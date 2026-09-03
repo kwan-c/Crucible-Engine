@@ -1,0 +1,28 @@
+# Build folders
+build/
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Visual Studio
+.vs/
+*.vcxproj.user
+*.vcxproj.filters
+*.suo
+*.ncb
+*.opensdf
+*.ipch
+*.pdb
+*.obj
+*.idb
+*.ipdb
+
+# System / Editor
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.swo
+.vscode/

@@ -1,0 +1,51 @@
+# ------------------------------------------------------------ #
+# Crucible Engine DLL
+# ------------------------------------------------------------ #
+project(Engine)
+
+# Gather engine source and header files
+file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS 
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
+)
+file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS 
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
+)
+
+# Create the DLL
+add_library(Engine SHARED
+    ${ENGINE_SOURCES}
+    ${ENGINE_HEADERS}
+)
+set_target_properties(Engine PROPERTIES LINKER_LANGUAGE CXX)
+
+# Set warning level
+if(MSVC)
+    target_compile_options(Engine PRIVATE /W4 /permissive-)
+else()
+    target_compile_options(Engine PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
+# Define export macro for DLL with relative paths from executable location
+target_compile_definitions(Engine 
+    PRIVATE
+        ENGINE_EXPORTS
+)
+
+# Include directories
+target_include_directories(Engine
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<INSTALL_INTERFACE:include>
+    PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/src
+)
+
+# Link against third-party dependencies
+target_link_libraries(Engine PUBLIC EngineThirdParty)
+
+# Organize files in Visual Studio Solution Explorer
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" 
+    FILES ${ENGINE_SOURCES} ${ENGINE_HEADERS}
+)
