@@ -25,7 +25,11 @@ namespace Crucible
 {
     bool Core::Init()
     {
-        if (!InitAppWindow("Crucible Engine", 1200, 800, { 0.3f, 0.1f, 0.1f, 1.0f }))
+        int winWidth = 1200;
+        int winHeight = 800;
+        float[4] bgColor = { 0.3f, 0.1f, 0.1f, 1.0f };
+
+        if (!InitAppWindow("Crucible Engine", winWidth, winHeight, bgColor))
         {
             std::cout << "Failed to initialize Core Engine.\n";
             return false;
