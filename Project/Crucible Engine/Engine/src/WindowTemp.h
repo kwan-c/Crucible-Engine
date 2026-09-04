@@ -1,5 +1,0 @@
-
-namespace Crucible
-{
-    int CreateWindow();
-}

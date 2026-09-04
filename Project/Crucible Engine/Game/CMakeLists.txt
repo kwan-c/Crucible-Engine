@@ -13,7 +13,10 @@ file(GLOB_RECURSE GAME_HEADERS CONFIGURE_DEPENDS
 )
 
 # Create executable (removed WIN32 to use console entry point)
-add_executable(Game ${GAME_SOURCES})
+add_executable(Game 
+    ${GAME_SOURCES}
+    ${GAME_HEADERS}    
+)
 
 # Set warning level and fix runtime library conflicts
 if(MSVC)
