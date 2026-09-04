@@ -24,7 +24,7 @@ namespace Crucible
     private:
 
         // Application window helpers
-        bool InitAppWindow(std::string const&, int width, int height);
+        bool InitAppWindow(std::string const&, int width, int height, float bgColor[4]);
         void UpdateAppWindow();
         void CleanUpAppWindow();
 

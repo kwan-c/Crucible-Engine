@@ -27,7 +27,7 @@ namespace Crucible
     {
         int winWidth = 1200;
         int winHeight = 800;
-        float[4] bgColor = { 0.3f, 0.1f, 0.1f, 1.0f };
+        float bgColor[] = { 0.3f, 0.1f, 0.1f, 1.0f };
 
         if (!InitAppWindow("Crucible Engine", winWidth, winHeight, bgColor))
         {
@@ -57,7 +57,7 @@ namespace Crucible
         CleanUpAppWindow();
     }
 
-    bool Core::InitAppWindow(std::string const& windowTitle, int width, int height, float[4] bgColor)
+    bool Core::InitAppWindow(std::string const& windowTitle, int width, int height, float bgColor[4])
     {
         // Set up GLFW ------------------------------------------------------------------------- //
         glfwInit();
