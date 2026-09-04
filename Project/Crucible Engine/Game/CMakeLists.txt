@@ -46,3 +46,8 @@ install(FILES
     "$<TARGET_FILE:Engine>"
     DESTINATION .
 )
+
+# Organize files in Visual Studio Solution Explorer
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" 
+    FILES ${GAME_SOURCES} ${GAME_HEADERS}
+)
