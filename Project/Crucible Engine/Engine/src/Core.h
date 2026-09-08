@@ -4,8 +4,10 @@
 #include <GLFW/glfw3.h>
 
 #include <string>
+#include <memory>
 
 #include "EngineExport.h"	// DLL export
+#include "Systems/Layer.h"
 
 namespace Crucible
 {
@@ -14,12 +16,10 @@ namespace Crucible
     public:
         // Core main functions
         bool Init();
-        void Update();
-        void CleanUp();
+        void Run();
 
-        // Accessors
-        GLFWwindow* GetWindow() const;
-        bool AppShouldClose() const;
+        // Manage system layers
+        void PushLayer(std::shared_ptr<Layer> layer);
 
     private:
 
