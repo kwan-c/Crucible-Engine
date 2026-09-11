@@ -27,19 +27,29 @@ set(IMGUI_SRC
     imgui/backends/imgui_impl_glfw.cpp
 
     # OpenGL3 backend
-    imgui/backends/imgui_impl_opengl3.cpp
-)
+    #imgui/backends/imgui_impl_opengl3.cpp
 
+    # Vulkan backend
+    imgui/backends/imgui_impl_vulkan.cpp  
+)
 add_library(imgui STATIC ${IMGUI_SRC})
 
 target_include_directories(imgui PUBLIC
     imgui
     imgui/backends
 )
-
-target_link_libraries(imgui PUBLIC glfw)
+target_link_libraries(imgui PUBLIC Vulkan::Vulkan glfw)
 
 set_target_properties(imgui PROPERTIES FOLDER "ThirdParty")
+
+
+# ------------------------------------------------------------ #
+# VMA (Vulkan Memory Allocator)
+# ------------------------------------------------------------ #
+
+# vma (header-only)
+add_library(vma INTERFACE)
+target_include_directories(vma SYSTEM INTERFACE vma/include)
 
 # ------------------------------------------------------------ #
 # XMATH
@@ -98,7 +108,6 @@ set_target_properties(Jolt PROPERTIES
     FOLDER "ThirdParty"
 )
 
-
 # Create an interface library that bundles all common dependencies
 add_library(EngineThirdParty INTERFACE)
 
@@ -111,4 +120,6 @@ target_link_libraries(EngineThirdParty INTERFACE
     xmath
     fmod
     Jolt
+    vma
+    Vulkan::Vulkan
 )

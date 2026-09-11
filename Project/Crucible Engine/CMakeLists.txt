@@ -3,6 +3,9 @@ cmake_minimum_required(VERSION 3.23.1)
 
 project(Crucible LANGUAGES CXX)
 
+# Find system-installed Vulkan SDK (LunarG)
+find_package(Vulkan REQUIRED)
+
 # Global C++ settings.
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
