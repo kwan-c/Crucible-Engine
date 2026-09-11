@@ -5,7 +5,6 @@ bool GameApp::Init()
     if (!m_engine.Init())
     {
         // std::cout << "Failed to initialize Core Engine...\n";
-        m_engine.CleanUp();
         return false;
     }
 
@@ -16,19 +15,7 @@ bool GameApp::Init()
 
 int GameApp::Run()
 {
-    while (!m_engine.AppShouldClose())
-    {
-        m_engine.Update();
-
-        /*
-            for (GameSystem gs : m_gameSystems)
-            {
-                gs.Update();
-            }
-        */
-    }
-    m_engine.CleanUp();
-    // GameApp::CleanUp();
+    m_engine.Run();
 
     return 0;
 }

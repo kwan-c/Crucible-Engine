@@ -1,4 +1,5 @@
-#include "AppManager.h"
+#include "WindowManager.h"
+#include <iostream>
 
 namespace {
 
@@ -22,22 +23,25 @@ namespace {
 
 namespace Crucible {
 
-    bool AppManager::Init(const std::string& title, int width, int height, float bgColor[4]) {
+    bool WindowManager::Init(const std::string& title, int width, int height, float bgColor[4]) {
 
         // Set up GLFW ------------------------------------------------------------------------- //
-        glfwInit();
+        if (!glfwInit()) {
+            std::cout << "Failed to intialize GLFW." << std::endl;
+            return false;
+        }
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, REQUIRED_GL_MAJOR);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, REQUIRED_GL_MINOR);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
-        m_appWindow = glfwCreateWindow(width, height, windowTitle.c_str(), NULL, NULL);
-        if (m_appWindow == NULL)
+        m_pWindow = glfwCreateWindow(width, height, title.c_str(), NULL, NULL);
+        if (m_pWindow == NULL)
         {
             std::cout << "Failed to create GLFW window." << std::endl;
             glfwTerminate();
             return false;
         }
-        glfwMakeContextCurrent(m_appWindow);
+        glfwMakeContextCurrent(m_pWindow);
 
         // Set up GLAD ------------------------------------------------------------------------- //
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -47,27 +51,15 @@ namespace Crucible {
             return false;
         }
 
-        glViewport(0, 0, width, height);
-        glfwSetFramebufferSizeCallback(m_appWindow, framebuffer_size_callback);
+        glViewport(100, 100, width, height);
+        glfwSetFramebufferSizeCallback(m_pWindow, framebuffer_size_callback);
         glClearColor(bgColor[0], bgColor[1], bgColor[2], bgColor[3]);
 
         return true;
     }
 
-    void AppManager::Update() {
-
-        glClear(GL_COLOR_BUFFER_BIT);
-        
-        processInput(m_appWindow);
-        m_appShouldClose = glfwWindowShouldClose(m_appWindow);
-
-        glfwSwapBuffers(m_appWindow);
-        glfwPollEvents(); 
-    }
-
-    void AppManager::CleanUp() {
-
-        glfwTerminate();
-    }
-    
+    void WindowManager::PollEvents() { glClear(GL_COLOR_BUFFER_BIT); glfwPollEvents(); processInput(m_pWindow); }
+    void WindowManager::SwapBuffers() { glfwSwapBuffers(m_pWindow); }
+    bool WindowManager::ShouldClose() const { return glfwWindowShouldClose(m_pWindow); }
+    void WindowManager::Shutdown() { glfwDestroyWindow(m_pWindow); glfwTerminate(); }
 }

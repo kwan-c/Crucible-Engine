@@ -14,6 +14,8 @@ namespace Crucible {
         
     public:
 
+        
+
     private:
         std::vector<RenderData> m_renderCache;
 

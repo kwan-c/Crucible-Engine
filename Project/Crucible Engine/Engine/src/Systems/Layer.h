@@ -8,7 +8,7 @@ namespace Crucible {
     
         virtual ~Layer() = default;
         virtual void OnAttach() {}
-        virtual void OnUpdate(float deltaTime) {}
+        virtual void OnUpdate(float deltaTime) = 0;
         virtual void OnRender() {}
         virtual void OnDetach() {}
 
