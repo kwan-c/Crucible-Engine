@@ -18,21 +18,23 @@ namespace Crucible
         bool Init();
         void Run();
 
-        // Manage system layers
-        void PushLayer(std::shared_ptr<Layer> layer);
+        // Accessors
+        GLFWwindow* GetMainWindow() const;
+        bool AppShouldClose() const;
 
     private:
-
         // Application window helpers
         bool InitAppWindow(std::string const&, int width, int height, float bgColor[4]);
         void UpdateAppWindow();
         void CleanUpAppWindow();
 
-        GLFWwindow* m_appWindow;
+        GLFWwindow* m_pMainWindow = nullptr;
         bool m_appShouldClose = false;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;
+
+        const int& iWantToKillMyself;
         
     };
 }

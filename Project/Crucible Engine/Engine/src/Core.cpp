@@ -1,7 +1,7 @@
 #include "Core.h"
 
+// Extern Libs
 #include <xmath.h>
-#include <iostream>
 #include <Jolt/Jolt.h>
 #include <Jolt/RegisterTypes.h>
 #include <Jolt/Core/Factory.h>
@@ -9,6 +9,9 @@
 #include <imgui_impl_opengl3.h>
 #include <imgui_impl_glfw.h>
 #include <fmod.hpp>
+
+// STL
+#include <iostream>
 
 namespace
 {
@@ -215,19 +218,23 @@ namespace Crucible
     bool Core::InitAppWindow(std::string const& windowTitle, int width, int height, float bgColor[4])
     {
         // Set up GLFW ------------------------------------------------------------------------- //
-        glfwInit();
+        if (!glfwInit())
+            throw std::runtime_error("Failed to initialize GLFW.");
+
+        glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, REQUIRED_GL_MAJOR);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, REQUIRED_GL_MINOR);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+        glfwWindowHint(GLFW_RESIZABLE, GLFW_TRUE);
 
-        m_appWindow = glfwCreateWindow(width, height, windowTitle.c_str(), NULL, NULL);
-        if (m_appWindow == NULL)
+        m_pMainWindow = glfwCreateWindow(width, height, windowTitle.c_str(), NULL, NULL);
+        if (m_pMainWindow == NULL)
         {
             std::cout << "Failed to create GLFW window." << std::endl;
             glfwTerminate();
             return false;
         }
-        glfwMakeContextCurrent(m_appWindow);
+        glfwMakeContextCurrent(m_pMainWindow);
 
         // Set up GLAD ------------------------------------------------------------------------- //
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -238,7 +245,7 @@ namespace Crucible
         }
 
         glViewport(0, 0, width, height);
-        glfwSetFramebufferSizeCallback(m_appWindow, framebuffer_size_callback);
+        glfwSetFramebufferSizeCallback(m_pMainWindow, framebuffer_size_callback);
         glClearColor(bgColor[0], bgColor[1], bgColor[2], bgColor[3]);
 
         return true;
@@ -248,10 +255,10 @@ namespace Crucible
     {
         //glClear(GL_COLOR_BUFFER_BIT);
         
-        processInput(m_appWindow);
-        m_appShouldClose = glfwWindowShouldClose(m_appWindow);
+        processInput(m_pMainWindow);
+        m_appShouldClose = glfwWindowShouldClose(m_pMainWindow);
 
-        //glfwSwapBuffers(m_appWindow);
+        glfwSwapBuffers(m_pMainWindow);
         glfwPollEvents();  
     }
 
@@ -283,7 +290,7 @@ namespace Crucible
     }
 
     // Accessor => pointer to application window;
-    GLFWwindow* Core::GetWindow() const { return m_appWindow; }
+    GLFWwindow* Core::GetMainWindow() const { return m_pMainWindow; }
     // Accessor => boolean data member tracking whether app should close;
     bool Core::AppShouldClose() const { return m_appShouldClose; }
 }
