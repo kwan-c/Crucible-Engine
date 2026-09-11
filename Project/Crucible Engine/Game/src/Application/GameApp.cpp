@@ -13,9 +13,7 @@ bool GameApp::Init()
     return true;
 }
 
-int GameApp::Run()
+void GameApp::Run()
 {
     m_engine.Run();
-
-    return 0;
 }

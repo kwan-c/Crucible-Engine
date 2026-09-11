@@ -7,7 +7,7 @@ class GameApp
 public:
     // GameApp main functions
     bool    Init();
-    int     Run();
+    void    Run();
 
 private:
     Crucible::Core m_engine;

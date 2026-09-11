@@ -1,5 +1,13 @@
 #include "RenderSystem.h"
 
+#if defined(INTELLISENSE) || !defined(USE_CPP20_MODULES)
+#include <vulkan/vulkan_raii.hpp>
+#else
+import vulkan_hpp;
+#endif
+#include <GLFW/glfw3.h>
+
+
 // Sandbox testing.
 namespace {
 
@@ -8,6 +16,12 @@ namespace {
      0.5f, -0.5f, 0.0f,
      0.0f,  0.5f, 0.0f
     };
+
+    void InitVulkan() {
+
+    }
+
+
 }
 
 namespace Crucible {
