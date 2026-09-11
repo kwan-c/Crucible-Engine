@@ -55,6 +55,12 @@ add_custom_command(TARGET Game POST_BUILD
         "${GAME_OUTPUT_DIR}"
 )
 
+# Ensure proper build order
+add_dependencies(Game 
+    #CopyAssets 
+    Engine 
+    #ManagedScripts
+)
 
 install(FILES 
     "$<TARGET_FILE:Engine>"

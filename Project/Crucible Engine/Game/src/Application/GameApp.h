@@ -5,7 +5,6 @@
 class GameApp
 {
 public:
-
     // GameApp main functions
     bool    Init();
     int     Run();

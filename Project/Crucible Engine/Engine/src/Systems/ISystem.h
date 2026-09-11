@@ -1,0 +1,8 @@
+
+namespace Crucible
+{
+    class ISystem
+    {
+
+    };
+}
