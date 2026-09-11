@@ -45,6 +45,17 @@ add_custom_command(TARGET Game POST_BUILD
     COMMENT "Copying Engine.dll..."
 )
 
+add_custom_command(TARGET Game POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/fmod/bin/fmod.dll"
+        "${GAME_OUTPUT_DIR}"
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/fmod/bin/fmodstudio.dll"
+        "${GAME_OUTPUT_DIR}"
+)
+
+
 install(FILES 
     "$<TARGET_FILE:Engine>"
     DESTINATION .
