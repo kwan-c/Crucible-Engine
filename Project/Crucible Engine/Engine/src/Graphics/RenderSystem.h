@@ -42,11 +42,20 @@ namespace Crucible {
         // Vulkan utility helpers
         void CreateInstance();
         void SetupDebugMessenger();
+        void PickPhysicalDevice();
+        void CreateLogicalDevice();
+
         std::vector<const char*> GetRequiredInstanceExtensions();
+        bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
 
         // Vulkan data members
-        vk::raii::Context m_context;
-        vk::raii::Instance m_instance = nullptr;    // connection btw app and vulk lib
+        vk::raii::Context           m_context;
+        vk::raii::Instance          m_instance = nullptr;           // connection btw app and vulk lib
+        vk::raii::PhysicalDevice    m_physicalDevice = nullptr;     // graphics card
+        vk::raii::Device            m_device = nullptr;             // logical interface to physical device
+
+        vk::raii::Queue             m_graphicsQueue = nullptr;
+
         vk::raii::DebugUtilsMessengerEXT m_debugMessenger = nullptr;
 
         static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT         severity,

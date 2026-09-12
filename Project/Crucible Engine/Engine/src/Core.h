@@ -9,6 +9,7 @@
 #include "EngineExport.h"	// DLL export
 #include "Systems/Layer.h"
 #include "Systems/WindowManager.h"
+#include "Graphics/RenderSystem.h"
 
 namespace Crucible
 {
@@ -26,6 +27,7 @@ namespace Crucible
         void CleanUp();
         
         std::unique_ptr<WindowManager> m_window;
+        std::unique_ptr<Renderer> m_renderer;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;

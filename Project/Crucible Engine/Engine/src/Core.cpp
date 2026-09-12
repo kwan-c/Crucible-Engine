@@ -5,11 +5,16 @@
 
 namespace Crucible {
 
-    Core::Core() : m_window{ std::make_unique<WindowManager>(1200, 800, "Crucible Engine") } {}
+    Core::Core() : 
+        m_window{ std::make_unique<WindowManager>(1200, 800, "Crucible Engine") },
+        m_renderer{}
+    {}
     Core::~Core() { CleanUp(); }
 
     bool Core::Init() 
     {
+        m_renderer->Init();
+
         std::cout << "The Hearth smoulders...\n";
 
         return true;

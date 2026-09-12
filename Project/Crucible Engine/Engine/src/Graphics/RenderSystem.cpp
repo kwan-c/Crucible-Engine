@@ -3,24 +3,18 @@
 // STL
 #include <stdexcept>
 #include <iostream>
+#include <map>      // PickPhysicalDevice()
 
-const std::vector<const char*> validationLayers = {
-    "VK_LAYER_KHRONOS_validation"
-};
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
 #else
 constexpr bool enableValidationLayers = true;
 #endif
 
-// Sandbox testing.
 namespace {
 
-    float vertices[] = {
-    -0.5f, -0.5f, 0.0f,
-     0.5f, -0.5f, 0.0f,
-     0.0f,  0.5f, 0.0f
-    };
+    std::vector<const char*> requiredDeviceExtension = { vk::KHRSwapchainExtensionName };
+    const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
 }   // ANONYMOUS NAMESPACE
 
@@ -45,8 +39,15 @@ namespace Crucible {
 
         CreateInstance();
         SetupDebugMessenger();
+        PickPhysicalDevice();
+        CreateLogicalDevice();
 
     }   // Renderer::InitVulkan()
+
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  VULKAN SET-UP FUNCTIONS
+    // ------------------------------------------------------------------------------------------------------------- //
 
     void Renderer::CreateInstance() {
 
@@ -135,6 +136,76 @@ namespace Crucible {
 
     }   // Renderer::SetupDebugMessenger()
 
+    /*
+        \brief
+        Selects graphics card device in the system that supports features required,
+        and assigns it to Renderer.m_physicalDevice data member.
+    */
+    void Renderer::PickPhysicalDevice() {
+
+        std::vector<vk::raii::PhysicalDevice> devices = m_instance.enumeratePhysicalDevices();
+        const auto deviceIt = std::ranges::find_if(devices, [&](const auto& device) {
+            return IsDeviceSuitable(device); });
+
+        if (deviceIt == devices.end()) {
+            throw std::runtime_error("[Renderer] Failed to find suitable GPU for program.");
+        }
+        m_physicalDevice = *deviceIt;
+
+    }   // Renderer::PickPhysicalDevice()
+
+    /*
+        \brief
+        Creates logical device that interfaces with physical device,
+        and assigns it to Renderer::m_device data member.
+        Creates graphics queue and assigns it to Renderer::m_graphicsQueue data member.
+    */
+    void Renderer::CreateLogicalDevice() {
+
+        // Specify queue to be created.
+        std::vector<vk::QueueFamilyProperties> qFamilyProps = m_physicalDevice.getQueueFamilyProperties();
+        auto graphicsQFamilyProp = std::ranges::find_if(qFamilyProps, [](const auto& qfp) {
+            return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
+            });
+        auto graphicsIdx = static_cast<uint32_t>(std::distance(qFamilyProps.begin(), graphicsQFamilyProp));
+        float qPriority = 0.5f;
+        vk::DeviceQueueCreateInfo deviceQCreateInfo{
+            .queueFamilyIndex = graphicsIdx,
+            .queueCount = 1,
+            .pQueuePriorities = &qPriority
+        };
+
+        // Specify device features (Currently leaving everything to vk::False).
+        vk::PhysicalDeviceFeatures deviceFeatures;
+
+        // Enabling additional features.
+        vk::StructureChain<vk::PhysicalDeviceFeatures2,
+            vk::PhysicalDeviceVulkan11Features,
+            vk::PhysicalDeviceVulkan13Features,
+            vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
+                {},
+                {.shaderDrawParameters = true},
+                {.dynamicRendering = true},
+                {.extendedDynamicState = true}
+        };
+
+        // Specifying device extensions.
+        std::vector<const char*> requiredDeviceExtension = { vk::KHRSwapchainExtensionName };
+
+        // Create the logical device.
+        vk::DeviceCreateInfo deviceCreateInfo{
+            .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+            .queueCreateInfoCount = 1,
+            .pQueueCreateInfos = &deviceQCreateInfo,
+            .enabledExtensionCount = static_cast<uint32_t>(requiredDeviceExtension.size()),
+            .ppEnabledExtensionNames = requiredDeviceExtension.data()
+        };
+
+        m_device = vk::raii::Device(m_physicalDevice, deviceCreateInfo);
+        m_graphicsQueue = vk::raii::Queue(m_device, graphicsIdx, 0);
+
+    }   // Renderer::CreateLogicalDevice()
+
     /*!
         \brief
         Compiles the names of all required extensions. (Additionally adds DebugUtilsExtension if validation layers are enabled)
@@ -154,11 +225,52 @@ namespace Crucible {
 
     }   // Renderer::GetRequiredInstanceExtensions()
 
+    /*
+        \brief
+        Checks if a device is suitable by checking against requirements.
+        \return
+        Returns true if device passes all requirements, else returns false.
+    */
+    bool Renderer::IsDeviceSuitable(const vk::raii::PhysicalDevice& device) {
 
+        // Check if device supports Vulkan 1.3 API version.
+        bool supportsVulkan1_3 = device.getProperties().apiVersion >= vk::ApiVersion13;
+
+        // Check if any queue families support graphics operations.
+        auto queueFamilies = device.getQueueFamilyProperties();
+        bool supportsGraphics = std::ranges::any_of(queueFamilies, [](const auto& qfp) {
+            return !!(qfp.queueFlags & vk::QueueFlagBits::eGraphics); });
+
+        // Check if all required device extensions are available.
+        auto availableDeviceExtensions = device.enumerateDeviceExtensionProperties();
+        bool supportsAllRequiredExtensions = std::ranges::all_of(requiredDeviceExtension, [&availableDeviceExtensions](const auto& requiredDeviceExtension) {
+            return std::ranges::any_of(availableDeviceExtensions, [requiredDeviceExtension](const auto& availableDeviceExtension) {
+                return strcmp(availableDeviceExtension.extensionName, requiredDeviceExtension) == 0; });
+            });
+
+        // Check if device supports required features (shader draw parameters, dynamic rendering and extended dynamic state).
+        auto features = device.template getFeatures2<vk::PhysicalDeviceFeatures2,
+            vk::PhysicalDeviceVulkan11Features,
+            vk::PhysicalDeviceVulkan13Features,
+            vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
+        bool supportsRequiredFeatures = features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
+            features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
+            features.template get<vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>().extendedDynamicState;
+
+        // Return true if the device meets all criteria.
+        return supportsVulkan1_3 && supportsGraphics && supportsAllRequiredExtensions && supportsRequiredFeatures;
+
+    }   // Renderer::IsDeviceSuitable
+
+    /*
+        \brief
+        Debug messenger callback function that prints warning and error messages.
+    */
     VKAPI_ATTR vk::Bool32 VKAPI_CALL Renderer::DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT         severity,
                                                           vk::DebugUtilsMessageTypeFlagsEXT                type,
                                                           const vk::DebugUtilsMessengerCallbackDataEXT*    pCallbackData,
                                                           void*                                            pUserData) {
+        (void)pUserData;
         // Only print warnings or errors.
         if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning
             || severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eError) {
