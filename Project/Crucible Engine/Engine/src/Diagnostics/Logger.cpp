@@ -158,6 +158,8 @@ namespace Crucible::Debug
                              state.startedAt,
                              SecondsSince(state.startTick)),
                  true);
+        WriteRaw("----------------------------------------"
+                 "----------------------------------------", false);
 
         const std::scoped_lock lock{ state.mutex };
 
@@ -166,7 +168,16 @@ namespace Crucible::Debug
             sink->Flush();
         }
 
+        // Release the buffers, not just their contents. clear() keeps a
+        // vector's capacity allocated, and this DLL's statics are destroyed
+        // *after* the exe's leak dump runs - so anything still held here
+        // gets reported as a leak.
         state.sinks.clear();
+        state.sinks.shrink_to_fit();
+
+        state.startedAt.clear();
+        state.startedAt.shrink_to_fit();
+
         state.initialised = false;
     }
 

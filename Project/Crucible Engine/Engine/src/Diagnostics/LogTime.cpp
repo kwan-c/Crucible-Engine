@@ -1,6 +1,7 @@
 #include "LogTime.h"
 
-#include <format>
+#include <array>
+#include <ctime>
 
 namespace Crucible::Debug
 {
@@ -10,19 +11,32 @@ namespace Crucible::Debug
 
     std::string LocalTimestamp()
     {
-        const auto nowUtc = floor<seconds>(system_clock::now());
+        // Deliberately NOT std::chrono::current_zone().
+        //
+        // On MSVC the first call to current_zone() loads the entire IANA
+        // timezone database into a global cache that is never freed, by
+        // design (microsoft/STL issue #2504). With _CRTDBG_LEAK_CHECK_DF
+        // enabled that shows up as several thousand reported "leaks" -
+        // every one of them a timezone name - which buries any real leak.
+        //
+        // The C runtime's localtime gives the same answer for far less:
+        // no database, no allocation, and no exceptions to worry about.
 
-        try
-        {
-            return std::format("{:%Y-%m-%d %H:%M:%S}",
-                               zoned_time{ current_zone(), nowUtc });
-        }
-        catch (const std::exception&)
-        {
-            // Some machines have no timezone database. Fall back to UTC
-            // rather than losing the timestamp entirely.
-            return std::format("{:%Y-%m-%d %H:%M:%S}Z", nowUtc);
-        }
+        const std::time_t seconds =
+            system_clock::to_time_t(system_clock::now());
+
+        std::tm local{};
+#ifdef _WIN32
+        localtime_s(&local, &seconds);
+#else
+        localtime_r(&seconds, &local);
+#endif
+
+        std::array<char, 32> buffer{};
+        const std::size_t written =
+            std::strftime(buffer.data(), buffer.size(), "%Y-%m-%d %H:%M:%S", &local);
+
+        return std::string(buffer.data(), written);
     }
 
     double SecondsSince(const TimePoint& start)
