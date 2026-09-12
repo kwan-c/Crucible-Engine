@@ -19,11 +19,17 @@ namespace {
 
 namespace Crucible {
 
-    bool WindowManager::Init(const std::string& title, int width, int height, float bgColor[4]) {
+    WindowManager::WindowManager(int w, int h, const std::string& title) {
+        if (!Init(title, w, h)) {
+            throw std::runtime_error("[WindowManager] Initialization failed.");
+        }
+    }
+
+    bool WindowManager::Init(const std::string& title, int width, int height) {
 
         // Set up GLFW ------------------------------------------------------------------------- //
         if (!glfwInit()) {
-            std::cout << "Failed to intialize GLFW." << std::endl;
+            std::cout << "[WindowManager] Failed to intialize GLFW." << std::endl;
             return false;
         }
         // No api -> Vulkan
@@ -33,16 +39,18 @@ namespace Crucible {
         m_pWindow = glfwCreateWindow(width, height, title.c_str(), NULL, NULL);
         if (m_pWindow == NULL)
         {
-            std::cout << "Failed to create GLFW window." << std::endl;
+            std::cout << "[WindowManager] Failed to create GLFW window." << std::endl;
             glfwTerminate();
             return false;
         }
 
+        m_width = width;
+        m_height = height;
+
         return true;
     }
 
-    void WindowManager::PollEvents() { glfwPollEvents(); }
+    void WindowManager::PollEvents() { glfwPollEvents(); processInput(m_pWindow); }
     void WindowManager::SwapBuffers() { glfwSwapBuffers(m_pWindow); }
     bool WindowManager::ShouldClose() const { return glfwWindowShouldClose(m_pWindow); }
-    void WindowManager::Shutdown() { glfwDestroyWindow(m_pWindow); glfwTerminate(); }
 }

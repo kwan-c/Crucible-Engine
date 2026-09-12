@@ -13,19 +13,26 @@ namespace Crucible {
     class WindowManager {
     
     public:
-        ~WindowManager() { Shutdown(); }
+        WindowManager(int w, int h, const std::string& title);
+        ~WindowManager() { glfwDestroyWindow(m_pWindow); glfwTerminate(); }
 
-        bool Init(const std::string& title, int width, int height, float bgColor[4]);
+        // Remove copy constructors.
+        WindowManager(const WindowManager&) = delete;
+        WindowManager& operator=(const WindowManager&) = delete;
+
+        bool Init(const std::string& title, int width, int height);
         
         void PollEvents();
         void SwapBuffers();
-        void Shutdown();
         bool ShouldClose() const;
 
         GLFWwindow* GetNativeHandle() const { return m_pWindow; }
 
     private:
         GLFWwindow* m_pWindow = nullptr;
+
+        int m_width = 1;
+        int m_height = 1;
 
     };
 

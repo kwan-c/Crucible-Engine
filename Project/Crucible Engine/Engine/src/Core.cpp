@@ -5,21 +5,11 @@
 
 namespace Crucible {
 
-    Core::Core() : m_window{ std::make_unique<WindowManager>() } {}
+    Core::Core() : m_window{ std::make_unique<WindowManager>(1200, 800, "Crucible Engine") } {}
     Core::~Core() { CleanUp(); }
 
     bool Core::Init() 
     {
-
-        int winWidth = 1200;
-        int winHeight = 800;
-        float bgColor[] = { 0.3f, 0.1f, 0.1f, 1.0f };
-
-        if (!m_window->Init("Crucible Engine", winWidth, winHeight, bgColor))
-        {
-            std::cout << "Failed to initialize Core Engine.\n";
-            return false;
-        }
         std::cout << "The Hearth smoulders...\n";
 
         return true;
@@ -37,7 +27,6 @@ namespace Crucible {
 
     void Core::CleanUp() {
 
-        m_window->Shutdown();
     }
 
 }
