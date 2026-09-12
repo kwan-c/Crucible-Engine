@@ -8,9 +8,9 @@
 
 int main()
 {
-    
+
     // Enable memory leak checking at program exit
-	_CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+    _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
     GameApp game;
     
