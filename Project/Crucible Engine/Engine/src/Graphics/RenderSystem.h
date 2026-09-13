@@ -26,22 +26,19 @@ namespace Crucible {
     class Renderer {
         
     public:
-        void Init();
+        void Init(GLFWwindow* window);
         void Update(float dt);
 
     private:
         std::vector<RenderData> m_renderCache;
 
-        Pipeline m_pipeline{ 
-            "../../../Assets/Shaders/Triangle.vert.spv", 
-            "../../../Assets/Shaders/Triangle.frag.spv" , {} };
-
         // Core Vulkan functions
-        void InitVulkan();
+        void InitVulkan(GLFWwindow* window);
 
         // Vulkan utility helpers
         void CreateInstance();
         void SetupDebugMessenger();
+        void CreateSurface(GLFWwindow* window);
         void PickPhysicalDevice();
         void CreateLogicalDevice();
 
@@ -55,6 +52,7 @@ namespace Crucible {
         vk::raii::Device            m_device = nullptr;             // logical interface to physical device
 
         vk::raii::Queue             m_graphicsQueue = nullptr;
+        vk::raii::SurfaceKHR        m_surface = nullptr;
 
         vk::raii::DebugUtilsMessengerEXT m_debugMessenger = nullptr;
 

@@ -2,7 +2,7 @@
 
 bool GameApp::Init()
 {
-    if (!m_engine.Init())
+    if (!m_engine->Init())
     {
         // std::cout << "Failed to initialize Core Engine...\n";
         return false;
@@ -15,5 +15,5 @@ bool GameApp::Init()
 
 void GameApp::Run()
 {
-    m_engine.Run();
+    m_engine->Run();
 }

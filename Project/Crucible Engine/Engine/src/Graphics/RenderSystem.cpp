@@ -20,7 +20,9 @@ namespace {
 
 namespace Crucible {
 
-    void Renderer::Init() {}
+    void Renderer::Init(GLFWwindow* window) {
+        InitVulkan(window);
+    }
 
     void Renderer::Update(float dt) {
         (void)dt;
@@ -35,10 +37,11 @@ namespace Crucible {
 
     }   // Renderer::Update()
 
-    void Renderer::InitVulkan() {
+    void Renderer::InitVulkan(GLFWwindow* window) {
 
         CreateInstance();
         SetupDebugMessenger();
+        CreateSurface(window);
         PickPhysicalDevice();
         CreateLogicalDevice();
 
@@ -138,6 +141,22 @@ namespace Crucible {
 
     /*
         \brief
+        Creates a VkSurfaceKHR object that represents an abstract type of surface to present rendered images to,
+        which will be backed by "window" already opened with GLFW.
+        \param
+        Pointer to a GLFWwindow already opened with GLFW.
+    */
+    void Renderer::CreateSurface(GLFWwindow* window) {
+        
+        VkSurfaceKHR surface = nullptr;
+        if (glfwCreateWindowSurface(*m_instance, window, nullptr, &surface) != 0) {
+            throw std::runtime_error("[Renderer] Failed to create window surface.");
+        }
+        m_surface = vk::raii::SurfaceKHR(m_instance, surface);
+    }
+
+    /*
+        \brief
         Selects graphics card device in the system that supports features required,
         and assigns it to Renderer.m_physicalDevice data member.
     */
@@ -164,16 +183,21 @@ namespace Crucible {
 
         // Specify queue to be created.
         std::vector<vk::QueueFamilyProperties> qFamilyProps = m_physicalDevice.getQueueFamilyProperties();
-        auto graphicsQFamilyProp = std::ranges::find_if(qFamilyProps, [](const auto& qfp) {
-            return (qfp.queueFlags & vk::QueueFlagBits::eGraphics) != static_cast<vk::QueueFlags>(0);
-            });
-        auto graphicsIdx = static_cast<uint32_t>(std::distance(qFamilyProps.begin(), graphicsQFamilyProp));
-        float qPriority = 0.5f;
-        vk::DeviceQueueCreateInfo deviceQCreateInfo{
-            .queueFamilyIndex = graphicsIdx,
-            .queueCount = 1,
-            .pQueuePriorities = &qPriority
-        };
+
+        // Get the first index in qFamilyProps that supports both graphics and surface presentation.
+        uint32_t queueIdx = ~0;
+        for (uint32_t qfpIndex = 0; qfpIndex < qFamilyProps.size(); ++qfpIndex) {
+
+            if ((qFamilyProps[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics)
+                && m_physicalDevice.getSurfaceSupportKHR(qfpIndex, *m_surface)) {
+
+                queueIdx = qfpIndex;
+                break;
+            }
+        }
+        if (queueIdx == ~0) {
+            throw std::runtime_error("[Renderer] Failed to find queue for graphics and surface presentation.\n");
+        }
 
         // Specify device features (Currently leaving everything to vk::False).
         vk::PhysicalDeviceFeatures deviceFeatures;
@@ -193,6 +217,13 @@ namespace Crucible {
         std::vector<const char*> requiredDeviceExtension = { vk::KHRSwapchainExtensionName };
 
         // Create the logical device.
+        float queuePriority = 0.5f;
+        vk::DeviceQueueCreateInfo deviceQCreateInfo{
+            .queueFamilyIndex = queueIdx,
+            .queueCount = 1,
+            .pQueuePriorities = &queuePriority
+        };
+
         vk::DeviceCreateInfo deviceCreateInfo{
             .pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
             .queueCreateInfoCount = 1,
@@ -202,7 +233,7 @@ namespace Crucible {
         };
 
         m_device = vk::raii::Device(m_physicalDevice, deviceCreateInfo);
-        m_graphicsQueue = vk::raii::Queue(m_device, graphicsIdx, 0);
+        m_graphicsQueue = vk::raii::Queue(m_device, queueIdx, 0);
 
     }   // Renderer::CreateLogicalDevice()
 
