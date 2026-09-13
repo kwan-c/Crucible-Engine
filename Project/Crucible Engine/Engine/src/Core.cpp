@@ -20,9 +20,6 @@ namespace Crucible {
     {
         std::cout << "The Hearth smoulders...\n";
 
-        // Enable memory leak checking at program exit
-        _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
-
         // ======== asset debugging (Removable) ==========
         {
             Crucible::AssetManager assets;
@@ -30,7 +27,7 @@ namespace Crucible {
             assets.Init();
             assets.PrintIndex();
 
-            auto tex = assets.Load("Textures/Crucible.jpg");
+            auto tex = assets.Load("Textures/Orange_Milk.jpg");
             assets.PrintLoaded();
         }
         // ===========================================
