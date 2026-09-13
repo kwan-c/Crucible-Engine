@@ -1,4 +1,5 @@
 #include "RenderSystem.h"
+#include "GraphicsUtils.h"
 
 // STL
 #include <stdexcept>
@@ -43,10 +44,14 @@ namespace Crucible {
         CreateInstance();
         SetupDebugMessenger();
         CreateSurface(window);
+
         PickPhysicalDevice();
         CreateLogicalDevice();
+
         CreateSwapChain(window);
         CreateImageViews();
+
+        CreateGraphicsPipeline();
 
     }   // Renderer::InitVulkan()
 
@@ -287,6 +292,96 @@ namespace Crucible {
 
     }   // Renderer::CreateImageViews()
 
+    /*
+        \brief
+        Creates shader module, sets parameters for fixed functions, then consolidates the information 
+        structures to create the graphics pipeline which is required for all draw commands.
+    */
+    void Renderer::CreateGraphicsPipeline() {
+
+        // Programmable stages (Vertex and Fragment shaders).
+        vk::raii::ShaderModule shaderModule = CreateShaderModule(
+            Graphics::Utils::ReadFile("../../../Assets/Shaders/slang.spv"));
+
+        vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+            .stage  = vk::ShaderStageFlagBits::eVertex,
+            .module = shaderModule,
+            .pName  = "vertMain"
+        };
+        vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+            .stage  = vk::ShaderStageFlagBits::eFragment,
+            .module = shaderModule,
+            .pName  = "fragMain"
+        };
+        vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+        // Fixed functions.
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo; // Currently hardcoding vertices in shader.
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+
+        // Set viewport to entire swapchain extent, make them dynamic more more flexibility in future.
+        vk::Viewport viewport{ 0.0f, 0.0f, static_cast<float>(m_swapChainExtent.width), static_cast<float>(m_swapChainExtent.height), 0.0f, 1.0f };
+        vk::Rect2D scissor{ vk::Offset2D{0,0}, m_swapChainExtent };
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        vk::PipelineDynamicStateCreateInfo dynamicState = {
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode = vk::PolygonMode::eFill,
+            .cullMode = vk::CullModeFlagBits::eBack,
+            .frontFace = vk::FrontFace::eClockwise,
+            .depthBiasEnable = vk::False,
+            .lineWidth = 1.0f
+        };
+
+        // Disable multisampling and color blending for now...
+        vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+            .blendEnable = vk::False,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA 
+        };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{
+            .logicOpEnable = vk::False,
+            .logicOp = vk::LogicOp::eCopy,
+            .attachmentCount = 1,
+            .pAttachments = &colorBlendAttachment
+        };
+
+        // Pipeline layout object (for uniform values).
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{ .setLayoutCount = 0, .pushConstantRangeCount = 0 };
+        m_pipelineLayout = vk::raii::PipelineLayout(m_device, pipelineLayoutInfo);
+
+        vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo{ 
+            .colorAttachmentCount = 1, 
+            .pColorAttachmentFormats = &m_swapChainSurfaceFormat.format };
+
+        // Consolidate all information to create Graphics Pipeline.
+        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain = 
+        {
+            {
+                .stageCount             = 2,
+                .pStages                = shaderStages,
+                .pVertexInputState      = &vertexInputInfo,
+                .pInputAssemblyState    = &inputAssembly,
+                .pViewportState         = &viewportState,
+                .pRasterizationState    = &rasterizer,
+                .pMultisampleState      = &multisampling,
+                .pColorBlendState       = &colorBlending,
+                .pDynamicState          = &dynamicState,
+                .layout                 = m_pipelineLayout,
+                .renderPass             = nullptr
+            },
+            { .colorAttachmentCount = 1, .pColorAttachmentFormats = &m_swapChainSurfaceFormat.format }
+        };
+        m_graphicsPipeline = vk::raii::Pipeline(m_device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+
+    }   // Renderer::CreateGraphicsPipeline()
+
     /*!
         \brief
         Compiles the names of all required extensions. (Additionally adds DebugUtilsExtension if validation layers are enabled)
@@ -353,6 +448,16 @@ namespace Crucible {
         return minImageCount;
 
     }   // Renderer::ChooseSwapMinImageCount()
+
+    [[nodiscard]] vk::raii::ShaderModule Renderer::CreateShaderModule(const std::vector<char>& code) const {
+
+        vk::ShaderModuleCreateInfo createInfo{
+            .codeSize = code.size() * sizeof(char),
+            .pCode = reinterpret_cast<const uint32_t*>(code.data())
+        };
+        return { m_device, createInfo };
+
+    }   // Renderer::CreateShaderModule()
 
     /*
         \brief

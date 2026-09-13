@@ -11,9 +11,6 @@ import vulkan_hpp;
 // STL
 #include <vector>
 
-// Crucible engine
-#include "Graphics/Pipeline.h"
-
 namespace {
     struct RenderData {
 
@@ -36,7 +33,7 @@ namespace Crucible {
         // Core Vulkan functions
         void InitVulkan(GLFWwindow* window);
 
-        // Vulkan utility helpers
+        // Vulkan helpers
         void CreateInstance();
         void SetupDebugMessenger();
         void CreateSurface(GLFWwindow* window);
@@ -44,13 +41,16 @@ namespace Crucible {
         void CreateLogicalDevice();
         void CreateSwapChain(GLFWwindow* window);
         void CreateImageViews();
+        void CreateGraphicsPipeline();
 
         std::vector<const char*> GetRequiredInstanceExtensions();
+        bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
         vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
         vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
         vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities, GLFWwindow* window);
         uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities);
-        bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
+        
+        [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char>& code) const;
 
         // Vulkan data members
         vk::raii::Context           m_context;
@@ -60,6 +60,8 @@ namespace Crucible {
         vk::raii::Device            m_device = nullptr;             // logical interface to physical device
         vk::raii::Queue             m_graphicsQueue = nullptr;
         vk::raii::SwapchainKHR      m_swapChain = nullptr;
+        vk::raii::PipelineLayout    m_pipelineLayout = nullptr;
+        vk::raii::Pipeline          m_graphicsPipeline = nullptr;
 
         // SwapChain parameters
         std::vector<vk::Image>              m_swapChainImages;

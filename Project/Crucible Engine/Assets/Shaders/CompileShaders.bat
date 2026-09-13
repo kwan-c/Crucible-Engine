@@ -1,3 +1,2 @@
-C:\VulkanSDK\1.4.357.0\Bin\glslc.exe Triangle.vert -o Triangle.vert.spv
-C:\VulkanSDK\1.4.357.0\Bin\glslc.exe Triangle.frag -o Triangle.frag.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe Triangle.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -entry vertMain -entry fragMain -o slang.spv
 pause
