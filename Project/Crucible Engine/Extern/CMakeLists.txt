@@ -13,9 +13,9 @@ set_target_properties(glad PROPERTIES FOLDER "ThirdParty")
 
 # Add more here...
 
-# ------------------------------------------------------------ #
+# ----------------------------------- #
 # IMGUI
-# ------------------------------------------------------------ #
+# ----------------------------------- #
 
 set(IMGUI_SRC
     imgui/imgui.cpp
@@ -43,26 +43,26 @@ target_link_libraries(imgui PUBLIC Vulkan::Vulkan glfw)
 set_target_properties(imgui PROPERTIES FOLDER "ThirdParty")
 
 
-# ------------------------------------------------------------ #
+# ----------------------------------- #
 # VMA (Vulkan Memory Allocator)
-# ------------------------------------------------------------ #
+# ----------------------------------- #
 
 # vma (header-only)
 add_library(vma INTERFACE)
 target_include_directories(vma SYSTEM INTERFACE vma/include)
 
-# ------------------------------------------------------------ #
-# XMATH
-# ------------------------------------------------------------ #
 
-# XMath (header-only)
+# ----------------------------------- #
+# XMATH (header-only)
+# ----------------------------------- #
+
 add_library(xmath INTERFACE)
 target_include_directories(xmath SYSTEM INTERFACE xmath/source)
 
 
-# ------------------------------------------------------------ #
+# ----------------------------------- #
 # FMOD
-# ------------------------------------------------------------ #
+# ----------------------------------- #
 
 set(FMOD_ROOT
     "${CMAKE_CURRENT_SOURCE_DIR}/fmod"
@@ -79,9 +79,9 @@ target_link_libraries(fmod INTERFACE
     "${FMOD_ROOT}/lib/x64/fmod_vc.lib"
 )
 
-# ------------------------------------------------------------ #
+# ----------------------------------- #
 # JOLT
-# ------------------------------------------------------------ #
+# ----------------------------------- #
 
 set(JPH_BUILD_SAMPLES OFF CACHE BOOL "" FORCE)
 set(JPH_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -108,6 +108,40 @@ set_target_properties(Jolt PROPERTIES
     FOLDER "ThirdParty"
 )
 
+# ----------------------------------- #
+# RTTR
+# ----------------------------------- #
+
+set(BUILD_STATIC ON CACHE BOOL "" FORCE)                 
+set(BUILD_RTTR_DYNAMIC OFF CACHE BOOL "" FORCE)          
+set(BUILD_WITH_STATIC_RUNTIME_LIBS OFF CACHE BOOL "" FORCE)
+set(BUILD_WITH_RTTI ON CACHE BOOL "" FORCE)              
+set(BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+set(BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(BUILD_DOCUMENTATION OFF CACHE BOOL "" FORCE)
+set(BUILD_INSTALLER OFF CACHE BOOL "" FORCE)
+set(BUILD_PACKAGE OFF CACHE BOOL "" FORCE)
+set(USE_PCH OFF CACHE BOOL "" FORCE)                     # simpler to reason about while debugging; turn back on later if you want faster rebuilds
+
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/rttr"
+    "${CMAKE_CURRENT_BINARY_DIR}/RTTR"
+)
+
+set_target_properties(rttr_core_lib PROPERTIES FOLDER "ThirdParty")
+
+# ----------------------------------- #
+# STB (header-only)
+# ----------------------------------- #
+
+add_library(stb INTERFACE)
+target_include_directories(stb SYSTEM INTERFACE stb)
+
+
+# ----------------------------------- #
+
+
 # Create an interface library that bundles all common dependencies
 add_library(EngineThirdParty INTERFACE)
 
@@ -122,4 +156,6 @@ target_link_libraries(EngineThirdParty INTERFACE
     Jolt
     vma
     Vulkan::Vulkan
+    rttr_core_lib
+    stb
 )

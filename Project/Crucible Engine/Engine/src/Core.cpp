@@ -1,4 +1,5 @@
 #include "Core.h"
+#include "AssetPipe/Assetmanager.h"
 
 // STL
 #include <iostream>
@@ -18,6 +19,21 @@ namespace Crucible {
     bool Core::Init() 
     {
         std::cout << "The Hearth smoulders...\n";
+
+        // Enable memory leak checking at program exit
+        _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+
+        // ======== asset debugging (Removable) ==========
+        {
+            Crucible::AssetManager assets;
+            std::cout << "\n\n";
+            assets.Init();
+            assets.PrintIndex();
+
+            auto tex = assets.Load("Textures/Crucible.jpg");
+            assets.PrintLoaded();
+        }
+        // ===========================================
 
         return true;
     }
