@@ -50,8 +50,10 @@ namespace Crucible {
 
         CreateSwapChain(window);
         CreateImageViews();
-
         CreateGraphicsPipeline();
+
+        CreateCommandPool();
+        CreateCommandBuffer();
 
     }   // Renderer::InitVulkan()
 
@@ -193,17 +195,16 @@ namespace Crucible {
         std::vector<vk::QueueFamilyProperties> qFamilyProps = m_physicalDevice.getQueueFamilyProperties();
 
         // Get the first index in qFamilyProps that supports both graphics and surface presentation.
-        uint32_t queueIdx = ~0u;
         for (uint32_t qfpIndex = 0; qfpIndex < qFamilyProps.size(); ++qfpIndex) {
 
             if ((qFamilyProps[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics)
                 && m_physicalDevice.getSurfaceSupportKHR(qfpIndex, *m_surface)) {
 
-                queueIdx = qfpIndex;
+                m_queueIndex = qfpIndex;
                 break;
             }
         }
-        if (queueIdx == ~0) {
+        if (m_queueIndex == ~0) {
             throw std::runtime_error("[Renderer] Failed to find queue for graphics and surface presentation.\n");
         }
 
@@ -224,7 +225,7 @@ namespace Crucible {
         // Create the logical device.
         float queuePriority = 0.5f;
         vk::DeviceQueueCreateInfo deviceQCreateInfo{
-            .queueFamilyIndex = queueIdx,
+            .queueFamilyIndex = m_queueIndex,
             .queueCount = 1,
             .pQueuePriorities = &queuePriority
         };
@@ -238,7 +239,7 @@ namespace Crucible {
         };
 
         m_device = vk::raii::Device(m_physicalDevice, deviceCreateInfo);
-        m_graphicsQueue = vk::raii::Queue(m_device, queueIdx, 0);
+        m_graphicsQueue = vk::raii::Queue(m_device, m_queueIndex, 0);
 
     }   // Renderer::CreateLogicalDevice()
 
@@ -381,6 +382,27 @@ namespace Crucible {
         m_graphicsPipeline = vk::raii::Pipeline(m_device, nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 
     }   // Renderer::CreateGraphicsPipeline()
+
+    void Renderer::CreateCommandPool() {
+    
+        vk::CommandPoolCreateInfo poolInfo{ 
+            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
+            .queueFamilyIndex = m_queueIndex
+        };
+        m_commandPool = vk::raii::CommandPool(m_device, poolInfo);
+
+    }   // Renderer::CreateCommandPool()
+
+    void Renderer::CreateCommandBuffer() {
+
+        vk::CommandBufferAllocateInfo allocInfo{ 
+            .commandPool = m_commandPool, 
+            .level = vk::CommandBufferLevel::ePrimary, 
+            .commandBufferCount = 1 
+        };
+        m_commandBuffer = std::move(vk::raii::CommandBuffers(m_device, allocInfo).front());
+
+    }   // Renderer::CreateCommandBuffer()
 
     /*!
         \brief

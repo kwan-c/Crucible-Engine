@@ -37,11 +37,17 @@ namespace Crucible {
         void CreateInstance();
         void SetupDebugMessenger();
         void CreateSurface(GLFWwindow* window);
+        
         void PickPhysicalDevice();
         void CreateLogicalDevice();
+        
         void CreateSwapChain(GLFWwindow* window);
         void CreateImageViews();
         void CreateGraphicsPipeline();
+        
+        void CreateCommandPool();
+        void CreateCommandBuffer();
+        void RecordCommandBuffer(uint32_t imageIndex);
 
         std::vector<const char*> GetRequiredInstanceExtensions();
         bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
@@ -62,6 +68,11 @@ namespace Crucible {
         vk::raii::SwapchainKHR      m_swapChain = nullptr;
         vk::raii::PipelineLayout    m_pipelineLayout = nullptr;
         vk::raii::Pipeline          m_graphicsPipeline = nullptr;
+
+        uint32_t m_queueIndex = ~0u;    // index for graphics queue for logical device
+        
+        vk::raii::CommandPool       m_commandPool = nullptr;
+        vk::raii::CommandBuffer     m_commandBuffer = nullptr;
 
         // SwapChain parameters
         std::vector<vk::Image>              m_swapChainImages;
