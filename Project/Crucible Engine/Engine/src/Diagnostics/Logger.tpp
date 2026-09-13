@@ -14,6 +14,7 @@ namespace Crucible::Debug
     //
     // The formatted text is kept in a named local rather than passed straight
     // through, so there is no question of the string_view outliving it.
+
     template <typename T>
     void LogSetting(const std::string_view& system,
                     const std::string_view& key,

@@ -11,16 +11,6 @@ namespace Crucible::Debug
 
     std::string LocalTimestamp()
     {
-        // Deliberately NOT std::chrono::current_zone().
-        //
-        // On MSVC the first call to current_zone() loads the entire IANA
-        // timezone database into a global cache that is never freed, by
-        // design (microsoft/STL issue #2504). With _CRTDBG_LEAK_CHECK_DF
-        // enabled that shows up as several thousand reported "leaks" -
-        // every one of them a timezone name - which buries any real leak.
-        //
-        // The C runtime's localtime gives the same answer for far less:
-        // no database, no allocation, and no exceptions to worry about.
 
         const std::time_t seconds =
             system_clock::to_time_t(system_clock::now());
