@@ -6,15 +6,17 @@
 namespace Crucible {
 
     Core::Core() : 
-        m_window{ std::make_unique<WindowManager>(1200, 800, "Crucible Engine") },
-        m_renderer{ std::make_unique<Renderer>() }
+        m_window{ new WindowManager(1200, 800, "Crucible Engine") },
+        m_renderer{ new Renderer(m_window->GetNativeHandle()) }
     {}
-    Core::~Core() { CleanUp(); }
+    Core::~Core() { 
+        CleanUp(); 
+        delete m_renderer;
+        delete m_window;
+    }
 
     bool Core::Init() 
     {
-        m_renderer->Init(m_window->GetNativeHandle());
-
         std::cout << "The Hearth smoulders...\n";
 
         return true;
@@ -30,8 +32,5 @@ namespace Crucible {
         }
     }
 
-    void Core::CleanUp() {
-
-    }
-
+    void Core::CleanUp() {}
 }

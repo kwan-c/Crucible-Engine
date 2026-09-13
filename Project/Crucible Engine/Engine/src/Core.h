@@ -26,8 +26,8 @@ namespace Crucible
     private:
         void CleanUp();
         
-        std::unique_ptr<WindowManager> m_window;
-        std::unique_ptr<Renderer> m_renderer;
+        WindowManager* m_window;
+        Renderer* m_renderer;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;

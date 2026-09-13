@@ -3,7 +3,10 @@
 // STL
 #include <stdexcept>
 #include <iostream>
-#include <map>      // PickPhysicalDevice()
+#include <cstdint>
+#include <limits>   // numeric_limits
+#include <algorithm>    // clamp
+    
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -20,9 +23,7 @@ namespace {
 
 namespace Crucible {
 
-    void Renderer::Init(GLFWwindow* window) {
-        InitVulkan(window);
-    }
+    Renderer::Renderer(GLFWwindow* window) { InitVulkan(window); }
 
     void Renderer::Update(float dt) {
         (void)dt;
@@ -44,6 +45,8 @@ namespace Crucible {
         CreateSurface(window);
         PickPhysicalDevice();
         CreateLogicalDevice();
+        CreateSwapChain(window);
+        CreateImageViews();
 
     }   // Renderer::InitVulkan()
 
@@ -185,7 +188,7 @@ namespace Crucible {
         std::vector<vk::QueueFamilyProperties> qFamilyProps = m_physicalDevice.getQueueFamilyProperties();
 
         // Get the first index in qFamilyProps that supports both graphics and surface presentation.
-        uint32_t queueIdx = ~0;
+        uint32_t queueIdx = ~0u;
         for (uint32_t qfpIndex = 0; qfpIndex < qFamilyProps.size(); ++qfpIndex) {
 
             if ((qFamilyProps[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics)
@@ -213,9 +216,6 @@ namespace Crucible {
                 {.extendedDynamicState = true}
         };
 
-        // Specifying device extensions.
-        std::vector<const char*> requiredDeviceExtension = { vk::KHRSwapchainExtensionName };
-
         // Create the logical device.
         float queuePriority = 0.5f;
         vk::DeviceQueueCreateInfo deviceQCreateInfo{
@@ -237,6 +237,56 @@ namespace Crucible {
 
     }   // Renderer::CreateLogicalDevice()
 
+    void Renderer::CreateSwapChain(GLFWwindow* window) {
+
+        vk::SurfaceCapabilitiesKHR surfaceCapabilities = m_physicalDevice.getSurfaceCapabilitiesKHR(*m_surface);
+        m_swapChainExtent = ChooseSwapExtent(surfaceCapabilities, window);
+        uint32_t minImageCount = ChooseSwapMinImageCount(surfaceCapabilities);
+
+        std::vector<vk::SurfaceFormatKHR> availableFormats = m_physicalDevice.getSurfaceFormatsKHR(*m_surface);
+        m_swapChainSurfaceFormat = ChooseSwapSurfaceFormat(availableFormats);
+
+        std::vector<vk::PresentModeKHR> availablePresentModes = m_physicalDevice.getSurfacePresentModesKHR(*m_surface);
+
+        vk::SwapchainCreateInfoKHR swapChainCreateInfo{
+            .surface            = *m_surface,
+            .minImageCount      = minImageCount,
+            .imageFormat        = m_swapChainSurfaceFormat.format,
+            .imageColorSpace    = m_swapChainSurfaceFormat.colorSpace,
+            .imageExtent        = m_swapChainExtent,
+            .imageArrayLayers   = 1,
+            .imageUsage         = vk::ImageUsageFlagBits::eColorAttachment,
+            .imageSharingMode   = vk::SharingMode::eExclusive,
+            .preTransform       = surfaceCapabilities.currentTransform,
+            .compositeAlpha     = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+            .presentMode        = ChooseSwapPresentMode(availablePresentModes),
+            .clipped            = true
+        };
+
+        m_swapChain = vk::raii::SwapchainKHR(m_device, swapChainCreateInfo);
+        m_swapChainImages = m_swapChain.getImages();
+
+    }   // Renderer::CreateSwapChain()
+
+    void Renderer::CreateImageViews() {
+
+        assert(m_swapChainImageViews.empty());
+        vk::ImageViewCreateInfo imageViewCreateInfo{
+            .viewType           = vk::ImageViewType::e2D,
+            .format             = m_swapChainSurfaceFormat.format,
+            .subresourceRange   = { 
+                .aspectMask = vk::ImageAspectFlagBits::eColor,
+                .levelCount = 1,
+                .layerCount = 1
+            }
+        };
+        for (auto& image : m_swapChainImages) {
+            imageViewCreateInfo.image = image;
+            m_swapChainImageViews.emplace_back(m_device, imageViewCreateInfo);
+        }
+
+    }   // Renderer::CreateImageViews()
+
     /*!
         \brief
         Compiles the names of all required extensions. (Additionally adds DebugUtilsExtension if validation layers are enabled)
@@ -255,6 +305,54 @@ namespace Crucible {
         return extensions;
 
     }   // Renderer::GetRequiredInstanceExtensions()
+
+    vk::SurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
+
+        assert(!availableFormats.empty());
+
+        const auto formatIt = std::ranges::find_if(availableFormats, [](const auto& format) {
+            return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear; });
+
+        return formatIt != availableFormats.end() ? *formatIt : availableFormats[0];
+
+    }   // Renderer::ChooseSwapSurfaceFormat()
+
+    vk::PresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes) {
+
+        // Assert that at least Fifo is present.
+        assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) {
+            return presentMode == vk::PresentModeKHR::eFifo; }));
+
+        // Return eMailbox if available, else default to eFifo.
+        return std::ranges::any_of(availablePresentModes, [](const vk::PresentModeKHR value) {
+            return vk::PresentModeKHR::eMailbox == value; }) ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
+
+    }   // Renderer::ChooseSwapPresentMode()
+
+    vk::Extent2D Renderer::ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities, GLFWwindow* window) {
+
+        if (surfaceCapabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+            return surfaceCapabilities.currentExtent;
+        }
+        int width{}, height{};
+        glfwGetFramebufferSize(window, &width, &height);
+
+        return {
+            std::clamp<uint32_t>(width, surfaceCapabilities.minImageExtent.width, surfaceCapabilities.maxImageExtent.width),
+            std::clamp<uint32_t>(height, surfaceCapabilities.minImageExtent.height, surfaceCapabilities.maxImageExtent.height)
+        };
+
+    }   // Renderer::ChooseSwapExtent()
+
+    uint32_t Renderer::ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities) {
+
+        auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
+        if ((0 < surfaceCapabilities.maxImageCount) && (surfaceCapabilities.maxImageCount < minImageCount)) {
+            minImageCount = surfaceCapabilities.maxImageCount;
+        }
+        return minImageCount;
+
+    }   // Renderer::ChooseSwapMinImageCount()
 
     /*
         \brief

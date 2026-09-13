@@ -27,6 +27,8 @@ namespace Crucible {
         bool ShouldClose() const;
 
         GLFWwindow* GetNativeHandle() const { return m_pWindow; }
+        int GetWidth() const{ return m_width; }
+        int GetHeight() const{ return m_height; }
 
     private:
         GLFWwindow* m_pWindow = nullptr;

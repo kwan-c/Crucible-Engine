@@ -4,11 +4,11 @@
 namespace {
 
     // Helper functions for window operations;
-    void static framebuffer_size_callback(GLFWwindow* window, int width, int height)
-    {
-        (void)window;
-        glViewport(0, 0, width, height);
-    }
+    //void static framebuffer_size_callback(GLFWwindow* window, int width, int height)
+    //{
+    //    (void)window;
+    //    glViewport(0, 0, width, height);
+    //}
     void static processInput(GLFWwindow *window)
     {
         if(glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)

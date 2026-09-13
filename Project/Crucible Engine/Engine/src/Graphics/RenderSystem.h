@@ -26,6 +26,7 @@ namespace Crucible {
     class Renderer {
         
     public:
+        Renderer(GLFWwindow* window);
         void Init(GLFWwindow* window);
         void Update(float dt);
 
@@ -41,18 +42,30 @@ namespace Crucible {
         void CreateSurface(GLFWwindow* window);
         void PickPhysicalDevice();
         void CreateLogicalDevice();
+        void CreateSwapChain(GLFWwindow* window);
+        void CreateImageViews();
 
         std::vector<const char*> GetRequiredInstanceExtensions();
+        vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
+        vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
+        vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities, GLFWwindow* window);
+        uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities);
         bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
 
         // Vulkan data members
         vk::raii::Context           m_context;
         vk::raii::Instance          m_instance = nullptr;           // connection btw app and vulk lib
+        vk::raii::SurfaceKHR        m_surface = nullptr;
         vk::raii::PhysicalDevice    m_physicalDevice = nullptr;     // graphics card
         vk::raii::Device            m_device = nullptr;             // logical interface to physical device
-
         vk::raii::Queue             m_graphicsQueue = nullptr;
-        vk::raii::SurfaceKHR        m_surface = nullptr;
+        vk::raii::SwapchainKHR      m_swapChain = nullptr;
+
+        // SwapChain parameters
+        std::vector<vk::Image>              m_swapChainImages;
+        std::vector<vk::raii::ImageView>    m_swapChainImageViews;
+        vk::Extent2D                        m_swapChainExtent;
+        vk::SurfaceFormatKHR                m_swapChainSurfaceFormat;
 
         vk::raii::DebugUtilsMessengerEXT m_debugMessenger = nullptr;
 
