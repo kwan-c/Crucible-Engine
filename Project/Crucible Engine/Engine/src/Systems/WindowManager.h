@@ -30,12 +30,15 @@ namespace Crucible {
         int GetWidth() const{ return m_width; }
         int GetHeight() const{ return m_height; }
 
+        bool m_framebufferResized = false;
+
     private:
         GLFWwindow* m_pWindow = nullptr;
 
         int m_width = 1;
         int m_height = 1;
 
+        static void FramebufferResizeCallback(GLFWwindow* window, int width, int height);
     };
 
 }

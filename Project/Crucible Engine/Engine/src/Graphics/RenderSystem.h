@@ -1,5 +1,6 @@
 #pragma once
 
+#define VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS  // To handle swap chain recreation.
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
 #include <vulkan/vulkan_raii.hpp>
@@ -10,6 +11,9 @@ import vulkan_hpp;
 
 // STL
 #include <vector>
+
+// Crucible Engine
+#include "Systems/WindowManager.h"
 
 namespace {
     struct RenderData {
@@ -23,31 +27,38 @@ namespace Crucible {
     class Renderer {
         
     public:
-        Renderer(GLFWwindow* window);
+        Renderer(WindowManager& win);
+        ~Renderer();
+
         void Init(GLFWwindow* window);
         void Update(float dt);
+        void DrawFrame(GLFWwindow* window);
 
     private:
         std::vector<RenderData> m_renderCache;
+        WindowManager& m_window;
 
-        // Core Vulkan functions
-        void InitVulkan(GLFWwindow* window);
+        // Core functions
+        void InitVulkan();
 
         // Vulkan helpers
         void CreateInstance();
         void SetupDebugMessenger();
-        void CreateSurface(GLFWwindow* window);
+        void CreateSurface();
         
         void PickPhysicalDevice();
         void CreateLogicalDevice();
         
-        void CreateSwapChain(GLFWwindow* window);
+        void CreateSwapChain();
+        void RecreateSwapChain();
+        void CleanupSwapChain();
         void CreateImageViews();
         void CreateGraphicsPipeline();
         
         void CreateCommandPool();
-        void CreateCommandBuffer();
+        void CreateCommandBuffers();
         void RecordCommandBuffer(uint32_t imageIndex);
+        void CreateSyncObjects();
 
         std::vector<const char*> GetRequiredInstanceExtensions();
         bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
@@ -59,20 +70,22 @@ namespace Crucible {
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char>& code) const;
 
         // Vulkan data members
-        vk::raii::Context           m_context;
-        vk::raii::Instance          m_instance = nullptr;           // connection btw app and vulk lib
-        vk::raii::SurfaceKHR        m_surface = nullptr;
-        vk::raii::PhysicalDevice    m_physicalDevice = nullptr;     // graphics card
-        vk::raii::Device            m_device = nullptr;             // logical interface to physical device
-        vk::raii::Queue             m_graphicsQueue = nullptr;
-        vk::raii::SwapchainKHR      m_swapChain = nullptr;
-        vk::raii::PipelineLayout    m_pipelineLayout = nullptr;
-        vk::raii::Pipeline          m_graphicsPipeline = nullptr;
+        vk::raii::Context                   m_context;
+        vk::raii::Instance                  m_instance = nullptr;           // connection btw app and vulk lib
+        vk::raii::DebugUtilsMessengerEXT    m_debugMessenger = nullptr;
+        vk::raii::SurfaceKHR                m_surface = nullptr;
+        vk::raii::PhysicalDevice            m_physicalDevice = nullptr;     // graphics card
+        vk::raii::Device                    m_device = nullptr;             // logical interface to physical device
+        vk::raii::Queue                     m_graphicsQueue = nullptr;
+        vk::raii::SwapchainKHR              m_swapChain = nullptr;
+        vk::raii::PipelineLayout            m_pipelineLayout = nullptr;
+        vk::raii::Pipeline                  m_graphicsPipeline = nullptr;
 
-        uint32_t m_queueIndex = ~0u;    // index for graphics queue for logical device
-        
-        vk::raii::CommandPool       m_commandPool = nullptr;
-        vk::raii::CommandBuffer     m_commandBuffer = nullptr;
+        uint32_t    m_queueIndex = ~0u;            // index for graphics queue for logical device
+        uint32_t    m_frameIndex = 0;
+
+        vk::raii::CommandPool                   m_commandPool = nullptr;
+        std::vector<vk::raii::CommandBuffer>    m_commandBuffers;
 
         // SwapChain parameters
         std::vector<vk::Image>              m_swapChainImages;
@@ -80,13 +93,19 @@ namespace Crucible {
         vk::Extent2D                        m_swapChainExtent;
         vk::SurfaceFormatKHR                m_swapChainSurfaceFormat;
 
-        vk::raii::DebugUtilsMessengerEXT m_debugMessenger = nullptr;
+        // Synchonization primitives
+        std::vector<vk::raii::Semaphore>    m_presentCompleteSemaphores;
+        std::vector<vk::raii::Semaphore>    m_renderFinishedSemaphores;
+        std::vector<vk::raii::Fence>        m_inFlightFences;
+
 
         static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT         severity,
                                                               vk::DebugUtilsMessageTypeFlagsEXT                type,
                                                               const vk::DebugUtilsMessengerCallbackDataEXT*    pCallbackData,
                                                               void*                                            pUserData);
-
+        void TransitionImageLayout(uint32_t imageIndex, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
+                                   vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
+                                   vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask);
 
     };  // RENDERER CLASS
 

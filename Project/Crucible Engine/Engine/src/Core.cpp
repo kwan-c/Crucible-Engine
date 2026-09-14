@@ -8,7 +8,7 @@ namespace Crucible {
 
     Core::Core() : 
         m_window{ new WindowManager(1200, 800, "Crucible Engine") },
-        m_renderer{ new Renderer(m_window->GetNativeHandle()) }
+        m_renderer{ new Renderer(*m_window) }
     {}
     Core::~Core() { 
         CleanUp(); 
@@ -40,7 +40,7 @@ namespace Crucible {
         while (!m_window->ShouldClose()) {
 
             m_window->PollEvents();
-
+            m_renderer->DrawFrame(m_window->GetNativeHandle());
             m_window->SwapBuffers();
         }
     }

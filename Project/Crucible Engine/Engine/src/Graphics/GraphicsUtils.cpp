@@ -19,5 +19,4 @@ namespace Crucible::Graphics {
         ifs.close();
         return buffer;
     }
-
 }
