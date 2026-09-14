@@ -1,7 +1,12 @@
 # Minimum version of CMake for this project.
 cmake_minimum_required(VERSION 3.23.1)
+project(Crucible LANGUAGES CXX C)
 
-project(Crucible LANGUAGES CXX)
+# Force consistent CRT selection across every target (including third-party ones)
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
 # Global C++ settings.
 set(CMAKE_CXX_STANDARD 23)
