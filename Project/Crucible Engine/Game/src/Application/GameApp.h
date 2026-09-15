@@ -1,15 +1,18 @@
 #pragma once
 
 #include "Core.h"
+#include <memory>
 
 class GameApp
 {
 public:
+    GameApp() : m_engine { std::make_unique<Crucible::Core>() } {}
+
     // GameApp main functions
     bool    Init();
-    int     Run();
+    void    Run();
 
 private:
-    Crucible::Core m_engine;
+    std::unique_ptr<Crucible::Core> m_engine;
 
 };
