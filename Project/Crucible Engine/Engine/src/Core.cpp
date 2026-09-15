@@ -6,30 +6,20 @@
 
 namespace Crucible {
 
-    Core::Core() : m_window{ std::make_unique<WindowManager>() }, 
-                   m_input{ std::make_unique<Input>() } {}
-    Core::~Core() { CleanUp(); }
-
-    bool Core::Init() 
+    Core::Core() :
+        m_window{ new WindowManager(1200, 800, "Crucible Engine") },
+        m_renderer{ new Renderer(*m_window) }
     {
+    }
+    Core::~Core() {
+        CleanUp();
+        delete m_renderer;
+        delete m_window;
+    }
 
-        int winWidth = 1200;
-        int winHeight = 800;
-        float bgColor[] = { 0.3f, 0.1f, 0.1f, 1.0f };
-
-        if (!m_window->Init("Crucible Engine", winWidth, winHeight, bgColor))
-        {
-            std::cout << "Failed to initialize Core Engine.\n";
-            return false;
-        }
-        m_input->Init();
-        m_input->AttachWindow(m_window->GetNativeHandle());
-
-
+    bool Core::Init()
+    {
         std::cout << "The Hearth smoulders...\n";
-
-        // Enable memory leak checking at program exit
-        _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
         // ======== asset debugging (Removable) ==========
         {
@@ -38,7 +28,7 @@ namespace Crucible {
             assets.Init();
             assets.PrintIndex();
 
-            auto tex = assets.Load("Textures/Crucible.jpg");
+            auto tex = assets.Load("Textures/Orange_Milk.jpg");
             assets.PrintLoaded();
         }
         // ===========================================
@@ -50,18 +40,13 @@ namespace Crucible {
 
         while (!m_window->ShouldClose()) {
 
-            m_input->BeginFrame();
+            float dt = 1.f / 60.f;
+
             m_window->PollEvents();
-
-
+            m_renderer->Update(dt);
             m_window->SwapBuffers();
         }
     }
 
-    void Core::CleanUp() {
-
-        m_input->Shutdown();
-        m_window->Shutdown();
-    }
-
+    void Core::CleanUp() {}
 }

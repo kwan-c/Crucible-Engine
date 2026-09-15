@@ -6,12 +6,10 @@
 #include <string>
 #include <memory>
 
-#include "Diagnostics/Logger.h"
-
 #include "EngineExport.h"	// DLL export
 #include "Systems/Layer.h"
 #include "Systems/WindowManager.h"
-#include "Input/InputSystem.h"
+#include "Graphics/RenderSystem.h"
 
 namespace Crucible
 {
@@ -26,14 +24,10 @@ namespace Crucible
         void Run();
 
     private:
-
-        // Logger is live before anything else is live, and dies last too
-        Debug::LogSession m_logSession{ { .logFile = "crucible.log" } };
-       
         void CleanUp();
-        
-        std::unique_ptr<WindowManager> m_window;
-        std::unique_ptr<Input> m_input;
+
+        WindowManager* m_window;
+        Renderer* m_renderer;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;
