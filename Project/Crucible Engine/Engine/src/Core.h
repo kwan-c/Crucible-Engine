@@ -11,6 +11,7 @@
 #include "EngineExport.h"	// DLL export
 #include "Systems/Layer.h"
 #include "Systems/WindowManager.h"
+#include "Input/InputSystem.h"
 
 namespace Crucible
 {
@@ -32,6 +33,7 @@ namespace Crucible
         void CleanUp();
         
         std::unique_ptr<WindowManager> m_window;
+        std::unique_ptr<Input> m_input;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;
