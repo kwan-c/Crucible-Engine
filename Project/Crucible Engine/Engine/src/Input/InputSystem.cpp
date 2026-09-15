@@ -107,10 +107,10 @@ namespace Crucible{
         // If pressed, set bit to true
         if (glfwAction == GLFW_PRESS) {
             m_current.set(static_cast<std::size_t>(crucibleKey), true);
-            CRU_INFO("Keycode to string {}", KeyCodeToString(crucibleKey));
         }
-        else // If released, set bit to false
+        else {// If released, set bit to false
             m_current.set(static_cast<std::size_t>(crucibleKey), false);
+        } 
 
 
     }

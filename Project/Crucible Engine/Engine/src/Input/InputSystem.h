@@ -38,9 +38,6 @@ namespace Crucible {
         /*!
             \brief
             Zeroes both snapshots. Nothing else - the window is not known yet.
-            TRICKY: both bitsets MUST start zeroed. If m_previous holds garbage, frame one
-            reports every key as just-released. std::bitset zero-initialises, so this is
-            mostly about not adding a constructor that breaks it later.
         */
         void Init() override;
 
@@ -57,22 +54,12 @@ namespace Crucible {
             \brief
             Unregisters the GLFW callbacks and drops both the window handle and the static
             instance pointer.
-            TRICKY: must run BEFORE the window is destroyed - clearing a callback slot needs
-            a live window handle, and glfwTerminate takes the whole library down with it.
-            Core::CleanUp calls this ahead of WindowManager::Shutdown for exactly that reason.
-            TRICKY: clear the callback slots before nulling m_window, or there is nothing left
-            to name the window with.
         */
         void Shutdown() override;
 
         /*!
             \brief
             Copies current -> previous. Core MUST call this immediately BEFORE PollEvents().
-            TRICKY: this is the single most important line in the system. Call it after
-            PollEvents and every edge query silently returns false forever, while IsDown
-            keeps working - so the system looks half-alive and you debug the wrong thing.
-            NOT part of ISystem: double-buffered state is specific to input, and Core holds
-            named members rather than a container of ISystem*, so it can just call this.
         */
         void BeginFrame();
 
@@ -82,11 +69,9 @@ namespace Crucible {
             \brief
             Registers the GLFW key and focus callbacks against a window, and publishes the
             static instance pointer the query functions read.
+
             \param window
             The window owned by WindowManager. Must outlive this system.
-            TRICKY: GLFW keeps one callback slot per window per event type, and setting one
-            silently evicts whatever was there. WindowManager already owns the framebuffer
-            resize slot; the key and focus slots are ours. Check before claiming a third.
             NOTE: the setters return the previous callback, which is how a later system
             (ImGui, an editor overlay) can chain instead of stomping.
         */
@@ -131,18 +116,12 @@ namespace Crucible {
         /*!
             \brief
             Sets or clears one bit in m_current.
-            TRICKY: ignore GLFW_REPEAT entirely. It is the OS text-repeat firing many times a
-            second while a key is held, and has nothing to do with frames. Only GLFW_PRESS
-            and GLFW_RELEASE may touch the bitset. Ignore KeyCode::Unknown too.
         */
         void OnKey(const int& glfwKey, const int& glfwAction);
 
         /*!
             \brief
             Clears every key when the window loses focus. Does nothing on focus gain.
-            TRICKY: alt-tab while holding a key and GLFW never delivers the key-up, because
-            the window was not focused when it happened. Without this the player comes back
-            to a key stuck down forever.
         */
         void OnFocusChanged(const bool& focused);
 
