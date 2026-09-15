@@ -6,17 +6,18 @@
 
 namespace Crucible {
 
-    Core::Core() : 
+    Core::Core() :
         m_window{ new WindowManager(1200, 800, "Crucible Engine") },
         m_renderer{ new Renderer(*m_window) }
-    {}
-    Core::~Core() { 
-        CleanUp(); 
+    {
+    }
+    Core::~Core() {
+        CleanUp();
         delete m_renderer;
         delete m_window;
     }
 
-    bool Core::Init() 
+    bool Core::Init()
     {
         std::cout << "The Hearth smoulders...\n";
 
@@ -39,8 +40,10 @@ namespace Crucible {
 
         while (!m_window->ShouldClose()) {
 
+            float dt = 1.f / 60.f;
+
             m_window->PollEvents();
-            m_renderer->DrawFrame(m_window->GetNativeHandle());
+            m_renderer->Update(dt);
             m_window->SwapBuffers();
         }
     }

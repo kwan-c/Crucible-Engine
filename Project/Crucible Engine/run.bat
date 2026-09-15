@@ -13,7 +13,7 @@ REM Var Names
 REM #------------#
 set CMAKE_VERSION=3.30.3
 set PROJECT_DIR=%~dp0
-set BUILD_DIR=%PROJECT_DIR%build
+set BUILD_DIR=%PROJECT_DIR%Build
 set LOCAL_CMAKE_DIR=%PROJECT_DIR%cmake
 set CMAKE_EXE=
 

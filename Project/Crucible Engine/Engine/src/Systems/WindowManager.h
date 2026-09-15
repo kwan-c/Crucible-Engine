@@ -11,7 +11,7 @@ namespace Crucible {
         Manager for application window.
     */
     class WindowManager {
-    
+
     public:
         WindowManager(int w, int h, const std::string& title);
         ~WindowManager() { glfwDestroyWindow(m_pWindow); glfwTerminate(); }
@@ -21,14 +21,16 @@ namespace Crucible {
         WindowManager& operator=(const WindowManager&) = delete;
 
         bool Init(const std::string& title, int width, int height);
-        
+
         void PollEvents();
         void SwapBuffers();
         bool ShouldClose() const;
 
         GLFWwindow* GetNativeHandle() const { return m_pWindow; }
-        int GetWidth() const{ return m_width; }
-        int GetHeight() const{ return m_height; }
+        int GetWidth() const { return m_width; }
+        int GetHeight() const { return m_height; }
+
+        bool m_framebufferResized = false;
 
         bool m_framebufferResized = false;
 

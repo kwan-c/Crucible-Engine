@@ -11,6 +11,12 @@ import vulkan_hpp;
 
 // STL
 #include <vector>
+#include <array>
+
+// Crucible Engine
+#include "Systems/WindowManager.h"
+#include "Math/Math.h"
+
 
 // Crucible Engine
 #include "Systems/WindowManager.h"
@@ -24,15 +30,34 @@ namespace {
 
 namespace Crucible {
 
+    struct Vertex {
+        Math::vec2 pos;
+        Math::vec3 color;
+
+        static vk::VertexInputBindingDescription GetBindingDescription() {
+            return { .binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex };
+        }
+        //static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions() {
+        //    return { {{.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offsetof(Vertex, pos)},
+        //        {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offsetof(Vertex, color)}} };
+        //}
+    };
+
     class Renderer {
-        
+
+        // Temp for testing.
+        const std::vector<Vertex> vertices = {
+            { {0.0f, -0.5f}, {1.0f, 0.0f, 0.0f} },
+            { {0.5f, 0.5f}, {0.0f, 1.0f, 0.0f} },
+            { {-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f} }
+        };
+
     public:
-        Renderer(WindowManager& win);
+        Renderer(WindowManager& window);
         ~Renderer();
 
-        void Init(GLFWwindow* window);
         void Update(float dt);
-        void DrawFrame(GLFWwindow* window);
+        void DrawFrame();
 
     private:
         std::vector<RenderData> m_renderCache;
@@ -45,16 +70,16 @@ namespace Crucible {
         void CreateInstance();
         void SetupDebugMessenger();
         void CreateSurface();
-        
+
         void PickPhysicalDevice();
         void CreateLogicalDevice();
-        
+
         void CreateSwapChain();
         void RecreateSwapChain();
         void CleanupSwapChain();
         void CreateImageViews();
         void CreateGraphicsPipeline();
-        
+
         void CreateCommandPool();
         void CreateCommandBuffers();
         void RecordCommandBuffer(uint32_t imageIndex);
@@ -66,7 +91,7 @@ namespace Crucible {
         vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
         vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities, GLFWwindow* window);
         uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities);
-        
+
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char>& code) const;
 
         // Vulkan data members

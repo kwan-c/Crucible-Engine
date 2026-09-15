@@ -25,7 +25,7 @@ namespace Crucible
 
     private:
         void CleanUp();
-        
+
         WindowManager* m_window;
         Renderer* m_renderer;
 

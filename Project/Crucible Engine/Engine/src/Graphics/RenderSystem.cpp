@@ -26,7 +26,7 @@ namespace {
 namespace Crucible {
 
     Renderer::Renderer(WindowManager& window) : m_window{ window } { InitVulkan(); }
-    Renderer::~Renderer() { 
+    Renderer::~Renderer() {
         m_device.waitIdle();
         CleanupSwapChain();
     }
@@ -41,6 +41,7 @@ namespace Crucible {
         // SORT & BATCH
 
         // EXECUTE GRAPHICS CALLS
+        DrawFrame();
 
     }   // Renderer::Update()
 
@@ -63,7 +64,7 @@ namespace Crucible {
 
     }   // Renderer::InitVulkan()
 
-    void Renderer::DrawFrame(GLFWwindow* window) {
+    void Renderer::DrawFrame() {
 
         // Blocks CPU until previous frame is complete.
         auto fenceResult = m_device.waitForFences(*m_inFlightFences[m_frameIndex], vk::True, UINT64_MAX);
@@ -89,7 +90,7 @@ namespace Crucible {
         // Record and submit command buffer.
         RecordCommandBuffer(imageIndex);
         vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-        const vk::SubmitInfo   submitInfo{ 
+        const vk::SubmitInfo   submitInfo{
             .waitSemaphoreCount = 1,
             .pWaitSemaphores = &*m_presentCompleteSemaphores[m_frameIndex],
             .pWaitDstStageMask = &waitDestinationStageMask,
@@ -395,7 +396,7 @@ namespace Crucible {
 
         // Programmable stages (Vertex and Fragment shaders).
         vk::raii::ShaderModule shaderModule = CreateShaderModule(
-            Graphics::Utils::ReadFile("../../../Assets/Shaders/slang.spv"));
+            Graphics::Utils::ReadFile("../../../Assets/Shaders/DefaultShader.spv"));
 
         vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
             .stage = vk::ShaderStageFlagBits::eVertex,
@@ -557,7 +558,6 @@ namespace Crucible {
     void Renderer::CreateSyncObjects() {
 
         assert(m_presentCompleteSemaphores.empty() && m_renderFinishedSemaphores.empty() && m_inFlightFences.empty());
-        
         for (size_t i = 0; i < m_swapChainImages.size(); ++i) {
             m_renderFinishedSemaphores.emplace_back(m_device, vk::SemaphoreCreateInfo());
         }
@@ -673,7 +673,7 @@ namespace Crucible {
             vk::PhysicalDeviceVulkan11Features,
             vk::PhysicalDeviceVulkan13Features,
             vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT>();
-        bool supportsRequiredFeatures = 
+        bool supportsRequiredFeatures =
             features.template get<vk::PhysicalDeviceVulkan11Features>().shaderDrawParameters &&
             features.template get<vk::PhysicalDeviceVulkan13Features>().dynamicRendering &&
             features.template get<vk::PhysicalDeviceVulkan13Features>().synchronization2 &&
@@ -689,9 +689,9 @@ namespace Crucible {
         Debug messenger callback function that prints warning and error messages.
     */
     VKAPI_ATTR vk::Bool32 VKAPI_CALL Renderer::DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT         severity,
-                                                          vk::DebugUtilsMessageTypeFlagsEXT                type,
-                                                          const vk::DebugUtilsMessengerCallbackDataEXT*    pCallbackData,
-                                                          void*                                            pUserData) {
+        vk::DebugUtilsMessageTypeFlagsEXT                type,
+        const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+        void* pUserData) {
         (void)pUserData;
         // Only print warnings or errors.
         if (severity == vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning
@@ -723,12 +723,12 @@ namespace Crucible {
                    .baseMipLevel = 0,
                    .levelCount = 1,
                    .baseArrayLayer = 0,
-                   .layerCount = 1} 
+                   .layerCount = 1}
         };
         vk::DependencyInfo dependency_info = {
             .dependencyFlags = {},
             .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &barrier 
+            .pImageMemoryBarriers = &barrier
         };
         m_commandBuffers[m_frameIndex].pipelineBarrier2(dependency_info);
     }   // Renderer::TransitionImageLayout()
