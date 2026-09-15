@@ -37,6 +37,7 @@ namespace Crucible {
             m_input->BeginFrame();
             m_window->PollEvents();
 
+
             m_window->SwapBuffers();
         }
     }

@@ -10,8 +10,9 @@
 //  Layers 3 and 4 (ActionMap, named actions) come next and sit on top of this without
 //  changing it.
 //
-//  REQUIRES the ISystem fixes: #pragma once, a public: section, and a virtual destructor.
-//  Also assumes ISystem gains BeginFrame() and Update(float dt).
+//  SINGLE INSTANCE BY DESIGN. The static queries resolve through one file-static pointer
+//  that AttachWindow publishes, so exactly one Input may be attached at a time. Supporting
+//  several windows means revisiting that indirection, not this class's layout.
 // ------------------------------------------------------------------------------------------- //
 
 // Third-party
@@ -45,18 +46,22 @@ namespace Crucible {
 
         /*!
             \brief
-            Per-frame work that is not the snapshot copy. Currently nothing; gamepad polling
-            will live here later.
-            \param dt
-            Seconds since the previous frame. Unused for now - mark it (void)dt.
+            Per-frame work that is not the snapshot copy. Currently empty; gamepad state is
+            polled rather than event-driven, so it will be read here.
+            NOTE: Core does not call this yet. Wire it into the frame loop before putting
+            anything in it, or the body will silently never run.
         */
         void Update() override;
 
         /*!
             \brief
-            Unregisters the GLFW callbacks and clears the static instance pointer.
-            TRICKY: must run before the window is destroyed, and must null the instance
-            pointer so a late query fails the assert rather than dereferencing freed memory.
+            Unregisters the GLFW callbacks and drops both the window handle and the static
+            instance pointer.
+            TRICKY: must run BEFORE the window is destroyed - clearing a callback slot needs
+            a live window handle, and glfwTerminate takes the whole library down with it.
+            Core::CleanUp calls this ahead of WindowManager::Shutdown for exactly that reason.
+            TRICKY: clear the callback slots before nulling m_window, or there is nothing left
+            to name the window with.
         */
         void Shutdown() override;
 
@@ -66,6 +71,8 @@ namespace Crucible {
             TRICKY: this is the single most important line in the system. Call it after
             PollEvents and every edge query silently returns false forever, while IsDown
             keeps working - so the system looks half-alive and you debug the wrong thing.
+            NOT part of ISystem: double-buffered state is specific to input, and Core holds
+            named members rather than a container of ISystem*, so it can just call this.
         */
         void BeginFrame();
 
@@ -73,12 +80,15 @@ namespace Crucible {
 
         /*!
             \brief
-            Registers the GLFW key and focus callbacks against a window, and records the
-            static instance pointer the query functions use.
+            Registers the GLFW key and focus callbacks against a window, and publishes the
+            static instance pointer the query functions read.
             \param window
             The window owned by WindowManager. Must outlive this system.
-            TRICKY: glfwSetWindowUserPointer has exactly ONE slot per window. Check whether
-            WindowManager already uses it before claiming it, or one of you silently wins.
+            TRICKY: GLFW keeps one callback slot per window per event type, and setting one
+            silently evicts whatever was there. WindowManager already owns the framebuffer
+            resize slot; the key and focus slots are ours. Check before claiming a third.
+            NOTE: the setters return the previous callback, which is how a later system
+            (ImGui, an editor overlay) can chain instead of stomping.
         */
         void AttachWindow(GLFWwindow* window);
 
@@ -87,7 +97,7 @@ namespace Crucible {
         // Static so gameplay never has to reach through Core, same split as the logger:
         // LogSession is an object, CRU_INFO is not. They forward to the single instance.
         //
-        // All three must assert-and-return-false if no instance is attached yet.
+        // All three log an error and return false if no instance is attached yet.
 
         /*!  \brief Is the key held right now? True every frame it is down. */
         static bool IsDown(const KeyCode& key);
@@ -111,8 +121,9 @@ namespace Crucible {
         // --- GLFW plumbing --------------------------------------------------------------- //
         //
         // GLFW takes plain C function pointers, which a non-static member function cannot
-        // satisfy (it has a hidden `this`). These statics are trampolines: they recover the
-        // instance from the window user pointer and call the real handler.
+        // satisfy (it has a hidden `this`). These statics are trampolines: they read the
+        // file-static instance pointer published by AttachWindow and call the real handler.
+        // They are the only places that pointer is needed - the handlers below have `this`.
 
         static void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
         static void FocusCallback(GLFWwindow* window, int focused);
@@ -128,7 +139,7 @@ namespace Crucible {
 
         /*!
             \brief
-            Clears every key when the window loses focus.
+            Clears every key when the window loses focus. Does nothing on focus gain.
             TRICKY: alt-tab while holding a key and GLFW never delivers the key-up, because
             the window was not focused when it happened. Without this the player comes back
             to a key stuck down forever.
@@ -143,7 +154,6 @@ namespace Crucible {
         std::bitset<KEY_COUNT> m_previous;   // snapshot of m_current from before PollEvents
 
         GLFWwindow* m_window = nullptr;
-
     };  // INPUT CLASS
 
 }   // NAMESPACE CRUCIBLE

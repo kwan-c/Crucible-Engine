@@ -11,7 +11,10 @@ namespace {
 namespace Crucible{
 
     void Input::Init(){
-        
+        // Zero initialise both bitsets
+        m_previous.reset();
+        m_current.reset();
+        CRU_DEBUG("[Input] successfully initialised!");
     }
 
     void Input::Update(){
@@ -19,7 +22,12 @@ namespace Crucible{
 	}
 
     void Input::Shutdown(){
-    
+        // Unregister stuff
+        glfwSetKeyCallback(m_window, nullptr);
+        g_instance = nullptr;
+        m_window = nullptr;
+
+        CRU_DEBUG("[Input] successfully shutdown!");
     }
 
 	// Save current state to previous state
@@ -36,7 +44,6 @@ namespace Crucible{
 
         glfwSetKeyCallback(window, &Input::KeyCallback);
         glfwSetWindowFocusCallback(window, &Input::FocusCallback);
-
 
     }
 
@@ -97,16 +104,20 @@ namespace Crucible{
 		if (crucibleKey == KeyCode::Unknown) {
             return; // Ignore unknown keys
         }
+        // If pressed, set bit to true
+        if(glfwAction == GLFW_PRESS)
+            m_current.set(static_cast<std::size_t>(crucibleKey), true);
+        else // If released, set bit to false
+            m_current.set(static_cast<std::size_t>(crucibleKey), false);
 
-        g_instance->m_current.set(static_cast<std::size_t>(crucibleKey));
+        CRU_INFO("Keycode to string {}", KeyCodeToString(crucibleKey));
+
     }
     
     void Input::OnFocusChanged(const bool& focused) {
         if (focused) return;
 
-
-
-		g_instance->m_current.reset();  // clear all keys when focus is lost
+		m_current.reset();  // clear all keys when focus is lost
 	}
 
 }
