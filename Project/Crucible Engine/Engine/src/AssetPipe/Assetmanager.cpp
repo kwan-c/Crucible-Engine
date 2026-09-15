@@ -34,13 +34,14 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
- 
+#include <xresource_mgr.h>
+
 namespace fs = std::filesystem;
  
 namespace {
  
     // How many parent folders to walk before giving up on finding "Assets".
-    constexpr int MAX_SEARCH_DEPTH = 10;
+    constexpr int MAX_SEARCH_DEPTH = 3;
  
     // The folder name the upward search looks for.
     constexpr const char* ASSET_ROOT_FOLDER_NAME = "Assets";
