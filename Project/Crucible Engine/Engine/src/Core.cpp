@@ -6,7 +6,8 @@
 
 namespace Crucible {
 
-    Core::Core() : m_window{ std::make_unique<WindowManager>() } {}
+    Core::Core() : m_window{ std::make_unique<WindowManager>() }, 
+                   m_input{ std::make_unique<Input>() } {}
     Core::~Core() { CleanUp(); }
 
     bool Core::Init() 
@@ -21,6 +22,10 @@ namespace Crucible {
             std::cout << "Failed to initialize Core Engine.\n";
             return false;
         }
+        m_input->Init();
+        m_input->AttachWindow(m_window->GetNativeHandle());
+
+
         std::cout << "The Hearth smoulders...\n";
 
         // Enable memory leak checking at program exit
@@ -45,7 +50,9 @@ namespace Crucible {
 
         while (!m_window->ShouldClose()) {
 
+            m_input->BeginFrame();
             m_window->PollEvents();
+
 
             m_window->SwapBuffers();
         }
@@ -53,6 +60,7 @@ namespace Crucible {
 
     void Core::CleanUp() {
 
+        m_input->Shutdown();
         m_window->Shutdown();
     }
 
