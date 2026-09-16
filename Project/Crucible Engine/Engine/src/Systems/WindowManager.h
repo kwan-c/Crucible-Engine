@@ -32,8 +32,6 @@ namespace Crucible {
 
         bool m_framebufferResized = false;
 
-        bool m_framebufferResized = false;
-
     private:
         GLFWwindow* m_pWindow = nullptr;
 

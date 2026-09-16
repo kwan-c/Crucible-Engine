@@ -59,6 +59,8 @@ namespace Crucible {
         CreateGraphicsPipeline();
 
         CreateCommandPool();
+        CreateVertexBuffer();
+
         CreateCommandBuffers();
         CreateSyncObjects();
 
@@ -411,7 +413,14 @@ namespace Crucible {
         vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
 
         // Fixed functions.
-        vk::PipelineVertexInputStateCreateInfo vertexInputInfo; // Currently hardcoding vertices in shader.
+        auto bindingDescription = Vertex::GetBindingDescription();
+        auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+            .vertexBindingDescriptionCount      = 1,
+            .pVertexBindingDescriptions         = &bindingDescription,
+            .vertexAttributeDescriptionCount    = static_cast<uint32_t>(attributeDescriptions.size()),
+            .pVertexAttributeDescriptions       = attributeDescriptions.data()
+        };
         vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
 
         // Set viewport to entire swapchain extent, make them dynamic more more flexibility in future.
@@ -567,6 +576,49 @@ namespace Crucible {
         }
 
     }   // Renderer::CreateSyncObjects()
+
+    void Renderer::CreateVertexBuffer() {
+
+        vk::BufferCreateInfo bufferInfo{
+            .size           = sizeof(vertices[0] * vertices.size()),
+            .usage          = vk::BufferUsageFlagBits::eVertexBuffer,
+            .sharingMode    = vk::SharingMode::eExclusive
+        };
+
+        m_vertexBuffer = vk::raii::Buffer(m_device, bufferInfo);
+
+        vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
+
+        vk::MemoryAllocateInfo = {
+            .allocationSize = memRequirements.size,
+            .memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+        };
+
+        m_vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
+        m_vertexBuffer.bindMemory(*vertexBufferMemory, 0);
+
+        void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
+        memcpy(data, vertices.data(), bufferInfo.size);
+        m_vertexBufferMemory.unmapMemory();
+
+
+
+    }   // Renderer::CreateVertexBuffer()
+
+    uint32_t Renderer::FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
+
+        vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+        {
+            if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            {
+                return i;
+            }
+        }
+        throw std::runtime_error("[Renderer] Failed to find suitable memory type.");
+
+    }   // Renderer::FindMemoryType()
 
     /*!
         \brief

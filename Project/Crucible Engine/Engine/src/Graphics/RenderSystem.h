@@ -16,10 +16,7 @@ import vulkan_hpp;
 // Crucible Engine
 #include "Systems/WindowManager.h"
 #include "Math/Math.h"
-
-
-// Crucible Engine
-#include "Systems/WindowManager.h"
+ 
 
 namespace {
     struct RenderData {
@@ -37,14 +34,14 @@ namespace Crucible {
         static vk::VertexInputBindingDescription GetBindingDescription() {
             return { .binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex };
         }
-        //static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions() {
-        //    return { {{.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offsetof(Vertex, pos)},
-        //        {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offsetof(Vertex, color)}} };
-        //}
+        static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions() {
+            return {{ {.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offset = offsetof(Vertex, pos)},
+                {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = offsetof(Vertex, color)} }};
+        }
     };
 
     class Renderer {
-
+        
         // Temp for testing.
         const std::vector<Vertex> vertices = {
             { {0.0f, -0.5f}, {1.0f, 0.0f, 0.0f} },
@@ -85,6 +82,11 @@ namespace Crucible {
         void RecordCommandBuffer(uint32_t imageIndex);
         void CreateSyncObjects();
 
+        // Input Buffers
+        void CreateVertexBuffer();
+        uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
+
+
         std::vector<const char*> GetRequiredInstanceExtensions();
         bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
         vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
@@ -111,6 +113,8 @@ namespace Crucible {
 
         vk::raii::CommandPool                   m_commandPool = nullptr;
         std::vector<vk::raii::CommandBuffer>    m_commandBuffers;
+        vk::raii::Buffer                        m_vertexBuffer = nullptr;
+        vk::raii::DeviceMemory                  m_vertexBufferMemory = nullptr;
 
         // SwapChain parameters
         std::vector<vk::Image>              m_swapChainImages;
