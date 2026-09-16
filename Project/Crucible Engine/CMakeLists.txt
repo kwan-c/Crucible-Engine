@@ -8,6 +8,9 @@ if(POLICY CMP0091)
 endif()
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL")
 
+# Find system-installed Vulkan SDK (LunarG)
+find_package(Vulkan REQUIRED)
+
 # Global C++ settings.
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
