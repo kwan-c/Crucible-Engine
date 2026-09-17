@@ -2,9 +2,16 @@
 
 //std libs
 #include <vector>
+#include <tuple>
+#include <utility>
+#include <cstdint>
+
 // header files
-#include "ECS/Core/ECSCore.h"
-#include "ECS/Components/ComponentRegistry.h"
+#include "../Core/ECSCore.h"
+#include "../Components/ComponentSignature.h"
+#include "../Components/ComponentTypeId.h"
+#include "../Archetype/ArchetypeRegistry.h"
+
 /*************************************************************************
 * \file:         Query.h
 * \author:       Abhishek Akilandeswari Patchamuthu
@@ -24,49 +31,90 @@
 
 namespace Crucible
 {
-	//helper template to get the first component queried;
-	template<typename First, typename ...Rest>
-	struct FirstOf
+	struct QueryDescription
 	{
-		using Type = First;
+		ComponentSignature required;
+		ComponentSignature excluded;
+		ComponentSignature optional; // reserved -- not used by matching yet
+		bool Matches(const ComponentSignature& archetype) const
+		{
+			return SignatureMatches(archetype, required)
+				&& (archetype & excluded).none();
+		}
 	};
 
+	// Query caching policies; Cached and Auto are reserved for later.
+	enum class QueryCachePolicy { None, Cached, Auto };
+	
+
 	//query class
-	template<typename ... Components>
-	class Query
+	class QueryBase
 	{
-		// no queries with zero comps
-		static_assert(sizeof...(Components) > 0, "Query must contain at least one compoenent type");
-
 	public:
+		QueryBase(QueryDescription description,ArchetypeRegistry& registry ):m_description(std::move (description)),m_registry(&registry){}
 
-		explicit Query(ComponentRegistry& registry) :m_registry(registry) {}
-
-		//for each function to Query
-		template<typename Fn>
-		void ForEach(Fn&& fn)
+		const std::vector<Archetype*>& MatchingArchetypes()const{return m_matching;}
+		bool MatchesArchetype(const Archetype& archetype)const
 		{
-			using seed = typename FirstOf<Components...>::Type;
+			return m_description.Matches(archetype.Signature());
+		}
 
-			auto& seedPool = m_registry.Pool<seed>();
+		void AddArchetype(Archetype* archetype) { m_matching.push_back(archetype); }
 
-			std::vector<Entity> entities = seedPool.Raw().Entities();
-
-			//chck if entites contain comps
-			for (Entity e : entities)
+		void Rebuild()
+		{
+			m_matching.clear();
+			for (Archetype* archetype : m_registry->All())
 			{
-				const bool hasAllComponents = (m_registry.Pool<Components>().Contains(e)&& ...);
-
-				if (!hasAllComponents)continue;
-
-				fn(e, *m_registry.Pool<Components>().Get(e)...);
+				if (m_description.Matches(archetype->Signature())) m_matching.push_back(archetype);
 			}
 		}
 
-	private:
+		void Refresh() { if (m_policy == QueryCachePolicy::None) Rebuild(); }
 
-		ComponentRegistry& m_registry;
+	protected:
+		QueryDescription m_description;
+		ArchetypeRegistry* m_registry = nullptr;
+		std::vector<Archetype*> m_matching;
+		QueryCachePolicy m_policy = QueryCachePolicy::None;
+	};
 
+	template <typename... Components>
+	class Query : public QueryBase
+	{
+	public:
+		using QueryBase::QueryBase;
+
+		template<typename Fn>
+		void ForEach(Fn&& fn)
+		{
+			Refresh();
+			for (Archetype* archetype : m_matching)
+			{
+				const uint32_t count = archetype->EntityCount();
+				if (count == 0)continue;
+
+				std::tuple<Components*...> columns{ static_cast<Components*>(archetype->GetColumnData(ComponentTypeId<Components>()))... };
+
+				const std::vector<Entity>& entities = archetype->Entities();
+
+				for (uint32_t row = 0; row < count; ++row)
+				{
+					fn(entities[row], std::get<Components*>(columns)[row]...);
+				}
+			}
+		}
+
+		uint32_t CountEntities()
+		{
+			Refresh();
+			uint32_t total = 0;
+			for (Archetype* archetype : m_matching)
+			{
+				total += archetype->EntityCount();
+			}
+			return total;
+		}
 	};
 
 }
