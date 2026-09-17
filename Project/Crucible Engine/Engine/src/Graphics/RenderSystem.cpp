@@ -545,7 +545,9 @@ namespace Crucible {
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_graphicsPipeline);
         commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(m_swapChainExtent.width), static_cast<float>(m_swapChainExtent.height), 0.0f, 1.0f));
         commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapChainExtent));
-        commandBuffer.draw(3, 1, 0, 0);
+
+        commandBuffer.bindVertexBuffers(0, *m_vertexBuffer, { 0 });
+        commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
         commandBuffer.endRendering();
 
@@ -580,24 +582,24 @@ namespace Crucible {
     void Renderer::CreateVertexBuffer() {
 
         vk::BufferCreateInfo bufferInfo{
-            .size           = sizeof(vertices[0] * vertices.size()),
+            .size           = sizeof(vertices[0]) * vertices.size(),
             .usage          = vk::BufferUsageFlagBits::eVertexBuffer,
             .sharingMode    = vk::SharingMode::eExclusive
         };
 
         m_vertexBuffer = vk::raii::Buffer(m_device, bufferInfo);
 
-        vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
+        vk::MemoryRequirements memRequirements = m_vertexBuffer.getMemoryRequirements();
 
-        vk::MemoryAllocateInfo = {
+        vk::MemoryAllocateInfo memoryAllocateInfo = {
             .allocationSize = memRequirements.size,
             .memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
         };
 
-        m_vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
-        m_vertexBuffer.bindMemory(*vertexBufferMemory, 0);
+        m_vertexBufferMemory = vk::raii::DeviceMemory(m_device, memoryAllocateInfo);
+        m_vertexBuffer.bindMemory(*m_vertexBufferMemory, 0);
 
-        void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
+        void* data = m_vertexBufferMemory.mapMemory(0, bufferInfo.size);
         memcpy(data, vertices.data(), bufferInfo.size);
         m_vertexBufferMemory.unmapMemory();
 
@@ -607,7 +609,7 @@ namespace Crucible {
 
     uint32_t Renderer::FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
 
-        vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+        vk::PhysicalDeviceMemoryProperties memProperties = m_physicalDevice.getMemoryProperties();
 
         for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
         {
