@@ -10,6 +10,7 @@
 #include "Systems/Layer.h"
 #include "Systems/WindowManager.h"
 #include "Graphics/RenderSystem.h"
+#include <ECS/World.h>
 
 namespace Crucible
 {
@@ -23,11 +24,16 @@ namespace Crucible
         bool Init();
         void Run();
 
+        World& GetWorld() noexcept { return *m_world; }
+        const World& GetWorld() const noexcept { return *m_world; }
+
     private:
         void CleanUp();
 
         WindowManager* m_window;
         Renderer* m_renderer;
+
+        std::unique_ptr<World> m_world;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;

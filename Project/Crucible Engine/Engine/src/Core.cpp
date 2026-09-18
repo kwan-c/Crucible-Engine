@@ -8,7 +8,8 @@ namespace Crucible {
 
     Core::Core() :
         m_window{ new WindowManager(1200, 800, "Crucible Engine") },
-        m_renderer{ new Renderer(*m_window) }
+        m_renderer{ new Renderer(*m_window) },
+        m_world{ std::make_unique<World>() }
     {
     }
     Core::~Core() {
@@ -31,7 +32,7 @@ namespace Crucible {
             auto tex = assets.Load("Textures/Orange_Milk.jpg");
             assets.PrintLoaded();
         }
-        // ===========================================
+
 
         return true;
     }
