@@ -26,22 +26,24 @@
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
 #include "AssetManager.h"
+#include "AssetRegistry.h"
  
 #include <algorithm>
 #include <array>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
-#include <xresource_mgr.h>
+#include <xresource_guid.h>
 
 namespace fs = std::filesystem;
  
 namespace {
  
     // How many parent folders to walk before giving up on finding "Assets".
-    constexpr int MAX_SEARCH_DEPTH = 3;
+    constexpr int MAX_SEARCH_DEPTH = 4;
  
     // The folder name the upward search looks for.
     constexpr const char* ASSET_ROOT_FOLDER_NAME = "Assets";
@@ -301,6 +303,7 @@ namespace Crucible {
         UnloadAll();
         m_index.clear();
         m_lookup.clear();
+        m_registry.Clear();
         m_assetRoot.clear();
         m_assetRootStr.clear();
         m_initialized = false;
@@ -314,6 +317,7 @@ namespace Crucible {
     {
         m_index.clear();
         m_lookup.clear();
+        m_registry.Clear();
  
         if (!m_initialized || m_assetRoot.empty())
             return false;
@@ -355,6 +359,13 @@ namespace Crucible {
                 continue;
             }
  
+            // A .meta describes an asset - it is not one itself, so it never
+            // belongs in the index. AssetRegistry collects them separately.
+            if (AssetRegistry::IsMetaFile(p))
+            {
+                continue;
+            }
+
             AssetEntry entry;
             entry.absolutePath = NormalizeSeparators(p.string());
  
@@ -377,6 +388,10 @@ namespace Crucible {
             m_index.push_back(std::move(entry));
         }
  
+        // Give every asset its stable guid before anything is sorted: adopt
+        // if from a .meta carry it across a rename, or mint a new one.
+        m_registry.Reconcile(m_index, m_assetRoot);
+
         // Alphabetical, so console output and any future browser list are stable.
         std::sort(m_index.begin(), m_index.end(),
             [](const AssetEntry& a, const AssetEntry& b) {
@@ -437,6 +452,30 @@ namespace Crucible {
         return m_assetRoot / fs::path{ NormalizePath(virtualPath) };
     }
  
+    // =======================================================================
+    //  IDENTITY
+    // =======================================================================
+
+    const AssetEntry* AssetManager::FindByGuid(xresource::instance_guid id) const
+    {
+        // The registry knows which path carries the guid; the index knows
+        // everything else about that path.
+        if (const std::string* path = m_registry.GetPath(id))
+        {
+            return Find(*path);
+        }
+        return nullptr;
+    }
+
+    xresource::instance_guid AssetManager::GetGuid(const std::string& virtualPath) const
+    {
+        if (const AssetEntry* entry = Find(virtualPath))
+        {
+            return entry->guid;
+        }
+        return xresource::instance_guid{};
+    }
+
     // =======================================================================
     //  READ
     // =======================================================================
@@ -598,7 +637,8 @@ namespace Crucible {
             
             for (const AssetEntry* entry : ofType)
             {
-                std::cout << "  " << std::setw(60) << std::left << entry->virtualPath
+                std::cout << "  " << AssetRegistry::GuidToString(entry->guid)
+                          << "  " << std::setw(60) << std::left << entry->virtualPath
                           << FormatSize(entry->sizeBytes) << "\n";
             }
         }
