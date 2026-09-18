@@ -56,6 +56,19 @@ namespace Crucible {
         void Update(float dt);
         void DrawFrame();
 
+        // Renderer data members accessors
+        // Raw Vulkan handles required by ImGui/Vulkan backend
+        VkInstance           GetVkInstance() const { return *m_instance; }
+        VkPhysicalDevice     GetVkPhysicalDevice() const { return *m_physicalDevice; }
+        VkDevice             GetVkDevice() const { return *m_device; }
+        VkQueue              GetVkQueue() const { return *m_graphicsQueue; }
+        VkDescriptorPool     GetVkDescriptorPool() const { return *m_descriptorPool; }
+        VkCommandPool        GetVkCommandPool() const { return *m_commandPool; }
+        const VkFormat*      GetVkColorAttachmentFormats() const { return &m_colorAttachmentFormat; }
+        uint32_t             GetVkQueueFamily() const { return m_queueIndex; }
+        uint32_t             GetVkMinImageCount() const { return ChooseSwapMinImageCount(m_physicalDevice.getSurfaceCapabilitiesKHR(*m_surface)); }
+        uint32_t             GetVkImageCount() const { return static_cast<uint32_t>(m_swapChainImages.size()); }
+
     private:
         std::vector<RenderData> m_renderCache;
         WindowManager& m_window;
@@ -93,6 +106,7 @@ namespace Crucible {
         vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
         vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities, GLFWwindow* window);
         uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities);
+        uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities) const;
 
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char>& code) const;
 
@@ -107,6 +121,7 @@ namespace Crucible {
         vk::raii::SwapchainKHR              m_swapChain = nullptr;
         vk::raii::PipelineLayout            m_pipelineLayout = nullptr;
         vk::raii::Pipeline                  m_graphicsPipeline = nullptr;
+        vk::raii::DescriptorPool            m_descriptorPool = nullptr;
 
         uint32_t    m_queueIndex = ~0u;            // index for graphics queue for logical device
         uint32_t    m_frameIndex = 0;
@@ -121,6 +136,9 @@ namespace Crucible {
         std::vector<vk::raii::ImageView>    m_swapChainImageViews;
         vk::Extent2D                        m_swapChainExtent;
         vk::SurfaceFormatKHR                m_swapChainSurfaceFormat;
+
+        // C-API mirror of m_swapChainSurfaceFormat.format, for ImGui/Vulkan-C consumers
+        VkFormat                            m_colorAttachmentFormat = VK_FORMAT_UNDEFINED;
 
         // Synchonization primitives
         std::vector<vk::raii::Semaphore>    m_presentCompleteSemaphores;

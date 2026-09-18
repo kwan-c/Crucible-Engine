@@ -33,6 +33,8 @@ namespace Crucible {
         }
         // ===========================================
 
+        ImGuiManager::Init(*this);
+
         return true;
     }
 
