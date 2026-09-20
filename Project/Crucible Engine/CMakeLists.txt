@@ -34,6 +34,7 @@ add_subdirectory(Extern)
 # Engine Projects
 # ------------------------------------------------------------
 add_subdirectory(Engine)
+add_subdirectory(Editor)
 add_subdirectory(Game)
 #add_subdirectory(ManagedScripts)
 

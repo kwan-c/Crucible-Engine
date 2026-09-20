@@ -317,6 +317,7 @@ namespace Crucible {
 
         std::vector<vk::SurfaceFormatKHR> availableFormats = m_physicalDevice.getSurfaceFormatsKHR(*m_surface);
         m_swapChainSurfaceFormat = ChooseSwapSurfaceFormat(availableFormats);
+        m_colorAttachmentFormat = static_cast<VkFormat>(m_swapChainSurfaceFormat.format);
 
         std::vector<vk::PresentModeKHR> availablePresentModes = m_physicalDevice.getSurfacePresentModesKHR(*m_surface);
 
@@ -538,6 +539,9 @@ namespace Crucible {
         commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapChainExtent));
         commandBuffer.draw(3, 1, 0, 0);
 
+        // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
+        if (m_overlayCallback) m_overlayCallback();
+
         commandBuffer.endRendering();
 
         // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
@@ -635,6 +639,16 @@ namespace Crucible {
         return minImageCount;
 
     }   // Renderer::ChooseSwapMinImageCount()
+
+    uint32_t Renderer::ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities) const {
+
+        auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
+        if ((0 < surfaceCapabilities.maxImageCount) && (surfaceCapabilities.maxImageCount < minImageCount)) {
+            minImageCount = surfaceCapabilities.maxImageCount;
+        }
+        return minImageCount;
+
+    }   // Renderer::ChooseSwapMinImageCount() const
 
     [[nodiscard]] vk::raii::ShaderModule Renderer::CreateShaderModule(const std::vector<char>& code) const {
 
