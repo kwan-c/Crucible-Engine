@@ -15,6 +15,7 @@
 #include "Diagnostics/Logger.h"
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_glfw.h>
+#include <imgui_internal.h>   // DockBuilder* API
 #include <iostream>
 
 // Include all other panels...
@@ -36,6 +37,76 @@ namespace {
 		}
 	}
 }
+
+// ---- dock layout (begin) ----
+namespace {
+
+	using DockArea = Crucible::EditorPanel::DockArea;
+
+	bool g_layoutPending = true;   // check once at startup whether a default layout is needed
+	bool g_forceReset = false;     // set by ImGuiManager::ResetLayout()
+
+	// True when imgui.ini already holds a layout the user made (split nodes, or windows docked in the root).
+	// An untouched dockspace (single empty node) is NOT treated as a user layout.
+	bool HasUserLayout(ImGuiID dockspace)
+	{
+		ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockspace);
+		if (node == nullptr) return false;
+		return !node->IsLeafNode() || node->Windows.Size > 0;
+	}
+
+	// Splits the dockspace according to the panels' m_docked / m_dockArea / m_dockRatio settings,
+	// then docks each panel's window into its area.
+	void BuildDefaultLayout(ImGuiID dockspace, ImVec2 size)
+	{
+		auto& panels = Crucible::EditorManager::GetInstance().m_panels;
+
+		ImGui::DockBuilderRemoveNode(dockspace);
+		ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
+		ImGui::DockBuilderSetNodeSize(dockspace, size);
+
+		// Split order: Left, Right (full height), then Top, Bottom (inside what is left).
+		// Center is whatever remains.
+		struct Split { DockArea area; ImGuiDir dir; };
+		constexpr Split splits[] = {
+			{ DockArea::Left,   ImGuiDir_Left  },
+			{ DockArea::Right,  ImGuiDir_Right },
+			{ DockArea::Top,    ImGuiDir_Up    },
+			{ DockArea::Bottom, ImGuiDir_Down  },
+		};
+
+		ImGuiID areaId[5] = {};   // indexed by static_cast<int>(DockArea)
+		ImGuiID remaining = dockspace;
+
+		for (Split const& s : splits)
+		{
+			bool requested = false;
+			float ratio = 0.25f;
+			for (auto& entry : panels)
+			{
+				auto const& p = entry.second;
+				if (p->m_docked && p->m_dockArea == s.area) { requested = true; ratio = p->m_dockRatio; break; }
+			}
+			if (!requested) continue;
+
+			ImGuiID atDir = 0, opposite = 0;
+			ImGui::DockBuilderSplitNode(remaining, s.dir, ratio, &atDir, &opposite);
+			areaId[static_cast<int>(s.area)] = atDir;
+			remaining = opposite;
+		}
+		areaId[static_cast<int>(DockArea::Center)] = remaining;
+
+		for (auto& entry : panels)
+		{
+			auto const& p = entry.second;
+			if (p->m_docked && !p->m_panelName.empty())
+				ImGui::DockBuilderDockWindow(p->m_panelName.c_str(), areaId[static_cast<int>(p->m_dockArea)]);
+		}
+
+		ImGui::DockBuilderFinish(dockspace);
+	}
+}
+// ---- dock layout (end) ----
 
 void Crucible::ImGuiManager::Init(Core const& core) {
 	
@@ -117,6 +188,18 @@ void Crucible::ImGuiManager::Update() {
 	ImGui::PopStyleVar(3);
 
 	ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+
+	// Build the default layout on the first frame (unless imgui.ini holds a layout the user made),
+	// or whenever View > Reset Layout asked for it. Must happen before DockSpace() and the panels' Begin().
+	if (g_layoutPending || g_forceReset)
+	{
+		bool const force = g_forceReset;
+		g_layoutPending = false;
+		g_forceReset = false;
+		if (force || !HasUserLayout(dockspace_id))
+			BuildDefaultLayout(dockspace_id, viewport->WorkSize);
+	}
+
 	ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
 
 	ImGui::End();
@@ -163,6 +246,10 @@ void Crucible::ImGuiManager::Draw(Core const& core) {
 	// NOTE: multi-viewport support (ImGuiConfigFlags_ViewportsEnable) needs
 	// ImGui::UpdatePlatformWindows() / RenderPlatformWindowsDefault() AFTER the main render
 	// pass has ended. Viewports are not enabled in Init() today, so that is omitted here.
+}
+
+void Crucible::ImGuiManager::ResetLayout() {
+	g_forceReset = true;
 }
 
 void Crucible::ImGuiManager::Exit() {

@@ -15,6 +15,29 @@
 #include "Reflection/ReflectionRegistration.h"
 #include "Math/Math.h"
 
+namespace rttr::detail {
+
+    template<bool V> struct template_type_trait<xmath::fvec3_t<V>> : std::true_type
+    {
+        static std::vector<::rttr::type> get_template_arguments() { return { ::rttr::type::get<bool>() }; }
+    };
+
+    template<bool V> struct template_type_trait<xmath::fquat_t<V>> : std::true_type
+    {
+        static std::vector<::rttr::type> get_template_arguments() { return { ::rttr::type::get<bool>() }; }
+    };
+
+    template<bool V> struct template_type_trait<xmath::fmat3_t<V>> : std::true_type
+    {
+        static std::vector<::rttr::type> get_template_arguments() { return { ::rttr::type::get<bool>() }; }
+    };
+
+    template<bool V> struct template_type_trait<xmath::fmat4_t<V>> : std::true_type
+    {
+        static std::vector<::rttr::type> get_template_arguments() { return { ::rttr::type::get<bool>() }; }
+    };
+}
+
 RTTR_REGISTRATION
 {
 	using namespace Crucible::Math;

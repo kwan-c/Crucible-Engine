@@ -46,6 +46,18 @@ namespace Crucible {
 		bool m_makeFocus = false;
 		bool m_rightClick = false;
 
+		// ---- Initial docking (read once, when the default layout is built) ----
+		// Set these in the panel's Init(). Example:
+		//		m_docked    = true;
+		//		m_dockArea  = DockArea::Right;
+		//		m_dockRatio = 0.25f;
+		enum class DockArea { Center, Left, Right, Top, Bottom };
+
+		bool     m_docked = false;              // true: start docked in m_dockArea, false: start as a floating window
+		DockArea m_dockArea = DockArea::Center; // where to dock (ignored when m_docked is false)
+		float    m_dockRatio = 0.25f;           // fraction of the space still free when this area is split off (order: Left, Right, Top, Bottom); the first panel to use an area decides
+
+
 		/*!
 		 * @brief	The scale size of a heading 1.
 		 */
@@ -99,5 +111,6 @@ namespace Crucible {
 		void Render();                    // finalize the UI (call once per frame, from Layer::OnUpdate)
 		void Draw(Core const& core);      // record draw commands (call from Layer::OnRender, render pass open)
 		void Exit();
+		void ResetLayout();               // rebuild the default dock layout on the next frame (View > Reset Layout)
 	}
 }

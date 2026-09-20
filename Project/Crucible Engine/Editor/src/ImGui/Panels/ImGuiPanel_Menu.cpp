@@ -55,6 +55,9 @@ void Crucible::Menu::Update() {
 			// The third argument is a bool* that MenuItem toggles for us (shows a tick).
 			ImGui::MenuItem("ImGui Demo Window", nullptr, &m_showDemoWindow);
 			ImGui::MenuItem("FPS Counter", nullptr, &m_showFps);
+			ImGui::Separator();
+			if (ImGui::MenuItem("Reset Layout"))
+				ImGuiManager::ResetLayout();
 			ImGui::EndMenu();
 		}
 

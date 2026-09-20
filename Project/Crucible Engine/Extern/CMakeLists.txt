@@ -139,6 +139,10 @@ add_subdirectory(
 
 set_target_properties(rttr_core PROPERTIES FOLDER "ThirdParty")
 
+# RTTR still uses std::aligned_storage, which is deprecated in C++23 (warning STL4034).
+# PUBLIC so every target that includes RTTR headers (Engine, Editor, Game) gets the define.
+target_compile_definitions(rttr_core PUBLIC _SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING)
+
 # ----------------------------------- #
 # STB (header-only)
 # ----------------------------------- #
