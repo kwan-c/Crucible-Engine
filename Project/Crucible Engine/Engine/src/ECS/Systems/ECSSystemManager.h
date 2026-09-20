@@ -46,6 +46,12 @@ namespace Crucible
     {
     public:
 
+        ECSSystemManager();
+
+        ECSSystemManager(const ECSSystemManager&) = delete;
+        ECSSystemManager& operator=(const ECSSystemManager&) = delete;
+        ECSSystemManager(ECSSystemManager&&) = delete;
+        ECSSystemManager& operator=(ECSSystemManager&&) = delete;
         /*********************************************************************
          \brief  Calls Init() on every registered system, in order.
          *********************************************************************/
@@ -83,8 +89,12 @@ namespace Crucible
         }
 
     private:
+        static constexpr std::size_t kSystemCount = static_cast<std::size_t>(ECSSystemId::MAX);
+
         ECSSystemRegistry m_registry;
 
         CommandBuffer m_commands;
+
+        std::array<ECSSystemId, kSystemCount> m_updateOrder;
     };
 }

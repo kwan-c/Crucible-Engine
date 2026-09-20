@@ -78,6 +78,8 @@ namespace Crucible
 		 *********************************************************************/
 		virtual void Shutdown()noexcept {}
 
+		virtual int Priority() const { return 0; }
+
 
 	};
 }

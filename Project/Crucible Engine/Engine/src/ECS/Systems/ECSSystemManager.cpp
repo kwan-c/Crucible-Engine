@@ -23,24 +23,61 @@
 *
 **************************************************************************/
 #include "ECSSystemManager.h"
+#include <algorithm>
+#include <Diagnostics/Logger.h>
 
 namespace Crucible
 {
+	ECSSystemManager::ECSSystemManager()
+	{
+		for (std::size_t i = 0; i < kSystemCount; ++i)
+		{
+			m_updateOrder[i] = static_cast<ECSSystemId>(i);
+		}
+
+		std::stable_sort(m_updateOrder.begin(), m_updateOrder.end(),
+			[this](ECSSystemId a, ECSSystemId b)
+			{
+				return m_registry.GetSystem(a).Priority() < m_registry.GetSystem(b).Priority();
+			});
+	}
+
 	void ECSSystemManager::Init()
 	{
-		m_registry.GetSystem(ECSSystemId::Physics).Init();
+		for (ECSSystemId id : m_updateOrder)
+		{
+			m_registry.GetSystem(id).Init();
+		}
 	}
 
 	void ECSSystemManager::Update(World& world)
 	{
-		m_registry.GetSystem(ECSSystemId::Physics).Update(world, m_commands);
-
-		m_commands.Execute(world);
+		try
+		{
+			for (ECSSystemId id : m_updateOrder)
+			{
+				m_registry.GetSystem(id).Update(world, m_commands);
+			}
+			m_commands.Execute(world);
+		}
+		catch (const std::exception& e)
+		{
+			CRU_ERROR("ECSSystemManager::Update: this frame's ECS update failed and was aborted - {}", e.what());
+			m_commands.Clear();
+		}
+		catch (...)
+		{
+			CRU_ERROR("ECSSystemManager::Update: this frame's ECS update failed with a non-std::exception and was aborted");
+			m_commands.Clear();
+		}
 	}
 
 	void ECSSystemManager::Shutdown() noexcept
 	{
-		m_registry.GetSystem(ECSSystemId::Physics).Shutdown();
+		for (auto it = m_updateOrder.rbegin(); it != m_updateOrder.rend(); ++it)
+		{
+			m_registry.GetSystem(*it).Shutdown();
+		}
 	}
 
 }

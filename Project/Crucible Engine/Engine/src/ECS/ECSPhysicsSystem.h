@@ -36,5 +36,7 @@ namespace Crucible
 		void Init() override;
 		void Update(World& world, CommandBuffer& commands)override;
 		void Shutdown() noexcept override;
+
+		int Priority()const override { return 1; }
 	};
 }
