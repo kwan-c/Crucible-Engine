@@ -2,7 +2,11 @@
 # Third-Party Dependencies
 # ------------------------------------------------------------ #
 
-# GLFW
+# GLFW (shared DLL)
+# Must be shared: Engine.dll creates the window, while Editor.exe's ImGui GLFW backend also calls
+# GLFW. A static GLFW would give each module its own copy of GLFW's global state, and the copy in
+# Editor.exe would report "not initialized" (glfwGetWin32Window returns NULL).
+set(GLFW_LIBRARY_TYPE SHARED CACHE STRING "" FORCE)
 add_subdirectory(glfw EXCLUDE_FROM_ALL)
 set_target_properties(glfw PROPERTIES FOLDER "ThirdParty")
 
@@ -14,33 +18,34 @@ set_target_properties(glad PROPERTIES FOLDER "ThirdParty")
 # Add more here...
 
 # ----------------------------------- #
-# IMGUI
+# IMGUI core (static, linked by Editor only)
 # ----------------------------------- #
 
-set(IMGUI_SRC
+add_library(imgui STATIC
     imgui/imgui.cpp
     imgui/imgui_draw.cpp
     imgui/imgui_tables.cpp
     imgui/imgui_widgets.cpp
-
-    # GLFW backend
-    imgui/backends/imgui_impl_glfw.cpp
-
-    # OpenGL3 backend
-    #imgui/backends/imgui_impl_opengl3.cpp
-
-    # Vulkan backend
-    imgui/backends/imgui_impl_vulkan.cpp  
+    imgui/imgui_demo.cpp
 )
-add_library(imgui STATIC ${IMGUI_SRC})
 
-target_include_directories(imgui PUBLIC
-    imgui
-    imgui/backends
-)
-target_link_libraries(imgui PUBLIC Vulkan::Vulkan glfw)
+target_include_directories(imgui PUBLIC imgui)
 
 set_target_properties(imgui PROPERTIES FOLDER "ThirdParty")
+
+# ----------------------------------- #
+# IMGUI backends (static, linked by Editor only)
+# ----------------------------------- #
+
+add_library(imgui_backends STATIC
+    imgui/backends/imgui_impl_glfw.cpp
+    imgui/backends/imgui_impl_vulkan.cpp
+)
+
+target_include_directories(imgui_backends PUBLIC imgui/backends)
+target_link_libraries(imgui_backends PUBLIC imgui glfw Vulkan::Vulkan)
+
+set_target_properties(imgui_backends PROPERTIES FOLDER "ThirdParty")
 
 
 # ----------------------------------- #
@@ -109,11 +114,14 @@ set_target_properties(Jolt PROPERTIES
 )
 
 # ----------------------------------- #
-# RTTR
+# RTTR (shared DLL)
 # ----------------------------------- #
+# Must be shared: RTTR keeps a global type registry. If it were static, Engine.dll and
+# Editor.exe would each get a private registry, and the Editor could not see any type that
+# Engine.dll registered (so the Inspector would show no properties for Engine components).
 
-set(BUILD_STATIC ON CACHE BOOL "" FORCE)                 
-set(BUILD_RTTR_DYNAMIC OFF CACHE BOOL "" FORCE)          
+set(BUILD_STATIC OFF CACHE BOOL "" FORCE)
+set(BUILD_RTTR_DYNAMIC ON CACHE BOOL "" FORCE)
 set(BUILD_WITH_STATIC_RUNTIME_LIBS OFF CACHE BOOL "" FORCE)
 set(BUILD_WITH_RTTI ON CACHE BOOL "" FORCE)              
 set(BUILD_UNIT_TESTS OFF CACHE BOOL "" FORCE)
@@ -129,7 +137,7 @@ add_subdirectory(
     "${CMAKE_CURRENT_BINARY_DIR}/RTTR"
 )
 
-set_target_properties(rttr_core_lib PROPERTIES FOLDER "ThirdParty")
+set_target_properties(rttr_core PROPERTIES FOLDER "ThirdParty")
 
 # ----------------------------------- #
 # STB (header-only)
@@ -150,12 +158,23 @@ target_link_libraries(EngineThirdParty INTERFACE
     glad
 
     # Add more here...
-    imgui
     xmath
     fmod
     Jolt
     vma
     Vulkan::Vulkan
-    rttr_core_lib
+    rttr_core
     stb
+)
+
+# ----------------------------------- #
+# Editor-only dependencies (ImGui).
+# Link this from Editor ONLY - never from Engine or Game.
+# ----------------------------------- #
+
+add_library(EditorThirdParty INTERFACE)
+
+target_link_libraries(EditorThirdParty INTERFACE
+    imgui
+    imgui_backends
 )

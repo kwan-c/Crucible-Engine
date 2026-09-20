@@ -539,6 +539,9 @@ namespace Crucible {
         commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapChainExtent));
         commandBuffer.draw(3, 1, 0, 0);
 
+        // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
+        if (m_overlayCallback) m_overlayCallback();
+
         commandBuffer.endRendering();
 
         // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR

@@ -12,6 +12,7 @@ import vulkan_hpp;
 // STL
 #include <vector>
 #include <array>
+#include <functional>
 
 // Crucible Engine
 #include "Systems/WindowManager.h"
@@ -56,6 +57,13 @@ namespace Crucible {
         void Update(float dt);
         void DrawFrame();
 
+        // Optional hook invoked while the frame's render pass is still open (after the scene
+        // draw, before endRendering). Lets Core forward to layers (e.g. the Editor's ImGui).
+        void SetOverlayCallback(std::function<void()> cb) { m_overlayCallback = std::move(cb); }
+
+        // Blocks until the GPU is idle. Call before tearing down anything the GPU may still use.
+        void WaitIdle() { m_device.waitIdle(); }
+
         // Renderer data members accessors
         // Raw Vulkan handles required by ImGui/Vulkan backend
         VkInstance           GetVkInstance() const { return *m_instance; }
@@ -64,6 +72,7 @@ namespace Crucible {
         VkQueue              GetVkQueue() const { return *m_graphicsQueue; }
         VkDescriptorPool     GetVkDescriptorPool() const { return *m_descriptorPool; }
         VkCommandPool        GetVkCommandPool() const { return *m_commandPool; }
+        VkCommandBuffer      GetCurrentCommandBuffer() const { return *m_commandBuffers[m_frameIndex]; }
         const VkFormat*      GetVkColorAttachmentFormats() const { return &m_colorAttachmentFormat; }
         uint32_t             GetVkQueueFamily() const { return m_queueIndex; }
         uint32_t             GetVkMinImageCount() const { return ChooseSwapMinImageCount(m_physicalDevice.getSurfaceCapabilitiesKHR(*m_surface)); }
@@ -72,6 +81,7 @@ namespace Crucible {
     private:
         std::vector<RenderData> m_renderCache;
         WindowManager& m_window;
+        std::function<void()> m_overlayCallback;
 
         // Core functions
         void InitVulkan();

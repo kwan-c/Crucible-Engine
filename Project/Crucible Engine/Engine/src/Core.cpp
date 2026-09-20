@@ -10,6 +10,10 @@ namespace Crucible {
         m_window{ new WindowManager(1200, 800, "Crucible Engine") },
         m_renderer{ new Renderer(*m_window) }
     {
+        // Layers draw inside the renderer's open render pass via OnRender().
+        m_renderer->SetOverlayCallback([this] {
+            for (auto& layer : m_layers) layer->OnRender();
+        });
     }
     Core::~Core() {
         CleanUp();
@@ -33,8 +37,6 @@ namespace Crucible {
         }
         // ===========================================
 
-        ImGuiManager::Init(*this);
-
         return true;
     }
 
@@ -45,10 +47,21 @@ namespace Crucible {
             float dt = 1.f / 60.f;
 
             m_window->PollEvents();
+            for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
             m_window->SwapBuffers();
         }
     }
 
-    void Core::CleanUp() {}
+    void Core::PushLayer(std::unique_ptr<Layer> layer) {
+        layer->OnAttach();
+        m_layers.push_back(std::move(layer));
+    }
+
+    void Core::CleanUp() {
+        // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
+        if (m_renderer) m_renderer->WaitIdle();
+        for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
+        m_layers.clear();
+    }
 }

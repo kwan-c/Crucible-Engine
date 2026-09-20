@@ -35,10 +35,10 @@ RTTR_REGISTRATION
 	;
 	
 	rttr::registration::class_<vec4>("vec4")
-		.property("w", &vec3::m_W)
-		.property("x", &vec3::m_X)
-		.property("y", &vec3::m_Y)
-		.property("z", &vec3::m_Z)
+		.property("w", &vec4::m_W)
+		.property("x", &vec4::m_X)
+		.property("y", &vec4::m_Y)
+		.property("z", &vec4::m_Z)
 	;
 	
     rttr::registration::class_<matrix3>("matrix3")
