@@ -230,6 +230,19 @@ namespace Crucible
 		*********************************************************************/
 		void Clear();
 
+		//record alled at row tick  if called exg world::add comp 
+		void Touch(std::size_t row, std::uint64_t tick)
+		{
+			assert(row < m_size);
+			m_changedTicks[row] = tick;
+		}
+
+		// The tick last passed to Touch() for `row`, or 0 if it never has been.
+		std::uint64_t LastChanged(std::size_t row) const
+		{
+			assert(row < m_size);
+			return m_changedTicks[row];
+		}
 	private:
 
 		/*********************************************************************
@@ -242,5 +255,6 @@ namespace Crucible
 		std::byte* m_data = nullptr;
 		std::size_t m_size = 0;
 		std::size_t m_capacity = 0;
+		std::vector<std::uint64_t> m_changedTicks;// for change detection
 	};
 }

@@ -212,6 +212,9 @@ namespace Crucible
 		 *********************************************************************/
 		EntityRecord& RecordAt(uint32_t index) { return m_records[index]; }
 		
+		//bulk creation
+		void Reserve(std::size_t additionalSlots) { m_records.reserve(m_records.size() + additionalSlots); }
+
 		/*********************************************************************
 		 \brief  How many entities are currently alive.
 		 \return Count of entities created and not yet destroyed.

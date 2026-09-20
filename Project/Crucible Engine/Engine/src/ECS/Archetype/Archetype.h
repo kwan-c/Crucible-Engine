@@ -224,6 +224,11 @@ namespace Crucible
 		 *********************************************************************/
 		void* GetComponentPtr(ComponentId id, uint32_t row);
 
+		void TouchAll(uint32_t row, std::uint64_t tick)
+		{
+			for (ComponentColumn& column : m_columns) column.Touch(row, tick);
+		}
+
 		/*********************************************************************
 		 \brief  Debug check that every column's size matches the entity
 				 count.
@@ -241,6 +246,8 @@ namespace Crucible
 		 *********************************************************************/
 		ArchetypeEdge& Edge(ComponentId id) { return m_edges[id]; }
 
+
+		void Reserve(uint32_t additionalRows);//for bulk creation
 	private:
 		/*********************************************************************
 		 \brief  Finds a component type's index into m_columns/m_componentIds.

@@ -254,4 +254,42 @@ namespace Crucible
 		}
 	};
 
+	template <typename... Required>
+	class QueryBuilder
+	{
+	public:
+		explicit QueryBuilder(ArchetypeRegistry& registry) : m_registry(&registry)
+		{
+			m_description.required = MakeSignature<Required...>();
+		}
+		
+		//entites containing will be skipped
+		template <typename... Excluded>
+		QueryBuilder& Exclude()
+		{
+			m_description.excluded = MakeSignature<Excluded...>();
+			return *this;
+		}
+
+		//optional
+		template <typename... Optional_>
+		QueryBuilder& Optional()
+		{
+			m_description.optional = MakeSignature<Optional_...>();
+			return *this;
+		}
+
+		Query<Required...> Build()
+		{
+			Query<Required...> query(std::move(m_description), *m_registry);
+			query.Rebuild();
+			return query;
+		}
+
+	private:
+		QueryDescription m_description;
+		ArchetypeRegistry* m_registry;
+
+	};
+
 }

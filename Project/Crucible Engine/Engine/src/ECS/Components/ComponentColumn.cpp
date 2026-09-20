@@ -38,7 +38,7 @@ namespace Crucible
 	}
 
 	ComponentColumn::ComponentColumn(ComponentColumn&& other)noexcept
-		:m_info(other.m_info), m_data(other.m_data), m_size(other.m_size), m_capacity(other.m_capacity)
+		:m_info(other.m_info), m_data(other.m_data), m_size(other.m_size), m_capacity(other.m_capacity),m_changedTicks(std::move(other.m_changedTicks))
 	{
 		other.m_info = nullptr;
 		other.m_data = nullptr;
@@ -60,6 +60,8 @@ namespace Crucible
 		m_data = other.m_data;
 		m_size = other.m_size;
 		m_capacity = other.m_capacity;
+		m_changedTicks = std::move(other.m_changedTicks);
+
 
 		other.m_info = nullptr;
 		other.m_data = nullptr;
@@ -128,6 +130,7 @@ namespace Crucible
 		Grow(m_size + 1);
 		void* slot = m_data + m_size * m_info->size;
 		++m_size;
+		m_changedTicks.push_back(0);
 		return slot;
 	}
 
@@ -157,6 +160,11 @@ namespace Crucible
 				m_info->destroy(last);
 			}
 		}
+
+		if (row != m_size - 1) m_changedTicks[row] = m_changedTicks[m_size - 1];
+		m_changedTicks.pop_back();
+
+
 		--m_size;
 	}
 
@@ -174,6 +182,7 @@ namespace Crucible
 		{
 			m_info->moveConstruct(dstSlot, At(row));
 		}
+		dst.m_changedTicks.back() = m_changedTicks[row];
 	}
 
 	void ComponentColumn::Clear()
@@ -187,5 +196,6 @@ namespace Crucible
 			}
 		}
 		m_size = 0;
+		m_changedTicks.clear();
 	}
 }

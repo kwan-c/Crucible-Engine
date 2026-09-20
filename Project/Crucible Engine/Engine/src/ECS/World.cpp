@@ -36,6 +36,8 @@
 
 namespace Crucible
 {
+
+	//build archetype registry over m_components
 	World::World() :m_archetypes(m_components)
 	{
 		m_components.RegisterAll();
@@ -46,6 +48,7 @@ namespace Crucible
 	}
 	Entity World::CreateEntity(const ComponentSignature& signature)
 	{
+		//so command buffer and  World commands dont get mixed up messing up archetype registry 
 		if (m_archetypes.IsIterating())
 		{
 			throw std::logic_error("World::CreateEntity called while a Query is iterating - use a CommandBuffer instead (see CommandBuffer.h)");
@@ -60,8 +63,58 @@ namespace Crucible
 		record.archetype = archetype;
 		record.row = row;
 
+		archetype->TouchAll(row, m_currentTick);
+
 		return entity;
 	}
+
+	std::vector<Entity> World::CreateEntities(uint32_t count, const ComponentSignature& signature)
+	{
+		if (m_archetypes.IsIterating())
+		{
+			throw std::logic_error("World::CreateEntities called while a Query is iterating - use a CommandBuffer instead (see CommandBuffer.h)");
+		}
+
+		std::vector<Entity> created;
+		if (count == 0) return created;
+		created.reserve(count);
+
+		Archetype* archetype = m_archetypes.FindOrCreate(signature);
+		archetype->Reserve(count);
+		m_entities.Reserve(count);
+
+		for (uint32_t i = 0; i < count; ++i)
+		{
+			const Entity entity = m_entities.Create();
+			const uint32_t row = archetype->AddEntityDefault(entity);
+
+			EntityRecord& record = m_entities.RecordAt(entity.index);
+			record.archetype = archetype;
+			record.row = row;
+
+			archetype->TouchAll(row, m_currentTick);
+
+			created.push_back(entity);
+		}
+		return created;
+	}
+
+	void World::OnEntityDestroyed(std::function<void(World&, Entity)> callback)
+	{
+		m_onDestroyHooks.push_back(std::move(callback));
+	}
+
+	void World::FireAddHooks(ComponentId id, Entity entity, void* component)
+	{
+		for (auto& hook : m_onAddHooks[id]) hook(*this, entity, component);
+	}
+
+	void World::FireRemoveHooks(ComponentId id, Entity entity, void* component)
+	{
+		for (auto& hook : m_onRemoveHooks[id]) hook(*this, entity, component);
+	}
+
+
 	void World::DestroyEntity(Entity entity)
 	{
 		if (m_archetypes.IsIterating())
@@ -70,6 +123,13 @@ namespace Crucible
 		}
 
 		if (!m_entities.IsAlive(entity)) return;
+
+		if (!m_onDestroyHooks.empty())
+		{
+			ArchetypeRegistry::IterationGuard guard(m_archetypes);
+			for (auto& hook : m_onDestroyHooks) hook(*this, entity);
+		}
+
 		EntityRecord& record = m_entities.Record(entity);
 		const Entity relocated = record.archetype->RemoveEntity(record.row);
 		if (relocated.IsValid())

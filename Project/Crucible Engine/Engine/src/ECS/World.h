@@ -37,6 +37,9 @@
 #include <cassert>
 #include <utility>
 #include <stdexcept>
+#include <vector>
+#include <functional>
+#include <array>
 
 //header files
 #include "Core/ECSCore.h"          // Entity, EntityManager, IndexedArray
@@ -82,6 +85,9 @@ namespace Crucible
 		// World owns ECS storage, so copying it is not allowed
 		World(const World&) = delete;
 		World& operator=(const World&) = delete;
+
+		void AdvanceTick() { ++m_currentTick; }
+		std::uint64_t CurrentTick() const { return m_currentTick; }
 
 		/*********************************************************************
 		 \brief  Registers component type T with this world's registry.
@@ -213,6 +219,22 @@ namespace Crucible
 		 *********************************************************************/
 		template <typename T> void RemoveComponent(Entity entity);
 
+		// Registers a callback fired for every entity that gains a T,
+		// AFTER the component's value has been written. Does NOT fire
+		// for an entity's initial component set from CreateEntity(s)
+		// (see item 10's note).
+		template <typename T>
+		void OnComponentAdded(std::function<void(World&, Entity, T&)> callback);
+
+		// Registers a callback fired for every entity about to lose a T,
+		// BEFORE the component is actually torn down (so the callback
+		// can still read it - e.g. release a GPU handle it holds).
+		template <typename T>
+		void OnComponentRemoved(std::function<void(World&, Entity, T&)> callback);
+
+		// Registers a callback fired for every entity about to be
+		// destroyed, BEFORE its component data is torn down.
+		void OnEntityDestroyed(std::function<void(World&, Entity)> callback);
 
 		/*********************************************************************
 		 \brief
@@ -227,6 +249,18 @@ namespace Crucible
 		template<typename ...T>
 		Query<T... > CreateQuery();
 
+
+
+		template<typename ...T>
+		QueryBuilder<T...> BuildQuery() { return QueryBuilder<T...>(m_archetypes); }
+
+		template <typename T>
+		std::uint64_t LastChanged(Entity entity) const;
+
+		template <typename T>
+		void MarkChanged(Entity entity);
+
+		std::vector<Entity> CreateEntities(uint32_t count, const ComponentSignature& signature = ComponentSignature{});
 	private:
 		/*********************************************************************
 		 \brief
@@ -258,8 +292,40 @@ namespace Crucible
 		EntityManager     m_entities;
 		ComponentRegistry m_components;
 		ArchetypeRegistry m_archetypes;
+		std::uint64_t m_currentTick = 1;
 
+
+		using ComponentHookFn = std::function<void(World&, Entity, void*)>;
+
+		void FireAddHooks(ComponentId id, Entity entity, void* component);
+		void FireRemoveHooks(ComponentId id, Entity entity, void* component);
+
+		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onAddHooks;
+		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onRemoveHooks;
+		std::vector<std::function<void(World&, Entity)>> m_onDestroyHooks;
 	};
+
+	template <typename T>
+	void World::OnComponentAdded(std::function<void(World&, Entity, T&)> callback)
+	{
+		const ComponentId id = ComponentTypeId<T>();
+		m_onAddHooks[id].push_back(
+			[cb = std::move(callback)](World& world, Entity entity, void* component)
+			{
+				cb(world, entity, *static_cast<T*>(component));
+			});
+	}
+
+	template <typename T>
+	void World::OnComponentRemoved(std::function<void(World&, Entity, T&)> callback)
+	{
+		const ComponentId id = ComponentTypeId<T>();
+		m_onRemoveHooks[id].push_back(
+			[cb = std::move(callback)](World& world, Entity entity, void* component)
+			{
+				cb(world, entity, *static_cast<T*>(component));
+			});
+	}
 
 	template <typename T>
 	bool World::HasComponent(Entity e)const
@@ -279,6 +345,30 @@ namespace Crucible
 		if (!record.archetype->Contains(id)) return nullptr;
 		return static_cast<T*>(record.archetype->GetComponentPtr(id, record.row));
 	}
+
+	template <typename T>
+	std::uint64_t World::LastChanged(Entity entity) const
+	{
+		if (!m_entities.IsAlive(entity)) return 0;
+		const EntityRecord& record = m_entities.Record(entity);
+		const ComponentId id = ComponentTypeId<T>();
+		if (!record.archetype->Contains(id)) return 0;
+		return record.archetype->GetColumn(id).LastChanged(record.row);
+	}
+
+	template <typename T>
+	void World::MarkChanged(Entity entity)
+	{
+		assert(m_entities.IsAlive(entity) && "MarkChanged on a dead/stale Entity");
+		if (!m_entities.IsAlive(entity)) return;
+
+		const EntityRecord& record = m_entities.Record(entity);
+		const ComponentId id = ComponentTypeId<T>();
+		if (!record.archetype->Contains(id)) return;
+
+		record.archetype->GetColumn(id).Touch(record.row, m_currentTick);
+	}
+
 	template<typename T>
 	inline T& World::AddComponent(Entity entity, T value)
 	{
@@ -299,6 +389,7 @@ namespace Crucible
 		{
 			T* existing = static_cast<T*>(record.archetype->GetComponentPtr(id, record.row));
 			*existing = std::move(value);
+			record.archetype->GetColumn(id).Touch(record.row, m_currentTick);
 			return *existing;
 		}
 		
@@ -307,6 +398,14 @@ namespace Crucible
 
 		T* slot = static_cast<T*>(destination->GetComponentPtr(id, record.row));
 		*slot = std::move(value);
+		destination->GetColumn(id).Touch(record.row, m_currentTick);
+
+		if (!m_onAddHooks[id].empty())
+		{
+			ArchetypeRegistry::IterationGuard guard(m_archetypes);
+			FireAddHooks(id, entity, slot);
+		}
+
 		return *slot;
 	}
 	template<typename T>
@@ -325,6 +424,13 @@ namespace Crucible
 		const ComponentId id = ComponentTypeId<T>();
 
 		if (!record.archetype->Contains(id)) return;
+
+		if (!m_onRemoveHooks[id].empty())
+		{
+			T* existing = static_cast<T*>(record.archetype->GetComponentPtr(id, record.row));
+			ArchetypeRegistry::IterationGuard guard(m_archetypes);
+			FireRemoveHooks(id, entity, existing);
+		}
 
 		Archetype* destination = m_archetypes.GetRemoveDestination(*record.archetype, id);
 		MoveEntity(record, entity, *destination);
