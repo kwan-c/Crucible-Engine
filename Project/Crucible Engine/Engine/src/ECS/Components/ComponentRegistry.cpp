@@ -1,3 +1,20 @@
+/*************************************************************************
+* \file:         ComponentRegistry.cpp
+* \author:       Abhishek Akilandeswari Patchamuthu
+* \par:          Email: a.patchamuthu@digipen.edu
+* \date          19 September 2026
+* \version       1.0
+* \brief
+*                Implementation of ComponentRegistry: bulk registration
+*                of every known component type and lookup/validation of
+*                individual ComponentInfo entries. See
+*                ComponentRegistry.h for the public interface.
+*
+* \history
+*    -v1.0       initial RegisterAll/Get/IsRegistered/RegisterInfo
+*
+*
+**************************************************************************/
 #include <cassert>
 #include <utility>
 

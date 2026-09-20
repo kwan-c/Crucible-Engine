@@ -1,3 +1,27 @@
+/*************************************************************************
+* \file:         Archetype.cpp
+* \author:       Abhishek Akilandeswari Patchamuthu
+* \par:          Email: a.patchamuthu@digipen.edu
+* \date          19 September 2026
+* \version       1.0
+* \brief
+*                Implementation of Archetype's row/column management.
+*                See Archetype.h for the public interface and member
+*                comments.
+*
+* \details
+*                The constructor builds one ComponentColumn per set bit
+*                in the signature (see ComponentColumn.h). Add/RemoveEntity
+*                keep m_entities and every column in lock-step (see
+*                ValidateRows()); World::MoveEntity (World.cpp) is the
+*                main caller that shuffles rows between two Archetypes
+*                when an entity's component set changes.
+*
+* \history
+*    -v1.0       initial column build + row add/remove/lookup
+*
+*
+**************************************************************************/
 #include <cassert>
 
 #include "Archetype.h"
@@ -6,13 +30,17 @@ namespace Crucible
 {
 	Archetype::Archetype(ComponentSignature signature, const ComponentRegistry& registry) :m_signature(signature)
 	{
+		m_columnLookup.assign(kMaxComponents, -1);
+
 		for (ComponentId id = 0; id < kMaxComponents; ++id)
 		{
 			if (!m_signature.test(id)) continue;
 			assert(registry.IsRegistered(id) && " archetype build from unregistered component");
-				m_componentIds.push_back(id);
-				m_columns.emplace_back(registry.Get(id));
+			m_columnLookup[id] = static_cast<int>(m_componentIds.size());
+			m_componentIds.push_back(id);
+			m_columns.emplace_back(registry.Get(id));
 		}
+
 		m_edges.resize(kMaxComponents);
 	}
 
@@ -53,11 +81,8 @@ namespace Crucible
 
 	int Archetype::ColumnIndex(ComponentId id)const
 	{
-		for (std::size_t i = 0; i < m_componentIds.size(); ++i)
-		{
-			if (m_componentIds[i] == id) return static_cast<int>(i);
-		}
-		return -1;
+		if (id >= m_columnLookup.size()) return -1;
+		return m_columnLookup[id];
 	}
 
 	ComponentColumn& Archetype::GetColumn(ComponentId id)

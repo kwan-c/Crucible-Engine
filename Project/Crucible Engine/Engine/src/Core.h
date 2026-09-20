@@ -11,6 +11,7 @@
 #include "Systems/WindowManager.h"
 #include "Graphics/RenderSystem.h"
 #include <ECS/World.h>
+#include <ECS/Systems/ECSSystemManager.h>
 
 namespace Crucible
 {
@@ -34,6 +35,8 @@ namespace Crucible
         Renderer* m_renderer;
 
         std::unique_ptr<World> m_world;
+
+        ECSSystemManager m_systems;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;

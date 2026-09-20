@@ -1,3 +1,26 @@
+/*************************************************************************
+* \file:         ComponentColumn.cpp
+* \author:       Abhishek Akilandeswari Patchamuthu
+* \par:          Email: a.patchamuthu@digipen.edu
+* \date          19 September 2026
+* \version       1.0
+* \brief
+*                Implementation of ComponentColumn's type-erased storage
+*                management (grow, push, swap-remove, move-between-columns).
+*                See ComponentColumn.h for the public interface.
+*
+* \details
+*                Every operation dispatches on
+*                ComponentInfo::isTriviallyRelocatable /
+*                isTriviallyDestructible (see ComponentInfo.h) to pick
+*                between a fast memcpy/no-op path and a correct
+*                move-construct+destroy path for non-trivial types.
+*
+* \history
+*    -v1.0       initial grow/push/swap-remove/move-between-columns implementation
+*
+*
+**************************************************************************/
 #include <algorithm>
 #include <cassert>
 #include <cstring>
@@ -68,12 +91,31 @@ namespace Crucible
 		}
 		else
 		{
+			std::size_t constructed = 0;
+			try
+			{
+				for (; constructed < m_size; ++constructed)
+				{
+					void* dst = newData + constructed * m_info->size;
+					void* src = m_data + constructed * m_info->size;
+					m_info->moveConstruct(dst, src);
+				}
+			}
+			catch (...)
+			{
+
+				for (std::size_t i = 0; i < constructed; ++i)
+				{
+					m_info->destroy(newData + i * m_info->size);
+				}
+				::operator delete(newData, std::align_val_t{ m_info->alignment });
+				throw;
+			}
+
+
 			for (std::size_t i = 0; i < m_size; i++)
 			{
-				void* dst = newData + i * m_info->size;
-				void* src = m_data + i * m_info->size;
-				m_info->moveConstruct(dst, src);
-				m_info->destroy(src);
+				m_info->destroy(m_data + i * m_info->size);
 			}
 		}
 		if (m_data)::operator delete(m_data, std::align_val_t{ m_info->alignment });

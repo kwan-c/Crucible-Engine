@@ -32,7 +32,9 @@ namespace Crucible {
             auto tex = assets.Load("Textures/Orange_Milk.jpg");
             assets.PrintLoaded();
         }
+        // ===========================================
 
+        m_systems.Init();
 
         return true;
     }
@@ -44,10 +46,16 @@ namespace Crucible {
             float dt = 1.f / 60.f;
 
             m_window->PollEvents();
+
+            m_systems.Update(*m_world);
+
             m_renderer->Update(dt);
             m_window->SwapBuffers();
         }
     }
 
-    void Core::CleanUp() {}
+    void Core::CleanUp() 
+    {
+        m_systems.Shutdown();
+    }
 }
