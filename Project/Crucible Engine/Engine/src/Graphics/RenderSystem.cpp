@@ -98,6 +98,9 @@ namespace Crucible {
         fc.frame.commandBuffer.bindVertexBuffers(0, *m_vertexBuffer, { 0 });
         fc.frame.commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
+        // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
+        if (m_overlayCallback) m_overlayCallback();
+        
         fc.frame.commandBuffer.endRendering();
 
         // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR

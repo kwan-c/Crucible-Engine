@@ -12,6 +12,7 @@
 // STL
 #include <vector>
 #include <array>
+#include <functional>
 
 // Crucible Engine
 #include "Systems/WindowManager.h"
@@ -47,12 +48,35 @@ namespace Crucible {
         void Update(float dt);
         void DrawFrame();
 
+        // Optional hook invoked while the frame's render pass is still open (after the scene
+        // draw, before endRendering). Lets Core forward to layers (e.g. the Editor's ImGui).
+        void SetOverlayCallback(std::function<void()> cb) { m_overlayCallback = std::move(cb); }
+
+        // Blocks until the GPU is idle. Call before tearing down anything the GPU may still use.
+        void WaitIdle() { m_device.waitIdle(); }
+
         // Renderer data members accessors
         VkDescriptorPool    GetVkDescriptorPool() const { return *m_descriptorPool; }
 
     private:
+
+        // Raw Vulkan handles required by ImGui/Vulkan backend
+        VkInstance           GetVkInstance() const { return *m_instance; }
+        VkPhysicalDevice     GetVkPhysicalDevice() const { return *m_physicalDevice; }
+        VkDevice             GetVkDevice() const { return *m_device; }
+        VkQueue              GetVkQueue() const { return *m_graphicsQueue; }
+        VkDescriptorPool     GetVkDescriptorPool() const { return *m_descriptorPool; }
+        VkCommandPool        GetVkCommandPool() const { return *m_commandPool; }
+        VkCommandBuffer      GetCurrentCommandBuffer() const { return *m_commandBuffers[m_frameIndex]; }
+        const VkFormat*      GetVkColorAttachmentFormats() const { return &m_colorAttachmentFormat; }
+        uint32_t             GetVkQueueFamily() const { return m_queueIndex; }
+        uint32_t             GetVkMinImageCount() const { return ChooseSwapMinImageCount(m_physicalDevice.getSurfaceCapabilitiesKHR(*m_surface)); }
+        uint32_t             GetVkImageCount() const { return static_cast<uint32_t>(m_swapChainImages.size()); }
+
+    private:
         std::vector<RenderData> m_renderCache;
-        WindowManager&          m_window;
+        WindowManager& m_window;
+        std::function<void()> m_overlayCallback;
 
         VulkanContext           m_context;
         VulkanSwapchain         m_swapchain;

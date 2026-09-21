@@ -46,20 +46,8 @@ target_include_directories(Engine
 # Link against third-party dependencies
 target_link_libraries(Engine PUBLIC EngineThirdParty)
 
-# Copy Core.dll to Game output directory
-add_custom_command(TARGET Engine POST_BUILD
-
-    # Ensure Game's output directory exists
-    COMMAND ${CMAKE_COMMAND} -E make_directory
-        "$<TARGET_FILE_DIR:Game>"
-
-    # Copy Engine.dll
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE:Engine>"
-        "$<TARGET_FILE_DIR:Game>"
-
-    COMMENT "Copying Engine.dll to Game output directory..."
-)
+# NOTE: Engine.dll is copied next to each executable by that executable's own
+# POST_BUILD step (see Game/CMakeLists.txt and Editor/CMakeLists.txt).
 
 # Organize files in Visual Studio Solution Explorer
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" 

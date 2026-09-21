@@ -15,6 +15,29 @@
 #include "Reflection/ReflectionRegistration.h"
 #include "Math/Math.h"
 
+namespace rttr::detail {
+
+    template<bool V> struct template_type_trait<xmath::fvec3_t<V>> : std::true_type
+    {
+        static std::vector<::rttr::type> get_template_arguments() { return { ::rttr::type::get<bool>() }; }
+    };
+
+    template<bool V> struct template_type_trait<xmath::fquat_t<V>> : std::true_type
+    {
+        static std::vector<::rttr::type> get_template_arguments() { return { ::rttr::type::get<bool>() }; }
+    };
+
+    template<bool V> struct template_type_trait<xmath::fmat3_t<V>> : std::true_type
+    {
+        static std::vector<::rttr::type> get_template_arguments() { return { ::rttr::type::get<bool>() }; }
+    };
+
+    template<bool V> struct template_type_trait<xmath::fmat4_t<V>> : std::true_type
+    {
+        static std::vector<::rttr::type> get_template_arguments() { return { ::rttr::type::get<bool>() }; }
+    };
+}
+
 RTTR_REGISTRATION
 {
 	using namespace Crucible::Math;
@@ -35,10 +58,10 @@ RTTR_REGISTRATION
 	;
 	
 	rttr::registration::class_<vec4>("vec4")
-		.property("w", &vec3::m_W)
-		.property("x", &vec3::m_X)
-		.property("y", &vec3::m_Y)
-		.property("z", &vec3::m_Z)
+		.property("w", &vec4::m_W)
+		.property("x", &vec4::m_X)
+		.property("y", &vec4::m_Y)
+		.property("z", &vec4::m_Z)
 	;
 	
     rttr::registration::class_<matrix3>("matrix3")
