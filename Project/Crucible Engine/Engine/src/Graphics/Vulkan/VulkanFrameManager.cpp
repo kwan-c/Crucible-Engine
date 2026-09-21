@@ -8,6 +8,7 @@ namespace Crucible {
     
     const FrameData&        VulkanFrameManager::GetCurrentFrame()   const { return m_frames[m_frameIndex]; }
     uint32_t                VulkanFrameManager::GetFrameIndex()     const { return m_frameIndex; }
+    uint32_t                VulkanFrameManager::MaxFramesInFlight() const { return MAX_FRAMES_IN_FLIGHT; }
     vk::raii::CommandPool&  VulkanFrameManager::GetCommandPool()          { return m_commandPool; }
 
     // ------------------------------------------------------------------------------------------------------------- //

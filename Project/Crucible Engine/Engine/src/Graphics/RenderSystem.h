@@ -32,13 +32,40 @@ namespace Crucible {
         
         // Temp for testing.
         const std::vector<Vertex> vertices = {
-            {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-            {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-            {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-            {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+            {{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+            {{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+            {{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}},
+            {{-0.5f, 0.5f, -0.5f}, {0.0f, 0.5f, 0.8f}},
+
+            {{-0.5f, -0.5f, 0.5f}, {0.8f, 0.0f, 0.8f}},
+            {{0.5f, -0.5f, 0.5f}, {0.0f, 0.8f, 0.5f}},
+            {{0.5f, 0.5f, 0.5f}, {0.8f, 0.8f, 0.0f}},
+            {{-0.5f, 0.5f, 0.5f}, {1.0f, 0.0f, 0.0f}}
         };
         const std::vector<uint32_t> indices = {
-            2, 1, 0, 0, 3, 2
+            // Back face: z = -0.5
+            0, 3, 2,
+            0, 2, 1,
+
+            // Front face: z = +0.5
+            4, 5, 6,
+            4, 6, 7,
+
+            // Left face: x = -0.5
+            0, 4, 7,
+            0, 7, 3,
+
+            // Right face: x = +0.5
+            1, 2, 6,
+            1, 6, 5,
+
+            // Bottom face: y = -0.5
+            0, 1, 5,
+            0, 5, 4,
+
+            // Top face: y = +0.5
+            3, 7, 6,
+            3, 6, 2
         };
 
     public:
@@ -47,6 +74,7 @@ namespace Crucible {
 
         void Update(float dt);
         void DrawFrame();
+        void UpdateUniformBuffer(uint32_t frameIndex);
 
         // Optional hook invoked while the frame's render pass is still open (after the scene
         // draw, before endRendering). Lets Core forward to layers (e.g. the Editor's ImGui).
@@ -69,13 +97,19 @@ namespace Crucible {
         VulkanBuffer                m_vertexBuffer;
         VulkanBuffer                m_indexBuffer;
 
+        std::vector<VulkanBuffer>   m_uniformBuffers;
+        std::vector<void*>          m_uniformBuffersMapped;
+
+        vk::raii::DescriptorPool                m_descriptorPool = nullptr;
+        std::vector<vk::raii::DescriptorSet>    m_descriptorSets;
+
         // Vulkan helpers
         void RecordCommandBuffer(FrameContext& fc);
         void CreateVertexBuffer();
         void CreateIndexBuffer();
-
-        // Vulkan data members
-        vk::raii::DescriptorPool    m_descriptorPool = nullptr;
+        void CreateUniformBuffers();
+        void CreateDescriptorPool();
+        void CreateDescriptorSets();
 
         void TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
                                    vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,

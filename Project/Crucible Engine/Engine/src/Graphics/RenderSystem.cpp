@@ -1,5 +1,4 @@
 #include "RenderSystem.h"
-#include "GraphicsUtils.h"
 
 // STL
 #include <stdexcept>
@@ -7,6 +6,7 @@
 #include <cstdint>
 #include <limits>   // numeric_limits
 #include <algorithm>    // clamp
+#include <chrono>
 
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
@@ -19,11 +19,16 @@ namespace Crucible {
     Renderer::Renderer(WindowManager& window) 
         : m_window{ window }, m_context{ m_window }, m_swapchain{ m_context, m_window } {
 
+        m_pipeline.CreateDescriptorSetLayout(m_context);
         m_pipeline.CreatePipeline(m_context, m_swapchain);
         m_frameManager.Init(m_context, m_swapchain);
 
         CreateVertexBuffer();
         CreateIndexBuffer();
+        CreateUniformBuffers();
+
+        CreateDescriptorPool();
+        CreateDescriptorSets();
     }
 
     Renderer::~Renderer() { m_context.ShutDown(); }
@@ -48,12 +53,29 @@ namespace Crucible {
         FrameContext fc = m_frameManager.BeginFrame(m_context, m_swapchain, err);
         if (err) { return; }
 
+        UpdateUniformBuffer(m_frameManager.GetFrameIndex());
+
         // Record and submit command buffer.
         RecordCommandBuffer(fc);
 
         m_frameManager.EndFrame(m_context, m_swapchain, fc, m_window);
 
     }   // Renderer::DrawFrame()
+
+    void Renderer::UpdateUniformBuffer(uint32_t frameIndex) {
+
+        static auto startTime   = std::chrono::high_resolution_clock::now();
+        auto currentTime        = std::chrono::high_resolution_clock::now();
+        float time              = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+        UniformBufferObject ubo{};
+        ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.view = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(m_swapchain.GetExtent().width) / static_cast<float>(m_swapchain.GetExtent().height), 0.1f, 10.0f);
+
+        memcpy(m_uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
+
+    }   // Renderer::UpdateUniformBuffer()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  VULKAN SET-UP FUNCTIONS
@@ -100,7 +122,7 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eColorAttachmentOutput         // dstStage
         );
 
-        vk::ClearValue              clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
+        vk::ClearValue              clearColor = vk::ClearColorValue(0.5f, 0.0f, 0.1f, 1.0f);
         vk::RenderingAttachmentInfo attachmentInfo = {
             .imageView = m_swapchain.GetImageViews()[fc.imageIndex],
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -119,11 +141,12 @@ namespace Crucible {
         fc.frame.commandBuffer.beginRendering(renderingInfo);
 
         fc.frame.commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
-        fc.frame.commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(m_swapchain.GetExtent().width), static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
+        fc.frame.commandBuffer.setViewport(0, vk::Viewport(0.0f, static_cast<float>(m_swapchain.GetExtent().height), static_cast<float>(m_swapchain.GetExtent().width), -static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
         fc.frame.commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapchain.GetExtent()));
         
         fc.frame.commandBuffer.bindVertexBuffers(0, *m_vertexBuffer.GetBuffer(), {0});
         fc.frame.commandBuffer.bindIndexBuffer(*m_indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+        fc.frame.commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.GetLayout(), 0, *m_descriptorSets[m_frameManager.GetFrameIndex()], nullptr);
         fc.frame.commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
@@ -151,7 +174,7 @@ namespace Crucible {
         m_vertexBuffer.Create(m_context, bufferSize,
             vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, 
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-        m_vertexBuffer.Upload(m_context, vertices.data(), bufferSize, m_frameManager.GetCommandPool());
+        m_vertexBuffer.UploadStaging(m_context, vertices.data(), bufferSize, m_frameManager.GetCommandPool());
 
     }   // Renderer::CreateVertexBuffer()
 
@@ -161,9 +184,67 @@ namespace Crucible {
         m_indexBuffer.Create(m_context, bufferSize, 
             vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, 
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-        m_indexBuffer.Upload(m_context, indices.data(), bufferSize, m_frameManager.GetCommandPool());
+        m_indexBuffer.UploadStaging(m_context, indices.data(), bufferSize, m_frameManager.GetCommandPool());
 
-    }   // Renderer::CreateVertexBuffer()
+    }   // Renderer::CreateIndexBuffer()
+
+    void Renderer::CreateUniformBuffers() {
+
+        for (uint32_t i = 0; i < m_frameManager.MaxFramesInFlight(); ++i) {
+            vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+            m_uniformBuffers.emplace_back();
+            m_uniformBuffers.back().Create(m_context, bufferSize,
+                vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_uniformBuffersMapped.emplace_back(m_uniformBuffers.back().GetMemory().mapMemory(0, bufferSize));
+        }
+
+    }   // Renderer::CreateUniformBuffers()
+
+    void Renderer::CreateDescriptorPool() {
+
+        uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
+        vk::DescriptorPoolSize poolSize{ 
+            .type = vk::DescriptorType::eUniformBuffer, 
+            .descriptorCount = maxFrames };
+        vk::DescriptorPoolCreateInfo poolInfo{ 
+            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 
+            .maxSets = maxFrames, .poolSizeCount = 1, .pPoolSizes = &poolSize };
+
+        m_descriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
+
+    }   // Renderer::CreateDescriptorPool()
+
+    void Renderer::CreateDescriptorSets() {
+
+        uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
+        std::vector<vk::DescriptorSetLayout> layouts(maxFrames, *m_pipeline.GetDescriptorSetLayout());
+        vk::DescriptorSetAllocateInfo allocInfo { 
+            .descriptorPool     = m_descriptorPool,
+            .descriptorSetCount = static_cast<uint32_t>(layouts.size()),
+            .pSetLayouts        = layouts.data() 
+        };
+        m_descriptorSets = m_context.GetDevice().allocateDescriptorSets(allocInfo);
+
+        for (size_t i = 0; i < maxFrames; i++) {
+
+            vk::DescriptorBufferInfo bufferInfo{ 
+                .buffer = m_uniformBuffers[i].GetBuffer(),
+                .offset = 0, 
+                .range  = sizeof(UniformBufferObject) };
+
+            vk::WriteDescriptorSet   descriptorWrite{ 
+                .dstSet             = m_descriptorSets[i],
+                .dstBinding         = 0,
+                .dstArrayElement    = 0,
+                .descriptorCount    = 1,
+                .descriptorType     = vk::DescriptorType::eUniformBuffer,
+                .pBufferInfo        = &bufferInfo };
+
+            m_context.GetDevice().updateDescriptorSets(descriptorWrite, {});
+        }
+
+    }   // Renderer::CreateDescriptorSets()
 
     void Renderer::TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
         vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,

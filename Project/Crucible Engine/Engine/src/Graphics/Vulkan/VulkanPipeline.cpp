@@ -8,12 +8,26 @@ namespace Crucible {
     // ACCESSORS
     // ------------------------------------------------------------------------------------------------------------- //
     
-    const vk::raii::Pipeline&       VulkanPipeline::GetPipeline()   const { return m_graphicsPipeline; }
-    const vk::raii::PipelineLayout& VulkanPipeline::GetLayout()     const { return m_pipelineLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetPipeline()               const { return m_graphicsPipeline; }
+    const vk::raii::PipelineLayout&         VulkanPipeline::GetLayout()                 const { return m_pipelineLayout; }
+    const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetDescriptorSetLayout()    const { return m_descriptorSetLayout; }
 
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN PIPELINE
     // ------------------------------------------------------------------------------------------------------------- //
+
+    void VulkanPipeline::CreateDescriptorSetLayout(VulkanContext& context) {
+
+        vk::DescriptorSetLayoutBinding uboLayoutBinding{
+            .binding            = 0, 
+            .descriptorType     = vk::DescriptorType::eUniformBuffer, 
+            .descriptorCount    = 1, 
+            .stageFlags         = vk::ShaderStageFlagBits::eVertex 
+        };
+        vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = 1, .pBindings = &uboLayoutBinding };
+        m_descriptorSetLayout = vk::raii::DescriptorSetLayout(context.GetDevice(), layoutInfo);
+
+    }   // VulkanPipeline::CreateDescriptorSetLayout()
 
     void VulkanPipeline::CreatePipeline(VulkanContext& context, VulkanSwapchain& swapchain) {
 
@@ -44,8 +58,6 @@ namespace Crucible {
         vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
 
         // Set viewport to entire swapchain extent, make them dynamic for more flexibility in future.
-        vk::Viewport viewport{ 0.0f, 0.0f, static_cast<float>(swapchain.GetExtent().width), static_cast<float>(swapchain.GetExtent().height), 0.0f, 1.0f };
-        vk::Rect2D scissor{ vk::Offset2D{0,0}, swapchain.GetExtent() };
         std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
         vk::PipelineDynamicStateCreateInfo dynamicState = {
             .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
@@ -77,7 +89,7 @@ namespace Crucible {
         };
 
         // Pipeline layout object (for uniform values).
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{ .setLayoutCount = 0, .pushConstantRangeCount = 0 };
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{ .setLayoutCount = 1, .pSetLayouts = &*m_descriptorSetLayout, .pushConstantRangeCount = 0 };
         m_pipelineLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
 
         auto swapchainFormat = swapchain.GetSurfaceFormat().format;

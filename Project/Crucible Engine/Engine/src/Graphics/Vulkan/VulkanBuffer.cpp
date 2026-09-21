@@ -22,7 +22,14 @@ namespace Crucible {
 
     }   // VulkanBuffer::Create()
 
-    void VulkanBuffer::Upload(VulkanContext& context, const void* data, vk::DeviceSize size, vk::raii::CommandPool& commandPool) {
+    void VulkanBuffer::Upload(VulkanContext& context, void const* data, vk::DeviceSize size) {
+
+        void* pData = m_memory.mapMemory(0, size);
+        memcpy(pData, data, size);
+        m_memory.unmapMemory();
+    }
+
+    void VulkanBuffer::UploadStaging(VulkanContext& context, const void* data, vk::DeviceSize size, vk::raii::CommandPool& commandPool) {
 
         assert(*m_buffer != vk::Buffer{} && "Upload() called before Create()");
         assert(*m_memory != vk::DeviceMemory{} && "Buffer has no memory allocated");
@@ -64,6 +71,7 @@ namespace Crucible {
     }   // VulkanBuffer::Upload()
 
     vk::raii::Buffer const& VulkanBuffer::GetBuffer() const { return m_buffer; }
+    vk::raii::DeviceMemory&  VulkanBuffer::GetMemory() { return m_memory; }
 
     uint32_t VulkanBuffer::FindMemoryType(VulkanContext& context, uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
 

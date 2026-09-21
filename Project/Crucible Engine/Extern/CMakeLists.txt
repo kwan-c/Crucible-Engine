@@ -15,6 +15,10 @@ add_library(glad glad/src/glad.c)
 target_include_directories(glad PUBLIC glad/include)
 set_target_properties(glad PROPERTIES FOLDER "ThirdParty")
 
+# GLM (header-only)
+add_library(glm INTERFACE)
+target_include_directories(glm SYSTEM INTERFACE glm)
+
 # Add more here...
 
 # ----------------------------------- #
@@ -166,6 +170,7 @@ add_library(EngineThirdParty INTERFACE)
 target_link_libraries(EngineThirdParty INTERFACE
     glfw
     glad
+    glm
 
     # Add more here...
     xmath

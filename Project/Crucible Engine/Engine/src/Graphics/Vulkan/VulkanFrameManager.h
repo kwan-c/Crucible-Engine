@@ -29,6 +29,7 @@ namespace Crucible {
         
         const FrameData&        GetCurrentFrame() const;
         uint32_t                GetFrameIndex() const;
+        uint32_t                MaxFramesInFlight() const;
         vk::raii::CommandPool&  GetCommandPool();
 
     private:
