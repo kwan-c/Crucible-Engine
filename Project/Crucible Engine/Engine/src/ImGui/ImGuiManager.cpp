@@ -66,27 +66,27 @@ void Crucible::ImGuiManager::Init(Core const& core) {
 	//initInfo.Queue = core.GetVkQueue();
 
 	// initInfo.DescriptorPool = core.GetVkDescriptorPool();   // not ready yet — leave unset (VK_NULL_HANDLE)
-	initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE;   // let ImGui create+own its own pool
+	//initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE;   // let ImGui create+own its own pool
 
-    initInfo.MinImageCount = core.GetVkMinImageCount();
+ //   initInfo.MinImageCount = core.GetVkMinImageCount();
 
-    initInfo.ImageCount = core.GetVkImageCount();
+ //   initInfo.ImageCount = core.GetVkImageCount();
 
-	initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
+	//initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
 
-    initInfo.CheckVkResultFn = CheckVulkanResult;
+ //   initInfo.CheckVkResultFn = CheckVulkanResult;
 
-	// Dynamic rendering
-	initInfo.UseDynamicRendering = true;
+	//// Dynamic rendering
+	//initInfo.UseDynamicRendering = true;
 
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType =
-		VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+	//initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType =
+	//	VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
 
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount =
-		1;
+	//initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount =
+	//	1;
 
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = 
-		core.GetVkColorAttachmentFormats();
+	//initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = 
+	//	core.GetVkColorAttachmentFormats();
 
 	ImGui_ImplVulkan_Init(&initInfo);
 

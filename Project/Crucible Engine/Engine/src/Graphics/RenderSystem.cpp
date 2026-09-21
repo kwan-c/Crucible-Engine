@@ -27,7 +27,8 @@ namespace Crucible {
 
     Renderer::Renderer(WindowManager& window) : m_window{ window } { InitVulkan(); }
     Renderer::~Renderer() {
-        CleanupSwapChain();
+        m_context.ShutDown();
+        m_swapchain.CleanUp();
     }
 
     void Renderer::Update(float dt) {
@@ -47,9 +48,8 @@ namespace Crucible {
     void Renderer::InitVulkan() {
 
         m_context.Init(m_window);
-
-        CreateSwapChain();
-        CreateImageViews();
+        m_swapchain.Init(m_context, m_window);
+        
         CreateGraphicsPipeline();
 
         CreateCommandPool();
@@ -70,11 +70,11 @@ namespace Crucible {
         }
 
         // Obtain image from swap chain.
-        auto [result, imageIndex] = m_swapChain.acquireNextImage(UINT64_MAX, *m_presentCompleteSemaphores[m_frameIndex], nullptr);
+        auto [result, imageIndex] = m_swapchain.GetSwapchain().acquireNextImage(UINT64_MAX, *m_presentCompleteSemaphores[m_frameIndex], nullptr);
 
         // Handle out-of-date or suboptimal swap chains.
         if (result == vk::Result::eErrorOutOfDateKHR) {
-            RecreateSwapChain();
+            m_swapchain.Recreate(m_context, m_window);
             return;
         }
         if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
@@ -102,13 +102,13 @@ namespace Crucible {
             .waitSemaphoreCount = 1,
             .pWaitSemaphores = &*m_renderFinishedSemaphores[imageIndex],
             .swapchainCount = 1,
-            .pSwapchains = &*m_swapChain,
+            .pSwapchains = &*m_swapchain.GetSwapchain(),
             .pImageIndices = &imageIndex
         };
         result = m_context.GetGraphicsQueue().presentKHR(presentInfoKHR);
         if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || m_window.m_framebufferResized) {
             m_window.m_framebufferResized = false;
-            RecreateSwapChain();
+            m_swapchain.Recreate(m_context, m_window);
         }
         else {
             // There are no other success codes than eSuccess; on any error code, presentKHR already threw an exception.
@@ -124,86 +124,7 @@ namespace Crucible {
     //  VULKAN SET-UP FUNCTIONS
     // ------------------------------------------------------------------------------------------------------------- //
 
-    void Renderer::CreateSwapChain() {
-
-        vk::SurfaceCapabilitiesKHR surfaceCapabilities = m_context.GetPhysicalDevice().getSurfaceCapabilitiesKHR(m_context.GetSurface());
-        m_swapChainExtent = ChooseSwapExtent(surfaceCapabilities, m_window.GetNativeHandle());
-        uint32_t minImageCount = ChooseSwapMinImageCount(surfaceCapabilities);
-
-        std::vector<vk::SurfaceFormatKHR> availableFormats = m_context.GetPhysicalDevice().getSurfaceFormatsKHR(m_context.GetSurface());
-        m_swapChainSurfaceFormat = ChooseSwapSurfaceFormat(availableFormats);
-        m_colorAttachmentFormat = static_cast<VkFormat>(m_swapChainSurfaceFormat.format);
-
-        std::vector<vk::PresentModeKHR> availablePresentModes = m_context.GetPhysicalDevice().getSurfacePresentModesKHR(m_context.GetSurface());
-
-        vk::SwapchainCreateInfoKHR swapChainCreateInfo{
-            .surface = m_context.GetSurface(),
-            .minImageCount = minImageCount,
-            .imageFormat = m_swapChainSurfaceFormat.format,
-            .imageColorSpace = m_swapChainSurfaceFormat.colorSpace,
-            .imageExtent = m_swapChainExtent,
-            .imageArrayLayers = 1,
-            .imageUsage = vk::ImageUsageFlagBits::eColorAttachment,
-            .imageSharingMode = vk::SharingMode::eExclusive,
-            .preTransform = surfaceCapabilities.currentTransform,
-            .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
-            .presentMode = ChooseSwapPresentMode(availablePresentModes),
-            .clipped = true
-        };
-
-        m_swapChain = vk::raii::SwapchainKHR(m_context.GetDevice(), swapChainCreateInfo);
-        m_swapChainImages = m_swapChain.getImages();
-
-    }   // Renderer::CreateSwapChain()
-
-    void Renderer::RecreateSwapChain() {
-
-        // Handle minimization.
-        int width = 0, height = 0;
-        glfwGetFramebufferSize(m_window.GetNativeHandle(), &width, &height);
-        while ((width == 0 || height == 0) && !glfwWindowShouldClose(m_window.GetNativeHandle())) {
-            glfwGetFramebufferSize(m_window.GetNativeHandle(), &width, &height);
-            glfwWaitEvents();
-        }
-        if (glfwWindowShouldClose(m_window.GetNativeHandle())) {
-            return;
-        }
-
-        m_context.GetDevice().waitIdle();
-        CleanupSwapChain();
-
-        CreateSwapChain();
-        CreateImageViews();
-
-    }   // Renderer::RecreateSwapChain()
-
-    void Renderer::CleanupSwapChain() {
-
-        m_swapChainImageViews.clear();
-        m_swapChain = nullptr;
-
-    }   // Renderer::CleanupSwapChain()
-
-    void Renderer::CreateImageViews() {
-
-        assert(m_swapChainImageViews.empty());
-        vk::ImageViewCreateInfo imageViewCreateInfo{
-            .viewType = vk::ImageViewType::e2D,
-            .format = m_swapChainSurfaceFormat.format,
-            .subresourceRange = {
-                .aspectMask = vk::ImageAspectFlagBits::eColor,
-                .levelCount = 1,
-                .layerCount = 1
-            }
-        };
-        for (auto& image : m_swapChainImages) {
-            imageViewCreateInfo.image = image;
-            m_swapChainImageViews.emplace_back(m_context.GetDevice(), imageViewCreateInfo);
-        }
-
-    }   // Renderer::CreateImageViews()
-
-    /*
+    /*!
         \brief
         Creates shader module, sets parameters for fixed functions, then consolidates the information
         structures to create the graphics pipeline which is required for all draw commands.
@@ -238,8 +159,8 @@ namespace Crucible {
         vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
 
         // Set viewport to entire swapchain extent, make them dynamic more more flexibility in future.
-        vk::Viewport viewport{ 0.0f, 0.0f, static_cast<float>(m_swapChainExtent.width), static_cast<float>(m_swapChainExtent.height), 0.0f, 1.0f };
-        vk::Rect2D scissor{ vk::Offset2D{0,0}, m_swapChainExtent };
+        vk::Viewport viewport{ 0.0f, 0.0f, static_cast<float>(m_swapchain.GetExtent().width), static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f};
+        vk::Rect2D scissor{ vk::Offset2D{0,0}, m_swapchain.GetExtent() };
         std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
         vk::PipelineDynamicStateCreateInfo dynamicState = {
             .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
@@ -274,9 +195,11 @@ namespace Crucible {
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo{ .setLayoutCount = 0, .pushConstantRangeCount = 0 };
         m_pipelineLayout = vk::raii::PipelineLayout(m_context.GetDevice(), pipelineLayoutInfo);
 
+        auto swapchainFormat = m_swapchain.GetSurfaceFormat().format;
+
         vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo{
             .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &m_swapChainSurfaceFormat.format };
+            .pColorAttachmentFormats = &swapchainFormat };
 
         // Consolidate all information to create Graphics Pipeline.
         vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
@@ -294,7 +217,7 @@ namespace Crucible {
                 .layout = m_pipelineLayout,
                 .renderPass = nullptr
             },
-            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &m_swapChainSurfaceFormat.format }
+            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat }
         };
         m_graphicsPipeline = vk::raii::Pipeline(m_context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 
@@ -340,7 +263,7 @@ namespace Crucible {
 
         vk::ClearValue              clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
         vk::RenderingAttachmentInfo attachmentInfo = {
-            .imageView = m_swapChainImageViews[imageIndex],
+            .imageView = m_swapchain.GetImageViews()[imageIndex],
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
@@ -348,7 +271,7 @@ namespace Crucible {
         };
 
         vk::RenderingInfo renderingInfo = {
-            .renderArea = {.offset = {0, 0}, .extent = m_swapChainExtent},
+            .renderArea = {.offset = {0, 0}, .extent = m_swapchain.GetExtent()},
             .layerCount = 1,
             .colorAttachmentCount = 1,
             .pColorAttachments = &attachmentInfo
@@ -357,8 +280,8 @@ namespace Crucible {
         commandBuffer.beginRendering(renderingInfo);
 
         commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_graphicsPipeline);
-        commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(m_swapChainExtent.width), static_cast<float>(m_swapChainExtent.height), 0.0f, 1.0f));
-        commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapChainExtent));
+        commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(m_swapchain.GetExtent().width), static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
+        commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapchain.GetExtent()));
 
         commandBuffer.bindVertexBuffers(0, *m_vertexBuffer, { 0 });
         commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
@@ -383,7 +306,7 @@ namespace Crucible {
     void Renderer::CreateSyncObjects() {
 
         assert(m_presentCompleteSemaphores.empty() && m_renderFinishedSemaphores.empty() && m_inFlightFences.empty());
-        for (size_t i = 0; i < m_swapChainImages.size(); ++i) {
+        for (size_t i = 0; i < m_swapchain.GetImages().size(); ++i) {
             m_renderFinishedSemaphores.emplace_back(m_context.GetDevice(), vk::SemaphoreCreateInfo());
         }
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
@@ -436,64 +359,6 @@ namespace Crucible {
 
     }   // Renderer::FindMemoryType()
 
-    vk::SurfaceFormatKHR Renderer::ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
-
-        assert(!availableFormats.empty());
-
-        const auto formatIt = std::ranges::find_if(availableFormats, [](const auto& format) {
-            return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear; });
-
-        return formatIt != availableFormats.end() ? *formatIt : availableFormats[0];
-
-    }   // Renderer::ChooseSwapSurfaceFormat()
-
-    vk::PresentModeKHR Renderer::ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes) {
-
-        // Assert that at least Fifo is present.
-        assert(std::ranges::any_of(availablePresentModes, [](auto presentMode) {
-            return presentMode == vk::PresentModeKHR::eFifo; }));
-
-        // Return eMailbox if available, else default to eFifo.
-        return std::ranges::any_of(availablePresentModes, [](const vk::PresentModeKHR value) {
-            return vk::PresentModeKHR::eMailbox == value; }) ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
-
-    }   // Renderer::ChooseSwapPresentMode()
-
-    vk::Extent2D Renderer::ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities, GLFWwindow* window) {
-
-        if (surfaceCapabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-            return surfaceCapabilities.currentExtent;
-        }
-        int width{}, height{};
-        glfwGetFramebufferSize(window, &width, &height);
-
-        return {
-            std::clamp<uint32_t>(width, surfaceCapabilities.minImageExtent.width, surfaceCapabilities.maxImageExtent.width),
-            std::clamp<uint32_t>(height, surfaceCapabilities.minImageExtent.height, surfaceCapabilities.maxImageExtent.height)
-        };
-
-    }   // Renderer::ChooseSwapExtent()
-
-    uint32_t Renderer::ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities) {
-
-        auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
-        if ((0 < surfaceCapabilities.maxImageCount) && (surfaceCapabilities.maxImageCount < minImageCount)) {
-            minImageCount = surfaceCapabilities.maxImageCount;
-        }
-        return minImageCount;
-
-    }   // Renderer::ChooseSwapMinImageCount()
-
-    uint32_t Renderer::ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities) const {
-
-        auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
-        if ((0 < surfaceCapabilities.maxImageCount) && (surfaceCapabilities.maxImageCount < minImageCount)) {
-            minImageCount = surfaceCapabilities.maxImageCount;
-        }
-        return minImageCount;
-
-    }   // Renderer::ChooseSwapMinImageCount() const
-
     [[nodiscard]] vk::raii::ShaderModule Renderer::CreateShaderModule(const std::vector<char>& code) const {
 
         vk::ShaderModuleCreateInfo createInfo{
@@ -517,7 +382,7 @@ namespace Crucible {
             .newLayout = new_layout,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = m_swapChainImages[imageIndex],
+            .image = m_swapchain.GetImages()[imageIndex],
             .subresourceRange = {
                    .aspectMask = vk::ImageAspectFlagBits::eColor,
                    .baseMipLevel = 0,

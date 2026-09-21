@@ -23,16 +23,16 @@ namespace Crucible {
     // ACCESSORS
     // ------------------------------------------------------------------------------------------------------------- //
 
-    const vk::raii::Instance&       VulkanContext::GetInstance() const              { return m_instance; }
-    const vk::raii::PhysicalDevice& VulkanContext::GetPhysicalDevice() const        { return m_physicalDevice; }
-    const vk::raii::Device&         VulkanContext::GetDevice() const                { return m_device; }
-    const vk::raii::Queue&          VulkanContext::GetGraphicsQueue() const         { return m_graphicsQueue; }
+    const vk::raii::Instance&       VulkanContext::GetInstance()            const { return m_instance; }
+    const vk::raii::PhysicalDevice& VulkanContext::GetPhysicalDevice()      const { return m_physicalDevice; }
+    const vk::raii::Device&         VulkanContext::GetDevice()              const { return m_device; }
+    const vk::raii::Queue&          VulkanContext::GetGraphicsQueue()       const { return m_graphicsQueue; }
 
-    vk::SurfaceKHR                  VulkanContext::GetSurface() const               { return m_surface; }
-    uint32_t                        VulkanContext::GetGraphicsQueueFamily() const   { return m_queueIndex; }
+    vk::SurfaceKHR                  VulkanContext::GetSurface()             const { return m_surface; }
+    uint32_t                        VulkanContext::GetGraphicsQueueFamily() const { return m_queueIndex; }
 
     // ------------------------------------------------------------------------------------------------------------- //
-    // VULKANCONTEXT
+    // VULKAN CONTEXT
     // ------------------------------------------------------------------------------------------------------------- //
 
     void VulkanContext::Init(WindowManager& window) {

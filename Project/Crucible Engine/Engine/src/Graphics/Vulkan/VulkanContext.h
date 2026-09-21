@@ -23,13 +23,13 @@ namespace Crucible {
         void Init(WindowManager& window);
         void ShutDown();
 
-        const vk::raii::Instance& GetInstance() const;
+        const vk::raii::Instance&       GetInstance() const;
         const vk::raii::PhysicalDevice& GetPhysicalDevice() const;
-        const vk::raii::Device& GetDevice() const;
-        const vk::raii::Queue& GetGraphicsQueue() const;
+        const vk::raii::Device&         GetDevice() const;
+        const vk::raii::Queue&          GetGraphicsQueue() const;
 
-        vk::SurfaceKHR GetSurface() const;
-        uint32_t GetGraphicsQueueFamily() const;
+        vk::SurfaceKHR                  GetSurface() const;
+        uint32_t                        GetGraphicsQueueFamily() const;
 
     private:
         void CreateInstance(WindowManager& window);
@@ -48,18 +48,16 @@ namespace Crucible {
                                                               void*                                             pUserData);
 
     private:
-        vk::raii::Context m_context;
-        vk::raii::Instance m_instance = nullptr;
-        vk::raii::DebugUtilsMessengerEXT m_debugMessenger = nullptr;
+        vk::raii::Context                   m_context;
+        vk::raii::Instance                  m_instance = nullptr;
+        vk::raii::DebugUtilsMessengerEXT    m_debugMessenger = nullptr;
 
-        vk::raii::SurfaceKHR m_surface = nullptr;
+        vk::raii::SurfaceKHR                m_surface = nullptr;
+        vk::raii::PhysicalDevice            m_physicalDevice = nullptr;
+        vk::raii::Device                    m_device = nullptr;
+        vk::raii::Queue                     m_graphicsQueue = nullptr;
 
-        vk::raii::PhysicalDevice m_physicalDevice = nullptr;
-        vk::raii::Device m_device = nullptr;
-
-        vk::raii::Queue m_graphicsQueue = nullptr;
-
-        uint32_t m_queueIndex = ~0u;
+        uint32_t                            m_queueIndex = ~0u;
 
     };
 

@@ -42,24 +42,24 @@ namespace Crucible
         //VkQueue              GetVkQueue() const {
         //    return (m_renderer != nullptr) ? m_renderer->GetVkQueue() : VK_NULL_HANDLE;
         //}
-        VkDescriptorPool     GetVkDescriptorPool() const {
-            return (m_renderer != nullptr) ? m_renderer->GetVkDescriptorPool() : VK_NULL_HANDLE;
-        }
-        VkCommandPool        GetVkCommandPool() const {
-            return (m_renderer != nullptr) ? m_renderer->GetVkCommandPool() : VK_NULL_HANDLE;
-        }
-        const VkFormat*      GetVkColorAttachmentFormats() const {
-            return (m_renderer != nullptr) ? m_renderer->GetVkColorAttachmentFormats() : nullptr;
-        }
-        //uint32_t             GetVkQueueFamily() const {
-        //    return m_renderer->GetVkQueueFamily();
+        //VkDescriptorPool     GetVkDescriptorPool() const {
+        //    return (m_renderer != nullptr) ? m_renderer->GetVkDescriptorPool() : VK_NULL_HANDLE;
         //}
-        uint32_t             GetVkMinImageCount() const {
-            return m_renderer->GetVkMinImageCount();
-        }
-        uint32_t             GetVkImageCount() const {
-            return m_renderer->GetVkImageCount();
-        }
+        //VkCommandPool        GetVkCommandPool() const {
+        //    return (m_renderer != nullptr) ? m_renderer->GetVkCommandPool() : VK_NULL_HANDLE;
+        //}
+        //const VkFormat*      GetVkColorAttachmentFormats() const {
+        //    return (m_renderer != nullptr) ? m_renderer->GetVkColorAttachmentFormats() : nullptr;
+        //}
+        ////uint32_t             GetVkQueueFamily() const {
+        ////    return m_renderer->GetVkQueueFamily();
+        ////}
+        //uint32_t             GetVkMinImageCount() const {
+        //    return m_renderer->GetVkMinImageCount();
+        //}
+        //uint32_t             GetVkImageCount() const {
+        //    return m_renderer->GetVkImageCount();
+        //}
 
 
     private:

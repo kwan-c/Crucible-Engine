@@ -46,7 +46,7 @@ namespace Crucible {
 
             m_window->PollEvents();
             m_renderer->Update(dt);
-            m_window->SwapBuffers();
+            //m_window->SwapBuffers();
         }
     }
 

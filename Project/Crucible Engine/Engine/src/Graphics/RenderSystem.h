@@ -15,9 +15,10 @@
 
 // Crucible Engine
 #include "Systems/WindowManager.h"
-#include "Vulkan/VulkanContext.h"
 #include "Math/Math.h"
  
+#include "Vulkan/VulkanContext.h"
+#include "Vulkan/VulkanSwapchain.h"
 
 namespace {
     struct RenderData {
@@ -60,9 +61,6 @@ namespace Crucible {
         // Renderer data members accessors
         VkDescriptorPool     GetVkDescriptorPool() const { return *m_descriptorPool; }
         VkCommandPool        GetVkCommandPool() const { return *m_commandPool; }
-        const VkFormat*      GetVkColorAttachmentFormats() const { return &m_colorAttachmentFormat; }
-        uint32_t             GetVkMinImageCount() const { return ChooseSwapMinImageCount(m_context.GetPhysicalDevice().getSurfaceCapabilitiesKHR(m_context.GetSurface())); }
-        uint32_t             GetVkImageCount() const { return static_cast<uint32_t>(m_swapChainImages.size()); }
 
     private:
         std::vector<RenderData> m_renderCache;
@@ -71,20 +69,10 @@ namespace Crucible {
         // Core functions
         void InitVulkan();
 
-        VulkanContext m_context;
+        VulkanContext   m_context;
+        VulkanSwapchain m_swapchain;
 
         // Vulkan helpers
-        void CreateInstance();
-        void SetupDebugMessenger();
-        void CreateSurface();
-
-        void PickPhysicalDevice();
-        void CreateLogicalDevice();
-
-        void CreateSwapChain();
-        void RecreateSwapChain();
-        void CleanupSwapChain();
-        void CreateImageViews();
         void CreateGraphicsPipeline();
 
         void CreateCommandPool();
@@ -96,19 +84,9 @@ namespace Crucible {
         void CreateVertexBuffer();
         uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
 
-
-        std::vector<const char*> GetRequiredInstanceExtensions();
-        bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
-        vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
-        vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
-        vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities, GLFWwindow* window);
-        uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities);
-        uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities) const;
-
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char>& code) const;
 
         // Vulkan data members
-        vk::raii::SwapchainKHR              m_swapChain = nullptr;
         vk::raii::PipelineLayout            m_pipelineLayout = nullptr;
         vk::raii::Pipeline                  m_graphicsPipeline = nullptr;
         vk::raii::DescriptorPool            m_descriptorPool = nullptr;
@@ -119,15 +97,6 @@ namespace Crucible {
         std::vector<vk::raii::CommandBuffer>    m_commandBuffers;
         vk::raii::Buffer                        m_vertexBuffer = nullptr;
         vk::raii::DeviceMemory                  m_vertexBufferMemory = nullptr;
-
-        // SwapChain parameters
-        std::vector<vk::Image>              m_swapChainImages;
-        std::vector<vk::raii::ImageView>    m_swapChainImageViews;
-        vk::Extent2D                        m_swapChainExtent;
-        vk::SurfaceFormatKHR                m_swapChainSurfaceFormat;
-
-        // C-API mirror of m_swapChainSurfaceFormat.format, for ImGui/Vulkan-C consumers
-        VkFormat                            m_colorAttachmentFormat = VK_FORMAT_UNDEFINED;
 
         // Synchonization primitives
         std::vector<vk::raii::Semaphore>    m_presentCompleteSemaphores;

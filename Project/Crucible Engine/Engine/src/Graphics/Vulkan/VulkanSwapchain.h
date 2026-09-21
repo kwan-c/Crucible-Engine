@@ -1,69 +1,48 @@
 #pragma once
 
-#define VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS  // To handle swap chain recreation.
-#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
-#if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
-    #include <vulkan/vulkan_raii.hpp>
-#else
-    import vulkan_hpp;
-#endif
+// Crucible Engine
+#include "VulkanContext.h"
+#include "Systems/WindowManager.h"
 
 namespace Crucible
 {
-    class VulkanContext;
-    class WindowManager;
+    // Forward Declarations
+    //class VulkanContext;
+    //class WindowManager;
 
-    class VulkanSwapchain
-    {
+    class VulkanSwapchain {
+
     public:
-        void Initialize(
-            VulkanContext& context,
-            WindowManager& window);
+        void Init(VulkanContext& context, WindowManager& window);
+        void Recreate(VulkanContext& context, WindowManager& window);
+        void CleanUp();
 
-        void Recreate(
-            VulkanContext& context,
-            WindowManager& window);
+        const vk::raii::SwapchainKHR&           GetSwapchain() const;
+        const std::vector<vk::Image>&           GetImages() const;
+        const std::vector<vk::raii::ImageView>& GetImageViews() const;
 
-        void Cleanup();
-
-        vk::raii::SwapchainKHR const& GetSwapchain() const;
-
-        std::vector<vk::Image> const& GetImages() const;
-        std::vector<vk::raii::ImageView> const& GetImageViews() const;
-
-        vk::Extent2D GetExtent() const;
-        vk::SurfaceFormatKHR GetSurfaceFormat() const;
-
-        VkFormat GetColorAttachmentFormat() const;
+        vk::Extent2D                            GetExtent() const;
+        vk::SurfaceFormatKHR                    GetSurfaceFormat() const;
+        VkFormat                                GetColorAttachmentFormat() const;
 
     private:
-        void CreateSwapchain(
-            VulkanContext& context,
-            WindowManager& window);
+        void CreateSwapchain(VulkanContext& context, WindowManager& window);
+        void CreateImageViews(VulkanContext& context);
 
-        void CreateImageViews(
-            VulkanContext& context);
+        vk::SurfaceFormatKHR    ChooseSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const& formats);
+        vk::PresentModeKHR      ChoosePresentMode(std::vector<vk::PresentModeKHR> const& modes);
+        vk::Extent2D            ChooseExtent(vk::SurfaceCapabilitiesKHR const& capabilities, WindowManager& window);
 
-        vk::SurfaceFormatKHR ChooseSurfaceFormat(
-            std::vector<vk::SurfaceFormatKHR> const& formats);
-
-        vk::PresentModeKHR ChoosePresentMode(
-            std::vector<vk::PresentModeKHR> const& modes);
-
-        vk::Extent2D ChooseExtent(
-            vk::SurfaceCapabilitiesKHR const& capabilities,
-            WindowManager& window);
-
+        uint32_t                ChooseMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities);
     private:
-        vk::raii::SwapchainKHR m_swapchain = nullptr;
+        vk::raii::SwapchainKHR              m_swapchain = nullptr;
+        std::vector<vk::Image>              m_images;
+        std::vector<vk::raii::ImageView>    m_imageViews;
 
-        std::vector<vk::Image> m_images;
-        std::vector<vk::raii::ImageView> m_imageViews;
+        vk::Extent2D                        m_extent{};
+        vk::SurfaceFormatKHR                m_surfaceFormat{};
+        VkFormat                            m_colorAttachmentFormat = VK_FORMAT_UNDEFINED;
 
-        vk::Extent2D m_extent{};
-        vk::SurfaceFormatKHR m_surfaceFormat{};
+    };  // VulkanSwapchain class
 
-        VkFormat m_colorAttachmentFormat =
-            VK_FORMAT_UNDEFINED;
-    };
-}
+}   // NAMESPACE CRUCIBLE
