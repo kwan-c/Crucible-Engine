@@ -20,6 +20,7 @@
 #include "Vulkan/VulkanSwapchain.h"
 #include "Vulkan/VulkanPipeline.h"
 #include "Vulkan/VulkanFrameManager.h"
+#include "Vulkan/VulkanBuffer.h"
 
 // Imgui
 #include "Vulkan/ImGuiContext.h"
@@ -31,9 +32,13 @@ namespace Crucible {
         
         // Temp for testing.
         const std::vector<Vertex> vertices = {
-            { {0.5f, 0.5f}, {1.0f, 0.0f, 0.0f} },
-            { {0.0f, -0.5f}, {0.0f, 1.0f, 0.0f} },
-            { {-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f} }
+            {{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+            {{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+            {{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+            {{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+        };
+        const std::vector<uint32_t> indices = {
+            2, 1, 0, 0, 3, 2
         };
 
     public:
@@ -53,26 +58,24 @@ namespace Crucible {
         ENGINE_API vk::CommandBuffer    GetCurrentCommandBuff() const;
 
     private:
-        WindowManager&          m_window;
-        std::function<void()>   m_overlayCallback;
+        WindowManager&              m_window;
+        std::function<void()>       m_overlayCallback;
 
-        VulkanContext           m_context;
-        VulkanSwapchain         m_swapchain;
-        VulkanPipeline          m_pipeline;
-        VulkanFrameManager      m_frameManager;
+        VulkanContext               m_context;
+        VulkanSwapchain             m_swapchain;
+        VulkanPipeline              m_pipeline;
+        VulkanFrameManager          m_frameManager;
+
+        VulkanBuffer                m_vertexBuffer;
+        VulkanBuffer                m_indexBuffer;
 
         // Vulkan helpers
         void RecordCommandBuffer(FrameContext& fc);
-
-        // Input Buffers
         void CreateVertexBuffer();
-        uint32_t FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
+        void CreateIndexBuffer();
 
         // Vulkan data members
         vk::raii::DescriptorPool    m_descriptorPool = nullptr;
-
-        vk::raii::Buffer            m_vertexBuffer = nullptr;
-        vk::raii::DeviceMemory      m_vertexBufferMemory = nullptr;
 
         void TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
                                    vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,

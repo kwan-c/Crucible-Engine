@@ -23,13 +23,13 @@ namespace Crucible {
     public:
         static constexpr uint32_t MAX_FRAMES_IN_FLIGHT = 2;
         
-        void            Init(VulkanContext& context, VulkanSwapchain& swapchain);
-        FrameContext    BeginFrame(VulkanContext& context, VulkanSwapchain& swapchain, bool& err);
-        void            EndFrame(VulkanContext& context, VulkanSwapchain& swapchain, FrameContext& fc, WindowManager& window);
+        void                    Init(VulkanContext& context, VulkanSwapchain& swapchain);
+        FrameContext            BeginFrame(VulkanContext& context, VulkanSwapchain& swapchain, bool& err);
+        void                    EndFrame(VulkanContext& context, VulkanSwapchain& swapchain, FrameContext& fc, WindowManager& window);
         
-        FrameData&      GetCurrentFrame();
-        const FrameData& GetCurrentFrame() const { return m_frames[m_frameIndex]; }
-        uint32_t        GetFrameIndex() const;
+        const FrameData&        GetCurrentFrame() const;
+        uint32_t                GetFrameIndex() const;
+        vk::raii::CommandPool&  GetCommandPool();
 
     private:
         vk::raii::CommandPool   m_commandPool = nullptr;

@@ -6,8 +6,9 @@ namespace Crucible {
     // ACCESSORS
     // ------------------------------------------------------------------------------------------------------------- //
     
-    FrameData& VulkanFrameManager::GetCurrentFrame() { return m_frames[m_frameIndex]; }
-    uint32_t VulkanFrameManager::GetFrameIndex() const { return m_frameIndex; }
+    const FrameData&        VulkanFrameManager::GetCurrentFrame()   const { return m_frames[m_frameIndex]; }
+    uint32_t                VulkanFrameManager::GetFrameIndex()     const { return m_frameIndex; }
+    vk::raii::CommandPool&  VulkanFrameManager::GetCommandPool()          { return m_commandPool; }
 
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN FRAME MANAGER
@@ -47,7 +48,7 @@ namespace Crucible {
 
     FrameContext VulkanFrameManager::BeginFrame(VulkanContext& context, VulkanSwapchain& swapchain, bool& err) {
 
-        FrameData& frame = GetCurrentFrame();
+        FrameData& frame = m_frames[m_frameIndex];
         auto fenceResult = context.GetDevice().waitForFences(*frame.inFlight, vk::True, UINT64_MAX);
         if (fenceResult != vk::Result::eSuccess)
         {

@@ -23,6 +23,7 @@ namespace Crucible {
         m_frameManager.Init(m_context, m_swapchain);
 
         CreateVertexBuffer();
+        CreateIndexBuffer();
     }
 
     Renderer::~Renderer() { m_context.ShutDown(); }
@@ -121,8 +122,9 @@ namespace Crucible {
         fc.frame.commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(m_swapchain.GetExtent().width), static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
         fc.frame.commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapchain.GetExtent()));
         
-        fc.frame.commandBuffer.bindVertexBuffers(0, *m_vertexBuffer, { 0 });
-        fc.frame.commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
+        fc.frame.commandBuffer.bindVertexBuffers(0, *m_vertexBuffer.GetBuffer(), {0});
+        fc.frame.commandBuffer.bindIndexBuffer(*m_indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+        fc.frame.commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
         if (m_overlayCallback) m_overlayCallback();
@@ -139,51 +141,29 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eColorAttachmentOutput,     // srcStage
             vk::PipelineStageFlagBits2::eBottomOfPipe               // dstStage
         );
-
         fc.frame.commandBuffer.end();
 
     }   // Renderer::RecordCommandBuffer()
 
     void Renderer::CreateVertexBuffer() {
 
-        vk::BufferCreateInfo bufferInfo{
-            .size           = sizeof(vertices[0]) * vertices.size(),
-            .usage          = vk::BufferUsageFlagBits::eVertexBuffer,
-            .sharingMode    = vk::SharingMode::eExclusive
-        };
-
-        m_vertexBuffer = vk::raii::Buffer(m_context.GetDevice(), bufferInfo);
-
-        vk::MemoryRequirements memRequirements = m_vertexBuffer.getMemoryRequirements();
-
-        vk::MemoryAllocateInfo memoryAllocateInfo = {
-            .allocationSize = memRequirements.size,
-            .memoryTypeIndex = FindMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
-        };
-
-        m_vertexBufferMemory = vk::raii::DeviceMemory(m_context.GetDevice(), memoryAllocateInfo);
-        m_vertexBuffer.bindMemory(*m_vertexBufferMemory, 0);
-
-        void* data = m_vertexBufferMemory.mapMemory(0, bufferInfo.size);
-        memcpy(data, vertices.data(), bufferInfo.size);
-        m_vertexBufferMemory.unmapMemory();
+        vk::DeviceSize bufferSize = sizeof(vertices[0])* vertices.size();
+        m_vertexBuffer.Create(m_context, bufferSize,
+            vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, 
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        m_vertexBuffer.Upload(m_context, vertices.data(), bufferSize, m_frameManager.GetCommandPool());
 
     }   // Renderer::CreateVertexBuffer()
 
-    uint32_t Renderer::FindMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
+    void Renderer::CreateIndexBuffer() {
 
-        vk::PhysicalDeviceMemoryProperties memProperties = m_context.GetPhysicalDevice().getMemoryProperties();
+        vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
+        m_indexBuffer.Create(m_context, bufferSize, 
+            vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, 
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        m_indexBuffer.Upload(m_context, indices.data(), bufferSize, m_frameManager.GetCommandPool());
 
-        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
-        {
-            if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-            {
-                return i;
-            }
-        }
-        throw std::runtime_error("[Renderer] Failed to find suitable memory type.");
-
-    }   // Renderer::FindMemoryType()
+    }   // Renderer::CreateVertexBuffer()
 
     void Renderer::TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
         vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,

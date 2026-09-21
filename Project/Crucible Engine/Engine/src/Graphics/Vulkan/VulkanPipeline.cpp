@@ -117,7 +117,7 @@ namespace Crucible {
 
         std::ifstream ifs(filename, std::ios::ate | std::ios::binary);
         if (!ifs.is_open()) {
-            throw std::runtime_error("[GraphicsUtils] Failed to open file: " + filename);
+            throw std::runtime_error("[Renderer | Pipeline] Failed to open file: " + filename);
         }
 
         std::vector<char> buffer(ifs.tellg());
