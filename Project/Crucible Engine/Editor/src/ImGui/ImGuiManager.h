@@ -112,7 +112,7 @@ namespace Crucible {
 		void Update();
 		void BeginFrame();
 		void Render();                    // finalize the UI (call once per frame, from Layer::OnUpdate)
-		void Draw(const Renderer& ren);      // record draw commands (call from Layer::OnRender, render pass open)
+		void Draw(Renderer& ren);		  // record draw commands (call from Layer::OnRender, render pass open)
 		void Exit();
 		void ResetLayout();               // rebuild the default dock layout on the next frame (View > Reset Layout)
 	}

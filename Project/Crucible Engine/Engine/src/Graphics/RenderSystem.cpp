@@ -58,9 +58,9 @@ namespace Crucible {
     //  VULKAN SET-UP FUNCTIONS
     // ------------------------------------------------------------------------------------------------------------- //
 
-    const ImGuiVulkanContext& Renderer::GetImguiContext() const {
+    ImGuiVulkanContext Renderer::GetImguiContext() const {
 
-        const ImGuiVulkanContext context = {
+        ImGuiVulkanContext context = {
             .window         = m_window.GetNativeHandle(),
             .instance       = *m_context.GetInstance(),
             .physicalDevice = *m_context.GetPhysicalDevice(),
@@ -78,9 +78,9 @@ namespace Crucible {
 
     }   // Renderer::GetImguiContext()
 
-    vk::raii::CommandBuffer& Renderer::GetCurrentCommandBuff() {
+    vk::CommandBuffer Renderer::GetCurrentCommandBuff() const {
 
-        return m_frameManager.GetCurrentFrame().commandBuffer;
+        return *m_frameManager.GetCurrentFrame().commandBuffer;
 
     }   // Renderer::GetCurrentCommandBuff()
 

@@ -8,12 +8,13 @@
 
 #include "Systems/Layer.h"
 #include "ImGui/ImGuiManager.h"
+#include <Graphics/RenderSystem.h>
 
 namespace Crucible {
 
 	class ImGuiLayer : public Layer {
 	public:
-		explicit ImGuiLayer(const Renderer& ren) : m_context{ ren.GetImguiContext()}, m_ren{ren} {}
+		explicit ImGuiLayer(Renderer& ren) : m_context{ ren.GetImguiContext()}, m_ren{ren} {}
 
 		void OnAttach() override { ImGuiManager::Init(m_context); }
 
@@ -30,8 +31,8 @@ namespace Crucible {
 		void OnDetach() override { ImGuiManager::Exit(); }
 
 	private:
-		const ImGuiVulkanContext&	m_context;
-		const Renderer&				m_ren;
+		ImGuiVulkanContext		m_context;
+		Renderer&				m_ren;
 	};
 
 }

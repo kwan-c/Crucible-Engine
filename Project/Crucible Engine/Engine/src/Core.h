@@ -35,7 +35,7 @@ namespace Crucible
         bool Init();
         void Run();
 
-        const Renderer& GetRenderer() const { return *m_renderer; }
+        Renderer& GetRenderer() const { return *m_renderer; }
 
         World& GetWorld() noexcept { return *m_world; }
         const World& GetWorld() const noexcept { return *m_world; }

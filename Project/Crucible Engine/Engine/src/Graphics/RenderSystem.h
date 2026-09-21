@@ -1,7 +1,5 @@
 #pragma once
 
-#define VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS  // To handle swap chain recreation.
-#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
     #include <vulkan/vulkan_raii.hpp>
 #else
@@ -24,7 +22,8 @@
 #include "Vulkan/VulkanFrameManager.h"
 
 // Imgui
-#include "Vulkan/ImGuiContext.h"  
+#include "Vulkan/ImGuiContext.h"
+#include "EngineExport.h"
 
 namespace Crucible {
 
@@ -50,8 +49,8 @@ namespace Crucible {
 
         // Renderer data members accessors
         VkDescriptorPool                GetVkDescriptorPool()   const { return *m_descriptorPool; }
-        const ImGuiVulkanContext&       GetImguiContext()       const;
-        vk::raii::CommandBuffer&        GetCurrentCommandBuff();
+        ENGINE_API ImGuiVulkanContext   GetImguiContext()       const;
+        ENGINE_API vk::CommandBuffer    GetCurrentCommandBuff() const;
 
     private:
         WindowManager&          m_window;

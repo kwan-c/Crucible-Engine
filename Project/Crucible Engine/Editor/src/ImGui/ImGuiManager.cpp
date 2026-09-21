@@ -230,8 +230,8 @@ void Crucible::ImGuiManager::Render() {
 }
 
 // Must be called while the frame's render pass is open (from Layer::OnRender).
-void Crucible::ImGuiManager::Draw(const Renderer& ren) {
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), *ren.GetCurrentCommandBuff());
+void Crucible::ImGuiManager::Draw(Renderer& ren) {
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ren.GetCurrentCommandBuff());
 
 	// NOTE: multi-viewport support (ImGuiConfigFlags_ViewportsEnable) needs
 	// ImGui::UpdatePlatformWindows() / RenderPlatformWindowsDefault() AFTER the main render
@@ -273,16 +273,14 @@ Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 
 float Crucible::EditorPanel::PushFontSize(float const fontScale)
 {
-	ImFont* const imfont = ImGui::GetFont();
-	float const old_size = imfont->Scale;
-	imfont->Scale = fontScale;
-	ImGui::PushFont(imfont);
-	return old_size;
+	// ImGui 1.92+: ImFont::Scale is gone; sizes are set per PushFont(). Scale relative to the current base size.
+	float const oldSize = ImGui::GetStyle().FontSizeBase;
+	ImGui::PushFont(nullptr, oldSize * fontScale);   // nullptr = keep current font
+	return oldSize;
 }
 
 void Crucible::EditorPanel::PopFontSize(float const prevScale)
 {
-	ImFont* const imfont = ImGui::GetFont();
-	imfont->Scale = prevScale;
+	(void)prevScale;   // PopFont() restores the previous font and size by itself
 	ImGui::PopFont();
 }
