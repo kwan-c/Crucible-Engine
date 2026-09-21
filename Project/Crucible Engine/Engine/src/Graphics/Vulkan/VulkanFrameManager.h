@@ -36,7 +36,7 @@ namespace Crucible {
         uint32_t                m_frameIndex = 0;
 
         // Separate vector of semaphores for syncing with Swapchain images.
-        std::vector<vk::raii::Semaphore> m_presentFinished;
+        std::vector<vk::raii::Semaphore> m_presentFinishedSemaphores;
 
     };  // VULKAN FRAME MANAGER CLASS
 
