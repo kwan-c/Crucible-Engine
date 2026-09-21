@@ -30,18 +30,18 @@ namespace Crucible
 
         // Vulkan handle accessors (forwarded to Renderer).
         // Return VK_NULL_HANDLE when renderer is not available.
-        VkInstance           GetVkInstance() const {
-            return (m_renderer != nullptr) ? m_renderer->GetVkInstance() : VK_NULL_HANDLE;
-        }
-        VkPhysicalDevice     GetVkPhysicalDevice() const {
-            return (m_renderer != nullptr) ? m_renderer->GetVkPhysicalDevice() : VK_NULL_HANDLE;
-        }
-        VkDevice             GetVkDevice() const {
-            return (m_renderer != nullptr) ? m_renderer->GetVkDevice() : VK_NULL_HANDLE;
-        }
-        VkQueue              GetVkQueue() const {
-            return (m_renderer != nullptr) ? m_renderer->GetVkQueue() : VK_NULL_HANDLE;
-        }
+        //VkInstance           GetVkInstance() const {
+        //    return (m_renderer != nullptr) ? m_renderer->GetVkInstance() : VK_NULL_HANDLE;
+        //}
+        //VkPhysicalDevice     GetVkPhysicalDevice() const {
+        //    return (m_renderer != nullptr) ? m_renderer->GetVkPhysicalDevice() : VK_NULL_HANDLE;
+        //}
+        //VkDevice             GetVkDevice() const {
+        //    return (m_renderer != nullptr) ? m_renderer->GetVkDevice() : VK_NULL_HANDLE;
+        //}
+        //VkQueue              GetVkQueue() const {
+        //    return (m_renderer != nullptr) ? m_renderer->GetVkQueue() : VK_NULL_HANDLE;
+        //}
         VkDescriptorPool     GetVkDescriptorPool() const {
             return (m_renderer != nullptr) ? m_renderer->GetVkDescriptorPool() : VK_NULL_HANDLE;
         }
@@ -51,9 +51,9 @@ namespace Crucible
         const VkFormat*      GetVkColorAttachmentFormats() const {
             return (m_renderer != nullptr) ? m_renderer->GetVkColorAttachmentFormats() : nullptr;
         }
-        uint32_t             GetVkQueueFamily() const {
-            return m_renderer->GetVkQueueFamily();
-        }
+        //uint32_t             GetVkQueueFamily() const {
+        //    return m_renderer->GetVkQueueFamily();
+        //}
         uint32_t             GetVkMinImageCount() const {
             return m_renderer->GetVkMinImageCount();
         }

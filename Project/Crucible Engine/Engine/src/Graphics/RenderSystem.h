@@ -3,9 +3,9 @@
 #define VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS  // To handle swap chain recreation.
 #define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
-#include <vulkan/vulkan_raii.hpp>
+    #include <vulkan/vulkan_raii.hpp>
 #else
-import vulkan_hpp;
+    import vulkan_hpp;
 #endif
 #include <GLFW/glfw3.h>
 
@@ -15,6 +15,7 @@ import vulkan_hpp;
 
 // Crucible Engine
 #include "Systems/WindowManager.h"
+#include "Vulkan/VulkanContext.h"
 #include "Math/Math.h"
  
 
@@ -57,16 +58,10 @@ namespace Crucible {
         void DrawFrame();
 
         // Renderer data members accessors
-        // Raw Vulkan handles required by ImGui/Vulkan backend
-        VkInstance           GetVkInstance() const { return *m_instance; }
-        VkPhysicalDevice     GetVkPhysicalDevice() const { return *m_physicalDevice; }
-        VkDevice             GetVkDevice() const { return *m_device; }
-        VkQueue              GetVkQueue() const { return *m_graphicsQueue; }
         VkDescriptorPool     GetVkDescriptorPool() const { return *m_descriptorPool; }
         VkCommandPool        GetVkCommandPool() const { return *m_commandPool; }
         const VkFormat*      GetVkColorAttachmentFormats() const { return &m_colorAttachmentFormat; }
-        uint32_t             GetVkQueueFamily() const { return m_queueIndex; }
-        uint32_t             GetVkMinImageCount() const { return ChooseSwapMinImageCount(m_physicalDevice.getSurfaceCapabilitiesKHR(*m_surface)); }
+        uint32_t             GetVkMinImageCount() const { return ChooseSwapMinImageCount(m_context.GetPhysicalDevice().getSurfaceCapabilitiesKHR(m_context.GetSurface())); }
         uint32_t             GetVkImageCount() const { return static_cast<uint32_t>(m_swapChainImages.size()); }
 
     private:
@@ -75,6 +70,8 @@ namespace Crucible {
 
         // Core functions
         void InitVulkan();
+
+        VulkanContext m_context;
 
         // Vulkan helpers
         void CreateInstance();
@@ -111,19 +108,11 @@ namespace Crucible {
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char>& code) const;
 
         // Vulkan data members
-        vk::raii::Context                   m_context;
-        vk::raii::Instance                  m_instance = nullptr;           // connection btw app and vulk lib
-        vk::raii::DebugUtilsMessengerEXT    m_debugMessenger = nullptr;
-        vk::raii::SurfaceKHR                m_surface = nullptr;
-        vk::raii::PhysicalDevice            m_physicalDevice = nullptr;     // graphics card
-        vk::raii::Device                    m_device = nullptr;             // logical interface to physical device
-        vk::raii::Queue                     m_graphicsQueue = nullptr;
         vk::raii::SwapchainKHR              m_swapChain = nullptr;
         vk::raii::PipelineLayout            m_pipelineLayout = nullptr;
         vk::raii::Pipeline                  m_graphicsPipeline = nullptr;
         vk::raii::DescriptorPool            m_descriptorPool = nullptr;
 
-        uint32_t    m_queueIndex = ~0u;            // index for graphics queue for logical device
         uint32_t    m_frameIndex = 0;
 
         vk::raii::CommandPool                   m_commandPool = nullptr;
@@ -146,10 +135,7 @@ namespace Crucible {
         std::vector<vk::raii::Fence>        m_inFlightFences;
 
 
-        static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT         severity,
-                                                              vk::DebugUtilsMessageTypeFlagsEXT                type,
-                                                              const vk::DebugUtilsMessengerCallbackDataEXT*    pCallbackData,
-                                                              void*                                            pUserData);
+
         void TransitionImageLayout(uint32_t imageIndex, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
                                    vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
                                    vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask);

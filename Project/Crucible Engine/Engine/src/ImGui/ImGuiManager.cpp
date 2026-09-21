@@ -57,13 +57,13 @@ void Crucible::ImGuiManager::Init(Core const& core) {
 	ImGui_ImplGlfw_InitForVulkan(core.tempReturn()->GetNativeHandle(), true);
 
 	ImGui_ImplVulkan_InitInfo initInfo = {};
-	initInfo.Instance = core.GetVkInstance();
-    initInfo.PhysicalDevice = core.GetVkPhysicalDevice();
-    initInfo.Device = core.GetVkDevice();
+	//initInfo.Instance = core.GetVkInstance();
+ //   initInfo.PhysicalDevice = core.GetVkPhysicalDevice();
+ //   initInfo.Device = core.GetVkDevice();
 
-	initInfo.QueueFamily = core.GetVkQueueFamily();
+	//initInfo.QueueFamily = core.GetVkQueueFamily();
 
-	initInfo.Queue = core.GetVkQueue();
+	//initInfo.Queue = core.GetVkQueue();
 
 	// initInfo.DescriptorPool = core.GetVkDescriptorPool();   // not ready yet — leave unset (VK_NULL_HANDLE)
 	initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE;   // let ImGui create+own its own pool
