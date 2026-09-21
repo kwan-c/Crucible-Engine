@@ -150,6 +150,12 @@ target_compile_definitions(rttr_core PUBLIC _SILENCE_CXX23_ALIGNED_STORAGE_DEPRE
 add_library(stb INTERFACE)
 target_include_directories(stb SYSTEM INTERFACE stb)
 
+# ----------------------------------- #
+# RAPID JSON (header-only)
+# ----------------------------------- #
+
+add_library(rapidjson INTERFACE)
+target_include_directories(rapidjson SYSTEM INTERFACE rapidjson/include)
 
 # ----------------------------------- #
 
@@ -169,6 +175,7 @@ target_link_libraries(EngineThirdParty INTERFACE
     Vulkan::Vulkan
     rttr_core
     stb
+    rapidjson
 )
 
 # ----------------------------------- #
