@@ -14,20 +14,16 @@ constexpr bool enableValidationLayers = false;
 constexpr bool enableValidationLayers = true;
 #endif
 
-namespace {
-
-    std::vector<const char*> requiredDeviceExtension = { vk::KHRSwapchainExtensionName };
-    const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
-
-    constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-
-}   // ANONYMOUS NAMESPACE
-
 namespace Crucible {
 
     Renderer::Renderer(WindowManager& window) 
-        : m_window{ window }, m_context{ m_window }, m_swapchain{ m_context, m_window } 
-    { InitVulkan(); }
+        : m_window{ window }, m_context{ m_window }, m_swapchain{ m_context, m_window } {
+
+        m_pipeline.CreatePipeline(m_context, m_swapchain);
+        m_frameManager.Init(m_context, m_swapchain);
+
+        CreateVertexBuffer();
+    }
 
     Renderer::~Renderer() { m_context.ShutDown(); }
 
@@ -45,16 +41,6 @@ namespace Crucible {
 
     }   // Renderer::Update()
 
-    void Renderer::InitVulkan() {
-
-        CreateGraphicsPipeline();
-
-        m_frameManager.Init(m_context, m_swapchain);
-
-        CreateVertexBuffer();
-
-    }   // Renderer::InitVulkan()
-
     void Renderer::DrawFrame() {
 
         bool err = false;
@@ -71,105 +57,6 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------------------------- //
     //  VULKAN SET-UP FUNCTIONS
     // ------------------------------------------------------------------------------------------------------------- //
-
-    /*!
-        \brief
-        Creates shader module, sets parameters for fixed functions, then consolidates the information
-        structures to create the graphics pipeline which is required for all draw commands.
-    */
-    void Renderer::CreateGraphicsPipeline() {
-
-        // Programmable stages (Vertex and Fragment shaders).
-        vk::raii::ShaderModule shaderModule = CreateShaderModule(
-            Graphics::Utils::ReadFile("../../../Assets/Shaders/DefaultShader.spv"));
-
-        vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-            .stage = vk::ShaderStageFlagBits::eVertex,
-            .module = shaderModule,
-            .pName = "vertMain"
-        };
-        vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-            .stage = vk::ShaderStageFlagBits::eFragment,
-            .module = shaderModule,
-            .pName = "fragMain"
-        };
-        vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
-
-        // Fixed functions.
-        auto bindingDescription = Vertex::GetBindingDescription();
-        auto attributeDescriptions = Vertex::GetAttributeDescriptions();
-        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-            .vertexBindingDescriptionCount      = 1,
-            .pVertexBindingDescriptions         = &bindingDescription,
-            .vertexAttributeDescriptionCount    = static_cast<uint32_t>(attributeDescriptions.size()),
-            .pVertexAttributeDescriptions       = attributeDescriptions.data()
-        };
-        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
-
-        // Set viewport to entire swapchain extent, make them dynamic more more flexibility in future.
-        vk::Viewport viewport{ 0.0f, 0.0f, static_cast<float>(m_swapchain.GetExtent().width), static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f};
-        vk::Rect2D scissor{ vk::Offset2D{0,0}, m_swapchain.GetExtent() };
-        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
-        vk::PipelineDynamicStateCreateInfo dynamicState = {
-            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
-            .pDynamicStates = dynamicStates.data()
-        };
-        vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
-
-        vk::PipelineRasterizationStateCreateInfo rasterizer{
-            .depthClampEnable = vk::False,
-            .rasterizerDiscardEnable = vk::False,
-            .polygonMode = vk::PolygonMode::eFill,
-            .cullMode = vk::CullModeFlagBits::eBack,
-            .frontFace = vk::FrontFace::eClockwise,
-            .depthBiasEnable = vk::False,
-            .lineWidth = 1.0f
-        };
-
-        // Disable multisampling and color blending for now...
-        vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
-        vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-            .blendEnable = vk::False,
-            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-        };
-        vk::PipelineColorBlendStateCreateInfo colorBlending{
-            .logicOpEnable = vk::False,
-            .logicOp = vk::LogicOp::eCopy,
-            .attachmentCount = 1,
-            .pAttachments = &colorBlendAttachment
-        };
-
-        // Pipeline layout object (for uniform values).
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{ .setLayoutCount = 0, .pushConstantRangeCount = 0 };
-        m_pipelineLayout = vk::raii::PipelineLayout(m_context.GetDevice(), pipelineLayoutInfo);
-
-        auto swapchainFormat = m_swapchain.GetSurfaceFormat().format;
-
-        vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo{
-            .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &swapchainFormat };
-
-        // Consolidate all information to create Graphics Pipeline.
-        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
-        {
-            {
-                .stageCount = 2,
-                .pStages = shaderStages,
-                .pVertexInputState = &vertexInputInfo,
-                .pInputAssemblyState = &inputAssembly,
-                .pViewportState = &viewportState,
-                .pRasterizationState = &rasterizer,
-                .pMultisampleState = &multisampling,
-                .pColorBlendState = &colorBlending,
-                .pDynamicState = &dynamicState,
-                .layout = m_pipelineLayout,
-                .renderPass = nullptr
-            },
-            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat }
-        };
-        m_graphicsPipeline = vk::raii::Pipeline(m_context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-
-    }   // Renderer::CreateGraphicsPipeline()
 
     void Renderer::RecordCommandBuffer(FrameContext& fc) {
 
@@ -204,7 +91,7 @@ namespace Crucible {
 
         fc.frame.commandBuffer.beginRendering(renderingInfo);
 
-        fc.frame.commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_graphicsPipeline);
+        fc.frame.commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
         fc.frame.commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(m_swapchain.GetExtent().width), static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
         fc.frame.commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapchain.GetExtent()));
         
@@ -268,16 +155,6 @@ namespace Crucible {
         throw std::runtime_error("[Renderer] Failed to find suitable memory type.");
 
     }   // Renderer::FindMemoryType()
-
-    [[nodiscard]] vk::raii::ShaderModule Renderer::CreateShaderModule(const std::vector<char>& code) const {
-
-        vk::ShaderModuleCreateInfo createInfo{
-            .codeSize = code.size() * sizeof(char),
-            .pCode = reinterpret_cast<const uint32_t*>(code.data())
-        };
-        return { m_context.GetDevice(), createInfo };
-
-    }   // Renderer::CreateShaderModule()
 
     void Renderer::TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
         vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
