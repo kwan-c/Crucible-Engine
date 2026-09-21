@@ -3,6 +3,7 @@
 
 // STL
 #include <iostream>
+#include <ECS/ECSPhysicsSystem.h>
 
 namespace Crucible {
 
@@ -38,6 +39,8 @@ namespace Crucible {
         }
         // ===========================================
 
+        RegisterEngineSystems();
+
         m_systems.Init();
 
         return true;
@@ -63,6 +66,12 @@ namespace Crucible {
     void Core::PushLayer(std::unique_ptr<Layer> layer) {
         layer->OnAttach();
         m_layers.push_back(std::move(layer));
+    }
+
+    void Core::RegisterEngineSystems()
+    {
+        //sample system registeration
+        m_systems.RegisterSystem<ECSPhysicsSystem>();
     }
 
     void Core::CleanUp() {

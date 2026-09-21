@@ -32,6 +32,8 @@
 
 #include <vector>
 
+#include "EngineExport.h"
+
 #include "../Components/ComponentColumn.h"
 #include "../Components/ComponentRegistry.h"
 #include "../Components/ComponentSignature.h"
@@ -66,7 +68,10 @@ namespace Crucible
 		Archetype* remove = nullptr;
 	};
 
-
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)
+#endif
 	/*************************************************************************
 	 \brief
 		A single table of entities that all share the exact same
@@ -86,7 +91,7 @@ namespace Crucible
 		Non-copyable in practice: it owns ComponentColumns, which are
 		move-only.
 	 *************************************************************************/
-	class Archetype
+	class ENGINE_API Archetype
 	{
 	public:
 
@@ -110,6 +115,11 @@ namespace Crucible
 			actually registered in registry.
 		 *********************************************************************/
 		Archetype(ComponentSignature Signature, const ComponentRegistry& registry);
+
+		Archetype(const Archetype&) = delete;
+		Archetype& operator=(const Archetype&) = delete;
+		Archetype(Archetype&&) = default;
+		Archetype& operator=(Archetype&&) = default;
 
 		/*********************************************************************
 		 \brief  This archetype's exact component set.
@@ -266,4 +276,7 @@ namespace Crucible
 
 		std::vector<int>m_columnLookup;
 	};
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 }

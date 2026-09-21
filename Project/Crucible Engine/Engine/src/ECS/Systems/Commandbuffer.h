@@ -29,13 +29,18 @@
 #include <utility>
 #include <vector>
 
+#include "EngineExport.h"
 
 //
 #include "../World.h"
 
-namespace Crucible
+namespace  Crucible
 {
-	class CommandBuffer
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)
+#endif
+	class ENGINE_API CommandBuffer
 	{
 	public:
 
@@ -141,7 +146,9 @@ namespace Crucible
 
 		std::vector<Entity> m_spawnedEntities;
 	};
-
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 
 	class CommandBuffer::EntitySpawn

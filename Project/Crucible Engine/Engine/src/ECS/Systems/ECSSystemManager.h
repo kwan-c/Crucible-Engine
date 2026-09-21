@@ -31,27 +31,43 @@ namespace Crucible
 {
     /*************************************************************************
      \brief
-        Top-level driver that owns an ECSSystemRegistry and calls each
-        system's Init/Update/Shutdown in a fixed, sequential order.
+        Top-level driver for all registered ECS systems.
 
      \details
-        This is the class the engine's Core is expected to own and drive
-        each frame - it hides the per-system loop behind a single
-        Init()/Update(World&)/Shutdown() call.
+        Owns the ECSSystemRegistry and CommandBuffer. Registered systems are
+        sorted by priority during Init(), updated sequentially each frame,
+        and shut down in reverse execution order.
 
      \note
-        Currently drives only ECSSystemId::Physics
+        All systems must be registered before Init().
      *************************************************************************/
     class ECSSystemManager
     {
     public:
 
-        ECSSystemManager();
+        ECSSystemManager()= default;
 
         ECSSystemManager(const ECSSystemManager&) = delete;
         ECSSystemManager& operator=(const ECSSystemManager&) = delete;
         ECSSystemManager(ECSSystemManager&&) = delete;
         ECSSystemManager& operator=(ECSSystemManager&&) = delete;
+
+        /*********************************************************************
+         \brief
+            Registers a system into the ECS system manager.
+
+         \note
+            Register systems before Init() is called.
+         *********************************************************************/
+        template<typename T, typename... Args>
+        T& RegisterSystem(Args&&... args)
+        {
+            assert(!m_initialized &&"Systems must be registered before ECSSystemManager::Init()");
+
+            T& system = m_registry.RegisterSystem<T>( std::forward<Args>(args)...);
+            return system;
+        }
+
         /*********************************************************************
          \brief  Calls Init() on every registered system, in order.
          *********************************************************************/
@@ -69,13 +85,13 @@ namespace Crucible
         void Shutdown() noexcept;
 
         /*********************************************************************
-         \brief  Fetches a registered system by id, mutable access.
-         \param[in] id The system to fetch.
+         \brief  Fetches a registered system by index, mutable access.
+         \param[in] index The system to fetch.
          \return Reference to that system.
          *********************************************************************/
-        IECSSystem& GetSystem(ECSSystemId id)
+        IECSSystem& GetSystem(std::size_t index)
         {
-            return m_registry.GetSystem(id);
+            return m_registry.GetSystem(index);
         }
 
         /*********************************************************************
@@ -83,18 +99,22 @@ namespace Crucible
          \param[in] id The system to fetch.
          \return Const reference to that system.
          *********************************************************************/
-        const IECSSystem& GetSystem(ECSSystemId id)const
+        const IECSSystem& GetSystem(std::size_t index) const
         {
-            return m_registry.GetSystem(id);
+            return m_registry.GetSystem(index);
         }
 
+
     private:
-        static constexpr std::size_t kSystemCount = static_cast<std::size_t>(ECSSystemId::MAX);
+        bool m_initialized = false;
+
+        void RebuildUpdateOrder();
 
         ECSSystemRegistry m_registry;
 
         CommandBuffer m_commands;
 
-        std::array<ECSSystemId, kSystemCount> m_updateOrder;
+        // Stores registry indices in execution order.
+        std::vector<std::size_t> m_updateOrder;
     };
 }

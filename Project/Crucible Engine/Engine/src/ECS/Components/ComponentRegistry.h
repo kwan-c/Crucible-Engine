@@ -30,6 +30,7 @@
 //std libs
 #include <vector>
 
+#include "EngineExport.h"
 
 //header fils
 #include "ComponentInfo.h"
@@ -37,6 +38,10 @@
 
 namespace Crucible 
 {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)
+#endif
     /*************************************************************************
      \brief
         Owns one ComponentInfo per registered ComponentKind, indexed
@@ -53,7 +58,7 @@ namespace Crucible
         ComponentId has a slot from construction on - RegisterAll() only
         fills those slots in.
      *************************************************************************/
-    class ComponentRegistry
+    class ENGINE_API ComponentRegistry
     {
     public:
 
@@ -133,4 +138,7 @@ namespace Crucible
         ComponentId RegisterInfo(ComponentInfo info);
         std::vector<ComponentInfo> m_components;
     };
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 }

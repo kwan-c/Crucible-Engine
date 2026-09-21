@@ -83,6 +83,9 @@ namespace Crucible
 
 
     private:
+
+        void RegisterEngineSystems();
+
         void CleanUp();
 
         WindowManager* m_window;

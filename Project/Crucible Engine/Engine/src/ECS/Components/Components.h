@@ -71,7 +71,7 @@ namespace Crucible
 	 *************************************************************************/
 	struct RigidBody
 	{
-		Math::vec3 velocity{ 0.f,0.f,0.f };
+	    Math::vec3 velocity{ 0.f,0.f,0.f };
 		float mass = 1.f;
 	};
 

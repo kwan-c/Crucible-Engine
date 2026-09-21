@@ -22,49 +22,65 @@
 *
 *
 **************************************************************************/
-#include "ECSSystemManager.h"
+
 #include <algorithm>
+#include <numeric>
+
+#include "ECSSystemManager.h"
+
 #include <Diagnostics/Logger.h>
 
 namespace Crucible
 {
-	ECSSystemManager::ECSSystemManager()
+	void ECSSystemManager::RebuildUpdateOrder()
 	{
-		for (std::size_t i = 0; i < kSystemCount; ++i)
-		{
-			m_updateOrder[i] = static_cast<ECSSystemId>(i);
-		}
+		m_updateOrder.resize(m_registry.Size());
 
-		std::stable_sort(m_updateOrder.begin(), m_updateOrder.end(),
-			[this](ECSSystemId a, ECSSystemId b)
+		std::iota(m_updateOrder.begin(),m_updateOrder.end(),std::size_t{ 0 });
+
+
+		std::stable_sort(m_updateOrder.begin(),m_updateOrder.end(),
+			[this](std::size_t a, std::size_t b)
 			{
-				return m_registry.GetSystem(a).Priority() < m_registry.GetSystem(b).Priority();
-			});
+				return
+					m_registry.GetSystem(a).Priority()
+					<
+					m_registry.GetSystem(b).Priority();
+			}
+		);
 	}
 
 	void ECSSystemManager::Init()
 	{
-		for (ECSSystemId id : m_updateOrder)
+		RebuildUpdateOrder();
+
+		for (std::size_t index : m_updateOrder)
 		{
-			m_registry.GetSystem(id).Init();
+			m_registry.GetSystem(index).Init();
 		}
+		m_initialized = true;
 	}
 
 	void ECSSystemManager::Update(World& world)
 	{
 		try
 		{
-			for (ECSSystemId id : m_updateOrder)
+			for (std::size_t index : m_updateOrder)
 			{
-				m_registry.GetSystem(id).Update(world, m_commands);
+				m_registry
+					.GetSystem(index)
+					.Update(world, m_commands);
 			}
+
 			m_commands.Execute(world);
 		}
+
 		catch (const std::exception& e)
 		{
-			CRU_ERROR("ECSSystemManager::Update: this frame's ECS update failed and was aborted - {}", e.what());
+			CRU_ERROR("ECSSystemManager::Update: this frame's ECS update failed and was aborted - {}",e.what());
 			m_commands.Clear();
 		}
+
 		catch (...)
 		{
 			CRU_ERROR("ECSSystemManager::Update: this frame's ECS update failed with a non-std::exception and was aborted");
@@ -78,6 +94,7 @@ namespace Crucible
 		{
 			m_registry.GetSystem(*it).Shutdown();
 		}
+		m_initialized = false;
 	}
 
 }

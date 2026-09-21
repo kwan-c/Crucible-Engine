@@ -38,11 +38,18 @@
 #include <unordered_map>
 #include <vector>
 
+
+#include "EngineExport.h"
+
 #include "Archetype.h"
+
 
 namespace Crucible
 {
-
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)
+#endif
 	/*************************************************************************
 	 \brief
 		Owns every Archetype that currently exists and maps a
@@ -58,7 +65,7 @@ namespace Crucible
 		Non-copyable in practice: owns Archetypes via std::unique_ptr and
 		exposes only non-owning Archetype* elsewhere.
 	 *************************************************************************/
-	class ArchetypeRegistry
+	class ENGINE_API ArchetypeRegistry
 	{
 	public:
 		/*********************************************************************
@@ -72,6 +79,10 @@ namespace Crucible
 		 *********************************************************************/
 		explicit ArchetypeRegistry(const ComponentRegistry& components);
 
+		ArchetypeRegistry(const ArchetypeRegistry&) = delete;
+		ArchetypeRegistry& operator=(const ArchetypeRegistry&) = delete;
+		ArchetypeRegistry(ArchetypeRegistry&&) = delete;
+		ArchetypeRegistry& operator=(ArchetypeRegistry&&) = delete;
 
 		/*********************************************************************
 		 \brief  Looks up an existing archetype by signature.
@@ -245,4 +256,7 @@ namespace Crucible
 		// See IsIterating()/IterationGuard above.
 		std::uint32_t m_iterationDepth = 0;
 	};
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 }

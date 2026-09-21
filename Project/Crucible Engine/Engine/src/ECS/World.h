@@ -54,6 +54,11 @@
 
 namespace Crucible
 {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)
+#endif
+
 	/*************************************************************************
 	 \brief
 		Composes EntityManager + ComponentRegistry + ArchetypeRegistry into
@@ -304,7 +309,9 @@ namespace Crucible
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onRemoveHooks;
 		std::vector<std::function<void(World&, Entity)>> m_onDestroyHooks;
 	};
-
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 	template <typename T>
 	void World::OnComponentAdded(std::function<void(World&, Entity, T&)> callback)
 	{
