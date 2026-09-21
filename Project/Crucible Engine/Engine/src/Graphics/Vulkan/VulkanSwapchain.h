@@ -4,17 +4,15 @@
 #include "VulkanContext.h"
 #include "Systems/WindowManager.h"
 
-namespace Crucible
-{
-    // Forward Declarations
-    //class VulkanContext;
-    //class WindowManager;
+namespace Crucible {
 
     class VulkanSwapchain {
 
     public:
-        void Init(VulkanContext& context, WindowManager& window);
-        void Recreate(VulkanContext& context, WindowManager& window);
+        VulkanSwapchain(VulkanContext& context, WindowManager& window);
+        ~VulkanSwapchain();
+
+        void Recreate(VulkanContext& context);
         void CleanUp();
 
         const vk::raii::SwapchainKHR&           GetSwapchain() const;
@@ -26,15 +24,18 @@ namespace Crucible
         VkFormat                                GetColorAttachmentFormat() const;
 
     private:
-        void CreateSwapchain(VulkanContext& context, WindowManager& window);
+        void CreateSwapchain(VulkanContext& context);
         void CreateImageViews(VulkanContext& context);
 
         vk::SurfaceFormatKHR    ChooseSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const& formats);
         vk::PresentModeKHR      ChoosePresentMode(std::vector<vk::PresentModeKHR> const& modes);
-        vk::Extent2D            ChooseExtent(vk::SurfaceCapabilitiesKHR const& capabilities, WindowManager& window);
+        vk::Extent2D            ChooseExtent(vk::SurfaceCapabilitiesKHR const& capabilities);
 
         uint32_t                ChooseMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities);
+    
     private:
+        WindowManager&                      m_window;
+
         vk::raii::SwapchainKHR              m_swapchain = nullptr;
         std::vector<vk::Image>              m_images;
         std::vector<vk::raii::ImageView>    m_imageViews;
@@ -43,6 +44,6 @@ namespace Crucible
         vk::SurfaceFormatKHR                m_surfaceFormat{};
         VkFormat                            m_colorAttachmentFormat = VK_FORMAT_UNDEFINED;
 
-    };  // VulkanSwapchain class
+    };  // VULKAN SWAPCHAIN CLASS
 
 }   // NAMESPACE CRUCIBLE

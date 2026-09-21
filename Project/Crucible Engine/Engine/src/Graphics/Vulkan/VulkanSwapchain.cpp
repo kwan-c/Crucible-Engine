@@ -18,45 +18,47 @@ namespace Crucible {
     // VULKAN SWAPCHAIN
     // ------------------------------------------------------------------------------------------------------------- //
 
-    void VulkanSwapchain::Init(VulkanContext& context, WindowManager& window) {
+    VulkanSwapchain::VulkanSwapchain(VulkanContext& context, WindowManager& window) : m_window { window } {
 
-        CreateSwapchain(context, window);
+        CreateSwapchain(context);
         CreateImageViews(context);
 
-    }   // VulkanSwapchain::Init()
+    }   // VulkanSwapchain::VulkanSwapchain()
 
-    void VulkanSwapchain::Recreate(VulkanContext& context, WindowManager& window) {
+    VulkanSwapchain::~VulkanSwapchain() { CleanUp(); }
+
+    void VulkanSwapchain::Recreate(VulkanContext& context) {
 
         // Handle minimization.
         int width = 0, height = 0;
-        glfwGetFramebufferSize(window.GetNativeHandle(), &width, &height);
-        while ((width == 0 || height == 0) && !glfwWindowShouldClose(window.GetNativeHandle())) {
-            glfwGetFramebufferSize(window.GetNativeHandle(), &width, &height);
+        glfwGetFramebufferSize(m_window.GetNativeHandle(), &width, &height);
+        while ((width == 0 || height == 0) && !glfwWindowShouldClose(m_window.GetNativeHandle())) {
+            glfwGetFramebufferSize(m_window.GetNativeHandle(), &width, &height);
             glfwWaitEvents();
         }
-        if (glfwWindowShouldClose(window.GetNativeHandle())) {
+        if (glfwWindowShouldClose(m_window.GetNativeHandle())) {
             return;
         }
 
         context.GetDevice().waitIdle();
         CleanUp();
 
-        CreateSwapchain(context, window);
+        CreateSwapchain(context);
         CreateImageViews(context);
 
     }   // VulkanSwapchain::Recreate()
 
-    void VulkanSwapchain::CleanUp() { 
+    void VulkanSwapchain::CleanUp() {
 
         m_imageViews.clear();
-        m_swapchain = nullptr; 
+        m_swapchain = nullptr;
 
     }   // VulkanSwapchain::CleanUp()
 
-    void VulkanSwapchain::CreateSwapchain(VulkanContext& context, WindowManager& window) {
+    void VulkanSwapchain::CreateSwapchain(VulkanContext& context) {
 
         vk::SurfaceCapabilitiesKHR surfaceCapabilities = context.GetPhysicalDevice().getSurfaceCapabilitiesKHR(context.GetSurface());
-        m_extent = ChooseExtent(surfaceCapabilities, window);
+        m_extent = ChooseExtent(surfaceCapabilities);
         uint32_t minImageCount = ChooseMinImageCount(surfaceCapabilities);
 
         std::vector<vk::SurfaceFormatKHR> availableFormats = context.GetPhysicalDevice().getSurfaceFormatsKHR(context.GetSurface());
@@ -128,13 +130,13 @@ namespace Crucible {
 
     }   // VulkanSwapchain::ChoosePresentMode()
 
-    vk::Extent2D VulkanSwapchain::ChooseExtent(vk::SurfaceCapabilitiesKHR const& capabilities, WindowManager& window) {
+    vk::Extent2D VulkanSwapchain::ChooseExtent(vk::SurfaceCapabilitiesKHR const& capabilities) {
 
         if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
             return capabilities.currentExtent;
         }
         int width{}, height{};
-        glfwGetFramebufferSize(window.GetNativeHandle(), &width, &height);
+        glfwGetFramebufferSize(m_window.GetNativeHandle(), &width, &height);
 
         return {
             std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
@@ -152,6 +154,5 @@ namespace Crucible {
         return minImageCount;
 
     }   // VulkanSwapchain::::ChooseSwapMinImageCount()
-
 
 }   // NAMESPACE CRUCIBLE

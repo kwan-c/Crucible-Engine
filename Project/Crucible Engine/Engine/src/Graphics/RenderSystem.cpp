@@ -25,11 +25,11 @@ namespace {
 
 namespace Crucible {
 
-    Renderer::Renderer(WindowManager& window) : m_window{ window } { InitVulkan(); }
-    Renderer::~Renderer() {
-        m_context.ShutDown();
-        m_swapchain.CleanUp();
-    }
+    Renderer::Renderer(WindowManager& window) 
+        : m_window{ window }, m_context{ m_window }, m_swapchain{ m_context, m_window } 
+    { InitVulkan(); }
+
+    Renderer::~Renderer() { m_context.ShutDown(); }
 
     void Renderer::Update(float dt) {
         (void)dt;
@@ -47,76 +47,24 @@ namespace Crucible {
 
     void Renderer::InitVulkan() {
 
-        m_context.Init(m_window);
-        m_swapchain.Init(m_context, m_window);
-        
         CreateGraphicsPipeline();
 
-        CreateCommandPool();
-        CreateVertexBuffer();
+        m_frameManager.Init(m_context, m_swapchain);
 
-        CreateCommandBuffers();
-        CreateSyncObjects();
+        CreateVertexBuffer();
 
     }   // Renderer::InitVulkan()
 
     void Renderer::DrawFrame() {
 
-        // Blocks CPU until previous frame is complete.
-        auto fenceResult = m_context.GetDevice().waitForFences(*m_inFlightFences[m_frameIndex], vk::True, UINT64_MAX);
-        if (fenceResult != vk::Result::eSuccess)
-        {
-            throw std::runtime_error("[Renderer] Failed to wait for fence.");
-        }
-
-        // Obtain image from swap chain.
-        auto [result, imageIndex] = m_swapchain.GetSwapchain().acquireNextImage(UINT64_MAX, *m_presentCompleteSemaphores[m_frameIndex], nullptr);
-
-        // Handle out-of-date or suboptimal swap chains.
-        if (result == vk::Result::eErrorOutOfDateKHR) {
-            m_swapchain.Recreate(m_context, m_window);
-            return;
-        }
-        if (result != vk::Result::eSuccess && result != vk::Result::eSuboptimalKHR) {
-            assert(result == vk::Result::eTimeout || result == vk::Result::eNotReady);
-            throw std::runtime_error("[Renderer] Failed to acquire swap chain image.");
-        }
-        m_context.GetDevice().resetFences(*m_inFlightFences[m_frameIndex]);
+        bool err = false;
+        FrameContext fc = m_frameManager.BeginFrame(m_context, m_swapchain, err);
+        if (err) { return; }
 
         // Record and submit command buffer.
-        RecordCommandBuffer(imageIndex);
-        vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
-        const vk::SubmitInfo   submitInfo{
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &*m_presentCompleteSemaphores[m_frameIndex],
-            .pWaitDstStageMask = &waitDestinationStageMask,
-            .commandBufferCount = 1,
-            .pCommandBuffers = &*m_commandBuffers[m_frameIndex],
-            .signalSemaphoreCount = 1,
-            .pSignalSemaphores = &*m_renderFinishedSemaphores[imageIndex]
-        };
-        m_context.GetGraphicsQueue().submit(submitInfo, *m_inFlightFences[m_frameIndex]);
+        RecordCommandBuffer(fc);
 
-        // Submit result back to swap chain.
-        const vk::PresentInfoKHR presentInfoKHR{
-            .waitSemaphoreCount = 1,
-            .pWaitSemaphores = &*m_renderFinishedSemaphores[imageIndex],
-            .swapchainCount = 1,
-            .pSwapchains = &*m_swapchain.GetSwapchain(),
-            .pImageIndices = &imageIndex
-        };
-        result = m_context.GetGraphicsQueue().presentKHR(presentInfoKHR);
-        if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || m_window.m_framebufferResized) {
-            m_window.m_framebufferResized = false;
-            m_swapchain.Recreate(m_context, m_window);
-        }
-        else {
-            // There are no other success codes than eSuccess; on any error code, presentKHR already threw an exception.
-            assert(result == vk::Result::eSuccess);
-        }
-
-        // Advance to next frame.
-        m_frameIndex = (m_frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
+        m_frameManager.EndFrame(m_context, m_swapchain, fc, m_window);
 
     }   // Renderer::DrawFrame()
 
@@ -223,36 +171,13 @@ namespace Crucible {
 
     }   // Renderer::CreateGraphicsPipeline()
 
-    void Renderer::CreateCommandPool() {
+    void Renderer::RecordCommandBuffer(FrameContext& fc) {
 
-        vk::CommandPoolCreateInfo poolInfo{
-            .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer,
-            .queueFamilyIndex = m_context.GetGraphicsQueueFamily()
-        };
-        m_commandPool = vk::raii::CommandPool(m_context.GetDevice(), poolInfo);
-
-    }   // Renderer::CreateCommandPool()
-
-    void Renderer::CreateCommandBuffers() {
-
-        vk::CommandBufferAllocateInfo allocInfo{
-            .commandPool        = m_commandPool,
-            .level              = vk::CommandBufferLevel::ePrimary,
-            .commandBufferCount = MAX_FRAMES_IN_FLIGHT
-        };
-        m_commandBuffers = vk::raii::CommandBuffers(m_context.GetDevice(), allocInfo);
-
-    }   // Renderer::CreateCommandBuffer()
-
-    void Renderer::RecordCommandBuffer(uint32_t imageIndex) {
-
-        auto& commandBuffer = m_commandBuffers[m_frameIndex];
-
-        commandBuffer.begin({});
+        fc.frame.commandBuffer.begin({});
 
         // Before starting rendering, transition the swapchain image to vk::ImageLayout::eColorAttachmentOptimal
         TransitionImageLayout(
-            imageIndex,
+            fc,
             vk::ImageLayout::eUndefined,
             vk::ImageLayout::eColorAttachmentOptimal,
             {},                                                        // srcAccessMask (no need to wait for previous operations)
@@ -263,7 +188,7 @@ namespace Crucible {
 
         vk::ClearValue              clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
         vk::RenderingAttachmentInfo attachmentInfo = {
-            .imageView = m_swapchain.GetImageViews()[imageIndex],
+            .imageView = m_swapchain.GetImageViews()[fc.imageIndex],
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eStore,
@@ -277,20 +202,20 @@ namespace Crucible {
             .pColorAttachments = &attachmentInfo
         };
 
-        commandBuffer.beginRendering(renderingInfo);
+        fc.frame.commandBuffer.beginRendering(renderingInfo);
 
-        commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_graphicsPipeline);
-        commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(m_swapchain.GetExtent().width), static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
-        commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapchain.GetExtent()));
+        fc.frame.commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_graphicsPipeline);
+        fc.frame.commandBuffer.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(m_swapchain.GetExtent().width), static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
+        fc.frame.commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapchain.GetExtent()));
+        
+        fc.frame.commandBuffer.bindVertexBuffers(0, *m_vertexBuffer, { 0 });
+        fc.frame.commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
 
-        commandBuffer.bindVertexBuffers(0, *m_vertexBuffer, { 0 });
-        commandBuffer.draw(static_cast<uint32_t>(vertices.size()), 1, 0, 0);
-
-        commandBuffer.endRendering();
+        fc.frame.commandBuffer.endRendering();
 
         // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
         TransitionImageLayout(
-            imageIndex,
+            fc,
             vk::ImageLayout::eColorAttachmentOptimal,
             vk::ImageLayout::ePresentSrcKHR,
             vk::AccessFlagBits2::eColorAttachmentWrite,             // srcAccessMask
@@ -299,22 +224,9 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eBottomOfPipe               // dstStage
         );
 
-        commandBuffer.end();
+        fc.frame.commandBuffer.end();
 
     }   // Renderer::RecordCommandBuffer()
-
-    void Renderer::CreateSyncObjects() {
-
-        assert(m_presentCompleteSemaphores.empty() && m_renderFinishedSemaphores.empty() && m_inFlightFences.empty());
-        for (size_t i = 0; i < m_swapchain.GetImages().size(); ++i) {
-            m_renderFinishedSemaphores.emplace_back(m_context.GetDevice(), vk::SemaphoreCreateInfo());
-        }
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
-            m_presentCompleteSemaphores.emplace_back(m_context.GetDevice(), vk::SemaphoreCreateInfo());
-            m_inFlightFences.emplace_back(m_context.GetDevice(), vk::FenceCreateInfo{ .flags = vk::FenceCreateFlagBits::eSignaled });
-        }
-
-    }   // Renderer::CreateSyncObjects()
 
     void Renderer::CreateVertexBuffer() {
 
@@ -339,8 +251,6 @@ namespace Crucible {
         void* data = m_vertexBufferMemory.mapMemory(0, bufferInfo.size);
         memcpy(data, vertices.data(), bufferInfo.size);
         m_vertexBufferMemory.unmapMemory();
-
-
 
     }   // Renderer::CreateVertexBuffer()
 
@@ -369,7 +279,7 @@ namespace Crucible {
 
     }   // Renderer::CreateShaderModule()
 
-    void Renderer::TransitionImageLayout(uint32_t imageIndex, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
+    void Renderer::TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
         vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
         vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask) {
 
@@ -382,7 +292,7 @@ namespace Crucible {
             .newLayout = new_layout,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = m_swapchain.GetImages()[imageIndex],
+            .image = m_swapchain.GetImages()[fc.imageIndex],
             .subresourceRange = {
                    .aspectMask = vk::ImageAspectFlagBits::eColor,
                    .baseMipLevel = 0,
@@ -395,7 +305,8 @@ namespace Crucible {
             .imageMemoryBarrierCount = 1,
             .pImageMemoryBarriers = &barrier
         };
-        m_commandBuffers[m_frameIndex].pipelineBarrier2(dependency_info);
+        fc.frame.commandBuffer.pipelineBarrier2(dependency_info);
+
     }   // Renderer::TransitionImageLayout()
 
 }   // NAMESPACE CRUCIBLE

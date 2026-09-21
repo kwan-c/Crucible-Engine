@@ -19,6 +19,7 @@
  
 #include "Vulkan/VulkanContext.h"
 #include "Vulkan/VulkanSwapchain.h"
+#include "Vulkan/VulkanFrameManager.h"
 
 namespace {
     struct RenderData {
@@ -69,16 +70,14 @@ namespace Crucible {
         // Core functions
         void InitVulkan();
 
-        VulkanContext   m_context;
-        VulkanSwapchain m_swapchain;
+        VulkanContext       m_context;
+        VulkanSwapchain     m_swapchain;
+        VulkanFrameManager  m_frameManager;
 
         // Vulkan helpers
         void CreateGraphicsPipeline();
 
-        void CreateCommandPool();
-        void CreateCommandBuffers();
-        void RecordCommandBuffer(uint32_t imageIndex);
-        void CreateSyncObjects();
+        void RecordCommandBuffer(FrameContext& fc);
 
         // Input Buffers
         void CreateVertexBuffer();
@@ -105,7 +104,7 @@ namespace Crucible {
 
 
 
-        void TransitionImageLayout(uint32_t imageIndex, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
+        void TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
                                    vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
                                    vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask);
 

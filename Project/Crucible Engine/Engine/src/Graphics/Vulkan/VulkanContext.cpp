@@ -35,7 +35,7 @@ namespace Crucible {
     // VULKAN CONTEXT
     // ------------------------------------------------------------------------------------------------------------- //
 
-    void VulkanContext::Init(WindowManager& window) {
+    VulkanContext::VulkanContext(WindowManager& window) {
 
         CreateInstance(window);
         SetupDebugMessenger();
@@ -43,13 +43,13 @@ namespace Crucible {
         PickPhysicalDevice();
         CreateLogicalDevice();
 
-    }   // VulkanContext::Init()
+    }   // VulkanContext::VulkanContext()
 
     void VulkanContext::ShutDown() {
 
         m_device.waitIdle();
 
-    }   // VulkanContext::ShutDown()
+    }   // VulkanContext::~VulkanContext()
 
     void VulkanContext::CreateInstance(WindowManager& window) {
 

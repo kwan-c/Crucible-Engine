@@ -17,10 +17,7 @@ namespace Crucible {
     class VulkanContext {
 
     public:
-        VulkanContext() = default;
-        ~VulkanContext() = default;
-
-        void Init(WindowManager& window);
+        VulkanContext(WindowManager& window);
         void ShutDown();
 
         const vk::raii::Instance&       GetInstance() const;
@@ -59,6 +56,6 @@ namespace Crucible {
 
         uint32_t                            m_queueIndex = ~0u;
 
-    };
+    };  // VULKAN CONTEXT CLASS
 
 }   // NAMESPACE CRUCIBLE
