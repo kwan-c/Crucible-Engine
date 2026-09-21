@@ -13,9 +13,9 @@ namespace Crucible {
 
 	class ImGuiLayer : public Layer {
 	public:
-		explicit ImGuiLayer(Core& core) : m_core{ core } {}
+		explicit ImGuiLayer(const Renderer& ren) : m_context{ ren.GetImguiContext()}, m_ren{ren} {}
 
-		void OnAttach() override { ImGuiManager::Init(m_core); }
+		void OnAttach() override { ImGuiManager::Init(m_context); }
 
 		// Build the UI for this frame (no GPU work yet).
 		void OnUpdate(float) override {
@@ -25,12 +25,13 @@ namespace Crucible {
 		}
 
 		// Called by the renderer inside the open render pass.
-		void OnRender() override { ImGuiManager::Draw(m_core); }
+		void OnRender() override { ImGuiManager::Draw(m_ren); }
 
 		void OnDetach() override { ImGuiManager::Exit(); }
 
 	private:
-		Core& m_core;
+		const ImGuiVulkanContext&	m_context;
+		const Renderer&				m_ren;
 	};
 
 }

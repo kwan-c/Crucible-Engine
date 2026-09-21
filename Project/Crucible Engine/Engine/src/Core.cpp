@@ -77,7 +77,6 @@ namespace Crucible {
     void Core::CleanUp() {
         m_systems.Shutdown();
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
-        if (m_renderer) m_renderer->WaitIdle();
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
     }

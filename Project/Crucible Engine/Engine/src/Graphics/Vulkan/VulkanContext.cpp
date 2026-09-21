@@ -37,7 +37,7 @@ namespace Crucible {
 
     VulkanContext::VulkanContext(WindowManager& window) {
 
-        CreateInstance(window);
+        CreateInstance();
         SetupDebugMessenger();
         CreateSurface(window);
         PickPhysicalDevice();
@@ -51,7 +51,7 @@ namespace Crucible {
 
     }   // VulkanContext::~VulkanContext()
 
-    void VulkanContext::CreateInstance(WindowManager& window) {
+    void VulkanContext::CreateInstance() {
 
         constexpr vk::ApplicationInfo appInfo{
             .pApplicationName = "Mekanomachia",

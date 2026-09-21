@@ -29,7 +29,7 @@ namespace Crucible {
         uint32_t                        GetGraphicsQueueFamily() const;
 
     private:
-        void CreateInstance(WindowManager& window);
+        void CreateInstance();
         void SetupDebugMessenger();
         void CreateSurface(WindowManager& window);
 
