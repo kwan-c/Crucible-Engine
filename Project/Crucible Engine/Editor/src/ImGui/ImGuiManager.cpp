@@ -20,6 +20,11 @@
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_Hierarchy.h"
+#include "ImGui/Panels/ImGuiPanel_SceneView.h"
+#include "ImGui/Panels/ImGuiPanel_GameView.h"
+#include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
+#include "ImGui/Panels/ImGuiPanel_Console.h"
 
 
 std::unique_ptr<Crucible::EditorManager> Crucible::EditorManager::s_Instance;
@@ -64,14 +69,18 @@ namespace {
 		ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
 		ImGui::DockBuilderSetNodeSize(dockspace, size);
 
-		// Split order: Left, Right (full height), then Top, Bottom (inside what is left).
-		// Center is whatever remains.
+		// Split order matches Unity's default layout:
+		//   Right  (full height)                -> Inspector
+		//   Bottom (under everything but Right) -> Asset Browser / Console
+		//   Left   (above Bottom)               -> Hierarchy
+		//   Top    (above Center)
+		// Center is whatever remains                -> Scene / Game
 		struct Split { DockArea area; ImGuiDir dir; };
 		constexpr Split splits[] = {
-			{ DockArea::Left,   ImGuiDir_Left  },
 			{ DockArea::Right,  ImGuiDir_Right },
-			{ DockArea::Top,    ImGuiDir_Up    },
 			{ DockArea::Bottom, ImGuiDir_Down  },
+			{ DockArea::Left,   ImGuiDir_Left  },
+			{ DockArea::Top,    ImGuiDir_Up    },
 		};
 
 		ImGuiID areaId[5] = {};   // indexed by static_cast<int>(DockArea)
@@ -257,13 +266,15 @@ Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 
 		// Add in Editor Panels here...
 		// 
-		//s_Instance->m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<EditorScene>();
+		// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
+		s_Instance->m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>();
+		s_Instance->m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>();
 		s_Instance->m_panels[ImguiPanels::MENU] = std::make_shared<Menu>();
-		//s_Instance->m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>();
+		s_Instance->m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>();
 		s_Instance->m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>();
-		//s_Instance->m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
+		s_Instance->m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
+		s_Instance->m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 		//s_Instance->m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();
-		//s_Instance->m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameScene>();
 
 		for (auto& panel : s_Instance->m_panels)
 			panel.second->Init();

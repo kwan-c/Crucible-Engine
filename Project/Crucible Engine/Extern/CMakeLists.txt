@@ -68,6 +68,15 @@ target_include_directories(vma SYSTEM INTERFACE vma/include)
 add_library(xmath INTERFACE)
 target_include_directories(xmath SYSTEM INTERFACE xmath/source)
 
+# ------------------------------------------------------------ #
+# XRESOURCE (guid + mgr, header-only)
+# ------------------------------------------------------------ #
+
+add_library(xresource INTERFACE)
+target_include_directories(xresource SYSTEM INTERFACE
+    xresource_mgr/source
+    xresource_mgr/source/dependencies/xresource_guid/source
+)
 
 # ----------------------------------- #
 # FMOD
@@ -174,6 +183,7 @@ target_link_libraries(EngineThirdParty INTERFACE
 
     # Add more here...
     xmath
+    xresource
     fmod
     Jolt
     vma

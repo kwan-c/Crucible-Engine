@@ -58,7 +58,7 @@ namespace Crucible {
 
 		bool     m_docked = false;              // true: start docked in m_dockArea, false: start as a floating window
 		DockArea m_dockArea = DockArea::Center; // where to dock (ignored when m_docked is false)
-		float    m_dockRatio = 0.25f;           // fraction of the space still free when this area is split off (order: Left, Right, Top, Bottom); the first panel to use an area decides
+		float    m_dockRatio = 0.25f;           // fraction of the space still free when this area is split off (order: Right, Bottom, Left, Top); the first panel to use an area decides
 
 
 		/*!

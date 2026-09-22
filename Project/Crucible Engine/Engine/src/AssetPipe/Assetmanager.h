@@ -39,9 +39,12 @@
 #include <string>
 #include <unordered_map>
 #include <vector>
- 
+
+#include <xresource_guid.h>
+
 #include "EngineExport.h"
- 
+#include "AssetRegistry.h"
+
 namespace Crucible {
  
     /*************************************************************************
@@ -118,6 +121,15 @@ namespace Crucible {
         AssetType      type          = AssetType::Unknown;
         std::uintmax_t sizeBytes     = 0;                   // Size on disk, recorded during the scan
         std::int64_t   lastWriteTime = 0;                   //!< Filesystem timestamp, for future hot reload
+
+        // Stable identity, loaded from(or written to) the asset's .meta file.
+        // Unlike virtualPath this survives the file being renamed or moved, so
+        // it is what scenes, prefabs and materials should reference.
+        xresource::instance_guid guid;
+
+        // FNV-1a hash of the file's contents. Used to recognise an asset whose
+        // filename changed: same bytes, same asset, keep the same guid.
+        std::uint64_t contentHash = 0;
     };
  
     /*************************************************************************
@@ -363,6 +375,44 @@ namespace Crucible {
          *********************************************************************/
         std::size_t GetAssetCount() const { return m_index.size(); }
  
+        // ===================================================================
+        //  IDENTITY - stable guids, independent of filename.
+        // ===================================================================
+
+        /*********************************************************************
+         \brief
+            Look up an asset by its stable guid.
+
+         \param[in]
+            id The asset's guid, as stored in its .meta file.
+         \return
+            Pointer to the entry, or nullptr if no asset carries that guid.
+
+         \details
+            This is the lookup a scene or prefab file uses. Because the guid
+            does not change when a file is renamed or moved, a reference saved
+            weeks ago still resolves.
+
+            Delegates to AssetRegistry for the guid -> path step, then looks
+            that path up in the index.
+         *********************************************************************/
+        const AssetEntry* FindByGuid(xresource::instance_guid id) const;
+
+        /*********************************************************************
+         \brief  The guid of an asset, found by path.
+         \param[in] virtualPath Path relative to the asset root.
+         \return The asset's guid, or an empty guid if it is not indexed.
+         *********************************************************************/
+        xresource::instance_guid GetGuid(const std::string& virtualPath) const;
+
+        /*********************************************************************
+         \brief  The registry that owns guids and .meta files.
+         \return Const reference, for guid -> path lookups.
+         \note
+            Guid text formatting lives there too: AssetRegistry::GuidToString.
+         *********************************************************************/
+        const AssetRegistry& GetRegistry() const { return m_registry; }
+
         /*********************************************************************
          \brief
             Convert a virtual path into a real filesystem path.
@@ -649,6 +699,10 @@ namespace Crucible {
         // The index: every file that exists.
         std::vector<AssetEntry>                      m_index;
         std::unordered_map<std::string, std::size_t> m_lookup;  // virtualPath -> index
+
+        // Owns every asset's permanent guid and the .meta files that store
+        // them. Reconciled at the end of each Refresh().
+        AssetRegistry m_registry;
  
         // The cache: only what has actually been read.
         std::unordered_map<std::string, std::shared_ptr<const AssetData>> m_cache;

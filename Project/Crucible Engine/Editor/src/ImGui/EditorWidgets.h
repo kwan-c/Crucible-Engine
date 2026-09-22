@@ -1,0 +1,69 @@
+#pragma once
+/*!
+* @file			EditorWidgets.h
+* @brief		Small drawing helpers shared by several editor panels.
+*
+* Header-only on purpose: these are a few lines each and are used by the
+* Scene / Game views and the Asset Browser.
+*/
+
+#include <imgui.h>
+
+namespace Crucible::EditorWidgets {
+
+	// Drag-and-drop payload type used when an asset is dragged out of the Asset Browser.
+	// The payload data is the asset's virtual path as a null-terminated string,
+	// e.g. "Textures/player.png". Any panel can accept it with:
+	//		if (ImGui::BeginDragDropTarget()) {
+	//			if (auto* p = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) {
+	//				char const* virtualPath = static_cast<char const*>(p->Data);
+	//			}
+	//			ImGui::EndDragDropTarget();
+	//		}
+	inline constexpr char const* kAssetPayload = "CRUCIBLE_ASSET";
+
+	// A small toolbar button that stays highlighted while 'active' is true.
+	inline bool ToolbarToggle(char const* label, bool active)
+	{
+		if (active)
+			ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
+		bool const pressed = ImGui::SmallButton(label);
+		if (active)
+			ImGui::PopStyleColor();
+		return pressed;
+	}
+
+	// Fills [min, max] with a dark background, a faint grid and two centred lines of text.
+	// Stand-in for a render target until the renderer can draw the scene into a texture.
+	inline void DrawViewportPlaceholder(ImVec2 min, ImVec2 max, char const* title, char const* subtitle)
+	{
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		dl->AddRectFilled(min, max, IM_COL32(30, 30, 32, 255));
+
+		constexpr float step = 32.0f;
+		ImU32 const gridColor = IM_COL32(255, 255, 255, 12);
+		for (float x = min.x; x < max.x; x += step) dl->AddLine(ImVec2(x, min.y), ImVec2(x, max.y), gridColor);
+		for (float y = min.y; y < max.y; y += step) dl->AddLine(ImVec2(min.x, y), ImVec2(max.x, y), gridColor);
+
+		ImVec2 const centre((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+		ImVec2 const titleSize = ImGui::CalcTextSize(title);
+		ImVec2 const subSize = ImGui::CalcTextSize(subtitle);
+		float const line = ImGui::GetTextLineHeightWithSpacing();
+
+		dl->AddText(ImVec2(centre.x - titleSize.x * 0.5f, centre.y - line), ImGui::GetColorU32(ImGuiCol_Text), title);
+		dl->AddText(ImVec2(centre.x - subSize.x * 0.5f, centre.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), subtitle);
+	}
+
+	// Moves the cursor in by a small margin so a toolbar row does not touch the window edge
+	// (the viewport panels use zero window padding so the image can fill the window).
+	inline void BeginToolbarRow()
+	{
+		ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 6.0f);
+		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
+	}
+
+	inline void EndToolbarRow()
+	{
+		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
+	}
+}
