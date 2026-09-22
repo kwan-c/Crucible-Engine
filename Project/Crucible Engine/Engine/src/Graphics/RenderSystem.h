@@ -20,7 +20,7 @@
 #include "Vulkan/VulkanSwapchain.h"
 #include "Vulkan/VulkanPipeline.h"
 #include "Vulkan/VulkanFrameManager.h"
-#include "Vulkan/VulkanBuffer.h"
+#include "Vulkan/VulkanResource.h"
 
 // Imgui
 #include "Vulkan/ImGuiContext.h"
@@ -96,6 +96,7 @@ namespace Crucible {
 
         VulkanBuffer                m_vertexBuffer;
         VulkanBuffer                m_indexBuffer;
+        VulkanImage                 m_image;
 
         std::vector<VulkanBuffer>   m_uniformBuffers;
         std::vector<void*>          m_uniformBuffersMapped;
@@ -111,6 +112,14 @@ namespace Crucible {
         void CreateDescriptorPool();
         void CreateDescriptorSets();
 
+        void CreateTextureImage(const std::string&);
+        void CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
+
+        vk::raii::CommandBuffer BeginSingleTimeCommand();
+        void EndSingleTimeCommand(vk::raii::CommandBuffer&& cmdBuff);
+
+        void TransitionImageLayout_I(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image, 
+                                   vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
         void TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
                                    vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
                                    vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask);

@@ -8,6 +8,9 @@
 #include <algorithm>    // clamp
 #include <chrono>
 
+#define STB_IMAGE_IMPLEMENTATION
+#include <stb_image.h>
+
 #ifdef NDEBUG
 constexpr bool enableValidationLayers = false;
 #else
@@ -22,6 +25,8 @@ namespace Crucible {
         m_pipeline.CreateDescriptorSetLayout(m_context);
         m_pipeline.CreatePipeline(m_context, m_swapchain);
         m_frameManager.Init(m_context, m_swapchain);
+
+        CreateTextureImage("../../../Assets/Textures/Orange_Milk.jpg");
 
         CreateVertexBuffer();
         CreateIndexBuffer();
@@ -70,6 +75,7 @@ namespace Crucible {
 
         UniformBufferObject ubo{};
         ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+        ubo.model = rotate(ubo.model, time * glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
         ubo.view = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
         ubo.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(m_swapchain.GetExtent().width) / static_cast<float>(m_swapchain.GetExtent().height), 0.1f, 10.0f);
 
@@ -245,6 +251,115 @@ namespace Crucible {
         }
 
     }   // Renderer::CreateDescriptorSets()
+
+    void Renderer::CreateTextureImage(const std::string& path) {
+
+        int texWidth{}, texHeight{}, texChannels{};
+        stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+        
+        vk::DeviceSize imageSize = texWidth * texHeight * 4;
+        if (!pixels)
+        {
+            throw std::runtime_error("[Renderer] Failed to load texture image: (" + path + ")");
+        }
+
+        VulkanBuffer stagingBuff;
+        stagingBuff.Create(m_context, imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        void* data = stagingBuff.GetMemory().mapMemory(0, imageSize);
+        memcpy(data, pixels, imageSize);
+        stagingBuff.GetMemory().unmapMemory();
+
+        stbi_image_free(pixels);
+
+        m_image.Create(m_context, texWidth, texHeight, 
+            vk::Format::eR8G8B8A8Srgb,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+        vk::raii::CommandBuffer commandBuffer = BeginSingleTimeCommand();
+
+        TransitionImageLayout_I(commandBuffer, m_image.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
+        CopyBufferToImage(commandBuffer, stagingBuff.GetBuffer(), m_image.GetImage(), static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight));
+        TransitionImageLayout_I(commandBuffer, m_image.GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
+        
+        EndSingleTimeCommand(std::move(commandBuffer));
+
+    }   // Renderer::CreateTextureImage()
+
+    void Renderer::CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height) {
+
+        vk::BufferImageCopy region{
+            .bufferOffset = 0,
+            .bufferRowLength = 0,
+            .bufferImageHeight = 0,
+            .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+            .imageOffset = {0, 0, 0},
+            .imageExtent = {width, height, 1} 
+        };
+        commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
+
+    }   // Renderer::CopyBufferToImage()
+
+
+    vk::raii::CommandBuffer Renderer::BeginSingleTimeCommand() {
+
+        vk::CommandBufferAllocateInfo allocInfo{ .commandPool = m_frameManager.GetCommandPool(), .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1};
+        vk::raii::CommandBuffer commandBuffer = std::move(vk::raii::CommandBuffers(m_context.GetDevice(), allocInfo).front());
+
+        vk::CommandBufferBeginInfo beginInfo{ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit };
+        commandBuffer.begin(beginInfo);
+
+        return std::move(commandBuffer);
+
+    }   // Renderer::BeginSingleTimeCommand()
+
+    void Renderer::EndSingleTimeCommand(vk::raii::CommandBuffer&& cmdBuff) {
+
+        cmdBuff.end();
+
+        vk::SubmitInfo submitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*cmdBuff };
+        m_context.GetGraphicsQueue().submit(submitInfo, nullptr);
+        m_context.GetGraphicsQueue().waitIdle();
+
+    }   // Renderer::EndSingleTimeCommand()
+
+    void Renderer::TransitionImageLayout_I(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image,
+        vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
+
+        vk::ImageMemoryBarrier barrier{ .oldLayout = oldLayout,
+                                       .newLayout = newLayout,
+                                       .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
+                                       .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
+                                       .image = image,
+                                       .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1} };
+
+        vk::PipelineStageFlags sourceStage;
+        vk::PipelineStageFlags destinationStage;
+
+        if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal)
+        {
+            barrier.srcAccessMask = {};
+            barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+            sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+            destinationStage = vk::PipelineStageFlagBits::eTransfer;
+        }
+        else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
+        {
+            barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+            barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+            sourceStage = vk::PipelineStageFlagBits::eTransfer;
+            destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+        }
+        else
+        {
+            throw std::invalid_argument("unsupported layout transition!");
+        }
+        commandBuffer.pipelineBarrier(sourceStage, destinationStage, {}, {}, {}, barrier);
+
+    }   // Renderer::TransitionImageLayout_I()
 
     void Renderer::TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
         vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,

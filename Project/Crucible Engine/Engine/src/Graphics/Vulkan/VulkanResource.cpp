@@ -1,6 +1,27 @@
-#include "VulkanBuffer.h"
+#include "VulkanResource.h"
 
 namespace Crucible {
+
+    uint32_t VulkanResource::FindMemoryType(VulkanContext& context, uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
+
+        vk::PhysicalDeviceMemoryProperties memProperties = context.GetPhysicalDevice().getMemoryProperties();
+
+        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
+        {
+            if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
+            {
+                return i;
+            }
+        }
+        throw std::runtime_error("[Renderer] Failed to find suitable memory type.");
+
+    }   // VulkanResource::FindMemoryType()
+
+    vk::raii::DeviceMemory& VulkanResource::GetMemory() { return m_memory; }
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    // VULKAN BUFFER
+    // ------------------------------------------------------------------------------------------------------------- //
 
     void VulkanBuffer::Create(VulkanContext& context, vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties) {
         
@@ -70,23 +91,37 @@ namespace Crucible {
 
     }   // VulkanBuffer::Upload()
 
-    vk::raii::Buffer const& VulkanBuffer::GetBuffer() const { return m_buffer; }
-    vk::raii::DeviceMemory&  VulkanBuffer::GetMemory() { return m_memory; }
+    const vk::raii::Buffer& VulkanBuffer::GetBuffer() const { return m_buffer; }
 
-    uint32_t VulkanBuffer::FindMemoryType(VulkanContext& context, uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
+    // ------------------------------------------------------------------------------------------------------------- //
+    // VULKAN IMAGE
+    // ------------------------------------------------------------------------------------------------------------- //
 
-        vk::PhysicalDeviceMemoryProperties memProperties = context.GetPhysicalDevice().getMemoryProperties();
+    void VulkanImage::Create(VulkanContext& context, uint32_t w, uint32_t h, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties) {
 
-        for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++)
-        {
-            if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties)
-            {
-                return i;
-            }
-        }
-        throw std::runtime_error("[Renderer] Failed to find suitable memory type.");
+        vk::ImageCreateInfo imageInfo{
+            .imageType   = vk::ImageType::e2D,
+            .format      = format,
+            .extent      = {w, h, 1},
+            .mipLevels   = 1,
+            .arrayLayers = 1,
+            .samples     = vk::SampleCountFlagBits::e1,
+            .tiling      = tiling,
+            .usage       = usage,
+            .sharingMode = vk::SharingMode::eExclusive
+        };
+        m_image = vk::raii::Image(context.GetDevice(), imageInfo);
 
-    }   // VulkanBuffer::FindMemoryType()
+        vk::MemoryRequirements memRequirements = m_image.getMemoryRequirements();
+        vk::MemoryAllocateInfo allocInfo{
+            .allocationSize  = memRequirements.size,
+            .memoryTypeIndex = FindMemoryType(context, memRequirements.memoryTypeBits, properties)};
+        m_memory = vk::raii::DeviceMemory(context.GetDevice(), allocInfo);
+        m_image.bindMemory(m_memory, 0);
 
+    }   // VulkanImage::Create()
+
+    const vk::raii::Image&  VulkanImage::GetImage() const { return m_image; }
+    vk::raii::Image&  VulkanImage::GetImage() { return m_image; }
 
 }   // NAMESPACE CRUCIBLE
