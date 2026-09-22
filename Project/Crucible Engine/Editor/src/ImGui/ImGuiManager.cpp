@@ -11,7 +11,6 @@
 */
 
 #include "ImGui/ImGuiManager.h"
-#include "Core.h"
 #include "Diagnostics/Logger.h"
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_glfw.h>
@@ -21,6 +20,11 @@
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_Hierarchy.h"
+#include "ImGui/Panels/ImGuiPanel_SceneView.h"
+#include "ImGui/Panels/ImGuiPanel_GameView.h"
+#include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
+#include "ImGui/Panels/ImGuiPanel_Console.h"
 
 
 std::unique_ptr<Crucible::EditorManager> Crucible::EditorManager::s_Instance;
@@ -65,14 +69,18 @@ namespace {
 		ImGui::DockBuilderAddNode(dockspace, ImGuiDockNodeFlags_DockSpace);
 		ImGui::DockBuilderSetNodeSize(dockspace, size);
 
-		// Split order: Left, Right (full height), then Top, Bottom (inside what is left).
-		// Center is whatever remains.
+		// Split order matches Unity's default layout:
+		//   Right  (full height)                -> Inspector
+		//   Bottom (under everything but Right) -> Asset Browser / Console
+		//   Left   (above Bottom)               -> Hierarchy
+		//   Top    (above Center)
+		// Center is whatever remains                -> Scene / Game
 		struct Split { DockArea area; ImGuiDir dir; };
 		constexpr Split splits[] = {
-			{ DockArea::Left,   ImGuiDir_Left  },
 			{ DockArea::Right,  ImGuiDir_Right },
-			{ DockArea::Top,    ImGuiDir_Up    },
 			{ DockArea::Bottom, ImGuiDir_Down  },
+			{ DockArea::Left,   ImGuiDir_Left  },
+			{ DockArea::Top,    ImGuiDir_Up    },
 		};
 
 		ImGuiID areaId[5] = {};   // indexed by static_cast<int>(DockArea)
@@ -108,7 +116,7 @@ namespace {
 }
 // ---- dock layout (end) ----
 
-void Crucible::ImGuiManager::Init(Core const& core) {
+void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context) {
 	
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -131,39 +139,30 @@ void Crucible::ImGuiManager::Init(Core const& core) {
 	// --------------------------------------------------
 	// Platform backend
 	// --------------------------------------------------
-	ImGui_ImplGlfw_InitForVulkan(core.tempReturn()->GetNativeHandle(), true);
+	ImGui_ImplGlfw_InitForVulkan(context.window, true);
 
 	ImGui_ImplVulkan_InitInfo initInfo = {};
-	initInfo.Instance = core.GetVkInstance();
-    initInfo.PhysicalDevice = core.GetVkPhysicalDevice();
-    initInfo.Device = core.GetVkDevice();
+	initInfo.Instance = context.instance;
+    initInfo.PhysicalDevice = context.physicalDevice;
+    initInfo.Device = context.device;
+	initInfo.QueueFamily = context.graphicsQueueFamily;
+	initInfo.Queue = context.graphicsQueue;
 
-	initInfo.QueueFamily = core.GetVkQueueFamily();
-
-	initInfo.Queue = core.GetVkQueue();
-
-	// initInfo.DescriptorPool = core.GetVkDescriptorPool();   // not ready yet — leave unset (VK_NULL_HANDLE)
+	//initInfo.DescriptorPool = context.descriptorPool;   // not ready yet ï¿½ leave unset (VK_NULL_HANDLE)
 	initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE;   // let ImGui create+own its own pool
-
-    initInfo.MinImageCount = core.GetVkMinImageCount();
-
-    initInfo.ImageCount = core.GetVkImageCount();
-
-	initInfo.PipelineInfoMain.MSAASamples = VK_SAMPLE_COUNT_1_BIT;
-
+    initInfo.MinImageCount = context.minImageCount;
+    initInfo.ImageCount = context.imageCount;
+	initInfo.PipelineInfoMain.MSAASamples = context.msaaSamples;
     initInfo.CheckVkResultFn = CheckVulkanResult;
 
 	// Dynamic rendering
 	initInfo.UseDynamicRendering = true;
 
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType =
-		VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
 
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount =
-		1;
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
 
-	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = 
-		core.GetVkColorAttachmentFormats();
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &context.colorFormat;
 
 	ImGui_ImplVulkan_Init(&initInfo);
 
@@ -240,8 +239,8 @@ void Crucible::ImGuiManager::Render() {
 }
 
 // Must be called while the frame's render pass is open (from Layer::OnRender).
-void Crucible::ImGuiManager::Draw(Core const& core) {
-	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), core.GetCurrentCommandBuffer());
+void Crucible::ImGuiManager::Draw(Renderer& ren) {
+	ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), ren.GetCurrentCommandBuff());
 
 	// NOTE: multi-viewport support (ImGuiConfigFlags_ViewportsEnable) needs
 	// ImGui::UpdatePlatformWindows() / RenderPlatformWindowsDefault() AFTER the main render
@@ -267,13 +266,15 @@ Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 
 		// Add in Editor Panels here...
 		// 
-		//s_Instance->m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<EditorScene>();
+		// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
+		s_Instance->m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>();
+		s_Instance->m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>();
 		s_Instance->m_panels[ImguiPanels::MENU] = std::make_shared<Menu>();
-		//s_Instance->m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>();
+		s_Instance->m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>();
 		s_Instance->m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>();
-		//s_Instance->m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
+		s_Instance->m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
+		s_Instance->m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 		//s_Instance->m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();
-		//s_Instance->m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameScene>();
 
 		for (auto& panel : s_Instance->m_panels)
 			panel.second->Init();
@@ -283,16 +284,14 @@ Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 
 float Crucible::EditorPanel::PushFontSize(float const fontScale)
 {
-	ImFont* const imfont = ImGui::GetFont();
-	float const old_size = imfont->Scale;
-	imfont->Scale = fontScale;
-	ImGui::PushFont(imfont);
-	return old_size;
+	// ImGui 1.92+: ImFont::Scale is gone; sizes are set per PushFont(). Scale relative to the current base size.
+	float const oldSize = ImGui::GetStyle().FontSizeBase;
+	ImGui::PushFont(nullptr, oldSize * fontScale);   // nullptr = keep current font
+	return oldSize;
 }
 
 void Crucible::EditorPanel::PopFontSize(float const prevScale)
 {
-	ImFont* const imfont = ImGui::GetFont();
-	imfont->Scale = prevScale;
+	(void)prevScale;   // PopFont() restores the previous font and size by itself
 	ImGui::PopFont();
 }
