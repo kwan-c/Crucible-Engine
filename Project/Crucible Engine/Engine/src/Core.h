@@ -13,6 +13,7 @@
 #include "Graphics/RenderSystem.h"
 #include <ECS/World.h>
 #include <ECS/Systems/ECSSystemManager.h>
+#include <Configuration/EngineConfig.h>
 
 namespace Crucible
 {
@@ -23,7 +24,7 @@ namespace Crucible
     class ENGINE_API Core
     {
     public:
-        Core();
+        explicit Core(const EngineConfig& m_config = EngineConfig{});
         ~Core();
 
         // Core owns raw pointers and unique_ptr layers: it must never be copied.
@@ -81,9 +82,9 @@ namespace Crucible
             return m_renderer->GetVkImageCount();
         }
 
-
+        
     private:
-
+        EngineConfig m_config;
         void RegisterEngineSystems();
 
         void CleanUp();

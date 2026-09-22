@@ -1,14 +1,19 @@
 #include "Core.h"
 #include "AssetPipe/Assetmanager.h"
+#include "Configuration/EngineConfigLoader.h"
+#include "Diagnostics/Logger.h"
 
 // STL
 #include <iostream>
 #include <ECS/ECSPhysicsSystem.h>
 
+
+
 namespace Crucible {
 
-    Core::Core() :
-        m_window{ new WindowManager(1200, 800, "Crucible Engine") },
+    Core::Core(const EngineConfig& config) :
+        m_config{ config },
+        m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() }
     {
@@ -67,6 +72,7 @@ namespace Crucible {
         layer->OnAttach();
         m_layers.push_back(std::move(layer));
     }
+
 
     void Core::RegisterEngineSystems()
     {
