@@ -8,8 +8,8 @@ namespace Crucible::Math
     using vec3 = xmath::fvec3;
     using vec4 = xmath::fvec4;
 
-    using matrix3 = xmath::fmat3;
-    using matrix4 = xmath::fmat4;
+    using mat3 = xmath::fmat3;
+    using mat4 = xmath::fmat4;
 
-    using quaternion = xmath::fquat;
+    using quat = xmath::fquat;
 }
