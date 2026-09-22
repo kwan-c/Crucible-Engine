@@ -9,6 +9,7 @@ file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
 )
 file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS 
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.tpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/include/*.h"
 )
 
@@ -44,6 +45,9 @@ target_include_directories(Engine
 
 # Link against third-party dependencies
 target_link_libraries(Engine PUBLIC EngineThirdParty)
+
+# NOTE: Engine.dll is copied next to each executable by that executable's own
+# POST_BUILD step (see Game/CMakeLists.txt and Editor/CMakeLists.txt).
 
 # Organize files in Visual Studio Solution Explorer
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" 

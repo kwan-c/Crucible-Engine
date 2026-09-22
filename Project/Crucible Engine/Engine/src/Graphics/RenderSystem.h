@@ -1,23 +1,162 @@
 #pragma once
 
+#define VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS  // To handle swap chain recreation.
+#define VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+#if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
+#include <vulkan/vulkan_raii.hpp>
+#else
+import vulkan_hpp;
+#endif
+#include <GLFW/glfw3.h>
+
+// STL
 #include <vector>
+#include <array>
+#include <functional>
+
+// Crucible Engine
+#include "Systems/WindowManager.h"
+#include "Math/Math.h"
+
 
 namespace {
     struct RenderData {
 
-    };
-}
+    };  // RENDERDATA STRUCT
+
+}   // ANONYMOUS NAMESPACE
 
 namespace Crucible {
 
-    class Renderer {
-        
-    public:
+    struct Vertex {
+        Math::vec2 pos;
+        Math::vec3 color;
 
-        
+        static vk::VertexInputBindingDescription GetBindingDescription() {
+            return { .binding = 0, .stride = sizeof(Vertex), .inputRate = vk::VertexInputRate::eVertex };
+        }
+        //static std::array<vk::VertexInputAttributeDescription, 2> GetAttributeDescriptions() {
+        //    return { {{.location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat, .offsetof(Vertex, pos)},
+        //        {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offsetof(Vertex, color)}} };
+        //}
+    };
+
+    class Renderer {
+
+        // Temp for testing.
+        const std::vector<Vertex> vertices = {
+            { {0.0f, -0.5f}, {1.0f, 0.0f, 0.0f} },
+            { {0.5f, 0.5f}, {0.0f, 1.0f, 0.0f} },
+            { {-0.5f, 0.5f}, {0.0f, 0.0f, 1.0f} }
+        };
+
+    public:
+        Renderer(WindowManager& window);
+        ~Renderer();
+
+        void Update(float dt);
+        void DrawFrame();
+
+        // Optional hook invoked while the frame's render pass is still open (after the scene
+        // draw, before endRendering). Lets Core forward to layers (e.g. the Editor's ImGui).
+        void SetOverlayCallback(std::function<void()> cb) { m_overlayCallback = std::move(cb); }
+
+        // Blocks until the GPU is idle. Call before tearing down anything the GPU may still use.
+        void WaitIdle() { m_device.waitIdle(); }
+
+        // Renderer data members accessors
+        // Raw Vulkan handles required by ImGui/Vulkan backend
+        VkInstance           GetVkInstance() const { return *m_instance; }
+        VkPhysicalDevice     GetVkPhysicalDevice() const { return *m_physicalDevice; }
+        VkDevice             GetVkDevice() const { return *m_device; }
+        VkQueue              GetVkQueue() const { return *m_graphicsQueue; }
+        VkDescriptorPool     GetVkDescriptorPool() const { return *m_descriptorPool; }
+        VkCommandPool        GetVkCommandPool() const { return *m_commandPool; }
+        VkCommandBuffer      GetCurrentCommandBuffer() const { return *m_commandBuffers[m_frameIndex]; }
+        const VkFormat*      GetVkColorAttachmentFormats() const { return &m_colorAttachmentFormat; }
+        uint32_t             GetVkQueueFamily() const { return m_queueIndex; }
+        uint32_t             GetVkMinImageCount() const { return ChooseSwapMinImageCount(m_physicalDevice.getSurfaceCapabilitiesKHR(*m_surface)); }
+        uint32_t             GetVkImageCount() const { return static_cast<uint32_t>(m_swapChainImages.size()); }
 
     private:
         std::vector<RenderData> m_renderCache;
+        WindowManager& m_window;
+        std::function<void()> m_overlayCallback;
 
-    };
-}
+        // Core functions
+        void InitVulkan();
+
+        // Vulkan helpers
+        void CreateInstance();
+        void SetupDebugMessenger();
+        void CreateSurface();
+
+        void PickPhysicalDevice();
+        void CreateLogicalDevice();
+
+        void CreateSwapChain();
+        void RecreateSwapChain();
+        void CleanupSwapChain();
+        void CreateImageViews();
+        void CreateGraphicsPipeline();
+
+        void CreateCommandPool();
+        void CreateCommandBuffers();
+        void RecordCommandBuffer(uint32_t imageIndex);
+        void CreateSyncObjects();
+
+        std::vector<const char*> GetRequiredInstanceExtensions();
+        bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
+        vk::SurfaceFormatKHR ChooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
+        vk::PresentModeKHR ChooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
+        vk::Extent2D ChooseSwapExtent(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities, GLFWwindow* window);
+        uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities);
+        uint32_t ChooseSwapMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities) const;
+
+        [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(const std::vector<char>& code) const;
+
+        // Vulkan data members
+        vk::raii::Context                   m_context;
+        vk::raii::Instance                  m_instance = nullptr;           // connection btw app and vulk lib
+        vk::raii::DebugUtilsMessengerEXT    m_debugMessenger = nullptr;
+        vk::raii::SurfaceKHR                m_surface = nullptr;
+        vk::raii::PhysicalDevice            m_physicalDevice = nullptr;     // graphics card
+        vk::raii::Device                    m_device = nullptr;             // logical interface to physical device
+        vk::raii::Queue                     m_graphicsQueue = nullptr;
+        vk::raii::SwapchainKHR              m_swapChain = nullptr;
+        vk::raii::PipelineLayout            m_pipelineLayout = nullptr;
+        vk::raii::Pipeline                  m_graphicsPipeline = nullptr;
+        vk::raii::DescriptorPool            m_descriptorPool = nullptr;
+
+        uint32_t    m_queueIndex = ~0u;            // index for graphics queue for logical device
+        uint32_t    m_frameIndex = 0;
+
+        vk::raii::CommandPool                   m_commandPool = nullptr;
+        std::vector<vk::raii::CommandBuffer>    m_commandBuffers;
+
+        // SwapChain parameters
+        std::vector<vk::Image>              m_swapChainImages;
+        std::vector<vk::raii::ImageView>    m_swapChainImageViews;
+        vk::Extent2D                        m_swapChainExtent;
+        vk::SurfaceFormatKHR                m_swapChainSurfaceFormat;
+
+        // C-API mirror of m_swapChainSurfaceFormat.format, for ImGui/Vulkan-C consumers
+        VkFormat                            m_colorAttachmentFormat = VK_FORMAT_UNDEFINED;
+
+        // Synchonization primitives
+        std::vector<vk::raii::Semaphore>    m_presentCompleteSemaphores;
+        std::vector<vk::raii::Semaphore>    m_renderFinishedSemaphores;
+        std::vector<vk::raii::Fence>        m_inFlightFences;
+
+
+        static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT         severity,
+            vk::DebugUtilsMessageTypeFlagsEXT                type,
+            const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData,
+            void* pUserData);
+        void TransitionImageLayout(uint32_t imageIndex, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
+            vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
+            vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask);
+
+    };  // RENDERER CLASS
+
+}   // NAMESPACE CRUCIBLE

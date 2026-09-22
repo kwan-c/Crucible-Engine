@@ -37,15 +37,19 @@ set_target_properties(Game PROPERTIES
 # Define output directory variable for cleaner commands
 set(GAME_OUTPUT_DIR "$<TARGET_FILE_DIR:Game>")
 
-# Copy Core.dll to Game output directory
 add_custom_command(TARGET Game POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:Engine>"
         "${GAME_OUTPUT_DIR}"
-    COMMENT "Copying Engine.dll..."
-)
 
-add_custom_command(TARGET Game POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:glfw>"
+        "${GAME_OUTPUT_DIR}"
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:rttr_core>"
+        "${GAME_OUTPUT_DIR}"
+
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/Extern/fmod/bin/fmod.dll"
         "${GAME_OUTPUT_DIR}"
