@@ -60,6 +60,7 @@ namespace Crucible {
             m_renderer->Update(dt);
             //m_window->SwapBuffers();
         }
+        m_renderer->ShutDown();
     }
 
    
@@ -79,5 +80,7 @@ namespace Crucible {
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
+
+        m_window->ShutDown();
     }
 }

@@ -31,7 +31,7 @@ namespace Crucible {
         CreateDescriptorSets();
     }
 
-    Renderer::~Renderer() { m_context.ShutDown(); }
+    void Renderer::ShutDown() { m_context.ShutDown(); }
 
     void Renderer::Update(float dt) {
         (void)dt;

@@ -70,7 +70,7 @@ namespace Crucible {
 
     public:
         Renderer(WindowManager& window);
-        ~Renderer();
+        void ShutDown();
 
         void Update(float dt);
         void DrawFrame();
