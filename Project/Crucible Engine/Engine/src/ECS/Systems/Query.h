@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                iterate entities matching a set of component types
 *
@@ -17,20 +17,27 @@
 *                ForEach()/CountEntities() iteration on top, reading
 *                each matching archetype's raw component columns (see
 *                Archetype::GetColumnData in Archetype.cpp) directly.
+*                A `const T` component is read-only access; a non-const
+*                `T` is write access and gets its change tick stamped for
+*                every row the query visits.
 *
 * \history
 *    -v1.0       skeleton
 *    -v1.1       added member-level comments for readability, no logic changes
-*
+*    -v1.2       const/non-const access (write columns stamp change ticks),
+*                ForEachChangedSince<F>(), rebuild narrowed to the rarest
+*                required component's archetype list; optional world-tick
+*                constructor parameter (existing constructor calls unchanged)
 *
 **************************************************************************/
 #pragma once
 
 //std libs
-#include <vector>
-#include <tuple>
-#include <utility>
+#include <array>
 #include <cstdint>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 // header files
 #include "../Core/ECSCore.h"
@@ -78,9 +85,8 @@ namespace Crucible
 		checking, see QueryBase::Refresh()); Cached and Auto are reserved
 		for later.
 	 *************************************************************************/
-	// Query caching policies; Cached and Auto are reserved for later.
 	enum class QueryCachePolicy { None, Cached, Auto };
-	
+
 
 	/*************************************************************************
 	 \brief
@@ -91,6 +97,11 @@ namespace Crucible
 		Query<Components...> derives from this to add typed iteration on
 		top; everything about deciding WHICH archetypes match lives here,
 		independent of which component types are actually being read.
+
+	 \note
+		Holds pointers into the owning World (archetype registry and, when
+		built through World, its tick) - a query must not outlive the World
+		it was created from.
 	 *************************************************************************/
 	class QueryBase
 	{
@@ -101,8 +112,11 @@ namespace Crucible
 		 \param[in] description What components to require/exclude.
 		 \param[in] registry The archetype registry to query against; must
 					outlive this object.
+		 \param[in] worldTick Optional pointer to the World's current tick.
+					When null, iteration does not stamp change ticks.
 		 *********************************************************************/
-		QueryBase(QueryDescription description,ArchetypeRegistry& registry ):m_description(std::move (description)),m_registry(&registry){}
+		QueryBase(QueryDescription description, ArchetypeRegistry& registry, const std::uint64_t* worldTick = nullptr)
+			: m_description(std::move(description)), m_registry(&registry), m_worldTick(worldTick) {}
 
 		/*********************************************************************
 		 \brief  The archetypes this query currently matches.
@@ -110,14 +124,14 @@ namespace Crucible
 		 \note  May be stale until Refresh()/Rebuild() has been called at
 				least once (World::CreateQuery() does this for you).
 		 *********************************************************************/
-		const std::vector<Archetype*>& MatchingArchetypes()const{return m_matching;}
+		const std::vector<Archetype*>& MatchingArchetypes() const { return m_matching; }
 
 		/*********************************************************************
 		 \brief  Whether a given archetype satisfies this query's description.
 		 \param[in] archetype The archetype to test.
 		 \return true if it matches.
 		 *********************************************************************/
-		bool MatchesArchetype(const Archetype& archetype)const
+		bool MatchesArchetype(const Archetype& archetype) const
 		{
 			return m_description.Matches(archetype.Signature());
 		}
@@ -132,18 +146,27 @@ namespace Crucible
 
 		/*********************************************************************
 		 \brief
-			Fully rebuilds the matching-archetype list by scanning every
-			archetype currently in the registry.
+			Fully rebuilds the matching-archetype list.
 
 		 \details
-			Clears and repopulates m_matching, then records the registry's
-			current Version() so Refresh() can skip a redundant rebuild next
-			time nothing has changed.
+			Scans only the archetype list of the rarest required component
+			(ArchetypeRegistry::ArchetypesWith) instead of every archetype,
+			then records the registry's Version() so Refresh() can skip a
+			redundant rebuild next time nothing has changed.
 		 *********************************************************************/
 		void Rebuild()
 		{
 			m_matching.clear();
-			for (Archetype* archetype : m_registry->All())
+
+			const std::vector<Archetype*>* candidates = &m_registry->All();
+			for (ComponentId id = 0; id < m_description.required.size(); ++id)
+			{
+				if (!m_description.required.test(id)) continue;
+				const std::vector<Archetype*>& with = m_registry->ArchetypesWith(id);
+				if (with.size() < candidates->size()) candidates = &with;
+			}
+
+			for (Archetype* archetype : *candidates)
 			{
 				if (m_description.Matches(archetype->Signature())) m_matching.push_back(archetype);
 			}
@@ -157,10 +180,10 @@ namespace Crucible
 		 \details
 			With QueryCachePolicy::None, skips Rebuild() when the registry's
 			Version() hasn't changed since the last rebuild (no new
-			archetype created); otherwise always rebuilds. Called
-			automatically by Query::ForEach()/CountEntities().
+			archetype created). Called automatically by
+			Query::ForEach()/ForEachChangedSince()/CountEntities().
 		 *********************************************************************/
-		void Refresh() 
+		void Refresh()
 		{
 			if (m_policy != QueryCachePolicy::None) return;
 			if (m_registry->Version() == m_lastSeenVersion) return;
@@ -170,10 +193,11 @@ namespace Crucible
 	protected:
 		QueryDescription m_description;
 		ArchetypeRegistry* m_registry = nullptr;
+		const std::uint64_t* m_worldTick = nullptr;
 		std::vector<Archetype*> m_matching;
 		QueryCachePolicy m_policy = QueryCachePolicy::None;
 
-		std::uint64_t m_lastSeenVersion = 0;
+		std::uint64_t m_lastSeenVersion = ~std::uint64_t{ 0 };
 	};
 
 	/*************************************************************************
@@ -182,20 +206,25 @@ namespace Crucible
 		matching entity's components directly from archetype storage.
 
 	 \tparam Components
-		The component types this query reads. Determines both the archetype
-		matching signature (via World::CreateQuery<T...>()) and the
-		parameter types passed to ForEach()'s callback.
+		The component types this query reads. `const T` is read-only access;
+		a non-const `T` is write access.
 
 	 \details
-		QueryBase holds the untyped matching/rebuild logic; this adds the
-		typed ForEach()/CountEntities() iteration on top, reading each
-		matching archetype's raw component columns directly - no per-entity
-		virtual dispatch or per-component lookup happens inside the row
-		loop.
+		For every row visited, each writable component's change tick is
+		stamped with the World's current tick (conservative - the same model
+		as Unity's read/write access). Declare components you only read as
+		const so they are not reported as changed. No per-entity virtual
+		dispatch or per-component lookup happens inside the row loop.
 	 *************************************************************************/
 	template <typename... Components>
 	class Query : public QueryBase
 	{
+		static_assert(sizeof...(Components) > 0, "Query needs at least one component type");
+
+		template <typename C> using Bare = std::remove_const_t<C>;
+		using PointerArray = std::array<void*, sizeof...(Components)>;
+		using TickArray = std::array<std::uint64_t*, sizeof...(Components)>;
+
 	public:
 		using QueryBase::QueryBase;
 
@@ -208,33 +237,32 @@ namespace Crucible
 			Callable compatible with (Entity, Components&...).
 		 \param[in]
 			fn The callback to invoke per entity.
-
-		 \details
-			Calls Refresh() first to ensure the matching-archetype list is
-			current, then for each non-empty matching archetype resolves
-			each requested component's column pointer once and indexes it
-			per row - avoiding a per-entity column lookup.
 		 *********************************************************************/
 		template<typename Fn>
 		void ForEach(Fn&& fn)
 		{
-			ArchetypeRegistry::IterationGuard guard(*m_registry);
+			Iterate(fn, kInvalidComponentId, 0, std::index_sequence_for<Components...>{});
+		}
 
-			Refresh();
-			for (Archetype* archetype : m_matching)
-			{
-				const uint32_t count = archetype->EntityCount();
-				if (count == 0)continue;
+		/*********************************************************************
+		 \brief
+			Like ForEach(), but only visits rows whose Filter component was
+			written after sinceTick.
 
-				std::tuple<Components*...> columns{ static_cast<Components*>(archetype->GetColumnData(ComponentTypeId<Components>()))... };
+		 \param[in]
+			sinceTick The tick you last processed at.
+		 \param[in]
+			fn The callback to invoke per entity.
 
-				const std::vector<Entity>& entities = archetype->Entities();
-
-				for (uint32_t row = 0; row < count; ++row)
-				{
-					fn(entities[row], std::get<Components*>(columns)[row]...);
-				}
-			}
+		 \note
+			Filter on a component this query reads as const. Filtering on a
+			component the query writes re-marks it on every visit, so the
+			query would keep re-triggering itself.
+		 *********************************************************************/
+		template <typename Filter, typename Fn>
+		void ForEachChangedSince(std::uint64_t sinceTick, Fn&& fn)
+		{
+			Iterate(fn, ComponentTypeId<Bare<Filter>>(), sinceTick, std::index_sequence_for<Components...>{});
 		}
 
 		/*********************************************************************
@@ -252,18 +280,74 @@ namespace Crucible
 			}
 			return total;
 		}
+
+	private:
+		template <typename C>
+		static std::uint64_t* WritableTicks(Archetype& archetype, bool stamping)
+		{
+			if constexpr (std::is_const_v<C>) return nullptr;
+			else return stamping ? archetype.GetColumn(ComponentTypeId<C>()).ChangedTicksData() : nullptr;
+		}
+
+		template <typename C>
+		static void StampIfWritable(std::uint64_t* ticks, uint32_t row, std::uint64_t tick)
+		{
+			if constexpr (!std::is_const_v<C>)
+			{
+				if (ticks) ticks[row] = tick;
+			}
+		}
+
+		template <typename Fn, std::size_t... I>
+		void Iterate(Fn& fn, ComponentId filterId, std::uint64_t sinceTick, std::index_sequence<I...>)
+		{
+			ArchetypeRegistry::IterationGuard guard(*m_registry);
+			Refresh();
+
+			const bool stamping = (m_worldTick != nullptr);
+			const std::uint64_t tick = stamping ? *m_worldTick : 0;
+
+			for (Archetype* archetype : m_matching)
+			{
+				const uint32_t count = archetype->EntityCount();
+				if (count == 0) continue;
+
+				const std::uint64_t* filterTicks = nullptr;
+				if (filterId != kInvalidComponentId)
+				{
+					if (!archetype->Contains(filterId)) continue;
+					filterTicks = archetype->GetColumn(filterId).ChangedTicksData();
+				}
+
+				const PointerArray columns{ archetype->GetColumnData(ComponentTypeId<Bare<Components>>())... };
+				const TickArray writeTicks{ WritableTicks<Components>(*archetype, stamping)... };
+				const std::vector<Entity>& entities = archetype->Entities();
+
+				for (uint32_t row = 0; row < count; ++row)
+				{
+					if (filterTicks && filterTicks[row] <= sinceTick) continue;
+					fn(entities[row], static_cast<Components*>(columns[I])[row]...);
+					(StampIfWritable<Components>(writeTicks[I], row, tick), ...);
+				}
+			}
+		}
 	};
 
+	/*************************************************************************
+	 \brief
+		Fluent builder for a Query<Required...> with Exclude<...>().
+	 *************************************************************************/
 	template <typename... Required>
 	class QueryBuilder
 	{
 	public:
-		explicit QueryBuilder(ArchetypeRegistry& registry) : m_registry(&registry)
+		explicit QueryBuilder(ArchetypeRegistry& registry, const std::uint64_t* worldTick = nullptr)
+			: m_registry(&registry), m_worldTick(worldTick)
 		{
-			m_description.required = MakeSignature<Required...>();
+			m_description.required = MakeSignature<std::remove_const_t<Required>...>();
 		}
-		
-		//entites containing will be skipped
+
+		//entities containing any of Excluded... will be skipped
 		template <typename... Excluded>
 		QueryBuilder& Exclude()
 		{
@@ -271,7 +355,7 @@ namespace Crucible
 			return *this;
 		}
 
-		//optional
+		//optional (reserved - recorded but not used by matching yet)
 		template <typename... Optional_>
 		QueryBuilder& Optional()
 		{
@@ -281,7 +365,7 @@ namespace Crucible
 
 		Query<Required...> Build()
 		{
-			Query<Required...> query(std::move(m_description), *m_registry);
+			Query<Required...> query(std::move(m_description), *m_registry, m_worldTick);
 			query.Rebuild();
 			return query;
 		}
@@ -289,7 +373,7 @@ namespace Crucible
 	private:
 		QueryDescription m_description;
 		ArchetypeRegistry* m_registry;
-
+		const std::uint64_t* m_worldTick;
 	};
 
 }

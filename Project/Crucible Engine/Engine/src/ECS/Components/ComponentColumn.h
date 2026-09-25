@@ -28,8 +28,10 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <cassert>
 #include <new>
+#include <vector>
 
 #include "ComponentInfo.h"
 
@@ -243,6 +245,14 @@ namespace Crucible
 			assert(row < m_size);
 			return m_changedTicks[row];
 		}
+
+		/*********************************************************************
+		 \brief  Raw pointer to the per-row change-tick array (parallel to the
+		         component data), for linear change filtering and stamping.
+		 \return Pointer to row 0's tick, or nullptr if the column is empty.
+		 *********************************************************************/
+		std::uint64_t* ChangedTicksData() noexcept { return m_changedTicks.data(); }
+		const std::uint64_t* ChangedTicksData() const noexcept { return m_changedTicks.data(); }
 	private:
 
 		/*********************************************************************

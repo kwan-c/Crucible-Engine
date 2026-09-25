@@ -103,4 +103,13 @@ namespace Crucible
 		}
 		return true;
 	}
+
+	void Archetype::Reserve(uint32_t additionalRows)
+	{
+		m_entities.reserve(m_entities.size() + additionalRows);
+		for (ComponentColumn& column : m_columns)
+		{
+			column.Reserve(column.Size() + additionalRows);
+		}
+	}
 }

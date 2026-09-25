@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *      Dynamic registry that owns all registered ECS systems.
 *
@@ -11,16 +11,22 @@
 *      Systems are registered explicitly through RegisterSystem<T>().
 *      Each system is stored through IECSSystem ownership so engine,
 *      game, and plugin systems can share the same execution pipeline
-*      without modifying a fixed system enum.
+*      without modifying a fixed system enum. One instance per system
+*      type is allowed, so FindSystem<T>() is unambiguous.
 *
 * \history
 *    -v1.0       initial fixed system-id enum + owning registry
-*
+*    -v1.1       dynamic registration; added FindSystem<T>() and rejection
+*                of duplicate system types; existing
+*                RegisterSystem/GetSystem/Size unchanged
 *
 **************************************************************************/
 #pragma once
 #include <cstddef>
 #include <memory>
+#include <stdexcept>
+#include <typeindex>
+#include <typeinfo>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -44,7 +50,7 @@ namespace Crucible
 
      \note
         Non-copyable and non-movable because the registry owns system
-        lifetimes.
+        lifetimes. Registering a second system of the same type throws.
      *************************************************************************/
     class ECSSystemRegistry
     {
@@ -74,6 +80,10 @@ namespace Crucible
 
          \return
             Reference to the newly created system.
+
+         \note
+            Throws std::logic_error if a system of type T is already
+            registered.
          *********************************************************************/
         template<typename T, typename... Args>
         T& RegisterSystem(Args&&... args)
@@ -83,6 +93,16 @@ namespace Crucible
                 "T must derive from IECSSystem"
                 );
 
+            if (FindSystem<T>() != nullptr)
+            {
+                throw std::logic_error("ECSSystemRegistry::RegisterSystem - a system of this type is already registered");
+            }
+
+            // Reserve first so the two pushes below cannot throw and leave
+            // m_systems and m_types out of step.
+            m_systems.reserve(m_systems.size() + 1);
+            m_types.reserve(m_types.size() + 1);
+
             auto system = std::make_unique<T>(
                 std::forward<Args>(args)...
             );
@@ -90,6 +110,7 @@ namespace Crucible
             T& reference = *system;
 
             m_systems.push_back(std::move(system));
+            m_types.emplace_back(typeid(T));
 
             return reference;
         }
@@ -111,7 +132,7 @@ namespace Crucible
 
         /*********************************************************************
          \brief  Fetches a system by index, read-only access.
-         \param[in] indexThe system to fetch.
+         \param[in] index The system to fetch.
          \return Const reference to that system.
          *********************************************************************/
         const IECSSystem& GetSystem(std::size_t index) const
@@ -119,8 +140,24 @@ namespace Crucible
             return *m_systems.at(index);
         }
 
+        /*********************************************************************
+         \brief  The registered system of type T.
+         \return Pointer to it, or nullptr if no system of type T exists.
+         *********************************************************************/
+        template <typename T>
+        T* FindSystem() noexcept
+        {
+            const std::type_index wanted(typeid(T));
+            for (std::size_t i = 0; i < m_systems.size(); ++i)
+            {
+                if (m_types[i] == wanted) return static_cast<T*>(m_systems[i].get());
+            }
+            return nullptr;
+        }
+
     private:
         std::vector<std::unique_ptr<IECSSystem>> m_systems;
+        std::vector<std::type_index> m_types;   // parallel to m_systems
 
     };
 }

@@ -2,10 +2,14 @@
 #include "AssetPipe/Assetmanager.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Diagnostics/Logger.h"
+#include "ECS/ECSPhysicsSystem.h"
 
 // STL
+#include <algorithm>
+#include <chrono>
+#include <exception>
 #include <iostream>
-#include <ECS/ECSPhysicsSystem.h>
+#include <cstdlib>
 
 
 
@@ -55,10 +59,11 @@ namespace Crucible {
 
         while (!m_window->ShouldClose()) {
 
-            float dt = 1.f / 60.f;
-
+            const float dt = 1.f / 60.f;
             m_window->PollEvents();
 
+            m_world->SetDeltaTime(dt);
+            m_world->AdvanceTick();
             m_systems.Update(*m_world);
 
             for (auto& layer : m_layers) layer->OnUpdate(dt);
@@ -82,6 +87,11 @@ namespace Crucible {
     }
 
     void Core::CleanUp() {
+        // Destroy entities while systems are still alive, so resource-owning
+        // OnComponentRemoved/OnEntityDestroyed hooks can still run.
+        try { m_world->DestroyAllEntities(); }
+        catch (const std::exception& e) { CRU_ERROR("Core::CleanUp: destroying entities failed - {}", e.what()); }
+
         m_systems.Shutdown();
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();

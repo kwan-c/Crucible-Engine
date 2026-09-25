@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.1
+* \version       1.3
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -26,6 +26,11 @@
 *    -v1.2       AddComponent/RemoveComponent now throw std::invalid_argument
 *                on a dead/stale Entity in every build config, instead of
 *                relying solely on an assert that NDEBUG strips out
+*    -v1.3       hook symmetry (CreateEntity(s) fire add hooks, DestroyEntity
+*                fires remove hooks), DestroyAllEntities, EmplaceComponent,
+*                SetDeltaTime/DeltaTime, queries stamp change ticks, new
+*                components relocated straight into their slot; all existing
+*                public names and signatures unchanged
 *
 **************************************************************************/
 #pragma once
@@ -33,27 +38,27 @@
 #include "EngineExport.h"
 
 //std libs
-#include<cstdint>
-#include <cassert>
-#include <utility>
-#include <stdexcept>
-#include <vector>
-#include <functional>
 #include <array>
+#include <cassert>
+#include <cstdint>
+#include <functional>
+#include <stdexcept>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 //header files
-#include "Core/ECSCore.h"          // Entity, EntityManager, IndexedArray
+#include "Core/ECSCore.h"          // Entity, EntityManager
 #include "Components/ComponentRegistry.h" // ComponentRegistry
 #include "Components/ComponentSignature.h"
 #include "Archetype/ArchetypeRegistry.h"
 #include "Systems/Query.h"
 
 
-
-
-
 namespace Crucible
 {
+	class CommandBuffer;
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4251)
@@ -91,8 +96,23 @@ namespace Crucible
 		World(const World&) = delete;
 		World& operator=(const World&) = delete;
 
+		/*********************************************************************
+		 \brief  Advances the tick every write this frame is stamped with.
+				 Call once per frame, before systems update.
+		 *********************************************************************/
 		void AdvanceTick() { ++m_currentTick; }
 		std::uint64_t CurrentTick() const { return m_currentTick; }
+
+		/*********************************************************************
+		 \brief  Sets this frame's delta time (seconds). Core calls this once
+				 per frame, before systems update.
+		 *********************************************************************/
+		void SetDeltaTime(float dt) noexcept { m_deltaTime = dt; }
+
+		/*********************************************************************
+		 \brief  This frame's delta time in seconds, as set by SetDeltaTime().
+		 *********************************************************************/
+		float DeltaTime() const noexcept { return m_deltaTime; }
 
 		/*********************************************************************
 		 \brief  Registers component type T with this world's registry.
@@ -137,15 +157,44 @@ namespace Crucible
 			Slightly cheaper than CreateEntity() + repeated AddComponent<T>()
 			calls when the full component set is already known up front,
 			since it avoids the intermediate archetype moves.
+
+		 \note
+			Fires OnComponentAdded for every component the entity starts with.
 		 *********************************************************************/
 		Entity CreateEntity(const ComponentSignature& signature);
+
+		/*********************************************************************
+		 \brief
+			Creates count entities in one archetype, reserving storage once.
+
+		 \param[in] count     Number of entities to create.
+		 \param[in] signature Component set every new entity starts with.
+		 \return The created entity handles.
+
+		 \note
+			Fires OnComponentAdded per entity, like CreateEntity(signature).
+		 *********************************************************************/
+		std::vector<Entity> CreateEntities(uint32_t count, const ComponentSignature& signature = ComponentSignature{});
 
 		/*********************************************************************
 		 \brief  Destroys an entity, freeing its slot for reuse.
 		 \param[in] entity The entity to destroy.
 		 \note  A no-op (not an error) if entity is already dead or stale.
+				Fires OnEntityDestroyed, then OnComponentRemoved for every
+				component the entity still owns, before tearing storage down.
 		 *********************************************************************/
 		void DestroyEntity(Entity entity);
+
+		/*********************************************************************
+		 \brief
+			Destroys every live entity through DestroyEntity(), so every
+			removal hook fires.
+
+		 \note
+			Call before tearing down anything those hooks release resources
+			into (e.g. the renderer). Throws if called during Query iteration.
+		 *********************************************************************/
+		void DestroyAllEntities();
 
 		/*********************************************************************
 		 \brief  Whether an entity handle is still alive.
@@ -197,13 +246,25 @@ namespace Crucible
 		 \details
 			If entity already has a T, overwrites it in place with no
 			archetype move. Otherwise moves the entity to the archetype for
-			its signature plus T (via ArchetypeRegistry::GetAddDestination
-			and MoveEntity()), then writes value into the new column slot.
+			its signature plus T and relocates value straight into its new
+			column slot (one move - no default-construct-then-assign).
 
 		 \note
-			Throws std::invalid_argument if entity is dead or stale.
+			Throws std::invalid_argument if entity is dead or stale, and
+			std::logic_error if called while a Query is iterating.
 		 *********************************************************************/
 		template <typename T> T& AddComponent(Entity entity, T value = T{});
+
+		/*********************************************************************
+		 \brief
+			Constructs a T from args and adds it (or overwrites an existing
+			T), exactly like AddComponent(entity, T(args...)).
+
+		 \tparam T    The component type to add.
+		 \tparam Args Constructor argument types for T.
+		 \return Reference to the entity's T instance.
+		 *********************************************************************/
+		template <typename T, typename... Args> T& EmplaceComponent(Entity entity, Args&&... args);
 
 		/*********************************************************************
 		 \brief
@@ -215,30 +276,52 @@ namespace Crucible
 			entity The entity to modify.
 
 		 \details
-			A no-op if entity does not currently have a T. Otherwise moves
-			the entity to the archetype for its signature minus T (via
-			ArchetypeRegistry::GetRemoveDestination and MoveEntity()).
+			A no-op if entity does not currently have a T. Otherwise fires
+			OnComponentRemoved, then moves the entity to the archetype for
+			its signature minus T.
 
 		 \note
-			Throws std::invalid_argument if entity is dead or stale.
+			Throws std::invalid_argument if entity is dead or stale, and
+			std::logic_error if called while a Query is iterating.
 		 *********************************************************************/
 		template <typename T> void RemoveComponent(Entity entity);
 
-		// Registers a callback fired for every entity that gains a T,
-		// AFTER the component's value has been written. Does NOT fire
-		// for an entity's initial component set from CreateEntity(s)
-		// (see item 10's note).
+		/*********************************************************************
+		 \brief
+			Registers a callback fired for every entity that gains a T,
+			AFTER the component's value has been written.
+
+		 \details
+			Fires for AddComponent/EmplaceComponent (when T is newly added),
+			CreateEntity(signature), CreateEntities and CommandBuffer spawns.
+			Overwriting an existing T does not fire it.
+
+		 \note
+			Runs under the iteration guard: hooks may read, but must queue
+			structural changes through a CommandBuffer. Registering a hook
+			during Query iteration or hook dispatch throws std::logic_error.
+		 *********************************************************************/
 		template <typename T>
 		void OnComponentAdded(std::function<void(World&, Entity, T&)> callback);
 
-		// Registers a callback fired for every entity about to lose a T,
-		// BEFORE the component is actually torn down (so the callback
-		// can still read it - e.g. release a GPU handle it holds).
+		/*********************************************************************
+		 \brief
+			Registers a callback fired for every entity about to lose a T,
+			BEFORE the component is torn down (so the callback can still
+			read it - e.g. release a GPU handle it holds).
+
+		 \details
+			Fires on RemoveComponent AND on DestroyEntity, so resource-owning
+			hooks always pair up with their add.
+		 *********************************************************************/
 		template <typename T>
 		void OnComponentRemoved(std::function<void(World&, Entity, T&)> callback);
 
-		// Registers a callback fired for every entity about to be
-		// destroyed, BEFORE its component data is torn down.
+		/*********************************************************************
+		 \brief
+			Registers a callback fired for every entity about to be
+			destroyed, BEFORE its component data is torn down.
+		 *********************************************************************/
 		void OnEntityDestroyed(std::function<void(World&, Entity)> callback);
 
 		/*********************************************************************
@@ -247,63 +330,75 @@ namespace Crucible
 
 		 \tparam T
 			The component types the query requires and will iterate.
+			`const T` is read-only access; non-const T is write access and
+			gets its change tick stamped on iteration.
 		 \return
 			A Query<T...> whose matching-archetype list has already been
 			built (Rebuild() is called before returning).
+
+		 \note
+			Build once (e.g. on a system's first Update) and keep it - the
+			query only re-scans archetypes when a new one has been created.
 		 *********************************************************************/
 		template<typename ...T>
 		Query<T... > CreateQuery();
 
-
-
+		/*********************************************************************
+		 \brief  Fluent builder for a query with Exclude<...>().
+		 *********************************************************************/
 		template<typename ...T>
-		QueryBuilder<T...> BuildQuery() { return QueryBuilder<T...>(m_archetypes); }
+		QueryBuilder<T...> BuildQuery() { return QueryBuilder<T...>(m_archetypes, &m_currentTick); }
 
+		/*********************************************************************
+		 \brief  Tick T was last written at for entity, or 0 if never (or if
+				 entity is dead / doesn't have T).
+		 *********************************************************************/
 		template <typename T>
 		std::uint64_t LastChanged(Entity entity) const;
 
+		/*********************************************************************
+		 \brief  Stamps T's change tick for entity with the current tick.
+		 *********************************************************************/
 		template <typename T>
 		void MarkChanged(Entity entity);
 
-		std::vector<Entity> CreateEntities(uint32_t count, const ComponentSignature& signature = ComponentSignature{});
 	private:
+		friend class CommandBuffer;
+		using ComponentHookFn = std::function<void(World&, Entity, void*)>;
+
+		EntityRecord& RequireMutableEntity(Entity entity, const char* operation);
+		Entity CreateEntityImpl(const ComponentSignature& signature, bool fireAddHooks);
+		void NotifyComponentsAdded(Entity entity);
+
 		/*********************************************************************
 		 \brief
 			Relocates an entity's row from its current archetype into
-			destination, carrying over every shared component and
-			default-constructing any newly added ones.
-
-		 \param[in,out]
-			record The entity's EntityRecord; updated in place to point at
-			its new archetype/row.
-		 \param[in]
-			entity The entity being moved (used only to place it into
-			destination's row list).
-		 \param[in,out]
-			destination The archetype to move the entity into. Must differ
-			from record.archetype.
+			destination, carrying over every shared component.
 
 		 \details
-			For each component destination requires: if the source
-			archetype already has it, moves the existing value across via
-			ComponentColumn::MoveElementTo(); otherwise default-constructs a
-			fresh value in the destination column. Afterwards removes the
-			entity's old row from the source archetype (which is what
-			actually destroys any moved-from values) and fixes up the row
-			index of whichever entity got swapped into that now-vacant row.
+			For each component destination requires: if the source archetype
+			already has it, moves the existing value across; if it is
+			addedId, relocates *addedValue straight into the new slot;
+			otherwise default-constructs it. Afterwards removes the entity's
+			old row from the source archetype and fixes up the row index of
+			whichever entity got swapped into that now-vacant row.
 		 *********************************************************************/
-		void MoveEntity(EntityRecord& record, Entity entity, Archetype& destination);
+		void MoveEntity(EntityRecord& record, Entity entity, Archetype& destination,
+			ComponentId addedId = kInvalidComponentId, void* addedValue = nullptr);
+
+		template <typename T> T& OverwriteComponent(EntityRecord& record, ComponentId id, T&& value);
+		template <typename T> T& InsertComponent(EntityRecord& record, Entity entity, ComponentId id, T&& value);
+
+		void FireAddHooks(ComponentId id, Entity entity, void* component);
+		void FireRemoveHooks(ComponentId id, Entity entity, void* component);
+		void FireAddHooksForRow(Archetype& archetype, uint32_t row, Entity entity);
+		void FireRemoveHooksForRow(Archetype& archetype, uint32_t row, Entity entity);
 
 		EntityManager     m_entities;
 		ComponentRegistry m_components;
 		ArchetypeRegistry m_archetypes;
-		std::uint64_t m_currentTick = 1;
-
-
-		using ComponentHookFn = std::function<void(World&, Entity, void*)>;
-
-		void FireAddHooks(ComponentId id, Entity entity, void* component);
-		void FireRemoveHooks(ComponentId id, Entity entity, void* component);
+		std::uint64_t     m_currentTick = 1;
+		float             m_deltaTime = 0.f;
 
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onAddHooks;
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onRemoveHooks;
@@ -312,11 +407,14 @@ namespace Crucible
 #ifdef _MSC_VER
 #pragma warning(pop)
 #endif
+
 	template <typename T>
 	void World::OnComponentAdded(std::function<void(World&, Entity, T&)> callback)
 	{
-		const ComponentId id = ComponentTypeId<T>();
-		m_onAddHooks[id].push_back(
+		if (m_archetypes.IsIterating())
+			throw std::logic_error("World::OnComponentAdded: register hooks outside queries and hook dispatch");
+
+		m_onAddHooks[ComponentTypeId<T>()].push_back(
 			[cb = std::move(callback)](World& world, Entity entity, void* component)
 			{
 				cb(world, entity, *static_cast<T*>(component));
@@ -326,8 +424,10 @@ namespace Crucible
 	template <typename T>
 	void World::OnComponentRemoved(std::function<void(World&, Entity, T&)> callback)
 	{
-		const ComponentId id = ComponentTypeId<T>();
-		m_onRemoveHooks[id].push_back(
+		if (m_archetypes.IsIterating())
+			throw std::logic_error("World::OnComponentRemoved: register hooks outside queries and hook dispatch");
+
+		m_onRemoveHooks[ComponentTypeId<T>()].push_back(
 			[cb = std::move(callback)](World& world, Entity entity, void* component)
 			{
 				cb(world, entity, *static_cast<T*>(component));
@@ -348,7 +448,7 @@ namespace Crucible
 
 		const EntityRecord& record = m_entities.Record(e);
 		const ComponentId id = ComponentTypeId<T>();
-		
+
 		if (!record.archetype->Contains(id)) return nullptr;
 		return static_cast<T*>(record.archetype->GetComponentPtr(id, record.row));
 	}
@@ -379,76 +479,60 @@ namespace Crucible
 	template<typename T>
 	inline T& World::AddComponent(Entity entity, T value)
 	{
-		if (m_archetypes.IsIterating())
-		{
-		throw std::logic_error("World::AddComponent called while a Query is iterating - use a CommandBuffer instead (see CommandBuffer.h)");
-		}
-
-		assert(m_entities.IsAlive(entity) && "AddComponent on a dead/stale Entity");
-
-		if (!m_entities.IsAlive(entity)) throw std::invalid_argument("World::AddComponent called with a dead/stale Entity");
-		
-
-		EntityRecord& record = m_entities.Record(entity);
+		EntityRecord& record = RequireMutableEntity(entity, "AddComponent");
 		const ComponentId id = ComponentTypeId<T>();
 
-		if (record.archetype->Contains(id))
-		{
-			T* existing = static_cast<T*>(record.archetype->GetComponentPtr(id, record.row));
-			*existing = std::move(value);
-			record.archetype->GetColumn(id).Touch(record.row, m_currentTick);
-			return *existing;
-		}
-		
-		Archetype* destination = m_archetypes.GetAddDestination(*record.archetype, id);
-		MoveEntity(record, entity, *destination);
-
-		T* slot = static_cast<T*>(destination->GetComponentPtr(id, record.row));
-		*slot = std::move(value);
-		destination->GetColumn(id).Touch(record.row, m_currentTick);
-
-		if (!m_onAddHooks[id].empty())
-		{
-			ArchetypeRegistry::IterationGuard guard(m_archetypes);
-			FireAddHooks(id, entity, slot);
-		}
-
-		return *slot;
+		if (record.archetype->Contains(id)) return OverwriteComponent<T>(record, id, std::move(value));
+		return InsertComponent<T>(record, entity, id, std::move(value));
 	}
+
+	template <typename T, typename... Args>
+	inline T& World::EmplaceComponent(Entity entity, Args&&... args)
+	{
+		return AddComponent<T>(entity, T(std::forward<Args>(args)...));
+	}
+
 	template<typename T>
 	inline void World::RemoveComponent(Entity entity)
 	{
-		if (m_archetypes.IsIterating())
-		{
-			throw std::logic_error("World::RemoveComponent called while a Query is iterating - use a CommandBuffer instead (see CommandBuffer.h)");
-		}
-
-		assert(m_entities.IsAlive(entity) && "Remove Component on dead/stale Entity");
-
-		if (!m_entities.IsAlive(entity)) throw std::invalid_argument("World::RemoveComponent called with a dead/stale Entity");
-
-		EntityRecord& record = m_entities.Record(entity);
+		EntityRecord& record = RequireMutableEntity(entity, "RemoveComponent");
 		const ComponentId id = ComponentTypeId<T>();
 
 		if (!record.archetype->Contains(id)) return;
 
-		if (!m_onRemoveHooks[id].empty())
-		{
-			T* existing = static_cast<T*>(record.archetype->GetComponentPtr(id, record.row));
-			ArchetypeRegistry::IterationGuard guard(m_archetypes);
-			FireRemoveHooks(id, entity, existing);
-		}
+		FireRemoveHooks(id, entity, record.archetype->GetComponentPtr(id, record.row));
 
 		Archetype* destination = m_archetypes.GetRemoveDestination(*record.archetype, id);
 		MoveEntity(record, entity, *destination);
+	}
+
+	template <typename T>
+	T& World::OverwriteComponent(EntityRecord& record, ComponentId id, T&& value)
+	{
+		T& existing = *static_cast<T*>(record.archetype->GetComponentPtr(id, record.row));
+		existing = std::move(value);
+		record.archetype->GetColumn(id).Touch(record.row, m_currentTick);
+		return existing;
+	}
+
+	template <typename T>
+	T& World::InsertComponent(EntityRecord& record, Entity entity, ComponentId id, T&& value)
+	{
+		Archetype* destination = m_archetypes.GetAddDestination(*record.archetype, id);
+		MoveEntity(record, entity, *destination, id, &value);   // value is relocated straight into its slot
+
+		T& slot = *static_cast<T*>(destination->GetComponentPtr(id, record.row));
+		destination->GetColumn(id).Touch(record.row, m_currentTick);
+		FireAddHooks(id, entity, &slot);
+		return slot;
 	}
 
 	template<typename... T>
 	Query<T...>World::CreateQuery()
 	{
 		QueryDescription description;
-		description.required = MakeSignature<T...>();
-		Query<T...>query(std::move(description), m_archetypes);
+		description.required = MakeSignature<std::remove_const_t<T>...>();
+		Query<T...>query(std::move(description), m_archetypes, &m_currentTick);
 		query.Rebuild();
 		return query;
 	}

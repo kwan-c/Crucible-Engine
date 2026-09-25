@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Declares CommandBuffer: records structural ECS changes
 *                (create/destroy entity, add/remove component) made
@@ -11,10 +11,20 @@
 *                iteration has finished.
 *
 * \details
+*                Records are packed into reusable chunks; each record is a
+*                header followed by its payload, aligned for that payload's
+*                own type. Replay is tolerant: a command whose target entity
+*                died earlier in the same buffer is skipped rather than
+*                aborting the rest of the buffer. Spawned entities are
+*                created directly in their final archetype, and their
+*                OnComponentAdded hooks fire at the end of Execute(), after
+*                their With<T>() values have been written.
 *
 * \history
 *    -v1.0       initial chunked-arena command buffer (destroy/add/remove/spawn)
-*
+*    -v1.1       tolerant replay (dead targets skipped), spawns created in
+*                their final archetype with add hooks deferred to the end of
+*                Execute(), per-payload alignment instead of a global 32 bytes
 *
 **************************************************************************/
 
@@ -54,20 +64,38 @@ namespace  Crucible
 		CommandBuffer(CommandBuffer&& other) noexcept;
 		CommandBuffer& operator=(CommandBuffer&& other) noexcept;
 
+		/*********************************************************************
+		 \brief  Queues destruction of entity (no-op on replay if already dead).
+		 *********************************************************************/
 		void DestroyEntity(Entity entity);
 
-
+		/*********************************************************************
+		 \brief  Queues World::AddComponent<T> (add or overwrite) on entity.
+		 \note   Skipped on replay if entity has died by then.
+		 *********************************************************************/
 		template <typename T>
-		void AddComponent(Entity enity, T value = T{});
+		void AddComponent(Entity entity, T value = T{});
 
+		/*********************************************************************
+		 \brief  Queues World::RemoveComponent<T> on entity.
+		 \note   Skipped on replay if entity has died by then.
+		 *********************************************************************/
 		template <typename T>
 		void RemoveComponent(Entity entity);
 
 
 		class EntitySpawn;
 
+		/*********************************************************************
+		 \brief  Queues creation of a new entity; chain With<T>() on the
+				 result to give it components.
+		 *********************************************************************/
 		EntitySpawn SpawnEntity();
 
+		/*********************************************************************
+		 \brief  Replays every queued command in order, then resets the
+				 buffer for reuse (chunk storage is kept).
+		 *********************************************************************/
 		void Execute(World& world);
 
 		void Clear()noexcept;
@@ -77,13 +105,15 @@ namespace  Crucible
 
 	private:
 
+		using ExecuteFn = void(*)(std::byte* payload, World& world, CommandBuffer& commands);
+		using DestroyFn = void(*)(std::byte* payload);
+
 		struct RecordHeader
 		{
-			void(*execute)(std::byte* payload, World& world, CommandBuffer& commands);
-
-			void(*destroyPayload)(std::byte* payload);
-
-			std::uint32_t payloadSize;
+			ExecuteFn     execute;
+			DestroyFn     destroyPayload;   // null for trivially destructible payloads
+			std::uint32_t payloadOffset;    // record start -> payload
+			std::uint32_t recordBytes;      // header + padding + payload, multiple of kRecordAlign
 		};
 
 		struct Chunk
@@ -93,25 +123,36 @@ namespace  Crucible
 			std::size_t capacity = 0;
 		};
 
-		static constexpr std::size_t kPayloadAlign = (alignof(std::max_align_t) > 32) ? alignof(std::max_align_t) : 32;
+		struct RecordSlot
+		{
+			std::byte*    record = nullptr;
+			std::uint32_t payloadOffset = 0;
+			std::uint32_t recordBytes = 0;
+		};
 
-		static constexpr std::size_t kHeaderBytes = (sizeof(RecordHeader) + kPayloadAlign - 1) & ~(kPayloadAlign - 1);
+		static constexpr std::size_t kRecordAlign = alignof(RecordHeader);
+		static constexpr std::size_t kChunkAlign = alignof(std::max_align_t);
 
-		static constexpr std::size_t kChunkHeaderBytes = (sizeof(Chunk) + kPayloadAlign - 1) & ~(kPayloadAlign - 1);
+		static constexpr std::size_t RoundUp(std::size_t value, std::size_t align)
+		{
+			return (value + align - 1) & ~(align - 1);
+		}
 
+		// Spelled out rather than RoundUp(): a static member initializer can't call a
+		// constexpr member function while the class is still incomplete.
+		static constexpr std::size_t kChunkHeaderBytes = (sizeof(Chunk) + kChunkAlign - 1) & ~(kChunkAlign - 1);
 		static constexpr std::size_t kChunkBytes = 4096 - kChunkHeaderBytes;
 
-		static constexpr std::size_t RoundUpToPayloadAlign(std::size_t bytes)
-		{
-			return (bytes + kPayloadAlign - 1) & ~(kPayloadAlign - 1);
-		}
+		static std::byte* ChunkData(Chunk* chunk) noexcept { return reinterpret_cast<std::byte*>(chunk) + kChunkHeaderBytes; }
 
 		static Chunk* AllocateChunk(std::size_t minCapacity);
 
-		std::byte* Allocate(std::size_t payloadBytes);
+		static bool TryPlace(Chunk* chunk, std::size_t payloadSize, std::size_t payloadAlign, RecordSlot& out) noexcept;
 
-		template<typename Payload,typename ExecuteFn , typename ... Args>
-		void Emplace(ExecuteFn, Args&&... args);
+		RecordSlot AllocateRecord(std::size_t payloadSize, std::size_t payloadAlign);
+
+		template<typename Payload, typename Fn, typename ... Args>
+		void Emplace(Fn executeFn, Args&&... args);
 
 		void DestroyPayloadsFrom(Chunk* chunk, std::size_t offset)noexcept;
 
@@ -145,6 +186,7 @@ namespace  Crucible
 		std::size_t m_count = 0;
 
 		std::vector<Entity> m_spawnedEntities;
+		std::vector<ComponentSignature> m_spawnSignatures;   // final component set per spawn token
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -180,13 +222,15 @@ namespace  Crucible
 		Emplace<Payload>(
 			[](std::byte* raw, World& world, CommandBuffer&)
 			{
-				Payload* p = reinterpret_cast<Payload*>(raw);
+				Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				// Deferred commands race earlier deferred destroys in the same
+				// buffer: a target that died first is a no-op, not an error.
+				if (!world.IsAlive(p->entity)) return;
 				world.AddComponent<T>(p->entity, std::move(p->value));
 			},
 			Payload{ entity, std::move(value) });
 	}
 
-	// See declaration above.
 	template <typename T>
 	void CommandBuffer::RemoveComponent(Entity entity)
 	{
@@ -195,7 +239,8 @@ namespace  Crucible
 		Emplace<Payload>(
 			[](std::byte* raw, World& world, CommandBuffer&)
 			{
-				Payload* p = reinterpret_cast<Payload*>(raw);
+				const Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				if (!world.IsAlive(p->entity)) return;
 				world.RemoveComponent<T>(p->entity);
 			},
 			Payload{ entity });
@@ -204,27 +249,28 @@ namespace  Crucible
 	template <typename T>
 	void CommandBuffer::RecordSetSpawnedComponent(std::uint32_t token, T value)
 	{
+		// The spawn is created with T already in its archetype (see RecordCreateSpawned).
+		m_spawnSignatures[token].set(ComponentTypeId<T>());
+
 		struct Payload { std::uint32_t token; T value; };
 
 		Emplace<Payload>(
 			[](std::byte* raw, World& world, CommandBuffer& commands)
 			{
-				Payload* p = reinterpret_cast<Payload*>(raw);
-				world.AddComponent<T>(commands.GetSpawnedEntity(p->token), std::move(p->value));
+				Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				const Entity entity = commands.GetSpawnedEntity(p->token);
+				if (!world.IsAlive(entity)) return;
+				world.AddComponent<T>(entity, std::move(p->value));   // overwrite in place - no migration
 			},
 			Payload{ token, std::move(value) });
 	}
 
 
-	template <typename Payload, typename ExecuteFn, typename... Args>
-	void CommandBuffer::Emplace(ExecuteFn executeFn, Args&&... args)
+	template <typename Payload, typename Fn, typename... Args>
+	void CommandBuffer::Emplace(Fn executeFn, Args&&... args)
 	{
-		static_assert(alignof(Payload) <= kPayloadAlign,
-			"CommandBuffer payload requires stricter alignment than kPayloadAlign supports - see the LIMITS note in CommandBuffer.h");
-
-		const std::size_t recordBytes = kHeaderBytes + RoundUpToPayloadAlign(sizeof(Payload));
-		std::byte* recordStart = Allocate(sizeof(Payload));
-		std::byte* payload = recordStart + kHeaderBytes;
+		const RecordSlot slot = AllocateRecord(sizeof(Payload), alignof(Payload));
+		std::byte* payload = slot.record + slot.payloadOffset;
 
 		try
 		{
@@ -232,21 +278,17 @@ namespace  Crucible
 		}
 		catch (...)
 		{
-			// Construction failed - nothing valid exists at 'payload'
-			// (any subobjects of Payload that DID finish constructing
-			// before the failure are already unwound by the language
-			// itself). Hand the space Allocate() just claimed back to
-			// the chunk so the next successful Emplace() call reuses
-			// it, and let the caller see the real exception rather
-			// than leaving a RecordHeader for a payload that was never
-			// actually built.
-			m_tail->used -= recordBytes;
+			// Construction failed - nothing valid exists at 'payload'. Hand the
+			// record's space back (it is always the last thing placed in the
+			// tail chunk) so no header is left pointing at an unbuilt payload.
+			m_tail->used -= slot.recordBytes;
 			throw;
 		}
 
-		auto* header = reinterpret_cast<RecordHeader*>(recordStart);
+		RecordHeader* header = ::new (static_cast<void*>(slot.record)) RecordHeader{};
 		header->execute = executeFn;
-		header->payloadSize = static_cast<std::uint32_t>(sizeof(Payload));
+		header->payloadOffset = slot.payloadOffset;
+		header->recordBytes = slot.recordBytes;
 
 		if constexpr (std::is_trivially_destructible_v<Payload>)
 		{
@@ -254,7 +296,7 @@ namespace  Crucible
 		}
 		else
 		{
-			header->destroyPayload = [](std::byte* p) { reinterpret_cast<Payload*>(p)->~Payload(); };
+			header->destroyPayload = [](std::byte* p) { std::launder(reinterpret_cast<Payload*>(p))->~Payload(); };
 		}
 
 		++m_count;

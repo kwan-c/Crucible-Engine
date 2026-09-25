@@ -40,6 +40,9 @@ namespace Crucible
 
         World& GetWorld() noexcept { return *m_world; }
         const World& GetWorld() const noexcept { return *m_world; }
+
+        // The ECS system driver, e.g. for Systems().RegisterSystem<MySystem>().
+        ECSSystemManager& Systems() noexcept { return m_systems; }
         // Attaches a layer (calls OnAttach) and takes ownership. Layers are updated in the
         // order pushed, and detached in reverse order when Core shuts down.
         void PushLayer(std::unique_ptr<Layer> layer);
