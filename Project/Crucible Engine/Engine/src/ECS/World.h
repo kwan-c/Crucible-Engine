@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -20,6 +20,20 @@
 *                bookkeeping in MoveEntity() (see World.cpp) behind
 *                simple Add/Remove/Get/Has component calls.
 *
+*                Guarantees:
+*                  - Structural changes are all-or-nothing: if an
+*                    allocation or component constructor throws, the
+*                    entity (and the whole batch, for CreateEntities) is
+*                    left exactly as before.
+*                  - Every mutable component access marks the component
+*                    changed (GetComponent/Write/non-const queries); use
+*                    Read<T>() or a const World for pure reads.
+*                  - Lifecycle-hook exceptions are caught, logged and
+*                    counted (HookFailureCount()); they never leave a
+*                    structural change half-done.
+*                  - Public entry points validate their input in every
+*                    build configuration.
+*
 * \history
 *    -v1.0       skeleton
 *    -v1.1       added member-level comments for readability, no logic changes
@@ -33,6 +47,12 @@
 *                public names and signatures unchanged
 *    -v1.4       private DestroyEntityImpl (silent removal of rolled-back
 *                spawns); documented that lifecycle hooks must not throw
+*    -v1.5       exception-safe creation/migration (CreateEntities is
+*                all-or-nothing), Read/Write + const GetComponent and
+*                stamping mutable GetComponent, signature validation,
+*                catch-log-continue hook policy with HookFailureCount(),
+*                declared-access and structural-change enforcement for
+*                running systems; existing public signatures unchanged
 *
 **************************************************************************/
 #pragma once
@@ -55,6 +75,7 @@
 #include "Components/ComponentSignature.h"
 #include "Archetype/ArchetypeRegistry.h"
 #include "Systems/Query.h"
+#include "Systems/SystemAccess.h"
 
 
 namespace Crucible
@@ -76,7 +97,7 @@ namespace Crucible
 		the archetype-move bookkeeping in MoveEntity() behind simple
 		Add/Remove/Get/Has component calls; gameplay code and systems should
 		only ever talk to World, never to EntityManager/Archetype/
-		ArchetypeRegistry directly.
+		ArchetypeRegistry directly (their mutators are private to World).
 
 	 \note
 		Non-copyable: owns all ECS storage (every entity, archetype and
@@ -127,12 +148,15 @@ namespace Crucible
 		/*********************************************************************
 		 \brief  This world's component registry.
 		 \return Reference to the ComponentRegistry.
+		 \note  Read-only in practice: registration is private to World.
 		 *********************************************************************/
 		ComponentRegistry& Components() { return m_components; }
 
 		/*********************************************************************
 		 \brief  This world's archetype registry.
 		 \return Reference to the ArchetypeRegistry.
+		 \note  Read-only in practice: archetype creation and every
+				structural change are private to World.
 		 *********************************************************************/
 		ArchetypeRegistry& Archetypes() { return m_archetypes; }
 
@@ -154,14 +178,11 @@ namespace Crucible
 			A handle to the new entity. Every one of its components is
 			default-constructed.
 
-		 \details
-			Creates the matching archetype first if it doesn't exist yet.
-			Slightly cheaper than CreateEntity() + repeated AddComponent<T>()
-			calls when the full component set is already known up front,
-			since it avoids the intermediate archetype moves.
-
 		 \note
-			Fires OnComponentAdded for every component the entity starts with.
+			Fires OnComponentAdded for every component the entity starts
+			with. Throws std::invalid_argument if the signature names an
+			unregistered component. If construction fails, no entity is
+			created and no slot is leaked.
 		 *********************************************************************/
 		Entity CreateEntity(const ComponentSignature& signature);
 
@@ -174,7 +195,9 @@ namespace Crucible
 		 \return The created entity handles.
 
 		 \note
-			Fires OnComponentAdded per entity, like CreateEntity(signature).
+			All-or-nothing: if any entity fails to build, every entity
+			created by this call is removed again and no hooks have fired.
+			Hooks fire per entity once the whole batch exists.
 		 *********************************************************************/
 		std::vector<Entity> CreateEntities(uint32_t count, const ComponentSignature& signature = ComponentSignature{});
 
@@ -223,14 +246,41 @@ namespace Crucible
 		bool HasComponent(Entity entity)const;
 
 		/*********************************************************************
-		 \brief  Fetches a pointer to an entity's instance of a component.
+		 \brief  Fetches a mutable pointer to an entity's component and
+				 marks it changed (same model as a non-const Query).
 		 \tparam T The component type to fetch.
 		 \param[in] entity The entity to query.
 		 \return Pointer to the component, or nullptr if entity is dead/
 				 stale or does not have T.
+		 \note  Use Read<T>() (or a const World) when you only read, so
+				change-filtered systems don't see false changes.
 		 *********************************************************************/
 		template <typename T>
 		T* GetComponent(Entity entity);
+
+		/*********************************************************************
+		 \brief  Read-only access to an entity's component; never marks it
+				 changed.
+		 \return Pointer to the component, or nullptr if entity is dead/
+				 stale or does not have T.
+		 *********************************************************************/
+		template <typename T>
+		const T* GetComponent(Entity entity) const;
+
+		/*********************************************************************
+		 \brief  Explicit read-only access (same as the const GetComponent).
+		 *********************************************************************/
+		template <typename T>
+		const T* Read(Entity entity) const { return GetComponent<T>(entity); }
+
+		/*********************************************************************
+		 \brief  Explicit write access: returns a mutable pointer and marks
+				 the component changed at the current tick.
+		 \return Pointer to the component, or nullptr if entity is dead/
+				 stale or does not have T.
+		 *********************************************************************/
+		template <typename T>
+		T* Write(Entity entity) { return GetComponent<T>(entity); }
 
 		/*********************************************************************
 		 \brief
@@ -253,7 +303,8 @@ namespace Crucible
 
 		 \note
 			Throws std::invalid_argument if entity is dead or stale, and
-			std::logic_error if called while a Query is iterating.
+			std::logic_error if called while a Query is iterating. If the
+			move fails, the entity is left unchanged.
 		 *********************************************************************/
 		template <typename T> T& AddComponent(Entity entity, T value = T{});
 
@@ -280,7 +331,9 @@ namespace Crucible
 		 \details
 			A no-op if entity does not currently have a T. Otherwise fires
 			OnComponentRemoved, then moves the entity to the archetype for
-			its signature minus T.
+			its signature minus T. Every allocation happens before the hook
+			fires, so a failure leaves both the entity and the hook state
+			untouched.
 
 		 \note
 			Throws std::invalid_argument if entity is dead or stale, and
@@ -303,9 +356,12 @@ namespace Crucible
 			structural changes through a CommandBuffer. Registering a hook
 			during Query iteration or hook dispatch throws std::logic_error.
 		 \warning
-			Lifecycle hooks are expected not to throw during normal engine
-			operation. A throwing hook is treated as an engine error: the
-			exception propagates, and hooks that already ran are NOT undone.
+			Hook failure policy: an exception thrown by a hook is caught,
+			logged and counted (HookFailureCount()); the remaining hooks
+			still run and the structural change always completes. Side
+			effects a hook made before throwing are NOT undone, and a
+			remove/destroy hook may later run for a component whose add
+			hook failed - hooks must tolerate that.
 		 *********************************************************************/
 		template <typename T>
 		void OnComponentAdded(std::function<void(World&, Entity, T&)> callback);
@@ -320,7 +376,7 @@ namespace Crucible
 			Fires on RemoveComponent AND on DestroyEntity, so resource-owning
 			hooks always pair up with their add.
 		 \warning
-			Expected not to throw - see OnComponentAdded().
+			Same failure policy as OnComponentAdded().
 		 *********************************************************************/
 		template <typename T>
 		void OnComponentRemoved(std::function<void(World&, Entity, T&)> callback);
@@ -330,9 +386,15 @@ namespace Crucible
 			Registers a callback fired for every entity about to be
 			destroyed, BEFORE its component data is torn down.
 		 \warning
-			Expected not to throw - see OnComponentAdded().
+			Same failure policy as OnComponentAdded().
 		 *********************************************************************/
 		void OnEntityDestroyed(std::function<void(World&, Entity)> callback);
+
+		/*********************************************************************
+		 \brief  How many lifecycle-hook invocations have thrown (and been
+				 caught) in this world so far.
+		 *********************************************************************/
+		std::uint64_t HookFailureCount() const noexcept { return m_hookFailures; }
 
 		/*********************************************************************
 		 \brief
@@ -349,6 +411,8 @@ namespace Crucible
 		 \note
 			Build once (e.g. on a system's first Update) and keep it - the
 			query only re-scans archetypes when a new one has been created.
+			A Query object belongs to one system; it must not be iterated by
+			two threads at once.
 		 *********************************************************************/
 		template<typename ...T>
 		Query<T... > CreateQuery();
@@ -368,6 +432,8 @@ namespace Crucible
 
 		/*********************************************************************
 		 \brief  Stamps T's change tick for entity with the current tick.
+		 \note  Throws std::invalid_argument for a dead/stale entity and
+				std::logic_error if the entity has no T.
 		 *********************************************************************/
 		template <typename T>
 		void MarkChanged(Entity entity);
@@ -377,11 +443,13 @@ namespace Crucible
 		using ComponentHookFn = std::function<void(World&, Entity, void*)>;
 
 		EntityRecord& RequireMutableEntity(Entity entity, const char* operation);
+		void RequireStructuralChange(const char* operation) const;
+
 		Entity CreateEntityImpl(const ComponentSignature& signature, bool fireAddHooks);
 		void NotifyComponentsAdded(Entity entity);
 
 		// fireHooks == false removes an entity whose add hooks never ran (a
-		// rolled-back CommandBuffer spawn), so no remove/destroy hook may run.
+		// rolled-back spawn or bulk create), so no remove/destroy hook may run.
 		void DestroyEntityImpl(Entity entity, bool fireHooks);
 
 		/*********************************************************************
@@ -390,12 +458,11 @@ namespace Crucible
 			destination, carrying over every shared component.
 
 		 \details
-			For each component destination requires: if the source archetype
-			already has it, moves the existing value across; if it is
-			addedId, relocates *addedValue straight into the new slot;
-			otherwise default-constructs it. Afterwards removes the entity's
-			old row from the source archetype and fixes up the row index of
-			whichever entity got swapped into that now-vacant row.
+			Reserves every destination array first and builds the
+			destination's new default columns before moving anything, so if
+			anything throws the entity is still intact in its source
+			archetype. addedValue (for addedId) is relocated straight into
+			its slot.
 		 *********************************************************************/
 		void MoveEntity(EntityRecord& record, Entity entity, Archetype& destination,
 			ComponentId addedId = kInvalidComponentId, void* addedValue = nullptr);
@@ -403,16 +470,20 @@ namespace Crucible
 		template <typename T> T& OverwriteComponent(EntityRecord& record, ComponentId id, T&& value);
 		template <typename T> T& InsertComponent(EntityRecord& record, Entity entity, ComponentId id, T&& value);
 
-		void FireAddHooks(ComponentId id, Entity entity, void* component);
-		void FireRemoveHooks(ComponentId id, Entity entity, void* component);
-		void FireAddHooksForRow(Archetype& archetype, uint32_t row, Entity entity);
-		void FireRemoveHooksForRow(Archetype& archetype, uint32_t row, Entity entity);
+		// Hook dispatch: every hook is isolated (see the failure policy on OnComponentAdded).
+		void FireAddHooks(ComponentId id, Entity entity, void* component) noexcept;
+		void FireRemoveHooks(ComponentId id, Entity entity, void* component) noexcept;
+		void FireDestroyHooks(Entity entity) noexcept;
+		void FireAddHooksForRow(Archetype& archetype, uint32_t row, Entity entity) noexcept;
+		void FireRemoveHooksForRow(Archetype& archetype, uint32_t row, Entity entity) noexcept;
+		void ReportHookFailure(const char* hookKind, ComponentId id, Entity entity, const char* what) noexcept;
 
 		EntityManager     m_entities;
 		ComponentRegistry m_components;
 		ArchetypeRegistry m_archetypes;
 		std::uint64_t     m_currentTick = 1;
 		float             m_deltaTime = 0.f;
+		std::uint64_t     m_hookFailures = 0;
 
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onAddHooks;
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onRemoveHooks;
@@ -458,13 +529,28 @@ namespace Crucible
 	template <typename T>
 	T* World::GetComponent(Entity e)
 	{
-		if (!m_entities.IsAlive(e)) return nullptr;
-
-		const EntityRecord& record = m_entities.Record(e);
 		const ComponentId id = ComponentTypeId<T>();
+		CheckDeclaredAccess(ComponentSignature{}, MakeSignature<T>(), "writes through World::GetComponent/Write and");
 
+		if (!m_entities.IsAlive(e)) return nullptr;
+		const EntityRecord& record = m_entities.Record(e);
 		if (!record.archetype->Contains(id)) return nullptr;
+
+		// Handing out a mutable pointer counts as a write.
+		record.archetype->GetColumn(id).Touch(record.row, m_currentTick);
 		return static_cast<T*>(record.archetype->GetComponentPtr(id, record.row));
+	}
+
+	template <typename T>
+	const T* World::GetComponent(Entity e) const
+	{
+		const ComponentId id = ComponentTypeId<T>();
+		CheckDeclaredAccess(MakeSignature<T>(), ComponentSignature{}, "reads through World::Read/GetComponent and");
+
+		if (!m_entities.IsAlive(e)) return nullptr;
+		const EntityRecord& record = m_entities.Record(e);
+		if (!record.archetype->Contains(id)) return nullptr;
+		return static_cast<const T*>(static_cast<const Archetype*>(record.archetype)->GetColumn(id).At(record.row));
 	}
 
 	template <typename T>
@@ -474,18 +560,21 @@ namespace Crucible
 		const EntityRecord& record = m_entities.Record(entity);
 		const ComponentId id = ComponentTypeId<T>();
 		if (!record.archetype->Contains(id)) return 0;
-		return record.archetype->GetColumn(id).LastChanged(record.row);
+		return static_cast<const Archetype*>(record.archetype)->GetColumn(id).LastChanged(record.row);
 	}
 
 	template <typename T>
 	void World::MarkChanged(Entity entity)
 	{
-		assert(m_entities.IsAlive(entity) && "MarkChanged on a dead/stale Entity");
-		if (!m_entities.IsAlive(entity)) return;
+		CheckDeclaredAccess(ComponentSignature{}, MakeSignature<T>(), "marks changed via World::MarkChanged and");
+
+		if (!m_entities.IsAlive(entity))
+			throw std::invalid_argument("World::MarkChanged called with a dead/stale Entity");
 
 		const EntityRecord& record = m_entities.Record(entity);
 		const ComponentId id = ComponentTypeId<T>();
-		if (!record.archetype->Contains(id)) return;
+		if (!record.archetype->Contains(id))
+			throw std::logic_error("World::MarkChanged: the entity does not have this component");
 
 		record.archetype->GetColumn(id).Touch(record.row, m_currentTick);
 	}
@@ -514,9 +603,11 @@ namespace Crucible
 
 		if (!record.archetype->Contains(id)) return;
 
-		FireRemoveHooks(id, entity, record.archetype->GetComponentPtr(id, record.row));
-
+		// Allocate everything the move needs first: once the hook has fired, the removal must not fail.
 		Archetype* destination = m_archetypes.GetRemoveDestination(*record.archetype, id);
+		destination->ReserveForAppend();
+
+		FireRemoveHooks(id, entity, record.archetype->GetComponentPtr(id, record.row));
 		MoveEntity(record, entity, *destination);
 	}
 

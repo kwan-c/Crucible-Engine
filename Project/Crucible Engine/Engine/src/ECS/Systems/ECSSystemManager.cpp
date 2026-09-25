@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Implementation of ECSSystemManager: drives every
 *                registered system's Init/Update/Shutdown, in order.
@@ -30,15 +30,19 @@
 *    -v1.2       schedule built by SystemScheduler (dependencies, access
 *                conflicts, batches); batches executed serially through the
 *                ExecuteBatch() seam; LogSchedule()
+*    -v1.3       each Update() runs inside the system's declared-access
+*                scope; MainThread affinity enforced
 *
 **************************************************************************/
 
 #include <exception>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <typeinfo>
 
 #include "ECSSystemManager.h"
+#include "SystemAccessScope.h"
 
 #include <Diagnostics/Logger.h>
 
@@ -142,6 +146,9 @@ namespace Crucible
 		// Cycles and impossible dependencies fail here, before any system's Init() runs.
 		RebuildSchedule();
 
+		// The thread that initialises the manager is the main thread for affinity checks.
+		m_mainThread = std::this_thread::get_id();
+
 		{
 			ScopedFlag running(m_iterating);
 
@@ -213,6 +220,18 @@ namespace Crucible
 
 		try
 		{
+			const SystemDesc& desc = m_schedule.descs[index];
+
+			// Main-thread systems (e.g. anything touching the window or graphics context) never run elsewhere.
+			if (desc.affinity == SystemAffinity::MainThread && std::this_thread::get_id() != m_mainThread)
+			{
+				throw std::logic_error("system has MainThread affinity but was run on another thread");
+			}
+
+			// While Update runs, World and Query hold the system to the access it declared.
+			const ActiveSystemAccess active{ &desc.access, m_schedule.names[index].c_str() };
+			SystemAccessScope accessScope(active);
+
 			m_registry.GetSystem(index).Update(world, slot.commands);
 		}
 		catch (const std::exception& e)

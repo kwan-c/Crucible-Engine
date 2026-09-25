@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Implementation of ComponentColumn's type-erased storage
 *                management (grow, push, swap-remove, move-between-columns).
@@ -16,9 +16,15 @@
 *                between a fast memcpy/no-op path and a correct
 *                move-construct+destroy path for non-trivial types.
 *
+*                Appends follow "commit last": capacity is reserved first
+*                (data AND change ticks), the element is constructed, and
+*                only then is the row counted. Moves and destructors are
+*                noexcept by contract, so relocation cannot fail halfway.
+*
 * \history
 *    -v1.0       initial grow/push/swap-remove/move-between-columns implementation
-*
+*    -v1.1       strong exception guarantee (commit-last appends, tick
+*                capacity reserved with data), PushBackMoved/PopBack
 *
 **************************************************************************/
 #include <algorithm>
@@ -53,7 +59,7 @@ namespace Crucible
 		if (m_data)
 		{
 			Clear();
-			if (m_data)::operator delete(m_data, std::align_val_t{ m_info->alignment });
+			::operator delete(m_data, std::align_val_t{ m_info->alignment });
 		}
 
 		m_info = other.m_info;
@@ -85,38 +91,20 @@ namespace Crucible
 	{
 		if (newCapacity <= m_capacity)return;
 
+		// Everything that can throw happens before the column is touched.
+		m_changedTicks.reserve(newCapacity);   // ticks first: later push_backs can then never throw
 		auto* newData = static_cast<std::byte*>(::operator new(newCapacity * m_info->size, std::align_val_t{ m_info->alignment }));
 
+		// Relocate the live elements; moves/destructors are noexcept by contract.
 		if (m_info->isTriviallyRelocatable)
 		{
 			if (m_size > 0)std::memcpy(newData, m_data, m_size * m_info->size);
 		}
 		else
 		{
-			std::size_t constructed = 0;
-			try
+			for (std::size_t i = 0; i < m_size; ++i)
 			{
-				for (; constructed < m_size; ++constructed)
-				{
-					void* dst = newData + constructed * m_info->size;
-					void* src = m_data + constructed * m_info->size;
-					m_info->moveConstruct(dst, src);
-				}
-			}
-			catch (...)
-			{
-
-				for (std::size_t i = 0; i < constructed; ++i)
-				{
-					m_info->destroy(newData + i * m_info->size);
-				}
-				::operator delete(newData, std::align_val_t{ m_info->alignment });
-				throw;
-			}
-
-
-			for (std::size_t i = 0; i < m_size; i++)
-			{
+				m_info->moveConstruct(newData + i * m_info->size, m_data + i * m_info->size);
 				m_info->destroy(m_data + i * m_info->size);
 			}
 		}
@@ -125,23 +113,41 @@ namespace Crucible
 		m_capacity = newCapacity;
 	}
 
-	void* ComponentColumn::PushBackUninitialized()
-	{
-		Grow(m_size + 1);
-		void* slot = m_data + m_size * m_info->size;
-		++m_size;
-		m_changedTicks.push_back(0);
-		return slot;
-	}
-
 	void* ComponentColumn::PushBackDefault()
 	{
-		void* slot = PushBackUninitialized();
-		m_info->defaultConstruct(slot);
+		ReserveForAppend();   // may throw; nothing changed yet
+
+		void* slot = m_data + m_size * m_info->size;
+		m_info->defaultConstruct(slot);   // may throw; the row isn't counted yet
+
+		// Commit: tick capacity was reserved with the data, so this can't throw.
+		m_changedTicks.push_back(0);
+		++m_size;
 		return slot;
 	}
 
-	void ComponentColumn::SwapRemove(std::size_t row)
+	void* ComponentColumn::PushBackMoved(void* src)
+	{
+		ReserveForAppend();   // the only step that can throw
+
+		void* slot = m_data + m_size * m_info->size;
+		if (m_info->isTriviallyRelocatable) std::memcpy(slot, src, m_info->size);
+		else m_info->moveConstruct(slot, src);
+
+		m_changedTicks.push_back(0);
+		++m_size;
+		return slot;
+	}
+
+	void ComponentColumn::PopBack() noexcept
+	{
+		assert(m_size > 0);
+		--m_size;
+		if (!m_info->isTriviallyDestructible) m_info->destroy(m_data + m_size * m_info->size);
+		m_changedTicks.pop_back();
+	}
+
+	void ComponentColumn::SwapRemove(std::size_t row) noexcept
 	{
 		assert(row < m_size);
 		std::byte* target = m_data + row * m_info->size;
@@ -164,7 +170,6 @@ namespace Crucible
 		if (row != m_size - 1) m_changedTicks[row] = m_changedTicks[m_size - 1];
 		m_changedTicks.pop_back();
 
-
 		--m_size;
 	}
 
@@ -173,19 +178,11 @@ namespace Crucible
 		assert(row < m_size);
 		assert(m_info == &dst.Info() && "column type mismatch");
 
-		void* dstSlot = dst.PushBackUninitialized();
-		if (m_info->isTriviallyRelocatable)
-		{
-			std::memcpy(dstSlot, At(row), m_info->size);
-		}
-		else
-		{
-			m_info->moveConstruct(dstSlot, At(row));
-		}
-		dst.m_changedTicks.back() = m_changedTicks[row];
+		dst.PushBackMoved(At(row));
+		dst.m_changedTicks.back() = m_changedTicks[row];   // an archetype move is not a component change
 	}
 
-	void ComponentColumn::Clear()
+	void ComponentColumn::Clear() noexcept
 	{
 		if (!m_info) return;
 		if (!m_info->isTriviallyDestructible)

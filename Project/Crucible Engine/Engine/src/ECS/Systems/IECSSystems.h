@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Declares IECSSystem: the base interface every ECS
 *                system (physics, rendering, audio, ...) must implement
@@ -25,6 +25,8 @@
 *                existing Init/Update/Shutdown/Priority unchanged
 *    -v1.2       added SystemDesc and the optional Describe() override
 *                (access, affinity, RunAfter/RunBefore) for the scheduler
+*    -v1.3       RunAfter/RunBefore are required dependencies; optional
+*                ones use RunAfterIfPresent/RunBeforeIfPresent
 *
 **************************************************************************/
 #pragma once
@@ -65,6 +67,15 @@ namespace Crucible
 	class IECSSystem;
 
 	/*************************************************************************
+	 \brief  One RunAfter/RunBefore constraint on another system type.
+	 *************************************************************************/
+	struct SystemDependency
+	{
+		std::type_index type;
+		bool required = true;   // required: the schedule fails if the other system isn't registered
+	};
+
+	/*************************************************************************
 	 \brief
 		Everything the scheduler needs to know about one system: stage,
 		priority, component access, thread affinity and explicit ordering
@@ -88,31 +99,55 @@ namespace Crucible
 		SystemAccess   access;
 		SystemAffinity affinity = SystemAffinity::MainThread;
 
-		std::vector<std::type_index> runAfter;    // systems that must run before this one
-		std::vector<std::type_index> runBefore;   // systems that must run after this one
+		std::vector<SystemDependency> runAfter;    // systems that must run before this one
+		std::vector<SystemDependency> runBefore;   // systems that must run after this one
 
 		/*********************************************************************
-		 \brief  This system runs after system T (ignored if T is not
-				 registered; checked against stage order if T is in another
-				 stage).
+		 \brief  This system runs after system T, which MUST be registered
+				 (Init()/registration fails otherwise). If T is in another
+				 stage, stage order must already agree.
 		 *********************************************************************/
 		template <typename T>
 		SystemDesc& RunAfter()
 		{
 			static_assert(std::is_base_of_v<IECSSystem, T>, "RunAfter<T>: T must derive from IECSSystem");
-			runAfter.emplace_back(typeid(T));
+			runAfter.push_back(SystemDependency{ typeid(T), true });
 			return *this;
 		}
 
 		/*********************************************************************
-		 \brief  This system runs before system T (same rules as
-				 RunAfter()).
+		 \brief  This system runs before system T, which MUST be registered
+				 (same rules as RunAfter()).
 		 *********************************************************************/
 		template <typename T>
 		SystemDesc& RunBefore()
 		{
 			static_assert(std::is_base_of_v<IECSSystem, T>, "RunBefore<T>: T must derive from IECSSystem");
-			runBefore.emplace_back(typeid(T));
+			runBefore.push_back(SystemDependency{ typeid(T), true });
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Like RunAfter(), but ignored (with an info log) when T is
+				 not registered - for optional features.
+		 *********************************************************************/
+		template <typename T>
+		SystemDesc& RunAfterIfPresent()
+		{
+			static_assert(std::is_base_of_v<IECSSystem, T>, "RunAfterIfPresent<T>: T must derive from IECSSystem");
+			runAfter.push_back(SystemDependency{ typeid(T), false });
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Like RunBefore(), but ignored (with an info log) when T is
+				 not registered - for optional features.
+		 *********************************************************************/
+		template <typename T>
+		SystemDesc& RunBeforeIfPresent()
+		{
+			static_assert(std::is_base_of_v<IECSSystem, T>, "RunBeforeIfPresent<T>: T must derive from IECSSystem");
+			runBefore.push_back(SystemDependency{ typeid(T), false });
 			return *this;
 		}
 

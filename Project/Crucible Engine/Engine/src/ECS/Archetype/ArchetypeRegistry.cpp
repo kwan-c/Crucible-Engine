@@ -16,6 +16,8 @@
 *                cache instead of unconditionally hashing+looking up;
 *                FindOrCreate() bumps a Version() counter on genuine
 *                creation so Query can skip redundant rebuilds
+*    -v1.2       FindOrCreate validates the signature and is strongly
+*                exception-safe
 *
 **************************************************************************/
 #include "ArchetypeRegistry.h"
@@ -38,12 +40,21 @@ namespace Crucible
 	{
 		if (Archetype* existing = Find(signature)) return existing;
 
+		m_components.ValidateSignature(signature, "ArchetypeRegistry::FindOrCreate");
+
 		auto owned = std::make_unique<Archetype>(signature, m_components);
 		Archetype* archetype = owned.get();
 
-		m_archetypes.emplace(signature, std::move(owned));
+		// Reserve every index first so the map and the lists can never get out of step.
+		m_all.reserve(m_all.size() + 1);
+		for (ComponentId id : archetype->ComponentIds())
+		{
+			m_componentToArchetypes[id].reserve(m_componentToArchetypes[id].size() + 1);
+		}
+
+		m_archetypes.emplace(signature, std::move(owned));   // last step that can throw
 		m_all.push_back(archetype);
-		
+
 		OnArchetypeCreated(*archetype);
 		++m_version;
 		return archetype;

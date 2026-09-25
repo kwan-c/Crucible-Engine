@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Declares ComponentColumn: a type-erased, contiguous
 *                dynamic array holding one component type's data for
@@ -20,9 +20,19 @@
 *                ComponentColumn.cpp for the implementation of
 *                growth/move/remove.
 *
+*                Exception safety: every append reserves capacity first,
+*                constructs the element, and only then counts the row, so a
+*                failed allocation or constructor leaves the column exactly
+*                as it was. Component moves and destructors are required to
+*                be noexcept (see MakeComponentInfo), which makes removal,
+*                relocation and rollback (PopBack) non-throwing.
+*
 * \history
 *    -v1.0       initial type-erased dynamic array (grow/push/swap-remove/move)
-*
+*    -v1.1       strong exception guarantee for appends (commit-last),
+*                PushBackMoved/PopBack replace PushBackUninitialized,
+*                noexcept remove/move/clear, mutation restricted to the ECS
+*                (friends)
 *
 **************************************************************************/
 #pragma once
@@ -37,6 +47,9 @@
 
 namespace Crucible
 {
+	class Archetype;
+	class World;
+	template <typename... Components> class Query;
 
 	/*************************************************************************
 	 \brief
@@ -48,15 +61,12 @@ namespace Crucible
 		ComponentInfo, and uses that info's function pointers to manage
 		individual elements - the column itself never needs to be a
 		template. One ComponentColumn exists per component type inside each
-		Archetype. Every growth/removal/move operation dispatches on
-		ComponentInfo::isTriviallyRelocatable/isTriviallyDestructible to
-		pick between a fast memcpy/no-op path and a correct
-		move-construct+destroy path.
+		Archetype.
 
 	 \note
-		Move-only: copying is deleted because it owns a raw allocation whose
-		element lifetimes are managed through function pointers, not T's
-		own copy semantics.
+		Move-only. Everything that changes rows or component data is private
+		and reachable only from Archetype, World and Query, so structural
+		changes can't bypass World's entity bookkeeping.
 	 *************************************************************************/
 	class ComponentColumn
 	{
@@ -121,122 +131,21 @@ namespace Crucible
 		 *********************************************************************/
 		std::size_t Capacity()const { return m_capacity; }
 
-
 		/*********************************************************************
-		 \brief  Raw pointer to the start of the column's backing storage.
+		 \brief  Read-only pointer to the start of the column's storage.
 		 \return Pointer to element 0, or nullptr if never allocated.
-		 \note  The caller must cast to the right type and respect Size()/
-				element stride (Info().size).
 		 *********************************************************************/
-		void* Data() { return m_data; } 
+		const void* Data() const { return m_data; }
 
 		/*********************************************************************
-		 \brief  Pointer to one element's storage.
+		 \brief  Read-only pointer to one element's storage.
 		 \param[in] row Index of the element to fetch.
-		 \return Pointer to that element's bytes.
 		 \note  Asserts row < Size() in debug builds; no check in release.
 		 *********************************************************************/
-		void* At(std::size_t row)
+		const void* At(std::size_t row) const
 		{
 			assert(row < m_size);
 			return m_data + row * m_info->size;
-		}
-
-		/*********************************************************************
-		 \brief
-			Ensures the column can hold at least newCapacity elements,
-			reallocating and relocating existing elements if needed.
-
-		 \param[in]
-			newCapacity The minimum capacity required.
-
-		 \details
-			No-op if capacity is already sufficient. Otherwise allocates a
-			new correctly-aligned buffer and relocates every existing
-			element into it - via memcpy for trivially relocatable types, or
-			move-construct-then-destroy otherwise - then frees the old
-			buffer.
-		 *********************************************************************/
-		void Reserve(std::size_t newCapacity);
-
-		/*********************************************************************
-		 \brief  Appends one default-constructed element.
-		 \return Pointer to the newly constructed element's storage.
-		 \details Grows the column first if it is at capacity.
-		 *********************************************************************/
-		void* PushBackDefault();
-
-		/*********************************************************************
-		\brief
-		   Reserves storage for one more element without constructing
-		   anything in it.
-
-		\return
-		   Pointer to the new, uninitialized slot.
-
-		\note
-		   The caller MUST construct a valid element into the returned
-		   pointer before the column is used again, since SwapRemove/
-		   Clear/the destructor assume every slot up to Size() holds a live
-		   object.
-		*********************************************************************/
-		void* PushBackUninitialized();
-
-		/*********************************************************************
-		 \brief  Removes one element by swapping the last element into its
-				 place.
-
-		 \param[in]
-			row Index of the element to remove.
-
-		 \details
-			Destroys the element at row (for non-trivial types), then - if
-			row wasn't already last - relocates the last element into row's
-			slot. Reduces Size() by one.
-
-		 \note
-			Changes which element occupies row (unless it was already
-			last) - callers tracking entities/rows in parallel (see
-			Archetype::RemoveEntity) must apply the same swap to their own
-			arrays.
-		 *********************************************************************/
-		void SwapRemove(std::size_t row);
-
-		/*********************************************************************
-		 \brief
-			Relocates one element from this column into a new element at the
-			end of another column of the same component type.
-
-		 \param[in]
-			row Index of the element to move, in this column.
-		 \param[in,out]
-			dst The destination column; must hold the same component type.
-			Gains one new element (appended).
-
-		 \details
-			Used by World::MoveEntity when an entity's component set
-			changes. Does not remove/destroy the source element - the
-			caller removes the source row afterwards (see
-			Archetype::RemoveEntity), which is what actually destroys the
-			now-moved-from element.
-
-		 \note
-			Asserts (debug only) that dst shares this column's ComponentInfo.
-		 *********************************************************************/
-		void MoveElementTo(std::size_t row, ComponentColumn& dst);
-
-		/*********************************************************************
-		\brief
-		   Destroys every live element and resets the column to empty,
-		   without releasing the underlying allocation.
-		*********************************************************************/
-		void Clear();
-
-		//record alled at row tick  if called exg world::add comp 
-		void Touch(std::size_t row, std::uint64_t tick)
-		{
-			assert(row < m_size);
-			m_changedTicks[row] = tick;
 		}
 
 		// The tick last passed to Touch() for `row`, or 0 if it never has been.
@@ -247,13 +156,85 @@ namespace Crucible
 		}
 
 		/*********************************************************************
-		 \brief  Raw pointer to the per-row change-tick array (parallel to the
-		         component data), for linear change filtering and stamping.
+		 \brief  Read-only pointer to the per-row change-tick array.
 		 \return Pointer to row 0's tick, or nullptr if the column is empty.
 		 *********************************************************************/
-		std::uint64_t* ChangedTicksData() noexcept { return m_changedTicks.data(); }
 		const std::uint64_t* ChangedTicksData() const noexcept { return m_changedTicks.data(); }
+
 	private:
+		friend class Archetype;
+		friend class World;
+		template <typename... Components> friend class Query;
+
+		void* Data() { return m_data; }
+
+		void* At(std::size_t row)
+		{
+			assert(row < m_size);
+			return m_data + row * m_info->size;
+		}
+
+		std::uint64_t* ChangedTicksData() noexcept { return m_changedTicks.data(); }
+
+		void Touch(std::size_t row, std::uint64_t tick)
+		{
+			assert(row < m_size);
+			m_changedTicks[row] = tick;
+		}
+
+		/*********************************************************************
+		 \brief  Ensures capacity for at least newCapacity elements
+				 (strong guarantee: on failure nothing changes).
+		 *********************************************************************/
+		void Reserve(std::size_t newCapacity);
+
+		/*********************************************************************
+		 \brief  Ensures one more element fits, growing by doubling
+				 (strong guarantee).
+		 *********************************************************************/
+		void ReserveForAppend() { Grow(m_size + 1); }
+
+		/*********************************************************************
+		 \brief  Appends one default-constructed element.
+		 \return Pointer to the new element.
+		 \note  Strong guarantee: if allocation or the constructor throws,
+				the column is unchanged.
+		 *********************************************************************/
+		void* PushBackDefault();
+
+		/*********************************************************************
+		 \brief  Appends an element relocated from src (move-constructed,
+				 or bit-copied for trivially relocatable types).
+		 \param[in] src A live element of this column's type; left in a
+				moved-from state for the caller to destroy.
+		 \return Pointer to the new element.
+		 \note  Only growth can throw, before anything changes.
+		 *********************************************************************/
+		void* PushBackMoved(void* src);
+
+		/*********************************************************************
+		 \brief  Destroys and removes the last element (rollback helper).
+		 *********************************************************************/
+		void PopBack() noexcept;
+
+		/*********************************************************************
+		 \brief  Removes one element by moving the last element into its
+				 place (the caller mirrors the swap in its own arrays).
+		 *********************************************************************/
+		void SwapRemove(std::size_t row) noexcept;
+
+		/*********************************************************************
+		 \brief  Appends a relocated copy of element `row` to dst (same
+				 component type), carrying its change tick.
+		 \note  Does not remove the source element; only growth of dst can
+				throw, before anything changes.
+		 *********************************************************************/
+		void MoveElementTo(std::size_t row, ComponentColumn& dst);
+
+		/*********************************************************************
+		 \brief  Destroys every element; keeps the allocation.
+		 *********************************************************************/
+		void Clear() noexcept;
 
 		/*********************************************************************
 		 \brief  Grows capacity (by doubling) to at least `required` elements.
@@ -265,6 +246,6 @@ namespace Crucible
 		std::byte* m_data = nullptr;
 		std::size_t m_size = 0;
 		std::size_t m_capacity = 0;
-		std::vector<std::uint64_t> m_changedTicks;// for change detection
+		std::vector<std::uint64_t> m_changedTicks;   // capacity kept >= m_capacity, so appends never throw here
 	};
 }

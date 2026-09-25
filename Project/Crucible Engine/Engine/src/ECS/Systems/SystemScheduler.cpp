@@ -10,6 +10,8 @@
 *
 * \history
 *    -v1.0       initial dependency DAG, topological order and batching
+*    -v1.1       required dependencies fail the schedule when missing;
+*                optional ones are logged and ignored
 *
 **************************************************************************/
 
@@ -205,21 +207,37 @@ namespace Crucible
 		DependencyGraph graph(nodes.size());
 		for (std::size_t self = 0; self < nodes.size(); ++self)
 		{
-			const auto resolveAll = [&](const std::vector<std::type_index>& targets, bool selfRunsAfterOther)
+			const auto resolveAll = [&](const std::vector<SystemDependency>& targets, bool selfRunsAfterOther)
 				{
-					for (const std::type_index& target : targets)
+					for (const SystemDependency& target : targets)
 					{
-						const auto found = indexByType.find(target);
+						const auto found = indexByType.find(target.type);
 						if (found == indexByType.end())
 						{
+							// A required dependency that isn't registered makes the schedule invalid.
+							if (target.required)
+							{
+								throw std::logic_error("ECS scheduler: system '" + nodes[self].name + "' requires '" +
+									target.type.name() + "' (" + (selfRunsAfterOther ? "RunAfter" : "RunBefore") +
+									"), which is not registered - register it or use " +
+									(selfRunsAfterOther ? "RunAfterIfPresent" : "RunBeforeIfPresent"));
+							}
+
 							// Optional dependency: the other system simply isn't part of this build.
-							CRU_INFO("ECS scheduler: '{}' has a dependency on unregistered system '{}' - ignored",
-								nodes[self].name, target.name());
+							CRU_INFO("ECS scheduler: '{}' has an optional dependency on unregistered system '{}' - ignored",
+								nodes[self].name, target.type.name());
 							continue;
 						}
 						ResolveDependency(nodes, self, found->second, selfRunsAfterOther, graph);
 					}
 				};
+
+			// Exclusive already means "touches everything"; listed reads/writes are just documentation.
+			const SystemAccess& access = nodes[self].desc.access;
+			if (access.exclusive && (access.reads.any() || access.writes.any()))
+			{
+				CRU_WARN("ECS scheduler: '{}' is Exclusive() and also lists reads/writes - Exclusive() wins", nodes[self].name);
+			}
 			resolveAll(nodes[self].desc.runAfter, true);
 			resolveAll(nodes[self].desc.runBefore, false);
 		}

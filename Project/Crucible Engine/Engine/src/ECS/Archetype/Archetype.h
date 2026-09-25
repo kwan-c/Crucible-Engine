@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.2
 * \brief
 *                Declares Archetype: a single table of entities that all
 *                share the exact same ComponentSignature, storing one
@@ -26,6 +26,9 @@
 *    -v1.1       ColumnIndex() is now an O(1) lookup via m_columnLookup
 *                instead of a linear scan; EntityAt() now bounds-asserts
 *                like ComponentColumn::At() does
+*    -v1.2       strong exception guarantee for row appends, noexcept
+*                removal, mutators private (World/ArchetypeRegistry/Query
+*                only), signature validated in all builds
 *
 **************************************************************************/
 #pragma once
@@ -111,8 +114,8 @@ namespace Crucible
 			(m_columnLookup) used by ColumnIndex().
 
 		 \note
-			Asserts (debug only) that every component id in the signature is
-			actually registered in registry.
+			Throws std::invalid_argument (all builds) if the signature
+			contains a component id that is not registered.
 		 *********************************************************************/
 		Archetype(ComponentSignature Signature, const ComponentRegistry& registry);
 
@@ -161,83 +164,13 @@ namespace Crucible
 		 *********************************************************************/
 		Entity EntityAt(uint32_t row) const { assert(row < m_entities.size()); return m_entities[row]; }
 
-
 		/*********************************************************************
-		 \brief
-			Appends a new row for entity, default-constructing every
-			column's value.
-
-		 \param[in]
-			entity The entity taking the new row.
-		 \return
-			The row index it was placed at (always the last row).
-		 *********************************************************************/
-		uint32_t AddEntityDefault(Entity entity);
-
-		/*********************************************************************
-		\brief
-		   Appends a new row for entity WITHOUT constructing any column
-		   values.
-
-		\param[in]
-		   entity The entity taking the new row.
-		\return
-		   The row index it was placed at (always the last row).
-
-		\note
-		   Every column's new slot must be filled in by the caller before
-		   the archetype is used again (see World::MoveEntity, which
-		   follows this with either a moved-in value or a
-		   PushBackDefault() per column).
-		*********************************************************************/
-		uint32_t AddEntityUninitialized(Entity entity);
-
-		/*********************************************************************
-		 \brief
-			Removes a row, swapping the last row into its place.
-
-		 \param[in]
-			row The row to remove.
-		 \return
-			The entity relocated into row (previously the last row's
-			occupant), or kNullEntity if row already was the last row.
-
-		 \details
-			Swap-removes every column at row, then applies the matching swap
-			to m_entities. Callers must update their own bookkeeping (e.g.
-			EntityManager's row field) for the returned relocated entity, if
-			valid.
-		 *********************************************************************/
-		Entity RemoveEntity(uint32_t row);
-
-		/*********************************************************************
-		 \brief  Raw pointer to the start of one component type's column data.
-		 \param[in] id The component type to fetch.
-		 \return Pointer to element 0 of that column.
-		 \note  Asserts (debug only) that this archetype contains id.
-		 *********************************************************************/
-		void* GetColumnData(ComponentId id);
-
-		/*********************************************************************
-		 \brief  The ComponentColumn storing one component type's data.
+		 \brief  Read-only view of the column storing one component type.
 		 \param[in] id The component type to fetch.
 		 \return Reference to that column.
 		 \note  Asserts (debug only) that this archetype contains id.
 		 *********************************************************************/
-		ComponentColumn& GetColumn(ComponentId id);
-
-		/*********************************************************************
-		 \brief  Pointer to one entity's instance of one component type.
-		 \param[in] id The component type to fetch.
-		 \param[in] row The row (entity) to fetch.
-		 \return Pointer to that component instance's storage.
-		 *********************************************************************/
-		void* GetComponentPtr(ComponentId id, uint32_t row);
-
-		void TouchAll(uint32_t row, std::uint64_t tick)
-		{
-			for (ComponentColumn& column : m_columns) column.Touch(row, tick);
-		}
+		const ComponentColumn& GetColumn(ComponentId id) const;
 
 		/*********************************************************************
 		 \brief  Debug check that every column's size matches the entity
@@ -247,18 +180,58 @@ namespace Crucible
 		 *********************************************************************/
 		bool ValidateRows()const;
 
+	private:
+		// Structural changes and mutable data access go through World only.
+		friend class World;
+		friend class ArchetypeRegistry;
+		template <typename... Components> friend class Query;
+
 		/*********************************************************************
-		 \brief  The cached add/remove-destination edge for one component
-				 type.
-		 \param[in] id The component type the transition is over.
-		 \return Mutable reference to this archetype's edge for id, so
-				 ArchetypeRegistry can read and lazily populate it.
+		 \brief  Appends a new row for entity, default-constructing every
+				 column's value.
+		 \return The row index it was placed at (always the last row).
+		 \note  Strong guarantee: if an allocation or a component
+				constructor throws, the archetype is unchanged.
 		 *********************************************************************/
+		uint32_t AddEntityDefault(Entity entity);
+
+		/*********************************************************************
+		 \brief  Makes room for one more row in the entity list and every
+				 column, so a following migration cannot fail on allocation.
+		 *********************************************************************/
+		void ReserveForAppend();
+
+		/*********************************************************************
+		 \brief  Records entity as the owner of the row every column has
+				 just been appended to (after ReserveForAppend()).
+		 \return The new row index.
+		 *********************************************************************/
+		uint32_t AppendEntityReserved(Entity entity) noexcept;
+
+		/*********************************************************************
+		 \brief  Removes a row, swapping the last row into its place.
+		 \return The entity relocated into row (previously the last row's
+				 occupant), or kNullEntity if row already was the last row.
+		 \note  Callers must update the relocated entity's record.
+		 *********************************************************************/
+		Entity RemoveEntity(uint32_t row) noexcept;
+
+		void* GetColumnData(ComponentId id);
+
+		ComponentColumn& GetColumn(ComponentId id);
+
+		void* GetComponentPtr(ComponentId id, uint32_t row);
+
+		void TouchAll(uint32_t row, std::uint64_t tick)
+		{
+			for (ComponentColumn& column : m_columns) column.Touch(row, tick);
+		}
+
+		// Cached add/remove-destination edge for one component type (see ArchetypeRegistry).
 		ArchetypeEdge& Edge(ComponentId id) { return m_edges[id]; }
 
-
 		void Reserve(uint32_t additionalRows);//for bulk creation
-	private:
+
 		/*********************************************************************
 		 \brief  Finds a component type's index into m_columns/m_componentIds.
 		 \param[in] id The component type to look up.

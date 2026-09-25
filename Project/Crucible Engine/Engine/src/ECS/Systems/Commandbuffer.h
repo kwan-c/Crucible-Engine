@@ -105,13 +105,13 @@ namespace  Crucible
 				 buffer for reuse (chunk storage is kept).
 		 \details Spawned entities' OnComponentAdded hooks fire at the end,
 				 after every other command in this buffer has run.
-		 \note   If anything throws (lifecycle hooks are expected not to -
-				 see World::OnComponentAdded), commands already replayed stay
-				 applied, and every spawned entity whose add hooks have not
-				 started yet is removed without firing any hooks, so a spawn
-				 is either fully created and hooked or absent. Hooks that
-				 already ran are not undone. The buffer is reset and the
-				 exception is rethrown.
+		 \note   Lifecycle-hook exceptions never reach here (World catches
+				 and logs them - see World::OnComponentAdded). If a command
+				 itself fails (e.g. an allocation), commands already replayed
+				 stay applied, and every spawned entity whose add hooks have
+				 not started yet is removed without firing any hooks, so a
+				 spawn is either fully created and hooked or absent. The
+				 buffer is reset and the exception is rethrown.
 		 *********************************************************************/
 		void Execute(World& world);
 

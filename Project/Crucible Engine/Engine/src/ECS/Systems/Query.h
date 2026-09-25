@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                iterate entities matching a set of component types
 *
@@ -30,13 +30,19 @@
 *                constructor parameter (existing constructor calls unchanged)
 *    -v1.3       static AppendAccess(SystemAccess&) so a system can derive
 *                its scheduler read/write access from its query type
+*    -v1.4       iteration checks the running system's declared access;
+*                a Query object rejects use from a second thread while in
+*                use (copies/moves get a fresh guard)
 *
 **************************************************************************/
 #pragma once
 
 //std libs
 #include <array>
+#include <atomic>
 #include <cstdint>
+#include <stdexcept>
+#include <thread>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -121,6 +127,41 @@ namespace Crucible
 		QueryBase(QueryDescription description, ArchetypeRegistry& registry, const std::uint64_t* worldTick = nullptr)
 			: m_description(std::move(description)), m_registry(&registry), m_worldTick(worldTick) {}
 
+		// Copies/moves share nothing mutable with the source: each gets a fresh in-use guard.
+		QueryBase(const QueryBase& other)
+			: m_description(other.m_description), m_registry(other.m_registry), m_worldTick(other.m_worldTick),
+			m_matching(other.m_matching), m_policy(other.m_policy), m_lastSeenVersion(other.m_lastSeenVersion) {}
+
+		QueryBase(QueryBase&& other) noexcept
+			: m_description(std::move(other.m_description)), m_registry(other.m_registry), m_worldTick(other.m_worldTick),
+			m_matching(std::move(other.m_matching)), m_policy(other.m_policy), m_lastSeenVersion(other.m_lastSeenVersion) {}
+
+		QueryBase& operator=(const QueryBase& other)
+		{
+			if (this == &other) return *this;
+			m_description = other.m_description;
+			m_registry = other.m_registry;
+			m_worldTick = other.m_worldTick;
+			m_matching = other.m_matching;
+			m_policy = other.m_policy;
+			m_lastSeenVersion = other.m_lastSeenVersion;
+			return *this;
+		}
+
+		QueryBase& operator=(QueryBase&& other) noexcept
+		{
+			if (this == &other) return *this;
+			m_description = std::move(other.m_description);
+			m_registry = other.m_registry;
+			m_worldTick = other.m_worldTick;
+			m_matching = std::move(other.m_matching);
+			m_policy = other.m_policy;
+			m_lastSeenVersion = other.m_lastSeenVersion;
+			return *this;
+		}
+
+		~QueryBase() = default;
+
 		/*********************************************************************
 		 \brief  The archetypes this query currently matches.
 		 \return Reference to the cached matching-archetype list.
@@ -194,6 +235,46 @@ namespace Crucible
 		}
 
 	protected:
+		/*********************************************************************
+		 \brief
+			Marks this Query object as being iterated by the calling thread.
+
+		 \details
+			Iterating refreshes the matching list and walks it, so one Query
+			object must never be used by two threads at once (give each
+			system its own query). Re-entrant use from the same thread (a
+			nested ForEach on the same query) is allowed.
+
+		 \note
+			Throws std::logic_error if another thread is using the query.
+		 *********************************************************************/
+		class UseGuard
+		{
+		public:
+			explicit UseGuard(QueryBase& query) : m_query(query)
+			{
+				const std::thread::id self = std::this_thread::get_id();
+				std::thread::id owner{};
+				// Claim the query, or accept a nested use by the thread that already owns it.
+				if (!m_query.m_user.compare_exchange_strong(owner, self) && owner != self)
+				{
+					throw std::logic_error("Query: the same Query object is being iterated by two threads - give each system its own Query");
+				}
+				++m_query.m_useDepth;
+			}
+
+			~UseGuard()
+			{
+				if (--m_query.m_useDepth == 0) m_query.m_user.store(std::thread::id{});
+			}
+
+			UseGuard(const UseGuard&) = delete;
+			UseGuard& operator=(const UseGuard&) = delete;
+
+		private:
+			QueryBase& m_query;
+		};
+
 		QueryDescription m_description;
 		ArchetypeRegistry* m_registry = nullptr;
 		const std::uint64_t* m_worldTick = nullptr;
@@ -201,6 +282,9 @@ namespace Crucible
 		QueryCachePolicy m_policy = QueryCachePolicy::None;
 
 		std::uint64_t m_lastSeenVersion = ~std::uint64_t{ 0 };
+
+		std::atomic<std::thread::id> m_user{};   // thread currently iterating (id{} = none)
+		int m_useDepth = 0;                      // nesting depth, touched only by m_user
 	};
 
 	/*************************************************************************
@@ -275,6 +359,7 @@ namespace Crucible
 		 *********************************************************************/
 		uint32_t CountEntities()
 		{
+			UseGuard inUse(*this);
 			Refresh();
 			uint32_t total = 0;
 			for (Archetype* archetype : m_matching)
@@ -329,6 +414,12 @@ namespace Crucible
 		template <typename Fn, std::size_t... I>
 		void Iterate(Fn& fn, ComponentId filterId, std::uint64_t sinceTick, std::index_sequence<I...>)
 		{
+			// The running system must have declared everything this query touches.
+			SystemAccess queryAccess;
+			AppendAccess(queryAccess);
+			CheckDeclaredAccess(queryAccess.reads, queryAccess.writes, "iterates a Query that");
+
+			UseGuard inUse(*this);
 			ArchetypeRegistry::IterationGuard guard(*m_registry);
 			Refresh();
 

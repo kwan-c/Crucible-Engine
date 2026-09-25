@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Declares ECSSystemManager: the top-level driver that
 *                owns an ECSSystemRegistry (see IECSSystemRegistry.h)
@@ -38,6 +38,8 @@
 *                (DAG + topological order + batches), serial batch
 *                execution, Schedule()/LogSchedule(); existing public names
 *                unchanged
+*    -v1.3       declared-access enforcement and MainThread affinity check
+*                while systems run
 *
 **************************************************************************/
 #pragma once
@@ -45,6 +47,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -172,7 +175,11 @@ namespace Crucible
          \brief  Runs one frame: each stage's batches in schedule order, then
                  that stage's command buffers.
          \param[in,out] world The world every system will read/modify.
-         \note   Every system runs serially on the calling thread.
+         \note   Every system runs serially on the calling thread. A system
+                 that declared its access (Describe()) is held to it while
+                 it runs: undeclared component access and direct structural
+                 World calls throw and count as a failure. A MainThread
+                 system run from a thread other than Init()'s fails too.
          *********************************************************************/
         void Update(World& world);
 
@@ -258,6 +265,7 @@ namespace Crucible
 
         bool m_initialized = false;
         bool m_iterating = false;                 // inside Init() or Update()
+        std::thread::id m_mainThread{};           // thread that called Init(); MainThread systems run only here
     };
 #ifdef _MSC_VER
 #pragma warning(pop)

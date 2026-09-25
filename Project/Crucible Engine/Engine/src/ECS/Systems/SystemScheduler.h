@@ -20,7 +20,9 @@
 *                  1. RunAfter/RunBefore become graph edges (same stage), are
 *                     already satisfied (consistent with stage order), or are
 *                     errors (contradict stage order / self-dependency).
-*                     Dependencies on unregistered systems are ignored.
+*                     A missing required dependency (RunAfter/RunBefore) is
+*                     an error; a missing optional one (...IfPresent) is
+*                     logged and ignored.
 *                  2. Kahn's topological sort; among ready systems the lower
 *                     priority value runs first, then registration order.
 *                  3. A dependency cycle is reported as an error naming the
@@ -90,7 +92,8 @@ namespace Crucible
 	 \param[in] nodes One entry per system, indexed by registration order.
 	 \return The schedule.
 	 \note   Throws std::logic_error on a dependency cycle, a
-			 self-dependency, or a dependency that contradicts stage order.
+			 self-dependency, a dependency that contradicts stage order, or
+			 a required dependency on an unregistered system.
 	 *************************************************************************/
 	SystemSchedule BuildSystemSchedule(const std::vector<SystemNode>& nodes);
 
