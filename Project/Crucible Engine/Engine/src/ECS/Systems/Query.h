@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                iterate entities matching a set of component types
 *
@@ -28,6 +28,8 @@
 *                ForEachChangedSince<F>(), rebuild narrowed to the rarest
 *                required component's archetype list; optional world-tick
 *                constructor parameter (existing constructor calls unchanged)
+*    -v1.3       static AppendAccess(SystemAccess&) so a system can derive
+*                its scheduler read/write access from its query type
 *
 **************************************************************************/
 #pragma once
@@ -44,6 +46,7 @@
 #include "../Components/ComponentSignature.h"
 #include "../Components/ComponentTypeId.h"
 #include "../Archetype/ArchetypeRegistry.h"
+#include "SystemAccess.h"
 
 
 namespace Crucible
@@ -281,7 +284,32 @@ namespace Crucible
 			return total;
 		}
 
+		/*********************************************************************
+		 \brief
+			Adds this query type's component access to a system's access
+			declaration: `const T` is a read, non-const T is a write.
+
+		 \param[in,out] access The access to extend (e.g. SystemDesc::access).
+
+		 \note
+			Static, so a system can declare its access in Describe() before
+			the query itself has been created. Marks the access as declared.
+		 *********************************************************************/
+		static void AppendAccess(SystemAccess& access)
+		{
+			(AppendComponentAccess<Components>(access), ...);
+			access.declared = true;
+		}
+
 	private:
+		template <typename C>
+		static void AppendComponentAccess(SystemAccess& access)
+		{
+			// const C is read-only; non-const C is written (and change-stamped) by ForEach.
+			if constexpr (std::is_const_v<C>) access.reads.set(ComponentTypeId<Bare<C>>());
+			else access.writes.set(ComponentTypeId<Bare<C>>());
+		}
+
 		template <typename C>
 		static std::uint64_t* WritableTicks(Archetype& archetype, bool stamping)
 		{

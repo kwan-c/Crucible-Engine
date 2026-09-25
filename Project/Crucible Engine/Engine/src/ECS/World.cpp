@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Implementation of World: entity creation/destruction
 *                and the archetype-move logic used by
@@ -31,6 +31,9 @@
 *                per-component remove hooks), DestroyAllEntities, hooks
 *                cannot be registered mid-iteration, MoveEntity relocates
 *                the added value instead of default-construct + assign
+*    -v1.2       DestroyEntity body moved into DestroyEntityImpl(entity,
+*                fireHooks) so CommandBuffer can silently roll back spawns
+*                whose add hooks never ran
 *
 **************************************************************************/
 
@@ -179,6 +182,11 @@ namespace Crucible
 
 	void World::DestroyEntity(Entity entity)
 	{
+		DestroyEntityImpl(entity, true);
+	}
+
+	void World::DestroyEntityImpl(Entity entity, bool fireHooks)
+	{
 		if (m_archetypes.IsIterating())
 		{
 			throw std::logic_error("World::DestroyEntity called while a Query is iterating - use a CommandBuffer instead (see CommandBuffer.h)");
@@ -188,16 +196,19 @@ namespace Crucible
 
 		EntityRecord& record = m_entities.Record(entity);
 
-		if (!m_onDestroyHooks.empty())
+		if (fireHooks)
 		{
-			ArchetypeRegistry::IterationGuard guard(m_archetypes);
-			for (auto& hook : m_onDestroyHooks) hook(*this, entity);
-		}
+			if (!m_onDestroyHooks.empty())
+			{
+				ArchetypeRegistry::IterationGuard guard(m_archetypes);
+				for (auto& hook : m_onDestroyHooks) hook(*this, entity);
+			}
 
-		// Every component the entity still owns counts as removed, so
-		// resource-owning OnComponentRemoved hooks fire here too - not only
-		// on RemoveComponent().
-		FireRemoveHooksForRow(*record.archetype, record.row, entity);
+			// Every component the entity still owns counts as removed, so
+			// resource-owning OnComponentRemoved hooks fire here too - not only
+			// on RemoveComponent().
+			FireRemoveHooksForRow(*record.archetype, record.row, entity);
+		}
 
 		const Entity relocated = record.archetype->RemoveEntity(record.row);
 		if (relocated.IsValid())

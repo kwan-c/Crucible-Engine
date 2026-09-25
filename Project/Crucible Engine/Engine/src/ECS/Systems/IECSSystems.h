@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares IECSSystem: the base interface every ECS
 *                system (physics, rendering, audio, ...) must implement
@@ -23,13 +23,20 @@
 *    -v1.0       initial system interface (Init/Update/Shutdown)
 *    -v1.1       added SystemStage and the optional Stage() override;
 *                existing Init/Update/Shutdown/Priority unchanged
+*    -v1.2       added SystemDesc and the optional Describe() override
+*                (access, affinity, RunAfter/RunBefore) for the scheduler
 *
 **************************************************************************/
 #pragma once
 
 #include <cstdint>
+#include <type_traits>
+#include <typeindex>
+#include <typeinfo>
+#include <vector>
 
 #include "CommandBuffer.h"
+#include "SystemAccess.h"
 
 
 namespace Crucible
@@ -53,6 +60,125 @@ namespace Crucible
 		PostUpdate,   // physics, transform propagation
 		PreRender,    // render extraction
 		Count
+	};
+
+	class IECSSystem;
+
+	/*************************************************************************
+	 \brief
+		Everything the scheduler needs to know about one system: stage,
+		priority, component access, thread affinity and explicit ordering
+		constraints.
+
+	 \details
+		ECSSystemManager fills stage/priority from Stage()/Priority() and
+		then calls IECSSystem::Describe(), which may override or extend any
+		field. Systems that never override Describe() keep today's
+		behaviour: Stage()/Priority() ordering, undeclared (exclusive)
+		access and MainThread affinity.
+
+	 \note
+		RunAfter<T>()/RunBefore<T>() need T to be a complete type, so a
+		Describe() that names another system belongs in the .cpp file.
+	 *************************************************************************/
+	struct SystemDesc
+	{
+		SystemStage    stage = SystemStage::Update;
+		int            priority = 0;                           // lower runs first among ready systems
+		SystemAccess   access;
+		SystemAffinity affinity = SystemAffinity::MainThread;
+
+		std::vector<std::type_index> runAfter;    // systems that must run before this one
+		std::vector<std::type_index> runBefore;   // systems that must run after this one
+
+		/*********************************************************************
+		 \brief  This system runs after system T (ignored if T is not
+				 registered; checked against stage order if T is in another
+				 stage).
+		 *********************************************************************/
+		template <typename T>
+		SystemDesc& RunAfter()
+		{
+			static_assert(std::is_base_of_v<IECSSystem, T>, "RunAfter<T>: T must derive from IECSSystem");
+			runAfter.emplace_back(typeid(T));
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  This system runs before system T (same rules as
+				 RunAfter()).
+		 *********************************************************************/
+		template <typename T>
+		SystemDesc& RunBefore()
+		{
+			static_assert(std::is_base_of_v<IECSSystem, T>, "RunBefore<T>: T must derive from IECSSystem");
+			runBefore.emplace_back(typeid(T));
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Declares read-only access to the given engine components.
+		 *********************************************************************/
+		template <typename... Components>
+		SystemDesc& Reads()
+		{
+			access.reads |= MakeSignature<Components...>();
+			access.declared = true;
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Declares write access to the given engine components.
+		 *********************************************************************/
+		template <typename... Components>
+		SystemDesc& Writes()
+		{
+			access.writes |= MakeSignature<Components...>();
+			access.declared = true;
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Declares the access of a query type the system iterates,
+				 e.g. Uses<Query<Transform, const RigidBody>>().
+		 \tparam QueryT A Query<...> type (see Query::AppendAccess()).
+		 *********************************************************************/
+		template <typename QueryT>
+		SystemDesc& Uses()
+		{
+			QueryT::AppendAccess(access);
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Marks the system as conflicting with every other system.
+		 *********************************************************************/
+		SystemDesc& Exclusive()
+		{
+			access.exclusive = true;
+			access.declared = true;
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Declares that the system touches no engine components
+				 (so it conflicts with nothing).
+		 *********************************************************************/
+		SystemDesc& NoComponentAccess()
+		{
+			access.declared = true;
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Sets the thread the system asks to run on (metadata only
+				 until a job system exists).
+		 *********************************************************************/
+		SystemDesc& Affinity(SystemAffinity value)
+		{
+			affinity = value;
+			return *this;
+		}
 	};
 
 	// base system class for ecs
@@ -113,5 +239,15 @@ namespace Crucible
 		 \return SystemStage::Update unless overridden.
 		 *********************************************************************/
 		virtual SystemStage Stage() const { return SystemStage::Update; }
+
+		/*********************************************************************
+		 \brief  Optional scheduling description: access, affinity and
+				 RunAfter/RunBefore dependencies.
+		 \param[in,out] desc Already filled from Stage()/Priority(); add to
+				 or override it here. No need to call the base version.
+		 \note  Called when the schedule is built (Init() and registration
+				 after Init()), not every frame.
+		 *********************************************************************/
+		virtual void Describe([[maybe_unused]] SystemDesc& desc) const {}
 	};
 }

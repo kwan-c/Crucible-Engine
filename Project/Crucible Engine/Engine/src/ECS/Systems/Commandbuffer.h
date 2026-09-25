@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares CommandBuffer: records structural ECS changes
 *                (create/destroy entity, add/remove component) made
@@ -25,6 +25,10 @@
 *    -v1.1       tolerant replay (dead targets skipped), spawns created in
 *                their final archetype with add hooks deferred to the end of
 *                Execute(), per-payload alignment instead of a global 32 bytes
+*    -v1.2       spawns are all-or-nothing when Execute() throws (spawns whose
+*                add hooks never ran are removed silently); EntitySpawn
+*                handles carry a private epoch so a stale handle can't touch
+*                a reused spawn token after Execute()/Clear()/move
 *
 **************************************************************************/
 
@@ -35,6 +39,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <new>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -89,12 +94,24 @@ namespace  Crucible
 		/*********************************************************************
 		 \brief  Queues creation of a new entity; chain With<T>() on the
 				 result to give it components.
+		 \note   The returned EntitySpawn is valid only until this buffer is
+				 executed, cleared or moved; With<T>() on it afterwards
+				 throws std::logic_error.
 		 *********************************************************************/
 		EntitySpawn SpawnEntity();
 
 		/*********************************************************************
 		 \brief  Replays every queued command in order, then resets the
 				 buffer for reuse (chunk storage is kept).
+		 \details Spawned entities' OnComponentAdded hooks fire at the end,
+				 after every other command in this buffer has run.
+		 \note   If anything throws (lifecycle hooks are expected not to -
+				 see World::OnComponentAdded), commands already replayed stay
+				 applied, and every spawned entity whose add hooks have not
+				 started yet is removed without firing any hooks, so a spawn
+				 is either fully created and hooked or absent. Hooks that
+				 already ran are not undone. The buffer is reset and the
+				 exception is rethrown.
 		 *********************************************************************/
 		void Execute(World& world);
 
@@ -162,6 +179,10 @@ namespace  Crucible
 
 		void FreeChunks()noexcept;
 
+		// Silently removes spawned entities [firstUnnotified, end) that are still
+		// alive - their add hooks never ran, so no remove hooks may run either.
+		void DiscardUnnotifiedSpawns(World& world, std::size_t firstUnnotified) noexcept;
+
 		Entity GetSpawnedEntity(std::uint32_t token) const
 		{
 			assert(token < m_spawnedEntities.size());
@@ -179,7 +200,7 @@ namespace  Crucible
 
 
 		template <typename T>
-		void RecordSetSpawnedComponent(std::uint32_t token, T value);
+		void RecordSetSpawnedComponent(std::uint32_t token, std::uint32_t epoch, T value);
 
 		Chunk* m_head = nullptr;
 		Chunk* m_tail = nullptr;
@@ -187,6 +208,10 @@ namespace  Crucible
 
 		std::vector<Entity> m_spawnedEntities;
 		std::vector<ComponentSignature> m_spawnSignatures;   // final component set per spawn token
+
+		// Bumped whenever spawn tokens are reset (Execute/Clear) or the buffer
+		// is moved from, so an EntitySpawn from an earlier epoch is rejected.
+		std::uint32_t m_spawnEpoch = 0;
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -202,16 +227,18 @@ namespace  Crucible
 		template <typename T>
 		EntitySpawn& With(T value = T{})
 		{
-			m_buffer->RecordSetSpawnedComponent<T>(m_token, std::move(value));
+			m_buffer->RecordSetSpawnedComponent<T>(m_token, m_epoch, std::move(value));
 			return *this;
 		}
 
 	private:
 		friend class CommandBuffer;
-		EntitySpawn(CommandBuffer& buffer, std::uint32_t token) :m_buffer(&buffer), m_token(token) {}
+		EntitySpawn(CommandBuffer& buffer, std::uint32_t token, std::uint32_t epoch)
+			:m_buffer(&buffer), m_token(token), m_epoch(epoch) {}
 
 		CommandBuffer* m_buffer;
 		std::uint32_t m_token;
+		std::uint32_t m_epoch;   // buffer epoch this token belongs to
 	};
 
 	template <typename T>
@@ -247,8 +274,15 @@ namespace  Crucible
 	}
 
 	template <typename T>
-	void CommandBuffer::RecordSetSpawnedComponent(std::uint32_t token, T value)
+	void CommandBuffer::RecordSetSpawnedComponent(std::uint32_t token, std::uint32_t epoch, T value)
 	{
+		// A handle kept past Execute()/Clear()/move would otherwise write into
+		// whichever spawn now owns the same token.
+		if (epoch != m_spawnEpoch || token >= m_spawnSignatures.size())
+		{
+			throw std::logic_error("CommandBuffer::EntitySpawn::With - spawn handle used after the buffer was executed or cleared");
+		}
+
 		// The spawn is created with T already in its archetype (see RecordCreateSpawned).
 		m_spawnSignatures[token].set(ComponentTypeId<T>());
 

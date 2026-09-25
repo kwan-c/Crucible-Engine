@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares ECSSystemManager: the top-level driver that
 *                owns an ECSSystemRegistry (see IECSSystemRegistry.h)
@@ -21,12 +21,23 @@
 *                disabled after kMaxConsecutiveFailures failing frames in
 *                a row.
 *
+*                The order comes from the scheduler (SystemScheduler.h):
+*                RunAfter/RunBefore dependencies first, then Priority(),
+*                then registration order, with systems grouped into batches
+*                that could theoretically run in parallel. Batches are
+*                executed serially here - a future job system plugs in at
+*                ExecuteBatch() without changing this class's interface.
+*
 * \history
 *    -v1.0       initial sequential single-system driver (Physics only)
 *    -v1.1       stages, per-system CommandBuffers flushed per stage,
 *                per-system failure isolation, idempotent Init/Shutdown,
 *                registration after Init, FindSystem<T>(), ENGINE_API;
 *                existing public names unchanged
+*    -v1.2       dependency/access-aware scheduling via SystemScheduler
+*                (DAG + topological order + batches), serial batch
+*                execution, Schedule()/LogSchedule(); existing public names
+*                unchanged
 *
 **************************************************************************/
 #pragma once
@@ -39,6 +50,7 @@
 
 #include "EngineExport.h"
 #include "IECSSystemRegistry.h"
+#include "SystemScheduler.h"
 
 namespace Crucible
 {
@@ -52,8 +64,10 @@ namespace Crucible
 
      \details
         Owns the ECSSystemRegistry and one CommandBuffer per system.
-        Registered systems are ordered by (Stage(), Priority()), updated
-        stage by stage each frame, and shut down in reverse execution order.
+        Registered systems are ordered by the scheduler (stage, then
+        RunAfter/RunBefore dependencies, then Priority(), then registration
+        order), updated stage by stage each frame, and shut down in reverse
+        execution order.
 
      \note
         Systems may be registered before or after Init(); a system
@@ -93,9 +107,11 @@ namespace Crucible
          \note
             Throws std::logic_error if called from inside Update(), or if a
             system of type T is already registered. If Init() has already
-            run, the new system's Init() is called immediately; if that
-            throws, the system stays registered but disabled and the
-            exception propagates.
+            run, the schedule is rebuilt and the new system's Init() is
+            called immediately. If the new system makes the schedule invalid
+            (e.g. a dependency cycle) it is unregistered again and the error
+            propagates; if its Init() throws, it stays registered but
+            disabled and the exception propagates.
          *********************************************************************/
         template<typename T, typename... Args>
         T& RegisterSystem(Args&&... args)
@@ -113,7 +129,18 @@ namespace Crucible
 
             if (m_initialized)
             {
-                RebuildUpdateOrder();
+                // Re-plan with the new system; undo the registration if the plan becomes invalid.
+                try
+                {
+                    RebuildSchedule();
+                }
+                catch (...)
+                {
+                    m_registry.PopBackSystem();
+                    m_slots.pop_back();
+                    throw;
+                }
+
                 try
                 {
                     system.Init();
@@ -130,17 +157,22 @@ namespace Crucible
         }
 
         /*********************************************************************
-         \brief  Calls Init() on every registered system, in execution order.
-         \note   A second call is ignored with a warning. If a system's Init()
-                 throws, every system already initialised is shut down again
-                 (reverse order) and the exception propagates.
+         \brief  Builds the schedule, then calls Init() on every registered
+                 system in execution order.
+         \note   A second call is ignored with a warning. An invalid schedule
+                 (dependency cycle, dependency contradicting stage order)
+                 throws std::logic_error before any system's Init() runs. If
+                 a system's Init() throws, every system already initialised
+                 is shut down again (reverse order) and the exception
+                 propagates.
          *********************************************************************/
         void Init();
 
         /*********************************************************************
-         \brief  Runs one frame: every stage's systems, then that stage's
-                 command buffers.
+         \brief  Runs one frame: each stage's batches in schedule order, then
+                 that stage's command buffers.
          \param[in,out] world The world every system will read/modify.
+         \note   Every system runs serially on the calling thread.
          *********************************************************************/
         void Update(World& world);
 
@@ -180,6 +212,21 @@ namespace Crucible
             return m_registry.FindSystem<T>();
         }
 
+        /*********************************************************************
+         \brief  The current execution plan (stages, batches, resolved
+                 descriptions). Empty until Init().
+         *********************************************************************/
+        const SystemSchedule& Schedule() const noexcept
+        {
+            return m_schedule;
+        }
+
+        /*********************************************************************
+         \brief  Logs the current schedule (stages, batches, affinity and
+                 access) for debugging.
+         *********************************************************************/
+        void LogSchedule() const;
+
     private:
 
         struct SystemSlot
@@ -191,11 +238,15 @@ namespace Crucible
             bool disabled = false;
         };
 
-        void RebuildUpdateOrder();
+        void RebuildSchedule();
+
+        void ExecuteBatch(const ExecutionBatch& batch, World& world);
+
+        void ExecuteBatchSerial(const ExecutionBatch& batch, World& world);
 
         void RunSystem(std::size_t index, World& world);
 
-        void FlushStage(std::size_t begin, std::size_t end, World& world);
+        void FlushStage(const StageSchedule& stage, World& world);
 
         void HandleFailure(std::size_t index, const char* what) noexcept;
 
@@ -203,7 +254,7 @@ namespace Crucible
 
         std::vector<SystemSlot> m_slots;          // parallel to the registry
 
-        std::vector<std::size_t> m_updateOrder;   // registry indices in execution order
+        SystemSchedule m_schedule;                // execution plan, rebuilt on Init()/late registration
 
         bool m_initialized = false;
         bool m_iterating = false;                 // inside Init() or Update()

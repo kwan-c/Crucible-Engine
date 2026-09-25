@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *      Dynamic registry that owns all registered ECS systems.
 *
@@ -19,6 +19,7 @@
 *    -v1.1       dynamic registration; added FindSystem<T>() and rejection
 *                of duplicate system types; existing
 *                RegisterSystem/GetSystem/Size unchanged
+*    -v1.2       IndexOf/TypeAt/PopBackSystem for the scheduler
 *
 **************************************************************************/
 #pragma once
@@ -154,6 +155,42 @@ namespace Crucible
             }
             return nullptr;
         }
+
+        /*********************************************************************
+         \brief  Registration index of the system with the given type.
+         \param[in] type typeid of the system class.
+         \return Its index, or npos if no such system is registered.
+         *********************************************************************/
+        std::size_t IndexOf(std::type_index type) const noexcept
+        {
+            for (std::size_t i = 0; i < m_types.size(); ++i)
+            {
+                if (m_types[i] == type) return i;
+            }
+            return npos;
+        }
+
+        /*********************************************************************
+         \brief  Type identity of the system at index.
+         *********************************************************************/
+        std::type_index TypeAt(std::size_t index) const
+        {
+            return m_types.at(index);
+        }
+
+        /*********************************************************************
+         \brief  Removes (and destroys) the most recently registered system.
+         \note   Used by ECSSystemManager to undo a registration that would
+                 make the schedule invalid (e.g. a dependency cycle).
+         *********************************************************************/
+        void PopBackSystem() noexcept
+        {
+            if (m_systems.empty()) return;
+            m_systems.pop_back();
+            m_types.pop_back();
+        }
+
+        static constexpr std::size_t npos = static_cast<std::size_t>(-1);
 
     private:
         std::vector<std::unique_ptr<IECSSystem>> m_systems;

@@ -3,18 +3,19 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Implementation of ECSSystemManager: drives every
 *                registered system's Init/Update/Shutdown, in order.
 *                See ECSSystemManager.h for the public interface.
 *
 * \details
-*                Execution order is rebuilt from (Stage(), Priority())
-*                whenever the set of systems changes - no per-system code
-*                lives here, so adding a system only means registering it.
-*                Update() runs one stage at a time: every system in the
-*                stage runs, then every one of their CommandBuffers is
+*                Execution order comes from BuildSystemSchedule()
+*                (SystemScheduler.h) and is rebuilt whenever the set of
+*                systems changes - no per-system code lives here, so adding
+*                a system only means registering it. Update() runs one stage
+*                at a time: every batch of the stage runs (serially, on this
+*                thread), then every one of the stage's CommandBuffers is
 *                replayed. Failures are isolated per system: a throwing
 *                Update() or command replay discards only that system's
 *                commands, and a system that fails
@@ -26,12 +27,15 @@
 *    -v1.0       initial sequential Init/Update/Shutdown (Physics only)
 *    -v1.1       stage/priority ordering, per-system CommandBuffers,
 *                per-system failure isolation, idempotent Init/Shutdown
+*    -v1.2       schedule built by SystemScheduler (dependencies, access
+*                conflicts, batches); batches executed serially through the
+*                ExecuteBatch() seam; LogSchedule()
 *
 **************************************************************************/
 
-#include <algorithm>
 #include <exception>
-#include <numeric>
+#include <string>
+#include <string_view>
 #include <typeinfo>
 
 #include "ECSSystemManager.h"
@@ -56,23 +60,71 @@ namespace Crucible
 			bool& m_flag;
 			bool  m_previous;
 		};
+
+		// "class Game::MovementSystem" -> "Game::MovementSystem" for readable logs.
+		std::string SystemName(const IECSSystem& system)
+		{
+			std::string_view name = typeid(system).name();
+			for (std::string_view prefix : { std::string_view("class "), std::string_view("struct ") })
+			{
+				if (name.substr(0, prefix.size()) == prefix) name.remove_prefix(prefix.size());
+			}
+			return std::string(name);
+		}
+
+		const char* AffinityName(SystemAffinity affinity) noexcept
+		{
+			switch (affinity)
+			{
+			case SystemAffinity::Worker:       return "Worker";
+			case SystemAffinity::MainThread:   return "MainThread";
+			case SystemAffinity::RenderThread: return "RenderThread";
+			default:                           return "Unknown";
+			}
+		}
+
+		// Component ids set in a signature, e.g. "0,2" (empty -> "-").
+		std::string ComponentList(const ComponentSignature& signature)
+		{
+			std::string text;
+			for (std::size_t id = 0; id < signature.size(); ++id)
+			{
+				if (!signature.test(id)) continue;
+				if (!text.empty()) text += ',';
+				text += std::to_string(id);
+			}
+			return text.empty() ? "-" : text;
+		}
 	}
 
-	void ECSSystemManager::RebuildUpdateOrder()
+	void ECSSystemManager::RebuildSchedule()
 	{
-		m_updateOrder.resize(m_registry.Size());
+		std::vector<SystemNode> nodes;
+		nodes.reserve(m_registry.Size());
 
-		std::iota(m_updateOrder.begin(), m_updateOrder.end(), std::size_t{ 0 });
+		for (std::size_t index = 0; index < m_registry.Size(); ++index)
+		{
+			const IECSSystem& system = m_registry.GetSystem(index);
 
-		std::stable_sort(m_updateOrder.begin(), m_updateOrder.end(),
-			[this](std::size_t a, std::size_t b)
-			{
-				const IECSSystem& lhs = m_registry.GetSystem(a);
-				const IECSSystem& rhs = m_registry.GetSystem(b);
-				if (lhs.Stage() != rhs.Stage()) return lhs.Stage() < rhs.Stage();
-				return lhs.Priority() < rhs.Priority();
-			}
-		);
+			// Stage()/Priority() are the defaults; Describe() may refine them.
+			SystemDesc desc;
+			desc.stage = system.Stage();
+			desc.priority = system.Priority();
+			system.Describe(desc);
+
+			nodes.push_back(SystemNode{ std::move(desc), m_registry.TypeAt(index), SystemName(system) });
+		}
+
+		try
+		{
+			// Only replace the current plan once the new one is known to be valid.
+			m_schedule = BuildSystemSchedule(nodes);
+		}
+		catch (const std::exception& e)
+		{
+			CRU_ERROR("ECSSystemManager: invalid system schedule - {}", e.what());
+			throw;
+		}
 	}
 
 	void ECSSystemManager::Init()
@@ -87,14 +139,16 @@ namespace Crucible
 			return;
 		}
 
-		RebuildUpdateOrder();
+		// Cycles and impossible dependencies fail here, before any system's Init() runs.
+		RebuildSchedule();
 
 		{
 			ScopedFlag running(m_iterating);
 
-			for (std::size_t i = 0; i < m_updateOrder.size(); ++i)
+			const std::vector<std::size_t>& order = m_schedule.serialOrder;
+			for (std::size_t i = 0; i < order.size(); ++i)
 			{
-				const std::size_t index = m_updateOrder[i];
+				const std::size_t index = order[i];
 				try
 				{
 					m_registry.GetSystem(index).Init();
@@ -105,9 +159,9 @@ namespace Crucible
 					// Undo the systems already brought up, newest first.
 					for (std::size_t j = i; j-- > 0;)
 					{
-						SystemSlot& slot = m_slots[m_updateOrder[j]];
+						SystemSlot& slot = m_slots[order[j]];
 						if (!slot.initialised) continue;
-						m_registry.GetSystem(m_updateOrder[j]).Shutdown();
+						m_registry.GetSystem(order[j]).Shutdown();
 						slot.initialised = false;
 					}
 					throw;
@@ -122,21 +176,31 @@ namespace Crucible
 	{
 		ScopedFlag running(m_iterating);
 
-		std::size_t begin = 0;
-		while (begin < m_updateOrder.size())
+		for (const StageSchedule& stage : m_schedule.stages)
 		{
-			const SystemStage stage = m_registry.GetSystem(m_updateOrder[begin]).Stage();
-
-			std::size_t end = begin;
-			while (end < m_updateOrder.size() && m_registry.GetSystem(m_updateOrder[end]).Stage() == stage)
+			for (const ExecutionBatch& batch : stage.batches)
 			{
-				RunSystem(m_updateOrder[end], world);
-				++end;
+				ExecuteBatch(batch, world);
 			}
 
-			// Later stages see this stage's structural changes in the same frame.
-			FlushStage(begin, end, world);
-			begin = end;
+			// Flush structural ECS changes after the stage finishes, so later stages see them.
+			FlushStage(stage, world);
+		}
+	}
+
+	void ECSSystemManager::ExecuteBatch(const ExecutionBatch& batch, World& world)
+	{
+		// Parallel execution is not available yet: every batch runs serially.
+		// A future job system branches here (serial stays as the "parallel off" mode).
+		ExecuteBatchSerial(batch, world);
+	}
+
+	void ECSSystemManager::ExecuteBatchSerial(const ExecutionBatch& batch, World& world)
+	{
+		// Batch order is the scheduler's serial order, so this is deterministic.
+		for (std::size_t index : batch.systems)
+		{
+			RunSystem(index, world);
 		}
 	}
 
@@ -161,29 +225,32 @@ namespace Crucible
 		}
 	}
 
-	void ECSSystemManager::FlushStage(std::size_t begin, std::size_t end, World& world)
+	void ECSSystemManager::FlushStage(const StageSchedule& stage, World& world)
 	{
-		for (std::size_t i = begin; i < end; ++i)
+		// Replay in execution order, one system at a time.
+		for (const ExecutionBatch& batch : stage.batches)
 		{
-			const std::size_t index = m_updateOrder[i];
-			SystemSlot& slot = m_slots[index];
-			if (slot.disabled) continue;
+			for (std::size_t index : batch.systems)
+			{
+				SystemSlot& slot = m_slots[index];
+				if (slot.disabled) continue;
 
-			try
-			{
-				slot.commands.Execute(world);
-			}
-			catch (const std::exception& e)
-			{
-				HandleFailure(index, e.what());
-			}
-			catch (...)
-			{
-				HandleFailure(index, "non-std::exception");
-			}
+				try
+				{
+					slot.commands.Execute(world);
+				}
+				catch (const std::exception& e)
+				{
+					HandleFailure(index, e.what());
+				}
+				catch (...)
+				{
+					HandleFailure(index, "non-std::exception");
+				}
 
-			// Only a frame whose Update AND replay both succeeded counts as healthy.
-			if (!slot.failedThisFrame) slot.consecutiveFailures = 0;
+				// Only a frame whose Update AND replay both succeeded counts as healthy.
+				if (!slot.failedThisFrame) slot.consecutiveFailures = 0;
+			}
 		}
 	}
 
@@ -222,7 +289,8 @@ namespace Crucible
 	{
 		if (!m_initialized) return;
 
-		for (auto it = m_updateOrder.rbegin(); it != m_updateOrder.rend(); ++it)
+		const std::vector<std::size_t>& order = m_schedule.serialOrder;
+		for (auto it = order.rbegin(); it != order.rend(); ++it)
 		{
 			SystemSlot& slot = m_slots[*it];
 			if (!slot.initialised) continue;
@@ -234,6 +302,28 @@ namespace Crucible
 		for (SystemSlot& slot : m_slots) slot.commands.Clear();
 
 		m_initialized = false;
+	}
+
+	void ECSSystemManager::LogSchedule() const
+	{
+		CRU_INFO("ECS schedule: {} systems, {} stages (serial execution)", m_schedule.serialOrder.size(), m_schedule.stages.size());
+
+		for (const StageSchedule& stage : m_schedule.stages)
+		{
+			for (std::size_t batchIndex = 0; batchIndex < stage.batches.size(); ++batchIndex)
+			{
+				for (std::size_t index : stage.batches[batchIndex].systems)
+				{
+					const SystemDesc& desc = m_schedule.descs[index];
+					const std::string access = !desc.access.declared ? std::string("undeclared (exclusive)")
+						: desc.access.exclusive ? std::string("exclusive")
+						: "reads " + ComponentList(desc.access.reads) + " writes " + ComponentList(desc.access.writes);
+
+					CRU_INFO("  {} batch {}: {} [priority {}, {}, {}]", StageName(stage.stage), batchIndex,
+						m_schedule.names[index], desc.priority, AffinityName(desc.affinity), access);
+				}
+			}
+		}
 	}
 
 }

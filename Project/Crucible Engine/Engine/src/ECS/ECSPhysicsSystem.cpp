@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Implementation of ECSPhysicsSystem. See
 *                ECSPhysicsSystem.h for the interface this satisfies.
@@ -18,6 +18,7 @@
 * \history
 *    -v1.0       stub implementation, no physics logic yet
 *    -v1.1       explicit Euler integration of velocity into position
+*    -v1.2       Describe() for the system scheduler
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -27,6 +28,11 @@ namespace Crucible
 {
 	void ECSPhysicsSystem::Init()
 	{
+	}
+	void ECSPhysicsSystem::Describe(SystemDesc& desc) const
+	{
+		// Pure component math: safe on a worker once a job system exists.
+		desc.Uses<BodyQuery>().Affinity(SystemAffinity::Worker);
 	}
 	void ECSPhysicsSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands)
 	{

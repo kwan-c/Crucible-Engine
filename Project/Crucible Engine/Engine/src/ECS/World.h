@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -31,6 +31,8 @@
 *                SetDeltaTime/DeltaTime, queries stamp change ticks, new
 *                components relocated straight into their slot; all existing
 *                public names and signatures unchanged
+*    -v1.4       private DestroyEntityImpl (silent removal of rolled-back
+*                spawns); documented that lifecycle hooks must not throw
 *
 **************************************************************************/
 #pragma once
@@ -300,6 +302,10 @@ namespace Crucible
 			Runs under the iteration guard: hooks may read, but must queue
 			structural changes through a CommandBuffer. Registering a hook
 			during Query iteration or hook dispatch throws std::logic_error.
+		 \warning
+			Lifecycle hooks are expected not to throw during normal engine
+			operation. A throwing hook is treated as an engine error: the
+			exception propagates, and hooks that already ran are NOT undone.
 		 *********************************************************************/
 		template <typename T>
 		void OnComponentAdded(std::function<void(World&, Entity, T&)> callback);
@@ -313,6 +319,8 @@ namespace Crucible
 		 \details
 			Fires on RemoveComponent AND on DestroyEntity, so resource-owning
 			hooks always pair up with their add.
+		 \warning
+			Expected not to throw - see OnComponentAdded().
 		 *********************************************************************/
 		template <typename T>
 		void OnComponentRemoved(std::function<void(World&, Entity, T&)> callback);
@@ -321,6 +329,8 @@ namespace Crucible
 		 \brief
 			Registers a callback fired for every entity about to be
 			destroyed, BEFORE its component data is torn down.
+		 \warning
+			Expected not to throw - see OnComponentAdded().
 		 *********************************************************************/
 		void OnEntityDestroyed(std::function<void(World&, Entity)> callback);
 
@@ -369,6 +379,10 @@ namespace Crucible
 		EntityRecord& RequireMutableEntity(Entity entity, const char* operation);
 		Entity CreateEntityImpl(const ComponentSignature& signature, bool fireAddHooks);
 		void NotifyComponentsAdded(Entity entity);
+
+		// fireHooks == false removes an entity whose add hooks never ran (a
+		// rolled-back CommandBuffer spawn), so no remove/destroy hook may run.
+		void DestroyEntityImpl(Entity entity, bool fireHooks);
 
 		/*********************************************************************
 		 \brief

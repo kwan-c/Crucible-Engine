@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares the ECSPhysicsSystem, which applies
 *                RigidBody-driven motion to Transform components each
@@ -20,6 +20,8 @@
 *    -v1.0       skeleton / placeholder system, no physics logic yet
 *    -v1.1       integrates velocity into position using
 *                World::DeltaTime(); PostUpdate stage; persistent query
+*    -v1.2       Describe(): scheduler access from its query type, Worker
+*                affinity
 *
 **************************************************************************/
 #pragma once
@@ -47,8 +49,17 @@ namespace Crucible
 		 *********************************************************************/
 		SystemStage Stage() const override { return SystemStage::PostUpdate; }
 
+		/*********************************************************************
+		 \brief  Scheduler description: access derived from BodyQuery
+				 (writes Transform, reads RigidBody), may run on a worker.
+		 *********************************************************************/
+		void Describe(SystemDesc& desc) const override;
+
 	private:
+		// One type for both the scheduler's access and the iteration itself.
+		using BodyQuery = Query<Transform, const RigidBody>;
+
 		// Built on the first Update(), then reused every frame.
-		std::optional<Query<Transform, const RigidBody>> m_bodies;
+		std::optional<BodyQuery> m_bodies;
 	};
 }

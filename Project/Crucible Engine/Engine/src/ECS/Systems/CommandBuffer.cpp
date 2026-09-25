@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Implementation of CommandBuffer's chunk management,
 *                DestroyEntity/SpawnEntity queuing, and Execute()/
@@ -46,6 +46,9 @@
 *    -v1.2       per-payload alignment (AllocateRecord/TryPlace replace
 *                Allocate), spawns created directly in their final
 *                archetype with add hooks fired at the end of Execute()
+*    -v1.3       Execute() rolls back spawns whose add hooks never ran when
+*                it throws (DiscardUnnotifiedSpawns); spawn epoch bumped on
+*                reset/move so stale EntitySpawn handles are rejected
 *
 **************************************************************************/
 
@@ -77,6 +80,7 @@ namespace Crucible
 		other.m_head = nullptr;
 		other.m_tail = nullptr;
 		other.m_count = 0;
+		++other.m_spawnEpoch;   // handles into 'other' must not reach the moved tokens
 	}
 
 	CommandBuffer& CommandBuffer::operator=(CommandBuffer&& other) noexcept
@@ -95,6 +99,11 @@ namespace Crucible
 		other.m_head = nullptr;
 		other.m_tail = nullptr;
 		other.m_count = 0;
+
+		// This buffer's old handles and 'other's handles both refer to tokens
+		// that are gone from where they point - invalidate both.
+		++m_spawnEpoch;
+		++other.m_spawnEpoch;
 
 		return *this;
 	}
@@ -142,7 +151,7 @@ namespace Crucible
 	CommandBuffer::EntitySpawn CommandBuffer::SpawnEntity()
 	{
 		const std::uint32_t token = RecordCreateSpawned();
-		return EntitySpawn(*this, token);
+		return EntitySpawn(*this, token, m_spawnEpoch);
 	}
 
 	// Allocates one new chunk with at least minCapacity bytes of storage
@@ -222,9 +231,10 @@ namespace Crucible
 
 	// Runs every queued command, in order, against world. Each record's
 	// payload is destroyed immediately after it runs. If execute() throws,
-	// that record's payload and every record after it are destroyed, the
-	// buffer is reset for reuse, and the exception is rethrown - no leaks
-	// either way.
+	// that record's payload and every record after it are destroyed, every
+	// spawn created so far is rolled back (none has had its add hooks yet),
+	// the buffer is reset for reuse, and the exception is rethrown - no
+	// leaks and no half-built, un-hooked spawns either way.
 	void CommandBuffer::Execute(World& world)
 	{
 		Chunk* chunk = m_head;
@@ -252,6 +262,7 @@ namespace Crucible
 			{
 				if (header->destroyPayload) header->destroyPayload(payload);
 				DestroyPayloadsFrom(chunk, nextOffset);
+				DiscardUnnotifiedSpawns(world, 0);
 				ResetForReuse();
 				throw;
 			}
@@ -261,17 +272,42 @@ namespace Crucible
 		}
 
 		// Spawned entities now hold their With<T>() values - fire their add hooks.
-		try
+		// If spawn i's hooks throw, spawn i stays (same as CreateEntity when its
+		// hook throws) and the spawns after it, never hooked, are rolled back.
+		for (std::size_t i = 0; i < m_spawnedEntities.size(); ++i)
 		{
-			for (Entity spawned : m_spawnedEntities) world.NotifyComponentsAdded(spawned);
-		}
-		catch (...)
-		{
-			ResetForReuse();
-			throw;
+			try
+			{
+				world.NotifyComponentsAdded(m_spawnedEntities[i]);
+			}
+			catch (...)
+			{
+				DiscardUnnotifiedSpawns(world, i + 1);
+				ResetForReuse();
+				throw;
+			}
 		}
 
 		ResetForReuse();
+	}
+
+	void CommandBuffer::DiscardUnnotifiedSpawns(World& world, std::size_t firstUnnotified) noexcept
+	{
+		for (std::size_t i = firstUnnotified; i < m_spawnedEntities.size(); ++i)
+		{
+			const Entity spawned = m_spawnedEntities[i];
+			if (!world.IsAlive(spawned)) continue;   // never created (throw came first)
+
+			try
+			{
+				world.DestroyEntityImpl(spawned, false);
+			}
+			catch (...)
+			{
+				// Only throws on misuse (Execute() during iteration), which
+				// would have failed before any spawn existed.
+			}
+		}
 	}
 
 	// Public "discard without running" entry point.
@@ -321,6 +357,7 @@ namespace Crucible
 		m_count = 0;
 		m_spawnedEntities.clear();
 		m_spawnSignatures.clear();
+		++m_spawnEpoch;   // spawn tokens restart at 0 - invalidate old EntitySpawn handles
 	}
 
 	// Frees every chunk's underlying allocation. Callers must have already
