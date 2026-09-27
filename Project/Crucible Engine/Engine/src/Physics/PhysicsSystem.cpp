@@ -1,29 +1,29 @@
-// STL
-#include <cstdarg>   // JoltTrace()
-#include <cstdio>    // JoltTrace()
-#include <format>    // JoltAssertFailed()
-
-// Jolt
-#include "Jolt/Jolt.h"
-#include <Jolt/RegisterTypes.h>
-#include <Jolt/Core/Factory.h>
-#include <Jolt/Core/TempAllocator.h>
-#include <Jolt/Core/JobSystemThreadPool.h>
-#include <Jolt/Physics/PhysicsSettings.h>
-#include <Jolt/Physics/PhysicsSystem.h>
-#include <Jolt/Physics/Collision/Shape/BoxShape.h>
-#include <Jolt/Physics/Collision/Shape/SphereShape.h>
-#include <Jolt/Physics/Body/BodyCreationSettings.h>
-#include <Jolt/Physics/Body/BodyActivationListener.h>
-// Engine
 #include "PhysicsSystem.h"
+
+// Jolt - Jolt.h always comes before any other Jolt header
+#include <Jolt/Jolt.h>
+#include <Jolt/Core/Factory.h>
+#include <Jolt/Physics/PhysicsSettings.h>
+#include <Jolt/RegisterTypes.h>
+
+// STL
+#include <algorithm>    // Init()
+#include <cstdarg>      // JoltTrace()
+#include <cstdio>       // JoltTrace()
+#include <format>       // JoltAssertFailed()
+#include <thread>       // Init()
+
+// Crucible engine
 #include "Diagnostics/Logger.h"
+#include "Physics/JoltConversions.h"
+#include "Physics/PhysicsInternal.h"
 
 namespace {
 
-    // Jolt only speaks when something is off, so this logs as a warning.
-    void JoltTrace(const char* fmt, ...)
-    {
+    // Jolt only speaks up when something is off, so this logs as a warning.
+    // Jolt's worker threads call it too, which is safe: the logger takes a lock.
+    void JoltTrace(const char* fmt, ...) {
+
         char buffer[1024];
 
         va_list args;
@@ -32,153 +32,220 @@ namespace {
         va_end(args);
 
         CRU_WARN("[Jolt] {}", buffer);
-    }
+
+    }   // JoltTrace()
 
 #ifdef JPH_ENABLE_ASSERTS
-    bool JoltAssertFailed(const char* expression, const char* message, const char* file, JPH::uint line)
-    {
+    // Logged with Jolt's own file and line, so the log points at the line inside
+    // Jolt that objected rather than at this function.
+    bool JoltAssertFailed(const char* expression, const char* message, const char* file, JPH::uint line) {
+
         Crucible::Debug::LogMessage(Crucible::Debug::Level::Error, file, static_cast<int>(line),
             std::format("[Jolt] assert failed: {} {}", expression, message != nullptr ? message : ""));
 
         return true;    // true = break into the debugger
-    }
+
+    }   // JoltAssertFailed()
 #endif
 
 }   // ANONYMOUS NAMESPACE
 
 namespace Crucible {
 
-	Physics::Physics() {
-	
-	}
+    using namespace JoltConvert;
 
-	Physics::~Physics() {
-	
-	}
+    Physics::Physics() : m_impl{ new Impl() } {}
 
-    // Builds the Jolt world: allocator, factory, types, job system, temp
-        // allocator, layer tables, then the PhysicsSystem itself. Returns false
-        // and logs if any of it fails; Core::Init does the same, which is why
-        // this returns bool rather than throwing the way the renderer does.
-        // The layer tables must outlive the world, so they cannot be locals here.
-    bool Physics::Init(const PhysicsSettings& settings = PhysicsSettings{}){
+    Physics::~Physics() {
+        Shutdown();
+        delete m_impl;
+    }
 
-		// Register the default allocator. Jolt needs this to manage memory for its internal structures.
-		JPH::RegisterDefaultAllocator();
+    bool Physics::IsInitialised() const { return m_impl->m_initialised; }
 
-        // Trace and Assert callbacks
-		JPH::Trace = JoltTrace;
-		JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = JoltAssertFailed;);
+    /*!
+        \brief
+        Builds the Jolt world, in the order Jolt needs it built.
+        \param settings
+        The limits and gravity, fixed for the lifetime of the world.
+        \return
+        False, with a line in the log, if the settings make no sense.
+    */
+    bool Physics::Init(const PhysicsSettings& settings) {
 
-		// Create Factory instance. Jolt uses this to create instances of various classes.
-		JPH::Factory::sInstance = new JPH::Factory();
+        Impl& impl = *m_impl;
+        if (impl.m_initialised) return true;    // a second Init is a no-op, not a second world
 
-		// Register all the types that Jolt knows about. 
-        // If we have custom shapes, we need to register them with the CollisionDispatch Class.
+        if (settings.m_maxBodies == 0 || settings.m_maxBodyPairs == 0 || settings.m_maxContacts == 0) {
+            CRU_ERROR("Physics::Init: max bodies, body pairs and contacts must all be above zero");
+            return false;
+        }
+
+        // JOLT'S GLOBALS ------------------------------------------------------- //
+        // Process-wide, not per-world, and the order matters: the allocator before
+        // anything allocates, Trace before RegisterTypes so a mismatched build can
+        // explain itself in the log, the factory before the types registering into it.
+        JPH::RegisterDefaultAllocator();
+
+        JPH::Trace = JoltTrace;
+        JPH_IF_ENABLE_ASSERTS(JPH::AssertFailed = JoltAssertFailed;)
+
+        // This class is the only thing in Crucible that touches Jolt, so it owns
+        // the factory outright and Shutdown deletes it. The day something else
+        // uses Jolt, these globals need a reference count instead.
+        JPH::Factory::sInstance = new JPH::Factory();
         JPH::RegisterTypes();
 
-        // Preallocates 10 MB for Physics system
-		// The amount can be changed in the PhysicsSettings struct.
-		JPH::TempAllocatorImpl tempAllocator(settings.m_tempAllocatorBytes);
+        // THE LAYER TABLES ------------------------------------------------------ //
+        const auto layerCount = static_cast<JPH::uint>(kPhysicsLayerCount);
 
-		JPH::JobSystemThreadPool();
+        // Who collides with whom: every pair asked once, from PhysicsLayers.cpp.
+        impl.m_layerPairs = std::make_unique<JPH::ObjectLayerPairFilterTable>(layerCount);
+        for (JPH::uint a = 0; a < layerCount; ++a)
+            for (JPH::uint b = a; b < layerCount; ++b)
+                if (LayersCollide(static_cast<PhysicsLayer>(a), static_cast<PhysicsLayer>(b)))
+                    impl.m_layerPairs->EnableCollision(static_cast<JPH::ObjectLayer>(a), static_cast<JPH::ObjectLayer>(b));
 
+        // Which tree each layer is filed in: the arena in one, everything else in the other.
+        impl.m_layerToTree = std::make_unique<JPH::BroadPhaseLayerInterfaceTable>(layerCount, Impl::kTreeCount);
+        for (JPH::uint layer = 0; layer < layerCount; ++layer) {
+            const bool isArena = static_cast<PhysicsLayer>(layer) == PhysicsLayer::NonMoving;
+            impl.m_layerToTree->MapObjectToBroadPhaseLayer(static_cast<JPH::ObjectLayer>(layer),
+                                                           isArena ? Impl::kTreeStatic : Impl::kTreeMoving);
+        }
 
-        
+        // Which trees a layer must search. Jolt derives this from the other two.
+        impl.m_layerVsTree = std::make_unique<JPH::ObjectVsBroadPhaseLayerFilterTable>(
+            *impl.m_layerToTree, Impl::kTreeCount, *impl.m_layerPairs, layerCount);
 
-    }
+        // SCRATCH MEMORY AND WORKERS -------------------------------------------- //
+        impl.m_tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(settings.m_tempAllocatorBytes);
 
-    // Destroys every body, then tears Jolt down in the reverse order of Init.
-    // Safe to call twice, and the destructor calls it for you.
+        // 0 means "decide for me". One fewer than the machine has, because the
+        // thread calling Step works too - then capped, because at M1's scale the
+        // jobs are small and every extra thread is one more to wait for at each
+        // barrier. Hyperthreads share execution units, so the top half of that
+        // count buys very little on SIMD work like this anyway. The cap is a
+        // guess until the week-3 profiler says otherwise; m_workerThreads
+        // overrides it whenever you want to measure a different number.
+        constexpr int kMaxAutoWorkers = 4;
+
+        int workers = static_cast<int>(settings.m_workerThreads);
+        if (workers <= 0) {
+            const int hardware = static_cast<int>(std::thread::hardware_concurrency());
+            workers = std::clamp(hardware - 1, 1, kMaxAutoWorkers);
+        }
+        impl.m_jobSystem = std::make_unique<JPH::JobSystemThreadPool>(JPH::cMaxPhysicsJobs, JPH::cMaxPhysicsBarriers, workers);
+
+        // THE WORLD -------------------------------------------------------------- //
+        impl.m_world = std::make_unique<JPH::PhysicsSystem>();
+        impl.m_world->Init(settings.m_maxBodies, 0, settings.m_maxBodyPairs, settings.m_maxContacts,
+                           *impl.m_layerToTree, *impl.m_layerVsTree, *impl.m_layerPairs);
+        impl.m_world->SetGravity(ToJolt(settings.m_gravity));
+
+        impl.m_settings    = settings;
+        impl.m_initialised = true;
+
+        CRU_INFO("Physics world started: {} worker threads, room for {} bodies", workers, settings.m_maxBodies);
+        return true;
+
+    }   // Physics::Init()
+
+    /*!
+        \brief
+        Takes the world apart in the reverse order Init built it. Safe to call
+        twice, and the destructor calls it for you.
+    */
     void Physics::Shutdown() {
 
-    }
+        Impl& impl = *m_impl;
+        if (!impl.m_initialised) return;
 
-    // One physics tick. Call it from the fixed step, never from the frame
-    // update, and always with the same dt (1/60). Inside, the work is spread
-    // across worker threads and this returns only when all of it is finished.
-    // Nothing else may touch bodies while it runs.
+        // Our bodies first, while the world that owns them still exists.
+        JPH::BodyInterface& bodies = impl.Bodies();
+        for (const std::uint32_t id : impl.m_bodies) {
+            bodies.RemoveBody(JPH::BodyID(id));     // out of the simulation...
+            bodies.DestroyBody(JPH::BodyID(id));    // ...then gone
+        }
+        impl.m_bodies.clear();
+        impl.m_movedBodies.clear();
+
+        // Reverse of Init. The layer tables go last because the world holds
+        // references to them.
+        impl.m_world.reset();
+        impl.m_jobSystem.reset();       // joins the worker threads
+        impl.m_tempAllocator.reset();
+        impl.m_layerVsTree.reset();
+        impl.m_layerToTree.reset();
+        impl.m_layerPairs.reset();
+
+        // Jolt's globals, so a later Init starts from a clean slate.
+        JPH::UnregisterTypes();
+        delete JPH::Factory::sInstance;
+        JPH::Factory::sInstance = nullptr;
+
+        impl.m_initialised = false;
+        CRU_INFO("Physics world stopped");
+
+    }   // Physics::Shutdown()
+
+    /*!
+        \brief
+        One tick. Jolt spreads the work over its worker threads and returns when
+        all of it is done; then the bodies that moved are collected for the ECS.
+    */
     void Physics::Step(float fixedDt) {
 
-    }
+        Impl& impl = *m_impl;
+        impl.m_movedBodies.clear();
+        if (!impl.m_initialised || !(fixedDt > 0.0f)) return;
 
-    // --- bodies ---
+        const JPH::EPhysicsUpdateError errors =
+            impl.m_world->Update(fixedDt, 1, impl.m_tempAllocator.get(), impl.m_jobSystem.get());
 
-    // Creates the shape and the body and adds it to the world. Returns an
-    // invalid handle if the description is nonsense (a capsule with no radius)
-    // or the world is full - check it, do not assume.
-    BodyHandle Physics::CreateBody(const BodyDesc& desc) {
+        if (errors != JPH::EPhysicsUpdateError::None)
+            CRU_ERROR("Physics::Step: a buffer filled up and contacts were dropped - raise the limits in PhysicsSettings");
 
-    }
+        // WHAT MOVED -------------------------------------------------------------- //
+        // Only awake bodies can have moved. Jolt puts a body to sleep once it has
+        // been still for a moment and drops it from this list, which is why a pile
+        // of settled crates costs nothing to sync.
+        JPH::BodyIDVector active;
+        impl.m_world->GetActiveBodies(JPH::EBodyType::RigidBody, active);
 
-    // Removes the body from the world and destroys it. Removing is not the
-    // same as destroying in Jolt; this does both. Handles to it stay invalid
-    // afterwards rather than becoming someone else's body.
-    void Physics::DestroyBody(const BodyHandle& body) {
+        JPH::BodyInterface& bodies = impl.Bodies();
+        for (const JPH::BodyID& id : active) {
 
-    }
+            if (!impl.m_bodies.contains(id.GetIndexAndSequenceNumber())) continue;   // not one of ours
 
-    // --- moving things ---
+            JPH::RVec3 position;
+            JPH::Quat  rotation;
+            bodies.GetPositionAndRotation(id, position, rotation);
 
-    // Teleport. No velocity, so the body arrives with whatever it had before.
-    // For something that should push what it hits while it moves - a lift, a
-    // door, an animated platform - use MoveKinematic instead.
-    void Physics::SetTransform(const BodyHandle& body, const Math::vec3& position, const Math::quaternion& rotation) {
+            Impl::Moved moved;
+            moved.m_userData = bodies.GetUserData(id);
+            moved.m_position = FromJolt(position);
+            moved.m_rotation = FromJolt(rotation);
+            impl.m_movedBodies.push_back(moved);
+        }
 
-    }
+    }   // Physics::Step()
 
-    // Reads a body's current transform. This is the simple path for the ECS
-    // sync; see GetMovedBody below for the one that skips sleeping bodies.
-    void Physics::GetTransform(const BodyHandle& body, Math::vec3& outPosition, Math::quaternion& outRotation) const {
-
-    }
-
-    // Moves a kinematic body toward a target over one step by giving it the
-    // velocity that gets it there. That velocity is what lets it push dynamic
-    // bodies; SetTransform would slide it straight through them.
-    void Physics::MoveKinematic(const BodyHandle& body, const Math::vec3& targetPosition, const Math::quaternion& targetRotation, float fixedDt) {
-
-    }
-
-    void Physics::SetLinearVelocity(const BodyHandle& body, const Math::vec3& velocity) {
-
-    }
-
-    Math::vec3 Physics::GetLinearVelocity(const BodyHandle& body) const {
-
-    }
-
-    // A kick, measured in kg*m/s, applied instantly - the crate jumping when
-    // it is shot. Use this rather than a force for one-off hits: a force is
-    // spread over the step and a one-frame force barely moves anything.
-    // Both of these wake a sleeping body; the equivalents on Jolt's Body do not.
-    void Physics::ApplyImpulse(const BodyHandle& body, const Math::vec3& impulse) {
-
-    }
-
-    // --- queries ---
-
-    // The weapon. Fires a ray and returns the closest thing it hits.
-    // Pass the shooter's own body as 'ignore' or the mech shoots itself in
-    // the foot on frame one. Sensors are not hit by this.
-    // Direction is expected normalised; distance is in metres.
-    RayHit Physics::Raycast(const Math::vec3& origin, const Math::vec3& direction, float maxDistance, const BodyHandle& ignore = BodyHandle{}) const {
-
-    }
-    // --- reading results back ---
-
-    // After Step, these list only the bodies that actually moved - Jolt puts
-    // resting bodies to sleep and skips them, so a scene with 500 crates that
-    // have settled costs nothing to sync. Fill these in second: start the ECS
-    // binding with GetTransform per body, and switch when the profiler says to.
     std::uint32_t Physics::GetMovedBodyCount() const {
-
+        return static_cast<std::uint32_t>(m_impl->m_movedBodies.size());
     }
 
-    bool Physics::GetMovedBody(std::uint32_t index, std::uint64_t& outUserData, Math::vec3& outPosition, Math::quaternion& outRotation) const {
+    bool Physics::GetMovedBody(std::uint32_t index, std::uint64_t& outUserData, Math::vec3& outPosition, Math::quat& outRotation) const {
 
-    }
+        const Impl& impl = *m_impl;
+        if (index >= impl.m_movedBodies.size()) return false;
 
-	
+        const Impl::Moved& moved = impl.m_movedBodies[index];
+        outUserData = moved.m_userData;
+        outPosition = moved.m_position;
+        outRotation = moved.m_rotation;
+        return true;
 
-}
+    }   // Physics::GetMovedBody()
+
+}   // NAMESPACE CRUCIBLE

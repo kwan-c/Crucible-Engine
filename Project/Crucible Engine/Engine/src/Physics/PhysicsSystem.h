@@ -9,7 +9,6 @@
 #include "Math/Math.h"
 #include "Physics/PhysicsLayers.h"
 
-
 // ---------------------------------------------------------------------------
 // Crucible::Physics
 //
@@ -26,13 +25,18 @@
 //
 // and the traffic is one way at each moment:
 //
-//   before Step   ECS -> here   spawns, teleports, velocities, kinematic targets
+//   before Step   ECS -> here   spawns, teleports, velocities
 //   Step          the world moves, spread over worker threads, returns when done
 //   after Step    here -> ECS   transforms of the bodies that actually moved
 //
 // Between those two moments, physics owns the transform of every dynamic body.
 // Gameplay writing a Transform component mid-step gets silently overwritten -
 // the same rule as Unity's "don't set transform.position on a Rigidbody".
+//
+// Three kinds of body: Static (the arena), Dynamic (crates), and Kinematic (a
+// lift or a door: you drive it, nothing pushes it back). M1 uses the first two;
+// the third is here for when the arena gets moving parts. Sensors are cut until
+// the pickups and trigger volumes that need contact events exist.
 //
 // No Jolt header is included here on purpose. Engine is a DLL and Jolt is a
 // static library, so if Game could see Jolt it would link a second copy with
@@ -62,7 +66,7 @@ namespace Crucible {
 
     enum class BodyMotion : std::uint8_t {
 
-        Static,     // never moves. The arena. Cheapest of the three
+        Static,     // never moves. The arena. The cheap one: Jolt never simulates it
         Kinematic,  // you move it; it shoves dynamic bodies, nothing shoves it. A lift, a door
         Dynamic     // forces and collisions move it. A crate
 
@@ -87,29 +91,28 @@ namespace Crucible {
 
     struct BodyDesc {
 
-        ShapeDesc        m_shape       {};
-        Math::vec3       m_position    = Math::vec3(0.0f, 0.0f, 0.0f);
-        Math::quaternion m_rotation    = Math::quaternion::fromIdentity();
-        BodyMotion       m_motion      = BodyMotion::Dynamic;
-        Layer            m_layer       = Layer::Moving;
-        float            m_mass        = 0.0f;    // 0 = derive it from the shape, which is almost always what you want
-        float            m_friction    = 0.2f;    // Jolt's defaults. 0 is ice, 1 is glue
-        float            m_restitution = 0.0f;    // bounciness. 0 is a sandbag, 1 is a superball
-        bool             m_isSensor    = false;   // a trigger: reports touches, blocks nothing
-        std::uint64_t    m_userData    = 0;       // yours. The ECS binding puts the Entity in here
+        ShapeDesc     m_shape       {};
+        Math::vec3    m_position    = Math::vec3(0.0f, 0.0f, 0.0f);
+        Math::quat    m_rotation    = Math::quat::fromIdentity();
+        BodyMotion    m_motion      = BodyMotion::Dynamic;
+        PhysicsLayer  m_layer       = PhysicsLayer::Moving;
+        float         m_mass        = 0.0f;    // 0 = derive it from the shape, which is almost always what you want
+        float         m_friction    = 0.2f;    // Jolt's defaults. 0 is ice, 1 is glue
+        float         m_restitution = 0.0f;    // bounciness. 0 is a sandbag, 1 is a superball
+        std::uint64_t m_userData    = 0;       // yours. The ECS binding puts the Entity in here
 
     };  // BODYDESC STRUCT
 
-    struct RayHit {
+    // Unity's RaycastHit. Only filled in when Raycast returns true.
+    struct RaycastHit {
 
-        bool          m_hit      = false;                        // check this first; the rest is undefined when false
         BodyHandle    m_body     {};
         std::uint64_t m_userData = 0;                            // copied off the body, so the caller need not look it up
         Math::vec3    m_point    = Math::vec3(0.0f, 0.0f, 0.0f);
-        Math::vec3    m_normal   = Math::vec3(0.0f, 1.0f, 0.0f);
+        Math::vec3    m_normal   = Math::vec3(0.0f, 1.0f, 0.0f);   // which way the surface faces where it was hit
         float         m_distance = 0.0f;
 
-    };  // RAYHIT STRUCT
+    };  // RAYCASTHIT STRUCT
 
     struct PhysicsSettings {
 
@@ -120,7 +123,7 @@ namespace Crucible {
         std::uint32_t m_maxBodyPairs       = 10240;
         std::uint32_t m_maxContacts        = 10240;
 
-        std::uint32_t m_workerThreads      = 0;                  // 0 = hardware threads minus one, because the calling thread joins in
+        std::uint32_t m_workerThreads      = 0;                  // 0 = pick automatically (hardware threads minus one, capped - see Init)
         std::size_t   m_tempAllocatorBytes = 10u * 1024 * 1024;  // scratch memory for one step; freed by the time Step returns
         Math::vec3    m_gravity            = Math::vec3(0.0f, -9.81f, 0.0f);
 
@@ -153,6 +156,12 @@ namespace Crucible {
         // Safe to call twice, and the destructor calls it for you.
         void Shutdown();
 
+        // Did Init succeed? Here because the ECS binding asks every frame before
+        // it touches anything, and the answer belongs with the object rather
+        // than in a flag elsewhere that someone has to reset when physics
+        // restarts. Everything below is a safe no-op while this is false.
+        bool IsInitialised() const;
+
         // One physics tick. Call it from the fixed step, never from the frame
         // update, and always with the same dt (1/60). Inside, the work is spread
         // across worker threads and this returns only when all of it is finished.
@@ -176,16 +185,16 @@ namespace Crucible {
         // Teleport. No velocity, so the body arrives with whatever it had before.
         // For something that should push what it hits while it moves - a lift, a
         // door, an animated platform - use MoveKinematic instead.
-        void SetTransform(const BodyHandle& body, const Math::vec3& position, const Math::quaternion& rotation);
+        void SetTransform(const BodyHandle& body, const Math::vec3& position, const Math::quat& rotation);
 
         // Reads a body's current transform. This is the simple path for the ECS
         // sync; see GetMovedBody below for the one that skips sleeping bodies.
-        void GetTransform(const BodyHandle& body, Math::vec3& outPosition, Math::quaternion& outRotation) const;
+        void GetTransform(const BodyHandle& body, Math::vec3& outPosition, Math::quat& outRotation) const;
 
         // Moves a kinematic body toward a target over one step by giving it the
         // velocity that gets it there. That velocity is what lets it push dynamic
         // bodies; SetTransform would slide it straight through them.
-        void MoveKinematic(const BodyHandle& body, const Math::vec3& targetPosition, const Math::quaternion& targetRotation, float fixedDt);
+        void MoveKinematic(const BodyHandle& body, const Math::vec3& targetPosition, const Math::quat& targetRotation, float fixedDt);
 
         void       SetLinearVelocity(const BodyHandle& body, const Math::vec3& velocity);
         Math::vec3 GetLinearVelocity(const BodyHandle& body) const;
@@ -193,16 +202,20 @@ namespace Crucible {
         // A kick, measured in kg*m/s, applied instantly - the crate jumping when
         // it is shot. Use this rather than a force for one-off hits: a force is
         // spread over the step and a one-frame force barely moves anything.
-        // Both of these wake a sleeping body; the equivalents on Jolt's Body do not.
+        // This wakes a sleeping body; the equivalent on Jolt's Body does not.
         void ApplyImpulse(const BodyHandle& body, const Math::vec3& impulse);
 
         // --- queries ---
 
-        // The weapon. Fires a ray and returns the closest thing it hits.
+        // The weapon. True if the ray hit something, with the closest hit in
+        // outHit; false leaves outHit untouched. Argument order matches Unity's
+        // Physics.Raycast(origin, direction, out hit, maxDistance) on purpose,
+        // so this is the one place out-parameters are not last.
         // Pass the shooter's own body as 'ignore' or the mech shoots itself in
-        // the foot on frame one. Sensors are not hit by this.
+        // the foot on frame one.
         // Direction is expected normalised; distance is in metres.
-        RayHit Raycast(const Math::vec3& origin, const Math::vec3& direction, float maxDistance, const BodyHandle& ignore = BodyHandle{}) const;
+        bool Raycast(const Math::vec3& origin, const Math::vec3& direction, RaycastHit& outHit, float maxDistance,
+                     const BodyHandle& ignore = BodyHandle{}) const;
 
         // --- reading results back ---
 
@@ -211,12 +224,12 @@ namespace Crucible {
         // have settled costs nothing to sync. Fill these in second: start the ECS
         // binding with GetTransform per body, and switch when the profiler says to.
         std::uint32_t GetMovedBodyCount() const;
-        bool          GetMovedBody(std::uint32_t index, std::uint64_t& outUserData, Math::vec3& outPosition, Math::quaternion& outRotation) const;
+        bool          GetMovedBody(std::uint32_t index, std::uint64_t& outUserData, Math::vec3& outPosition, Math::quat& outRotation) const;
 
     private:
 
-        // Everything Jolt hides in here, defined in the .cpp. Two reasons: Game
-        // must never see a Jolt header (see the note at the top of this file),
+        // Everything Jolt hides in here, defined in PhysicsInternal.h. Two reasons:
+        // Game must never see a Jolt header (see the note at the top of this file),
         // and an exported class with std:: members warns C4251 at /W4 - the same
         // trap ScopedTimer dodges. A raw pointer rather than a unique_ptr for the
         // same reason; the destructor deletes it.
