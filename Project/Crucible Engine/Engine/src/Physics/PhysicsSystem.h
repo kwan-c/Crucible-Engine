@@ -198,6 +198,12 @@ namespace Crucible {
         // restarts. Everything below is a safe no-op while this is false.
         bool IsInitialised() const;
 
+        // Rebuilds the search tree the arena lives in. Adding a batch of static
+        // bodies leaves that tree lopsided, and every raycast and pair test pays
+        // for it until this runs. Costly, so call it after building a level, not
+        // every frame. The ECS binding calls it for you when static bodies appear.
+        void OptimizeBroadPhase();
+
         // One physics tick. Call it from the fixed step, never from the frame
         // update, and always with the same dt (1/60). Inside, the work is spread
         // across worker threads and this returns only when all of it is finished.
@@ -261,6 +267,11 @@ namespace Crucible {
         // What the last MoveCharacter actually achieved, after walls and steps
         // had their say. Ask for this rather than assuming the velocity you gave.
         Math::vec3 GetCharacterVelocity(const CharacterHandle& character) const;
+
+        // The hidden body that makes a character visible to raycasts. Pass this
+        // as Raycast's `ignore`, or the mech shoots itself: a ray starting inside
+        // a shape hits that shape at distance zero.
+        BodyHandle GetCharacterBody(const CharacterHandle& character) const;
 
         Math::vec3 GetCharacterPosition(const CharacterHandle& character) const;
         void       SetCharacterPosition(const CharacterHandle& character, const Math::vec3& position);   // a respawn

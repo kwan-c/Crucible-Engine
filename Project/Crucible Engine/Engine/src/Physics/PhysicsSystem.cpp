@@ -1,10 +1,13 @@
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header
+#pragma warning(push)
+#pragma warning(disable : 26495)   // uninitialised member inside Jolt's own headers; not our code to fix
 #include <Jolt/Jolt.h>
 #include <Jolt/Core/Factory.h>
 #include <Jolt/Physics/PhysicsSettings.h>
 #include <Jolt/RegisterTypes.h>
+#pragma warning(pop)
 
 // STL
 #include <algorithm>    // Init()
@@ -119,7 +122,18 @@ namespace Crucible {
             *impl.m_layerToTree, Impl::kTreeCount, *impl.m_layerPairs, layerCount);
 
         // SCRATCH MEMORY AND WORKERS -------------------------------------------- //
-        impl.m_tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(settings.m_tempAllocatorBytes);
+        // Jolt calls std::abort() if a step ever needs more scratch than this -
+        // not an assert, so it kills Release builds too. 0 means "use the
+        // default", matching m_workerThreads, and anything implausibly small is
+        // raised rather than trusted: a 4 KB scratch space is a typo.
+        constexpr std::size_t kMinTempAllocatorBytes = 1u * 1024 * 1024;
+        std::size_t scratch = settings.m_tempAllocatorBytes;
+        if (scratch == 0) scratch = PhysicsSettings{}.m_tempAllocatorBytes;
+        if (scratch < kMinTempAllocatorBytes) {
+            CRU_WARN("Physics::Init: m_tempAllocatorBytes was {} - raising it to {}", scratch, kMinTempAllocatorBytes);
+            scratch = kMinTempAllocatorBytes;
+        }
+        impl.m_tempAllocator = std::make_unique<JPH::TempAllocatorImpl>(static_cast<JPH::uint>(scratch));
 
         // 0 means "decide for me". One fewer than the machine has, because the
         // thread calling Step works too - then capped, because at M1's scale the
@@ -206,6 +220,11 @@ namespace Crucible {
         CRU_INFO("Physics world stopped");
 
     }   // Physics::Shutdown()
+
+    void Physics::OptimizeBroadPhase() {
+        Impl& impl = *m_impl;
+        if (impl.m_initialised) impl.m_world->OptimizeBroadPhase();
+    }
 
     /*!
         \brief

@@ -101,10 +101,20 @@ namespace {
             && a.m_pushStrength == b.m_pushStrength && a.m_layer == b.m_layer;
     }   // SameRecipe()
 
-    // Once per entity, ever. A warning that repeats every frame buries the log.
-    void WarnOnce(bool& warned, const Entity& entity, const char* message) {
-        if (warned) return;
-        warned = true;
+    // One bit per message. A crate can be both badly scaled and on the wrong
+    // layer, and hearing about only the first one is how the second gets missed.
+    enum WarnBit : std::uint32_t {
+        kWarnNaN          = 1u << 0,
+        kWarnLayer        = 1u << 1,
+        kWarnScale        = 1u << 2,
+        kWarnTwoColliders = 1u << 3,
+    };
+
+    // Once per entity per message, ever. A warning that repeats every frame
+    // buries the log.
+    void WarnOnce(std::uint32_t& flags, const WarnBit& bit, const Entity& entity, const char* message) {
+        if ((flags & bit) != 0u) return;
+        flags |= bit;
         CRU_WARN("entity {}:{} {}", entity.index, entity.generation, message);
     }   // WarnOnce()
 
@@ -121,8 +131,9 @@ namespace {
         Math::quat    rotation  = Math::quat::fromIdentity();
         Math::vec3    velocity  = Math::vec3(0.0f, 0.0f, 0.0f);
 
-        std::uint64_t seenFrame = 0;     // the last frame the query found this entity
-        bool          warned    = false; // one warning per entity is plenty
+        std::uint64_t seenFrame  = 0;    // the last frame the query found this entity
+        std::uint64_t pulledStep = 0;    // the last step this body turned up in the moved list
+        std::uint32_t warned     = 0;    // WarnBit flags already logged for this entity
 
     };  // RECORD STRUCT
 
@@ -138,7 +149,7 @@ namespace {
 
         Math::vec3      position  = Math::vec3(0.0f, 0.0f, 0.0f);   // where physics last put it
         std::uint64_t   seenFrame = 0;
-        bool            warned    = false;
+        std::uint32_t   warned    = 0;
 
     };  // CHARACTERRECORD STRUCT
 
@@ -169,8 +180,10 @@ namespace Crucible {
         std::unordered_map<std::uint64_t, Record>          records;           // keyed by EntityToUserData(entity)
         std::unordered_map<std::uint64_t, CharacterRecord> characterRecords;  // same key, the mechs
 
+        bool          staticBodyMade = false;                   // a new arena piece appeared: the static tree wants rebuilding
         float         accumulator    = 0.0f;                    // time owed to the simulation, under one step
         std::uint64_t frame          = 0;
+        std::uint64_t step           = 0;
         std::uint32_t stepsLastFrame = 0;
 
         void BindWorld(World& ecs);
@@ -202,11 +215,20 @@ namespace Crucible {
     }
 
     void ECSPhysicsSystem::Shutdown() noexcept {
+
         if (!m_state) return;
+
         m_state->RemoveAll();
         m_state->physics.Shutdown();
+
+        // A Query holds pointers into the World's archetypes, and must not
+        // outlive it. Dropping them here means a restart rebuilds them rather
+        // than reusing ones that point at a world that is gone.
+        m_state->colliders.reset();
+        m_state->characters.reset();
         m_state->world = nullptr;
-    }
+
+    }   // ECSPhysicsSystem::Shutdown()
 
     Physics&      ECSPhysicsSystem::GetPhysics()              { return m_state->physics; }
     std::uint32_t ECSPhysicsSystem::GetStepsLastFrame() const { return m_state->stepsLastFrame; }
@@ -253,6 +275,15 @@ namespace Crucible {
         // SYNC ONCE, THEN STEP -------------------------------------------------- //
         // Gameplay ran once this frame, so its intentions only need carrying over once.
         s.Sync(world);
+
+        // Only on frames where the level actually grew. Jolt's static tree is
+        // built for a world that stops changing, so one rebuild after a batch of
+        // arena pieces pays for itself in every raycast afterwards.
+        if (s.staticBodyMade) {
+            s.physics.OptimizeBroadPhase();
+            s.staticBodyMade = false;
+        }
+
         for (std::uint32_t i = 0; i < steps; ++i) s.Step(world);
         s.stepsLastFrame = steps;
 
@@ -262,11 +293,14 @@ namespace Crucible {
     // that are gone, so they all go.
     void ECSPhysicsSystem::State::BindWorld(World& ecs) {
 
-        if (world == &ecs) return;
+        if (world == &ecs && colliders.has_value()) return;
 
         RemoveAll();
         world = &ecs;
-        colliders.emplace(ecs.CreateQuery<const Transform, const Collider>());
+        // Excluding CharacterController matters: without it an entity with both
+        // would get a body AND a capsule, the body would chase the capsule
+        // around by teleport, and the mech would fight its own collider.
+        colliders.emplace(ecs.BuildQuery<const Transform, const Collider>().Exclude<CharacterController>().Build());
         characters.emplace(ecs.CreateQuery<const Transform, CharacterController>());
 
     }   // ECSPhysicsSystem::State::BindWorld()
@@ -287,7 +321,7 @@ namespace Crucible {
         characters->ForEach([&](Entity entity, const Transform& transform, CharacterController& controller) {
             CharacterRecord& record = TouchCharacter(entity);
             if (ecs.Read<Collider>(entity) != nullptr)
-                WarnOnce(record.warned, entity, "has a Collider and a CharacterController - only the CharacterController is used");
+                WarnOnce(record.warned, kWarnTwoColliders, entity, "has a Collider and a CharacterController - only the CharacterController is used");
             SyncCharacter(record, transform, controller);
         });
 
@@ -322,7 +356,7 @@ namespace Crucible {
     void ECSPhysicsSystem::State::SyncBody(Record& record, const Transform& transform, const Collider& collider, const RigidBody* rigidbody) {
 
         if (!Finite(transform.positions) || !Finite(transform.rotation)) {
-            WarnOnce(record.warned, record.entity, "has NaN or infinity in its Transform - physics is leaving it alone until that is fixed");
+            WarnOnce(record.warned, kWarnNaN, record.entity, "has NaN or infinity in its Transform - physics is leaving it alone until that is fixed");
             return;
         }
 
@@ -341,10 +375,10 @@ namespace Crucible {
         // Two NonMoving bodies never collide, so a crate left on that layer falls
         // through the floor and through other crates. Easy mistake, hard symptom.
         if (rigidbody != nullptr && collider.m_layer == PhysicsLayer::NonMoving)
-            WarnOnce(record.warned, record.entity, "has a RigidBody but sits on the NonMoving layer, which collides with nothing that matters - set Collider::m_layer to Moving");
+            WarnOnce(record.warned, kWarnLayer, record.entity, "has a RigidBody but sits on the NonMoving layer, which collides with nothing that matters - set Collider::m_layer to Moving");
 
         if (!Same(transform.scale, Math::vec3(1.0f, 1.0f, 1.0f)))
-            WarnOnce(record.warned, record.entity, "has a Transform scale other than 1 - colliders are not scaled yet, so the collider will not match the mesh");
+            WarnOnce(record.warned, kWarnScale, record.entity, "has a Transform scale other than 1 - colliders are not scaled yet, so the collider will not match the mesh");
 
         // NEW, OR A SETTING CHANGED: (RE)BUILD ---------------------------------- //
         if (!record.body.IsValid() || !SameRecipe(desc, record.recipe)) {
@@ -362,6 +396,8 @@ namespace Crucible {
             // Carry the velocity across, so a falling crate keeps falling when a
             // setting is edited mid-flight rather than stopping dead in the air.
             if (record.body.IsValid() && rigidbody != nullptr) physics.SetLinearVelocity(record.body, record.velocity);
+
+            if (record.body.IsValid() && desc.m_motion == BodyMotion::Static) staticBodyMade = true;
             return;
         }
 
@@ -388,7 +424,7 @@ namespace Crucible {
     void ECSPhysicsSystem::State::SyncCharacter(CharacterRecord& record, const Transform& transform, CharacterController& controller) {
 
         if (!Finite(transform.positions)) {
-            WarnOnce(record.warned, record.entity, "has NaN or infinity in its Transform - physics is leaving it alone until that is fixed");
+            WarnOnce(record.warned, kWarnNaN, record.entity, "has NaN or infinity in its Transform - physics is leaving it alone until that is fixed");
             return;
         }
 
@@ -434,6 +470,8 @@ namespace Crucible {
     // ------------------------------------------------------------------- //
 
     void ECSPhysicsSystem::State::Step(World& ecs) {
+
+        ++step;
 
         // Characters move BEFORE the world steps, so a crate the mech just shoved
         // reacts in this same step instead of looking a frame late.
@@ -488,9 +526,14 @@ namespace Crucible {
         controller->m_isGrounded    = physics.IsGrounded(record.character);
         controller->m_velocity      = achieved;
 
+        // Only touch the Transform when it really moved. A mutable GetComponent
+        // stamps the component as changed, and an idle mech standing still would
+        // otherwise mark itself changed every single step.
         const Math::vec3 position = physics.GetCharacterPosition(record.character);
-        if (Transform* transform = ecs.GetComponent<Transform>(record.entity)) transform->positions = position;
-        record.position = position;
+        if (!Same(position, record.position)) {
+            if (Transform* transform = ecs.GetComponent<Transform>(record.entity)) transform->positions = position;
+            record.position = position;
+        }
 
     }   // ECSPhysicsSystem::State::StepCharacter()
 
@@ -522,6 +565,23 @@ namespace Crucible {
                 rigidbody->velocity = physics.GetLinearVelocity(record.body);
                 record.velocity     = rigidbody->velocity;
             }
+
+            record.pulledStep = step;
+        }
+
+        // A body that stopped appearing has gone to sleep. Its last reported
+        // velocity was whatever was still left under Jolt's sleep threshold, and
+        // it would sit in the component forever - so gameplay asking "is this
+        // still moving" would say yes about a crate that settled a minute ago.
+        // Zero it once; after that record.velocity matches and this does nothing.
+        const Math::vec3 zero(0.0f, 0.0f, 0.0f);
+        for (auto& [key, record] : records) {
+
+            if (record.pulledStep == step || record.seenFrame != frame) continue;
+            if (!record.body.IsValid() || Same(record.velocity, zero)) continue;
+
+            if (RigidBody* rigidbody = ecs.GetComponent<RigidBody>(record.entity)) rigidbody->velocity = zero;
+            record.velocity = zero;
         }
 
     }   // ECSPhysicsSystem::State::PullBodies()

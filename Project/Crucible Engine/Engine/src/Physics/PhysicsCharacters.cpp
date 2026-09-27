@@ -1,8 +1,11 @@
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header
+#pragma warning(push)
+#pragma warning(disable : 26495)   // uninitialised member inside Jolt's own headers; not our code to fix
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Character/CharacterVirtual.h>
+#pragma warning(pop)
 
 // STL
 #include <algorithm>    // CreateCharacter()
@@ -72,7 +75,10 @@ namespace Crucible {
         settings->mShape          = shape;
         settings->mInnerBodyShape = shape;      // the hidden body raycasts and crates can see
         settings->mInnerBodyLayer = layer;
-        settings->mMaxSlopeAngle  = JPH::DegreesToRadians(std::clamp(desc.m_slopeLimit, 0.0f, 89.0f));
+        // The low end clamps to 1 degree, not 0: Jolt turns slope limiting OFF
+        // entirely once cos(angle) comes within 0.0001 of 1, so a designer
+        // setting 0 to mean "climbs nothing" would get a mech that walks up walls.
+        settings->mMaxSlopeAngle  = JPH::DegreesToRadians(std::clamp(desc.m_slopeLimit, 1.0f, 89.0f));
         settings->mMaxStrength    = std::max(desc.m_pushStrength, 0.0f);
 
         // Only contacts below the feet count as ground. Without this plane,
@@ -140,8 +146,7 @@ namespace Crucible {
         Impl::Character* slot = impl.Slot(character);
         if (slot == nullptr || !IsFinite(velocity) || !(fixedDt > 0.0f)) return;
 
-        JPH::CharacterVirtual& mech   = *slot->character;
-        const JPH::Vec3        before = mech.GetPosition();
+        JPH::CharacterVirtual& mech = *slot->character;
 
         mech.SetLinearVelocity(ToJolt(velocity));
 
@@ -155,8 +160,11 @@ namespace Crucible {
                             impl.m_world->GetDefaultLayerFilter(slot->layer),
                             JPH::BodyFilter{}, JPH::ShapeFilter{}, *impl.m_tempAllocator);
 
-        // How fast it really went, once walls and steps had their say.
-        slot->velocity = (mech.GetPosition() - before) / fixedDt;
+        // What it is moving at now that contacts have cancelled whatever it could
+        // not achieve. Deliberately NOT (distance moved / dt): walking up a step
+        // and snapping down to the floor also *teleport* the capsule, and those
+        // would read as +18 m/s and -30 m/s spikes inside one 1/60 s step.
+        slot->velocity = mech.GetLinearVelocity();
 
     }   // Physics::MoveCharacter()
 
@@ -168,6 +176,12 @@ namespace Crucible {
     Math::vec3 Physics::GetCharacterVelocity(const CharacterHandle& character) const {
         const Impl::Character* slot = m_impl->Slot(character);
         return slot != nullptr ? FromJolt(slot->velocity) : Math::vec3(0.0f, 0.0f, 0.0f);
+    }
+
+    // Jolt owns the inner body, so this is the only way to name it.
+    BodyHandle Physics::GetCharacterBody(const CharacterHandle& character) const {
+        const Impl::Character* slot = m_impl->Slot(character);
+        return slot != nullptr ? BodyHandle{ slot->character->GetInnerBodyID().GetIndexAndSequenceNumber() } : BodyHandle{};
     }
 
     Math::vec3 Physics::GetCharacterPosition(const CharacterHandle& character) const {

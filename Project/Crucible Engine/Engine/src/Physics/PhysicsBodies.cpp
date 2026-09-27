@@ -1,8 +1,11 @@
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header
+#pragma warning(push)
+#pragma warning(disable : 26495)   // uninitialised member inside Jolt's own headers; not our code to fix
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
+#pragma warning(pop)
 
 // STL
 #include <algorithm>    // CreateBody()
@@ -161,6 +164,14 @@ namespace Crucible {
 
         Impl& impl = *m_impl;
         if (!impl.Has(body) || !IsFinite(targetPosition) || !IsFinite(targetRotation) || !(fixedDt > 0.0f)) return;
+
+        // Unlike the velocity and impulse calls, Jolt's MoveKinematic has no
+        // static-body guard. A static body owns no motion properties, so this
+        // would assert in Debug and dereference null in Release.
+        if (impl.Bodies().GetMotionType(Impl::ToId(body)) == JPH::EMotionType::Static) {
+            CRU_WARN("Physics::MoveKinematic: that body is static and cannot be driven - create it as Kinematic");
+            return;
+        }
 
         impl.Bodies().MoveKinematic(Impl::ToId(body), ToJolt(targetPosition), ToJolt(targetRotation), fixedDt);
 
