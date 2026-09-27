@@ -9,6 +9,7 @@
 #include <Jolt/Physics/Collision/ObjectLayerPairFilterTable.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseLayerInterfaceTable.h>
 #include <Jolt/Physics/Collision/BroadPhase/ObjectVsBroadPhaseLayerFilterTable.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
 
 // STL
 #include <cstdint>
@@ -52,6 +53,26 @@ namespace Crucible {
 
         bool m_initialised = false;
 
+        // --- CHARACTERS ---------------------------------------------------- //
+        // Declared after m_world so they are destroyed BEFORE it: a character
+        // holds a pointer to the world, and its inner body lives inside it.
+
+        std::unique_ptr<JPH::CharacterVsCharacterCollisionSimple> m_characterVsCharacter;   // lets mechs bump into each other
+
+        struct Character {
+
+            JPH::Ref<JPH::CharacterVirtual> character;
+            float                           stepOffset = 0.3f;
+            JPH::ObjectLayer                layer      = 0;
+            JPH::Vec3                       velocity   = JPH::Vec3::sZero();   // what the last move achieved
+            std::uint32_t                   generation = 1;
+            bool                            inUse      = false;
+
+        };  // CHARACTER STRUCT
+
+        std::vector<Character>     m_characters;            // slot 0 is never handed out
+        std::vector<std::uint32_t> m_freeCharacterSlots;
+
         // --- THE TWO SEARCH TREES ------------------------------------------ //
         // Before Jolt tests shapes, it asks a much cheaper question: are these
         // two even near each other? It answers that with bounding-box trees,
@@ -91,9 +112,27 @@ namespace Crucible {
 
         static JPH::BodyID ToId(const BodyHandle& body) { return JPH::BodyID(body.m_id); }
 
+        // Turns a ShapeDesc into a Jolt shape (PhysicsShapes.cpp). Returns null,
+        // and says why in the log, if the description cannot make one.
+        static JPH::RefConst<JPH::Shape> BuildShape(const ShapeDesc& desc);
+
         // The first line of every public function: is the world up, is the
         // handle valid, and is this body one we made? Anything else is a
         // stale handle, and stale handles do nothing rather than crash.
+        // The character behind a handle, or null if the handle is stale. The
+        // generation must match, which is what stops a recycled slot answering
+        // to a handle from the mech that used to live there.
+        Character* Slot(const CharacterHandle& handle) {
+            if (!m_initialised || !handle.IsValid() || handle.m_index >= m_characters.size()) return nullptr;
+            Character& slot = m_characters[handle.m_index];
+            return (slot.inUse && slot.generation == handle.m_generation) ? &slot : nullptr;
+        }
+
+        // The const version, written once by borrowing the non-const one.
+        const Character* Slot(const CharacterHandle& handle) const {
+            return const_cast<Impl*>(this)->Slot(handle);
+        }
+
         bool Has(const BodyHandle& body) const {
             return m_initialised && body.IsValid() && m_bodies.contains(body.m_id);
         }

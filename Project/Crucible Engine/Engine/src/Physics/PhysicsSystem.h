@@ -64,6 +64,21 @@ namespace Crucible {
 
     };  // BODYHANDLE STRUCT
 
+    /*
+        The same idea as BodyHandle, for character controllers. Index 0 is never
+        handed out, so a default-constructed handle means "no character". The
+        generation rises when a slot is reused, so an old handle stops matching
+        rather than steering somebody else's mech.
+    */
+    struct CharacterHandle {
+
+        std::uint32_t m_index      = 0;
+        std::uint32_t m_generation = 0;
+
+        bool IsValid() const { return m_index != 0; }
+
+    };  // CHARACTERHANDLE STRUCT
+
     enum class BodyMotion : std::uint8_t {
 
         Static,     // never moves. The arena. The cheap one: Jolt never simulates it
@@ -86,6 +101,7 @@ namespace Crucible {
         Math::vec3 m_halfExtents = Math::vec3(0.5f, 0.5f, 0.5f);   // Box:     HALF the size, so a 1m cube is 0.5
         float      m_radius      = 0.5f;                           // Sphere, Capsule
         float      m_halfHeight  = 0.5f;                           // Capsule: half the straight middle; the caps are extra
+        Math::vec3 m_center      = Math::vec3(0.0f, 0.0f, 0.0f);   // Unity's Collider.center: the shape's offset from the body's origin
 
     };  // SHAPEDESC STRUCT
 
@@ -113,6 +129,26 @@ namespace Crucible {
         float         m_distance = 0.0f;
 
     };  // RAYCASTHIT STRUCT
+
+    /*
+        Unity's CharacterController, as a description. A capsule that walks: it
+        slides along walls, climbs steps and shoves crates, and it only moves
+        when MoveCharacter is called. Nothing in the simulation pushes it back.
+    */
+    struct CharacterDesc {
+
+        Math::vec3    m_position     = Math::vec3(0.0f, 0.0f, 0.0f);
+        float         m_height       = 2.0f;        // the whole capsule, rounded ends included
+        float         m_radius       = 0.5f;
+        Math::vec3    m_center       = Math::vec3(0.0f, 0.0f, 0.0f);   // capsule centre relative to m_position
+
+        float         m_slopeLimit   = 45.0f;       // degrees; steeper than this and it slides back down
+        float         m_stepOffset   = 0.3f;        // metres it steps up without jumping
+        float         m_pushStrength = 100.0f;      // newtons it can shove crates with. A mech wants much more
+        PhysicsLayer  m_layer        = PhysicsLayer::Player;
+        std::uint64_t m_userData     = 0;           // yours, same as BodyDesc
+
+    };  // CHARACTERDESC STRUCT
 
     struct PhysicsSettings {
 
@@ -205,6 +241,30 @@ namespace Crucible {
         // This wakes a sleeping body; the equivalent on Jolt's Body does not.
         void ApplyImpulse(const BodyHandle& body, const Math::vec3& impulse);
 
+        // --- characters (Unity's CharacterController) ---
+
+        // Builds the capsule and puts it in the world. Invalid handle, with the
+        // reason logged, if the description makes no sense.
+        CharacterHandle CreateCharacter(const CharacterDesc& desc);
+        void            DestroyCharacter(const CharacterHandle& character);
+
+        // One step of walking. `velocity` is the whole thing, including up and
+        // down: nothing adds gravity for you, because a character that fell on
+        // its own could not be made to jump. Slides along walls, climbs steps up
+        // to the step offset, and stays stuck to the floor walking down slopes.
+        void MoveCharacter(const CharacterHandle& character, const Math::vec3& velocity, float fixedDt);
+
+        // Standing on something walkable. Sliding down a too-steep slope is not
+        // grounded, which is what stops a jump halfway up a ramp.
+        bool IsGrounded(const CharacterHandle& character) const;
+
+        // What the last MoveCharacter actually achieved, after walls and steps
+        // had their say. Ask for this rather than assuming the velocity you gave.
+        Math::vec3 GetCharacterVelocity(const CharacterHandle& character) const;
+
+        Math::vec3 GetCharacterPosition(const CharacterHandle& character) const;
+        void       SetCharacterPosition(const CharacterHandle& character, const Math::vec3& position);   // a respawn
+
         // --- queries ---
 
         // The weapon. True if the ray hit something, with the closest hit in
@@ -213,7 +273,8 @@ namespace Crucible {
         // so this is the one place out-parameters are not last.
         // Pass the shooter's own body as 'ignore' or the mech shoots itself in
         // the foot on frame one.
-        // Direction is expected normalised; distance is in metres.
+        // The direction need not be normalised - it is normalised for you, the
+        // way Unity does it. Distance is in metres.
         bool Raycast(const Math::vec3& origin, const Math::vec3& direction, RaycastHit& outHit, float maxDistance,
                      const BodyHandle& ignore = BodyHandle{}) const;
 

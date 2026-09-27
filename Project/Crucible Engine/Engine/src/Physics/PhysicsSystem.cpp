@@ -143,6 +143,13 @@ namespace Crucible {
                            *impl.m_layerToTree, *impl.m_layerVsTree, *impl.m_layerPairs);
         impl.m_world->SetGravity(ToJolt(settings.m_gravity));
 
+        // Characters live beside the bodies. Slot 0 stays empty so that index 0
+        // can mean "no character", the same trick BodyHandle plays with 0xFFFFFFFF.
+        impl.m_characterVsCharacter = std::make_unique<JPH::CharacterVsCharacterCollisionSimple>();
+        impl.m_characters.clear();
+        impl.m_characters.emplace_back();
+        impl.m_freeCharacterSlots.clear();
+
         impl.m_settings    = settings;
         impl.m_initialised = true;
 
@@ -161,7 +168,18 @@ namespace Crucible {
         Impl& impl = *m_impl;
         if (!impl.m_initialised) return;
 
-        // Our bodies first, while the world that owns them still exists.
+        // Characters first: releasing one also removes the hidden body it carries,
+        // and that body has to go while the world still exists.
+        for (Impl::Character& slot : impl.m_characters) {
+            if (!slot.inUse) continue;
+            impl.m_characterVsCharacter->Remove(slot.character.GetPtr());
+            slot.character = nullptr;
+        }
+        impl.m_characters.clear();
+        impl.m_freeCharacterSlots.clear();
+        impl.m_characterVsCharacter.reset();
+
+        // Then our bodies, while the world that owns them still exists.
         JPH::BodyInterface& bodies = impl.Bodies();
         for (const std::uint32_t id : impl.m_bodies) {
             bodies.RemoveBody(JPH::BodyID(id));     // out of the simulation...

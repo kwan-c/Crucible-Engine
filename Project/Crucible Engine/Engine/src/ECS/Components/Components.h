@@ -32,6 +32,7 @@
 
 #include"ComponentKind.h"
 #include"Math/Math.h"
+#include"Physics/PhysicsComponents.h"
 
 namespace Crucible
 {
@@ -41,6 +42,8 @@ namespace Crucible
 	struct Transform
 	{
 		Math::vec3  positions{0.f,0.f,0.f};
+		Math::quat  rotation = Math::quat::fromIdentity();
+		Math::vec3  scale{1.f,1.f,1.f};
 	};
 
 	/*************************************************************************

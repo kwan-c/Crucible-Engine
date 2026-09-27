@@ -57,8 +57,10 @@ namespace Crucible
 		RigidBody = 1,
 		MeshRenderer = 2,
 		Audio = 3,
+		Collider = 4,
+		CharacterController = 5,
 
-		MAXCOMPONENT = 4
+		MAXCOMPONENT = 6
 	};
 
 
@@ -116,5 +118,7 @@ namespace Crucible
  X(RigidBody)                                                                \
  X(MeshRenderer)                                                               \
  X(Audio)                                                                      \
+ X(Collider)                                                                   \
+ X(CharacterController)                                                        \
 
 }
