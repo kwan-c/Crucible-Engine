@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Implementation of ComponentRegistry: bulk registration
 *                of every known component type and lookup/validation of
@@ -12,10 +12,12 @@
 *
 * \history
 *    -v1.0       initial RegisterAll/Get/IsRegistered/RegisterInfo
-*
+*    -v1.1       validation throws in every build configuration;
+*                RegisteredSignature/ValidateSignature
 *
 **************************************************************************/
-#include <cassert>
+#include <stdexcept>
+#include <string>
 #include <utility>
 
 #include "ComponentRegistry.h"
@@ -28,34 +30,68 @@ namespace Crucible
 		m_components.resize(kMaxComponents);
 	}
 
-	void ComponentRegistry::RegisterAll() 
+	void ComponentRegistry::RegisterAll()
 	{
 #define CRUCIBLE_REGISTER(Type) Register<Type>();
 		CRUCIBLE_COMPONENT_LIST(CRUCIBLE_REGISTER)
 #undef CRUCIBLE_REGISTER
-			for (ComponentId id = 0; id < kMaxComponents; ++id)
-			{
-				assert(m_components[id].IsValid() &&
-					"ComponentKind entry has no registered type - check "
-					"CRUCIBLE_COMPONENT_LIST and the CRUCIBLE_COMPONENT bindings");
-			}
 
+		// A ComponentKind without a bound type would make every signature containing it unusable.
+		for (ComponentId id = 0; id < kMaxComponents; ++id)
+		{
+			if (!m_components[id].IsValid())
+			{
+				throw std::logic_error("ComponentRegistry::RegisterAll: ComponentKind " + std::to_string(id) +
+					" has no registered type - check CRUCIBLE_COMPONENT_LIST and the CRUCIBLE_COMPONENT bindings");
+			}
+		}
 	}
 
 	const ComponentInfo& ComponentRegistry::Get(ComponentId id) const
 	{
-		assert(IsValidComponentId(id));
+		if (!IsRegistered(id))
+		{
+			throw std::out_of_range("ComponentRegistry::Get: component id " + std::to_string(id) + " is not registered");
+		}
 		return m_components[id];
 	}
+
 	bool ComponentRegistry::IsRegistered(ComponentId id) const
 	{
 		return IsValidComponentId(id) && m_components[id].IsValid();
 	}
 
+	ComponentSignature ComponentRegistry::RegisteredSignature() const noexcept
+	{
+		ComponentSignature registered;
+		for (ComponentId id = 0; id < kMaxComponents; ++id)
+		{
+			if (m_components[id].IsValid()) registered.set(id);
+		}
+		return registered;
+	}
+
+	void ComponentRegistry::ValidateSignature(const ComponentSignature& signature, const char* operation) const
+	{
+		const ComponentSignature unknown = signature & ~RegisteredSignature();
+		if (unknown.none()) return;
+
+		// Name every offending id so the caller can find the bad bit quickly.
+		std::string ids;
+		for (ComponentId id = 0; id < kMaxComponents; ++id)
+		{
+			if (unknown.test(id)) ids += (ids.empty() ? "" : ", ") + std::to_string(id);
+		}
+		throw std::invalid_argument(std::string(operation) + ": signature contains unregistered component id(s) " + ids);
+	}
+
 	ComponentId ComponentRegistry::RegisterInfo(ComponentInfo info)
 	{
 		const ComponentId id = info.id;
-		assert(IsValidComponentId(id));
+		if (!IsValidComponentId(id))
+		{
+			throw std::out_of_range("ComponentRegistry::Register: invalid component id " + std::to_string(id));
+		}
 		if (!m_components[id].IsValid())
 			m_components[id] = std::move(info);
 		return id;

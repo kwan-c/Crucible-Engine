@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.2
 * \brief
 *                Declares ArchetypeRegistry: owns every Archetype that
 *                currently exists and maps a ComponentSignature to its
@@ -29,11 +29,14 @@
 *                instead of always hashing+looking up; added a Version()
 *                change counter for Query's rebuild-skipping; exposed
 *                ArchetypesWith()
-*
+*    -v1.2       archetype creation private to World, IterationGuard only
+*                constructible by World/Query, atomic iteration depth
 *
 **************************************************************************/
 #pragma once
 
+#include <atomic>
+#include <cassert>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -93,69 +96,10 @@ namespace Crucible
 		Archetype* Find(const ComponentSignature& signature);
 
 		/*********************************************************************
-		 \brief
-			Looks up an archetype by signature, creating and registering it
-			first if it doesn't exist yet.
-
-		 \param[in]
-			signature The exact component set required.
-		 \return
-			Pointer to the (possibly newly created) archetype.
-
-		 \details
-			Creating a new archetype bumps Version() and indexes it into
-			m_componentToArchetypes for every component type it contains.
-		 *********************************************************************/
-		Archetype* FindOrCreate(const ComponentSignature& signature);
-
-		/*********************************************************************
 		 \brief  The archetype with no components.
 		 \return Pointer to the empty archetype, created in the constructor.
 		 *********************************************************************/
 		Archetype* EmptyArchetype()const { return m_empty; }
-
-		/*********************************************************************
-		 \brief
-			Resolves the archetype reached by adding one component type to
-			source.
-
-		 \param[in,out]
-			source The archetype an entity is currently in. Its edge cache
-			for id may be populated as a side effect.
-		 \param[in]
-			id The component type being added.
-		 \return
-			Pointer to the destination archetype (source's signature with id
-			set).
-
-		 \details
-			Checks source's ArchetypeEdge cache first; on a miss, resolves
-			via FindOrCreate() and caches the result in both directions
-			(source's add-edge and the destination's remove-edge), so the
-			reverse transition is also O(1) afterwards.
-		 *********************************************************************/
-		Archetype* GetAddDestination(Archetype& source, ComponentId id);
-
-		/*********************************************************************
-		 \brief
-			Resolves the archetype reached by removing one component type
-			from source.
-
-		 \param[in,out]
-			source The archetype an entity is currently in. Its edge cache
-			for id may be populated as a side effect.
-		 \param[in]
-			id The component type being removed.
-		 \return
-			Pointer to the destination archetype (source's signature with id
-			cleared).
-
-		 \details
-			Mirrors GetAddDestination(): checks the edge cache first, and on
-			a miss populates both source's remove-edge and the destination's
-			add-edge.
-		 *********************************************************************/
-		Archetype* GetRemoveDestination(Archetype& source, ComponentId id);
 
 		/*********************************************************************
 		 \brief  Every archetype that currently exists.
@@ -191,7 +135,7 @@ namespace Crucible
 		// alive for this registry - i.e. some Query is mid-ForEach
 		// over it right now. World's structural mutators (see
 		// World.h/.cpp) check this before touching any archetype.
-		bool IsIterating()const noexcept { return m_iterationDepth > 0; }
+		bool IsIterating()const noexcept { return m_iterationDepth.load(std::memory_order_acquire) > 0; }
 
 		// RAII reentrancy guard.While an IterationGuard is alive,
 		// IsIterating() above returns true for this registry.
@@ -203,11 +147,11 @@ namespace Crucible
 		// from INSIDE another Query::ForEach's callback (a legitimate,
 		// read-only thing to do) nests correctly: the outer guard's
 		// protection isn't dropped early just because an inner one
-		// also finished.
+		// also finished. The counter is atomic so queries running on
+		// different threads can hold guards at the same time.
 		class IterationGuard
 		{
 		public:
-			explicit IterationGuard(ArchetypeRegistry& registry) :m_registry(registry) { m_registry.BeginIteration(); }
 			~IterationGuard() { m_registry.EndIteration(); }
 
 			// A second guard for the same iteration would double-count
@@ -221,18 +165,51 @@ namespace Crucible
 			IterationGuard& operator=(IterationGuard&&) = delete;
 
 		private:
+			// Only the ECS itself (queries and World's hook dispatch) opens guards.
+			friend class World;
+			template <typename... Components> friend class Query;
+
+			explicit IterationGuard(ArchetypeRegistry& registry) :m_registry(registry) { m_registry.BeginIteration(); }
+
 			ArchetypeRegistry& m_registry;
 		};
 
 	private:
+		// Archetypes are created only as a side effect of World's structural changes.
+		friend class World;
+
+		/*********************************************************************
+		 \brief  Looks up an archetype by signature, creating and
+				 registering it first if it doesn't exist yet (bumps
+				 Version()).
+		 \note  Throws std::invalid_argument for an unregistered component.
+		 *********************************************************************/
+		Archetype* FindOrCreate(const ComponentSignature& signature);
+
+		/*********************************************************************
+		 \brief  The archetype reached by adding id to source; uses and
+				 fills the edge cache in both directions.
+		 *********************************************************************/
+		Archetype* GetAddDestination(Archetype& source, ComponentId id);
+
+		/*********************************************************************
+		 \brief  The archetype reached by removing id from source; uses and
+				 fills the edge cache in both directions.
+		 *********************************************************************/
+		Archetype* GetRemoveDestination(Archetype& source, ComponentId id);
+
 		// Nested classes have access to their enclosing class's
 		// private members, so IterationGuard above can call these
 		// directly - kept private themselves since incrementing/
 		// decrementing outside a properly RAII-scoped guard would be
 		// exactly the kind of easy-to-mismatch bookkeeping this whole
 		// mechanism exists to avoid.
-		void BeginIteration() noexcept { ++m_iterationDepth; }
-		void EndIteration() noexcept { assert(m_iterationDepth > 0 && "IterationGuard end/begin mismatch"); --m_iterationDepth; }
+		void BeginIteration() noexcept { m_iterationDepth.fetch_add(1, std::memory_order_acq_rel); }
+		void EndIteration() noexcept
+		{
+			[[maybe_unused]] const std::uint32_t previous = m_iterationDepth.fetch_sub(1, std::memory_order_acq_rel);
+			assert(previous > 0 && "IterationGuard end/begin mismatch");
+		}
 
 		/*********************************************************************
 		 \brief  Indexes a newly created archetype into
@@ -254,7 +231,7 @@ namespace Crucible
 
 		// Depth of currently-alive IterationGuards for this registry.
 		// See IsIterating()/IterationGuard above.
-		std::uint32_t m_iterationDepth = 0;
+		std::atomic<std::uint32_t> m_iterationDepth{ 0 };
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)

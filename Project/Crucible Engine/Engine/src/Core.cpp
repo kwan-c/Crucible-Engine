@@ -1,14 +1,23 @@
 #include "Core.h"
 #include "AssetPipe/Assetmanager.h"
+#include "Configuration/EngineConfigLoader.h"
+#include "Diagnostics/Logger.h"
+#include "ECS/ECSPhysicsSystem.h"
 
 // STL
+#include <algorithm>
+#include <chrono>
+#include <exception>
 #include <iostream>
-#include <ECS/ECSPhysicsSystem.h>
+#include <cstdlib>
+
+
 
 namespace Crucible {
 
-    Core::Core() :
-        m_window{ new WindowManager(1200, 800, "Crucible Engine") },
+    Core::Core(const EngineConfig& config) :
+        m_config{ config },
+        m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() }
     {
@@ -50,10 +59,11 @@ namespace Crucible {
 
         while (!m_window->ShouldClose()) {
 
-            float dt = 1.f / 60.f;
-
+            const float dt = 1.f / 60.f;
             m_window->PollEvents();
 
+            m_world->SetDeltaTime(dt);
+            m_world->AdvanceTick();
             m_systems.Update(*m_world);
 
             for (auto& layer : m_layers) layer->OnUpdate(dt);
@@ -69,6 +79,7 @@ namespace Crucible {
         m_layers.push_back(std::move(layer));
     }
 
+
     void Core::RegisterEngineSystems()
     {
         //sample system registeration
@@ -76,6 +87,11 @@ namespace Crucible {
     }
 
     void Core::CleanUp() {
+        // Destroy entities while systems are still alive, so resource-owning
+        // OnComponentRemoved/OnEntityDestroyed hooks can still run.
+        try { m_world->DestroyAllEntities(); }
+        catch (const std::exception& e) { CRU_ERROR("Core::CleanUp: destroying entities failed - {}", e.what()); }
+
         m_systems.Shutdown();
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();

@@ -3,39 +3,52 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.2
 * \brief
-*                Implementation of ECSPhysicsSystem. Currently empty -
-*                see ECSPhysicsSystem.h for the interface this
-*                satisfies.
+*                Implementation of ECSPhysicsSystem. See
+*                ECSPhysicsSystem.h for the interface this satisfies.
 *
 * \details
-*                All three overrides (Init/Update/Shutdown) are stubbed
-*                out. Update() will eventually query the World (see
-*                World.h / World.cpp) for entities that have both a
-*                RigidBody and a Transform component (see Components.h)
-*                and integrate velocity into position.
+*                Update() visits every entity with both a Transform and a
+*                RigidBody (see Components.h) and integrates velocity into
+*                position using the frame delta time from
+*                World::DeltaTime(). RigidBody is read-only here, so only
+*                Transform gets its change tick stamped.
 *
 * \history
 *    -v1.0       stub implementation, no physics logic yet
-*
+*    -v1.1       explicit Euler integration of velocity into position
+*    -v1.2       Describe() for the system scheduler
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
-#include <iostream>
 #include <ECS/World.h>
-#include <ECS/Components/Components.h>
 
 namespace Crucible
 {
 	void ECSPhysicsSystem::Init()
 	{
 	}
-	void ECSPhysicsSystem::Update([[maybe_unused]] World& world, [[maybe_unused]] CommandBuffer& commands)
+	void ECSPhysicsSystem::Describe(SystemDesc& desc) const
 	{
+		// Pure component math: safe on a worker once a job system exists.
+		desc.Uses<BodyQuery>().Affinity(SystemAffinity::Worker);
+	}
+	void ECSPhysicsSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands)
+	{
+		if (!m_bodies) m_bodies.emplace(world.CreateQuery<Transform, const RigidBody>());
 
+		const float dt = world.DeltaTime();
+
+		m_bodies->ForEach([dt](Entity, Transform& transform, const RigidBody& body)
+			{
+				transform.positions.m_X += body.velocity.m_X * dt;
+				transform.positions.m_Y += body.velocity.m_Y * dt;
+				transform.positions.m_Z += body.velocity.m_Z * dt;
+			});
 	}
 	void ECSPhysicsSystem::Shutdown() noexcept
 	{
+		m_bodies.reset();
 	}
 }

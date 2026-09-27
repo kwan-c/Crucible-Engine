@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Implementation of Archetype's row/column management.
 *                See Archetype.h for the public interface and member
@@ -17,11 +17,18 @@
 *                main caller that shuffles rows between two Archetypes
 *                when an entity's component set changes.
 *
+*                Appends reserve every array first and undo partially
+*                appended columns on failure, so the lock-step invariant
+*                holds even when an allocation or constructor throws.
+*
 * \history
 *    -v1.0       initial column build + row add/remove/lookup
-*
+*    -v1.1       strong exception guarantee for AddEntityDefault,
+*                ReserveForAppend/AppendEntityReserved for migrations,
+*                signature validated in all builds
 *
 **************************************************************************/
+#include <algorithm>
 #include <cassert>
 
 #include "Archetype.h"
@@ -30,12 +37,13 @@ namespace Crucible
 {
 	Archetype::Archetype(ComponentSignature signature, const ComponentRegistry& registry) :m_signature(signature)
 	{
+		registry.ValidateSignature(m_signature, "Archetype");
+
 		m_columnLookup.assign(kMaxComponents, -1);
 
 		for (ComponentId id = 0; id < kMaxComponents; ++id)
 		{
 			if (!m_signature.test(id)) continue;
-			assert(registry.IsRegistered(id) && " archetype build from unregistered component");
 			m_columnLookup[id] = static_cast<int>(m_componentIds.size());
 			m_componentIds.push_back(id);
 			m_columns.emplace_back(registry.Get(id));
@@ -44,22 +52,44 @@ namespace Crucible
 		m_edges.resize(kMaxComponents);
 	}
 
-	uint32_t Archetype::AddEntityUninitialized(Entity e)
+	void Archetype::ReserveForAppend()
 	{
-		m_entities.push_back(e);
+		// Grow geometrically; reserve(size + 1) alone would reallocate on every append.
+		if (m_entities.size() == m_entities.capacity())
+		{
+			m_entities.reserve(std::max<std::size_t>(8, m_entities.capacity() * 2));
+		}
+		for (ComponentColumn& column : m_columns) column.ReserveForAppend();
+	}
+
+	uint32_t Archetype::AppendEntityReserved(Entity entity) noexcept
+	{
+		assert(m_entities.size() < m_entities.capacity() && "ReserveForAppend() must come first");
+		m_entities.push_back(entity);
+		assert(ValidateRows());
 		return static_cast<uint32_t>(m_entities.size() - 1);
 	}
 
 	uint32_t Archetype::AddEntityDefault(Entity e)
 	{
-		const uint32_t row = AddEntityUninitialized(e);
+		ReserveForAppend();   // afterwards only component constructors can throw
 
-		for (ComponentColumn& column : m_columns) column.PushBackDefault();
-		assert(ValidateRows());
-		return row;
+		std::size_t constructed = 0;
+		try
+		{
+			for (; constructed < m_columns.size(); ++constructed) m_columns[constructed].PushBackDefault();
+		}
+		catch (...)
+		{
+			// Undo the columns already appended so every column keeps the same length.
+			while (constructed > 0) m_columns[--constructed].PopBack();
+			throw;
+		}
+
+		return AppendEntityReserved(e);
 	}
-	
-	Entity Archetype::RemoveEntity(uint32_t row)
+
+	Entity Archetype::RemoveEntity(uint32_t row) noexcept
 	{
 		assert(row < m_entities.size());
 		assert(ValidateRows());
@@ -92,6 +122,13 @@ namespace Crucible
 		return m_columns[static_cast<std::size_t>(index)];
 	}
 
+	const ComponentColumn& Archetype::GetColumn(ComponentId id) const
+	{
+		const int index = ColumnIndex(id);
+		assert(index >= 0 && "component not present in this archetype");
+		return m_columns[static_cast<std::size_t>(index)];
+	}
+
 	void* Archetype::GetColumnData(ComponentId id) { return GetColumn(id).Data(); }
 	void* Archetype::GetComponentPtr(ComponentId id, uint32_t row) { return GetColumn(id).At(row); }
 
@@ -102,5 +139,14 @@ namespace Crucible
 			if (column.Size() != m_entities.size()) return false;
 		}
 		return true;
+	}
+
+	void Archetype::Reserve(uint32_t additionalRows)
+	{
+		m_entities.reserve(m_entities.size() + additionalRows);
+		for (ComponentColumn& column : m_columns)
+		{
+			column.Reserve(column.Size() + additionalRows);
+		}
 	}
 }
