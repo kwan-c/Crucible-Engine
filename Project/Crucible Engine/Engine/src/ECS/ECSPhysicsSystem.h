@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Declares the ECSPhysicsSystem, which applies
 *                RigidBody-driven motion to Transform components each
@@ -22,20 +22,26 @@
 *                World::DeltaTime(); PostUpdate stage; persistent query
 *    -v1.2       Describe(): scheduler access from its query type, Worker
 *                affinity
+*    -v1.3       exported (ENGINE_API) so code outside Engine.dll can
+*                register it or name it in RunAfter<>()
 *
 **************************************************************************/
 #pragma once
 
 #include <optional>
 
+#include "EngineExport.h"
 #include "Systems/IECSSystems.h"
 #include "Systems/Query.h"
 #include "Components/Components.h"
 
 namespace Crucible
 {
-
-	class ECSPhysicsSystem final :public IECSSystem
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251 4275)   // STL members; IECSSystem is a header-only interface
+#endif
+	class ENGINE_API ECSPhysicsSystem final :public IECSSystem
 	{
 	public:
 		void Init() override;
@@ -62,4 +68,7 @@ namespace Crucible
 		// Built on the first Update(), then reused every frame.
 		std::optional<BodyQuery> m_bodies;
 	};
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 }

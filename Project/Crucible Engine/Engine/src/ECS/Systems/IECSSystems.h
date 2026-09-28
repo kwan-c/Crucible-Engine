@@ -67,8 +67,8 @@ namespace Crucible
 	{
 		PreUpdate,    // input, network receive
 		Update,       // main per-frame logic - default stage for every system
-		PostUpdate,   // physics, transform propagation
-		PreRender,    // render extraction
+		PostUpdate,   // physics
+		PreRender,    // transform propagation (first), then render extraction
 		Count
 	};
 

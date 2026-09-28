@@ -3,6 +3,7 @@
 #include "Configuration/EngineConfigLoader.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/ECSPhysicsSystem.h"
+#include "ECS/HierarchyTransformSystem.h"
 
 // STL
 #include <algorithm>
@@ -96,6 +97,7 @@ namespace Crucible {
     {
         //sample system registeration
         m_systems.RegisterSystem<ECSPhysicsSystem>();
+        m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
     }
 
     void Core::CleanUp() {
