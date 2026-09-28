@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.3
+* \version       1.6
 * \brief
 *                Declares ECSSystemManager: the top-level driver that
 *                owns an ECSSystemRegistry (see IECSSystemRegistry.h)
@@ -40,6 +40,15 @@
 *                unchanged
 *    -v1.3       declared-access enforcement and MainThread affinity check
 *                while systems run
+*    -v1.4       per-system event outboxes (engine/gameplay/network),
+*                SystemContext passed to Update(), outboxes merged and
+*                delivered at each stage flush; SetEventBuses()
+*    -v1.5       systems receive an EventWriter (engine + network outboxes)
+*                through SystemContext; the per-system gameplay outbox is
+*                gone (gameplay events will come from scripting)
+*    -v1.6       gameplay outbox restored behind the writer's gameplay
+*                route, granted only to systems declaring
+*                EmitsGameplayEvents()
 *
 **************************************************************************/
 #pragma once
@@ -54,9 +63,14 @@
 #include "EngineExport.h"
 #include "IECSSystemRegistry.h"
 #include "SystemScheduler.h"
+#include "SystemContext.h"
+#include "EventBus/EventBus.h"
+#include "EventBus/EventWriter.h"
 
 namespace Crucible
 {
+    struct EventBuses;   // EventBus/EventBuses.h - owned by Core
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4251)
@@ -234,16 +248,46 @@ namespace Crucible
          *********************************************************************/
         void LogSchedule() const;
 
+        /*********************************************************************
+         \brief  Connects the manager to the engine's event buses. Core calls
+                 this once, before Init().
+         \param[in] buses The buses to merge system outboxes into; must
+                    outlive the manager. nullptr disconnects (events that
+                    systems send are then discarded).
+         *********************************************************************/
+        void SetEventBuses(EventBuses* buses) noexcept { m_events = buses; }
+
     private:
 
         struct SystemSlot
         {
             CommandBuffer commands;
+            EventOutbox   engineOut;        // this system's events, one outbox per bus
+            EventOutbox   gameplayOut;      // only written if the system declared EmitsGameplayEvents()
+            EventOutbox   networkOut;
             std::uint32_t consecutiveFailures = 0;
             bool failedThisFrame = false;   // Update or command replay failed this frame
             bool initialised = false;       // Init() succeeded, so Shutdown() is owed
             bool disabled = false;
+
+            void ClearOutboxes() noexcept
+            {
+                engineOut.Clear();
+                gameplayOut.Clear();
+                networkOut.Clear();
+            }
         };
+
+        /*********************************************************************
+         \brief  Merges every system's outboxes of one stage into their
+                 buses (in scheduler execution order), then delivers the
+                 engine, network and gameplay buses (in that order).
+         \note   Runs after the stage's command replay, so listeners see the
+                 stage's structural changes. On the gameplay bus the ECS
+                 lifecycle events those commands produced come first, then
+                 the systems' gameplay events (scheduler order).
+         *********************************************************************/
+        void MergeAndDeliverEvents(const StageSchedule& stage);
 
         void RebuildSchedule();
 
@@ -262,6 +306,8 @@ namespace Crucible
         std::vector<SystemSlot> m_slots;          // parallel to the registry
 
         SystemSchedule m_schedule;                // execution plan, rebuilt on Init()/late registration
+
+        EventBuses* m_events = nullptr;           // owned by Core; nullptr = events discarded
 
         bool m_initialized = false;
         bool m_iterating = false;                 // inside Init() or Update()
