@@ -22,7 +22,15 @@ set_target_properties(Engine PROPERTIES LINKER_LANGUAGE CXX)
 
 # Set warning level
 if(MSVC)
-    target_compile_options(Engine PRIVATE /W4 /permissive-)
+    target_compile_options(Engine PRIVATE
+        /W4 /permissive-
+
+        # Do not run code analysis (the C26xxx and C6xxx checks) inside third-party headers.
+        # CMake already passes every SYSTEM include as /external:I with /external:W0, but that
+        # only lowers the COMPILER warning level - analysis warnings have no level to lower, so
+        # they need this switch too. Every check stays on over our own code.
+        /analyze:external-
+    )
 else()
     target_compile_options(Engine PRIVATE -Wall -Wextra -Wpedantic)
 endif()

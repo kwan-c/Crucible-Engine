@@ -29,6 +29,11 @@ struct GLFWwindow;   // forward declared on purpose - GLFW must not leak to our 
 
 namespace Crucible {
 
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)   // private std::bitset members; nothing outside Engine.dll touches them
+#pragma warning(disable : 4275)   // ISystem is a pure interface, so it has nothing to export
+#endif
     class ENGINE_API Input : public ISystem {
 
     public:
@@ -134,5 +139,8 @@ namespace Crucible {
 
         GLFWwindow* m_window = nullptr;
     };  // INPUT CLASS
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 
 }   // NAMESPACE CRUCIBLE

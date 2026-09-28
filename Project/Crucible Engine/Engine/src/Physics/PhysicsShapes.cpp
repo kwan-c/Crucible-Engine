@@ -1,14 +1,11 @@
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header
-#pragma warning(push)
-#pragma warning(disable : 26495)   // uninitialised member inside Jolt's own headers; not our code to fix
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
-#pragma warning(pop)
 
 // STL
 #include <algorithm>    // BuildShape()
