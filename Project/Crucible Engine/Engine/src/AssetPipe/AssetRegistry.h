@@ -11,6 +11,10 @@
 #include "EngineExport.h"
 
 namespace Crucible {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)   // STL / xresource members in exported types; Engine.dll and its clients share one toolchain
+#endif
 	
 	struct AssetEntry;
 
@@ -69,4 +73,7 @@ namespace Crucible {
 	private:
 		std::unordered_map<xresource::instance_guid, std::string> m_guidToPath;
 	};
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 }
