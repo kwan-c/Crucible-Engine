@@ -141,7 +141,7 @@ namespace Crucible {
 
         if (!impl.Has(body)) {          // a stale handle answers with the origin, never with rubbish
             outPosition = Math::vec3(0.0f, 0.0f, 0.0f);
-            outRotation = Math::quat::fromIdentity();
+            outRotation = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);
             return;
         }
 

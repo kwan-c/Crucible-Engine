@@ -81,7 +81,7 @@ namespace Crucible {
         // Only contacts below the feet count as ground. Without this plane,
         // brushing a wall or clipping a ceiling would read as "standing on it",
         // and the mech could jump off a wall it happened to be touching.
-        const float footHeight = desc.m_center.m_Y - std::max(std::abs(desc.m_height) * 0.5f - std::abs(desc.m_radius), 0.0f);
+        const float footHeight = desc.m_center.y - std::max(std::abs(desc.m_height) * 0.5f - std::abs(desc.m_radius), 0.0f);
         settings->mSupportingVolume = JPH::Plane(JPH::Vec3::sAxisY(), -footHeight);
 
         JPH::Ref<JPH::CharacterVirtual> character =

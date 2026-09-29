@@ -53,15 +53,15 @@ namespace {
     // nudging something a millimetre a frame would never reach the body.
 
     bool Same(const Math::vec3& a, const Math::vec3& b) {
-        return a.m_X == b.m_X && a.m_Y == b.m_Y && a.m_Z == b.m_Z;
+        return a.x == b.x && a.y == b.y && a.z == b.z;
     }
 
     bool Same(const Math::quat& a, const Math::quat& b) {
-        return a.m_X == b.m_X && a.m_Y == b.m_Y && a.m_Z == b.m_Z && a.m_W == b.m_W;
+        return a.x == b.x && a.y == b.y && a.z == b.z && a.w == b.w;
     }
 
-    bool Finite(const Math::vec3& v) { return std::isfinite(v.m_X) && std::isfinite(v.m_Y) && std::isfinite(v.m_Z); }
-    bool Finite(const Math::quat& q) { return std::isfinite(q.m_X) && std::isfinite(q.m_Y) && std::isfinite(q.m_Z) && std::isfinite(q.m_W); }
+    bool Finite(const Math::vec3& v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
+    bool Finite(const Math::quat& q) { return std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w); }
 
     // The collider as gameplay states it (full sizes, Unity style) turned into
     // what Jolt wants (half sizes). The ONE place that conversion happens.
@@ -69,7 +69,7 @@ namespace {
 
         ShapeDesc shape;
         shape.m_type        = collider.m_type;
-        shape.m_halfExtents = Math::vec3(collider.m_size.m_X * 0.5f, collider.m_size.m_Y * 0.5f, collider.m_size.m_Z * 0.5f);
+        shape.m_halfExtents = Math::vec3(collider.m_size.x * 0.5f, collider.m_size.y * 0.5f, collider.m_size.z * 0.5f);
         shape.m_radius      = collider.m_radius;
         shape.m_center      = collider.m_center;
 
@@ -128,7 +128,7 @@ namespace {
         bool          failed    = false; // building from that description failed: wait for it to change
 
         Math::vec3    position  = Math::vec3(0.0f, 0.0f, 0.0f);   // the Transform as physics last left it
-        Math::quat    rotation  = Math::quat::fromIdentity();
+        Math::quat    rotation  = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);
         Math::vec3    velocity  = Math::vec3(0.0f, 0.0f, 0.0f);
 
         std::uint64_t seenFrame  = 0;    // the last frame the query found this entity
@@ -494,7 +494,7 @@ namespace Crucible {
         CharacterController* controller = ecs.GetComponent<CharacterController>(record.entity);
         if (controller == nullptr || !record.character.IsValid()) return;
 
-        const float gravity  = settings.m_gravity.m_Y;      // -9.81
+        const float gravity  = settings.m_gravity.y;      // -9.81
         const bool  grounded = physics.IsGrounded(record.character);
 
         // UP AND DOWN ------------------------------------------------------------ //
@@ -513,13 +513,13 @@ namespace Crucible {
 
         // MOVE -------------------------------------------------------------------- //
         const Math::vec3 sideways = controller->m_moveVelocity;
-        physics.MoveCharacter(record.character, Math::vec3(sideways.m_X, vertical, sideways.m_Z), kFixedDeltaTime);
+        physics.MoveCharacter(record.character, Math::vec3(sideways.x, vertical, sideways.z), kFixedDeltaTime);
 
         // Rising, but not as fast as asked: something is overhead, so stop
         // rising. Without this the mech keeps "climbing" on paper after a head
         // bump and hangs in the air before falling.
         const Math::vec3 achieved = physics.GetCharacterVelocity(record.character);
-        if (vertical > 0.0f && achieved.m_Y < vertical) vertical = std::max(achieved.m_Y, 0.0f);
+        if (vertical > 0.0f && achieved.y < vertical) vertical = std::max(achieved.y, 0.0f);
 
         // RESULTS ------------------------------------------------------------------ //
         controller->m_verticalSpeed = vertical;

@@ -109,7 +109,7 @@ namespace Crucible {
 
         ShapeDesc     m_shape       {};
         Math::vec3    m_position    = Math::vec3(0.0f, 0.0f, 0.0f);
-        Math::quat    m_rotation    = Math::quat::fromIdentity();
+        Math::quat    m_rotation    = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);
         BodyMotion    m_motion      = BodyMotion::Dynamic;
         PhysicsLayer  m_layer       = PhysicsLayer::Moving;
         float         m_mass        = 0.0f;    // 0 = derive it from the shape, which is almost always what you want

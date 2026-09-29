@@ -97,7 +97,7 @@ namespace Crucible {
 
             std::uint64_t m_userData = 0;
             Math::vec3    m_position = Math::vec3(0.0f, 0.0f, 0.0f);
-            Math::quat    m_rotation = Math::quat::fromIdentity();
+            Math::quat    m_rotation = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);
 
         };  // MOVED STRUCT
 

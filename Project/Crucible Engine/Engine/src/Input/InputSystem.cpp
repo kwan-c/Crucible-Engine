@@ -253,16 +253,16 @@ namespace Crucible{
         // GLFW can deliver several cursor events inside one PollEvents, so the movement is
         // accumulated rather than assigned. Working it out from positions in gameplay code
         // would throw away everything except the last event of the frame.
-        m_mouseDelta.m_X += position.m_X - m_mousePosition.m_X;
-        m_mouseDelta.m_Y += position.m_Y - m_mousePosition.m_Y;
+        m_mouseDelta.x += position.x - m_mousePosition.x;
+        m_mouseDelta.y += position.y - m_mousePosition.y;
 
         m_mousePosition = position;
     }
 
     void Input::OnScroll(const double& xOffset, const double& yOffset) {
         // Accumulated for the same reason as the delta: one frame can hold several notches.
-        m_mouseScroll.m_X += static_cast<float>(xOffset);
-        m_mouseScroll.m_Y += static_cast<float>(yOffset);
+        m_mouseScroll.x += static_cast<float>(xOffset);
+        m_mouseScroll.y += static_cast<float>(yOffset);
     }
 
     void Input::OnFocusChanged(const bool& focused) {

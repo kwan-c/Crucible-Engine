@@ -9,21 +9,31 @@
 // Crucible engine
 #include "Math/Math.h"
 
+// glm's quaternion constructor order is a build setting, not a fixed fact: define
+// GLM_FORCE_QUAT_DATA_XYZW and it silently becomes (x, y, z, w). Every rotation in
+// the engine would then be subtly wrong rather than obviously broken, which is the
+// worst way for a bug to behave. Fail the build instead.
+#ifdef GLM_FORCE_QUAT_DATA_XYZW
+#error "Crucible assumes glm's default (w, x, y, z) quaternion constructor - see Physics/JoltConversions.h"
+#endif
+
 // ---------------------------------------------------------------------------
-// Engine-private: xmath <-> Jolt.
+// Engine-private: glm <-> Jolt.
 //
 // Never include this from a header that Game can see. It drags in Jolt, which
 // is the one thing PhysicsSystem.h goes out of its way to avoid.
 //
-// The two libraries already agree on everything that usually goes wrong between
-// maths libraries: metres, Y up, right-handed, and quaternions stored x, y, z, w
-// in that order. So a conversion is a plain copy of three or four floats, with
-// no axis flipping and no re-ordering.
+// The two libraries agree on the things that usually go wrong between maths
+// libraries: metres, Y up, right-handed. So there is no axis flipping here.
 //
-// The copy is always BY NAME - never a memcpy, a cast or a reinterpret. Both
-// types are 16 bytes wide for SIMD, and the fourth lane is not yours: xmath
-// leaves whatever was last in it, and Jolt keeps a copy of Z there. Copying
-// the bits across would read that.
+// They disagree on exactly one thing, and it is the easy one to get wrong:
+// glm's quaternion constructor takes (w, x, y, z), Jolt's takes (x, y, z, w).
+// Every quaternion built in this file reorders for that, and it is the reason
+// a wrong rotation shows up as a plausible-looking one rather than a crash.
+//
+// The copy is always BY NAME - never a memcpy, a cast or a reinterpret. They
+// are not even the same size: glm's vec3 is three floats, while Jolt's Vec3 is
+// four wide for SIMD and keeps a copy of Z in that fourth lane.
 //
 // In its own namespace because IsFinite is a name the engine will want again
 // one day. Physics .cpp files put `using namespace JoltConvert;` at the top so
@@ -32,7 +42,7 @@
 
 namespace Crucible::JoltConvert {
 
-    inline JPH::Vec3 ToJolt(const Math::vec3& v) { return JPH::Vec3(v.m_X, v.m_Y, v.m_Z); }
+    inline JPH::Vec3 ToJolt(const Math::vec3& v) { return JPH::Vec3(v.x, v.y, v.z); }
 
     /*!
         \brief
@@ -47,18 +57,18 @@ namespace Crucible::JoltConvert {
     */
     inline JPH::Quat ToJolt(const Math::quat& q) {
 
-        const float lengthSq = q.m_X * q.m_X + q.m_Y * q.m_Y + q.m_Z * q.m_Z + q.m_W * q.m_W;
+        const float lengthSq = q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w;
 
 		// written as lengthSq > 1.0e-12f rather than lengthSq != 0 to catch NaN and infinity, which Jolt does not like either
         if (!(lengthSq > 1.0e-12f) || !std::isfinite(lengthSq)) return JPH::Quat::sIdentity();
 
         const float inverse = 1.0f / std::sqrt(lengthSq);
-        return JPH::Quat(q.m_X * inverse, q.m_Y * inverse, q.m_Z * inverse, q.m_W * inverse);
+        return JPH::Quat(q.x * inverse, q.y * inverse, q.z * inverse, q.w * inverse);
 
     }   // ToJolt()
 
     inline Math::vec3 FromJolt(JPH::Vec3Arg v) { return Math::vec3(v.GetX(), v.GetY(), v.GetZ()); }
-    inline Math::quat FromJolt(JPH::QuatArg q) { return Math::quat(q.GetX(), q.GetY(), q.GetZ(), q.GetW()); }
+    inline Math::quat FromJolt(JPH::QuatArg q) { return Math::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ()); }
 
     // ------------------------------------------------------------------- //
     // NAN GUARDS
@@ -70,11 +80,11 @@ namespace Crucible::JoltConvert {
     inline bool IsFinite(const float& value) { return std::isfinite(value); }
 
     inline bool IsFinite(const Math::vec3& v) {
-        return std::isfinite(v.m_X) && std::isfinite(v.m_Y) && std::isfinite(v.m_Z);
+        return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
     }
 
     inline bool IsFinite(const Math::quat& q) {
-        return std::isfinite(q.m_X) && std::isfinite(q.m_Y) && std::isfinite(q.m_Z) && std::isfinite(q.m_W);
+        return std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w);
     }
 
 }   // NAMESPACE CRUCIBLE::JOLTCONVERT

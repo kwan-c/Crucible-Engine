@@ -63,7 +63,7 @@ namespace Crucible {
         back - it goes where you tell it, and the world can only block it.
 
             CharacterController& mech = *world.GetComponent<CharacterController>(player);
-            mech.SimpleMove(Math::vec3(input.m_X * 6.0f, 0.0f, input.m_Z * 6.0f));
+            mech.SimpleMove(Math::vec3(input.x * 6.0f, 0.0f, input.z * 6.0f));
             if (jumpPressed && mech.m_isGrounded) mech.Jump(1.5f);
 
         The capsule's centre is the Transform's position plus m_center, so set
