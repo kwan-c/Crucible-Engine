@@ -35,6 +35,7 @@
 
 #include"ComponentKind.h"
 #include"Math/Math.h"
+#include"Physics/PhysicsComponents.h"
 #include"../Core/ECSCore.h"   // Entity (HierarchyNode links)
 
 namespace Crucible

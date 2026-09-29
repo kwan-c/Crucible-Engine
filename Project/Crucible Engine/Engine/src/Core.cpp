@@ -50,6 +50,13 @@ namespace Crucible {
         }
         // ===========================================
 
+        // Input attaches before anything else installs GLFW callbacks. ImGui's backend
+        // chains to callbacks that are already registered, but anything installed after it
+        // replaces ImGui's - which is how its text fields go dead.
+        m_input.Init();
+        m_input.AttachWindow(m_window->GetNativeHandle());
+
+
         // Event buses: report listener failures through the engine log, and let the
         // system manager merge each system's outboxes into them at every stage flush.
         const auto logFailure = [](const std::string& message) { CRU_ERROR("{}", message); };
@@ -70,6 +77,10 @@ namespace Crucible {
         while (!m_window->ShouldClose()) {
 
             const float dt = 1.f / 60.f;
+            // Snapshot last frame's input and zero the per-frame mouse deltas. This MUST stay
+            // immediately before PollEvents, because PollEvents is what fires the callbacks
+            // that fill this frame's state.
+            m_input.BeginFrame();
             m_window->PollEvents();
             m_events.engine.DeliverPending();   // window/input events queued by callbacks
 
@@ -111,6 +122,7 @@ namespace Crucible {
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
 
+        m_input.Shutdown();
         m_window->ShutDown();
     }
 }

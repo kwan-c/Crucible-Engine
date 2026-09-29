@@ -1,74 +1,79 @@
 /*************************************************************************
 * \file:         ECSPhysicsSystem.h
-* \author:       Abhishek Akilandeswari Patchamuthu
-* \par:          Email: a.patchamuthu@digipen.edu
-* \date          19 September 2026
-* \version       1.3
+* \author:       Abhishek Akilandeswari Patchamuthu (v1.0 skeleton),
+*                Hugo (v2.0 physics binding)
+* \date          27 September 2026
+* \version       2.0
 * \brief
-*                Declares the ECSPhysicsSystem, which applies
-*                RigidBody-driven motion to Transform components each
-*                frame.
+*                The ECS side of physics: keeps Crucible::Physics in step
+*                with the Transform, Collider and RigidBody components.
 *
 * \details
-*                ECSPhysicsSystem implements the IECSSystem interface
-*                (see Systems/IECSSystems.h) so it can be registered
-*                with and driven by ECSSystemManager. It runs in the
-*                PostUpdate stage and keeps one persistent query, built
-*                lazily on its first Update(). See ECSPhysicsSystem.cpp.
+*                Each Update():
+*                  1. works out how many fixed 1/60 s steps are due
+*                  2. syncs components into the physics world - creates,
+*                     rebuilds and removes bodies, and passes on anything
+*                     gameplay changed
+*                  3. runs those steps and writes the results back into
+*                     the Transforms
+*
+*                Gameplay never talks to this class. It edits components,
+*                and reaches the world itself through GetPhysics() for
+*                raycasts.
 *
 * \history
 *    -v1.0       skeleton / placeholder system, no physics logic yet
-*    -v1.1       integrates velocity into position using
-*                World::DeltaTime(); PostUpdate stage; persistent query
-*    -v1.2       Describe(): scheduler access from its query type, Worker
-*                affinity
-*    -v1.3       exported (ENGINE_API) so code outside Engine.dll can
-*                register it or name it in RunAfter<>()
+*    -v2.0       the real binding
 *
 **************************************************************************/
 #pragma once
 
-#include <optional>
+// STL
+#include <cstdint>
+#include <memory>
 
-#include "EngineExport.h"
+// Crucible engine
+#include "Physics/PhysicsSystem.h"
 #include "Systems/IECSSystems.h"
-#include "Systems/Query.h"
-#include "Components/Components.h"
 
-namespace Crucible
-{
-#ifdef _MSC_VER
-#pragma warning(push)
-#pragma warning(disable : 4251 4275)   // STL members; IECSSystem is a header-only interface
-#endif
-	class ENGINE_API ECSPhysicsSystem final :public IECSSystem
-	{
-	public:
-		void Init() override;
-		void Update(World& world, CommandBuffer& commands)override;
-		void Shutdown() noexcept override;
+namespace Crucible {
 
-		int Priority()const override { return 1; }
+    class ECSPhysicsSystem final : public IECSSystem {
 
-		/*********************************************************************
-		 \brief  Physics runs after the main per-frame logic.
-		 *********************************************************************/
-		SystemStage Stage() const override { return SystemStage::PostUpdate; }
+    public:
 
-		/*********************************************************************
-		 \brief  Scheduler description: access derived from BodyQuery
-				 (writes Transform, reads RigidBody), may run on a worker.
-		 *********************************************************************/
-		void Describe(SystemDesc& desc) const override;
+        explicit ECSPhysicsSystem(const PhysicsSettings& settings = PhysicsSettings{});
+        ~ECSPhysicsSystem() override;
 
-	private:
-		// One type for both the scheduler's access and the iteration itself.
-		using BodyQuery = Query<Transform, const RigidBody>;
+        ECSPhysicsSystem(const ECSPhysicsSystem&)            = delete;
+        ECSPhysicsSystem& operator=(const ECSPhysicsSystem&) = delete;
 
-		// Built on the first Update(), then reused every frame.
-		std::optional<BodyQuery> m_bodies;
-	};
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
-}
+        // --- IECSSystem ---------------------------------------------------- //
+
+        void Init() override;
+        void Update(World& world, CommandBuffer& commands) override;
+        void Shutdown() noexcept override;
+
+        // Physics belongs after gameplay has had its say and before rendering
+        // reads the results - which is exactly what PostUpdate is for.
+        SystemStage Stage() const override { return SystemStage::PostUpdate; }
+        int         Priority() const override { return 1; }
+
+        // --- for gameplay and tests ------------------------------------------ //
+
+        // The world itself, for raycasts. Gameplay gets here through Core.
+        Physics&      GetPhysics();
+        std::uint32_t GetStepsLastFrame() const;    // 0, 1 or more after a hitch
+
+        // Update with a frame time you choose, instead of World::DeltaTime().
+        // This is what a test harness drives, and how you simulate 30 or 144 fps.
+        void Advance(World& world, float frameDeltaTime);
+
+    private:
+
+        struct State;                               // everything else, in the .cpp
+        std::unique_ptr<State> m_state;
+
+    };  // ECSPHYSICSSYSTEM CLASS
+
+}   // NAMESPACE CRUCIBLE

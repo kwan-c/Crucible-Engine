@@ -113,6 +113,17 @@ set_target_properties(Jolt PROPERTIES
     FOLDER "ThirdParty"
 )
 
+# Jolt exposes its headers with a plain target_include_directories(Jolt PUBLIC ...), because it
+# arrives through add_subdirectory rather than a target we write ourselves. That makes MSVC treat
+# them as our code and run /W4 and the code-analysis checks over them. Re-tag them as SYSTEM, the
+# same as glm, vma, xmath, xresource, stb and rapidjson above, so they come through as /external:I.
+get_target_property(JOLT_INCLUDE_DIRS Jolt INTERFACE_INCLUDE_DIRECTORIES)
+if(JOLT_INCLUDE_DIRS)
+    set_target_properties(Jolt PROPERTIES
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${JOLT_INCLUDE_DIRS}"
+    )
+endif()
+
 # ----------------------------------- #
 # RTTR (shared DLL)
 # ----------------------------------- #

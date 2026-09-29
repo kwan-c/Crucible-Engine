@@ -60,10 +60,12 @@ namespace Crucible
 		RigidBody = 1,
 		MeshRenderer = 2,
 		Audio = 3,
-		HierarchyNode = 4,    // parent / child / sibling links
-		WorldTransform = 5,   // computed by HierarchyTransformSystem
+		Collider = 4,
+		CharacterController = 5,
+		HierarchyNode = 6,    // parent / child / sibling links
+		WorldTransform = 7,   // computed by HierarchyTransformSystem
 
-		MAXCOMPONENT = 6
+		MAXCOMPONENT = 8
 	};
 
 
@@ -157,6 +159,8 @@ namespace Crucible
  X(RigidBody)                                                                \
  X(MeshRenderer)                                                               \
  X(Audio)                                                                      \
+ X(Collider)                                                                   \
+ X(CharacterController)                                                        \
  X(HierarchyNode)                                                              \
  X(WorldTransform)                                                             \
 

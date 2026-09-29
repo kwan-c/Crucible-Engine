@@ -10,6 +10,7 @@
 #include "Systems/Layer.h"
 #include "Systems/WindowManager.h"
 #include "Graphics/RenderSystem.h"
+#include "Input/InputSystem.h"
 #include <ECS/World.h>
 #include <ECS/Systems/ECSSystemManager.h>
 #include <ECS/Systems/EventBus/EventBuses.h>
@@ -63,6 +64,7 @@ namespace Crucible
 
         WindowManager* m_window;
         Renderer* m_renderer;
+        Input m_input;      // owns the GLFW input callbacks; queried statically, e.g. Input::IsDown
         std::vector<std::unique_ptr<Layer>> m_layers;
 
         // Declared BEFORE the World: members are destroyed in reverse order, so the buses

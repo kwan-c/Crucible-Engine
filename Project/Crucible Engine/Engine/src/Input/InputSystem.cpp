@@ -23,7 +23,22 @@ namespace Crucible{
 
     void Input::Shutdown(){
         // Unregister stuff
-        glfwSetKeyCallback(m_window, nullptr);
+        if (m_window != nullptr) {
+
+            // Clear every callback we installed. The window can outlive this system, and a
+            // stale callback would then fire into a dangling g_instance.
+            glfwSetKeyCallback(m_window, nullptr);
+            glfwSetWindowFocusCallback(m_window, nullptr);
+            glfwSetMouseButtonCallback(m_window, nullptr);
+            glfwSetCursorPosCallback(m_window, nullptr);
+            glfwSetScrollCallback(m_window, nullptr);
+
+            // Never leave the cursor captured: if the window outlives us, the user has no
+            // pointer and no way to get it back.
+            if (m_mouseLocked) { glfwSetInputMode(m_window, GLFW_CURSOR, GLFW_CURSOR_NORMAL); }
+        }
+
+        m_mouseLocked = false;
         g_instance = nullptr;
         m_window = nullptr;
 
@@ -33,6 +48,12 @@ namespace Crucible{
 	// Save current state to previous state
     void Input::BeginFrame(){
 		m_previous = m_current;
+
+        // Delta and scroll describe one frame only, so they start every frame at zero and
+        // are refilled by the callbacks during PollEvents. That is the whole reason this
+        // function has to run immediately before PollEvents.
+        m_mouseDelta = Math::vec2{ 0.f, 0.f };
+        m_mouseScroll = Math::vec2{ 0.f, 0.f };
 	}
 
     void Input::AttachWindow(GLFWwindow* window) {
@@ -44,6 +65,20 @@ namespace Crucible{
 
         glfwSetKeyCallback(window, &Input::KeyCallback);
         glfwSetWindowFocusCallback(window, &Input::FocusCallback);
+
+        glfwSetMouseButtonCallback(window, &Input::MouseButtonCallback);
+        glfwSetCursorPosCallback(window, &Input::CursorPosCallback);
+        glfwSetScrollCallback(window, &Input::ScrollCallback);
+
+        // Start from where the cursor already is. Without this the first cursor event is
+        // measured against (0, 0), which is a delta of hundreds of pixels - the classic
+        // camera snap on the first frame somebody moves the mouse.
+        double startX = 0.0;
+        double startY = 0.0;
+        glfwGetCursorPos(window, &startX, &startY);
+
+        m_mousePosition = Math::vec2{ static_cast<float>(startX), static_cast<float>(startY) };
+        m_skipNextDelta = false;
 
     }
 
@@ -115,10 +150,130 @@ namespace Crucible{
 
     }
     
+    // --- mouse ---------------------------------------------------------------------------- //
+    //
+    // The buttons live in m_current with the keys, so IsDown / IsPressed / IsReleased already
+    // work on them. Only what a bitset cannot hold needs code of its own.
+    //
+    // These five guard on g_instance WITHOUT logging, unlike the key queries: a camera calls
+    // them every frame, so one error line would be sixty a second.
+
+    Math::vec2 Input::GetMousePosition() {
+        if (g_instance == nullptr) { return Math::vec2{ 0.f, 0.f }; }
+
+        return g_instance->m_mousePosition;
+    }
+
+    Math::vec2 Input::GetMouseDelta() {
+        if (g_instance == nullptr) { return Math::vec2{ 0.f, 0.f }; }
+
+        return g_instance->m_mouseDelta;
+    }
+
+    Math::vec2 Input::GetMouseScroll() {
+        if (g_instance == nullptr) { return Math::vec2{ 0.f, 0.f }; }
+
+        return g_instance->m_mouseScroll;
+    }
+
+    void Input::SetMouseLocked(const bool& locked) {
+        if (g_instance == nullptr || g_instance->m_window == nullptr) { return; }
+
+        // Already in that mode: return before the warp, so no delta is skipped for nothing.
+        if (g_instance->m_mouseLocked == locked) { return; }
+
+        g_instance->m_mouseLocked = locked;
+
+        glfwSetInputMode(g_instance->m_window, GLFW_CURSOR,
+            locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+
+        // Raw motion skips the OS pointer acceleration curve, so the same hand movement
+        // always turns the camera by the same amount. GLFW only honours it while the cursor
+        // is disabled, and not every platform has it - hence the support check.
+        if (glfwRawMouseMotionSupported() == GLFW_TRUE) {
+            glfwSetInputMode(g_instance->m_window, GLFW_RAW_MOUSE_MOTION,
+                locked ? GLFW_TRUE : GLFW_FALSE);
+        }
+
+        // Disabling the cursor warps it to the window centre and enabling it puts it back,
+        // so either way the next event is a teleport. Swallow one delta, or the camera spins
+        // the moment you enter or leave mouse-look.
+        g_instance->m_skipNextDelta = true;
+    }
+    
+    bool Input::IsMouseLocked() {
+        if (g_instance == nullptr) { return false; }
+
+        return g_instance->m_mouseLocked;
+    }
+
+    void Input::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
+        (void)window; (void)mods;
+
+        if (g_instance == nullptr) { return; }
+        g_instance->OnMouseButton(button, action);
+    }
+
+    void Input::CursorPosCallback(GLFWwindow* window, double xPos, double yPos) {
+        (void)window;
+
+        if (g_instance == nullptr) { return; }
+        g_instance->OnCursorMoved(xPos, yPos);
+    }
+
+    void Input::ScrollCallback(GLFWwindow* window, double xOffset, double yOffset) {
+        (void)window;
+
+        if (g_instance == nullptr) { return; }
+        g_instance->OnScroll(xOffset, yOffset);
+    }
+
+    void Input::OnMouseButton(const int& glfwButton, const int& glfwAction) {
+        // Own numbering, own translation - but the same bitset as the keys, which is why
+        // there is no second set of query functions for buttons.
+        const KeyCode crucibleButton = KeyCodeFromGlfwMouseButton(glfwButton);
+
+        if (crucibleButton == KeyCode::Unknown) {
+            return;   // a button beyond the eight GLFW reports
+        }
+
+        // No GLFW_REPEAT exists for buttons, so PRESS or RELEASE is the whole story.
+        m_current.set(static_cast<std::size_t>(crucibleButton), glfwAction == GLFW_PRESS);
+    }
+
+    void Input::OnCursorMoved(const double& xPos, const double& yPos) {
+        const Math::vec2 position{ static_cast<float>(xPos), static_cast<float>(yPos) };
+
+        if (m_skipNextDelta) {
+            m_mousePosition = position;
+            m_skipNextDelta = false;
+            return;
+        }
+
+        // GLFW can deliver several cursor events inside one PollEvents, so the movement is
+        // accumulated rather than assigned. Working it out from positions in gameplay code
+        // would throw away everything except the last event of the frame.
+        m_mouseDelta.m_X += position.m_X - m_mousePosition.m_X;
+        m_mouseDelta.m_Y += position.m_Y - m_mousePosition.m_Y;
+
+        m_mousePosition = position;
+    }
+
+    void Input::OnScroll(const double& xOffset, const double& yOffset) {
+        // Accumulated for the same reason as the delta: one frame can hold several notches.
+        m_mouseScroll.m_X += static_cast<float>(xOffset);
+        m_mouseScroll.m_Y += static_cast<float>(yOffset);
+    }
+
     void Input::OnFocusChanged(const bool& focused) {
         if (focused) return;
 
 		m_current.reset();  // clear all keys when focus is lost
+
+        // The cursor can be anywhere by the time focus comes back, so the first event after
+        // that would be a teleport-sized delta. Swallow it, exactly like a lock change does.
+        m_skipNextDelta = true;
 	}
+
 
 }
