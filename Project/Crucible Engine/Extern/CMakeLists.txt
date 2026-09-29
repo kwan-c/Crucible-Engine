@@ -10,11 +10,6 @@ set(GLFW_LIBRARY_TYPE SHARED CACHE STRING "" FORCE)
 add_subdirectory(glfw EXCLUDE_FROM_ALL)
 set_target_properties(glfw PROPERTIES FOLDER "ThirdParty")
 
-# Glad
-add_library(glad glad/src/glad.c)
-target_include_directories(glad PUBLIC glad/include)
-set_target_properties(glad PROPERTIES FOLDER "ThirdParty")
-
 # GLM (header-only)
 add_library(glm INTERFACE)
 target_include_directories(glm SYSTEM INTERFACE glm)
@@ -59,14 +54,6 @@ set_target_properties(imgui_backends PROPERTIES FOLDER "ThirdParty")
 # vma (header-only)
 add_library(vma INTERFACE)
 target_include_directories(vma SYSTEM INTERFACE vma/include)
-
-
-# ----------------------------------- #
-# XMATH (header-only)
-# ----------------------------------- #
-
-add_library(xmath INTERFACE)
-target_include_directories(xmath SYSTEM INTERFACE xmath/source)
 
 # ------------------------------------------------------------ #
 # XRESOURCE (guid + mgr, header-only)
@@ -178,11 +165,9 @@ add_library(EngineThirdParty INTERFACE)
 
 target_link_libraries(EngineThirdParty INTERFACE
     glfw
-    glad
     glm
 
     # Add more here...
-    xmath
     xresource
     fmod
     Jolt

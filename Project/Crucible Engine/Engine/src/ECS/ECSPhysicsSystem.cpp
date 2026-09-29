@@ -42,9 +42,9 @@ namespace Crucible
 
 		m_bodies->ForEach([dt](Entity, Transform& transform, const RigidBody& body)
 			{
-				transform.positions.m_X += body.velocity.m_X * dt;
-				transform.positions.m_Y += body.velocity.m_Y * dt;
-				transform.positions.m_Z += body.velocity.m_Z * dt;
+				transform.positions.x += body.velocity.x * dt;
+				transform.positions.y += body.velocity.y * dt;
+				transform.positions.z += body.velocity.z * dt;
 			});
 	}
 	void ECSPhysicsSystem::Shutdown() noexcept

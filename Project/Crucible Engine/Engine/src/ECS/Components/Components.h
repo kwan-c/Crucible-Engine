@@ -44,8 +44,8 @@ namespace Crucible
 	 *************************************************************************/
 	struct Transform
 	{
-		Math::vec3  positions{0.f,0.f,0.f};                   // local: relative to the parent (or the world, for a root)
-		Math::quat  rotation = Math::quat::fromIdentity();    // xmath doesn't zero-initialise: always set explicitly
+		Math::vec3  positions{0.f,0.f,0.f};								// local: relative to the parent (or the world, for a root)
+		Math::quat  rotation = Math::quat(Math::vec3(0.f, 0.f, 0.f));
 		Math::vec3  scale{ 1.f,1.f,1.f };
 	};
 
@@ -60,7 +60,7 @@ namespace Crucible
 	 *************************************************************************/
 	struct WorldTransform
 	{
-		Math::mat4 matrix = Math::mat4::fromIdentity();
+		Math::mat4 matrix = Math::mat4(1.0f);
 		bool valid = false;   // false until the propagation system has computed it
 	};
 

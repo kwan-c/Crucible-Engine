@@ -132,12 +132,14 @@ namespace Crucible
 		// one - the scale is applied to the rotation columns here instead.
 		inline Math::mat4 ComposeTRS(const Math::vec3& translation, const Math::quat& rotation, const Math::vec3& scale) noexcept
 		{
-			Math::mat4 m;
-			m.setupSRT(Math::vec3(1.f, 1.f, 1.f), rotation, translation);
-			const float s[3] = { scale.m_X, scale.m_Y, scale.m_Z };
-			for (std::size_t col = 0; col < 3; ++col)
-				for (std::size_t row = 0; row < 3; ++row)
-					m(row, col) *= s[col];
+			Math::mat4 m(1.0f);
+
+			m = glm::translate(m, translation);
+
+			m = m * glm::mat4_cast(rotation);
+
+			m = glm::scale(m, scale);
+			
 			return m;
 		}
 

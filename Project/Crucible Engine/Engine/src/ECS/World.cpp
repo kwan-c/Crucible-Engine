@@ -433,7 +433,7 @@ namespace Crucible
 		// Local T*R*S; t is only null for a dead entity (a live one always has a Transform).
 		Math::mat4 LocalMatrix(const Transform* t)
 		{
-			if (!t) return Math::mat4::fromIdentity();
+			if (!t) return Math::mat4(1.0f);
 			return Detail::ComposeTRS(t->positions, t->rotation, t->scale);
 		}
 
@@ -447,9 +447,9 @@ namespace Crucible
 		Math::quat QuatFromBasis(const Math::vec3& ux, const Math::vec3& uy, const Math::vec3& uz)
 		{
 			const float r[3][3] = {   // r[row][col]
-				{ ux.m_X, uy.m_X, uz.m_X },
-				{ ux.m_Y, uy.m_Y, uz.m_Y },
-				{ ux.m_Z, uy.m_Z, uz.m_Z } };
+				{ ux.x, uy.x, uz.x },
+				{ ux.y, uy.y, uz.y },
+				{ ux.z, uy.z, uz.z } };
 
 			float x, y, z, w;
 			const float trace = r[0][0] + r[1][1] + r[2][2];
@@ -481,26 +481,29 @@ namespace Crucible
 	bool Detail::DecomposeTRS(const Math::mat4& m, Math::vec3& translation, Math::quat& rotation,
 		Math::vec3& scale, int reflectAxis) noexcept
 	{
-		const Math::vec3 c0(m(0, 0), m(1, 0), m(2, 0));
-		const Math::vec3 c1(m(0, 1), m(1, 1), m(2, 1));
-		const Math::vec3 c2(m(0, 2), m(1, 2), m(2, 2));
-		const Math::vec3 t = m.ExtractPosition();
-		if (!(c0.isFinite() && c1.isFinite() && c2.isFinite() && t.isFinite())) return false;
+		const Math::vec3 c0(m[0][0], m[1][0], m[2][0]);
+		const Math::vec3 c1(m[0][1], m[1][1], m[2][1]);
+		const Math::vec3 c2(m[0][2], m[1][2], m[2][2]);
+		const Math::vec3 t = m[3];
+		if (!(glm::isfinite(c0.x) && glm::isfinite(c0.y) && glm::isfinite(c0.z) &&
+			glm::isfinite(c1.x) && glm::isfinite(c1.y) && glm::isfinite(c1.z) &&
+			glm::isfinite(c2.x) && glm::isfinite(c2.y) && glm::isfinite(c2.z) &&
+			glm::isfinite(t.x) && glm::isfinite(t.y) && glm::isfinite(t.z))) return false;
 
-		const float l0 = c0.Length(), l1 = c1.Length(), l2 = c2.Length();
+		const float l0 = c0.length(), l1 = c1.length(), l2 = c2.length();
 		if (!(l0 > kMinScale && l1 > kMinScale && l2 > kMinScale)) return false;   // a zero scale axis
 
 		// Gram-Schmidt: X keeps its direction, Y stays in the XY plane, Z completes a
 		// right-handed basis. Without shear this is exactly the rotation; with shear it is
 		// an axis-preserving approximation, not the closest rotation.
 		Math::vec3 ux = c0 * (1.f / l0);
-		const Math::vec3 yRest = c1 - ux * ux.Dot(c1);
-		const float ly = yRest.Length();
+		const Math::vec3 yRest = c1 - ux * glm::dot(ux, c1);
+		const float ly = yRest.length();
 		if (!(ly > kPlanarTolerance * l1)) return false;   // Y collapsed onto X
 		Math::vec3 uy = yRest * (1.f / ly);
-		Math::vec3 uz = ux.Cross(uy);
+		Math::vec3 uz = glm::cross(ux, uy);
 
-		float sx = l0, sy = ly, sz = uz.Dot(c2);            // sz < 0: the matrix is mirrored
+		float sx = l0, sy = ly, sz = glm::dot(uz, c2);            // sz < 0: the matrix is mirrored
 		if (!(std::fabs(sz) > kPlanarTolerance * l2)) return false;   // Z collapsed into the XY plane
 
 		// A mirrored matrix has its reflection on Z so far. Moving it to another axis is a
@@ -613,7 +616,7 @@ namespace Crucible
 	bool World::ReachesUp(Entity from, Entity target, Math::mat4* worldOut) const
 	{
 		// world = L(root) * ... * L(from), built upward as world = L(ancestor) * world.
-		Math::mat4 world = Math::mat4::fromIdentity();
+		Math::mat4 world = Math::mat4(1.0f);
 		std::size_t depth = 0;
 		for (Entity e = from; e.IsValid(); )
 		{
@@ -817,13 +820,13 @@ namespace Crucible
 		// from a matrix. If the parents differ in handedness, the frame is mirrored - put
 		// that reflection on an axis the local scale already mirrors, so the two cancel.
 		const Math::mat4 frame = newParentInverse * FrameMatrix(oldParentWorld, local);
-		const int reflectAxis = local.scale.m_Y < 0.f ? 1 : local.scale.m_Z < 0.f ? 2 : 0;
+		const int reflectAxis = local.scale.y < 0.f ? 1 : local.scale.z < 0.f ? 2 : 0;
 		Math::vec3 frameScale;
 		if (!Detail::DecomposeTRS(frame, out.positions, out.rotation, frameScale, reflectAxis))
 			return ParentResult::UnsupportedTransform;   // the current parent chain has a zero scale
 
-		out.scale = Math::vec3(frameScale.m_X * local.scale.m_X, frameScale.m_Y * local.scale.m_Y,
-			frameScale.m_Z * local.scale.m_Z);
+		out.scale = Math::vec3(frameScale.x * local.scale.x, frameScale.y * local.scale.y,
+			frameScale.z * local.scale.z);
 		return ParentResult::Ok;
 	}
 
@@ -841,7 +844,7 @@ namespace Crucible
 
 		// One walk up from the new parent both detects a cycle and, for keep-world,
 		// accumulates the new parent's world matrix.
-		Math::mat4 newParentWorld = Math::mat4::fromIdentity();
+		Math::mat4 newParentWorld = Math::mat4(1.0f);
 		if (parent.IsValid() && ReachesUp(parent, child, worldPositionStays ? &newParentWorld : nullptr))
 			return ParentResult::WouldCycle;
 
@@ -856,7 +859,7 @@ namespace Crucible
 			Math::quat r;
 			if (!Detail::DecomposeTRS(newParentWorld, t, r, s)) return ParentResult::UnsupportedTransform;
 			const ParentResult solve = SolveKeepWorld(*LocalOf(child), ComputeWorldMatrix(oldParent),
-				newParentWorld.Inverse(), solved);
+				glm::inverse(newParentWorld), solved);
 			if (solve != ParentResult::Ok) return solve;
 		}
 
@@ -890,7 +893,7 @@ namespace Crucible
 		// share the old parent, so its world matrix is computed once; the new parent is
 		// the root (identity, nothing to invert).
 		const Math::mat4 parentWorld = ComputeWorldMatrix(parent);
-		const Math::mat4 rootInverse = Math::mat4::fromIdentity();
+		const Math::mat4 rootInverse = Math::mat4(1.0f);
 		std::vector<Transform> solved(children.size());
 		for (std::size_t i = 0; i < children.size(); ++i)
 		{
