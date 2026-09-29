@@ -17,7 +17,7 @@ namespace Crucible {
 	public:
 		// REQUIRED Overrides
 		void Init() override;
-		void Update() override;
+		void Update(float dt) override;
 	};
 
 }

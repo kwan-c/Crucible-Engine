@@ -2,6 +2,7 @@
 #include "AssetPipe/Assetmanager.h"
 
 // STL
+#include <algorithm>
 #include <iostream>
 #include <ECS/ECSPhysicsSystem.h>
 
@@ -48,9 +49,29 @@ namespace Crucible {
 
     void Core::Run() {
 
+        // Real frame time, not an assumed 60 FPS: nothing here caps the actual frame rate (no
+        // glfwSwapInterval, no sleep/limiter), and the swapchain's present mode is chosen
+        // dynamically (VulkanSwapchain::ChoosePresentMode() prefers Mailbox, which does not
+        // block the app the way Fifo/vsync does). A hard-coded "1.f / 60.f" here silently
+        // assumed the app always ran at exactly 60 FPS - so at whatever *actual* frame rate
+        // Mailbox let it run at (which can be very high with an empty-ish scene and no cap),
+        // every animation driven by dt (cube spin, the editor fly-camera, ...) played back
+        // proportionally too fast or too slow. It happened to look "corrected" after toggling
+        // fullscreen because that forces a swapchain recreate (via the resize it causes), and
+        // depending on the platform/compositor a fullscreen-negotiated surface can end up stuck
+        // on a hard-blocking present mode afterwards even once back in windowed mode - which
+        // only ever fixed the SYMPTOM (actual FPS settling near 60) rather than the cause.
+        double lastTime = glfwGetTime();
+
         while (!m_window->ShouldClose()) {
 
-            float dt = 1.f / 60.f;
+            double const now = glfwGetTime();
+            float dt = static_cast<float>(now - lastTime);
+            lastTime = now;
+
+            // Clamp so a debugger breakpoint, window drag, or other multi-second stall doesn't
+            // make every dt-driven system leap forward by however long the freeze lasted.
+            dt = std::min(dt, 1.0f / 15.0f);
 
             m_window->PollEvents();
 

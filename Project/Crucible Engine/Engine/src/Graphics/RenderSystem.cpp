@@ -33,6 +33,9 @@ namespace Crucible {
         CreateDescriptorPool();
         CreateDescriptorSets();
 
+        CreateViewportSampler();
+        CreateViewportDescriptorPool();
+
         // Built-in mesh so there is always something to draw / test with.
         m_cubeMesh = CreateMesh(Primitives::MakeCube());
         m_renderQueue.reserve(1024);
@@ -111,8 +114,8 @@ namespace Crucible {
             for (int z = -half; z <= half; ++z) {
                 const float phase = static_cast<float>(x * 7 + z * 3);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(x * spacing, 0.0f, z * spacing));
-                model = glm::rotate(model, (m_time + phase) * glm::radians(8.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-                model = glm::rotate(model, (m_time + phase) * glm::radians(4.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                model = glm::rotate(model, (m_time + phase) * glm::radians(20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                model = glm::rotate(model, (m_time + phase) * glm::radians(10.0f), glm::vec3(1.0f, 0.0f, 0.0f));
                 Submit(m_cubeMesh, model);
             }
         }
@@ -135,6 +138,7 @@ namespace Crucible {
             //.descriptorPool = *m_descriptorPool,
             //.pipelineCache = 
             .colorFormat    = m_swapchain.GetColorAttachmentFormat(),
+            .depthFormat    = static_cast<VkFormat>(m_swapchain.GetDepthFormat()),
             .minImageCount  = static_cast<uint32_t>(2),
             .imageCount     = static_cast<uint32_t>(m_swapchain.GetImages().size()),
         };
@@ -151,9 +155,68 @@ namespace Crucible {
 
     void Renderer::RecordCommandBuffer(FrameContext& fc) {
 
+        const uint32_t frameIndex = m_frameManager.GetFrameIndex();
+
         fc.frame.commandBuffer.begin({});
 
-        // Before starting rendering, transition the swapchain image to vk::ImageLayout::eColorAttachmentOptimal
+        // ---- Offscreen editor viewports -------------------------------------------------------
+        // Empty in a standalone Engine/Game build: this loop simply doesn't run, so the cost of
+        // supporting viewports at all is the one `m_viewports.empty()` check further down.
+        for (auto& [id, vp] : m_viewports) {
+
+            vp.camera.SetAspect(static_cast<float>(vp.extent.width), static_cast<float>(vp.extent.height));
+            UpdateViewportUniforms(vp, frameIndex);
+
+            TransitionImageLayout(
+                fc, vp.colorImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+                vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+                {}, vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput
+            );
+            TransitionImageLayout(
+                fc, vp.depthImage.GetImage(), vk::ImageAspectFlagBits::eDepth,
+                vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+                {}, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests
+            );
+
+            vk::RenderingAttachmentInfo color{
+                .imageView = vp.colorView,
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .clearValue = vk::ClearColorValue(0.05f, 0.05f, 0.06f, 1.0f)
+            };
+            vk::RenderingAttachmentInfo depth{
+                .imageView = vp.depthView,
+                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+                .loadOp = vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eDontCare,
+                .clearValue = vk::ClearDepthStencilValue(1.0f, 0)
+            };
+            vk::RenderingInfo renderingInfo{
+                .renderArea = {.offset = {0, 0}, .extent = vp.extent},
+                .layerCount = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments = &color,
+                .pDepthAttachment = &depth
+            };
+
+            fc.frame.commandBuffer.beginRendering(renderingInfo);
+            DrawRenderQueue(*fc.frame.commandBuffer, vp.extent, *vp.descriptorSets[frameIndex]);
+            fc.frame.commandBuffer.endRendering();
+
+            // Hand off to the Editor as a sampled texture (ImGui_ImplVulkan_AddTexture expects this layout).
+            TransitionImageLayout(
+                fc, vp.colorImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+                vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderRead,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader
+            );
+        }
+
+        // ---- Swapchain (window) pass -----------------------------------------------------------
         TransitionImageLayout(
             fc,
             m_swapchain.GetImages()[fc.imageIndex],
@@ -208,32 +271,11 @@ namespace Crucible {
 
         fc.frame.commandBuffer.beginRendering(renderingInfo);
 
-        fc.frame.commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
-        fc.frame.commandBuffer.setViewport(0, vk::Viewport(0.0f, static_cast<float>(m_swapchain.GetExtent().height), static_cast<float>(m_swapchain.GetExtent().width), -static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
-        fc.frame.commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapchain.GetExtent()));
-
-        // Camera data (view/proj) is bound once for the whole frame.
-        fc.frame.commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.GetLayout(), 0, *m_descriptorSets[m_frameManager.GetFrameIndex()], nullptr);
-
-        // Draw every submitted object. Queue is sorted by mesh, so buffers rebind only on change.
-        MeshHandle boundMesh;   // starts Invalid
-        for (const RenderItem& item : m_renderQueue) {
-
-            if (!item.mesh.IsValid() || item.mesh.id >= m_meshes.size()) { continue; }
-            const GpuMesh& mesh = m_meshes[item.mesh.id];
-            if (mesh.indexCount == 0) { continue; }   // still uploading (CreateMeshAsync); skip for now
-
-            if (!(item.mesh == boundMesh)) {
-                fc.frame.commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), {0});
-                fc.frame.commandBuffer.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
-                boundMesh = item.mesh;
-            }
-
-            // Per-object model matrix goes in a push constant (recorded into the command buffer,
-            // so there are no per-frame-in-flight synchronisation concerns).
-            PushConstants pc{ item.model };
-            fc.frame.commandBuffer.pushConstants<PushConstants>(m_pipeline.GetLayout(), vk::ShaderStageFlagBits::eVertex, 0, pc);
-            fc.frame.commandBuffer.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
+        // Only draw the scene straight to the window when nobody has registered an offscreen
+        // viewport for it. In the Editor, the Scene/Game panels already drew the scene above and
+        // display it themselves via ImGui::Image(); this pass then holds only the ImGui overlay.
+        if (m_viewports.empty()) {
+            DrawRenderQueue(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex]);
         }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
@@ -256,6 +298,38 @@ namespace Crucible {
         fc.frame.commandBuffer.end();
 
     }   // Renderer::RecordCommandBuffer()
+
+    void Renderer::DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet) {
+
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
+        cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
+        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+
+        // Camera data (view/proj) is bound once for the whole pass.
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.GetLayout(), 0, cameraSet, nullptr);
+
+        // Draw every submitted object. Queue is sorted by mesh, so buffers rebind only on change.
+        MeshHandle boundMesh;   // starts Invalid
+        for (const RenderItem& item : m_renderQueue) {
+
+            if (!item.mesh.IsValid() || item.mesh.id >= m_meshes.size()) { continue; }
+            const GpuMesh& mesh = m_meshes[item.mesh.id];
+            if (mesh.indexCount == 0) { continue; }   // still uploading (CreateMeshAsync); skip for now
+
+            if (!(item.mesh == boundMesh)) {
+                cmd.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), {0});
+                cmd.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+                boundMesh = item.mesh;
+            }
+
+            // Per-object model matrix goes in a push constant (recorded into the command buffer,
+            // so there are no per-frame-in-flight synchronisation concerns).
+            PushConstants pc{ item.model };
+            cmd.pushConstants<PushConstants>(m_pipeline.GetLayout(), vk::ShaderStageFlagBits::eVertex, 0, pc);
+            cmd.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
+        }
+
+    }   // Renderer::DrawRenderQueue()
 
     MeshHandle Renderer::CreateMesh(const MeshData& data) {
 
@@ -310,6 +384,196 @@ namespace Crucible {
         m_meshes[handle.id] = std::move(mesh);
 
     }   // Renderer::UploadMesh()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  VIEWPORTS (offscreen render targets for the Editor)
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    ViewportHandle Renderer::CreateViewport(uint32_t width, uint32_t height) {
+
+        if (m_viewports.size() >= kMaxViewports) {
+            throw std::runtime_error("[Renderer] CreateViewport: kMaxViewports exceeded; raise the limit if you genuinely need more.");
+        }
+
+        ViewportHandle handle{ m_nextViewportId++ };
+        Viewport& vp = m_viewports[handle.id];   // default-constructs in place
+        CreateViewportImages(vp, width, height);
+        CreateViewportUniformsAndDescriptors(vp);
+        return handle;
+
+    }   // Renderer::CreateViewport()
+
+    void Renderer::ResizeViewport(ViewportHandle handle, uint32_t width, uint32_t height) {
+
+        Viewport& vp = GetViewportOrThrow(handle);
+        if (vp.extent.width == width && vp.extent.height == height) { return; }   // no-op: avoids rebuilding on every identical layout pass
+        if (width == 0 || height == 0) { return; }                                // panel fully collapsed; keep the last valid image
+
+        // The old images might still be read by an in-flight frame (e.g. ImGui sampling last
+        // frame's texture while this frame is being recorded). Resizing is a rare, interactive-
+        // only event (dragging a dock splitter), so a full wait here is the simplest correct
+        // option; it is not something that happens on the per-frame hot path.
+        m_context.GetDevice().waitIdle();
+
+        // Only the images change size; the uniform buffers/descriptor sets are resolution-
+        // independent (they just hold view/proj), so keep reusing the ones allocated at
+        // CreateViewport time instead of re-allocating from the (fixed-capacity) descriptor pool.
+        CreateViewportImages(vp, width, height);
+
+    }   // Renderer::ResizeViewport()
+
+    void Renderer::DestroyViewport(ViewportHandle handle) {
+
+        auto it = m_viewports.find(handle.id);
+        if (it == m_viewports.end()) { return; }
+
+        // Same reasoning as ResizeViewport: don't tear down GPU resources a frame in flight
+        // might still be using.
+        m_context.GetDevice().waitIdle();
+        m_viewports.erase(it);
+
+    }   // Renderer::DestroyViewport()
+
+    Camera& Renderer::GetViewportCamera(ViewportHandle handle) {
+
+        return GetViewportOrThrow(handle).camera;
+
+    }   // Renderer::GetViewportCamera()
+
+    vk::ImageView Renderer::GetViewportColorView(ViewportHandle handle) const {
+
+        return *GetViewportOrThrow(handle).colorView;
+
+    }   // Renderer::GetViewportColorView()
+
+    Renderer::Viewport& Renderer::GetViewportOrThrow(ViewportHandle handle) {
+
+        auto it = m_viewports.find(handle.id);
+        if (it == m_viewports.end()) {
+            throw std::runtime_error("[Renderer] Unknown or already-destroyed ViewportHandle.");
+        }
+        return it->second;
+
+    }   // Renderer::GetViewportOrThrow()
+
+    const Renderer::Viewport& Renderer::GetViewportOrThrow(ViewportHandle handle) const {
+
+        auto it = m_viewports.find(handle.id);
+        if (it == m_viewports.end()) {
+            throw std::runtime_error("[Renderer] Unknown or already-destroyed ViewportHandle.");
+        }
+        return it->second;
+
+    }   // Renderer::GetViewportOrThrow()
+
+    void Renderer::CreateViewportSampler() {
+
+        vk::SamplerCreateInfo samplerInfo{
+            .magFilter = vk::Filter::eLinear,
+            .minFilter = vk::Filter::eLinear,
+            .mipmapMode = vk::SamplerMipmapMode::eLinear,
+            .addressModeU = vk::SamplerAddressMode::eClampToEdge,
+            .addressModeV = vk::SamplerAddressMode::eClampToEdge,
+            .addressModeW = vk::SamplerAddressMode::eClampToEdge,
+            .anisotropyEnable = vk::False,
+            .compareEnable = vk::False,
+            .minLod = 0.0f,
+            .maxLod = 0.0f,
+            .borderColor = vk::BorderColor::eIntOpaqueBlack,
+            .unnormalizedCoordinates = vk::False
+        };
+        m_viewportSampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
+
+    }   // Renderer::CreateViewportSampler()
+
+    void Renderer::CreateViewportDescriptorPool() {
+
+        // Sized up front for the worst case (kMaxViewports simultaneously alive, each with its
+        // own set per frame in flight) so viewport creation never has to touch pool capacity.
+        uint32_t maxSets = kMaxViewports * m_frameManager.MaxFramesInFlight();
+        vk::DescriptorPoolSize poolSize{
+            .type = vk::DescriptorType::eUniformBuffer,
+            .descriptorCount = maxSets };
+        vk::DescriptorPoolCreateInfo poolInfo{
+            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .maxSets = maxSets, .poolSizeCount = 1, .pPoolSizes = &poolSize };
+
+        m_viewportDescriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
+
+    }   // Renderer::CreateViewportDescriptorPool()
+
+    void Renderer::CreateViewportImages(Viewport& vp, uint32_t width, uint32_t height) {
+
+        vp.extent = { width, height };
+
+        // Must match the pipeline's baked-in color/depth attachment formats exactly (dynamic
+        // rendering requires this), so reuse whatever the swapchain already settled on.
+        const vk::Format colorFormat = m_swapchain.GetSurfaceFormat().format;
+        const vk::Format depthFormat = m_swapchain.GetDepthFormat();
+
+        vp.colorImage.Create(m_context, width, height, colorFormat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        vk::ImageViewCreateInfo colorViewInfo{
+            .image = vp.colorImage.GetImage(),
+            .viewType = vk::ImageViewType::e2D,
+            .format = colorFormat,
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1 }
+        };
+        vp.colorView = vk::raii::ImageView(m_context.GetDevice(), colorViewInfo);
+
+        vp.depthImage.Create(m_context, width, height, depthFormat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        vk::ImageViewCreateInfo depthViewInfo{
+            .image = vp.depthImage.GetImage(),
+            .viewType = vk::ImageViewType::e2D,
+            .format = depthFormat,
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1 }
+        };
+        vp.depthView = vk::raii::ImageView(m_context.GetDevice(), depthViewInfo);
+
+    }   // Renderer::CreateViewportImages()
+
+    void Renderer::CreateViewportUniformsAndDescriptors(Viewport& vp) {
+
+        uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
+        for (uint32_t i = 0; i < maxFrames; ++i) {
+            vp.uniformBuffers.emplace_back();
+            vp.uniformBuffers.back().Create(m_context, sizeof(FrameUniforms),
+                vk::BufferUsageFlagBits::eUniformBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            vp.uniformBuffersMapped.emplace_back(vp.uniformBuffers.back().GetMemory().mapMemory(0, sizeof(FrameUniforms)));
+        }
+
+        std::vector<vk::DescriptorSetLayout> layouts(maxFrames, *m_pipeline.GetDescriptorSetLayout());
+        vk::DescriptorSetAllocateInfo allocInfo{
+            .descriptorPool     = m_viewportDescriptorPool,
+            .descriptorSetCount = maxFrames,
+            .pSetLayouts        = layouts.data()
+        };
+        vp.descriptorSets = m_context.GetDevice().allocateDescriptorSets(allocInfo);
+
+        for (uint32_t i = 0; i < maxFrames; ++i) {
+            vk::DescriptorBufferInfo bufferInfo{ .buffer = vp.uniformBuffers[i].GetBuffer(), .offset = 0, .range = sizeof(FrameUniforms) };
+            vk::WriteDescriptorSet   write{
+                .dstSet = vp.descriptorSets[i], .dstBinding = 0, .dstArrayElement = 0,
+                .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &bufferInfo };
+            m_context.GetDevice().updateDescriptorSets(write, {});
+        }
+
+    }   // Renderer::CreateViewportUniformsAndDescriptors()
+
+    void Renderer::UpdateViewportUniforms(Viewport& vp, uint32_t frameIndex) {
+
+        FrameUniforms ubo{};
+        ubo.view = vp.camera.GetView();
+        ubo.proj = vp.camera.GetProjection();
+        memcpy(vp.uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
+
+    }   // Renderer::UpdateViewportUniforms()
 
     void Renderer::CreateUniformBuffers() {
 

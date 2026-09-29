@@ -13,7 +13,7 @@ void Crucible::Console::Init() {
 	m_dockArea = DockArea::Bottom;
 }
 
-void Crucible::Console::Update() {
+void Crucible::Console::Update(float) {
 	if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		ImGui::TextDisabled("Log output will appear here.");
 		ImGui::TextDisabled("Needs an Engine hook to register an editor log sink (see LogSink.h).");

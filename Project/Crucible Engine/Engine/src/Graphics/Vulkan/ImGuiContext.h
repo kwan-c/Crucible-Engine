@@ -19,6 +19,12 @@ namespace Crucible {
         VkPipelineCache pipelineCache = VK_NULL_HANDLE;
 
         VkFormat colorFormat = VK_FORMAT_UNDEFINED;
+        // The swapchain's depth attachment format. ImGui's own pipeline draws inside the
+        // SAME open dynamic-rendering pass as the scene (Renderer's overlay callback runs
+        // before endRendering()), and that pass has a real depth attachment bound - so ImGui's
+        // pipeline must declare a matching depthAttachmentFormat too, or the validation layer
+        // flags every ImGui draw call (VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-08914).
+        VkFormat depthFormat = VK_FORMAT_UNDEFINED;
 
         uint32_t minImageCount = 2;
         uint32_t imageCount = 2;

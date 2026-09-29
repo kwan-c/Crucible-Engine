@@ -116,7 +116,7 @@ namespace {
 }
 // ---- dock layout (end) ----
 
-void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context) {
+void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& renderer) {
 	
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -148,7 +148,7 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context) {
 	initInfo.QueueFamily = context.graphicsQueueFamily;
 	initInfo.Queue = context.graphicsQueue;
 
-	//initInfo.DescriptorPool = context.descriptorPool;   // not ready yet � leave unset (VK_NULL_HANDLE)
+	initInfo.DescriptorPool = context.descriptorPool;
 	initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE;   // let ImGui create+own its own pool
     initInfo.MinImageCount = context.minImageCount;
     initInfo.ImageCount = context.imageCount;
@@ -164,12 +164,28 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context) {
 
 	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.pColorAttachmentFormats = &context.colorFormat;
 
+	// ImGui's draw calls (ImGui_ImplVulkan_RenderDrawData(), invoked from Renderer's overlay
+	// callback) are recorded into the SAME open dynamic-rendering pass as the scene, which has a
+	// real depth attachment bound - so ImGui's own pipeline must be told that attachment's format
+	// too, or the validation layer flags every one of its draw calls (depthAttachmentFormat would
+	// otherwise default to VK_FORMAT_UNDEFINED, mismatching the bound D32_SFLOAT depth image;
+	// see VUID-vkCmdDrawIndexed-dynamicRenderingUnusedAttachments-08914). ImGui doesn't depth-test
+	// its own draws either way (no depth/stencil state is set below), this only satisfies the
+	// "formats must match" rule for a pass that has one bound.
+	initInfo.PipelineInfoMain.PipelineRenderingCreateInfo.depthAttachmentFormat = context.depthFormat;
+
 	ImGui_ImplVulkan_Init(&initInfo);
+
+	// Build the panel set now that the ImGui Vulkan backend (ImGui_ImplVulkan_AddTexture and
+	// friends) is ready - the Scene/Game views create their offscreen viewport texture lazily,
+	// on their first Update() with a non-zero size, but they still need a live Renderer&
+	// reference to do it.
+	EditorManager::GetInstance().Init(renderer);
 
 	CRU_INFO("ImGui Successfully Initialized");
 }
 
-void Crucible::ImGuiManager::Update() {
+void Crucible::ImGuiManager::Update(float dt) {
 	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
 		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
 		ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
@@ -220,7 +236,7 @@ void Crucible::ImGuiManager::Update() {
 			currentPanel.second->m_rightClick = false;
 		}
 
-		currentPanel.second->Update();
+		currentPanel.second->Update(dt);
 	}
 }
 
@@ -252,6 +268,13 @@ void Crucible::ImGuiManager::ResetLayout() {
 }
 
 void Crucible::ImGuiManager::Exit() {
+	// Drop every panel (Scene/Game views included) while the Renderer and the ImGui Vulkan
+	// backend are still alive: EditorManager's s_Instance is a static-storage-duration object,
+	// so left to its own devices it would only be destroyed at static-teardown time - well after Core has already
+	// destroyed the Renderer and the window - and ViewportPanel::~ViewportPanel() needs both
+	// still alive to release its offscreen image / descriptor set / ImGui texture handle.
+	EditorManager::GetInstance().Shutdown();
+
 	ImGui_ImplVulkan_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
 	ImGui::DestroyContext();
@@ -259,27 +282,34 @@ void Crucible::ImGuiManager::Exit() {
 
 Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 {
-	// TODO: insert return statement here
 	if (s_Instance == nullptr)
 	{
 		s_Instance = std::make_unique<EditorManager>();
-
-		// Add in Editor Panels here...
-		// 
-		// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
-		s_Instance->m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>();
-		s_Instance->m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>();
-		s_Instance->m_panels[ImguiPanels::MENU] = std::make_shared<Menu>();
-		s_Instance->m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>();
-		s_Instance->m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>();
-		s_Instance->m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
-		s_Instance->m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
-		//s_Instance->m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();
-
-		for (auto& panel : s_Instance->m_panels)
-			panel.second->Init();
 	}
 	return *s_Instance;
+}
+
+void Crucible::EditorManager::Init(Renderer& renderer)
+{
+	// Add in Editor Panels here...
+	//
+	// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
+	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(renderer);
+	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(renderer);
+	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>();
+	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>();
+	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>();
+	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
+	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
+	//m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();
+
+	for (auto& panel : m_panels)
+		panel.second->Init();
+}
+
+void Crucible::EditorManager::Shutdown()
+{
+	m_panels.clear();
 }
 
 float Crucible::EditorPanel::PushFontSize(float const fontScale)

@@ -11,6 +11,7 @@
 #include <vector>
 #include <array>
 #include <deque>
+#include <unordered_map>
 #include <functional>
 
 // Crucible Engine
@@ -42,6 +43,24 @@ namespace Crucible {
             uint32_t     indexCount = 0;
         };
 
+        // An offscreen render target: its own color+depth image, camera, and per-frame-in-flight
+        // uniform buffer/descriptor set, so several can be drawn per frame with different cameras
+        // (Scene view vs. Game view) without stepping on each other's data.
+        struct Viewport {
+            vk::Extent2D        extent{};
+
+            VulkanImage         colorImage;
+            vk::raii::ImageView colorView = nullptr;
+            VulkanImage         depthImage;
+            vk::raii::ImageView depthView = nullptr;
+
+            Camera              camera;   // independent from the main m_camera and from other viewports
+
+            std::vector<VulkanBuffer>            uniformBuffers;
+            std::vector<void*>                   uniformBuffersMapped;
+            std::vector<vk::raii::DescriptorSet> descriptorSets;
+        };
+
     public:
         Renderer(WindowManager& window);
         void ShutDown();
@@ -70,6 +89,27 @@ namespace Crucible {
 
         MeshHandle            GetCubeMesh() const { return m_cubeMesh; }
 
+        // ---- Viewports (offscreen render targets for the Editor) ----
+        // The Engine/Game build never calls these, so m_viewports stays empty and
+        // RecordCommandBuffer takes the direct-to-window path with zero extra branching cost
+        // beyond a single empty-container check.
+        //
+        // Typical Editor-panel usage:
+        //     if (!m_viewport.IsValid()) m_viewport = renderer.CreateViewport(w, h);
+        //     if (panelResized) renderer.ResizeViewport(m_viewport, newW, newH);
+        //     ImGui::Image((ImTextureID)myCachedDescriptorSet, size);   // see note on AddTexture below
+        //     // on panel close / shutdown:
+        //     renderer.DestroyViewport(m_viewport);
+        ENGINE_API ViewportHandle CreateViewport(uint32_t width, uint32_t height);
+        ENGINE_API void           ResizeViewport(ViewportHandle handle, uint32_t width, uint32_t height);
+        ENGINE_API void           DestroyViewport(ViewportHandle handle);
+
+        ENGINE_API Camera&        GetViewportCamera(ViewportHandle handle);
+        // One sampler is shared by every viewport image (they're just being displayed, not
+        // filtered differently), so there is exactly one to hand to ImGui_ImplVulkan_AddTexture().
+        ENGINE_API vk::Sampler    GetViewportSampler() const { return *m_viewportSampler; }
+        ENGINE_API vk::ImageView  GetViewportColorView(ViewportHandle handle) const;
+
         // ---- Draw submission ----
         // Call once per visible object per frame (the ECS extraction step). The queue is
         // consumed and cleared at the end of Update().
@@ -84,7 +124,6 @@ namespace Crucible {
         void SetOverlayCallback(std::function<void()> cb) { m_overlayCallback = std::move(cb); }
 
         // Renderer data members accessors
-        VkDescriptorPool                GetVkDescriptorPool()   const { return *m_descriptorPool; }
         ENGINE_API ImGuiVulkanContext   GetImguiContext()       const;
         ENGINE_API vk::CommandBuffer    GetCurrentCommandBuff() const;
 
@@ -113,6 +152,13 @@ namespace Crucible {
         vk::raii::DescriptorPool                m_descriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet>    m_descriptorSets;
 
+        // Viewports (see ViewportHandle). Empty in a standalone Engine/Game build.
+        static constexpr uint32_t                  kMaxViewports = 8;
+        std::unordered_map<uint32_t, Viewport>     m_viewports;
+        uint32_t                                   m_nextViewportId = 0;
+        vk::raii::DescriptorPool                   m_viewportDescriptorPool = nullptr;
+        vk::raii::Sampler                          m_viewportSampler = nullptr;
+
         // Pending async mesh uploads (see CreateMeshAsync).
         struct PendingMeshUpload { MeshHandle handle; MeshData data; };
         std::deque<PendingMeshUpload> m_pendingMeshUploads;
@@ -126,6 +172,19 @@ namespace Crucible {
         void SubmitDemoScene();
         void ProcessPendingMeshUploads();
         void UploadMesh(MeshHandle handle, const MeshData& data);
+
+        // Records the bind-and-draw loop over m_renderQueue against whatever color/depth
+        // attachments are currently bound (the swapchain, or a Viewport). Shared by the direct-
+        // to-window path and the offscreen-viewport path so they can never drift apart.
+        void DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet);
+
+        void CreateViewportSampler();
+        void CreateViewportDescriptorPool();
+        void CreateViewportImages(Viewport& vp, uint32_t width, uint32_t height);
+        void CreateViewportUniformsAndDescriptors(Viewport& vp);
+        void UpdateViewportUniforms(Viewport& vp, uint32_t frameIndex);
+        Viewport& GetViewportOrThrow(ViewportHandle handle);
+        const Viewport& GetViewportOrThrow(ViewportHandle handle) const;
 
         void CreateTextureImage(const std::string&);
         void CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);

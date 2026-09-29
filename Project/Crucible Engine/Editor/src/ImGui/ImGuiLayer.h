@@ -16,12 +16,12 @@ namespace Crucible {
 	public:
 		explicit ImGuiLayer(Renderer& ren) : m_context{ ren.GetImguiContext()}, m_ren{ren} {}
 
-		void OnAttach() override { ImGuiManager::Init(m_context); }
+		void OnAttach() override { ImGuiManager::Init(m_context, m_ren); }
 
 		// Build the UI for this frame (no GPU work yet).
-		void OnUpdate(float) override {
+		void OnUpdate(float dt) override {
 			ImGuiManager::BeginFrame();
-			ImGuiManager::Update();
+			ImGuiManager::Update(dt);
 			ImGuiManager::Render();
 		}
 

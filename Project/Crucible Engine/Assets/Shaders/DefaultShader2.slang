@@ -44,7 +44,7 @@ VSOutput vertMain(VSInput input) {
 
 [shader("fragment")]
 float4 fragMain(VSOutput inVert) : SV_Target {
-    float3 lightDir = normalize(float3(0.5, 1.0, 0.3));
+    float3 lightDir  = normalize(float3(0.2, 0.8, 0.5));
     float  nDotL     = max(dot(normalize(inVert.normalWS), lightDir), 0.0);
     float3 ambient   = inVert.color * 0.25;
     float3 diffuse   = inVert.color * nDotL * 0.85;

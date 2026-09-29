@@ -39,8 +39,13 @@ namespace Crucible {
 
 	class EditorPanel {
 	public:
+		virtual ~EditorPanel() = default;
+
 		virtual void Init() = 0;
-		virtual void Update() = 0;
+		// dt: seconds since last frame. Panels that don't need it just ignore the parameter
+		// (e.g. `void Update(float) override { ... }`); the Scene/Game viewport panels need it
+		// to drive the editor fly-camera at a frame-rate-independent speed.
+		virtual void Update(float dt) = 0;
 
 		std::string m_panelName;
 		ImGuiWindowFlags m_flags{};
@@ -91,6 +96,21 @@ namespace Crucible {
 	class EditorManager {
 	public:
 		static EditorManager& GetInstance();
+
+		// Builds the panel set. Call once, from ImGuiManager::Init(), after the ImGui Vulkan
+		// backend is ready - the Scene/Game views need a live Renderer& to construct their
+		// ViewportPanel (see ImGuiPanel_SceneView.h / ImGuiPanel_GameView.h).
+		void Init(Renderer& renderer);
+
+		// Drops every panel (and, with them, any GPU-owning members like ViewportPanel) while
+		// the Renderer and the ImGui Vulkan backend are still alive. MUST be called from
+		// ImGuiManager::Exit() before ImGui_ImplVulkan_Shutdown(): EditorManager itself is a
+		// static-storage-duration object (see s_Instance), so without this its panels would otherwise
+		// only be destroyed at static-teardown time - after Core has already destroyed the
+		// Renderer and the window, which would leave ViewportPanel::Shutdown() reaching into
+		// dead objects.
+		void Shutdown();
+
 		std::map<ImguiPanels, std::shared_ptr<EditorPanel>> m_panels;
 
 		// This function assumes the caller gives the correct type.
@@ -108,8 +128,8 @@ namespace Crucible {
 	};
 
 	namespace ImGuiManager {
-		void Init(const ImGuiVulkanContext& context);
-		void Update();
+		void Init(const ImGuiVulkanContext& context, Renderer& renderer);
+		void Update(float dt);
 		void BeginFrame();
 		void Render();                    // finalize the UI (call once per frame, from Layer::OnUpdate)
 		void Draw(Renderer& ren);		  // record draw commands (call from Layer::OnRender, render pass open)

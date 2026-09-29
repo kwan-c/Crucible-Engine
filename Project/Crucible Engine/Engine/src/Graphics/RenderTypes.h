@@ -9,6 +9,22 @@
 namespace Crucible {
 
     // ------------------------------------------------------------------------------------------ //
+    //  Viewports (offscreen render targets)
+    // ------------------------------------------------------------------------------------------ //
+
+    // Opaque handle to an offscreen render target the Renderer draws the scene into, so it can be
+    // displayed inside an ImGui panel (Scene view, Game view, asset thumbnails, ...) instead of
+    // going straight to the window. The Renderer knows nothing about ImGui; it just exposes the
+    // resulting sampled image + sampler for whoever owns the handle to hand to
+    // ImGui_ImplVulkan_AddTexture().
+    struct ViewportHandle {
+        static constexpr uint32_t Invalid = 0xFFFFFFFFu;
+        uint32_t id = Invalid;
+        bool IsValid() const { return id != Invalid; }
+        friend bool operator==(ViewportHandle a, ViewportHandle b) { return a.id == b.id; }
+    };
+
+    // ------------------------------------------------------------------------------------------ //
     //  Mesh resources
     // ------------------------------------------------------------------------------------------ //
 
@@ -65,14 +81,14 @@ namespace Crucible {
             };
             return MeshData{
                 {
-                    v({-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}),
-                    v({ 0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}),
-                    v({ 0.5f,  0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}),
-                    v({-0.5f,  0.5f, -0.5f}, {0.0f, 0.5f, 0.8f}),
-                    v({-0.5f, -0.5f,  0.5f}, {0.8f, 0.0f, 0.8f}),
-                    v({ 0.5f, -0.5f,  0.5f}, {0.0f, 0.8f, 0.5f}),
-                    v({ 0.5f,  0.5f,  0.5f}, {0.8f, 0.8f, 0.0f}),
-                    v({-0.5f,  0.5f,  0.5f}, {1.0f, 0.0f, 0.0f})
+                    v({-0.5f, -0.5f, -0.5f}, {0.1f, 0.5f, 0.5f}),
+                    v({ 0.5f, -0.5f, -0.5f}, {0.1f, 0.5f, 0.5f}),
+                    v({ 0.5f,  0.5f, -0.5f}, {0.1f, 0.5f, 0.5f}),
+                    v({-0.5f,  0.5f, -0.5f}, {0.1f, 0.5f, 0.5f}),
+                    v({-0.5f, -0.5f,  0.5f}, {0.1f, 0.5f, 0.5f}),
+                    v({ 0.5f, -0.5f,  0.5f}, {0.1f, 0.5f, 0.5f}),
+                    v({ 0.5f,  0.5f,  0.5f}, {0.1f, 0.5f, 0.5f}),
+                    v({-0.5f,  0.5f,  0.5f}, {0.1f, 0.5f, 0.5f})
                 },
                 {
                     0, 3, 2,  0, 2, 1,   // back   (z = -0.5)
