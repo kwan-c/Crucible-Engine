@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -26,7 +26,8 @@
 	* -v1.1       Transform rotation/scale; WorldTransform and HierarchyNode;
 	*             mandatory base components (Transform, WorldTransform,
 	*             HierarchyNode)
-	*
+	* -v1.2       GLM: Transform's identity rotation is a constant (w, x, y, z)
+	*             instead of an Euler-angle constructor
 	*
 	**************************************************************************/
 #pragma once
@@ -45,8 +46,8 @@ namespace Crucible
 	 *************************************************************************/
 	struct Transform
 	{
-		Math::vec3  positions{0.f,0.f,0.f};								// local: relative to the parent (or the world, for a root)
-		Math::quat  rotation = Math::quat(Math::vec3(0.f, 0.f, 0.f));
+		Math::vec3  positions{0.f,0.f,0.f};                   // local: relative to the parent (or the world, for a root)
+		Math::quat  rotation{ 1.f, 0.f, 0.f, 0.f };           // identity - glm::quat takes (w, x, y, z)
 		Math::vec3  scale{ 1.f,1.f,1.f };
 	};
 
