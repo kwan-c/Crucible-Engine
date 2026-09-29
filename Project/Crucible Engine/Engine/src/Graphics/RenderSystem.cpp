@@ -4,9 +4,9 @@
 #include <stdexcept>
 #include <iostream>
 #include <cstdint>
-#include <limits>   // numeric_limits
-#include <algorithm>    // clamp
-#include <chrono>
+#include <cstring>      // memcpy
+#include <limits>       // numeric_limits
+#include <algorithm>    // clamp, stable_sort
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -28,27 +28,41 @@ namespace Crucible {
 
         CreateTextureImage("../../../Assets/Textures/Orange_Milk.jpg");
 
-        CreateVertexBuffer();
-        CreateIndexBuffer();
         CreateUniformBuffers();
 
         CreateDescriptorPool();
         CreateDescriptorSets();
+
+        // Built-in mesh so there is always something to draw / test with.
+        m_cubeMesh = CreateMesh(Primitives::MakeCube());
+        m_renderQueue.reserve(1024);
     }
 
     void Renderer::ShutDown() { m_context.ShutDown(); }
 
     void Renderer::Update(float dt) {
-        (void)dt;
+
+        m_time += dt;
+
+        // Finish a few queued async mesh uploads (see CreateMeshAsync) before drawing this frame.
+        ProcessPendingMeshUploads();
 
         // QUERY & CULL
+        //   (Frustum culling would go here: m_camera.GetViewProjection() gives you the planes.)
 
         // POPULATE RENDER QUEUE
+        //   The ECS extraction system calls Submit() before Update(). The demo scene is a stand-in.
+        if (m_demoScene) { SubmitDemoScene(); }
 
         // SORT & BATCH
+        //   Group by mesh so each mesh's vertex/index buffers are bound once per frame.
+        std::stable_sort(m_renderQueue.begin(), m_renderQueue.end(),
+            [](const RenderItem& a, const RenderItem& b) { return a.mesh < b.mesh; });
 
         // EXECUTE GRAPHICS CALLS
         DrawFrame();
+
+        m_renderQueue.clear();
 
     }   // Renderer::Update()
 
@@ -58,7 +72,7 @@ namespace Crucible {
         FrameContext fc = m_frameManager.BeginFrame(m_context, m_swapchain, err);
         if (err) { return; }
 
-        UpdateUniformBuffer(m_frameManager.GetFrameIndex());
+        UpdateFrameUniforms(m_frameManager.GetFrameIndex());
 
         // Record and submit command buffer.
         RecordCommandBuffer(fc);
@@ -67,21 +81,43 @@ namespace Crucible {
 
     }   // Renderer::DrawFrame()
 
-    void Renderer::UpdateUniformBuffer(uint32_t frameIndex) {
+    void Renderer::Submit(MeshHandle mesh, const glm::mat4& model) {
 
-        static auto startTime   = std::chrono::high_resolution_clock::now();
-        auto currentTime        = std::chrono::high_resolution_clock::now();
-        float time              = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+        m_renderQueue.push_back(RenderItem{ mesh, model });
 
-        UniformBufferObject ubo{};
-        ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.model = rotate(ubo.model, time * glm::radians(45.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-        ubo.view = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-        ubo.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(m_swapchain.GetExtent().width) / static_cast<float>(m_swapchain.GetExtent().height), 0.1f, 10.0f);
+    }   // Renderer::Submit()
+
+    void Renderer::UpdateFrameUniforms(uint32_t frameIndex) {
+
+        // Keep the projection in sync with the swapchain (handles window resize; skips minimised 0-height).
+        const vk::Extent2D extent = m_swapchain.GetExtent();
+        m_camera.SetAspect(static_cast<float>(extent.width), static_cast<float>(extent.height));
+
+        FrameUniforms ubo{};
+        ubo.view = m_camera.GetView();
+        ubo.proj = m_camera.GetProjection();
 
         memcpy(m_uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
 
-    }   // Renderer::UpdateUniformBuffer()
+    }   // Renderer::UpdateFrameUniforms()
+
+    void Renderer::SubmitDemoScene() {
+
+        // 7x7 grid of cubes on the XZ plane, each spinning at a slightly different phase.
+        constexpr int   half    = 3;
+        constexpr float spacing = 2.0f;
+
+        for (int x = -half; x <= half; ++x) {
+            for (int z = -half; z <= half; ++z) {
+                const float phase = static_cast<float>(x * 7 + z * 3);
+                glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(x * spacing, 0.0f, z * spacing));
+                model = glm::rotate(model, (m_time + phase) * glm::radians(8.0f), glm::vec3(0.0f, 1.0f, 0.0f));
+                model = glm::rotate(model, (m_time + phase) * glm::radians(4.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+                Submit(m_cubeMesh, model);
+            }
+        }
+
+    }   // Renderer::SubmitDemoScene()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  VULKAN SET-UP FUNCTIONS
@@ -120,6 +156,8 @@ namespace Crucible {
         // Before starting rendering, transition the swapchain image to vk::ImageLayout::eColorAttachmentOptimal
         TransitionImageLayout(
             fc,
+            m_swapchain.GetImages()[fc.imageIndex],
+            vk::ImageAspectFlagBits::eColor,
             vk::ImageLayout::eUndefined,
             vk::ImageLayout::eColorAttachmentOptimal,
             {},                                                        // srcAccessMask (no need to wait for previous operations)
@@ -128,8 +166,22 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eColorAttachmentOutput         // dstStage
         );
 
+        // Depth content is fully discarded and re-cleared every frame, so there's nothing to
+        // preserve; go straight from eUndefined to eDepthAttachmentOptimal.
+        TransitionImageLayout(
+            fc,
+            m_swapchain.GetDepthImage(),
+            vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eUndefined,
+            vk::ImageLayout::eDepthAttachmentOptimal,
+            {},
+            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests
+        );
+
         vk::ClearValue              clearColor = vk::ClearColorValue(0.5f, 0.0f, 0.1f, 1.0f);
-        vk::RenderingAttachmentInfo attachmentInfo = {
+        vk::RenderingAttachmentInfo colorAttachmentInfo = {
             .imageView = m_swapchain.GetImageViews()[fc.imageIndex],
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
             .loadOp = vk::AttachmentLoadOp::eClear,
@@ -137,11 +189,21 @@ namespace Crucible {
             .clearValue = clearColor
         };
 
+        vk::ClearValue              clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
+        vk::RenderingAttachmentInfo depthAttachmentInfo = {
+            .imageView = m_swapchain.GetDepthImageView(),
+            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+            .loadOp = vk::AttachmentLoadOp::eClear,
+            .storeOp = vk::AttachmentStoreOp::eDontCare,   // depth isn't needed after this frame
+            .clearValue = clearDepth
+        };
+
         vk::RenderingInfo renderingInfo = {
             .renderArea = {.offset = {0, 0}, .extent = m_swapchain.GetExtent()},
             .layerCount = 1,
             .colorAttachmentCount = 1,
-            .pColorAttachments = &attachmentInfo
+            .pColorAttachments = &colorAttachmentInfo,
+            .pDepthAttachment = &depthAttachmentInfo
         };
 
         fc.frame.commandBuffer.beginRendering(renderingInfo);
@@ -149,11 +211,30 @@ namespace Crucible {
         fc.frame.commandBuffer.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
         fc.frame.commandBuffer.setViewport(0, vk::Viewport(0.0f, static_cast<float>(m_swapchain.GetExtent().height), static_cast<float>(m_swapchain.GetExtent().width), -static_cast<float>(m_swapchain.GetExtent().height), 0.0f, 1.0f));
         fc.frame.commandBuffer.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), m_swapchain.GetExtent()));
-        
-        fc.frame.commandBuffer.bindVertexBuffers(0, *m_vertexBuffer.GetBuffer(), {0});
-        fc.frame.commandBuffer.bindIndexBuffer(*m_indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+
+        // Camera data (view/proj) is bound once for the whole frame.
         fc.frame.commandBuffer.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.GetLayout(), 0, *m_descriptorSets[m_frameManager.GetFrameIndex()], nullptr);
-        fc.frame.commandBuffer.drawIndexed(static_cast<uint32_t>(indices.size()), 1, 0, 0, 0);
+
+        // Draw every submitted object. Queue is sorted by mesh, so buffers rebind only on change.
+        MeshHandle boundMesh;   // starts Invalid
+        for (const RenderItem& item : m_renderQueue) {
+
+            if (!item.mesh.IsValid() || item.mesh.id >= m_meshes.size()) { continue; }
+            const GpuMesh& mesh = m_meshes[item.mesh.id];
+            if (mesh.indexCount == 0) { continue; }   // still uploading (CreateMeshAsync); skip for now
+
+            if (!(item.mesh == boundMesh)) {
+                fc.frame.commandBuffer.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), {0});
+                fc.frame.commandBuffer.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+                boundMesh = item.mesh;
+            }
+
+            // Per-object model matrix goes in a push constant (recorded into the command buffer,
+            // so there are no per-frame-in-flight synchronisation concerns).
+            PushConstants pc{ item.model };
+            fc.frame.commandBuffer.pushConstants<PushConstants>(m_pipeline.GetLayout(), vk::ShaderStageFlagBits::eVertex, 0, pc);
+            fc.frame.commandBuffer.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
+        }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
         if (m_overlayCallback) m_overlayCallback();
@@ -163,6 +244,8 @@ namespace Crucible {
         // After rendering, transition the swapchain image to vk::ImageLayout::ePresentSrcKHR
         TransitionImageLayout(
             fc,
+            m_swapchain.GetImages()[fc.imageIndex],
+            vk::ImageAspectFlagBits::eColor,
             vk::ImageLayout::eColorAttachmentOptimal,
             vk::ImageLayout::ePresentSrcKHR,
             vk::AccessFlagBits2::eColorAttachmentWrite,             // srcAccessMask
@@ -174,30 +257,64 @@ namespace Crucible {
 
     }   // Renderer::RecordCommandBuffer()
 
-    void Renderer::CreateVertexBuffer() {
+    MeshHandle Renderer::CreateMesh(const MeshData& data) {
 
-        vk::DeviceSize bufferSize = sizeof(vertices[0])* vertices.size();
-        m_vertexBuffer.Create(m_context, bufferSize,
-            vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, 
+        MeshHandle handle{ static_cast<uint32_t>(m_meshes.size()) };
+        m_meshes.emplace_back();       // reserve slot (indexCount == 0 => not yet renderable)
+        UploadMesh(handle, data);      // ... filled in synchronously, right here
+        return handle;
+
+    }   // Renderer::CreateMesh()
+
+    MeshHandle Renderer::CreateMeshAsync(MeshData data) {
+
+        MeshHandle handle{ static_cast<uint32_t>(m_meshes.size()) };
+        m_meshes.emplace_back();       // reserve slot; RecordCommandBuffer skips it until uploaded
+        m_pendingMeshUploads.push_back({ handle, std::move(data) });
+        return handle;
+
+    }   // Renderer::CreateMeshAsync()
+
+    void Renderer::ProcessPendingMeshUploads() {
+
+        for (uint32_t n = 0; n < kMaxMeshUploadsPerFrame && !m_pendingMeshUploads.empty(); ++n) {
+            PendingMeshUpload pending = std::move(m_pendingMeshUploads.front());
+            m_pendingMeshUploads.pop_front();
+            UploadMesh(pending.handle, pending.data);
+        }
+
+    }   // Renderer::ProcessPendingMeshUploads()
+
+    void Renderer::UploadMesh(MeshHandle handle, const MeshData& data) {
+
+        if (data.vertices.empty() || data.indices.empty()) {
+            throw std::runtime_error("[Renderer] UploadMesh: mesh has no vertices or indices");
+        }
+
+        GpuMesh mesh;
+
+        vk::DeviceSize vbSize = sizeof(Vertex) * data.vertices.size();
+        mesh.vertexBuffer.Create(m_context, vbSize,
+            vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-        m_vertexBuffer.UploadStaging(m_context, vertices.data(), bufferSize, m_frameManager.GetCommandPool());
+        mesh.vertexBuffer.UploadStaging(m_context, data.vertices.data(), vbSize, m_frameManager.GetCommandPool());
 
-    }   // Renderer::CreateVertexBuffer()
-
-    void Renderer::CreateIndexBuffer() {
-
-        vk::DeviceSize bufferSize = sizeof(indices[0]) * indices.size();
-        m_indexBuffer.Create(m_context, bufferSize, 
-            vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst, 
+        vk::DeviceSize ibSize = sizeof(uint32_t) * data.indices.size();
+        mesh.indexBuffer.Create(m_context, ibSize,
+            vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-        m_indexBuffer.UploadStaging(m_context, indices.data(), bufferSize, m_frameManager.GetCommandPool());
+        mesh.indexBuffer.UploadStaging(m_context, data.indices.data(), ibSize, m_frameManager.GetCommandPool());
 
-    }   // Renderer::CreateIndexBuffer()
+        mesh.indexCount = static_cast<uint32_t>(data.indices.size());
+
+        m_meshes[handle.id] = std::move(mesh);
+
+    }   // Renderer::UploadMesh()
 
     void Renderer::CreateUniformBuffers() {
 
         for (uint32_t i = 0; i < m_frameManager.MaxFramesInFlight(); ++i) {
-            vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+            vk::DeviceSize bufferSize = sizeof(FrameUniforms);
             m_uniformBuffers.emplace_back();
             m_uniformBuffers.back().Create(m_context, bufferSize,
                 vk::BufferUsageFlagBits::eUniformBuffer,
@@ -237,7 +354,7 @@ namespace Crucible {
             vk::DescriptorBufferInfo bufferInfo{ 
                 .buffer = m_uniformBuffers[i].GetBuffer(),
                 .offset = 0, 
-                .range  = sizeof(UniformBufferObject) };
+                .range  = sizeof(FrameUniforms) };
 
             vk::WriteDescriptorSet   descriptorWrite{ 
                 .dstSet             = m_descriptorSets[i],
@@ -361,7 +478,8 @@ namespace Crucible {
 
     }   // Renderer::TransitionImageLayout_I()
 
-    void Renderer::TransitionImageLayout(FrameContext fc, vk::ImageLayout old_layout, vk::ImageLayout new_layout,
+    void Renderer::TransitionImageLayout(FrameContext fc, vk::Image image, vk::ImageAspectFlags aspectMask,
+        vk::ImageLayout old_layout, vk::ImageLayout new_layout,
         vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
         vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask) {
 
@@ -374,9 +492,9 @@ namespace Crucible {
             .newLayout = new_layout,
             .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
             .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = m_swapchain.GetImages()[fc.imageIndex],
+            .image = image,
             .subresourceRange = {
-                   .aspectMask = vk::ImageAspectFlagBits::eColor,
+                   .aspectMask = aspectMask,
                    .baseMipLevel = 0,
                    .levelCount = 1,
                    .baseArrayLayer = 0,

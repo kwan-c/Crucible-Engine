@@ -1,5 +1,7 @@
 #include "VulkanSwapchain.h"
 
+#include <array>
+
 namespace Crucible {
 
     // ------------------------------------------------------------------------------------------------------------- //
@@ -14,6 +16,10 @@ namespace Crucible {
     vk::SurfaceFormatKHR                    VulkanSwapchain::GetSurfaceFormat()         const { return m_surfaceFormat; }
     VkFormat                                VulkanSwapchain::GetColorAttachmentFormat() const { return m_colorAttachmentFormat; }
 
+    vk::Image                                VulkanSwapchain::GetDepthImage()             const { return m_depthImage.GetImage(); }
+    const vk::raii::ImageView&              VulkanSwapchain::GetDepthImageView()        const { return m_depthImageView; }
+    vk::Format                              VulkanSwapchain::GetDepthFormat()           const { return m_depthFormat; }
+
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN SWAPCHAIN
     // ------------------------------------------------------------------------------------------------------------- //
@@ -22,6 +28,7 @@ namespace Crucible {
 
         CreateSwapchain(context);
         CreateImageViews(context);
+        CreateDepthResources(context);
 
     }   // VulkanSwapchain::VulkanSwapchain()
 
@@ -45,11 +52,13 @@ namespace Crucible {
 
         CreateSwapchain(context);
         CreateImageViews(context);
+        CreateDepthResources(context);
 
     }   // VulkanSwapchain::Recreate()
 
     void VulkanSwapchain::CleanUp() {
 
+        m_depthImageView = nullptr;
         m_imageViews.clear();
         m_swapchain = nullptr;
 
@@ -107,6 +116,31 @@ namespace Crucible {
 
     }   // VulkanSwapchain::CreateImageViews()
 
+    void VulkanSwapchain::CreateDepthResources(VulkanContext& context) {
+
+        m_depthFormat = ChooseDepthFormat(context);
+
+        // One depth image sized to the current extent; recreated alongside the swapchain on resize.
+        m_depthImage.Create(context, m_extent.width, m_extent.height,
+            m_depthFormat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+
+        vk::ImageViewCreateInfo viewInfo{
+            .image = m_depthImage.GetImage(),
+            .viewType = vk::ImageViewType::e2D,
+            .format = m_depthFormat,
+            .subresourceRange = {
+                .aspectMask = vk::ImageAspectFlagBits::eDepth,
+                .levelCount = 1,
+                .layerCount = 1
+            }
+        };
+        m_depthImageView = vk::raii::ImageView(context.GetDevice(), viewInfo);
+
+    }   // VulkanSwapchain::CreateDepthResources()
+
     vk::SurfaceFormatKHR VulkanSwapchain::ChooseSurfaceFormat(std::vector<vk::SurfaceFormatKHR> const& formats) {
 
         assert(!formats.empty());
@@ -144,6 +178,24 @@ namespace Crucible {
         };
 
     }   // VulkanSwapchain::ChooseExtent()
+
+    vk::Format VulkanSwapchain::ChooseDepthFormat(VulkanContext& context) {
+
+        // Preference order: pure 32-bit depth first (no wasted stencil bits), then the packed
+        // depth+stencil formats that are more broadly supported on older/mobile hardware.
+        constexpr std::array<vk::Format, 3> candidates = {
+            vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint
+        };
+
+        for (vk::Format format : candidates) {
+            vk::FormatProperties props = context.GetPhysicalDevice().getFormatProperties(format);
+            if (props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eDepthStencilAttachment) {
+                return format;
+            }
+        }
+        throw std::runtime_error("[Renderer | Swapchain] Failed to find a supported depth format.");
+
+    }   // VulkanSwapchain::ChooseDepthFormat()
 
     uint32_t VulkanSwapchain::ChooseMinImageCount(const vk::SurfaceCapabilitiesKHR& surfaceCapabilities) {
 
