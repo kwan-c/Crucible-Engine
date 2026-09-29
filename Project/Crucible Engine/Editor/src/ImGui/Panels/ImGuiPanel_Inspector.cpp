@@ -14,7 +14,7 @@ void Crucible::Inspector::Init() {
 	m_dockRatio = 0.25f;
 }
 
-void Crucible::Inspector::Update() {
+void Crucible::Inspector::Update(float) {
 	if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		if (m_draw) m_draw();
 		else ImGui::TextDisabled("Nothing selected");

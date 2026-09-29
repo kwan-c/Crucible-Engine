@@ -53,6 +53,12 @@ namespace Crucible {
         KP0, KP1, KP2, KP3, KP4, KP5, KP6, KP7, KP8, KP9,
         KPDecimal, KPDivide, KPMultiply, KPSubtract, KPAdd, KPEnter, KPEqual,
 
+        // Mouse buttons. They are KeyCodes on purpose: one bitset, one set of queries,
+        // and a binding can name a mouse button anywhere it can name a key. Unity's
+        // old KeyCode does the same thing with Mouse0..Mouse6.
+        MouseLeft, MouseRight, MouseMiddle,
+        MouseButton4, MouseButton5, MouseButton6, MouseButton7, MouseButton8,
+
         Count    // must stay last - this is the bitset size
 
     };  // KEYCODE ENUM
@@ -66,6 +72,18 @@ namespace Crucible {
         The matching KeyCode, or KeyCode::Unknown for keys we do not track.
     */
     KeyCode KeyCodeFromGlfw(const int& glfwKey);
+
+    /*!
+        \brief
+        Translates a raw GLFW mouse-button value into a Crucible KeyCode.
+        \param glfwButton
+        A GLFW_MOUSE_BUTTON_* value as delivered by the mouse-button callback.
+        \return
+        The matching KeyCode, or KeyCode::Unknown for buttons we do not track.
+        NOTE: separate from KeyCodeFromGlfw because GLFW numbers buttons from zero in
+        their own space - a button value and a key value are not comparable.
+    */
+    KeyCode KeyCodeFromGlfwMouseButton(const int& glfwButton);
 
     /*!
         \brief

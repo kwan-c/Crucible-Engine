@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 September 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Implementation of CommandBuffer's chunk management,
 *                DestroyEntity/SpawnEntity queuing, and Execute()/
@@ -49,10 +49,17 @@
 *    -v1.3       Execute() rolls back spawns whose add hooks never ran when
 *                it throws (DiscardUnnotifiedSpawns); spawn epoch bumped on
 *                reset/move so stale EntitySpawn handles are rejected
+*    -v1.4       SetParent/DetachChildren/SetSiblingIndex/WithParent
+*                commands (logged and skipped when refused, never thrown);
+*                rollback unlinks a parented spawn before removing it
 *
 **************************************************************************/
 
 #include "CommandBuffer.h"
+
+#include <string>
+
+#include <Diagnostics/Logger.h>
 
 namespace Crucible
 {
@@ -120,6 +127,83 @@ namespace Crucible
 				world.DestroyEntity(p->entity);
 			},
 			Payload{ entity });
+	}
+
+	void CommandBuffer::SetParent(Entity child, Entity parent, bool worldPositionStays)
+	{
+		struct Payload { Entity child; Entity parent; bool worldPositionStays; };
+
+		Emplace<Payload>(
+			[](std::byte* raw, World& world, CommandBuffer&)
+			{
+				const Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				const ParentResult result = world.TrySetParent(p->child, p->parent, p->worldPositionStays);
+				// A child destroyed earlier in the same flush is a normal race, not a bug.
+				if (result != ParentResult::Ok && result != ParentResult::DeadChild)
+					CRU_WARN("CommandBuffer::SetParent skipped: {}", ToString(result));
+			},
+			Payload{ child, parent, worldPositionStays });
+	}
+
+	void CommandBuffer::DetachChildren(Entity parent)
+	{
+		struct Payload { Entity parent; };
+
+		Emplace<Payload>(
+			[](std::byte* raw, World& world, CommandBuffer&)
+			{
+				const Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				if (!world.IsAlive(p->parent)) return;
+				// Refused as a whole (a child can't keep its world transform): log, don't fail the system.
+				try { world.DetachChildren(p->parent); }
+				catch (const std::invalid_argument& e) { CRU_WARN("CommandBuffer::DetachChildren skipped: {}", e.what()); }
+			},
+			Payload{ parent });
+	}
+
+	void CommandBuffer::SetSiblingIndex(Entity entity, std::uint32_t index)
+	{
+		struct Payload { Entity entity; std::uint32_t index; };
+
+		Emplace<Payload>(
+			[](std::byte* raw, World& world, CommandBuffer&)
+			{
+				const Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				if (world.IsAlive(p->entity)) world.SetSiblingIndex(p->entity, p->index);
+			},
+			Payload{ entity, index });
+	}
+
+	void CommandBuffer::RequireLiveSpawn(std::uint32_t token, std::uint32_t epoch, const char* operation) const
+	{
+		// A handle kept past Execute()/Clear()/move would otherwise write into
+		// whichever spawn now owns the same token.
+		if (epoch != m_spawnEpoch || token >= m_spawnSignatures.size())
+		{
+			throw std::logic_error(std::string("CommandBuffer::EntitySpawn::") + operation +
+				" - spawn handle used after the buffer was executed or cleared");
+		}
+	}
+
+	void CommandBuffer::RecordSpawnParent(std::uint32_t token, std::uint32_t epoch, Entity parent, bool worldPositionStays)
+	{
+		RequireLiveSpawn(token, epoch, "WithParent");
+
+		struct Payload { std::uint32_t token; Entity parent; bool worldPositionStays; };
+
+		Emplace<Payload>(
+			[](std::byte* raw, World& world, CommandBuffer& commands)
+			{
+				const Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				const Entity child = commands.GetSpawnedEntity(p->token);
+				if (!world.IsAlive(child)) return;
+				// Only links (and the local Transform) change: the spawn already has its
+				// HierarchyNode, so it stays in the archetype it was created in.
+				const ParentResult result = world.TrySetParent(child, p->parent, p->worldPositionStays);
+				if (result != ParentResult::Ok)
+					CRU_WARN("CommandBuffer::EntitySpawn::WithParent skipped: {}", ToString(result));
+			},
+			Payload{ token, parent, worldPositionStays });
 	}
 
 	// Reserves the next spawn token and its (initially empty) final
@@ -300,6 +384,10 @@ namespace Crucible
 
 			try
 			{
+				// No hooks run for a rolled-back spawn, including the one that normally
+				// unlinks a destroyed entity - so unlink it here, or a WithParent() parent
+				// would keep a dead child. A spawn has no children (nothing can name it).
+				world.DetachFromParent(spawned);
 				world.DestroyEntityImpl(spawned, false);
 			}
 			catch (...)

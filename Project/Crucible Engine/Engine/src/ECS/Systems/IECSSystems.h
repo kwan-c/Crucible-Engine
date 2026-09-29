@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.3
+* \version       1.6
 * \brief
 *                Declares IECSSystem: the base interface every ECS
 *                system (physics, rendering, audio, ...) must implement
@@ -27,6 +27,13 @@
 *                (access, affinity, RunAfter/RunBefore) for the scheduler
 *    -v1.3       RunAfter/RunBefore are required dependencies; optional
 *                ones use RunAfterIfPresent/RunBeforeIfPresent
+*    -v1.4       added the Update(World&, SystemContext&) overload for event
+*                outboxes; Update(World&, CommandBuffer&) keeps its
+*                signature and now has an empty default
+*    -v1.5       SystemContext carries an EventWriter (explicit
+*                EmitEngine/EmitNetwork) instead of per-bus outboxes
+*    -v1.6       SystemDesc::EmitsGameplayEvents() - the declaration that
+*                authorises ctx.events.EmitGameplay for a system
 *
 **************************************************************************/
 #pragma once
@@ -39,6 +46,7 @@
 
 #include "CommandBuffer.h"
 #include "SystemAccess.h"
+#include "SystemContext.h"
 
 
 namespace Crucible
@@ -59,8 +67,8 @@ namespace Crucible
 	{
 		PreUpdate,    // input, network receive
 		Update,       // main per-frame logic - default stage for every system
-		PostUpdate,   // physics, transform propagation
-		PreRender,    // render extraction
+		PostUpdate,   // physics
+		PreRender,    // transform propagation (first), then render extraction
 		Count
 	};
 
@@ -98,6 +106,10 @@ namespace Crucible
 		int            priority = 0;                           // lower runs first among ready systems
 		SystemAccess   access;
 		SystemAffinity affinity = SystemAffinity::MainThread;
+
+		// true = this system owns gameplay decisions and may use ctx.events.EmitGameplay(...).
+		// Native engine systems leave it false: gameplay events come from scripting.
+		bool emitsGameplayEvents = false;
 
 		std::vector<SystemDependency> runAfter;    // systems that must run before this one
 		std::vector<SystemDependency> runBefore;   // systems that must run after this one
@@ -214,6 +226,19 @@ namespace Crucible
 			affinity = value;
 			return *this;
 		}
+
+		/*********************************************************************
+		 \brief  Allows this system to use ctx.events.EmitGameplay(...).
+		 \details Gameplay decisions belong to the scripting layer, so this
+				  is meant for the script bridge (or another system that
+				  genuinely owns gameplay decisions) - not for native engine
+				  systems. Without it, EmitGameplay throws std::logic_error.
+		 *********************************************************************/
+		SystemDesc& EmitsGameplayEvents()
+		{
+			emitsGameplayEvents = true;
+			return *this;
+		}
 	};
 
 	// base system class for ecs
@@ -248,14 +273,45 @@ namespace Crucible
 		virtual void Init() {}
 
 		/*********************************************************************
-		 \brief  Runs this system's per-frame logic over a World.
+		 \brief  Runs this system's per-frame logic over a World - the
+				 original entry point, used by systems that don't send
+				 events.
 		 \param[in,out] world The world to read/modify.
 		 \param[in,out] commands This system's own CommandBuffer; anything
 				queued here is applied at the end of the system's stage.
-		 \note  Pure virtual - every concrete system must implement this.
+		 \note  Override EITHER this OR Update(World&, SystemContext&).
 				Frame delta time is available through World::DeltaTime().
+				(It used to be pure virtual; it now has an empty default so
+				systems that only override the context version still
+				compile. Existing overrides are unaffected.)
 		 *********************************************************************/
-		virtual void Update(World& world, CommandBuffer& commands) = 0;
+		virtual void Update([[maybe_unused]] World& world, [[maybe_unused]] CommandBuffer& commands) {}
+
+		/*********************************************************************
+		 \brief  Runs this system's per-frame logic with its full context:
+				 CommandBuffer plus EventWriter.
+		 \param[in,out] world The world to read/modify.
+		 \param[in,out] ctx   This system's commands and event writer;
+				everything written here is applied/delivered at the end of
+				the system's stage (commands first, then events).
+		 \details The system manager always calls this one. The default
+				 forwards to Update(World&, CommandBuffer&), so systems
+				 written before events existed keep working unchanged.
+				 Override this version to send events:
+				 \code
+				 void MySystem::Update(World& world, SystemContext& ctx)
+				 {
+					 ctx.commands.DestroyEntity(e);
+					 ctx.events.EmitEngine(SomethingHappened{ e });
+				 }
+				 \endcode
+				 Engine and network routes are always available;
+				 ctx.events.EmitGameplay needs SystemDesc::EmitsGameplayEvents()
+				 (gameplay decisions belong to scripting). Listeners never run
+				 during Update(). Don't keep ctx (or its members) beyond this
+				 call.
+		 *********************************************************************/
+		virtual void Update(World& world, SystemContext& ctx) { Update(world, ctx.commands); }
 
 		/*********************************************************************
 		 \brief  One-time teardown, called once when the engine shuts down.

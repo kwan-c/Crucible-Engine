@@ -88,15 +88,33 @@ namespace Crucible {
             .pAttachments = &colorBlendAttachment
         };
 
-        // Pipeline layout object (for uniform values).
-        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{ .setLayoutCount = 1, .pSetLayouts = &*m_descriptorSetLayout, .pushConstantRangeCount = 0 };
+        // Depth testing so overlapping meshes sort correctly (a single hard-coded cube never
+        // needed this; multiple/imported models will).
+        vk::PipelineDepthStencilStateCreateInfo depthStencil{
+            .depthTestEnable = vk::True,
+            .depthWriteEnable = vk::True,
+            .depthCompareOp = vk::CompareOp::eLess,
+            .depthBoundsTestEnable = vk::False,
+            .stencilTestEnable = vk::False
+        };
+
+        // Pipeline layout object. Set 0 = per-frame camera UBO (view/proj). A push constant
+        // carries the per-draw model matrix, so any number of objects can share that one UBO.
+        vk::PushConstantRange modelPushConstantRange{
+            .stageFlags = vk::ShaderStageFlagBits::eVertex,
+            .offset     = 0,
+            .size       = sizeof(glm::mat4)
+        };
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
+            .setLayoutCount         = 1,
+            .pSetLayouts            = &*m_descriptorSetLayout,
+            .pushConstantRangeCount = 1,
+            .pPushConstantRanges    = &modelPushConstantRange
+        };
         m_pipelineLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
 
         auto swapchainFormat = swapchain.GetSurfaceFormat().format;
-
-        vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo{
-            .colorAttachmentCount = 1,
-            .pColorAttachmentFormats = &swapchainFormat };
+        auto depthFormat     = swapchain.GetDepthFormat();
 
         // Consolidate all information to create Graphics Pipeline.
         vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
@@ -109,12 +127,13 @@ namespace Crucible {
                 .pViewportState = &viewportState,
                 .pRasterizationState = &rasterizer,
                 .pMultisampleState = &multisampling,
+                .pDepthStencilState = &depthStencil,
                 .pColorBlendState = &colorBlending,
                 .pDynamicState = &dynamicState,
                 .layout = m_pipelineLayout,
                 .renderPass = nullptr
             },
-            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat }
+            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat, .depthAttachmentFormat = depthFormat }
         };
         m_graphicsPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 

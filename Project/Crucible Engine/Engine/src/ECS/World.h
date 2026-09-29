@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.5
+* \version       1.7
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -53,6 +53,14 @@
 *                catch-log-continue hook policy with HookFailureCount(),
 *                declared-access and structural-change enforcement for
 *                running systems; existing public signatures unchanged
+*    -v1.6       mandatory base components (Transform, WorldTransform,
+*                HierarchyNode) on every entity; Unity-style hierarchy API
+*                (SetParent, DetachChildren, sibling order, in World.cpp;
+*                world transforms are read from WorldTransform); DestroyEntity destroys
+*                descendants; RemoveComponent only takes RemovableComponent
+*    -v1.7       private ReadNodeRow (one lookup per node for
+*                HierarchyTransformSystem); per-call access checks
+*                Debug-only (see CRUCIBLE_ECS_ACCESS_CHECKS)
 *
 **************************************************************************/
 #pragma once
@@ -73,6 +81,7 @@
 #include "Core/ECSCore.h"          // Entity, EntityManager
 #include "Components/ComponentRegistry.h" // ComponentRegistry
 #include "Components/ComponentSignature.h"
+#include "Components/Components.h"        // Transform, WorldTransform, HierarchyNode (the mandatory base)
 #include "Archetype/ArchetypeRegistry.h"
 #include "Systems/Query.h"
 #include "Systems/SystemAccess.h"
@@ -81,6 +90,119 @@
 namespace Crucible
 {
 	class CommandBuffer;
+
+	/*************************************************************************
+	 \brief  Why World::TrySetParent() refused a change (Ok = applied or
+			 nothing to do).
+	 *************************************************************************/
+	enum class ParentResult : std::uint8_t
+	{
+		Ok,
+		DeadChild,     // child is dead/stale/null
+		DeadParent,    // parent is non-null but dead/stale
+		SelfParent,    // child == parent
+		WouldCycle,    // parent is one of child's descendants
+		UnsupportedTransform   // worldPositionStays: a parent's world transform has a zero/non-finite scale (not invertible)
+	};
+
+	/*************************************************************************
+	 \brief  Human-readable reason for a ParentResult (for logs/exceptions).
+	 *************************************************************************/
+	ENGINE_API const char* ToString(ParentResult result) noexcept;
+
+	/*************************************************************************
+	 \brief  Crucible's mandatory base scene components. World ORs this into
+			 every creation signature (CreateEntity, CreateEntities,
+			 CommandBuffer spawns), so each entity is born in its final
+			 archetype with all three, default-valued:
+			   Transform      position 0, identity rotation, scale 1
+			   WorldTransform identity matrix, valid = false
+			   HierarchyNode  all links null, childCount 0 (a root)
+	 \note   Must agree with the Mandatory<T> specialisations in
+			 Components.h - checked for every registered component below.
+	 *************************************************************************/
+	inline constexpr ComponentSignature kMandatoryComponents =
+		MakeSignature<Transform, WorldTransform, HierarchyNode>();
+
+	namespace Detail
+	{
+		// T*R*S matrix; any scale, including zero and negative. Not xmath's fmat4(t, r, s)
+		// constructor (declared (translation, rotation, scale) but defined (scale, rotation,
+		// translation)), and setupSRT only gets a unit scale because it asserts on a zero
+		// one - the scale is applied to the rotation columns here instead.
+		inline Math::mat4 ComposeTRS(const Math::vec3& translation, const Math::quat& rotation, const Math::vec3& scale) noexcept
+		{
+			Math::mat4 m(1.0f);
+
+			m = glm::translate(m, translation);
+
+			m = m * glm::mat4_cast(rotation);
+
+			m = glm::scale(m, scale);
+			
+			return m;
+		}
+
+		/*********************************************************************
+		 \brief  Splits an affine matrix into translation * rotation * SIGNED
+				 scale.
+		 \param[in]  m           The matrix (e.g. a world or local matrix).
+		 \param[out] translation Exact translation of m.
+		 \param[out] rotation    A proper rotation (never a reflection).
+		 \param[out] scale       Signed per-axis scale: a mirrored matrix gets
+								 exactly one negative axis.
+		 \param[in]  reflectAxis Which axis (0 = X, 1 = Y, 2 = Z) carries the
+								 negative sign when m is mirrored.
+		 \return false (outputs untouched) when m has a non-finite value or an
+				 (almost) zero / collapsed scale axis - i.e. m is not
+				 invertible and has no meaningful rotation.
+		 \details Shear policy: a rotated child under a non-uniformly scaled
+				  parent has shear, which T/R/S can't store. Then the
+				  translation is still exact, the rotation keeps the X axis
+				  direction and the XY plane (Gram-Schmidt), and each scale is
+				  the axisprojection onto that rotation. This is an
+				  axis-preserving approximation (not in general the closest
+				  rotation or T*R*S): recomposing it does not reproduce the
+				  sheared matrix exactly.if object is sheared there will be and approximation 
+				  if obj is not sheared the rotatoin will be accurate
+		 \note   Use this, not fmat4::ExtractRotation()/ExtractScale(): xmath
+				 returns the inverse rotation past 90 degrees and never a
+				 negative scale.
+		 *********************************************************************/
+		ENGINE_API bool DecomposeTRS(const Math::mat4& m, Math::vec3& translation, Math::quat& rotation,
+			Math::vec3& scale, int reflectAxis = 0) noexcept;
+
+		// Whether the Mandatory<T> trait and kMandatoryComponents say the same thing about T.
+		template <typename T>
+		constexpr bool MandatoryTraitMatchesSignature() noexcept
+		{
+			return Mandatory<T>::value == kMandatoryComponents[ComponentTypeId<T>()];
+		}
+	}
+
+	// Two-way consistency check over EVERY registered component: a type marked
+	// Mandatory<T> but missing from kMandatoryComponents fails here, and so does
+	// a bit in kMandatoryComponents whose type isn't marked Mandatory. The count
+	// check makes sure the list really covers every ComponentKind, so no id can
+	// escape the comparison.
+#define CRUCIBLE_MANDATORY_MATCHES(Type) && Detail::MandatoryTraitMatchesSignature<Type>()
+#define CRUCIBLE_COUNT_COMPONENT(Type) + 1u
+	static_assert(true CRUCIBLE_COMPONENT_LIST(CRUCIBLE_MANDATORY_MATCHES),
+		"kMandatoryComponents and Mandatory<T> must agree for every component (see Components.h)");
+	static_assert((0u CRUCIBLE_COMPONENT_LIST(CRUCIBLE_COUNT_COMPONENT)) == kMaxComponents,
+		"CRUCIBLE_COMPONENT_LIST must list every ComponentKind for the mandatory check to be complete");
+#undef CRUCIBLE_COUNT_COMPONENT
+#undef CRUCIBLE_MANDATORY_MATCHES
+
+	/*************************************************************************
+	 \brief  Runtime form of Mandatory<T>, for any path that removes by
+			 ComponentId (editor, serialization): such a path must refuse
+			 ids this returns true for.
+	 *************************************************************************/
+	constexpr bool IsMandatoryComponent(ComponentId id) noexcept
+	{
+		return id < kMaxComponents && kMandatoryComponents[id];
+	}
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -161,8 +283,10 @@ namespace Crucible
 		ArchetypeRegistry& Archetypes() { return m_archetypes; }
 
 		/*********************************************************************
-		 \brief  Creates a new entity with no components.
-		 \return A handle to the new entity, placed in the empty archetype.
+		 \brief  Creates a new entity with only the mandatory base
+				 components (Transform, WorldTransform, HierarchyNode - see
+				 kMandatoryComponents), default-valued: a root at the origin.
+		 \return A handle to the new entity.
 		 *********************************************************************/
 		Entity CreateEntity();
 
@@ -172,10 +296,12 @@ namespace Crucible
 			given component signature.
 
 		 \param[in]
-			signature The exact component set the new entity should start
-			with.
+			signature The components the new entity should start with. The
+			mandatory base components (kMandatoryComponents) are always
+			added to it, so passing them is allowed but never needed.
 		 \return
-			A handle to the new entity. Every one of its components is
+			A handle to the new entity, placed directly in the archetype for
+			signature | kMandatoryComponents. Every one of its components is
 			default-constructed.
 
 		 \note
@@ -191,7 +317,8 @@ namespace Crucible
 			Creates count entities in one archetype, reserving storage once.
 
 		 \param[in] count     Number of entities to create.
-		 \param[in] signature Component set every new entity starts with.
+		 \param[in] signature Component set every new entity starts with
+							  (plus kMandatoryComponents, always).
 		 \return The created entity handles.
 
 		 \note
@@ -202,11 +329,18 @@ namespace Crucible
 		std::vector<Entity> CreateEntities(uint32_t count, const ComponentSignature& signature = ComponentSignature{});
 
 		/*********************************************************************
-		 \brief  Destroys an entity, freeing its slot for reuse.
+		 \brief  Destroys an entity AND all its descendants (Unity's
+				 Object.Destroy semantics), freeing their slots for reuse.
 		 \param[in] entity The entity to destroy.
+		 \details Children are destroyed before their parents. To keep the
+				  children, call DetachChildren(entity) first. Every destroy
+				  path (this, CommandBuffer::DestroyEntity, DestroyAllEntities,
+				  a rolled-back spawn) destroys the descendants too, so no
+				  entity is ever left with a dead parent or turned into an
+				  orphan root.
 		 \note  A no-op (not an error) if entity is already dead or stale.
 				Fires OnEntityDestroyed, then OnComponentRemoved for every
-				component the entity still owns, before tearing storage down.
+				component each entity still owns, before tearing storage down.
 		 *********************************************************************/
 		void DestroyEntity(Entity entity);
 
@@ -300,11 +434,15 @@ namespace Crucible
 			archetype move. Otherwise moves the entity to the archetype for
 			its signature plus T and relocates value straight into its new
 			column slot (one move - no default-construct-then-assign).
+			Every entity has the mandatory components, so
+			AddComponent<Transform>/<WorldTransform> is always an in-place
+			overwrite (no hook, no archetype move).
 
 		 \note
 			Throws std::invalid_argument if entity is dead or stale, and
 			std::logic_error if called while a Query is iterating. If the
-			move fails, the entity is left unchanged.
+			move fails, the entity is left unchanged. HierarchyNode is
+			refused at compile time - use SetParent.
 		 *********************************************************************/
 		template <typename T> T& AddComponent(Entity entity, T value = T{});
 
@@ -337,9 +475,12 @@ namespace Crucible
 
 		 \note
 			Throws std::invalid_argument if entity is dead or stale, and
-			std::logic_error if called while a Query is iterating.
+			std::logic_error if called while a Query is iterating. The
+			mandatory base components (Transform, WorldTransform,
+			HierarchyNode) are rejected at compile time
+			(RemovableComponent); they only go away with DestroyEntity.
 		 *********************************************************************/
-		template <typename T> void RemoveComponent(Entity entity);
+		template <RemovableComponent T> void RemoveComponent(Entity entity);
 
 		/*********************************************************************
 		 \brief
@@ -348,8 +489,14 @@ namespace Crucible
 
 		 \details
 			Fires for AddComponent/EmplaceComponent (when T is newly added),
-			CreateEntity(signature), CreateEntities and CommandBuffer spawns.
+			CreateEntity/CreateEntities (including the mandatory base
+			components, with their default values) and CommandBuffer spawns.
 			Overwriting an existing T does not fire it.
+
+			For a CommandBuffer spawn the hook fires once per component,
+			after the WHOLE buffer has replayed, so it sees the final value:
+			the one given to EntitySpawn::With<T>() (or the default), after
+			any WithParent() has already solved the local Transform.
 
 		 \note
 			Runs under the iteration guard: hooks may read, but must queue
@@ -396,6 +543,135 @@ namespace Crucible
 		 *********************************************************************/
 		std::uint64_t HookFailureCount() const noexcept { return m_hookFailures; }
 
+		// ---------------------------------------------------------------------
+		// Hierarchy - Unity Transform semantics (SetParent, DetachChildren,
+		// sibling order, root). World is the only writer
+		// of HierarchyNode links: every public write path refuses the
+		// component at compile time, so both ends of every link always agree.
+		// Every entity has a HierarchyNode (mandatory), so these never add a
+		// component or move an entity between archetypes.
+		// Defined in World.cpp.
+		// ---------------------------------------------------------------------
+
+		/*********************************************************************
+		 \brief  Unity's Transform.SetParent(parent, worldPositionStays):
+				 child becomes the LAST child of parent; kNullEntity makes it
+				 a root.
+		 \param worldPositionStays true (Unity's default): the child keeps
+				 its world position/rotation/scale - its local Transform is
+				 recomputed. false: its local Transform is kept, so it moves
+				 with the new parent.
+		 \return Ok, or why nothing was changed. UnsupportedTransform (only
+				 with worldPositionStays) when the new parent's world
+				 transform, or the child's current parent chain, has a zero or
+				 non-finite scale: there is no local Transform that keeps the
+				 world transform. Use worldPositionStays = false then.
+		 \details The world matrix is kept exactly whenever T/R/S can store
+				  it. The solve works on the child's frame WITHOUT its own
+				  scale, so a zero or mirrored local scale (e.g. -1, 1, 1) is
+				  carried over unchanged; if the old and new parents differ in
+				  handedness, the reflection moves into the local scale (on an
+				  axis that is already negative, if any). Shear can't be stored:
+				  see Detail::DecomposeTRS for the policy (position exact).
+				  Strong guarantee: every step that can throw or fail
+				  (structural check, reading and solving transforms) happens
+				  before any link or Transform is modified.
+		 \note   Edits links on several entities, so structural rules apply:
+				 throws std::logic_error during Query iteration or inside a
+				 declared system's Update - use CommandBuffer::SetParent there.
+		 *********************************************************************/
+		ParentResult TrySetParent(Entity child, Entity parent, bool worldPositionStays = true);
+
+		/*********************************************************************
+		 \brief  TrySetParent() that throws std::invalid_argument when the
+				 change is refused (cycle, self-parent, dead entity,
+				 unsupported transform).
+		 *********************************************************************/
+		void SetParent(Entity child, Entity parent, bool worldPositionStays = true);
+
+		/*********************************************************************
+		 \brief  Unity's Transform.DetachChildren(): every child becomes a
+				 root and keeps its world transform. Same rules as SetParent.
+		 \note   All-or-nothing: if any child can't keep its world transform
+				 (parent has a zero scale - see TrySetParent), throws
+				 std::invalid_argument and nothing is detached.
+		 *********************************************************************/
+		void DetachChildren(Entity parent);
+
+		/*********************************************************************
+		 \brief  Unity's Transform.parent.
+		 \return The parent, or kNullEntity for a root or a dead entity.
+		 *********************************************************************/
+		Entity GetParent(Entity entity) const;
+
+		/*********************************************************************
+		 \brief  Unity's Transform.childCount (0 for a dead entity).
+		 *********************************************************************/
+		std::uint32_t ChildCount(Entity entity) const;
+
+		/*********************************************************************
+		 \brief  Unity's Transform.GetChild(index).
+		 \return The index-th child, or kNullEntity if out of range.
+		 \note   Walks from whichever end is closer: O(min(index, count-1-index)).
+				 To visit every child use ForEachChild (O(count) overall).
+		 *********************************************************************/
+		Entity GetChild(Entity parent, std::uint32_t index) const;
+
+		/*********************************************************************
+		 \brief  Unity's Transform.root: the topmost ancestor (entity itself
+				 if it has no parent; kNullEntity if entity is dead).
+		 *********************************************************************/
+		Entity GetRoot(Entity entity) const;
+
+		/*********************************************************************
+		 \brief  Unity's Transform.IsChildOf: true if entity IS ancestor, or
+				 is anywhere below it.
+		 *********************************************************************/
+		bool IsChildOf(Entity entity, Entity ancestor) const;
+
+		/*********************************************************************
+		 \brief  Strict version of IsChildOf: ancestor is entity's parent,
+				 grandparent, ... (never entity itself).
+		 *********************************************************************/
+		bool IsAncestorOf(Entity ancestor, Entity entity) const;
+
+		/*********************************************************************
+		 \brief  Unity's Transform.GetSiblingIndex. Roots have no sibling
+				 list and return 0.
+		 \note   Walks both directions at once: O(min(index, count-1-index)).
+		 *********************************************************************/
+		std::uint32_t GetSiblingIndex(Entity entity) const;
+
+		/*********************************************************************
+		 \brief  Unity's Transform.SetSiblingIndex: moves entity to index
+				 among its siblings (clamped to the end). A no-op for roots.
+		 \note   Same structural rules as SetParent.
+		 *********************************************************************/
+		void SetSiblingIndex(Entity entity, std::uint32_t index);
+
+		/*********************************************************************
+		 \brief  Unity's SetAsFirstSibling / SetAsLastSibling.
+		*********************************************************************/
+		void SetAsFirstSibling(Entity entity);
+		void SetAsLastSibling(Entity entity);
+
+		/*********************************************************************
+		 \brief  Calls fn(child) for each direct child, first to last (Unity:
+				 foreach (Transform child in transform)).
+		 \note   Don't reparent or destroy this entity's children inside fn.
+		*********************************************************************/
+		template <typename Fn>
+		void ForEachChild(Entity parent, Fn&& fn) const;
+
+		/*********************************************************************
+		 \brief  Appends root and all its descendants to out, parents before
+				 children. Nothing is appended for a dead root.
+		 \note   O(subtree). out doubles as the work list; reuse the same
+				 vector across calls (clear() keeps its capacity) to avoid
+				 reallocating.
+		*********************************************************************/
+		void CollectSubtree(Entity root, std::vector<Entity>& out) const;
+
 		/*********************************************************************
 		 \brief
 			Builds a Query over a fixed set of required component types.
@@ -440,6 +716,23 @@ namespace Crucible
 
 	private:
 		friend class CommandBuffer;
+		friend class HierarchyTransformSystem;   // reads NodeRow: one lookup per node per frame
+
+		// Everything HierarchyTransformSystem needs about one node, from ONE
+		// entity lookup (the public Read/LastChanged/Write path costs one each).
+		struct NodeRow
+		{
+			const Transform* local = nullptr;
+			const HierarchyNode* links = nullptr;
+			WorldTransform* world = nullptr;
+			std::uint64_t localTick = 0;          // LastChanged<Transform>
+			std::uint64_t linksTick = 0;          // LastChanged<HierarchyNode>
+			std::uint64_t* worldTick = nullptr;   // stamp this when world is rewritten
+		};
+		// false for a dead/stale entity. Every live entity has all three
+		// (mandatory base components), so there is no Contains() check.
+		bool ReadNodeRow(Entity entity, NodeRow& out) noexcept;
+
 		using ComponentHookFn = std::function<void(World&, Entity, void*)>;
 
 		EntityRecord& RequireMutableEntity(Entity entity, const char* operation);
@@ -463,6 +756,11 @@ namespace Crucible
 			anything throws the entity is still intact in its source
 			archetype. addedValue (for addedId) is relocated straight into
 			its slot.
+		 \note
+			Throws std::logic_error (before anything moves) if destination
+			lacks a mandatory base component. Removal paths must check
+			earlier (before firing remove hooks); RemoveComponent does so at
+			compile time.
 		 *********************************************************************/
 		void MoveEntity(EntityRecord& record, Entity entity, Archetype& destination,
 			ComponentId addedId = kInvalidComponentId, void* addedValue = nullptr);
@@ -477,6 +775,40 @@ namespace Crucible
 		void FireAddHooksForRow(Archetype& archetype, uint32_t row, Entity entity) noexcept;
 		void FireRemoveHooksForRow(Archetype& archetype, uint32_t row, Entity entity) noexcept;
 		void ReportHookFailure(const char* hookKind, ComponentId id, Entity entity, const char* what) noexcept;
+
+		// Hierarchy internals (World.cpp). HierarchyLinks() is the only write path to a
+		// HierarchyNode; it does NOT stamp - StampReparented() marks the one entity whose
+		// parent changed (sibling/child-list edits move nothing).
+		HierarchyNode& HierarchyLinks(Entity entity);
+		void StampReparented(Entity entity);
+		void DetachFromParent(Entity child);
+		void InsertChildAt(Entity child, Entity parent, std::uint32_t index);   // index >= count appends
+		void DestroyDescendants(Entity root, bool fireHooks);
+
+		// Unchecked reads for internal walks: one record lookup, no declared-access check
+		// (public queries check once per call via CheckHierarchyRead). Null if dead.
+		const HierarchyNode* NodeOf(Entity entity) const;
+		const Transform* LocalOf(Entity entity) const;
+		void CheckHierarchyRead(const char* operation) const;
+
+		// The index-th child, walking from whichever end is closer; kNullEntity past the end.
+		Entity ChildAt(const HierarchyNode& parent, std::uint32_t index) const;
+		// Position among its siblings (0 for a root), walking both directions at once.
+		std::uint32_t SiblingIndexOf(const HierarchyNode& node) const;
+		// True if target is from or one of its ancestors. With worldOut, also returns from's
+		// world matrix from the same walk (valid only when false is returned).
+		bool ReachesUp(Entity from, Entity target, Math::mat4* worldOut) const;
+
+		// The local Transform that keeps a child's world transform when it moves from
+		// oldParentWorld to the parent whose inverse world matrix is newParentInverse
+		// (identity = root). Reads only; UnsupportedTransform if there is none.
+		ParentResult SolveKeepWorld(const Transform& local, const Math::mat4& oldParentWorld,
+			const Math::mat4& newParentInverse, Transform& out) const;
+
+		// parent world x local (T*R*S) computed now in one pass up the parents;
+		// identity for a dead entity or kNullEntity. Used by keep-world reparenting.
+		Math::mat4 ComputeWorldMatrix(Entity entity) const;
+		void InstallHierarchyHook();
 
 		EntityManager     m_entities;
 		ComponentRegistry m_components;
@@ -519,6 +851,24 @@ namespace Crucible
 			});
 	}
 
+	inline bool World::ReadNodeRow(Entity entity, NodeRow& out) noexcept
+	{
+		if (!m_entities.IsAlive(entity)) return false;
+		const EntityRecord& record = m_entities.Record(entity);
+		Archetype& a = *record.archetype;
+		const std::uint32_t row = record.row;
+		ComponentColumn& local = a.GetColumn(ComponentTypeId<Transform>());
+		ComponentColumn& links = a.GetColumn(ComponentTypeId<HierarchyNode>());
+		ComponentColumn& world = a.GetColumn(ComponentTypeId<WorldTransform>());
+		out.local = static_cast<const Transform*>(local.At(row));
+		out.links = static_cast<const HierarchyNode*>(links.At(row));
+		out.world = static_cast<WorldTransform*>(world.At(row));
+		out.localTick = local.ChangedTicksData()[row];
+		out.linksTick = links.ChangedTicksData()[row];
+		out.worldTick = world.ChangedTicksData() + row;
+		return true;
+	}
+
 	template <typename T>
 	bool World::HasComponent(Entity e)const
 	{
@@ -529,7 +879,8 @@ namespace Crucible
 	template <typename T>
 	T* World::GetComponent(Entity e)
 	{
-		const ComponentId id = ComponentTypeId<T>();
+		static_assert(!WorldManaged<T>::value, "This component is managed by World (e.g. HierarchyNode): use Read<T>() and World's API to change it");
+		constexpr ComponentId id = ComponentTypeId<T>();
 		CheckDeclaredAccess(ComponentSignature{}, MakeSignature<T>(), "writes through World::GetComponent/Write and");
 
 		if (!m_entities.IsAlive(e)) return nullptr;
@@ -544,13 +895,27 @@ namespace Crucible
 	template <typename T>
 	const T* World::GetComponent(Entity e) const
 	{
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 		CheckDeclaredAccess(MakeSignature<T>(), ComponentSignature{}, "reads through World::Read/GetComponent and");
 
 		if (!m_entities.IsAlive(e)) return nullptr;
 		const EntityRecord& record = m_entities.Record(e);
 		if (!record.archetype->Contains(id)) return nullptr;
 		return static_cast<const T*>(static_cast<const Archetype*>(record.archetype)->GetColumn(id).At(record.row));
+	}
+
+	template <typename Fn>
+	void World::ForEachChild(Entity parent, Fn&& fn) const
+	{
+		CheckHierarchyRead("reads through World::ForEachChild and");   // once, not per child
+		const HierarchyNode* node = NodeOf(parent);
+		if (!node) return;   // dead/stale parent: nothing to visit (a live one always has a node)
+		for (Entity c = node->firstChild; c.IsValid(); )
+		{
+			const Entity next = NodeOf(c)->nextSibling;   // read before fn runs
+			fn(c);
+			c = next;
+		}
 	}
 
 	template <typename T>
@@ -582,6 +947,7 @@ namespace Crucible
 	template<typename T>
 	inline T& World::AddComponent(Entity entity, T value)
 	{
+		static_assert(!WorldManaged<T>::value, "This component is managed by World (e.g. HierarchyNode): use SetParent (kNullEntity to detach)");
 		EntityRecord& record = RequireMutableEntity(entity, "AddComponent");
 		const ComponentId id = ComponentTypeId<T>();
 
@@ -595,7 +961,7 @@ namespace Crucible
 		return AddComponent<T>(entity, T(std::forward<Args>(args)...));
 	}
 
-	template<typename T>
+	template<RemovableComponent T>
 	inline void World::RemoveComponent(Entity entity)
 	{
 		EntityRecord& record = RequireMutableEntity(entity, "RemoveComponent");

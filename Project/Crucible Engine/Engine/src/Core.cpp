@@ -10,6 +10,7 @@
 #include "ECS/World.h"
 #include "Scene/Prefab.h"
 #include "Scene/Scene.h"
+#include "ECS/HierarchyTransformSystem.h"
 
 // STL
 #include <algorithm>
@@ -28,7 +29,8 @@ namespace Crucible {
         m_config{ config },
         m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
         m_renderer{ new Renderer(*m_window) },
-        m_world{ std::make_unique<World>() }
+        m_world{ std::make_unique<World>() },
+        m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) }
     {
         // Layers draw inside the renderer's open render pass via OnRender().
         m_renderer->SetOverlayCallback([this] {
@@ -119,6 +121,20 @@ namespace Crucible {
                      total);
         }
         // ===========================================
+        // Input attaches before anything else installs GLFW callbacks. ImGui's backend
+        // chains to callbacks that are already registered, but anything installed after it
+        // replaces ImGui's - which is how its text fields go dead.
+        m_input.Init();
+        m_input.AttachWindow(m_window->GetNativeHandle());
+
+
+        // Event buses: report listener failures through the engine log, and let the
+        // system manager merge each system's outboxes into them at every stage flush.
+        const auto logFailure = [](const std::string& message) { CRU_ERROR("{}", message); };
+        m_events.engine.SetFailureLogger(logFailure);
+        m_events.gameplay.SetFailureLogger(logFailure);
+        m_events.network.SetFailureLogger(logFailure);
+        m_systems.SetEventBuses(&m_events);
 
         RegisterEngineSystems();
 
@@ -129,14 +145,42 @@ namespace Crucible {
 
     void Core::Run() {
 
+        // Real frame time, not an assumed 60 FPS: nothing here caps the actual frame rate (no
+        // glfwSwapInterval, no sleep/limiter), and the swapchain's present mode is chosen
+        // dynamically (VulkanSwapchain::ChoosePresentMode() prefers Mailbox, which does not
+        // block the app the way Fifo/vsync does). A hard-coded "1.f / 60.f" here silently
+        // assumed the app always ran at exactly 60 FPS - so at whatever *actual* frame rate
+        // Mailbox let it run at (which can be very high with an empty-ish scene and no cap),
+        // every animation driven by dt (cube spin, the editor fly-camera, ...) played back
+        // proportionally too fast or too slow. It happened to look "corrected" after toggling
+        // fullscreen because that forces a swapchain recreate (via the resize it causes), and
+        // depending on the platform/compositor a fullscreen-negotiated surface can end up stuck
+        // on a hard-blocking present mode afterwards even once back in windowed mode - which
+        // only ever fixed the SYMPTOM (actual FPS settling near 60) rather than the cause.
+        double lastTime = glfwGetTime();
+
         while (!m_window->ShouldClose()) {
 
-            const float dt = 1.f / 60.f;
+            double const now = glfwGetTime();
+            float dt = static_cast<float>(now - lastTime);
+            lastTime = now;
+
+            // Clamp so a debugger breakpoint, window drag, or other multi-second stall doesn't
+            // make every dt-driven system leap forward by however long the freeze lasted.
+            dt = std::min(dt, 1.0f / 15.0f);
+
+            // Snapshot last frame's input and zero the per-frame mouse deltas. This MUST stay
+            // immediately before PollEvents, because PollEvents is what fires the callbacks
+            // that fill this frame's state.
+            m_input.BeginFrame();
             m_window->PollEvents();
+            m_events.engine.DeliverPending();   // window/input events queued by callbacks
 
             m_world->SetDeltaTime(dt);
             m_world->AdvanceTick();
-            m_systems.Update(*m_world);
+            m_systems.Update(*m_world);         // each stage delivers its own events
+
+            m_events.TickAll(dt);               // delayed events whose time has come get queued
 
             for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
@@ -156,6 +200,7 @@ namespace Crucible {
     {
         //sample system registeration
         m_systems.RegisterSystem<ECSPhysicsSystem>();
+        m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
     }
 
     void Core::CleanUp() {
@@ -169,6 +214,7 @@ namespace Crucible {
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
 
+        m_input.Shutdown();
         m_window->ShutDown();
     }
 }

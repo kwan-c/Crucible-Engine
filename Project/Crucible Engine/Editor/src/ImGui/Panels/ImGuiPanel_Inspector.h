@@ -18,7 +18,7 @@ namespace Crucible {
 	public:
 		// REQUIRED Overrides
 		void Init() override;
-		void Update() override;
+		void Update(float dt) override;
 
 		// The Hierarchy panel will call this when the user clicks something.
 		template<typename T> void SetTarget(T& obj) { m_draw = [&obj] { DrawInstance(obj); }; }

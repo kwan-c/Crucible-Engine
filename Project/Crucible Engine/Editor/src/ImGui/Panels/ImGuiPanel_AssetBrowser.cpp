@@ -155,7 +155,7 @@ void Crucible::AssetBrowser::Refresh() {
 	m_listingDirty = true;
 }
 
-void Crucible::AssetBrowser::Update() {
+void Crucible::AssetBrowser::Update(float) {
 	if (!ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		ImGui::End();
 		return;

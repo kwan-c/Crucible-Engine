@@ -31,7 +31,7 @@ void Crucible::GameView::Init() {
 	m_flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
 }
 
-void Crucible::GameView::Update() {
+void Crucible::GameView::Update(float) {
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 	bool const visible = ImGui::Begin(m_panelName.c_str(), nullptr, m_flags);
 	ImGui::PopStyleVar();
@@ -63,13 +63,56 @@ void Crucible::GameView::Update() {
 	ImVec2 const max(min.x + size.x, min.y + size.y);
 	m_viewportSize = size;
 
+	// The render target is sized to the letterboxed image, not the full panel: that's the exact
+	// resolution the game camera renders at (matches the doc comment on GetViewportSize()).
+	uint32_t const width = static_cast<uint32_t>(std::max(size.x, 0.0f));
+	uint32_t const height = static_cast<uint32_t>(std::max(size.y, 0.0f));
+	m_viewport.Resize(width, height);
+
+	// Not stood up yet this frame (panel collapsed, or its very first frame before the dock
+	// layout has given it a real size) - GetCamera() would throw on an unset handle, and there's
+	// nothing to draw yet anyway.
+	if (!m_viewport.IsValid()) {
+		ImGui::GetWindowDrawList()->AddRectFilled(regionMin, regionMax, IM_COL32(0, 0, 0, 255));
+		ImGui::SetCursorScreenPos(regionMin);
+		ImGui::InvisibleButton("##GameViewport", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
+		m_hovered = ImGui::IsItemHovered();
+		ImGui::End();
+		return;
+	}
+
+	// ---- Referencing the Renderer's main camera ----------------------------------------------
+	// Unlike the Scene view (which flies its OWN independent camera around), the Game view must
+	// always show exactly what the "real" game camera sees. That camera lives on the Renderer as
+	// m_camera (Renderer::GetCamera()) - it's the one a future gameplay/ECS camera system (and,
+	// today, the direct-to-window path used by a standalone Game build) actually drives.
+	//
+	// Every offscreen Viewport the Renderer manages owns its OWN Camera on purpose (see the
+	// comment on Renderer::Viewport / GetViewportCamera()), so several panels can be drawn per
+	// frame from different cameras without their view/proj data stepping on each other. That
+	// means the Game view's viewport camera is a *separate object* from the main camera, and the
+	// two don't automatically stay in sync - hence the explicit copy below every frame. Camera is
+	// a plain value type (position/yaw/pitch/lens floats, no GPU handles), so this is just a
+	// cheap struct copy, not a resource reference.
+	//
+	// The aspect ratio copied in here doesn't matter: Renderer::RecordCommandBuffer() overwrites
+	// each viewport camera's aspect from that viewport's own extent (set via Resize() above)
+	// before it uploads the frame's view/proj uniforms, so the Game view's letterboxed aspect
+	// always wins regardless of whatever the main camera's aspect happened to be.
+	m_viewport.GetCamera() = m_renderer.GetCamera();
+
+	// Placeholder first (covers the gap before the offscreen image exists, e.g. the first frame),
+	// then the real image on top of it, inside the fitted/letterboxed rectangle.
+	ImGui::GetWindowDrawList()->AddRectFilled(regionMin, regionMax, IM_COL32(0, 0, 0, 255));
+	EditorWidgets::DrawViewportPlaceholder(min, max, "Game View", "Waiting for the renderer...");
+	ImGui::SetCursorScreenPos(min);
+	m_viewport.DrawImage(size);
+
+	// Invisible item over the whole panel (not just the letterboxed rect) so hover queries work
+	// the same way the Scene view's do.
+	ImGui::SetCursorScreenPos(regionMin);
 	ImGui::InvisibleButton("##GameViewport", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
 	m_hovered = ImGui::IsItemHovered();
-
-	// Black bars, then the game image (placeholder for now) in the fitted rectangle.
-	// Later: ImGui::SetCursorScreenPos(min); ImGui::Image(gameTexture, size);
-	ImGui::GetWindowDrawList()->AddRectFilled(regionMin, regionMax, IM_COL32(0, 0, 0, 255));
-	EditorWidgets::DrawViewportPlaceholder(min, max, "Game View", "Game camera output goes here");
 
 	ImGui::End();
 }

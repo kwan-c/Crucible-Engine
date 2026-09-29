@@ -37,7 +37,7 @@ namespace Crucible::Debug
         // triggers warning C4251.
         const char* m_label;
         Level       m_level;
-        std::chrono::steady_clock::time_point m_start;
+        std::int64_t m_startTicks;
     };
 }
 

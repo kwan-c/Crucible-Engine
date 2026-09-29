@@ -33,7 +33,7 @@ namespace Crucible {
 	public:
 		// REQUIRED Overrides
 		void Init() override;
-		void Update() override;
+		void Update(float dt) override;
 
 		// Virtual path of the selected asset or folder ("" when nothing is selected).
 		std::string const& GetSelected() const { return m_selected; }

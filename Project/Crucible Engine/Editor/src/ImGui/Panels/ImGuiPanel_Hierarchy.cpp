@@ -14,7 +14,7 @@ void Crucible::Hierarchy::Init() {
 	m_dockRatio = 0.22f;
 }
 
-void Crucible::Hierarchy::Update() {
+void Crucible::Hierarchy::Update(float) {
 	if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		ImGui::TextDisabled("Scene entities will be listed here.");
 	}

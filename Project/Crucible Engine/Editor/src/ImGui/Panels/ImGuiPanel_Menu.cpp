@@ -13,7 +13,7 @@ void Crucible::Menu::Init() {
 	m_panelName = "Menu";
 }
 
-void Crucible::Menu::Update() {
+void Crucible::Menu::Update(float) {
 
 	if (ImGui::BeginMainMenuBar())
 	{
