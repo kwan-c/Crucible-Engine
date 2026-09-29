@@ -46,6 +46,10 @@
 #include "AssetRegistry.h"
 
 namespace Crucible {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)   // STL / xresource members in exported types; Engine.dll and its clients share one toolchain
+#endif
  
     /*************************************************************************
      \brief
@@ -710,4 +714,7 @@ namespace Crucible {
         bool m_initialized = false;
     };
  
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 }
