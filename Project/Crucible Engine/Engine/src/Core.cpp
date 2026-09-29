@@ -3,6 +3,7 @@
 #include "Configuration/EngineConfigLoader.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/ECSPhysicsSystem.h"
+#include "ECS/HierarchyTransformSystem.h"
 
 // STL
 #include <algorithm>
@@ -19,7 +20,8 @@ namespace Crucible {
         m_config{ config },
         m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
         m_renderer{ new Renderer(*m_window) },
-        m_world{ std::make_unique<World>() }
+        m_world{ std::make_unique<World>() },
+        m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) }
     {
         // Layers draw inside the renderer's open render pass via OnRender().
         m_renderer->SetOverlayCallback([this] {
@@ -55,6 +57,13 @@ namespace Crucible {
         m_input.AttachWindow(m_window->GetNativeHandle());
 
 
+        // Event buses: report listener failures through the engine log, and let the
+        // system manager merge each system's outboxes into them at every stage flush.
+        const auto logFailure = [](const std::string& message) { CRU_ERROR("{}", message); };
+        m_events.engine.SetFailureLogger(logFailure);
+        m_events.gameplay.SetFailureLogger(logFailure);
+        m_events.network.SetFailureLogger(logFailure);
+        m_systems.SetEventBuses(&m_events);
 
         RegisterEngineSystems();
 
@@ -73,11 +82,14 @@ namespace Crucible {
             // that fill this frame's state.
             m_input.BeginFrame();
             m_window->PollEvents();
+            m_events.engine.DeliverPending();   // window/input events queued by callbacks
 
             m_world->SetDeltaTime(dt);
             m_world->AdvanceTick();
-            m_systems.Update(*m_world);
-            
+            m_systems.Update(*m_world);         // each stage delivers its own events
+
+            m_events.TickAll(dt);               // delayed events whose time has come get queued
+
             for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
             //m_window->SwapBuffers();
@@ -96,6 +108,7 @@ namespace Crucible {
     {
         //sample system registeration
         m_systems.RegisterSystem<ECSPhysicsSystem>();
+        m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
     }
 
     void Core::CleanUp() {

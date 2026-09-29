@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Implementation of Archetype's row/column management.
 *                See Archetype.h for the public interface and member
@@ -26,6 +26,8 @@
 *    -v1.1       strong exception guarantee for AddEntityDefault,
 *                ReserveForAppend/AppendEntityReserved for migrations,
 *                signature validated in all builds
+*    -v1.2       column lookup (ColumnIndex/GetColumn/GetComponentPtr/
+*                GetColumnData) moved inline into Archetype.h
 *
 **************************************************************************/
 #include <algorithm>
@@ -39,7 +41,7 @@ namespace Crucible
 	{
 		registry.ValidateSignature(m_signature, "Archetype");
 
-		m_columnLookup.assign(kMaxComponents, -1);
+		m_columnLookup.fill(-1);
 
 		for (ComponentId id = 0; id < kMaxComponents; ++id)
 		{
@@ -108,29 +110,6 @@ namespace Crucible
 		assert(ValidateRows());
 		return relocated;
 	}
-
-	int Archetype::ColumnIndex(ComponentId id)const
-	{
-		if (id >= m_columnLookup.size()) return -1;
-		return m_columnLookup[id];
-	}
-
-	ComponentColumn& Archetype::GetColumn(ComponentId id)
-	{
-		const int index = ColumnIndex(id);
-		assert(index >= 0 &&"component not present in this archetype");
-		return m_columns[static_cast<std::size_t>(index)];
-	}
-
-	const ComponentColumn& Archetype::GetColumn(ComponentId id) const
-	{
-		const int index = ColumnIndex(id);
-		assert(index >= 0 && "component not present in this archetype");
-		return m_columns[static_cast<std::size_t>(index)];
-	}
-
-	void* Archetype::GetColumnData(ComponentId id) { return GetColumn(id).Data(); }
-	void* Archetype::GetComponentPtr(ComponentId id, uint32_t row) { return GetColumn(id).At(row); }
 
 	bool Archetype::ValidateRows()const
 	{

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          25 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares SystemAccess (which engine components a system
 *                reads/writes), SystemAffinity (which thread a system wants
@@ -22,6 +22,8 @@
 *    -v1.1       thread-local running-system context and the
 *                CheckDeclaredAccess/CheckStructuralAccess enforcement used
 *                by World and Query
+*    -v1.2       per-call access checks Debug-only (CRUCIBLE_ECS_ACCESS_CHECKS);
+*                structural checks unchanged
 *
 **************************************************************************/
 #pragma once
@@ -32,6 +34,18 @@
 
 #include "EngineExport.h"
 #include "../Components/ComponentSignature.h"
+
+// Per-call declared-access checks (World::Read/Write/GetComponent, Query
+// iteration, hierarchy reads). On in Debug, off in Release: the check costs a
+// thread-local lookup on every component access. Define CRUCIBLE_ECS_ACCESS_CHECKS
+// to 1 or 0 to override (e.g. keep it on in a Release test build).
+#ifndef CRUCIBLE_ECS_ACCESS_CHECKS
+#  ifdef NDEBUG
+#    define CRUCIBLE_ECS_ACCESS_CHECKS 0
+#  else
+#    define CRUCIBLE_ECS_ACCESS_CHECKS 1
+#  endif
+#endif
 
 namespace Crucible
 {
@@ -142,9 +156,13 @@ namespace Crucible
 	 \param[in] reads  Components about to be read.
 	 \param[in] writes Components about to be written.
 	 \param[in] operation What is being done, for the message.
+	 \note   Only when CRUCIBLE_ECS_ACCESS_CHECKS is 1 (Debug by default); a
+			 no-op otherwise. Structural checks (CheckStructuralAccess)
+			 always run.
 	 *************************************************************************/
 	inline void CheckDeclaredAccess(const ComponentSignature& reads, const ComponentSignature& writes, const char* operation)
 	{
+#if CRUCIBLE_ECS_ACCESS_CHECKS
 		const ActiveSystemAccess* active = Detail::RestrictedSystem();
 		if (!active) return;
 
@@ -157,6 +175,10 @@ namespace Crucible
 		if (missingWrites.any()) message += " writes undeclared component(s) " + Detail::ComponentIdList(missingWrites);
 		if (missingReads.any()) message += " reads undeclared component(s) " + Detail::ComponentIdList(missingReads);
 		throw std::logic_error(message + " - declare them in Describe()");
+#else
+		// Release: per-call checks compiled out (see CRUCIBLE_ECS_ACCESS_CHECKS above).
+		(void)reads; (void)writes; (void)operation;
+#endif
 	}
 
 	/*************************************************************************

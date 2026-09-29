@@ -307,6 +307,8 @@ namespace Crucible
 	class Query : public QueryBase
 	{
 		static_assert(sizeof...(Components) > 0, "Query needs at least one component type");
+		static_assert(((std::is_const_v<Components> || !WorldManaged<std::remove_const_t<Components>>::value) && ...),
+			"This component is managed by World (e.g. HierarchyNode): query it as const and change it through World's API");
 
 		template <typename C> using Bare = std::remove_const_t<C>;
 		using PointerArray = std::array<void*, sizeof...(Components)>;

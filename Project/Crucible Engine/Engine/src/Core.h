@@ -14,6 +14,8 @@
 #include "Input/InputSystem.h"
 #include <ECS/World.h>
 #include <ECS/Systems/ECSSystemManager.h>
+#include <ECS/Systems/EventBus/EventBuses.h>
+#include <ECS/Systems/EventBus/EcsEvents.h>
 #include <Configuration/EngineConfig.h>
 
 namespace Crucible
@@ -44,6 +46,13 @@ namespace Crucible
 
         // The ECS system driver, e.g. for Systems().RegisterSystem<MySystem>().
         ECSSystemManager& Systems() noexcept { return m_systems; }
+
+        // The engine / gameplay / network event buses (subscribe from a system's Init()).
+        EventBuses& Events() noexcept { return m_events; }
+
+        // Opt-in entity/component events on the gameplay bus, e.g. EcsBridge().OnRemoved<MeshRenderer>(...).
+        // (Not called "EcsEvents()" - that would hide the EcsEvents namespace inside Core.)
+        EcsEventBridge& EcsBridge() noexcept { return *m_ecsEvents; }
         // Attaches a layer (calls OnAttach) and takes ownership. Layers are updated in the
         // order pushed, and detached in reverse order when Core shuts down.
         void PushLayer(std::unique_ptr<Layer> layer);
@@ -59,7 +68,14 @@ namespace Crucible
         Input m_input;      // owns the GLFW input callbacks; queried statically, e.g. Input::IsDown
         std::vector<std::unique_ptr<Layer>> m_layers;
 
+        // Declared BEFORE the World: members are destroyed in reverse order, so the buses
+        // outlive the World and every system (the ECS bridge's World hooks point at a bus).
+        EventBuses m_events;
+
         std::unique_ptr<World> m_world;
+
+        // World hooks -> gameplay-bus events; created right after the World.
+        std::unique_ptr<EcsEventBridge> m_ecsEvents;
 
         ECSSystemManager m_systems;
 

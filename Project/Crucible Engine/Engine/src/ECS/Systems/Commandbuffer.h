@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Declares CommandBuffer: records structural ECS changes
 *                (create/destroy entity, add/remove component) made
@@ -29,6 +29,10 @@
 *                add hooks never ran are removed silently); EntitySpawn
 *                handles carry a private epoch so a stale handle can't touch
 *                a reused spawn token after Execute()/Clear()/move
+*    -v1.3       hierarchy commands (SetParent, DetachChildren,
+*                SetSiblingIndex, EntitySpawn::WithParent); HierarchyNode
+*                can't be written/added through the buffer; mandatory base
+*                components can't be removed
 *
 **************************************************************************/
 
@@ -83,17 +87,43 @@ namespace  Crucible
 
 		/*********************************************************************
 		 \brief  Queues World::RemoveComponent<T> on entity.
-		 \note   Skipped on replay if entity has died by then.
+		 \note   Skipped on replay if entity has died by then. The mandatory
+				 base components can't be removed (RemovableComponent).
 		 *********************************************************************/
-		template <typename T>
+		template <RemovableComponent T>
 		void RemoveComponent(Entity entity);
+
+		/*********************************************************************
+		 \brief  Queues World::TrySetParent(child, parent, worldPositionStays)
+				 (Unity's SetParent; kNullEntity makes child a root).
+		 \note   An invalid request (cycle, self-parent, dead parent) is
+				 logged and skipped on replay, never thrown, so one bad
+				 request can't fail the system that sent it.
+		 *********************************************************************/
+		void SetParent(Entity child, Entity parent, bool worldPositionStays = true);
+
+		/*********************************************************************
+		 \brief  Queues World::DetachChildren(parent). No-op on replay if
+				 parent has died; if a child can't keep its world transform
+				 (zero-scale parent) nothing is detached and it is logged,
+				 never thrown.
+		 *********************************************************************/
+		void DetachChildren(Entity parent);
+
+		/*********************************************************************
+		 \brief  Queues World::SetSiblingIndex(entity, index). No-op on
+				 replay if entity has died.
+		 *********************************************************************/
+		void SetSiblingIndex(Entity entity, std::uint32_t index);
 
 
 		class EntitySpawn;
 
 		/*********************************************************************
 		 \brief  Queues creation of a new entity; chain With<T>() on the
-				 result to give it components.
+				 result to give it components. It always gets the mandatory
+				 base components too (see kMandatoryComponents), in the same
+				 single archetype placement.
 		 \note   The returned EntitySpawn is valid only until this buffer is
 				 executed, cleared or moved; With<T>() on it afterwards
 				 throws std::logic_error.
@@ -202,6 +232,11 @@ namespace  Crucible
 		template <typename T>
 		void RecordSetSpawnedComponent(std::uint32_t token, std::uint32_t epoch, T value);
 
+		void RecordSpawnParent(std::uint32_t token, std::uint32_t epoch, Entity parent, bool worldPositionStays);
+
+		// Throws std::logic_error if an EntitySpawn handle outlived its buffer epoch.
+		void RequireLiveSpawn(std::uint32_t token, std::uint32_t epoch, const char* operation) const;
+
 		Chunk* m_head = nullptr;
 		Chunk* m_tail = nullptr;
 		std::size_t m_count = 0;
@@ -221,13 +256,40 @@ namespace  Crucible
 	class CommandBuffer::EntitySpawn
 	{
 	public:
-		// Queues "add component T (default-valued unless given) to
-		// the entity this spawn creates" and returns *this so calls
-		// can be chained.
+		/*********************************************************************
+		 \brief  Queues "the entity this spawn creates starts with component
+				 T = value (default-valued unless given)"; returns *this so
+				 calls can be chained.
+		 \details For a mandatory component (Transform, WorldTransform) the
+				  entity has it anyway: this only sets its initial value, it
+				  never adds a second one. OnComponentAdded<T> fires once, at
+				  the end of Execute(), and sees this value (see
+				  World::OnComponentAdded).
+		 *********************************************************************/
 		template <typename T>
 		EntitySpawn& With(T value = T{})
 		{
+			static_assert(!WorldManaged<T>::value, "HierarchyNode links are managed by World: a spawn always starts as a root - use WithParent() (or CommandBuffer::SetParent) to parent it");
 			m_buffer->RecordSetSpawnedComponent<T>(m_token, m_epoch, std::move(value));
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  Queues SetParent(spawned entity, parent, worldPositionStays)
+				 right after the With<T>() values given so far.
+		 \details The default false keeps the Transform given to
+				  With<Transform>() as LOCAL to parent, like Unity's
+				  Instantiate(prefab, parent). Call it after With<Transform>():
+				  a later With<Transform>() would overwrite the solved local.
+				  A refused request (dead parent) is logged and the spawn
+				  stays a root. If the same buffer later destroys parent,
+				  the spawn goes with it (DestroyEntity cascades) - its
+				  remove hooks then run although its add hooks never did,
+				  which hooks must already tolerate (World::OnComponentAdded).
+		 *********************************************************************/
+		EntitySpawn& WithParent(Entity parent, bool worldPositionStays = false)
+		{
+			m_buffer->RecordSpawnParent(m_token, m_epoch, parent, worldPositionStays);
 			return *this;
 		}
 
@@ -244,6 +306,7 @@ namespace  Crucible
 	template <typename T>
 	void CommandBuffer::AddComponent(Entity entity, T value)
 	{
+		static_assert(!WorldManaged<T>::value, "This component is managed by World (e.g. HierarchyNode): use CommandBuffer::SetParent");
 		struct Payload { Entity entity; T value; };
 
 		Emplace<Payload>(
@@ -258,7 +321,7 @@ namespace  Crucible
 			Payload{ entity, std::move(value) });
 	}
 
-	template <typename T>
+	template <RemovableComponent T>
 	void CommandBuffer::RemoveComponent(Entity entity)
 	{
 		struct Payload { Entity entity; };
@@ -276,14 +339,10 @@ namespace  Crucible
 	template <typename T>
 	void CommandBuffer::RecordSetSpawnedComponent(std::uint32_t token, std::uint32_t epoch, T value)
 	{
-		// A handle kept past Execute()/Clear()/move would otherwise write into
-		// whichever spawn now owns the same token.
-		if (epoch != m_spawnEpoch || token >= m_spawnSignatures.size())
-		{
-			throw std::logic_error("CommandBuffer::EntitySpawn::With - spawn handle used after the buffer was executed or cleared");
-		}
+		RequireLiveSpawn(token, epoch, "With");
 
 		// The spawn is created with T already in its archetype (see RecordCreateSpawned).
+		// For a mandatory T the bit is already implied, so this changes nothing.
 		m_spawnSignatures[token].set(ComponentTypeId<T>());
 
 		struct Payload { std::uint32_t token; T value; };

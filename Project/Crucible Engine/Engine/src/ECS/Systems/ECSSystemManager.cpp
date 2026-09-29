@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.3
+* \version       1.6
 * \brief
 *                Implementation of ECSSystemManager: drives every
 *                registered system's Init/Update/Shutdown, in order.
@@ -32,6 +32,13 @@
 *                ExecuteBatch() seam; LogSchedule()
 *    -v1.3       each Update() runs inside the system's declared-access
 *                scope; MainThread affinity enforced
+*    -v1.4       SystemContext passed to Update(); per-system event outboxes
+*                merged (serial order) and delivered after each stage's
+*                command replay; failed systems lose their events too
+*    -v1.5       RunSystem builds a per-call EventWriter over the slot's
+*                engine/network outboxes; gameplay outbox removed
+*    -v1.6       gameplay outbox back; the writer grants the gameplay route
+*                only to systems that declared EmitsGameplayEvents()
 *
 **************************************************************************/
 
@@ -43,6 +50,7 @@
 
 #include "ECSSystemManager.h"
 #include "SystemAccessScope.h"
+#include "EventBus/EventBuses.h"
 
 #include <Diagnostics/Logger.h>
 
@@ -232,7 +240,15 @@ namespace Crucible
 			const ActiveSystemAccess active{ &desc.access, m_schedule.names[index].c_str() };
 			SystemAccessScope accessScope(active);
 
-			m_registry.GetSystem(index).Update(world, slot.commands);
+			// Everything the system may write lives in its own slot (safe for future worker threads).
+			// The writer and context exist only for this call: systems must not keep them.
+			// Engine + network are always allowed; gameplay only if the system declared it owns gameplay decisions.
+			const EventRoute routes = desc.emitsGameplayEvents
+				? EventRoute::All
+				: EventRoute::Engine | EventRoute::Network;
+			EventWriter events(slot.engineOut, slot.gameplayOut, slot.networkOut, routes, m_schedule.names[index].c_str());
+			SystemContext ctx{ slot.commands, events };
+			m_registry.GetSystem(index).Update(world, ctx);
 		}
 		catch (const std::exception& e)
 		{
@@ -271,12 +287,65 @@ namespace Crucible
 				if (!slot.failedThisFrame) slot.consecutiveFailures = 0;
 			}
 		}
+
+		// Commands are applied; now events, so listeners see this stage's changes.
+		MergeAndDeliverEvents(stage);
+	}
+
+	void ECSSystemManager::MergeAndDeliverEvents(const StageSchedule& stage)
+	{
+		// Not connected to any buses: discard whatever the systems sent.
+		if (!m_events)
+		{
+			for (const ExecutionBatch& batch : stage.batches)
+				for (std::size_t index : batch.systems) m_slots[index].ClearOutboxes();
+			return;
+		}
+
+		// A merge/delivery failure (out of memory) is contained per bus: the bus drops and
+		// counts what it couldn't handle, stays consistent, and the frame carries on.
+		const auto contain = [](const char* what, auto&& step) noexcept
+			{
+				try { step(); }
+				catch (const std::exception& e)
+				{
+					try { CRU_ERROR("ECSSystemManager: {} failed - {}", what, e.what()); } catch (...) {}
+				}
+				catch (...)
+				{
+					try { CRU_ERROR("ECSSystemManager: {} failed", what); } catch (...) {}
+				}
+			};
+
+		// Merge in the scheduler's serial order: the event order is deterministic,
+		// however the systems' threads were timed.
+		for (const ExecutionBatch& batch : stage.batches)
+		{
+			for (std::size_t index : batch.systems)
+			{
+				SystemSlot& slot = m_slots[index];
+				if (slot.disabled) { slot.ClearOutboxes(); continue; }
+
+				contain("merging engine events", [&] { m_events->engine.Merge(slot.engineOut); });
+				contain("merging network events", [&] { m_events->network.Merge(slot.networkOut); });
+				// Appended after the lifecycle events the command replay already queued on this bus.
+				contain("merging gameplay events", [&] { m_events->gameplay.Merge(slot.gameplayOut); });
+			}
+		}
+
+		// Deliver on this (main) thread, bus by bus: engine, network, then gameplay (which also
+		// carries the ECS lifecycle events queued by hooks during the command replay above).
+		// Order is guaranteed within a bus only. Listener exceptions are caught inside the bus.
+		contain("delivering engine events", [&] { m_events->engine.DeliverPending(); });
+		contain("delivering network events", [&] { m_events->network.DeliverPending(); });
+		contain("delivering gameplay events", [&] { m_events->gameplay.DeliverPending(); });
 	}
 
 	void ECSSystemManager::HandleFailure(std::size_t index, const char* what) noexcept
 	{
 		SystemSlot& slot = m_slots[index];
 		slot.commands.Clear();   // lose only this system's commands
+		slot.ClearOutboxes();    // ...and its events: they could describe changes that never happened
 
 		// A system failing in both Update and replay in one frame counts once.
 		if (!slot.failedThisFrame)
@@ -318,7 +387,11 @@ namespace Crucible
 			slot.initialised = false;
 		}
 
-		for (SystemSlot& slot : m_slots) slot.commands.Clear();
+		for (SystemSlot& slot : m_slots)
+		{
+			slot.commands.Clear();
+			slot.ClearOutboxes();
+		}
 
 		m_initialized = false;
 	}
@@ -338,8 +411,9 @@ namespace Crucible
 						: desc.access.exclusive ? std::string("exclusive")
 						: "reads " + ComponentList(desc.access.reads) + " writes " + ComponentList(desc.access.writes);
 
-					CRU_INFO("  {} batch {}: {} [priority {}, {}, {}]", StageName(stage.stage), batchIndex,
-						m_schedule.names[index], desc.priority, AffinityName(desc.affinity), access);
+					CRU_INFO("  {} batch {}: {} [priority {}, {}, {}{}]", StageName(stage.stage), batchIndex,
+						m_schedule.names[index], desc.priority, AffinityName(desc.affinity), access,
+						desc.emitsGameplayEvents ? ", emits gameplay events" : "");
 				}
 			}
 		}
