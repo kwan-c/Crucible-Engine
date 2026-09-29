@@ -51,6 +51,11 @@ namespace rttr::detail {
 // The template_type_trait specialisations above must stay in this header:
 // they are compile-time traits and every translation unit needs to see them.
 // The registration is runtime data and belongs in exactly one .cpp.
+// Disabled, not deleted: kept for reference. The live math registrations
+// are in ReflectionComponentRegistration.cpp. Re-enabling this block causes
+//   'rttr__auto__register__': 'struct' type redefinition
+// because that .cpp includes this header and has its own block.
+#if 0
 RTTR_REGISTRATION
 {
 	using namespace Crucible::Math;
@@ -111,3 +116,4 @@ RTTR_REGISTRATION
  //       .property("w", &quat::m_W)
  //   ;
 }
+#endif

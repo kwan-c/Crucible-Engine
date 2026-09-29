@@ -52,57 +52,43 @@ RTTR_REGISTRATION
     // Registration for Math Library
     // -----------------
 
+	// The math library is GLM (see Math/Math.h). Its vector and quaternion
+	// components are the plain fields x / y / z / w, so they register the
+	// same way any struct does.
+	//
+	// mat3 and mat4 are deliberately NOT registered. GLM stores a matrix as a
+	// private array of columns with no named fields to point RTTR at, and
+	// nothing that gets serialised holds one: the only matrix component,
+	// WorldTransform, is recomputed every frame and never written to a file.
+	// If one is ever needed, register it through getter/setter functions.
+	//
+	// Older scene files wrote vec4 as w, x, y, z. Keys are matched by name on
+	// load, so those files still read correctly.
+
 	rttr::registration::class_<vec2>("vec2")
-		.property("x", &vec2::m_X)
-		.property("y", &vec2::m_Y)
+		.property("x", &vec2::x)
+		.property("y", &vec2::y)
 	;
-	
+
 	rttr::registration::class_<vec3>("vec3")
-		.property("x", &vec3::m_X)
-		.property("y", &vec3::m_Y)
-		.property("z", &vec3::m_Z)
+		.property("x", &vec3::x)
+		.property("y", &vec3::y)
+		.property("z", &vec3::z)
 	;
-	
+
 	rttr::registration::class_<vec4>("vec4")
-		.property("w", &vec4::m_W)
-		.property("x", &vec4::m_X)
-		.property("y", &vec4::m_Y)
-		.property("z", &vec4::m_Z)
+		.property("x", &vec4::x)
+		.property("y", &vec4::y)
+		.property("z", &vec4::z)
+		.property("w", &vec4::w)
 	;
-	
-    rttr::registration::class_<mat3>("mat3")
-        .property("m00", &mat3::m_00)
-        .property("m10", &mat3::m_10)
-        .property("m20", &mat3::m_20)
-        .property("m01", &mat3::m_01)
-        .property("m11", &mat3::m_11)
-        .property("m21", &mat3::m_21)
-        .property("m02", &mat3::m_02)
-        .property("m12", &mat3::m_12)
-        .property("m22", &mat3::m_22)
-    ;
-	
-	rttr::registration::class_<mat4>("mat4")
-        .property("m00", &mat4::m_00)
-        .property("m10", &mat4::m_10)
-        .property("m20", &mat4::m_20)
-        .property("m30", &mat4::m_30)
-        .property("m01", &mat4::m_01)
-        .property("m11", &mat4::m_11)
-        .property("m21", &mat4::m_21)
-        .property("m31", &mat4::m_31)
-        .property("m02", &mat4::m_02)
-        .property("m12", &mat4::m_12)
-        .property("m22", &mat4::m_22)
-        .property("m32", &mat4::m_32)
+
+	rttr::registration::class_<quat>("quat")
+		.property("x", &quat::x)
+		.property("y", &quat::y)
+		.property("z", &quat::z)
+		.property("w", &quat::w)
 	;
-	
-    rttr::registration::class_<quat>("quat")
-        .property("x", &quat::m_X)
-        .property("y", &quat::m_Y)
-        .property("z", &quat::m_Z)
-        .property("w", &quat::m_W)
-    ;
 
     // -----------------
     // Components (Crucible::)
@@ -113,6 +99,8 @@ RTTR_REGISTRATION
     rttr::registration::class_<Transform>("Transform")
         .constructor<>()
         .property("positions", &Transform::positions)
+        .property("rotation",  &Transform::rotation)
+        .property("scale",     &Transform::scale)
     ;
 
     rttr::registration::class_<MeshRenderer>("MeshRenderer")
@@ -132,4 +120,69 @@ RTTR_REGISTRATION
         .property("velocity", &RigidBody::velocity)
         .property("mass",     &RigidBody::mass)
     ;
+
+    // -----------------
+    // Physics (Physics/PhysicsComponents.h)
+    // -----------------
+    //
+    // Enums are registered by name so the scene file says "Capsule" and
+    // "Player", not 2 and 2. Reordering an enum then cannot silently change
+    // what an existing scene means. PhysicsLayer::Count is deliberately left
+    // out - it is a table size, not a layer anyone should pick.
+
+    rttr::registration::enumeration<ShapeType>("ShapeType")
+    (
+        rttr::value("Box",     ShapeType::Box),
+        rttr::value("Sphere",  ShapeType::Sphere),
+        rttr::value("Capsule", ShapeType::Capsule)
+    );
+
+    rttr::registration::enumeration<PhysicsLayer>("PhysicsLayer")
+    (
+        rttr::value("NonMoving",  PhysicsLayer::NonMoving),
+        rttr::value("Moving",     PhysicsLayer::Moving),
+        rttr::value("Player",     PhysicsLayer::Player),
+        rttr::value("Enemy",      PhysicsLayer::Enemy),
+        rttr::value("Projectile", PhysicsLayer::Projectile)
+    );
+
+    rttr::registration::class_<Collider>("Collider")
+        .constructor<>()
+        .property("type",       &Collider::m_type)
+        .property("size",       &Collider::m_size)
+        .property("radius",     &Collider::m_radius)
+        .property("height",     &Collider::m_height)
+        .property("center",     &Collider::m_center)
+        .property("friction",   &Collider::m_friction)
+        .property("bounciness", &Collider::m_bounciness)
+        .property("layer",      &Collider::m_layer)
+    ;
+
+    // Settings are saved. Results and step-to-step state are runtime-only:
+    // tagged DO_NOT_SERIALIZE so the Inspector can still show them, but a
+    // scene never stores "is grounded" or a half-finished jump.
+    rttr::registration::class_<CharacterController>("CharacterController")
+        .constructor<>()
+        .property("height",       &CharacterController::m_height)
+        .property("radius",       &CharacterController::m_radius)
+        .property("center",       &CharacterController::m_center)
+        .property("slopeLimit",   &CharacterController::m_slopeLimit)
+        .property("stepOffset",   &CharacterController::m_stepOffset)
+        .property("pushStrength", &CharacterController::m_pushStrength)
+        .property("layer",        &CharacterController::m_layer)
+        .property("isGrounded",    &CharacterController::m_isGrounded)
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+        .property("velocity",      &CharacterController::m_velocity)
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+        .property("moveVelocity",  &CharacterController::m_moveVelocity)
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+        .property("verticalSpeed", &CharacterController::m_verticalSpeed)
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+        .property("jumpHeight",    &CharacterController::m_jumpHeight)
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+    ;
+
+    // HierarchyNode and WorldTransform are intentionally NOT registered for
+    // serialization: EntityIO skips them. The tree is saved by Scene as guid
+    // references, and WorldTransform is recomputed every frame.
 }

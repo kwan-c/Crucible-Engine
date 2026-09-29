@@ -66,7 +66,7 @@ namespace Crucible {
             for (int i = 0; i < 20; ++i)
             {
                 const Entity e = crate.Instantiate(world);
-                world.GetComponent<Transform>(e)->positions.m_X = i * 2.f;
+                world.GetComponent<Transform>(e)->positions.x = i * 2.f;
             }
         }
      \endcode

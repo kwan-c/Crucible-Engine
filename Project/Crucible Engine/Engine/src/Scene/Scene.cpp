@@ -24,6 +24,7 @@
 #include "Scene/Scene.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <utility>
 #include <vector>
 
@@ -99,12 +100,36 @@ namespace Crucible {
         // --- Write them out -----------------------------------------------
         doc.EnsureArray("entities");
 
+        std::size_t parented = 0;
+
         for (const auto& [id, entity] : ordered)
         {
             const std::size_t index = doc.PushObject("entities");
             const std::string base  = "entities/" + std::to_string(index);
 
             doc.Set(base + "/id", AssetRegistry::GuidToString(id));
+
+            // The tree is stored as a guid reference, never as the raw
+            // HierarchyNode links - those are Entity handles, which are slot
+            // indices that mean nothing after a reload. The parent is always
+            // alive and therefore always in m_ids.
+            const Entity parent = world.GetParent(entity);
+            if (parent.IsValid())
+            {
+                const auto parentId = m_ids.find(parent);
+                if (parentId != m_ids.end())
+                {
+                    doc.Set(base + "/parent", AssetRegistry::GuidToString(parentId->second));
+
+                    // Entities are written in guid order, not tree order, so
+                    // the position among siblings has to be recorded
+                    // explicitly or the Hierarchy panel order would shuffle.
+                    doc.Set(base + "/siblingIndex",
+                            static_cast<int>(world.GetSiblingIndex(entity)));
+                    ++parented;
+                }
+            }
+
             EntityIO::WriteComponents(world, entity, doc, base + "/components");
         }
 
@@ -113,8 +138,8 @@ namespace Crucible {
             return false;
         }
 
-        CRU_INFO("Scene: saved '{}' ({} entities) to {}",
-                 m_name, ordered.size(), file.string());
+        CRU_INFO("Scene: saved '{}' ({} entities, {} parented) to {}",
+                 m_name, ordered.size(), parented, file.string());
         return true;
     }
 
@@ -155,6 +180,21 @@ namespace Crucible {
         const std::size_t count = doc.GetListSize("entities");
         std::size_t components = 0;
 
+        // A parent can appear later in the file than its child (the file is
+        // in guid order, not tree order), so every entity has to exist
+        // before any link can be made. Links are collected here and applied
+        // in a second pass.
+        struct PendingLink
+        {
+            Entity        child;
+            std::uint64_t parentId;
+            std::uint32_t siblingIndex;
+        };
+        std::vector<PendingLink> links;
+        std::unordered_map<std::uint64_t, Entity> byId;
+        byId.reserve(count);
+
+        // --- Pass 1: create every entity and its components ---------------
         for (std::size_t i = 0; i < count; ++i)
         {
             const std::string base = "entities/" + std::to_string(i);
@@ -170,13 +210,64 @@ namespace Crucible {
                     : AssetRegistry::GuidFromString(idText);
 
             m_ids.emplace(entity, id);
+            byId.emplace(id.m_Value, entity);
 
             components += EntityIO::ReadComponents(world, entity, doc,
                                                    base + "/components");
+
+            const std::string parentText = doc.Get<std::string>(base + "/parent", std::string{});
+            if (!parentText.empty())
+            {
+                links.push_back({ entity,
+                                  AssetRegistry::GuidFromString(parentText).m_Value,
+                                  static_cast<std::uint32_t>(doc.Get<int>(base + "/siblingIndex", 0)) });
+            }
         }
 
-        CRU_INFO("Scene: loaded '{}' ({} entities, {} components) from {}",
-                 m_name, count, components, file.string());
+        // --- Pass 2: rebuild the tree -------------------------------------
+        //
+        // TrySetParent appends the child as its parent's LAST child. Applying
+        // links sorted by (parent, siblingIndex) therefore reproduces the
+        // saved sibling order with no extra SetSiblingIndex calls.
+        std::sort(links.begin(), links.end(),
+                  [](const PendingLink& lhs, const PendingLink& rhs)
+                  {
+                      if (lhs.parentId != rhs.parentId) return lhs.parentId < rhs.parentId;
+                      return lhs.siblingIndex < rhs.siblingIndex;
+                  });
+
+        std::size_t parented = 0;
+        for (const PendingLink& link : links)
+        {
+            const auto parent = byId.find(link.parentId);
+            if (parent == byId.end())
+            {
+                // The parent is not in this file - a hand edit, or a merge
+                // that dropped it. Keep the child as a root rather than fail.
+                CRU_WARN("Scene: an entity's parent is missing from '{}' - left as a root",
+                         file.string());
+                continue;
+            }
+
+            // worldPositionStays = false: the file holds each entity's LOCAL
+            // Transform, which must be kept as-is. With true, SetParent would
+            // recompute it to preserve the world position the entity had as
+            // a root - which is not where it was saved.
+            const ParentResult result = world.TrySetParent(link.child, parent->second, false);
+            if (result == ParentResult::Ok)
+            {
+                ++parented;
+            }
+            else
+            {
+                // A cycle can only come from a corrupted or hand-edited file.
+                CRU_WARN("Scene: could not restore a parent link in '{}' ({}) - left as a root",
+                         file.string(), ToString(result));
+            }
+        }
+
+        CRU_INFO("Scene: loaded '{}' ({} entities, {} components, {} parented) from {}",
+                 m_name, count, components, parented, file.string());
         return true;
     }
 

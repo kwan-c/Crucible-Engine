@@ -23,6 +23,7 @@
 *************************************************************************/
 #include "Scene/EntityIO.h"
 
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -30,6 +31,35 @@
 #include "ECS/Components/Components.h"
 #include "ECS/World.h"
 #include "Json/JsonWrapper.h"
+
+namespace {
+
+    /*************************************************************************
+     \brief
+        Components in CRUCIBLE_COMPONENT_LIST that must never be written to,
+        or read from, a scene file.
+
+     \details
+        HierarchyNode   Raw Entity handles (parent, siblings). Handles are
+                        slot indices that mean nothing after a reload. It is
+                        also WorldManaged, so AddComponent<HierarchyNode> is
+                        a compile error. The tree is saved by Scene instead,
+                        as guid references resolved through World::SetParent.
+
+        WorldTransform  Derived: HierarchyTransformSystem recomputes it from
+                        Transform every frame. Saving it would only store a
+                        stale copy.
+
+     \note
+        Checked with if constexpr, not a runtime if. A runtime branch still
+        instantiates AddComponent<HierarchyNode>, and its static_assert fires
+        even though the branch could never run.
+     *************************************************************************/
+    template <typename T>
+    inline constexpr bool kSkipInSceneFile =
+        Crucible::WorldManaged<T>::value
+        || std::is_same_v<T, Crucible::WorldTransform>;
+}
 
 namespace Crucible::EntityIO {
 
@@ -46,6 +76,7 @@ namespace Crucible::EntityIO {
         // type here, so Read<T> and ComponentTraits<T> both resolve at
         // compile time.
         #define CRU_WRITE_ONE_COMPONENT(T)                                  \
+            if constexpr (!kSkipInSceneFile<T>)                             \
             {                                                               \
                 if (world.HasComponent<T>(entity))                          \
                 {                                                           \
@@ -75,28 +106,32 @@ namespace Crucible::EntityIO {
         for (const std::string& name : doc.GetMemberNames(componentsPath))
         {
             const std::string path = componentsPath + "/" + name;
-            bool matched = false;
+            bool recognised = false;
 
             // The reverse of the write macro: compare the runtime name
             // against each compile-time name until one hits.
+            //
+            // Transform is a mandatory component, so the entity already has
+            // one from CreateEntity(). AddComponent on an existing component
+            // overwrites it, which is exactly what loading wants.
             #define CRU_READ_ONE_COMPONENT(T)                               \
-                if (!matched && name == ComponentTraits<T>::name)           \
+                if (!recognised && name == ComponentTraits<T>::name)        \
                 {                                                           \
-                    T component{};                                          \
-                    doc.GetObject(path, component);                         \
-                    world.AddComponent<T>(entity, std::move(component));    \
-                    matched = true;                                         \
+                    recognised = true;                                      \
+                    if constexpr (!kSkipInSceneFile<T>)                     \
+                    {                                                       \
+                        T component{};                                      \
+                        doc.GetObject(path, component);                     \
+                        world.AddComponent<T>(entity, std::move(component));\
+                        ++applied;                                          \
+                    }                                                       \
                 }
 
             CRUCIBLE_COMPONENT_LIST(CRU_READ_ONE_COMPONENT)
 
             #undef CRU_READ_ONE_COMPONENT
 
-            if (matched)
-            {
-                ++applied;
-            }
-            else
+            if (!recognised)
             {
                 // Not fatal. Most likely a component that exists on another
                 // branch, or one that has since been removed from
