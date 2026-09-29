@@ -38,9 +38,6 @@ set_target_properties(Game PROPERTIES
 set(GAME_OUTPUT_DIR "$<TARGET_FILE_DIR:Game>")
 
 add_custom_command(TARGET Game POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE:Engine>"
-        "${GAME_OUTPUT_DIR}"
 
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:glfw>"

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Declares ComponentInfo: the type-erased description of
 *                a single component type (size, alignment, and
@@ -23,6 +23,8 @@
 *
 * \history
 *    -v1.0       initial type-erased component metadata + MakeComponentInfo<T>
+*    -v1.1       components must be nothrow move-constructible and nothrow
+*                destructible (compile-time check)
 *
 *
 **************************************************************************/
@@ -177,6 +179,9 @@ namespace Crucible
 	{
 		static_assert(RegisteredComponent<T>, "T is no a registered ECS component");
 		static_assert(std::is_default_constructible_v<T>, "components must be default constructable");
+		// Storage relies on these for non-throwing relocation, removal and rollback.
+		static_assert(std::is_nothrow_move_constructible_v<T>, "components must be nothrow move-constructible");
+		static_assert(std::is_nothrow_destructible_v<T>, "components must be nothrow destructible");
 
 
 		ComponentInfo info;

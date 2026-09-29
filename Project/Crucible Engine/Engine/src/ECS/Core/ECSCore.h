@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          17 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                core data structures and management systems for ecs
 *
@@ -21,11 +21,16 @@
 *    -v1.1       added member-level comments for readability, no logic changes
 *    -v1.2       fixed comment typos (brief line + the Entity/gens note
 *                below), no logic changes
-*
+*    -v1.3       Release() for slots whose creation failed, slots retired
+*                instead of wrapping their generation, noexcept Destroy()
+*                (free list pre-reserved), index-space exhaustion check
 *
 **************************************************************************/
 #pragma once
+#include <algorithm>
 #include <cstdint>
+#include <limits>
+#include <stdexcept>
 #include <vector>
 #include <iostream>
 
@@ -236,7 +241,7 @@ namespace Crucible
 			archetype - its record's archetype is left null until the
 			caller (normally World::CreateEntity) assigns one.
 		 *********************************************************************/
-		//Allocate new an an reuses slot form free list if one 
+		//Allocate new an an reuses slot form free list if one
 		Entity Create()
 		{
 			uint32_t idx;
@@ -247,9 +252,20 @@ namespace Crucible
 			}
 			else
 			{
-				 idx = static_cast<uint32_t>(m_records.size());
+				if (m_records.size() >= std::numeric_limits<uint32_t>::max())
+				{
+					throw std::length_error("EntityManager::Create: entity index space exhausted");
+				}
+
+				// The free list may later hold every slot, so it grows with the record table;
+				// Destroy()/Release() can then return slots without ever allocating.
+				if (m_freeList.capacity() < m_records.size() + 1)
+				{
+					m_freeList.reserve(std::max<std::size_t>(m_records.size() + 1, m_freeList.capacity() * 2));
+				}
+
+				idx = static_cast<uint32_t>(m_records.size());
 				m_records.emplace_back();
-				
 			}
 			EntityRecord& record = m_records[idx];
 			record.archetype = nullptr;
@@ -297,24 +313,63 @@ namespace Crucible
 			true if e was alive and has been destroyed, false if it was
 			already dead/stale (double-destroy is a no-op, not an error).
 		 *********************************************************************/
-		bool Destroy(Entity e)
+		bool Destroy(Entity e) noexcept
 		{
 			if (!IsAlive(e)) return false;//prevent double deletion
 
-			EntityRecord& record = m_records[e.index];
-
-			++record.generation;
-			record.archetype = nullptr;
-			record.row = 0;
-
-			--m_aliveCount;
-			m_freeList.push_back(e.index);
+			FreeSlot(e.index);
 			return true;
 		}
 
+		/*********************************************************************
+		 \brief
+			Returns a slot obtained from Create() that was never placed in an
+			archetype (creation failed part-way), so it isn't leaked.
+
+		 \param[in]
+			e The handle Create() returned.
+		 \return
+			true if the slot was released.
+		 *********************************************************************/
+		bool Release(Entity e) noexcept
+		{
+			if (!e.IsValid() || e.index >= m_records.size()) return false;
+			const EntityRecord& record = m_records[e.index];
+			if (record.generation != e.generation || record.archetype != nullptr) return false;
+
+			FreeSlot(e.index);
+			return true;
+		}
+
+		/*********************************************************************
+		 \brief  How many slots have been permanently retired because their
+				 generation counter ran out.
+		 *********************************************************************/
+		uint32_t RetiredCount() const { return m_retiredCount; }
+
 	private:
+		// Invalidates every handle to a slot and makes it reusable (or retires it).
+		void FreeSlot(uint32_t index) noexcept
+		{
+			EntityRecord& record = m_records[index];
+			record.archetype = nullptr;
+			record.row = 0;
+			--m_aliveCount;
+
+			// A slot whose generation would wrap is retired forever, so an old handle can never match again.
+			if (record.generation == std::numeric_limits<uint32_t>::max())
+			{
+				++m_retiredCount;
+				return;
+			}
+
+			++record.generation;
+			m_freeList.push_back(index);   // capacity reserved in Create(), cannot throw
+		}
+
 		std::vector<EntityRecord> m_records;
 		std::vector<uint32_t> m_freeList;// available indexes that can be reused which have been destroyed previously
 		uint32_t m_aliveCount = 0;
+		uint32_t m_retiredCount = 0;
 	};
 }

@@ -3,29 +3,34 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.2
 * \brief
-*                Declares the ECSPhysicsSystem, a placeholder physics
-*                system that will apply RigidBody-driven motion to
-*                Transform components each frame.
+*                Declares the ECSPhysicsSystem, which applies
+*                RigidBody-driven motion to Transform components each
+*                frame.
 *
 * \details
 *                ECSPhysicsSystem implements the IECSSystem interface
 *                (see Systems/IECSSystems.h) so it can be registered
-*                with and driven by the engine's SystemRegistry/manager.
-*                The actual physics update logic is not yet implemented -
-*                see ECSPhysicsSystem.cpp for the (currently empty)
-*                Init/Update/Shutdown bodies.
+*                with and driven by ECSSystemManager. It runs in the
+*                PostUpdate stage and keeps one persistent query, built
+*                lazily on its first Update(). See ECSPhysicsSystem.cpp.
 *
 * \history
 *    -v1.0       skeleton / placeholder system, no physics logic yet
-*
+*    -v1.1       integrates velocity into position using
+*                World::DeltaTime(); PostUpdate stage; persistent query
+*    -v1.2       Describe(): scheduler access from its query type, Worker
+*                affinity
 *
 **************************************************************************/
 #pragma once
 
+#include <optional>
+
 #include "Systems/IECSSystems.h"
-//this is a sample place holder file 
+#include "Systems/Query.h"
+#include "Components/Components.h"
 
 namespace Crucible
 {
@@ -38,5 +43,23 @@ namespace Crucible
 		void Shutdown() noexcept override;
 
 		int Priority()const override { return 1; }
+
+		/*********************************************************************
+		 \brief  Physics runs after the main per-frame logic.
+		 *********************************************************************/
+		SystemStage Stage() const override { return SystemStage::PostUpdate; }
+
+		/*********************************************************************
+		 \brief  Scheduler description: access derived from BodyQuery
+				 (writes Transform, reads RigidBody), may run on a worker.
+		 *********************************************************************/
+		void Describe(SystemDesc& desc) const override;
+
+	private:
+		// One type for both the scheduler's access and the iteration itself.
+		using BodyQuery = Query<Transform, const RigidBody>;
+
+		// Built on the first Update(), then reused every frame.
+		std::optional<BodyQuery> m_bodies;
 	};
 }

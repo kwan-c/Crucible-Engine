@@ -8,14 +8,15 @@
 
 #include "Systems/Layer.h"
 #include "ImGui/ImGuiManager.h"
+#include <Graphics/RenderSystem.h>
 
 namespace Crucible {
 
 	class ImGuiLayer : public Layer {
 	public:
-		explicit ImGuiLayer(Core& core) : m_core{ core } {}
+		explicit ImGuiLayer(Renderer& ren) : m_context{ ren.GetImguiContext()}, m_ren{ren} {}
 
-		void OnAttach() override { ImGuiManager::Init(m_core); }
+		void OnAttach() override { ImGuiManager::Init(m_context); }
 
 		// Build the UI for this frame (no GPU work yet).
 		void OnUpdate(float) override {
@@ -25,12 +26,13 @@ namespace Crucible {
 		}
 
 		// Called by the renderer inside the open render pass.
-		void OnRender() override { ImGuiManager::Draw(m_core); }
+		void OnRender() override { ImGuiManager::Draw(m_ren); }
 
 		void OnDetach() override { ImGuiManager::Exit(); }
 
 	private:
-		Core& m_core;
+		ImGuiVulkanContext		m_context;
+		Renderer&				m_ren;
 	};
 
 }

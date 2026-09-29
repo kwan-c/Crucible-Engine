@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.2
 * \brief
 *      Dynamic registry that owns all registered ECS systems.
 *
@@ -11,16 +11,23 @@
 *      Systems are registered explicitly through RegisterSystem<T>().
 *      Each system is stored through IECSSystem ownership so engine,
 *      game, and plugin systems can share the same execution pipeline
-*      without modifying a fixed system enum.
+*      without modifying a fixed system enum. One instance per system
+*      type is allowed, so FindSystem<T>() is unambiguous.
 *
 * \history
 *    -v1.0       initial fixed system-id enum + owning registry
-*
+*    -v1.1       dynamic registration; added FindSystem<T>() and rejection
+*                of duplicate system types; existing
+*                RegisterSystem/GetSystem/Size unchanged
+*    -v1.2       IndexOf/TypeAt/PopBackSystem for the scheduler
 *
 **************************************************************************/
 #pragma once
 #include <cstddef>
 #include <memory>
+#include <stdexcept>
+#include <typeindex>
+#include <typeinfo>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -44,7 +51,7 @@ namespace Crucible
 
      \note
         Non-copyable and non-movable because the registry owns system
-        lifetimes.
+        lifetimes. Registering a second system of the same type throws.
      *************************************************************************/
     class ECSSystemRegistry
     {
@@ -74,6 +81,10 @@ namespace Crucible
 
          \return
             Reference to the newly created system.
+
+         \note
+            Throws std::logic_error if a system of type T is already
+            registered.
          *********************************************************************/
         template<typename T, typename... Args>
         T& RegisterSystem(Args&&... args)
@@ -83,6 +94,16 @@ namespace Crucible
                 "T must derive from IECSSystem"
                 );
 
+            if (FindSystem<T>() != nullptr)
+            {
+                throw std::logic_error("ECSSystemRegistry::RegisterSystem - a system of this type is already registered");
+            }
+
+            // Reserve first so the two pushes below cannot throw and leave
+            // m_systems and m_types out of step.
+            m_systems.reserve(m_systems.size() + 1);
+            m_types.reserve(m_types.size() + 1);
+
             auto system = std::make_unique<T>(
                 std::forward<Args>(args)...
             );
@@ -90,6 +111,7 @@ namespace Crucible
             T& reference = *system;
 
             m_systems.push_back(std::move(system));
+            m_types.emplace_back(typeid(T));
 
             return reference;
         }
@@ -111,7 +133,7 @@ namespace Crucible
 
         /*********************************************************************
          \brief  Fetches a system by index, read-only access.
-         \param[in] indexThe system to fetch.
+         \param[in] index The system to fetch.
          \return Const reference to that system.
          *********************************************************************/
         const IECSSystem& GetSystem(std::size_t index) const
@@ -119,8 +141,60 @@ namespace Crucible
             return *m_systems.at(index);
         }
 
+        /*********************************************************************
+         \brief  The registered system of type T.
+         \return Pointer to it, or nullptr if no system of type T exists.
+         *********************************************************************/
+        template <typename T>
+        T* FindSystem() noexcept
+        {
+            const std::type_index wanted(typeid(T));
+            for (std::size_t i = 0; i < m_systems.size(); ++i)
+            {
+                if (m_types[i] == wanted) return static_cast<T*>(m_systems[i].get());
+            }
+            return nullptr;
+        }
+
+        /*********************************************************************
+         \brief  Registration index of the system with the given type.
+         \param[in] type typeid of the system class.
+         \return Its index, or npos if no such system is registered.
+         *********************************************************************/
+        std::size_t IndexOf(std::type_index type) const noexcept
+        {
+            for (std::size_t i = 0; i < m_types.size(); ++i)
+            {
+                if (m_types[i] == type) return i;
+            }
+            return npos;
+        }
+
+        /*********************************************************************
+         \brief  Type identity of the system at index.
+         *********************************************************************/
+        std::type_index TypeAt(std::size_t index) const
+        {
+            return m_types.at(index);
+        }
+
+        /*********************************************************************
+         \brief  Removes (and destroys) the most recently registered system.
+         \note   Used by ECSSystemManager to undo a registration that would
+                 make the schedule invalid (e.g. a dependency cycle).
+         *********************************************************************/
+        void PopBackSystem() noexcept
+        {
+            if (m_systems.empty()) return;
+            m_systems.pop_back();
+            m_types.pop_back();
+        }
+
+        static constexpr std::size_t npos = static_cast<std::size_t>(-1);
+
     private:
         std::vector<std::unique_ptr<IECSSystem>> m_systems;
+        std::vector<std::type_index> m_types;   // parallel to m_systems
 
     };
 }

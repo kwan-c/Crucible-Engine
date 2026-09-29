@@ -31,6 +31,9 @@ endif()
 target_compile_definitions(Engine 
     PRIVATE
         ENGINE_EXPORTS
+    PUBLIC
+        VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
+        VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS   # To handle swap chain recreation.
 )
 
 # Include directories
@@ -48,6 +51,19 @@ target_link_libraries(Engine PUBLIC EngineThirdParty)
 
 # NOTE: Engine.dll is copied next to each executable by that executable's own
 # POST_BUILD step (see Game/CMakeLists.txt and Editor/CMakeLists.txt).
+add_custom_command(TARGET Engine POST_BUILD
+
+    # Ensure Game's output directory exists
+    COMMAND ${CMAKE_COMMAND} -E make_directory
+        "$<TARGET_FILE_DIR:Game>"
+
+    # Copy Engine.dll
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:Engine>"
+        "$<TARGET_FILE_DIR:Game>"
+
+    COMMENT "Copying Engine.dll to Game output directory..."
+)
 
 # Organize files in Visual Studio Solution Explorer
 source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}/src" 
