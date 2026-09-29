@@ -11,6 +11,7 @@
 #include "Systems/Layer.h"
 #include "Systems/WindowManager.h"
 #include "Graphics/RenderSystem.h"
+#include "Input/InputSystem.h"
 #include <ECS/World.h>
 #include <ECS/Systems/ECSSystemManager.h>
 #include <Configuration/EngineConfig.h>
@@ -55,6 +56,7 @@ namespace Crucible
 
         WindowManager* m_window;
         Renderer* m_renderer;
+        Input m_input;      // owns the GLFW input callbacks; queried statically, e.g. Input::IsDown
         std::vector<std::unique_ptr<Layer>> m_layers;
 
         std::unique_ptr<World> m_world;
