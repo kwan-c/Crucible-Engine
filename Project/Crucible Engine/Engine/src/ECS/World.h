@@ -955,7 +955,7 @@ namespace Crucible
 	{
 		if (!m_entities.IsAlive(entity)) return 0;
 		const EntityRecord& record = m_entities.Record(entity);
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 		if (!record.archetype->Contains(id)) return 0;
 		return static_cast<const Archetype*>(record.archetype)->GetColumn(id).LastChanged(record.row);
 	}
@@ -969,7 +969,7 @@ namespace Crucible
 			throw std::invalid_argument("World::MarkChanged called with a dead/stale Entity");
 
 		const EntityRecord& record = m_entities.Record(entity);
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 		if (!record.archetype->Contains(id))
 			throw std::logic_error("World::MarkChanged: the entity does not have this component");
 
@@ -981,7 +981,7 @@ namespace Crucible
 	{
 		static_assert(!WorldManaged<T>::value, "This component is managed by World (e.g. HierarchyNode): use SetParent (kNullEntity to detach)");
 		EntityRecord& record = RequireMutableEntity(entity, "AddComponent");
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 
 		if (record.archetype->Contains(id)) return OverwriteComponent<T>(record, id, std::move(value));
 		return InsertComponent<T>(record, entity, id, std::move(value));
@@ -997,7 +997,7 @@ namespace Crucible
 	inline void World::RemoveComponent(Entity entity)
 	{
 		EntityRecord& record = RequireMutableEntity(entity, "RemoveComponent");
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 
 		if (!record.archetype->Contains(id)) return;
 
