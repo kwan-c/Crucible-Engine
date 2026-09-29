@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -58,6 +58,9 @@
 *                (SetParent, DetachChildren, sibling order, in World.cpp;
 *                world transforms are read from WorldTransform); DestroyEntity destroys
 *                descendants; RemoveComponent only takes RemovableComponent
+*    -v1.7       private ReadNodeRow (one lookup per node for
+*                HierarchyTransformSystem); per-call access checks
+*                Debug-only (see CRUCIBLE_ECS_ACCESS_CHECKS)
 *
 **************************************************************************/
 #pragma once
@@ -646,7 +649,7 @@ namespace Crucible
 
 		/*********************************************************************
 		 \brief  Unity's SetAsFirstSibling / SetAsLastSibling.
-		 *********************************************************************/
+		*********************************************************************/
 		void SetAsFirstSibling(Entity entity);
 		void SetAsLastSibling(Entity entity);
 
@@ -654,7 +657,7 @@ namespace Crucible
 		 \brief  Calls fn(child) for each direct child, first to last (Unity:
 				 foreach (Transform child in transform)).
 		 \note   Don't reparent or destroy this entity's children inside fn.
-		 *********************************************************************/
+		*********************************************************************/
 		template <typename Fn>
 		void ForEachChild(Entity parent, Fn&& fn) const;
 
@@ -664,7 +667,7 @@ namespace Crucible
 		 \note   O(subtree). out doubles as the work list; reuse the same
 				 vector across calls (clear() keeps its capacity) to avoid
 				 reallocating.
-		 *********************************************************************/
+		*********************************************************************/
 		void CollectSubtree(Entity root, std::vector<Entity>& out) const;
 
 		/*********************************************************************
@@ -711,6 +714,23 @@ namespace Crucible
 
 	private:
 		friend class CommandBuffer;
+		friend class HierarchyTransformSystem;   // reads NodeRow: one lookup per node per frame
+
+		// Everything HierarchyTransformSystem needs about one node, from ONE
+		// entity lookup (the public Read/LastChanged/Write path costs one each).
+		struct NodeRow
+		{
+			const Transform* local = nullptr;
+			const HierarchyNode* links = nullptr;
+			WorldTransform* world = nullptr;
+			std::uint64_t localTick = 0;          // LastChanged<Transform>
+			std::uint64_t linksTick = 0;          // LastChanged<HierarchyNode>
+			std::uint64_t* worldTick = nullptr;   // stamp this when world is rewritten
+		};
+		// false for a dead/stale entity. Every live entity has all three
+		// (mandatory base components), so there is no Contains() check.
+		bool ReadNodeRow(Entity entity, NodeRow& out) noexcept;
+
 		using ComponentHookFn = std::function<void(World&, Entity, void*)>;
 
 		EntityRecord& RequireMutableEntity(Entity entity, const char* operation);
@@ -827,6 +847,24 @@ namespace Crucible
 			{
 				cb(world, entity, *static_cast<T*>(component));
 			});
+	}
+
+	inline bool World::ReadNodeRow(Entity entity, NodeRow& out) noexcept
+	{
+		if (!m_entities.IsAlive(entity)) return false;
+		const EntityRecord& record = m_entities.Record(entity);
+		Archetype& a = *record.archetype;
+		const std::uint32_t row = record.row;
+		ComponentColumn& local = a.GetColumn(ComponentTypeId<Transform>());
+		ComponentColumn& links = a.GetColumn(ComponentTypeId<HierarchyNode>());
+		ComponentColumn& world = a.GetColumn(ComponentTypeId<WorldTransform>());
+		out.local = static_cast<const Transform*>(local.At(row));
+		out.links = static_cast<const HierarchyNode*>(links.At(row));
+		out.world = static_cast<WorldTransform*>(world.At(row));
+		out.localTick = local.ChangedTicksData()[row];
+		out.linksTick = links.ChangedTicksData()[row];
+		out.worldTick = world.ChangedTicksData() + row;
+		return true;
 	}
 
 	template <typename T>

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Declares Archetype: a single table of entities that all
 *                share the exact same ComponentSignature, storing one
@@ -17,8 +17,8 @@
 *                and looked up by ArchetypeRegistry (see
 *                ArchetypeRegistry.h/.cpp) and are never created
 *                directly by gameplay code. See Archetype.cpp for the
-*                implementation of row add/remove and column lookup,
-*                and World.cpp for how entities are moved between
+*                implementation of row add/remove (column lookup is inline
+*                here), and World.cpp for how entities are moved between
 *                archetypes when their component set changes.
 *
 * \history
@@ -29,10 +29,14 @@
 *    -v1.2       strong exception guarantee for row appends, noexcept
 *                removal, mutators private (World/ArchetypeRegistry/Query
 *                only), signature validated in all builds
+*    -v1.3       inlined column lookup (ColumnIndex/GetColumn/GetComponentPtr/
+*                GetColumnData); m_columnLookup is a fixed std::array
 *
 **************************************************************************/
 #pragma once
 
+#include <array>
+#include <cassert>
 #include <vector>
 
 #include "EngineExport.h"
@@ -170,7 +174,12 @@ namespace Crucible
 		 \return Reference to that column.
 		 \note  Asserts (debug only) that this archetype contains id.
 		 *********************************************************************/
-		const ComponentColumn& GetColumn(ComponentId id) const;
+		const ComponentColumn& GetColumn(ComponentId id) const
+		{
+			const int index = ColumnIndex(id);
+			assert(index >= 0 && "component not present in this archetype");
+			return m_columns[static_cast<std::size_t>(index)];
+		}
 
 		/*********************************************************************
 		 \brief  Debug check that every column's size matches the entity
@@ -216,11 +225,16 @@ namespace Crucible
 		 *********************************************************************/
 		Entity RemoveEntity(uint32_t row) noexcept;
 
-		void* GetColumnData(ComponentId id);
+		void* GetColumnData(ComponentId id) { return GetColumn(id).Data(); }
 
-		ComponentColumn& GetColumn(ComponentId id);
+		ComponentColumn& GetColumn(ComponentId id)
+		{
+			const int index = ColumnIndex(id);
+			assert(index >= 0 && "component not present in this archetype");
+			return m_columns[static_cast<std::size_t>(index)];
+		}
 
-		void* GetComponentPtr(ComponentId id, uint32_t row);
+		void* GetComponentPtr(ComponentId id, uint32_t row) { return GetColumn(id).At(row); }
 
 		void TouchAll(uint32_t row, std::uint64_t tick)
 		{
@@ -239,7 +253,10 @@ namespace Crucible
 				 id.
 		 \details O(1) via m_columnLookup, built once in the constructor.
 		 *********************************************************************/
-		int ColumnIndex(ComponentId id)const;
+		int ColumnIndex(ComponentId id) const
+		{
+			return id < kMaxComponents ? m_columnLookup[id] : -1;
+		}
 
 		ComponentSignature m_signature;
 		std::vector<ComponentId> m_componentIds;
@@ -247,7 +264,7 @@ namespace Crucible
 		std::vector<Entity> m_entities;
 		std::vector<ArchetypeEdge> m_edges;
 
-		std::vector<int>m_columnLookup;
+		std::array<int, kMaxComponents> m_columnLookup{};   // id -> column index, -1 = absent (inline, no heap hop)
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          28 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Computes WorldTransform = parent world x local (T*R*S)
 *                for every entity, parents before children, and only for
@@ -38,6 +38,8 @@
 *
 * \history
 *    -v1.0       initial top-down propagation with change ticks
+*    -v1.1       one lookup per node (World::ReadNodeRow), roots from the
+*                query's HierarchyNode column, parent matrix by pointer
 *
 **************************************************************************/
 #pragma once
@@ -112,14 +114,17 @@ namespace Crucible
 		void InvalidateAll() noexcept { m_lastRunTick = 0; }
 
 	private:
-		// Every entity has a Transform, so this visits every entity (roots are
-		// picked out by their HierarchyNode). const: iterating stamps nothing.
-		using NodeQuery = Query<const Transform>;
+		// Every entity has a Transform and a HierarchyNode, so this visits every
+		// entity. Roots are picked straight from the HierarchyNode column: no
+		// lookup. const: iterating stamps nothing.
+		using NodeQuery = Query<const Transform, const HierarchyNode>;
 
 		struct Frame
 		{
 			Entity entity;
-			Math::mat4 parentWorld;
+			// The parent's matrix, read in place from its WorldTransform slot (nothing
+			// restructures during Update, so the pointer stays valid). nullptr = root.
+			const Math::mat4* parentWorld;
 			bool parentRecomputed;
 		};
 
