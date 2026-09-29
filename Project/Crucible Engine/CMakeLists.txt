@@ -40,5 +40,5 @@ add_subdirectory(Game)
 
 # Set startup project for Visual Studio
 if(MSVC)
-    set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Game)
+    set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Editor)
 endif()
