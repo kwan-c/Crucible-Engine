@@ -127,6 +127,29 @@ namespace Crucible {
 
     }   // KeyCodeFromGlfw()
 
+    /*
+        Mouse buttons arrive through their own callback, numbered in their own space, so
+        they need their own translation. Above Layer 1 there is still only KeyCode.
+    */
+    KeyCode KeyCodeFromGlfwMouseButton(const int& glfwButton) {
+
+        switch (glfwButton) {
+
+        case GLFW_MOUSE_BUTTON_LEFT:       return KeyCode::MouseLeft;
+        case GLFW_MOUSE_BUTTON_RIGHT:      return KeyCode::MouseRight;
+        case GLFW_MOUSE_BUTTON_MIDDLE:     return KeyCode::MouseMiddle;
+        case GLFW_MOUSE_BUTTON_4:          return KeyCode::MouseButton4;
+        case GLFW_MOUSE_BUTTON_5:          return KeyCode::MouseButton5;
+        case GLFW_MOUSE_BUTTON_6:          return KeyCode::MouseButton6;
+        case GLFW_MOUSE_BUTTON_7:          return KeyCode::MouseButton7;
+        case GLFW_MOUSE_BUTTON_8:          return KeyCode::MouseButton8;
+
+        default: return KeyCode::Unknown;
+
+        }   // switch
+
+    }   // KeyCodeFromGlfwMouseButton()
+
     const char* KeyCodeToString(const KeyCode& key) {
 
         switch (key) {
@@ -235,6 +258,15 @@ namespace Crucible {
         case KeyCode::KPAdd:                     return "KPAdd";
         case KeyCode::KPEnter:                   return "KPEnter";
         case KeyCode::KPEqual:                   return "KPEqual";
+
+        case KeyCode::MouseLeft:                 return "MouseLeft";
+        case KeyCode::MouseRight:                return "MouseRight";
+        case KeyCode::MouseMiddle:               return "MouseMiddle";
+        case KeyCode::MouseButton4:              return "MouseButton4";
+        case KeyCode::MouseButton5:              return "MouseButton5";
+        case KeyCode::MouseButton6:              return "MouseButton6";
+        case KeyCode::MouseButton7:              return "MouseButton7";
+        case KeyCode::MouseButton8:              return "MouseButton8";
 
         case KeyCode::Unknown:
         case KeyCode::Count:

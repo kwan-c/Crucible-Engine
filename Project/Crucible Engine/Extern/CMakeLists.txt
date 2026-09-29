@@ -10,11 +10,6 @@ set(GLFW_LIBRARY_TYPE SHARED CACHE STRING "" FORCE)
 add_subdirectory(glfw EXCLUDE_FROM_ALL)
 set_target_properties(glfw PROPERTIES FOLDER "ThirdParty")
 
-# Glad
-add_library(glad glad/src/glad.c)
-target_include_directories(glad PUBLIC glad/include)
-set_target_properties(glad PROPERTIES FOLDER "ThirdParty")
-
 # GLM (header-only)
 add_library(glm INTERFACE)
 target_include_directories(glm SYSTEM INTERFACE glm)
@@ -59,14 +54,6 @@ set_target_properties(imgui_backends PROPERTIES FOLDER "ThirdParty")
 # vma (header-only)
 add_library(vma INTERFACE)
 target_include_directories(vma SYSTEM INTERFACE vma/include)
-
-
-# ----------------------------------- #
-# XMATH (header-only)
-# ----------------------------------- #
-
-add_library(xmath INTERFACE)
-target_include_directories(xmath SYSTEM INTERFACE xmath/source)
 
 # ------------------------------------------------------------ #
 # XRESOURCE (guid + mgr, header-only)
@@ -126,6 +113,17 @@ set_target_properties(Jolt PROPERTIES
     FOLDER "ThirdParty"
 )
 
+# Jolt exposes its headers with a plain target_include_directories(Jolt PUBLIC ...), because it
+# arrives through add_subdirectory rather than a target we write ourselves. That makes MSVC treat
+# them as our code and run /W4 and the code-analysis checks over them. Re-tag them as SYSTEM, the
+# same as glm, vma, xmath, xresource, stb and rapidjson above, so they come through as /external:I.
+get_target_property(JOLT_INCLUDE_DIRS Jolt INTERFACE_INCLUDE_DIRECTORIES)
+if(JOLT_INCLUDE_DIRS)
+    set_target_properties(Jolt PROPERTIES
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${JOLT_INCLUDE_DIRS}"
+    )
+endif()
+
 # ----------------------------------- #
 # RTTR (shared DLL)
 # ----------------------------------- #
@@ -178,11 +176,9 @@ add_library(EngineThirdParty INTERFACE)
 
 target_link_libraries(EngineThirdParty INTERFACE
     glfw
-    glad
     glm
 
     # Add more here...
-    xmath
     xresource
     fmod
     Jolt

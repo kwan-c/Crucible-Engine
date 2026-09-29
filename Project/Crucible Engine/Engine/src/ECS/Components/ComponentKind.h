@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -22,6 +22,8 @@
 *
 * \history
 *    -v1.0       initial fixed component-kind enum + binding macros
+*    -v1.1       HierarchyNode and WorldTransform kinds; WorldManaged and
+*                Mandatory traits, RemovableComponent concept
 *
 *
 **************************************************************************/
@@ -29,6 +31,7 @@
 
 #include <cstdint>
 #include <string_view>
+#include <type_traits>
 
 namespace Crucible
 {
@@ -57,8 +60,12 @@ namespace Crucible
 		RigidBody = 1,
 		MeshRenderer = 2,
 		Audio = 3,
+		Collider = 4,
+		CharacterController = 5,
+		HierarchyNode = 6,    // parent / child / sibling links
+		WorldTransform = 7,   // computed by HierarchyTransformSystem
 
-		MAXCOMPONENT = 4
+		MAXCOMPONENT = 8
 	};
 
 
@@ -74,6 +81,42 @@ namespace Crucible
 	 *************************************************************************/
 	template <typename T>
 	struct ComponentTraits;
+
+	/*************************************************************************
+	 \brief
+		True for components whose fields only World may write, because they
+		hold invariants that span several entities (e.g. HierarchyNode
+		links).
+	 \details
+		Public mutable access paths (World::GetComponent/Write/AddComponent/
+		EmplaceComponent, non-const Query, CommandBuffer::AddComponent and
+		EntitySpawn::With) static_assert against it. Specialised next to the
+		component's definition in Components.h.
+	 *************************************************************************/
+	template <typename T>
+	struct WorldManaged : std::false_type {};
+
+	/*************************************************************************
+	 \brief
+		True for Crucible's mandatory base scene components (Transform,
+		WorldTransform, HierarchyNode): every entity World creates has them
+		from birth until it is destroyed.
+	 \details
+		Specialised next to the component definitions in Components.h. World
+		combines them into every creation signature (kMandatoryComponents in
+		World.h, which is checked against this trait for every component),
+		and the typed removal paths (World::RemoveComponent,
+		CommandBuffer::RemoveComponent) only accept RemovableComponent types.
+	 *************************************************************************/
+	template <typename T>
+	struct Mandatory : std::false_type {};
+
+	/*************************************************************************
+	 \brief  A component that may be removed from a live entity (i.e. not
+			 one of the mandatory base components).
+	 *************************************************************************/
+	template <typename T>
+	concept RemovableComponent = !Mandatory<T>::value;
 
 
 /*************************************************************************
@@ -116,5 +159,9 @@ namespace Crucible
  X(RigidBody)                                                                \
  X(MeshRenderer)                                                               \
  X(Audio)                                                                      \
+ X(Collider)                                                                   \
+ X(CharacterController)                                                        \
+ X(HierarchyNode)                                                              \
+ X(WorldTransform)                                                             \
 
 }
