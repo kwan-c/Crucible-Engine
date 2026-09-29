@@ -1,0 +1,47 @@
+{
+    "version": 1,
+    "name": "demo",
+    "entities": [
+        {
+            "id": "0BF270D1B33D8003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 7.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "colour": {
+                        "w": 1.0,
+                        "x": 1.0,
+                        "y": 0.5,
+                        "z": 0.25
+                    }
+                }
+            }
+        },
+        {
+            "id": "33F270D1B33D8001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.0,
+                        "y": 2.0,
+                        "z": 3.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": -9.800000190734863,
+                        "z": 0.0
+                    },
+                    "mass": 5.0
+                }
+            }
+        }
+    ]
+}

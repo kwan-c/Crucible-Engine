@@ -85,12 +85,9 @@ namespace Crucible
 			{
 				out.contenthash = std::strtoull(value.c_str(), nullptr, 16);
 			}
-			else if (key == "time")
-			{
-				out.sourceTime = static_cast<std::int64_t>(std::strtoll(value.c_str(), nullptr, 10));
-			}
-
-			return out.guid.m_Value != 0;
+			// "path" is a human-readable hint only and is deliberately ignored.
+			// "time" was written by older builds; it is ignored too, and disappears
+			// the next time this .meta is legitimately rewritten.
 		}
 
 		return out.guid.m_Value != 0;
@@ -111,7 +108,6 @@ namespace Crucible
 			<< std::hex << std::uppercase
 			<< "hash=" << meta.contenthash << "\n"
 			<< std::dec
-			<< "time=" << meta.sourceTime << "\n"
 			<< "path=" << hintPath << "\n";
 
 		return file.good();
@@ -207,14 +203,30 @@ namespace Crucible
 			}
 
 			entry.guid = found->second.guid;
-			entry.contentHash = found->second.contenthash;
 			++report.is_known;
 
-			if (found->second.sourceTime != entry.lastWriteTime)
+			// With no stored timestamp, hashing is the only way to tell whether
+			// the file changed. The .meta is rewritten only when the bytes really
+			// differ - a git checkout gives every file a fresh mtime but identical
+			// content, so nothing is written and nobody sees a spurious diff.
+			const std::uint64_t hash = HashFileContents(fs::path{ entry.absolutePath });
+
+			if (hash == 0)
 			{
-				entry.contentHash = HashFileContents(fs::path{ entry.absolutePath });
-				WriteMeta(metaPath, { entry.guid, entry.contentHash, entry.lastWriteTime }, entry.virtualPath);
-				++report.is_edited;
+				// Unreadable right now (locked by another program, for instance).
+				// Keep the recorded hash rather than overwriting a good one with a
+				// failure, which would break rename detection for this asset.
+				entry.contentHash = found->second.contenthash;
+			}
+			else
+			{
+				entry.contentHash = hash;
+
+				if (hash != found->second.contenthash)
+				{
+					WriteMeta(metaPath, { entry.guid, entry.contentHash }, entry.virtualPath);
+					++report.is_edited;
+				}
 			}
 
 			orphans.erase(found);
@@ -261,7 +273,7 @@ namespace Crucible
 			}
 
 			WriteMeta(MetaPathFor(fs::path{ entry->absolutePath }),
-				{ entry->guid, entry->contentHash, entry->lastWriteTime }, entry->virtualPath);
+				{ entry->guid, entry->contentHash }, entry->virtualPath);
 		}
 
 		// Pass 3: whatever is left is described a deleted asset

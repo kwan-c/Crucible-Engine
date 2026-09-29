@@ -1,0 +1,24 @@
+{
+    "version": 1,
+    "name": "Crate",
+    "entity": {
+        "components": {
+            "Transform": {
+                "positions": {
+                    "x": 7.0,
+                    "y": 0.0,
+                    "z": 0.0
+                }
+            },
+            "MeshRenderer": {
+                "visible": false,
+                "colour": {
+                    "w": 1.0,
+                    "x": 1.0,
+                    "y": 0.5,
+                    "z": 0.25
+                }
+            }
+        }
+    }
+}
