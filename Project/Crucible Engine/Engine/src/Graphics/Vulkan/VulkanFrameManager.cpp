@@ -1,3 +1,17 @@
+/*************************************************************************
+* \file:         VulkanFrameManager.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See VulkanFrameManager.h for what this class owns and why.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
+
 #include "VulkanFrameManager.h"
 
 namespace Crucible {

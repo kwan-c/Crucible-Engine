@@ -1,6 +1,10 @@
 #pragma once
 /*************************************************************************
 * \file:         RenderExtractSystem.h
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
 * \brief
 *                ECS -> Renderer bridge: the "POPULATE RENDER QUEUE" step
 *                RenderSystem.h's Renderer::Update() comment refers to.
@@ -33,6 +37,10 @@
 *                queue via Submit()) BEFORE m_renderer->Update(dt) (which
 *                drains that queue via DrawFrame()), so no change to the
 *                frame loop's ordering is needed.
+*
+* \history
+*    -v1.0       initial implementation
+*
 **************************************************************************/
 
 #include <optional>
@@ -62,18 +70,21 @@ namespace Crucible
 		 \brief  Holds the Renderer this system extracts into. The Renderer
 				 is Core-owned and outlives every system (see Core.h's
 				 member destruction order), so a plain reference is safe.
+		 \param[in] renderer The Core-owned Renderer to extract into.
 		 *********************************************************************/
 		explicit RenderExtractSystem(Renderer& renderer) : m_renderer(renderer) {}
 
 		/*********************************************************************
 		 \brief  PreRender: after HierarchyTransformSystem has filled this
 				 frame's WorldTransforms, before the Renderer draws them.
+		 \return SystemStage::PreRender.
 		 *********************************************************************/
 		SystemStage Stage() const override { return SystemStage::PreRender; }
 
 		/*********************************************************************
 		 \brief  Runs after HierarchyTransformSystem's own (lowest-possible)
 				 priority within PreRender, so the default (0) is fine here.
+		 \return 0.
 		 *********************************************************************/
 		int Priority() const override { return 0; }
 
@@ -82,12 +93,16 @@ namespace Crucible
 				 requirement on HierarchyTransformSystem (required: without
 				 it, WorldTransform is never computed and nothing would
 				 ever be drawn, so this is a hard dependency, not optional).
+		 \param[in] desc The descriptor to fill in.
 		 *********************************************************************/
 		void Describe(SystemDesc& desc) const override;
 
 		/*********************************************************************
 		 \brief  Submits every visible, loaded entity's world matrix to the
 				 Renderer's render queue for this frame.
+		 \param[in] world The World to query this frame's entities from.
+		 \param[in] ctx   Unused by this system (accepted to satisfy
+						  IECSSystem's interface).
 		 *********************************************************************/
 		void Update(World& world, SystemContext& ctx) override;
 

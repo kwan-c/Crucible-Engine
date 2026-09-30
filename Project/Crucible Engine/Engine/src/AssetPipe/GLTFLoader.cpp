@@ -1,7 +1,16 @@
 /*************************************************************************
- \file       GLTFLoader.cpp
- \brief      See GLTFLoader.h for the format/scope this parser covers.
- *************************************************************************/
+* \file:         GLTFLoader.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See GLTFLoader.h for the format/scope this parser covers.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
 
 #include "GLTFLoader.h"
 
