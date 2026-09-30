@@ -82,11 +82,11 @@ namespace Crucible {
         uploaded to the GPU, which hasn't happened yet at parse time).
      *************************************************************************/
     struct GLTFMaterial {
-        bool        hasBaseColor = false;         std::size_t baseColorImage = 0;
-        bool        hasNormal = false;            std::size_t normalImage = 0;
-        bool        hasMetallicRoughness = false; std::size_t metallicRoughnessImage = 0;
-        bool        hasEmissive = false;           std::size_t emissiveImage = 0;
-        bool        hasOcclusion = false;          std::size_t occlusionImage = 0;
+        bool        hasBaseColor = false;           std::size_t baseColorImage = 0;
+        bool        hasNormal = false;              std::size_t normalImage = 0;
+        bool        hasMetallicRoughness = false;   std::size_t metallicRoughnessImage = 0;
+        bool        hasEmissive = false;            std::size_t emissiveImage = 0;
+        bool        hasOcclusion = false;           std::size_t occlusionImage = 0;
 
         glm::vec4   baseColorFactor{ 1.0f, 1.0f, 1.0f, 1.0f };
         glm::vec3   emissiveFactor{ 0.0f, 0.0f, 0.0f };
