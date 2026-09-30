@@ -259,14 +259,16 @@ namespace Crucible {
     // VULKAN IMAGE
     // ------------------------------------------------------------------------------------------------------------- //
 
-    void VulkanImage::Create(VulkanContext& context, uint32_t w, uint32_t h, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties) {
+    void VulkanImage::Create(VulkanContext& context, uint32_t w, uint32_t h, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,
+        uint32_t arrayLayers, vk::ImageCreateFlags flags) {
 
         vk::ImageCreateInfo imageInfo{
+            .flags       = flags,
             .imageType   = vk::ImageType::e2D,
             .format      = format,
             .extent      = {w, h, 1},
             .mipLevels   = 1,
-            .arrayLayers = 1,
+            .arrayLayers = arrayLayers,
             .samples     = vk::SampleCountFlagBits::e1,
             .tiling      = tiling,
             .usage       = usage,

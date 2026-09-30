@@ -40,6 +40,8 @@
 #include"../Core/ECSCore.h"   // Entity (HierarchyNode links)
 #include"Graphics/MeshHandle.h"   // MeshHandle - deliberately NOT RenderTypes.h, which pulls in Vulkan
 #include"Graphics/MaterialHandle.h"   // MaterialHandle - same reasoning: header-only, no Vulkan
+#include"Graphics/CubemapHandle.h"    // CubemapHandle (Skybox) - same reasoning
+#include"Graphics/LightTypes.h"       // LightType (Light) - same reasoning
 
 namespace Crucible
 {
@@ -122,6 +124,66 @@ namespace Crucible
 	};
 	
 	/*************************************************************************
+	 \brief
+		A light source. Position and direction come from the entity's
+		WorldTransform, so lights parent, move and rotate like anything else.
+	 \details
+		RenderExtractSystem submits every enabled Light each frame
+		(Renderer::SubmitLight). Conventions:
+		  - Position: the WorldTransform's translation (Point/Spot only).
+		  - Direction: the WorldTransform's local -Z axis (GLM's "forward"),
+		    i.e. the way the light travels (Directional/Spot only). With an
+		    identity rotation a directional light shines along -Z; pitch the
+		    entity down to aim it at the ground.
+		  - intensity: Directional = radiance; Point/Spot = radiant intensity
+		    with inverse-square falloff (radiance 1 at distance 1 per unit of
+		    intensity), smoothly windowed to zero at `range`.
+		  - innerConeDeg/outerConeDeg: Spot half-angles (full intensity inside
+		    inner, fading to zero at outer).
+		If no Light is submitted at all in a frame, the Renderer falls back
+		to one built-in directional "sun" so an unlit scene is never black;
+		adding any Light entity takes over from it.
+	 *************************************************************************/
+	struct Light
+	{
+		LightType  type = LightType::Point;
+		Math::vec3 colour{ 1.f, 1.f, 1.f };
+		float      intensity = 10.f;
+		float      range = 10.f;
+		float      innerConeDeg = 20.f;
+		float      outerConeDeg = 30.f;
+		bool       enabled = true;
+	};
+
+	/*************************************************************************
+	 \brief
+		Scene-wide sky and ambient settings. Put it on exactly one entity
+		(if several exist, whichever the query visits last wins).
+	 \details
+		RenderExtractSystem hands it to Renderer::SetEnvironment() each
+		frame; with no Skybox entity the Renderer uses its defaults (the
+		built-in procedural sky, default ambient, exposure 1).
+		  - cubemap: from Renderer::CreateCubemap()/CreateCubemapFromEquirect();
+		    Invalid -> the built-in procedural sky. Runtime-only (not saved
+		    in scene files yet), same as MeshRenderer::mesh - see the asset
+		    GUID -> handle mapping planned for the Inspector.
+		  - visible: false -> no sky is drawn (the clear colour shows).
+		  - ambientSky/ambientGround/ambientIntensity: hemisphere ambient
+		    light (a cheap stand-in for image-based lighting).
+		  - exposure: multiplier before tonemapping, for meshes and sky alike.
+	 *************************************************************************/
+	struct Skybox
+	{
+		CubemapHandle cubemap{};
+		bool          visible = true;
+		float         intensity = 1.f;
+		Math::vec3    ambientSky{ 0.30f, 0.36f, 0.45f };
+		Math::vec3    ambientGround{ 0.20f, 0.18f, 0.16f };
+		float         ambientIntensity = 1.f;
+		float         exposure = 1.f;
+	};
+
+	/*************************************************************************
 	 \brief  Playback state for an entity's audio source.
 	 *************************************************************************/
 	struct Audio
@@ -148,6 +210,8 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(Audio, Audio);
 	CRUCIBLE_COMPONENT(HierarchyNode, HierarchyNode);
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
+	CRUCIBLE_COMPONENT(Light, Light);
+	CRUCIBLE_COMPONENT(Skybox, Skybox);
 
 	// Links span several entities: only World may write them.
 	template <> struct WorldManaged<HierarchyNode> : std::true_type {};

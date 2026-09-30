@@ -29,6 +29,8 @@ namespace Crucible {
     void RenderExtractSystem::Describe(SystemDesc& desc) const {
 
         desc.Uses<ExtractQuery>()                    // reads WorldTransform + MeshRenderer
+            .Uses<LightQuery>()                      // reads WorldTransform + Light
+            .Uses<SkyboxQuery>()                     // reads Skybox
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer; not thread-safe today
 
@@ -54,6 +56,47 @@ namespace Crucible {
                 : m_renderer.GetDefaultMaterial();
 
             m_renderer.Submit(meshRenderer.mesh, material, worldTransform.matrix);
+
+        });
+
+        // Lights: position = the world matrix's translation, direction = its local -Z axis (see
+        // the Light component's doc comment). Normalizing the axis (done in SubmitLight) strips
+        // any scale the entity or a parent carries.
+        if (!m_lightQuery) { m_lightQuery.emplace(world.CreateQuery<const WorldTransform, const Light>()); }
+
+        m_lightQuery->ForEach([this](Entity, const WorldTransform& worldTransform, const Light& light) {
+
+            if (!light.enabled || !worldTransform.valid) { return; }
+
+            const glm::mat4& m = worldTransform.matrix;
+            LightData data;
+            data.type         = light.type;
+            data.position     = glm::vec3(m[3]);
+            data.direction    = -glm::vec3(m[2]);   // local +Z column, negated = forward
+            data.colour       = light.colour;
+            data.intensity    = light.intensity;
+            data.range        = light.range;
+            data.innerConeDeg = light.innerConeDeg;
+            data.outerConeDeg = light.outerConeDeg;
+            m_renderer.SubmitLight(data);
+
+        });
+
+        // Environment: the scene's Skybox (last one visited wins if there are several). With none,
+        // the Renderer simply keeps its defaults for the frame.
+        if (!m_skyboxQuery) { m_skyboxQuery.emplace(world.CreateQuery<const Skybox>()); }
+
+        m_skyboxQuery->ForEach([this](Entity, const Skybox& skybox) {
+
+            EnvironmentSettings env;
+            env.skybox           = skybox.cubemap;   // Invalid -> the Renderer's built-in sky
+            env.drawSkybox       = skybox.visible;
+            env.skyboxIntensity  = skybox.intensity;
+            env.ambientSky       = skybox.ambientSky;
+            env.ambientGround    = skybox.ambientGround;
+            env.ambientIntensity = skybox.ambientIntensity;
+            env.exposure         = skybox.exposure;
+            m_renderer.SetEnvironment(env);
 
         });
 

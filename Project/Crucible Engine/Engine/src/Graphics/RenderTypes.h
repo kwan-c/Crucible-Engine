@@ -34,6 +34,8 @@
 #include "MeshHandle.h"
 #include "TextureHandle.h"
 #include "MaterialHandle.h"
+#include "CubemapHandle.h"
+#include "LightTypes.h"
 #include "Vulkan/VulkanPipeline.h"   // for Vertex (adjust if Vertex lives elsewhere)
 
 namespace Crucible {
@@ -109,12 +111,139 @@ namespace Crucible {
         alignment - a UBO enforces 16-byte alignment per member in a way a
         push constant/HLSL cbuffer does not, so a bare vec3 here (unlike
         MaterialFactors' vec3 fields, which are fine in a push constant)
-        would silently misalign whatever member followed it.
+        would silently misalign whatever member followed it. The same rule
+        is why every member added for lighting below is a full vec4/uvec4.
+
+        Lighting/environment members (filled from the frame's
+        EnvironmentSettings and light queue - see Renderer::
+        FillFrameUniforms()):
+          - ambientSky / ambientGround: rgb = hemisphere ambient radiance
+            (already multiplied by EnvironmentSettings::ambientIntensity)
+            for surfaces facing straight up / straight down; the shader
+            blends between them by the normal's world-space Y. w unused.
+          - renderParams: x = exposure (multiplier applied before
+            tonemapping), y = skybox intensity, zw unused.
+          - lightParams:  x = number of valid entries in the light storage
+            buffer (set 0, binding 1) this frame, yzw unused.
+
+     \note
+        Shared by BOTH shaders that bind set 0 (DefaultShader2.slang and
+        Skybox.slang) - all three copies must stay identical.
      *************************************************************************/
     struct FrameUniforms {
-        glm::mat4 view{ 1.0f };
-        glm::mat4 proj{ 1.0f };
-        glm::vec4 cameraPosWS{ 0.0f, 0.0f, 0.0f, 0.0f };
+        glm::mat4  view{ 1.0f };
+        glm::mat4  proj{ 1.0f };
+        glm::vec4  cameraPosWS{ 0.0f, 0.0f, 0.0f, 0.0f };
+        glm::vec4  ambientSky{ 0.0f, 0.0f, 0.0f, 0.0f };
+        glm::vec4  ambientGround{ 0.0f, 0.0f, 0.0f, 0.0f };
+        glm::vec4  renderParams{ 1.0f, 1.0f, 0.0f, 0.0f };
+        glm::uvec4 lightParams{ 0u, 0u, 0u, 0u };
+    };
+    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5,
+        "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
+
+    // ------------------------------------------------------------------------------------------ //
+    //  Lights & environment
+    // ------------------------------------------------------------------------------------------ //
+
+    /*************************************************************************
+     \brief
+        Hard cap on lights per frame (the light storage buffer is sized
+        for exactly this many GpuLights per frame in flight).
+
+     \details
+        Every fragment loops over every light (plain forward shading, no
+        clustering/tiling yet), so this is also the practical performance
+        ceiling. Renderer::SubmitLight() warns once and drops the rest
+        beyond it.
+     *************************************************************************/
+    inline constexpr uint32_t kMaxLights = 256;
+
+    /*************************************************************************
+     \brief
+        One light, in world space, as the CPU describes it to
+        Renderer::SubmitLight().
+
+     \details
+        - direction: the way the light TRAVELS (for a sun pointing down,
+                     (0,-1,0)). Used by Directional and Spot; ignored by
+                     Point. Need not be normalized.
+        - position:  used by Point and Spot; ignored by Directional.
+        - colour:    linear RGB; multiplied by intensity.
+        - intensity: Directional - radiance (the old hardcoded light was
+                     3.0). Point/Spot - radiant intensity: follows inverse-
+                     square falloff, so intensity 1 gives radiance 1 at a
+                     distance of 1 unit.
+        - range:     Point/Spot - distance at which the light is windowed
+                     smoothly to exactly zero.
+        - innerConeDeg/outerConeDeg: Spot - full-intensity half-angle and
+                     the half-angle at which it reaches zero, in degrees.
+     *************************************************************************/
+    struct LightData {
+        LightType  type = LightType::Point;
+        glm::vec3  position{ 0.0f, 0.0f, 0.0f };
+        glm::vec3  direction{ 0.0f, -1.0f, 0.0f };
+        glm::vec3  colour{ 1.0f, 1.0f, 1.0f };
+        float      intensity = 1.0f;
+        float      range = 10.0f;
+        float      innerConeDeg = 20.0f;
+        float      outerConeDeg = 30.0f;
+    };
+
+    /*************************************************************************
+     \brief
+        GPU layout of one light: one element of the light storage buffer
+        (set 0, binding 1, StructuredBuffer<GpuLight> in
+        DefaultShader2.slang).
+
+     \details
+        Four vec4s = 64 bytes, which is identical under std430 and plain
+        C++ layout, so no padding rules can disagree. Built from LightData
+        by Renderer::SubmitLight().
+          - positionRange:  xyz = world position, w = range
+          - directionType:  xyz = normalized travel direction,
+                            w = float(LightType)
+          - colourIntensity: rgb = linear colour, w = intensity
+          - spotParams:     x = cos(inner half-angle),
+                            y = cos(outer half-angle), zw unused
+     *************************************************************************/
+    struct GpuLight {
+        glm::vec4 positionRange{ 0.0f };
+        glm::vec4 directionType{ 0.0f };
+        glm::vec4 colourIntensity{ 0.0f };
+        glm::vec4 spotParams{ 0.0f };
+    };
+    static_assert(sizeof(GpuLight) == 64, "GpuLight must match the shader's 64-byte std430 GpuLight.");
+
+    /*************************************************************************
+     \brief
+        Per-frame sky / ambient / exposure settings, handed to
+        Renderer::SetEnvironment() (normally by RenderExtractSystem, from
+        the scene's Skybox component).
+
+     \details
+        Like the render and light queues, this is per-frame state: the
+        Renderer resets it to GetDefaultEnvironment() after every frame,
+        so a scene with no Skybox entity gets the built-in procedural sky
+        and default ambient.
+          - skybox:           Invalid -> the Renderer's built-in procedural
+                              sky (GetDefaultSkybox()).
+          - drawSkybox:       false -> no sky is drawn and the pass's clear
+                              colour shows instead.
+          - skyboxIntensity:  multiplier on the sampled sky colour.
+          - ambientSky/Ground + ambientIntensity: cheap hemisphere ambient,
+                              a stand-in for real image-based lighting.
+          - exposure:         multiplier applied to the final HDR colour
+                              before tonemapping (meshes and sky alike).
+     *************************************************************************/
+    struct EnvironmentSettings {
+        CubemapHandle skybox{};
+        bool          drawSkybox = true;
+        float         skyboxIntensity = 1.0f;
+        glm::vec3     ambientSky{ 0.30f, 0.36f, 0.45f };
+        glm::vec3     ambientGround{ 0.20f, 0.18f, 0.16f };
+        float         ambientIntensity = 1.0f;
+        float         exposure = 1.0f;
     };
 
     // ------------------------------------------------------------------------------------------ //

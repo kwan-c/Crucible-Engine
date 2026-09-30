@@ -52,9 +52,9 @@ namespace Crucible {
         static constexpr glm::vec3 WorldUp{ 0.0f, 1.0f, 0.0f };
 
         // Placement
-        glm::vec3 position{ 0.0f, 1.5f, 4.0f };
+        glm::vec3 position{ 0.0f, 6.0f, 3.5f };
         float     yaw   = -90.0f;   // degrees, rotation around WorldUp
-        float     pitch = -15.0f;   // degrees, clamped to +-89 to avoid gimbal flip
+        float     pitch = -45.0f;   // degrees, clamped to +-89 to avoid gimbal flip
 
         // Lens
         float fovY   = 60.0f;       // degrees

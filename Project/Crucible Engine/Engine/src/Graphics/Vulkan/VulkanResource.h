@@ -195,8 +195,14 @@ namespace Crucible {
          \param[in] tiling     Image tiling mode.
          \param[in] usage      Vulkan image usage flags.
          \param[in] properties Desired memory properties (e.g. device-local).
+         \param[in] arrayLayers Number of array layers (6 for a cubemap).
+                                Defaults to 1 (a plain 2D image).
+         \param[in] flags       Image create flags (vk::ImageCreateFlagBits::
+                                eCubeCompatible for a cubemap). Defaults to
+                                none.
          *********************************************************************/
-        void Create(VulkanContext& context, uint32_t w, uint32_t h, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
+        void Create(VulkanContext& context, uint32_t w, uint32_t h, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,
+                    uint32_t arrayLayers = 1, vk::ImageCreateFlags flags = {});
 
         /*********************************************************************
          \brief  Accessor.

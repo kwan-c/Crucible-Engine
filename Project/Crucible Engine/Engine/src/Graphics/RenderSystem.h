@@ -105,6 +105,17 @@ namespace Crucible {
             vk::raii::DescriptorSet   descriptorSet = nullptr;
         };
 
+        // GPU-side cubemap (skybox): a 6-layer cube-compatible image, its cube view, and the one
+        // descriptor set (skybox pipeline's set = 1) it's bound into - allocated once at creation,
+        // same as a material's, since a cubemap's contents never change after upload.
+        struct GpuCubemap {
+            VulkanImage              image;
+            vk::raii::ImageView      view = nullptr;
+            vk::raii::DescriptorSet  descriptorSet = nullptr;
+            uint32_t                 faceSize = 0;
+            std::string              debugName;
+        };
+
         // An offscreen render target: its own color+depth image, camera, and per-frame-in-flight
         // uniform buffer/descriptor set, so several can be drawn per frame with different cameras
         // (Scene view vs. Game view) without stepping on each other's data.
@@ -341,6 +352,103 @@ namespace Crucible {
          *********************************************************************/
         MaterialHandle GetDefaultMaterial() const { return m_defaultMaterial; }
 
+        // ---- Lights & environment ------------------------------------------------------------
+
+        /*********************************************************************
+         \brief
+            Queues one light for this frame.
+
+         \param[in] light The light, in world space (see LightData in
+                           RenderTypes.h for the field conventions).
+
+         \details
+            Same per-frame contract as Submit(): call once per light per
+            frame (RenderExtractSystem does this for every enabled ECS
+            Light component); the queue is consumed and cleared at the end
+            of Update(). At most kMaxLights (RenderTypes.h) are used per
+            frame - extras are dropped with a one-time warning.
+
+            If NOTHING is submitted in a frame, the Renderer lights the
+            scene with one built-in directional "sun" (the direction and
+            strength of the old hardcoded shader light) so a scene with no
+            Light entities is never black.
+         *********************************************************************/
+        ENGINE_API void SubmitLight(const LightData& light);
+
+        /*********************************************************************
+         \brief
+            Sets this frame's sky, ambient and exposure.
+
+         \param[in] settings The environment to render this frame with.
+
+         \details
+            Per-frame like SubmitLight(): reset to GetDefaultEnvironment()
+            at the end of every Update(). RenderExtractSystem calls this
+            from the scene's Skybox component; with no such entity the
+            defaults apply (built-in procedural sky, default ambient,
+            exposure 1). An Invalid settings.skybox also means "the
+            built-in procedural sky".
+         *********************************************************************/
+        ENGINE_API void SetEnvironment(const EnvironmentSettings& settings);
+
+        /*********************************************************************
+         \brief  The environment used whenever SetEnvironment() wasn't
+                 called this frame.
+         \return The default EnvironmentSettings.
+         *********************************************************************/
+        const EnvironmentSettings& GetDefaultEnvironment() const { return m_defaultEnvironment; }
+
+        /*********************************************************************
+         \brief
+            Creates a cubemap from six square face images of equal size.
+
+         \param[in] facePaths Image file paths in Vulkan/OpenGL cube face
+                                order: +X, -X, +Y, -Y, +Z, -Z (right, left,
+                                top, bottom, front, back).
+         \param[in] isSRGB    true for ordinary colour images (the usual
+                                case for LDR skybox sets).
+
+         \return A handle for Skybox::cubemap / EnvironmentSettings::skybox.
+
+         \details
+            Cached by the joined path list, like CreateTexture(). Throws if
+            a face fails to load, isn't square, or doesn't match face 0's
+            size.
+
+         \note
+            Face sets exported for other engines sometimes use a different
+            handedness; if the sky looks mirrored or a face is rotated,
+            swap +X/-X (or +Z/-Z) in facePaths.
+         *********************************************************************/
+        ENGINE_API CubemapHandle CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB = true);
+
+        /*********************************************************************
+         \brief
+            Creates a cubemap from one equirectangular (latitude/longitude,
+            2:1) panorama - the format HDRI sites such as Poly Haven ship.
+
+         \param[in] path     Image path. .hdr files are loaded as true HDR
+                               (values above 1.0 kept); LDR formats
+                               (.png/.jpg/...) are converted to linear.
+         \param[in] faceSize Resolution of each generated cube face.
+
+         \return A handle for Skybox::cubemap / EnvironmentSettings::skybox.
+
+         \details
+            Resampled on the CPU into six faces (bilinear), stored as
+            RGBA16F so HDR range survives. Cached by path + faceSize.
+            Throws if the file can't be loaded.
+         *********************************************************************/
+        ENGINE_API CubemapHandle CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize = 512);
+
+        /*********************************************************************
+         \brief  The built-in procedural sky (a blue gradient with a soft
+                 sun glow matching the fallback sun light), generated at
+                 startup. Used whenever no valid skybox is set.
+         \return Handle to the built-in sky cubemap.
+         *********************************************************************/
+        CubemapHandle GetDefaultSkybox() const { return m_defaultSkybox; }
+
         /*********************************************************************
          \brief
             Creates an offscreen render target (color+depth image, own
@@ -505,8 +613,31 @@ namespace Crucible {
         TextureHandle                               m_defaultNormalTexture;   // flat tangent-space normal (128,128,255,255)
         MaterialHandle                              m_defaultMaterial;
 
+        // Cubemaps (skyboxes). Pool BEFORE the cubemaps whose descriptor sets it allocates -
+        // same destruction-order rule as m_materialDescriptorPools/m_materials above.
+        static constexpr uint32_t                   kMaxCubemaps = 64;
+        vk::raii::DescriptorPool                    m_cubemapDescriptorPool = nullptr;
+        vk::raii::Sampler                           m_skyboxSampler = nullptr;
+        std::vector<GpuCubemap>                     m_cubemaps;
+        std::unordered_map<std::string, uint32_t>   m_cubemapCacheByKey;   // joined paths / path+size -> CubemapHandle::id
+        CubemapHandle                               m_defaultSkybox;
+
+        // Lights & environment (per frame, like m_renderQueue): filled by SubmitLight()/
+        // SetEnvironment(), consumed by DrawFrame(), reset at the end of Update().
+        std::vector<GpuLight>                       m_lightQueue;
+        bool                                        m_warnedTooManyLights = false;
+        uint32_t                                    m_frameLightCount = 0;   // lights actually uploaded this frame (after fallback/clamp)
+        EnvironmentSettings                         m_defaultEnvironment;
+        EnvironmentSettings                         m_environment;
+
         std::vector<VulkanBuffer>                   m_uniformBuffers;
         std::vector<void*>                          m_uniformBuffersMapped;
+
+        // One light storage buffer per frame in flight (kMaxLights GpuLights each), persistently
+        // mapped like the uniform buffers. Shared by the window's set 0 AND every viewport's set
+        // 0 for that frame index - lights are world state, not per-camera.
+        std::vector<VulkanBuffer>                   m_lightBuffers;
+        std::vector<void*>                          m_lightBuffersMapped;
 
         vk::raii::DescriptorPool                    m_descriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet>        m_descriptorSets;
@@ -545,7 +676,30 @@ namespace Crucible {
         Viewport& GetViewportOrThrow(ViewportHandle handle);
         const Viewport& GetViewportOrThrow(ViewportHandle handle) const;
 
-        void CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height);
+        void CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height,
+                               uint32_t layerCount = 1);
+
+        // ---- Lights/environment/skybox helpers ----
+        void CreateLightBuffers();
+        // Copies this frame's m_lightQueue (or the fallback sun, if it's empty) into
+        // m_lightBuffers[frameIndex] and records how many were written in m_frameLightCount.
+        void UpdateLightBuffer(uint32_t frameIndex);
+        // Everything FrameUniforms holds besides view/proj/cameraPos: ambient, exposure, skybox
+        // intensity, light count. Shared by the window and viewport paths so they can't drift.
+        void FillEnvironmentUniforms(FrameUniforms& ubo) const;
+        // Points binding 1 (the light buffer) of each per-frame set 0 at m_lightBuffers[i].
+        void WriteLightBufferDescriptors(std::vector<vk::raii::DescriptorSet>& sets);
+        void CreateSkyboxSampler();
+        void CreateCubemapDescriptorPool();
+        void CreateDefaultSkybox();
+        // Shared core of every cubemap-creation path: uploads six tightly-packed faces (+X, -X,
+        // +Y, -Y, +Z, -Z, each faceSize^2 texels of bytesPerTexel) to a new cube image, creates
+        // its cube view and descriptor set, and returns the new handle.
+        CubemapHandle UploadCubemapFaces(const void* faceData, uint32_t faceSize, vk::Format format,
+                                         uint32_t bytesPerTexel, const std::string& debugName);
+        // Draws the current environment's sky into the currently-open rendering pass. Must run
+        // AFTER the opaque draws (it relies on their depth to skip covered pixels).
+        void DrawSkybox(vk::CommandBuffer cmd, vk::DescriptorSet frameSet);
 
         // ---- Texture/Material helpers ----
         // Shared core of every texture-creation path: uploads already-decoded RGBA8 pixels to a
@@ -571,7 +725,7 @@ namespace Crucible {
         void EndSingleTimeCommand(vk::raii::CommandBuffer&& cmdBuff);
 
         void TransitionImageLayout_I(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image, 
-                                   vk::ImageLayout oldLayout, vk::ImageLayout newLayout);
+                                   vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t layerCount = 1);
 
         // Generalized from a swapchain-color-only helper so it can also transition the depth
         // image: takes the target image and aspect mask explicitly instead of assuming color.

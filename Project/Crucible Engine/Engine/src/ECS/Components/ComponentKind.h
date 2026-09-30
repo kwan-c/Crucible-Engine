@@ -64,8 +64,10 @@ namespace Crucible
 		CharacterController = 5,
 		HierarchyNode = 6,    // parent / child / sibling links
 		WorldTransform = 7,   // computed by HierarchyTransformSystem
+		Light = 8,            // Graphics: point/spot/directional light
+		Skybox = 9,           // Graphics: scene sky + ambient + exposure
 
-		MAXCOMPONENT = 8
+		MAXCOMPONENT = 10
 	};
 
 
@@ -163,5 +165,7 @@ namespace Crucible
  X(CharacterController)                                                        \
  X(HierarchyNode)                                                              \
  X(WorldTransform)                                                             \
+ X(Light)                                                                      \
+ X(Skybox)                                                                     \
 
 }

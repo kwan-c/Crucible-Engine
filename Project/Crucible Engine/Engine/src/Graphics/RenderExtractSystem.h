@@ -12,7 +12,9 @@
 * \details
 *                Queries every entity with a WorldTransform + MeshRenderer
 *                and calls Renderer::Submit(mesh, worldMatrix) for each
-*                visible, loaded one. Deliberately the ONLY place that
+*                visible, loaded one; likewise every enabled Light
+*                (Renderer::SubmitLight) and the scene's Skybox
+*                (Renderer::SetEnvironment). Deliberately the ONLY place that
 *                depends on both the ECS and the Renderer at once - Renderer
 *                itself stays entirely unaware the ECS exists (see
 *                RenderSystem.h/.cpp), and the ECS's Components.h only
@@ -99,7 +101,8 @@ namespace Crucible
 
 		/*********************************************************************
 		 \brief  Submits every visible, loaded entity's world matrix to the
-				 Renderer's render queue for this frame.
+				 Renderer's render queue for this frame, plus every enabled
+				 Light and the scene's Skybox settings.
 		 \param[in] world The World to query this frame's entities from.
 		 \param[in] ctx   Unused by this system (accepted to satisfy
 						  IECSSystem's interface).
@@ -108,9 +111,13 @@ namespace Crucible
 
 	private:
 		using ExtractQuery = Query<const WorldTransform, const MeshRenderer>;
+		using LightQuery   = Query<const WorldTransform, const Light>;
+		using SkyboxQuery  = Query<const Skybox>;
 
 		Renderer& m_renderer;
-		std::optional<ExtractQuery> m_query;   // built once, on first Update() (needs a World&)
+		std::optional<ExtractQuery> m_query;         // built once, on first Update() (needs a World&)
+		std::optional<LightQuery>   m_lightQuery;    // same
+		std::optional<SkyboxQuery>  m_skyboxQuery;   // same
 	};
 
 #ifdef _MSC_VER

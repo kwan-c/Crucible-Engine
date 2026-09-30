@@ -95,8 +95,9 @@ namespace Crucible {
 
     public:
         /*********************************************************************
-         \brief  Creates the set-0 descriptor set layout (the per-frame
-                 camera UBO).
+         \brief  Creates the set-0 descriptor set layout: binding 0 = the
+                 per-frame FrameUniforms UBO, binding 1 = the per-frame
+                 light storage buffer.
          \param[in] context The VulkanContext to create the layout through.
          *********************************************************************/
         void CreateDescriptorSetLayout(VulkanContext& context);
@@ -114,6 +115,33 @@ namespace Crucible {
             versa. See the .cpp for the exact binding layout.
          *********************************************************************/
         void CreateMaterialDescriptorSetLayout(VulkanContext& context);
+
+        /*********************************************************************
+         \brief
+            Creates the skybox pipeline's set-1 descriptor set layout: a
+            single cubemap combined-image-sampler.
+
+         \param[in] context The VulkanContext to create the layout through.
+         *********************************************************************/
+        void CreateSkyboxDescriptorSetLayout(VulkanContext& context);
+
+        /*********************************************************************
+         \brief
+            Creates the skybox pipeline (Assets/Shaders/Skybox.spv): no
+            vertex input, no culling, depth test LESS_OR_EQUAL with depth
+            writes off, drawn after the opaque meshes.
+
+         \param[in] context   The VulkanContext to create the pipeline
+                               through.
+         \param[in] swapchain Supplies the color/depth attachment formats
+                               the pipeline must match.
+
+         \note
+            Requires CreateDescriptorSetLayout() and
+            CreateSkyboxDescriptorSetLayout() to have run first (its
+            layout is set 0 = the per-frame set, set 1 = the cubemap).
+         *********************************************************************/
+        void CreateSkyboxPipeline(VulkanContext& context, VulkanSwapchain& swapchain);
 
         /*********************************************************************
          \brief  Creates the graphics pipeline itself: shader stages,
@@ -159,6 +187,25 @@ namespace Crucible {
          *********************************************************************/
         const vk::raii::DescriptorSetLayout&    GetMaterialDescriptorSetLayout() const;
 
+        /*********************************************************************
+         \brief  Accessor.
+         \return Const reference to the skybox pipeline.
+         *********************************************************************/
+        const vk::raii::Pipeline&               GetSkyboxPipeline() const;
+
+        /*********************************************************************
+         \brief  Accessor.
+         \return Const reference to the skybox pipeline layout.
+         *********************************************************************/
+        const vk::raii::PipelineLayout&         GetSkyboxLayout() const;
+
+        /*********************************************************************
+         \brief  Accessor.
+         \return Const reference to the skybox's set-1 (cubemap)
+                 descriptor set layout.
+         *********************************************************************/
+        const vk::raii::DescriptorSetLayout&    GetSkyboxDescriptorSetLayout() const;
+
     private:
         std::vector<char> ReadFile(std::string const& filename);
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(VulkanContext& context, std::vector<char> const& code);
@@ -168,6 +215,10 @@ namespace Crucible {
         vk::raii::PipelineLayout        m_pipelineLayout    = nullptr;
         vk::raii::DescriptorSetLayout   m_descriptorSetLayout = nullptr;
         vk::raii::DescriptorSetLayout   m_materialDescriptorSetLayout = nullptr;
+
+        vk::raii::Pipeline              m_skyboxPipeline = nullptr;
+        vk::raii::PipelineLayout        m_skyboxPipelineLayout = nullptr;
+        vk::raii::DescriptorSetLayout   m_skyboxDescriptorSetLayout = nullptr;
 
     };  // VULKAN PIPELINE CLASS
 
