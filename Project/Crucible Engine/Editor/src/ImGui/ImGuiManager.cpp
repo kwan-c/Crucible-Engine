@@ -116,7 +116,7 @@ namespace {
 }
 // ---- dock layout (end) ----
 
-void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& renderer) {
+void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& renderer, World& world) {
 	
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -180,7 +180,7 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& r
 	// friends) is ready - the Scene/Game views create their offscreen viewport texture lazily,
 	// on their first Update() with a non-zero size, but they still need a live Renderer&
 	// reference to do it.
-	EditorManager::GetInstance().Init(renderer);
+	EditorManager::GetInstance().Init(renderer, world);
 
 	CRU_INFO("ImGui Successfully Initialized");
 }
@@ -289,7 +289,7 @@ Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 	return *s_Instance;
 }
 
-void Crucible::EditorManager::Init(Renderer& renderer)
+void Crucible::EditorManager::Init(Renderer& renderer, World& world)
 {
 	// Add in Editor Panels here...
 	//
@@ -297,8 +297,8 @@ void Crucible::EditorManager::Init(Renderer& renderer)
 	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(renderer);
 	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(renderer);
 	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>();
-	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>();
-	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>();
+	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(world);
+	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(world, renderer);
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	//m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();
