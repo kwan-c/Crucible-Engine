@@ -13,7 +13,7 @@ int main()
     }
 
     // The editor is the engine + an ImGui layer on top of it.
-    core.PushLayer(std::make_unique<Crucible::ImGuiLayer>(core.GetRenderer()));
+    core.PushLayer(std::make_unique<Crucible::ImGuiLayer>(core.GetRenderer(), core.GetWorld()));
 
     core.Run();
     return 0;

@@ -36,6 +36,7 @@ enum class ImguiPanels
 namespace Crucible {
 
 	class Core;
+	class World;   // forward-declared: EditorManager::Init/ImGuiManager::Init only take a reference
 
 	class EditorPanel {
 	public:
@@ -99,8 +100,9 @@ namespace Crucible {
 
 		// Builds the panel set. Call once, from ImGuiManager::Init(), after the ImGui Vulkan
 		// backend is ready - the Scene/Game views need a live Renderer& to construct their
-		// ViewportPanel (see ImGuiPanel_SceneView.h / ImGuiPanel_GameView.h).
-		void Init(Renderer& renderer);
+		// ViewportPanel (see ImGuiPanel_SceneView.h / ImGuiPanel_GameView.h), and Hierarchy/
+		// Inspector need a live World& to list/select entities and edit their components.
+		void Init(Renderer& renderer, World& world);
 
 		// Drops every panel (and, with them, any GPU-owning members like ViewportPanel) while
 		// the Renderer and the ImGui Vulkan backend are still alive. MUST be called from
@@ -128,7 +130,7 @@ namespace Crucible {
 	};
 
 	namespace ImGuiManager {
-		void Init(const ImGuiVulkanContext& context, Renderer& renderer);
+		void Init(const ImGuiVulkanContext& context, Renderer& renderer, World& world);
 		void Update(float dt);
 		void BeginFrame();
 		void Render();                    // finalize the UI (call once per frame, from Layer::OnUpdate)
