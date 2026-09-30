@@ -107,6 +107,7 @@ RTTR_REGISTRATION
         .constructor<>()
         .property("visible", &MeshRenderer::visible)
         .property("colour",  &MeshRenderer::colour)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
     ;
 
     rttr::registration::class_<Audio>("Audio")
@@ -171,7 +172,8 @@ RTTR_REGISTRATION
         .property("pushStrength", &CharacterController::m_pushStrength)
         .property("layer",        &CharacterController::m_layer)
         .property("isGrounded",    &CharacterController::m_isGrounded)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("velocity",      &CharacterController::m_velocity)
             (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
         .property("moveVelocity",  &CharacterController::m_moveVelocity)

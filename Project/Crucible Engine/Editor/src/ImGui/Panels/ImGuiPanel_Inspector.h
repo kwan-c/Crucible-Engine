@@ -53,8 +53,12 @@ namespace Crucible {
 		void DrawEntityInspector(Entity entity);
 
 		// These functions will return true if the user changed a value, so the caller can mark the scene dirty and/or trigger a re-render.
-		bool DrawTransformSection(Transform& transform);
-		bool DrawMeshRendererSection(MeshRenderer& renderer);
+		//bool DrawTransformSection(Transform& transform);
+		//bool DrawMeshRendererSection(MeshRenderer& renderer);
+		//bool DrawMaterialSection(MeshRenderer& renderer);
+
+		template <typename T> bool DrawComponentExtras(T&) { return false; }
+		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
 		bool DrawMaterialSection(MeshRenderer& renderer);
 
 		std::function<void()> m_draw;

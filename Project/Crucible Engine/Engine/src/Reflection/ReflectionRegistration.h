@@ -105,5 +105,10 @@ enum class MetaDataTypes {
 					rttr::metadata(MetaDataTypes::COMBOBOX, &Audioerer::m_AllAudioClipPaths)
 				)
 	*/
-	COMBOBOX
+	COMBOBOX,
+
+	/*!
+	* @brief    Draw this vec3/vec4 with a colour picker instead of drag fields.
+	*/
+	COLOUR
 };

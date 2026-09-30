@@ -8,6 +8,9 @@
 #include "Diagnostics/Logger.h"
 #include "Scene/SceneManager.h"
 
+#include <cstdio>
+#include <string>
+
 namespace {
 
 	// One material texture slot's drag-drop target. Draws a small placeholder box (no GPU->ImGui
@@ -65,70 +68,75 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 
 	bool changed = false;
 
-	// Re-fetched fresh every frame rather than cached: see the header comment on why
-	// SetSelectedEntity stores an Entity instead of a component reference.
-	if (Transform* transform = m_world.GetComponent<Transform>(entity)) {
-		if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-			changed |= DrawTransformSection(*transform);
+	// One collapsible section per component the entity has. Skips the two the World manages
+	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
+	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
+#define CRU_INSPECT_COMPONENT(T)                                                        \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform>)        \
+		{                                                                                   \
+			if (T* component = m_world.GetComponent<T>(entity))                             \
+			{                                                                               \
+				std::string const header(ComponentTraits<T>::name);                         \
+				ImGui::PushID(header.c_str());                                              \
+				if (ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen))\
+				{                                                                           \
+					changed |= DrawInstance(*component);                                    \
+					changed |= DrawComponentExtras(*component);                             \
+				}                                                                           \
+				ImGui::PopID();                                                             \
+			}                                                                               \
 		}
-	}
 
-	if (MeshRenderer* renderer = m_world.GetComponent<MeshRenderer>(entity)) {
-		if (ImGui::CollapsingHeader("Mesh Renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
-			changed |= DrawMeshRendererSection(*renderer);
-		}
-		if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-			changed |= DrawMaterialSection(*renderer);
-		}
-	}
+	CRUCIBLE_COMPONENT_LIST(CRU_INSPECT_COMPONENT)
+	#undef CRU_INSPECT_COMPONENT
 
-	if (changed) {
-		m_scenes.MarkDirty();
-	}
+		if (changed) {
+			m_scenes.MarkDirty();
+		}
 }
 
-bool Crucible::Inspector::DrawTransformSection(Transform& transform) {
-	bool changed = false;
-
-	changed |= ImGui::DragFloat3("Position", &transform.positions.x, 0.05f);
-
-	// Edited as Euler degrees, stored as a quaternion - matches this component's own
-	// default-construction pattern (Math::quat(Math::vec3(0,0,0))). Re-derived from the
-	// quaternion every frame rather than cached, so an external change (e.g. physics) is
-	// always reflected; this does mean two very different Euler triples can produce the same
-	// orientation (gimbal ambiguity) and the displayed angles can jump between equivalent
-	// representations frame to frame while not being dragged - a known, accepted simplification.
-	Math::vec3 euler = glm::degrees(glm::eulerAngles(transform.rotation));
-	if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
-		transform.rotation = Math::quat(glm::radians(euler));
-		changed = true;
-	}
-
-	ImGui::DragFloat3("Scale", &transform.scale.x, 0.05f);
-
-	return changed;
-}
-
-bool Crucible::Inspector::DrawMeshRendererSection(MeshRenderer& renderer) {
-	bool changed = false;
-
-	changed |= ImGui::Checkbox("Visible", &renderer.visible);
-	changed |= ImGui::ColorEdit4("Colour", &renderer.colour.x);
-
-	// Meshes are procedural (Renderer::CreateMesh from a primitive generator, or a .glb load),
-	// not asset-indexed like textures, so there's no drag-drop swap for this slot yet - just a
-	// read-only display of which GPU mesh is bound. The Renderer owns the id->name mapping
-	// (GpuMesh::debugName, set when the mesh was created - see Renderer::CreateMesh's doc
-	// comment) rather than this panel guessing or keeping its own map, so this always reflects
-	// whatever the Renderer actually has, however the mesh got there.
-	if (renderer.mesh.IsValid()) {
-		ImGui::Text("Mesh: %s (id %u)", m_renderer.GetMeshName(renderer.mesh).c_str(), renderer.mesh.id);
-	} else {
-		ImGui::TextDisabled("Mesh: none");
-	}
-
-	return changed;
-}
+//bool Crucible::Inspector::DrawTransformSection(Transform& transform) {
+//	bool changed = false;
+//
+//	changed |= ImGui::DragFloat3("Position", &transform.positions.x, 0.05f);
+//
+//	// Edited as Euler degrees, stored as a quaternion - matches this component's own
+//	// default-construction pattern (Math::quat(Math::vec3(0,0,0))). Re-derived from the
+//	// quaternion every frame rather than cached, so an external change (e.g. physics) is
+//	// always reflected; this does mean two very different Euler triples can produce the same
+//	// orientation (gimbal ambiguity) and the displayed angles can jump between equivalent
+//	// representations frame to frame while not being dragged - a known, accepted simplification.
+//	Math::vec3 euler = glm::degrees(glm::eulerAngles(transform.rotation));
+//	if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
+//		transform.rotation = Math::quat(glm::radians(euler));
+//		changed = true;
+//	}
+//
+//	ImGui::DragFloat3("Scale", &transform.scale.x, 0.05f);
+//
+//	return changed;
+//}
+//
+//bool Crucible::Inspector::DrawMeshRendererSection(MeshRenderer& renderer) {
+//	bool changed = false;
+//
+//	changed |= ImGui::Checkbox("Visible", &renderer.visible);
+//	changed |= ImGui::ColorEdit4("Colour", &renderer.colour.x);
+//
+//	// Meshes are procedural (Renderer::CreateMesh from a primitive generator, or a .glb load),
+//	// not asset-indexed like textures, so there's no drag-drop swap for this slot yet - just a
+//	// read-only display of which GPU mesh is bound. The Renderer owns the id->name mapping
+//	// (GpuMesh::debugName, set when the mesh was created - see Renderer::CreateMesh's doc
+//	// comment) rather than this panel guessing or keeping its own map, so this always reflects
+//	// whatever the Renderer actually has, however the mesh got there.
+//	if (renderer.mesh.IsValid()) {
+//		ImGui::Text("Mesh: %s (id %u)", m_renderer.GetMeshName(renderer.mesh).c_str(), renderer.mesh.id);
+//	} else {
+//		ImGui::TextDisabled("Mesh: none");
+//	}
+//
+//	return changed;
+//}
 
 bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 	// No material assigned yet: offer to create one from the Renderer's neutral defaults rather
@@ -200,36 +208,117 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 
 bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 	bool changed = false;
-	for (auto& prop : obj.get_derived_type().get_properties()) {
 
+	auto const props = obj.get_derived_type().get_properties();
+	if (props.empty()) {
+		// Catches a component someone forgot to register.
+		ImGui::TextDisabled("(no properties registered with rttr)");
+		return false;
+	}
+
+	for (auto& prop : props) {
 		if (prop.get_metadata(MetaDataTypes::NOT_ON_IMGUI).to_bool()) continue;
 
-		rttr::type type = prop.get_type();
-		rttr::variant value = prop.get_value(obj);
-		char const* name = prop.get_name().data();
+		rttr::type const  type = prop.get_type();
+		rttr::variant     value = prop.get_value(obj);
+		std::string const label = prop.get_name().to_string();
+		char const* name = label.c_str();
 
 		ImGui::BeginDisabled(prop.is_readonly() ||
 			prop.get_metadata(MetaDataTypes::DISABLED_ON_IMGUI).to_bool());
 
-		if (type == rttr::type::get<float>()) {
-			float v = value.get_value<float>();
-			if (ImGui::DragFloat(name, &v, 0.1f)) { prop.set_value(obj, v); changed = true; }
+		rttr::variant newValue;
+		bool edited = false;
+
+		if (type == rttr::type::get<bool>()) {
+			bool v = value.get_value<bool>();
+			if (ImGui::Checkbox(name, &v)) { newValue = v; edited = true; }
 		}
 		else if (type == rttr::type::get<int>()) {
 			int v = value.get_value<int>();
-			if (ImGui::DragInt(name, &v)) { prop.set_value(obj, v); changed = true; }
+			if (ImGui::DragInt(name, &v)) { newValue = v; edited = true; }
 		}
-		else if (type == rttr::type::get<bool>()) {
-			bool v = value.get_value<bool>();
-			if (ImGui::Checkbox(name, &v)) { prop.set_value(obj, v); changed = true; }
+		else if (type == rttr::type::get<std::uint32_t>()) {
+			std::uint32_t v = value.get_value<std::uint32_t>();
+			if (ImGui::DragScalar(name, ImGuiDataType_U32, &v)) { newValue = v; edited = true; }
 		}
-		else if (type.is_class()) {   // vec3, nested structs, etc: recurse
+		else if (type == rttr::type::get<float>()) {
+			float v = value.get_value<float>();
+			rttr::variant const range = prop.get_metadata(MetaDataTypes::SLIDER);
+			edited = range.is_type<Math::vec2>()
+				? ImGui::SliderFloat(name, &v, range.get_value<Math::vec2>().x, range.get_value<Math::vec2>().y)
+				: ImGui::DragFloat(name, &v, 0.05f);
+			if (edited) newValue = v;
+		}
+		else if (type == rttr::type::get<std::string>()) {
+			char buffer[256];
+			std::snprintf(buffer, sizeof(buffer), "%s", value.get_value<std::string>().c_str());
+			if (ImGui::InputText(name, buffer, sizeof(buffer))) { newValue = std::string(buffer); edited = true; }
+		}
+		else if (type.is_enumeration()) {
+			rttr::enumeration const e = type.get_enumeration();
+			std::string const current = e.value_to_name(value).to_string();
+			if (ImGui::BeginCombo(name, current.c_str())) {
+				for (auto const& option : e.get_names()) {
+					std::string const optionName = option.to_string();
+					bool const selected = (optionName == current);
+					if (ImGui::Selectable(optionName.c_str(), selected)) { newValue = e.name_to_value(option); edited = true; }
+					if (selected) ImGui::SetItemDefaultFocus();
+				}
+				ImGui::EndCombo();
+			}
+		}
+		else if (type == rttr::type::get<Math::vec2>()) {
+			Math::vec2 v = value.get_value<Math::vec2>();
+			if (ImGui::DragFloat2(name, &v.x, 0.05f)) { newValue = v; edited = true; }
+		}
+		else if (type == rttr::type::get<Math::vec3>()) {
+			Math::vec3 v = value.get_value<Math::vec3>();
+			edited = prop.get_metadata(MetaDataTypes::COLOUR).to_bool()
+				? ImGui::ColorEdit3(name, &v.x)
+				: ImGui::DragFloat3(name, &v.x, 0.05f);
+			if (edited) newValue = v;
+		}
+		else if (type == rttr::type::get<Math::vec4>()) {
+			Math::vec4 v = value.get_value<Math::vec4>();
+			edited = prop.get_metadata(MetaDataTypes::COLOUR).to_bool()
+				? ImGui::ColorEdit4(name, &v.x)
+				: ImGui::DragFloat4(name, &v.x, 0.05f);
+			if (edited) newValue = v;
+		}
+		else if (type == rttr::type::get<Math::quat>()) {
+			// Edited as Euler degrees, stored as a quaternion (same trade-off as before).
+			Math::vec3 euler = glm::degrees(glm::eulerAngles(value.get_value<Math::quat>()));
+			if (ImGui::DragFloat3(name, &euler.x, 0.5f)) { newValue = Math::quat(glm::radians(euler)); edited = true; }
+		}
+		else if (type.is_class()) {
+			// Any other registered struct: recurse into its properties.
 			if (ImGui::TreeNode(name)) {
-				if (DrawInstance(value)) { prop.set_value(obj, value); changed = true; }
+				if (DrawInstance(value)) { newValue = value; edited = true; }
 				ImGui::TreePop();
 			}
+		}
+		else {
+			ImGui::TextDisabled("%s: unsupported type %s", name, type.get_name().to_string().c_str());
+		}
+
+		if (edited) {
+			prop.set_value(obj, newValue);
+			changed = true;
 		}
 		ImGui::EndDisabled();
 	}
 	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
+	if (renderer.mesh.IsValid()) {
+		ImGui::Text("Mesh: %s (id %u)", m_renderer.GetMeshName(renderer.mesh).c_str(), renderer.mesh.id);
+	}
+	else {
+		ImGui::TextDisabled("Mesh: none");
+	}
+
+	ImGui::SeparatorText("Material");
+	return DrawMaterialSection(renderer);   // your existing function, returning bool
 }
