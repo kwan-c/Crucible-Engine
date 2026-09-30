@@ -1,51 +1,37 @@
 #pragma once
+// Precompiled header: ONLY headers that almost never change. No Crucible headers here.
 
-// Precompiled header for Crucible engine
-
-// Include standard library headers
+// ---- Standard library ----
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
-#include <concepts>
+#include <deque>
 #include <filesystem>
+#include <format>
+#include <functional>
 #include <memory>
+#include <optional>
+#include <span>
 #include <string>
+#include <string_view>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
-#include <vector>
-#include <optional>
 #include <variant>
-#include <ranges>
-#include <format>
-#include <span>
-#include <type_traits>
-#include <functional>
-#include <cassert>
-#include <stdexcept>
-#include <iostream>
-#include <sstream>
-#include <fstream>
-#include <chrono>
+#include <vector>
 
-// Include third-party library headers
-#include <rapidjson/document.h>
+// ---- Third-party ----
+#define GLFW_INCLUDE_VULKAN              // matches Systems/WindowManager.h
 #include <GLFW/glfw3.h>
+#include <vulkan/vulkan_raii.hpp>
 
-// Include Crucible engine headers
-#include "AssetPipe/Assetmanager.h"
-#include "AssetPipe/AssetRegistry.h"
-#include "Audio/AudioBuses.h"
-#include "Configuration/EngineConfig.h"
-#include "Configuration/EngineConfigLoader.h"
-#include "Diagnostics/Logger.h"
-#include "Diagnostics/LogLevel.h"
-#include "Diagnostics/LogSink.h"
-#include "Diagnostics/LogTime.h"
-#include "Diagnostics/ScopedTimer.h"
-#include "ECS/Archetype/Archetype.h"
-#include "ECS/Archetype/ArchetypeRegistry.h"
-#include "ECS/Components/Components.h"
+#define GLM_ENABLE_EXPERIMENTAL          // matches Math/Math.h
+#include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/compatibility.hpp>
 
-// Define any necessary macros or constants
-
-// Forward declarations of classes and functions
+#include <rapidjson/document.h>
+#include <rttr/registration.h>
+#include <rttr/type.h>

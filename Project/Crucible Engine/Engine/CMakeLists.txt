@@ -18,6 +18,8 @@ add_library(Engine SHARED
     ${ENGINE_SOURCES}
     ${ENGINE_HEADERS}
 )
+
+target_precompile_headers(Engine PRIVATE src/pch.h)
 set_target_properties(Engine PROPERTIES LINKER_LANGUAGE CXX)
 
 # Set warning level
@@ -30,6 +32,7 @@ if(MSVC)
         # only lowers the COMPILER warning level - analysis warnings have no level to lower, so
         # they need this switch too. Every check stays on over our own code.
         /analyze:external-
+	/MP
     )
 else()
     target_compile_options(Engine PRIVATE -Wall -Wextra -Wpedantic)

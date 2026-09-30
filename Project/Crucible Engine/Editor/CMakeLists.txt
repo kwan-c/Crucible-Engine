@@ -17,11 +17,13 @@ add_executable(Editor
     ${EDITOR_SOURCES}
     ${EDITOR_HEADERS}
 )
+
+target_precompile_headers(Editor PRIVATE src/pch.h)
 set_target_properties(Editor PROPERTIES LINKER_LANGUAGE CXX)
 
 # Set warning level
 if(MSVC)
-    target_compile_options(Editor PRIVATE /W4 /permissive-)
+    target_compile_options(Editor PRIVATE /W4 /permissive- /MP)
 else()
     target_compile_options(Editor PRIVATE -Wall -Wextra -Wpedantic)
 endif()
