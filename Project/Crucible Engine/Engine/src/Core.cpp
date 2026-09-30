@@ -11,6 +11,7 @@
 #include "Scene/Prefab.h"
 #include "Scene/Scene.h"
 #include "ECS/HierarchyTransformSystem.h"
+#include "Graphics/RenderExtractSystem.h"
 
 // STL
 #include <algorithm>
@@ -145,18 +146,6 @@ namespace Crucible {
 
     void Core::Run() {
 
-        // Real frame time, not an assumed 60 FPS: nothing here caps the actual frame rate (no
-        // glfwSwapInterval, no sleep/limiter), and the swapchain's present mode is chosen
-        // dynamically (VulkanSwapchain::ChoosePresentMode() prefers Mailbox, which does not
-        // block the app the way Fifo/vsync does). A hard-coded "1.f / 60.f" here silently
-        // assumed the app always ran at exactly 60 FPS - so at whatever *actual* frame rate
-        // Mailbox let it run at (which can be very high with an empty-ish scene and no cap),
-        // every animation driven by dt (cube spin, the editor fly-camera, ...) played back
-        // proportionally too fast or too slow. It happened to look "corrected" after toggling
-        // fullscreen because that forces a swapchain recreate (via the resize it causes), and
-        // depending on the platform/compositor a fullscreen-negotiated surface can end up stuck
-        // on a hard-blocking present mode afterwards even once back in windowed mode - which
-        // only ever fixed the SYMPTOM (actual FPS settling near 60) rather than the cause.
         double lastTime = glfwGetTime();
 
         while (!m_window->ShouldClose()) {
@@ -184,7 +173,6 @@ namespace Crucible {
 
             for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
-            //m_window->SwapBuffers();
         }
         m_renderer->ShutDown();
     }
@@ -201,6 +189,7 @@ namespace Crucible {
         //sample system registeration
         m_systems.RegisterSystem<ECSPhysicsSystem>();
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
+        m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer);   // second in PreRender: Submit()s meshes
     }
 
     void Core::CleanUp() {

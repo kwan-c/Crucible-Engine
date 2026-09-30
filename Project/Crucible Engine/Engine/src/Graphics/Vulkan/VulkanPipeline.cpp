@@ -1,4 +1,5 @@
 #include "VulkanPipeline.h"
+#include "../RenderTypes.h"   // PushConstants (model matrix + material factors)
 
 #include <fstream>
 
@@ -11,6 +12,7 @@ namespace Crucible {
     const vk::raii::Pipeline&               VulkanPipeline::GetPipeline()               const { return m_graphicsPipeline; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetLayout()                 const { return m_pipelineLayout; }
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetDescriptorSetLayout()    const { return m_descriptorSetLayout; }
+    const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetMaterialDescriptorSetLayout() const { return m_materialDescriptorSetLayout; }
 
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN PIPELINE
@@ -22,12 +24,38 @@ namespace Crucible {
             .binding            = 0, 
             .descriptorType     = vk::DescriptorType::eUniformBuffer, 
             .descriptorCount    = 1, 
-            .stageFlags         = vk::ShaderStageFlagBits::eVertex 
+            // Fragment needs this now too: FrameUniforms::cameraPosWS feeds the PBR specular
+            // term's view vector (see DefaultShader2.slang's fragMain).
+            .stageFlags         = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
         };
         vk::DescriptorSetLayoutCreateInfo layoutInfo{ .bindingCount = 1, .pBindings = &uboLayoutBinding };
         m_descriptorSetLayout = vk::raii::DescriptorSetLayout(context.GetDevice(), layoutInfo);
 
     }   // VulkanPipeline::CreateDescriptorSetLayout()
+
+    void VulkanPipeline::CreateMaterialDescriptorSetLayout(VulkanContext& context) {
+
+        // Set 1, bindings 0-4: albedo, normal, metallicRoughness, emissive, occlusion - all
+        // fragment-stage-only combined image samplers. One of these sets is allocated per
+        // Material (Renderer::CreateMaterial), never per frame-in-flight: unlike the camera UBO,
+        // a material's texture bindings don't change every frame, so a single set can be reused
+        // across all frames in flight (see Renderer::WriteMaterialDescriptorSet).
+        std::array<vk::DescriptorSetLayoutBinding, 5> bindings{};
+        for (uint32_t i = 0; i < static_cast<uint32_t>(bindings.size()); ++i) {
+            bindings[i] = vk::DescriptorSetLayoutBinding{
+                .binding         = i,
+                .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eFragment
+            };
+        }
+        vk::DescriptorSetLayoutCreateInfo layoutInfo{
+            .bindingCount = static_cast<uint32_t>(bindings.size()),
+            .pBindings    = bindings.data()
+        };
+        m_materialDescriptorSetLayout = vk::raii::DescriptorSetLayout(context.GetDevice(), layoutInfo);
+
+    }   // VulkanPipeline::CreateMaterialDescriptorSetLayout()
 
     void VulkanPipeline::CreatePipeline(VulkanContext& context, VulkanSwapchain& swapchain) {
 
@@ -98,18 +126,22 @@ namespace Crucible {
             .stencilTestEnable = vk::False
         };
 
-        // Pipeline layout object. Set 0 = per-frame camera UBO (view/proj). A push constant
-        // carries the per-draw model matrix, so any number of objects can share that one UBO.
-        vk::PushConstantRange modelPushConstantRange{
-            .stageFlags = vk::ShaderStageFlagBits::eVertex,
+        // Pipeline layout object. Set 0 = per-frame camera UBO (view/proj). Set 1 = the current
+        // draw's material (five texture bindings - see CreateMaterialDescriptorSetLayout). A
+        // push constant carries the per-draw model matrix AND the material's scalar factors
+        // (PushConstants, RenderTypes.h), readable from both stages since the model matrix is
+        // vertex-only but the factors are fragment-only.
+        vk::PushConstantRange pushConstantRange{
+            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
             .offset     = 0,
-            .size       = sizeof(glm::mat4)
+            .size       = sizeof(PushConstants)
         };
+        std::array<vk::DescriptorSetLayout, 2> setLayouts{ *m_descriptorSetLayout, *m_materialDescriptorSetLayout };
         vk::PipelineLayoutCreateInfo pipelineLayoutInfo{
-            .setLayoutCount         = 1,
-            .pSetLayouts            = &*m_descriptorSetLayout,
+            .setLayoutCount         = static_cast<uint32_t>(setLayouts.size()),
+            .pSetLayouts            = setLayouts.data(),
             .pushConstantRangeCount = 1,
-            .pPushConstantRanges    = &modelPushConstantRange
+            .pPushConstantRanges    = &pushConstantRange
         };
         m_pipelineLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
 

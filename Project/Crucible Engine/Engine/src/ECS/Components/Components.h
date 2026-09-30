@@ -38,6 +38,8 @@
 #include"Math/Math.h"
 #include"Physics/PhysicsComponents.h"
 #include"../Core/ECSCore.h"   // Entity (HierarchyNode links)
+#include"Graphics/MeshHandle.h"   // MeshHandle - deliberately NOT RenderTypes.h, which pulls in Vulkan
+#include"Graphics/MaterialHandle.h"   // MaterialHandle - same reasoning: header-only, no Vulkan
 
 namespace Crucible
 {
@@ -96,13 +98,27 @@ namespace Crucible
 	 \brief
 		Data needed to draw an entity's mesh.
 	 \details
-		Purely descriptive - no dependency on a specific renderer beyond the
-		Math types.
+		Purely descriptive - no dependency on a specific renderer, only on
+		the Math types and the Renderer's opaque MeshHandle (a plain
+		uint32_t-wrapping struct - see Graphics/MeshHandle.h - so this
+		still doesn't pull in Vulkan or any renderer internals).
+		`mesh` starts Invalid (MeshHandle::Invalid); it's set once the
+		resource manager has uploaded the entity's model (Renderer::
+		CreateMesh/CreateMeshAsync) and knows the resulting handle.
+		RenderExtractSystem (Graphics/RenderExtractSystem.h) skips any
+		entity whose mesh IsValid() is still false, or whose visible is
+		false, so a not-yet-loaded model is simply not drawn yet rather
+		than crashing.
 	 *************************************************************************/
 	struct MeshRenderer
 	{
 		bool visible = true;
 		Math::vec4 colour{ 0.f,0.f,0.f,0.f };
+		MeshHandle mesh{};
+		// Invalid -> RenderExtractSystem falls back to Renderer::GetDefaultMaterial() (a plain
+		// field, not a separate ECS component, because Query's "optional" component matching is
+		// an unimplemented no-op - see Query.h).
+		MaterialHandle material{};
 	};
 	
 	/*************************************************************************

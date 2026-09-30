@@ -12,11 +12,13 @@
 
 namespace Crucible {
 
+	class World;   // forward-declared: a reference doesn't need the full (heavy) ECS/World.h here
+
 	class ImGuiLayer : public Layer {
 	public:
-		explicit ImGuiLayer(Renderer& ren) : m_context{ ren.GetImguiContext()}, m_ren{ren} {}
+		ImGuiLayer(Renderer& ren, World& world) : m_context{ ren.GetImguiContext()}, m_ren{ren}, m_world{world} {}
 
-		void OnAttach() override { ImGuiManager::Init(m_context, m_ren); }
+		void OnAttach() override { ImGuiManager::Init(m_context, m_ren, m_world); }
 
 		// Build the UI for this frame (no GPU work yet).
 		void OnUpdate(float dt) override {
@@ -33,6 +35,7 @@ namespace Crucible {
 	private:
 		ImGuiVulkanContext		m_context;
 		Renderer&				m_ren;
+		World&					m_world;
 	};
 
 }
