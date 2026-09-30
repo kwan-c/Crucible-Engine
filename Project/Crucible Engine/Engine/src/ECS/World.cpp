@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Implementation of World: entity creation/destruction
 *                and the archetype-move logic used by
@@ -48,6 +48,12 @@
 *                descendants, hierarchy hook installed by the constructor;
 *                Unity-style hierarchy members (SetParent, DetachChildren,
 *                sibling order)
+*    -v1.5       GLM math fixed and sped up: DecomposeTRS wraps
+*                glm::decompose (validated first, unit-length axes, outputs
+*                written only on success); glm::affineInverse; no
+*                negative scales (mirrored keep-world
+*                solves are refused); shared PlaceNewEntity (single + batch
+*                creation) and UnlinkFromSiblings (detach + destroy hook)
 *
 **************************************************************************/
 
@@ -56,6 +62,9 @@
 #include <array>
 #include <cassert>
 #include <cmath>
+
+#include <glm/gtc/matrix_inverse.hpp>   // glm::affineInverse
+#include <glm/gtx/matrix_decompose.hpp>  // glm::decompose (GLM_ENABLE_EXPERIMENTAL is set by Math.h)
 #include <exception>
 #include <limits>
 #include <stdexcept>
@@ -121,12 +130,21 @@ namespace Crucible
 
 		// Resolve the archetype before taking a slot, so a failure here leaks nothing.
 		Archetype* archetype = m_archetypes.FindOrCreate(signature);
+		const Entity entity = PlaceNewEntity(*archetype);
+
+		if (fireAddHooks) FireAddHooksForRow(*archetype, m_entities.RecordAt(entity.index).row, entity);
+
+		return entity;
+	}
+
+	Entity World::PlaceNewEntity(Archetype& archetype)
+	{
 		const Entity entity = m_entities.Create();
 
 		uint32_t row = 0;
 		try
 		{
-			row = archetype->AddEntityDefault(entity);
+			row = archetype.AddEntityDefault(entity);
 		}
 		catch (...)
 		{
@@ -136,13 +154,9 @@ namespace Crucible
 		}
 
 		EntityRecord& record = m_entities.RecordAt(entity.index);
-		record.archetype = archetype;
+		record.archetype = &archetype;
 		record.row = row;
-
-		archetype->TouchAll(row, m_currentTick);
-
-		if (fireAddHooks) FireAddHooksForRow(*archetype, row, entity);
-
+		archetype.TouchAll(row, m_currentTick);
 		return entity;
 	}
 
@@ -169,26 +183,7 @@ namespace Crucible
 		try
 		{
 			for (uint32_t i = 0; i < count; ++i)
-			{
-				const Entity entity = m_entities.Create();
-				uint32_t row = 0;
-				try
-				{
-					row = archetype->AddEntityDefault(entity);
-				}
-				catch (...)
-				{
-					m_entities.Release(entity);
-					throw;
-				}
-
-				EntityRecord& record = m_entities.RecordAt(entity.index);
-				record.archetype = archetype;
-				record.row = row;
-				archetype->TouchAll(row, m_currentTick);
-
-				created.push_back(entity);   // capacity reserved above
-			}
+				created.push_back(PlaceNewEntity(*archetype));   // capacity reserved above
 		}
 		catch (...)
 		{
@@ -443,77 +438,69 @@ namespace Crucible
 			return parentWorld * Detail::ComposeTRS(local.positions, local.rotation, kUnitScale);
 		}
 
-		// Quaternion of a proper orthonormal basis (columns ux, uy, uz), Shepperd's method.
-		Math::quat QuatFromBasis(const Math::vec3& ux, const Math::vec3& uy, const Math::vec3& uz)
+		bool AllFinite(const Math::vec3& v) noexcept
 		{
-			const float r[3][3] = {   // r[row][col]
-				{ ux.x, uy.x, uz.x },
-				{ ux.y, uy.y, uz.y },
-				{ ux.z, uy.z, uz.z } };
+			return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z);
+		}
 
-			float x, y, z, w;
-			const float trace = r[0][0] + r[1][1] + r[2][2];
-			if (trace > 0.f)
-			{
-				const float k = 2.f * std::sqrt(trace + 1.f);
-				w = 0.25f * k; x = (r[2][1] - r[1][2]) / k; y = (r[0][2] - r[2][0]) / k; z = (r[1][0] - r[0][1]) / k;
-			}
-			else if (r[0][0] > r[1][1] && r[0][0] > r[2][2])
-			{
-				const float k = 2.f * std::sqrt(1.f + r[0][0] - r[1][1] - r[2][2]);
-				w = (r[2][1] - r[1][2]) / k; x = 0.25f * k; y = (r[0][1] + r[1][0]) / k; z = (r[0][2] + r[2][0]) / k;
-			}
-			else if (r[1][1] > r[2][2])
-			{
-				const float k = 2.f * std::sqrt(1.f + r[1][1] - r[0][0] - r[2][2]);
-				w = (r[0][2] - r[2][0]) / k; x = (r[0][1] + r[1][0]) / k; y = 0.25f * k; z = (r[1][2] + r[2][1]) / k;
-			}
-			else
-			{
-				const float k = 2.f * std::sqrt(1.f + r[2][2] - r[0][0] - r[1][1]);
-				w = (r[1][0] - r[0][1]) / k; x = (r[0][2] + r[2][0]) / k; y = (r[1][2] + r[2][1]) / k; z = 0.25f * k;
-			}
-			if (w < 0.f) { x = -x; y = -y; z = -z; w = -w; }   // one representative of q / -q
-			return Math::quat(x, y, z, w);
+		enum class Basis { Proper, Mirrored, Degenerate };
+
+		// Classifies an affine matrix's 3x3 basis (bottom row ignored). Degenerate: a
+		// non-finite value, an (almost) zero axis, or axes (almost) in one plane - not
+		// invertible. axisLengths gets each column's length.
+		Basis ClassifyBasis(const Math::mat4& m, Math::vec3& axisLengths) noexcept
+		{
+			const Math::vec3 c0(m[0]), c1(m[1]), c2(m[2]);
+			if (!(AllFinite(c0) && AllFinite(c1) && AllFinite(c2) && AllFinite(Math::vec3(m[3])))) return Basis::Degenerate;
+
+			axisLengths = Math::vec3(glm::length(c0), glm::length(c1), glm::length(c2));
+			if (!(axisLengths.x > kMinScale && axisLengths.y > kMinScale && axisLengths.z > kMinScale)) return Basis::Degenerate;
+
+			// Volume of the unit-length axes: +-1 when orthogonal, 0 when flat, < 0 when
+			// mirrored. Scale-independent (and can't overflow like det / (l0 * l1 * l2)).
+			const float volume = glm::dot(glm::cross(c0 / axisLengths.x, c1 / axisLengths.y), c2 / axisLengths.z);
+			if (!(std::fabs(volume) > kPlanarTolerance)) return Basis::Degenerate;
+			return volume > 0.f ? Basis::Proper : Basis::Mirrored;
+		}
+
+		// glm::affineInverse of m when m is invertible (mirrored is fine: the handedness
+		// check belongs to the decomposition of the solved matrix).
+		bool TryAffineInverse(const Math::mat4& m, Math::mat4& inverse) noexcept
+		{
+			Math::vec3 lengths;
+			if (ClassifyBasis(m, lengths) == Basis::Degenerate) return false;
+			inverse = glm::affineInverse(m);
+			return true;
 		}
 	}
 
 	bool Detail::DecomposeTRS(const Math::mat4& m, Math::vec3& translation, Math::quat& rotation,
-		Math::vec3& scale, int reflectAxis) noexcept
+		Math::vec3& scale) noexcept
 	{
-		const Math::vec3 c0(m[0][0], m[1][0], m[2][0]);
-		const Math::vec3 c1(m[0][1], m[1][1], m[2][1]);
-		const Math::vec3 c2(m[0][2], m[1][2], m[2][2]);
-		const Math::vec3 t = m[3];
-		if (!(glm::isfinite(c0.x) && glm::isfinite(c0.y) && glm::isfinite(c0.z) &&
-			glm::isfinite(c1.x) && glm::isfinite(c1.y) && glm::isfinite(c1.z) &&
-			glm::isfinite(c2.x) && glm::isfinite(c2.y) && glm::isfinite(c2.z) &&
-			glm::isfinite(t.x) && glm::isfinite(t.y) && glm::isfinite(t.z))) return false;
+		// No negative scales: a mirrored matrix is refused, like a singular one.
+		Math::vec3 lengths;
+		if (ClassifyBasis(m, lengths) != Basis::Proper) return false;
 
-		const float l0 = c0.length(), l1 = c1.length(), l2 = c2.length();
-		if (!(l0 > kMinScale && l1 > kMinScale && l2 > kMinScale)) return false;   // a zero scale axis
+		// glm::decompose's singularity test is an absolute |det| < FLT_EPSILON, which
+		// would refuse small but valid scales. Give it unit-length axes (|det| is then the
+		// volume checked above) and a clean affine bottom row, and scale back afterwards:
+		// dividing an axis by its length changes neither its direction nor, after
+		// Gram-Schmidt, anything but that axis' scale.
+		const Math::mat4 unit(Math::vec4(Math::vec3(m[0]) / lengths.x, 0.f), Math::vec4(Math::vec3(m[1]) / lengths.y, 0.f),
+			Math::vec4(Math::vec3(m[2]) / lengths.z, 0.f), Math::vec4(Math::vec3(m[3]), 1.f));
 
-		// Gram-Schmidt: X keeps its direction, Y stays in the XY plane, Z completes a
-		// right-handed basis. Without shear this is exactly the rotation; with shear it is
-		// an axis-preserving approximation, not the closest rotation.
-		Math::vec3 ux = c0 * (1.f / l0);
-		const Math::vec3 yRest = c1 - ux * glm::dot(ux, c1);
-		const float ly = yRest.length();
-		if (!(ly > kPlanarTolerance * l1)) return false;   // Y collapsed onto X
-		Math::vec3 uy = yRest * (1.f / ly);
-		Math::vec3 uz = glm::cross(ux, uy);
+		Math::vec3 t, s, skew;
+		Math::vec4 perspective;
+		Math::quat q;
+		if (!glm::decompose(unit, s, q, t, skew, perspective)) return false;
+		s *= lengths;
+		if (!(AllFinite(s) && std::isfinite(q.w) && std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z)))
+			return false;
 
-		float sx = l0, sy = ly, sz = glm::dot(uz, c2);            // sz < 0: the matrix is mirrored
-		if (!(std::fabs(sz) > kPlanarTolerance * l2)) return false;   // Z collapsed into the XY plane
-
-		// A mirrored matrix has its reflection on Z so far. Moving it to another axis is a
-		// 180-degree turn about the third axis: negate that axis and Z (both basis and scale).
-		if (sz < 0.f && reflectAxis == 0) { ux = ux * -1.f; uz = uz * -1.f; sx = -sx; sz = -sz; }
-		if (sz < 0.f && reflectAxis == 1) { uy = uy * -1.f; uz = uz * -1.f; sy = -sy; sz = -sz; }
-
+		if (q.w < 0.f) q = -q;   // canonical of q / -q (same rotation)
 		translation = t;
-		rotation = QuatFromBasis(ux, uy, uz);
-		scale = Math::vec3(sx, sy, sz);
+		rotation = SafeNormalize(q);
+		scale = s;
 		return true;
 	}
 
@@ -527,7 +514,7 @@ namespace Crucible
 		case ParentResult::SelfParent: return "an entity can't be its own parent";
 		case ParentResult::WouldCycle: return "parent is a descendant of child (would create a cycle)";
 		case ParentResult::UnsupportedTransform:
-			return "can't keep the world transform: a parent's world transform has a zero or non-finite scale (use worldPositionStays = false)";
+			return "can't keep the world transform: a parent's world transform has a zero or non-finite scale, or the parents differ in handedness (would need a negative scale; use worldPositionStays = false)";
 		default:                       return "unknown";
 		}
 	}
@@ -637,16 +624,19 @@ namespace Crucible
 		const Entity parent = c.parent;
 		if (!parent.IsValid()) return;
 
-		HierarchyNode& p = HierarchyLinks(parent);
-		if (c.prevSibling.IsValid()) HierarchyLinks(c.prevSibling).nextSibling = c.nextSibling;
-		else                         p.firstChild = c.nextSibling;
-		if (c.nextSibling.IsValid()) HierarchyLinks(c.nextSibling).prevSibling = c.prevSibling;
-		else                         p.lastChild = c.prevSibling;
-		--p.childCount;
-
+		UnlinkFromSiblings(c, HierarchyLinks(parent));
 		c.parent = kNullEntity;
 		c.prevSibling = kNullEntity;
 		c.nextSibling = kNullEntity;
+	}
+
+	void World::UnlinkFromSiblings(const HierarchyNode& child, HierarchyNode& parent)
+	{
+		if (child.prevSibling.IsValid()) HierarchyLinks(child.prevSibling).nextSibling = child.nextSibling;
+		else                             parent.firstChild = child.nextSibling;
+		if (child.nextSibling.IsValid()) HierarchyLinks(child.nextSibling).prevSibling = child.prevSibling;
+		else                             parent.lastChild = child.prevSibling;
+		--parent.childCount;
 	}
 
 	void World::InsertChildAt(Entity child, Entity parent, std::uint32_t index)
@@ -702,14 +692,7 @@ namespace Crucible
 			{
 				// 1. Unlink self from its parent's child list (no stamps: nothing else moves).
 				if (h.parent.IsValid() && w.IsAlive(h.parent))
-				{
-					HierarchyNode& p = w.HierarchyLinks(h.parent);
-					if (h.prevSibling.IsValid()) w.HierarchyLinks(h.prevSibling).nextSibling = h.nextSibling;
-					else                         p.firstChild = h.nextSibling;
-					if (h.nextSibling.IsValid()) w.HierarchyLinks(h.nextSibling).prevSibling = h.prevSibling;
-					else                         p.lastChild = h.prevSibling;
-					--p.childCount;
-				}
+					w.UnlinkFromSiblings(h, w.HierarchyLinks(h.parent));
 
 				// 2. No children can be left: DestroyEntityImpl destroys every descendant
 				//    first, so nothing is ever orphaned. Reaching here with children means
@@ -813,20 +796,18 @@ namespace Crucible
 	// ---------------------------------------------------------------- mutations
 
 	ParentResult World::SolveKeepWorld(const Transform& local, const Math::mat4& oldParentWorld,
-		const Math::mat4& newParentInverse, Transform& out) const
+		const Math::mat4* newParentInverse, Transform& out) const
 	{
 		// Solve for the child's frame WITHOUT its own scale, then put the local scale back:
-		// a zero or mirrored local scale is carried over exactly instead of being recovered
-		// from a matrix. If the parents differ in handedness, the frame is mirrored - put
-		// that reflection on an axis the local scale already mirrors, so the two cancel.
-		const Math::mat4 frame = newParentInverse * FrameMatrix(oldParentWorld, local);
-		const int reflectAxis = local.scale.y < 0.f ? 1 : local.scale.z < 0.f ? 2 : 0;
+		// a zero local scale is carried over exactly instead of being recovered from a
+		// (singular) matrix.
+		const Math::mat4 world = FrameMatrix(oldParentWorld, local);
+		const Math::mat4 frame = newParentInverse ? *newParentInverse * world : world;
 		Math::vec3 frameScale;
-		if (!Detail::DecomposeTRS(frame, out.positions, out.rotation, frameScale, reflectAxis))
-			return ParentResult::UnsupportedTransform;   // the current parent chain has a zero scale
+		if (!Detail::DecomposeTRS(frame, out.positions, out.rotation, frameScale))
+			return ParentResult::UnsupportedTransform;   // zero-scale chain, or the parents differ in handedness
 
-		out.scale = Math::vec3(frameScale.x * local.scale.x, frameScale.y * local.scale.y,
-			frameScale.z * local.scale.z);
+		out.scale = frameScale * local.scale;
 		return ParentResult::Ok;
 	}
 
@@ -854,12 +835,12 @@ namespace Crucible
 		Transform solved{};
 		if (worldPositionStays)
 		{
-			// The new parent must be invertible, or no local Transform reaches the old world spot.
-			Math::vec3 t, s;
-			Math::quat r;
-			if (!Detail::DecomposeTRS(newParentWorld, t, r, s)) return ParentResult::UnsupportedTransform;
+			// The new parent must be invertible, or no local Transform reaches the old world
+			// spot. A root needs no inverse (identity).
+			Math::mat4 newParentInverse;
+			if (parent.IsValid() && !TryAffineInverse(newParentWorld, newParentInverse)) return ParentResult::UnsupportedTransform;
 			const ParentResult solve = SolveKeepWorld(*LocalOf(child), ComputeWorldMatrix(oldParent),
-				glm::inverse(newParentWorld), solved);
+				parent.IsValid() ? &newParentInverse : nullptr, solved);
 			if (solve != ParentResult::Ok) return solve;
 		}
 
@@ -891,13 +872,12 @@ namespace Crucible
 
 		// All-or-nothing: solve every child's root Transform before detaching any. They
 		// share the old parent, so its world matrix is computed once; the new parent is
-		// the root (identity, nothing to invert).
+		// the root (nothing to invert).
 		const Math::mat4 parentWorld = ComputeWorldMatrix(parent);
-		const Math::mat4 rootInverse = Math::mat4(1.0f);
 		std::vector<Transform> solved(children.size());
 		for (std::size_t i = 0; i < children.size(); ++i)
 		{
-			if (SolveKeepWorld(*LocalOf(children[i]), parentWorld, rootInverse, solved[i]) != ParentResult::Ok)
+			if (SolveKeepWorld(*LocalOf(children[i]), parentWorld, nullptr, solved[i]) != ParentResult::Ok)
 				throw std::invalid_argument(std::string("World::DetachChildren: ") + ToString(ParentResult::UnsupportedTransform));
 		}
 

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -61,6 +61,10 @@
 *    -v1.7       private ReadNodeRow (one lookup per node for
 *                HierarchyTransformSystem); per-call access checks
 *                Debug-only (see CRUCIBLE_ECS_ACCESS_CHECKS)
+*    -v1.8       GLM math: Detail::SafeNormalize, ComposeTRS from glm
+*                mat4_cast + glm::scale; DecomposeTRS wraps
+*                glm::decompose; no negative scales (mirrored keep-world
+*                reparents are refused); shared unlink/placement helpers
 *
 **************************************************************************/
 #pragma once
@@ -70,6 +74,7 @@
 //std libs
 #include <array>
 #include <cassert>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <stdexcept>
@@ -102,7 +107,7 @@ namespace Crucible
 		DeadParent,    // parent is non-null but dead/stale
 		SelfParent,    // child == parent
 		WouldCycle,    // parent is one of child's descendants
-		UnsupportedTransform   // worldPositionStays: a parent's world transform has a zero/non-finite scale (not invertible)
+		UnsupportedTransform   // worldPositionStays: a parent's world transform has a zero/non-finite scale (not invertible), or keeping the world pose would need a mirrored (negative) scale
 	};
 
 	/*************************************************************************
@@ -126,51 +131,71 @@ namespace Crucible
 
 	namespace Detail
 	{
-		// T*R*S matrix; any scale, including zero and negative. Not xmath's fmat4(t, r, s)
-		// constructor (declared (translation, rotation, scale) but defined (scale, rotation,
-		// translation)), and setupSRT only gets a unit scale because it asserts on a zero
-		// one - the scale is applied to the rotation columns here instead.
-		inline Math::mat4 ComposeTRS(const Math::vec3& translation, const Math::quat& rotation, const Math::vec3& scale) noexcept
+		// GLM conventions used below: matrices are column-major (m[column][row], m[3] is the
+		// translation), glm::quat's constructor takes (w, x, y, z), and v.length() is the
+		// component count - glm::length(v) is the Euclidean length.
+
+		/*********************************************************************
+		 \brief  Unit form of q, or identity when q is zero or non-finite.
+		 \details A rotation must be unit length or mat4_cast() turns it into a
+				  scaled/sheared matrix; a zero or NaN one would poison every
+				  descendant. Already-unit quaternions (the common case) are
+				  returned unchanged, without a square root.
+		 *********************************************************************/
+		inline Math::quat SafeNormalize(const Math::quat& q) noexcept
 		{
-			Math::mat4 m(1.0f);
-
-			m = glm::translate(m, translation);
-
-			m = m * glm::mat4_cast(rotation);
-
-			m = glm::scale(m, scale);
-			
-			return m;
+			const float n2 = glm::dot(q, q);
+			if (n2 > 0.999999f && n2 < 1.000001f) return q;
+			if (!(n2 > 1e-12f) || !std::isfinite(n2)) return Math::quat(1.f, 0.f, 0.f, 0.f);   // identity (w first)
+			return glm::normalize(q);
 		}
 
 		/*********************************************************************
-		 \brief  Splits an affine matrix into translation * rotation * SIGNED
-				 scale.
-		 \param[in]  m           The matrix (e.g. a world or local matrix).
+		 \brief  translation * rotation * scale as one matrix.
+		 \details The rotation matrix gets the translation as its last column,
+				  then glm::scale() scales the three axis columns - the same
+				  result as translate * mat4_cast * scale without the two 4x4
+				  multiplies. The rotation is normalised first (see
+				  SafeNormalize).
+		 *********************************************************************/
+		inline Math::mat4 ComposeTRS(const Math::vec3& translation, const Math::quat& rotation, const Math::vec3& scale) noexcept
+		{
+			Math::mat4 m = glm::mat4_cast(SafeNormalize(rotation));
+			m[3] = Math::vec4(translation, 1.f);
+			return glm::scale(m, scale);
+		}
+
+		/*********************************************************************
+		 \brief  Splits an affine matrix into translation * rotation * scale,
+				 with a positive scale on every axis (glm::decompose inside).
+		 \param[in]  m           The matrix (e.g. a world or local matrix);
+								 its bottom row is ignored (treated as affine).
 		 \param[out] translation Exact translation of m.
-		 \param[out] rotation    A proper rotation (never a reflection).
-		 \param[out] scale       Signed per-axis scale: a mirrored matrix gets
-								 exactly one negative axis.
-		 \param[in]  reflectAxis Which axis (0 = X, 1 = Y, 2 = Z) carries the
-								 negative sign when m is mirrored.
-		 \return false (outputs untouched) when m has a non-finite value or an
-				 (almost) zero / collapsed scale axis - i.e. m is not
-				 invertible and has no meaningful rotation.
-		 \details Shear policy: a rotated child under a non-uniformly scaled
-				  parent has shear, which T/R/S can't store. Then the
-				  translation is still exact, the rotation keeps the X axis
-				  direction and the XY plane (Gram-Schmidt), and each scale is
-				  the axisprojection onto that rotation. This is an
+		 \param[out] rotation    Unit rotation, the canonical one (w >= 0) of
+								 q / -q.
+		 \param[out] scale       Per-axis scale, all positive.
+		 \return false (outputs untouched) when m has a non-finite value, an
+				 (almost) zero or collapsed scale axis (not invertible), or is
+				 mirrored - Crucible does not produce negative scales.
+		 \details Without shear the result is exact: ComposeTRS() of it gives m
+				  back. Shear policy (glm::decompose's Gram-Schmidt): a rotated
+				  child under a non-uniformly scaled parent has shear, which
+				  T/R/S can't store. Then the translation is still exact, the
+				  rotation keeps the X axis direction and the XY plane, and each
+				  scale is the axis' projection onto that rotation. This is an
 				  axis-preserving approximation (not in general the closest
 				  rotation or T*R*S): recomposing it does not reproduce the
-				  sheared matrix exactly.if object is sheared there will be and approximation 
-				  if obj is not sheared the rotatoin will be accurate
-		 \note   Use this, not fmat4::ExtractRotation()/ExtractScale(): xmath
-				 returns the inverse rotation past 90 degrees and never a
-				 negative scale.
+				  sheared matrix exactly.
+		 \note   Prefer this to calling glm::decompose() directly: that one
+				 lets NaNs through, writes its outputs even when it fails,
+				 flips all three scales negative for a mirrored matrix, and
+				 rejects small but valid scales (its singularity test is an
+				 absolute |det| < FLT_EPSILON, e.g. a uniform scale under
+				 0.005). This wrapper validates first and hands glm a basis
+				 with unit-length axes, then scales the result back.
 		 *********************************************************************/
 		ENGINE_API bool DecomposeTRS(const Math::mat4& m, Math::vec3& translation, Math::quat& rotation,
-			Math::vec3& scale, int reflectAxis = 0) noexcept;
+			Math::vec3& scale) noexcept;
 
 		// Whether the Mandatory<T> trait and kMandatoryComponents say the same thing about T.
 		template <typename T>
@@ -564,15 +589,16 @@ namespace Crucible
 		 \return Ok, or why nothing was changed. UnsupportedTransform (only
 				 with worldPositionStays) when the new parent's world
 				 transform, or the child's current parent chain, has a zero or
-				 non-finite scale: there is no local Transform that keeps the
-				 world transform. Use worldPositionStays = false then.
+				 non-finite scale, or when the old and new parents differ in
+				 handedness (keeping the pose would need a negative scale):
+				 there is no local Transform that keeps the world transform.
+				 Use worldPositionStays = false then.
 		 \details The world matrix is kept exactly whenever T/R/S can store
 				  it. The solve works on the child's frame WITHOUT its own
-				  scale, so a zero or mirrored local scale (e.g. -1, 1, 1) is
-				  carried over unchanged; if the old and new parents differ in
-				  handedness, the reflection moves into the local scale (on an
-				  axis that is already negative, if any). Shear can't be stored:
-				  see Detail::DecomposeTRS for the policy (position exact).
+				  scale, so a zero local scale is carried over unchanged
+				  (the local scale is never recovered from a matrix). Crucible
+				  never creates a negative scale. Shear can't be stored: see
+				  Detail::DecomposeTRS for the policy (position exact).
 				  Strong guarantee: every step that can throw or fail
 				  (structural check, reading and solving transforms) happens
 				  before any link or Transform is modified.
@@ -593,7 +619,7 @@ namespace Crucible
 		 \brief  Unity's Transform.DetachChildren(): every child becomes a
 				 root and keeps its world transform. Same rules as SetParent.
 		 \note   All-or-nothing: if any child can't keep its world transform
-				 (parent has a zero scale - see TrySetParent), throws
+				 (parent has a zero or negative scale - see TrySetParent), throws
 				 std::invalid_argument and nothing is detached.
 		 *********************************************************************/
 		void DetachChildren(Entity parent);
@@ -739,6 +765,9 @@ namespace Crucible
 		void RequireStructuralChange(const char* operation) const;
 
 		Entity CreateEntityImpl(const ComponentSignature& signature, bool fireAddHooks);
+		// Takes an entity slot and adds its default row to archetype, stamped now, no hooks.
+		// Strong guarantee: on a throw the slot is given back and archetype is unchanged.
+		Entity PlaceNewEntity(Archetype& archetype);
 		void NotifyComponentsAdded(Entity entity);
 
 		// fireHooks == false removes an entity whose add hooks never ran (a
@@ -782,6 +811,9 @@ namespace Crucible
 		HierarchyNode& HierarchyLinks(Entity entity);
 		void StampReparented(Entity entity);
 		void DetachFromParent(Entity child);
+		// Takes child out of parent's child list (neighbours' sibling links, parent's
+		// first/last child and count); child's own links are left for the caller.
+		void UnlinkFromSiblings(const HierarchyNode& child, HierarchyNode& parent);
 		void InsertChildAt(Entity child, Entity parent, std::uint32_t index);   // index >= count appends
 		void DestroyDescendants(Entity root, bool fireHooks);
 
@@ -800,10 +832,10 @@ namespace Crucible
 		bool ReachesUp(Entity from, Entity target, Math::mat4* worldOut) const;
 
 		// The local Transform that keeps a child's world transform when it moves from
-		// oldParentWorld to the parent whose inverse world matrix is newParentInverse
-		// (identity = root). Reads only; UnsupportedTransform if there is none.
+		// oldParentWorld to the parent whose inverse world matrix is *newParentInverse
+		// (nullptr = root). Reads only; UnsupportedTransform if there is none.
 		ParentResult SolveKeepWorld(const Transform& local, const Math::mat4& oldParentWorld,
-			const Math::mat4& newParentInverse, Transform& out) const;
+			const Math::mat4* newParentInverse, Transform& out) const;
 
 		// parent world x local (T*R*S) computed now in one pass up the parents;
 		// identity for a dead entity or kNullEntity. Used by keep-world reparenting.
@@ -923,7 +955,7 @@ namespace Crucible
 	{
 		if (!m_entities.IsAlive(entity)) return 0;
 		const EntityRecord& record = m_entities.Record(entity);
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 		if (!record.archetype->Contains(id)) return 0;
 		return static_cast<const Archetype*>(record.archetype)->GetColumn(id).LastChanged(record.row);
 	}
@@ -937,7 +969,7 @@ namespace Crucible
 			throw std::invalid_argument("World::MarkChanged called with a dead/stale Entity");
 
 		const EntityRecord& record = m_entities.Record(entity);
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 		if (!record.archetype->Contains(id))
 			throw std::logic_error("World::MarkChanged: the entity does not have this component");
 
@@ -949,7 +981,7 @@ namespace Crucible
 	{
 		static_assert(!WorldManaged<T>::value, "This component is managed by World (e.g. HierarchyNode): use SetParent (kNullEntity to detach)");
 		EntityRecord& record = RequireMutableEntity(entity, "AddComponent");
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 
 		if (record.archetype->Contains(id)) return OverwriteComponent<T>(record, id, std::move(value));
 		return InsertComponent<T>(record, entity, id, std::move(value));
@@ -965,7 +997,7 @@ namespace Crucible
 	inline void World::RemoveComponent(Entity entity)
 	{
 		EntityRecord& record = RequireMutableEntity(entity, "RemoveComponent");
-		const ComponentId id = ComponentTypeId<T>();
+		constexpr ComponentId id = ComponentTypeId<T>();
 
 		if (!record.archetype->Contains(id)) return;
 

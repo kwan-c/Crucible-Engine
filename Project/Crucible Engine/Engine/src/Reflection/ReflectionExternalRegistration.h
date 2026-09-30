@@ -38,6 +38,24 @@ namespace rttr::detail {
     //};
 }
 
+// NOTE (Nelson, 29 Sep 2026): the RTTR_REGISTRATION block that used to sit
+// here has moved to Reflection/ReflectionComponentRegistration.cpp.
+//
+// RTTR_REGISTRATION expands to a fixed-name struct and function, so a
+// translation unit may only contain one. Living in a header, this one was
+// pulled into both ImGuiPanel_Inspector.cpp and ImGuiManager.cpp - two
+// copies in the Editor - and could never be combined with any other
+// registration. It also meant the math types were registered by the Editor
+// only, so Game.exe ran without them.
+//
+// The template_type_trait specialisations above must stay in this header:
+// they are compile-time traits and every translation unit needs to see them.
+// The registration is runtime data and belongs in exactly one .cpp.
+// Disabled, not deleted: kept for reference. The live math registrations
+// are in ReflectionComponentRegistration.cpp. Re-enabling this block causes
+//   'rttr__auto__register__': 'struct' type redefinition
+// because that .cpp includes this header and has its own block.
+#if 0
 RTTR_REGISTRATION
 {
 	using namespace Crucible::Math;
@@ -98,3 +116,4 @@ RTTR_REGISTRATION
  //       .property("w", &quat::m_W)
  //   ;
 }
+#endif

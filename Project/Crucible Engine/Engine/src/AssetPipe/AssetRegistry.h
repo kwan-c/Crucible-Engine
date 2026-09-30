@@ -11,6 +11,10 @@
 #include "EngineExport.h"
 
 namespace Crucible {
+#ifdef _MSC_VER
+#pragma warning(push)
+#pragma warning(disable : 4251)   // STL / xresource members in exported types; Engine.dll and its clients share one toolchain
+#endif
 	
 	struct AssetEntry;
 
@@ -18,7 +22,10 @@ namespace Crucible {
 	{
 		xresource::instance_guid guid;
 		std::uint64_t contenthash = 0;
-		std::int64_t sourceTime = 0;
+		// No timestamp is stored. A timestamp changes whenever git rewrites the
+		// working tree (checkout, pull, stash), which made every .meta get
+		// rewritten on the next launch and show up as a diff for the whole team.
+		// The hash alone decides whether an asset changed.
 	};
 
 	class ENGINE_API AssetRegistry
@@ -69,4 +76,7 @@ namespace Crucible {
 	private:
 		std::unordered_map<xresource::instance_guid, std::string> m_guidToPath;
 	};
+#ifdef _MSC_VER
+#pragma warning(pop)
+#endif
 }
