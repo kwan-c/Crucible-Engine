@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -26,6 +26,7 @@
 	* -v1.1       Transform rotation/scale; WorldTransform and HierarchyNode;
 	*             mandatory base components (Transform, WorldTransform,
 	*             HierarchyNode)
+	* -v1.2       Audio renamed to AudioSource (clashed with class Crucible::Audio)
 	*
 	*
 	**************************************************************************/
@@ -106,8 +107,10 @@ namespace Crucible
 	
 	/*************************************************************************
 	 \brief  Playback state for an entity's audio source.
+	 \note   Named AudioSource (Unity's name), not Audio: the audio system
+	         class is Crucible::Audio, and one namespace cannot hold both.
 	 *************************************************************************/
-	struct Audio
+	struct AudioSource
 	{
 		bool play = false;
 		bool loop = false;
@@ -128,7 +131,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(Transform, Transform);
 	CRUCIBLE_COMPONENT(RigidBody, RigidBody);
 	CRUCIBLE_COMPONENT(MeshRenderer, MeshRenderer);
-	CRUCIBLE_COMPONENT(Audio, Audio);
+	CRUCIBLE_COMPONENT(AudioSource, AudioSource);
 	CRUCIBLE_COMPONENT(HierarchyNode, HierarchyNode);
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 

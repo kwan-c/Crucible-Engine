@@ -109,10 +109,10 @@ RTTR_REGISTRATION
         .property("colour",  &MeshRenderer::colour)
     ;
 
-    rttr::registration::class_<Audio>("Audio")
+    rttr::registration::class_<AudioSource>("AudioSource")
         .constructor<>()
-        .property("play", &Audio::play)
-        .property("loop", &Audio::loop)
+        .property("play", &AudioSource::play)
+        .property("loop", &AudioSource::loop)
     ;
 
     rttr::registration::class_<RigidBody>("RigidBody")

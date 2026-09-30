@@ -59,7 +59,7 @@ namespace Crucible
 		Transform = 0,
 		RigidBody = 1,
 		MeshRenderer = 2,
-		Audio = 3,
+		AudioSource = 3,
 		Collider = 4,
 		CharacterController = 5,
 		HierarchyNode = 6,    // parent / child / sibling links
@@ -158,7 +158,7 @@ namespace Crucible
  X(Transform)                                                                \
  X(RigidBody)                                                                \
  X(MeshRenderer)                                                               \
- X(Audio)                                                                      \
+ X(AudioSource)                                                                \
  X(Collider)                                                                   \
  X(CharacterController)                                                        \
  X(HierarchyNode)                                                              \
