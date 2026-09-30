@@ -1,3 +1,18 @@
+/*************************************************************************
+* \file:         RenderExtractSystem.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See RenderExtractSystem.h for what this system does and
+*                why it exists.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
+
 #include "RenderExtractSystem.h"
 
 // IECSSystems.h only forward-declares World (it's a heavy header most systems don't need in

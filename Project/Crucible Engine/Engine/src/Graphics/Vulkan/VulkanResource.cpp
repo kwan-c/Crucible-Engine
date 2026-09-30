@@ -1,3 +1,18 @@
+/*************************************************************************
+* \file:         VulkanResource.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See VulkanResource.h for what VulkanResource/VulkanBuffer/
+*                VulkanImage are and why they exist.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
+
 #include "VulkanResource.h"
 
 namespace Crucible {

@@ -1,3 +1,18 @@
+/*************************************************************************
+* \file:         RenderSystem.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See RenderSystem.h for what Renderer owns and its full
+*                public API documentation.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
+
 #include "RenderSystem.h"
 
 // STL

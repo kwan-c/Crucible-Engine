@@ -1,3 +1,17 @@
+/*************************************************************************
+* \file:         VulkanPipeline.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See VulkanPipeline.h for what this class owns and why.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
+
 #include "VulkanPipeline.h"
 #include "../RenderTypes.h"   // PushConstants (model matrix + material factors)
 

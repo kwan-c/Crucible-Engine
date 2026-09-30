@@ -1,4 +1,29 @@
 #pragma once
+/*************************************************************************
+* \file:         RenderSystem.h
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                The engine's Renderer: owns the Vulkan context/swapchain/
+*                pipeline/frame manager and every GPU-side mesh, texture,
+*                material, and offscreen viewport resource.
+*
+* \details
+*                Declares Renderer, the single class the rest of the
+*                engine (and the Editor) talks to for anything GPU-related:
+*                uploading meshes/textures, creating/updating materials,
+*                creating offscreen viewports for Editor panels, submitting
+*                per-frame draw calls, and driving the frame loop itself.
+*                Renderer stays entirely unaware the ECS exists - see
+*                RenderExtractSystem.h for the one place that bridges the
+*                two.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
     #include <vulkan/vulkan_raii.hpp>
@@ -33,6 +58,17 @@
 
 namespace Crucible {
 
+    /*************************************************************************
+     \brief
+        The engine's Renderer: owns the Vulkan context/swapchain/pipeline/
+        frame manager and every GPU-side mesh, texture, material, and
+        offscreen viewport resource.
+
+     \details
+        See the file header for Renderer's role in the engine. Internally
+        organized into Meshes, Textures, Materials, Viewports, and Draw
+        submission - see the section banners below and in the .cpp.
+     *************************************************************************/
     class Renderer {
 
         // GPU-side mesh. One vertex + one index buffer per mesh for now (simple; suballocate from
@@ -88,124 +124,332 @@ namespace Crucible {
         };
 
     public:
+        /*********************************************************************
+         \brief  Constructs the Vulkan context/swapchain/pipeline/frame
+                 manager, uploads the default textures/material/primitive
+                 meshes, and loads the demo scene's sample model.
+         \param[in] window The window to render into.
+         *********************************************************************/
         Renderer(WindowManager& window);
+
+        /*********************************************************************
+         \brief  Waits for the device to go idle before teardown.
+         *********************************************************************/
         void ShutDown();
 
+        /*********************************************************************
+         \brief  Advances demo-scene time, drains any pending async mesh
+                 uploads, populates/sorts the render queue, and draws the
+                 frame.
+         \param[in] dt Frame delta time, in seconds.
+         *********************************************************************/
         void Update(float dt);
+
+        /*********************************************************************
+         \brief  Acquires a swapchain image, records the command buffer for
+                 this frame, and submits/presents it.
+         *********************************************************************/
         void DrawFrame();
+
+        /*********************************************************************
+         \brief  Refreshes the given frame-in-flight's camera uniform
+                 buffer from the main camera's current view/projection.
+         \param[in] frameIndex Index of the frame in flight to update.
+         *********************************************************************/
         void UpdateFrameUniforms(uint32_t frameIndex);
 
-        // ---- Camera ----
-        // The renderer owns the active camera; a controller (or the ECS) mutates it each frame
-        // before Update(). Aspect ratio is kept in sync with the swapchain automatically.
+        /*********************************************************************
+         \brief  Accessor for the active (main) camera.
+         \return Mutable reference to the main camera.
+         \note  The renderer owns the active camera; a controller (or the
+                ECS) mutates it each frame before Update(). Aspect ratio is
+                kept in sync with the swapchain automatically.
+         *********************************************************************/
         Camera&       GetCamera()       { return m_camera; }
+
+        /*********************************************************************
+         \brief  Accessor for the active (main) camera.
+         \return Const reference to the main camera.
+         *********************************************************************/
         const Camera& GetCamera() const { return m_camera; }
 
-        // ---- Meshes ----
-        // Uploads mesh data to the GPU immediately (blocks until the copy completes) and returns
-        // a handle for use in an entity's MeshRenderer component (ECS/Components/Components.h;
-        // extracted into a Submit() call every frame by Graphics/RenderExtractSystem.h). Use for
-        // meshes needed right away: built-in primitives, or a handful of assets loaded at startup.
-        // debugName is optional and purely descriptive (see GetMeshName()) - pass the source
-        // asset's own name when you have one (a glTF mesh's "name", say), otherwise leave it
-        // empty and a generic "Mesh <id>" is used.
+        /*********************************************************************
+         \brief
+            Uploads mesh data to the GPU immediately (blocks until the
+            copy completes) and returns a handle for use in an entity's
+            MeshRenderer component.
+
+         \param[in] data      The CPU-side mesh to upload.
+         \param[in] debugName Optional, purely descriptive name (see
+                               GetMeshName()) - pass the source asset's own
+                               name when you have one (a glTF mesh's
+                               "name", say), otherwise leave it empty and a
+                               generic "Mesh <id>" is used.
+         \return A handle for use in an entity's MeshRenderer component
+                 (ECS/Components/Components.h; extracted into a Submit()
+                 call every frame by Graphics/RenderExtractSystem.h).
+
+         \details
+            Use for meshes needed right away: built-in primitives, or a
+            handful of assets loaded at startup.
+         *********************************************************************/
         ENGINE_API MeshHandle CreateMesh(const MeshData& data, const std::string& debugName = {});
 
-        // Returns a handle immediately; the actual GPU upload is throttled across frames
-        // (see kMaxMeshUploadsPerFrame) instead of blocking. Use this for meshes streamed in at
-        // runtime (e.g. the Resource Manager's .glb loader) so a burst of loaded models doesn't
-        // stall a single frame. The mesh simply isn't drawn until its upload completes.
+        /*********************************************************************
+         \brief
+            Returns a handle immediately; the actual GPU upload is
+            throttled across frames (see kMaxMeshUploadsPerFrame) instead
+            of blocking.
+
+         \param[in] data      The CPU-side mesh to upload.
+         \param[in] debugName Optional, purely descriptive name - see
+                               CreateMesh().
+         \return A handle, usable immediately (see \\details).
+
+         \details
+            Use this for meshes streamed in at runtime (e.g. the Resource
+            Manager's .glb loader) so a burst of loaded models doesn't
+            stall a single frame. The mesh simply isn't drawn until its
+            upload completes.
+         *********************************************************************/
         ENGINE_API MeshHandle CreateMeshAsync(MeshData data, const std::string& debugName = {});
 
-        // The Renderer is the source of truth for "which mesh is id 3" - not any one Editor
-        // panel. A name is descriptive metadata about a GPU resource, so it lives right next to
-        // the resource (GpuMesh::debugName) instead of a separate map some panel keeps in sync by
-        // hand: there's no single place in the Editor where "a mesh was just created" happens (a
-        // primitive in Renderer's own constructor, a .glb load, gameplay code later), so any
-        // panel-owned map would inevitably drift, and every panel wanting to show a name (today
-        // just Inspector, maybe Hierarchy or a future asset browser tomorrow) would otherwise need
-        // its own copy kept in sync independently. Centralizing it here also means it's available
-        // to anything that isn't a panel at all - a debug log line, a future
-        // vkSetDebugUtilsObjectNameEXT call for RenderDoc/Nsight captures, and so on.
-        // Returns a reference into m_meshes - same lifetime caveat as GetMaterialData(): valid
-        // until the next structural change to the mesh list, so don't hold it across frames.
+        /*********************************************************************
+         \brief
+            Returns a mesh's human-readable debug name.
+
+         \param[in] handle The mesh to look up.
+         \return Reference to the mesh's debug name (or a shared
+                 "(unknown mesh)" string for an invalid/out-of-range
+                 handle).
+
+         \details
+            The Renderer is the source of truth for "which mesh is id 3" -
+            not any one Editor panel. A name is descriptive metadata about
+            a GPU resource, so it lives right next to the resource
+            (GpuMesh::debugName) instead of a separate map some panel
+            keeps in sync by hand: there's no single place in the Editor
+            where "a mesh was just created" happens (a primitive in
+            Renderer's own constructor, a .glb load, gameplay code later),
+            so any panel-owned map would inevitably drift, and every panel
+            wanting to show a name (today just Inspector, maybe Hierarchy
+            or a future asset browser tomorrow) would otherwise need its
+            own copy kept in sync independently. Centralizing it here also
+            means it's available to anything that isn't a panel at all - a
+            debug log line, a future vkSetDebugUtilsObjectNameEXT call for
+            RenderDoc/Nsight captures, and so on.
+
+         \note
+            Returns a reference into m_meshes - same lifetime caveat as
+            GetMaterialData(): valid until the next structural change to
+            the mesh list, so don't hold it across frames.
+         *********************************************************************/
         ENGINE_API const std::string& GetMeshName(MeshHandle handle) const;
 
-        // ---- Textures ----
-        // Loads an image file from disk and uploads it to the GPU, returning a handle for use in
-        // a MaterialData. Cached by resolved path - calling this twice with the same path returns
-        // the same handle instead of decoding/uploading twice. isSRGB should be true for color
-        // data (albedo, emissive) and false for data textures (normal maps, metallic-roughness,
-        // occlusion) - getting this wrong silently double-gamma-corrects those maps.
+        /*********************************************************************
+         \brief
+            Loads an image file from disk and uploads it to the GPU,
+            returning a handle for use in a MaterialData.
+
+         \param[in] path   Path to the image file on disk.
+         \param[in] isSRGB Should be true for color data (albedo,
+                            emissive) and false for data textures (normal
+                            maps, metallic-roughness, occlusion) - getting
+                            this wrong silently double-gamma-corrects those
+                            maps.
+         \return A texture handle.
+
+         \details
+            Cached by resolved path - calling this twice with the same
+            path returns the same handle instead of decoding/uploading
+            twice.
+         *********************************************************************/
         ENGINE_API TextureHandle CreateTexture(const std::string& path, bool isSRGB = true);
 
-        // Same as above but from an already-loaded image file's bytes in memory (still a file
-        // format stb_image understands - PNG/JPG/etc, not raw pixels) - e.g. a glTF texture whose
-        // image lives in a binary buffer view rather than as a standalone file. cacheKey is
-        // optional; pass one (e.g. the glTF image index) to dedupe repeated calls the same way
-        // the path-based overload does.
+        /*********************************************************************
+         \brief
+            Same as CreateTexture() but from an already-loaded image
+            file's bytes in memory (still a file format stb_image
+            understands - PNG/JPG/etc, not raw pixels).
+
+         \param[in] fileBytes Pointer to the encoded image file's bytes.
+         \param[in] byteCount Number of bytes at fileBytes.
+         \param[in] isSRGB    See CreateTexture().
+         \param[in] cacheKey  Optional; pass one (e.g. the glTF image
+                               index) to dedupe repeated calls the same way
+                               the path-based overload does.
+         \return A texture handle.
+
+         \details
+            e.g. a glTF texture whose image lives in a binary buffer view
+            rather than as a standalone file.
+         *********************************************************************/
         ENGINE_API TextureHandle CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount,
             bool isSRGB = true, const std::string& cacheKey = std::string());
 
-        // ---- Materials ----
-        // Creates a new material from the given texture bindings + scalar factors (any texture
-        // left Invalid falls back to a neutral placeholder - see CreateDefaultTextures). Returns a
-        // handle for an entity's MeshRenderer::material.
+        /*********************************************************************
+         \brief
+            Creates a new material from the given texture bindings +
+            scalar factors.
+
+         \param[in] data The material's texture bindings and scalar
+                          factors.
+         \return A handle for an entity's MeshRenderer::material.
+
+         \details
+            Any texture left Invalid falls back to a neutral placeholder -
+            see CreateDefaultTextures().
+         *********************************************************************/
         ENGINE_API MaterialHandle CreateMaterial(const MaterialData& data);
 
-        // Rewrites an existing material in place - this is what lets a designer change a
-        // material's texture or tint while the Editor is running without every entity using that
-        // material needing a new handle. Cheap (no Vulkan sync) if only `factors` changed; if any
-        // texture handle differs from what this material currently has, does one graphics-queue
-        // wait-idle before rewriting the descriptor set (see the .cpp) - fine for an occasional
-        // designer edit, not something to call every frame.
+        /*********************************************************************
+         \brief
+            Rewrites an existing material in place.
+
+         \param[in] handle The material to update.
+         \param[in] data   The material's new texture bindings and scalar
+                            factors.
+
+         \details
+            This is what lets a designer change a material's texture or
+            tint while the Editor is running without every entity using
+            that material needing a new handle. Cheap (no Vulkan sync) if
+            only `factors` changed; if any texture handle differs from
+            what this material currently has, does one graphics-queue
+            wait-idle before rewriting the descriptor set (see the .cpp) -
+            fine for an occasional designer edit, not something to call
+            every frame.
+         *********************************************************************/
         ENGINE_API void UpdateMaterial(MaterialHandle handle, const MaterialData& data);
 
+        /*********************************************************************
+         \brief  Reads back a material's current texture bindings/scalar
+                 factors.
+         \param[in] handle The material to look up.
+         \return Const reference to the material's data.
+         *********************************************************************/
         ENGINE_API const MaterialData& GetMaterialData(MaterialHandle handle) const;
 
-        // Neutral white-albedo/flat-normal/no-effect material, substituted by RenderExtractSystem
-        // for any entity whose MeshRenderer::material is Invalid so every draw always has a
-        // material descriptor set bound (the shader never has to branch on "no material").
+        /*********************************************************************
+         \brief  The default material handle.
+         \return Handle to the neutral white-albedo/flat-normal/no-effect
+                 material.
+         \note  Substituted by RenderExtractSystem for any entity whose
+                MeshRenderer::material is Invalid so every draw always has
+                a material descriptor set bound (the shader never has to
+                branch on "no material").
+         *********************************************************************/
         MaterialHandle GetDefaultMaterial() const { return m_defaultMaterial; }
 
-        // ---- Viewports (offscreen render targets for the Editor) ----
-        // The Engine/Game build never calls these, so m_viewports stays empty and
-        // RecordCommandBuffer takes the direct-to-window path with zero extra branching cost
-        // beyond a single empty-container check.
-        //
-        // Typical Editor-panel usage:
-        //     if (!m_viewport.IsValid()) m_viewport = renderer.CreateViewport(w, h);
-        //     if (panelResized) renderer.ResizeViewport(m_viewport, newW, newH);
-        //     ImGui::Image((ImTextureID)myCachedDescriptorSet, size);   // see note on AddTexture below
-        //     // on panel close / shutdown:
-        //     renderer.DestroyViewport(m_viewport);
+        /*********************************************************************
+         \brief
+            Creates an offscreen render target (color+depth image, own
+            camera, own per-frame-in-flight uniform buffer/descriptor
+            set).
+
+         \param[in] width  Viewport width, in pixels.
+         \param[in] height Viewport height, in pixels.
+         \return A handle to the new viewport.
+
+         \details
+            The Engine/Game build never calls these, so m_viewports stays
+            empty and RecordCommandBuffer takes the direct-to-window path
+            with zero extra branching cost beyond a single empty-container
+            check.
+
+            Typical Editor-panel usage:
+                if (!m_viewport.IsValid()) m_viewport = renderer.CreateViewport(w, h);
+                if (panelResized) renderer.ResizeViewport(m_viewport, newW, newH);
+                ImGui::Image((ImTextureID)myCachedDescriptorSet, size);   // see note on AddTexture below
+                // on panel close / shutdown:
+                renderer.DestroyViewport(m_viewport);
+         *********************************************************************/
         ENGINE_API ViewportHandle CreateViewport(uint32_t width, uint32_t height);
+
+        /*********************************************************************
+         \brief  Resizes an existing viewport's color/depth images.
+         \param[in] handle The viewport to resize.
+         \param[in] width  New width, in pixels.
+         \param[in] height New height, in pixels.
+         *********************************************************************/
         ENGINE_API void           ResizeViewport(ViewportHandle handle, uint32_t width, uint32_t height);
+
+        /*********************************************************************
+         \brief  Destroys a viewport's GPU resources.
+         \param[in] handle The viewport to destroy.
+         *********************************************************************/
         ENGINE_API void           DestroyViewport(ViewportHandle handle);
 
+        /*********************************************************************
+         \brief  Accessor for a viewport's independent camera.
+         \param[in] handle The viewport to look up.
+         \return Mutable reference to that viewport's Camera.
+         *********************************************************************/
         ENGINE_API Camera&        GetViewportCamera(ViewportHandle handle);
-        // One sampler is shared by every viewport image (they're just being displayed, not
-        // filtered differently), so there is exactly one to hand to ImGui_ImplVulkan_AddTexture().
+
+        /*********************************************************************
+         \brief  Accessor for the shared viewport sampler.
+         \return The sampler handle.
+         \note  One sampler is shared by every viewport image (they're
+                just being displayed, not filtered differently), so there
+                is exactly one to hand to ImGui_ImplVulkan_AddTexture().
+         *********************************************************************/
         ENGINE_API vk::Sampler    GetViewportSampler() const { return *m_viewportSampler; }
+
+        /*********************************************************************
+         \brief  Accessor for a viewport's current color image view.
+         \param[in] handle The viewport to look up.
+         \return The color image view.
+         *********************************************************************/
         ENGINE_API vk::ImageView  GetViewportColorView(ViewportHandle handle) const;
 
-        // ---- Draw submission ----
-        // Call once per visible object per frame (the ECS extraction step). The queue is
-        // consumed and cleared at the end of Update(). Pass GetDefaultMaterial() (or let the
-        // caller's own fallback logic do so - see RenderExtractSystem) rather than an Invalid
-        // MaterialHandle; DrawRenderQueue always binds a material descriptor set per draw.
+        /*********************************************************************
+         \brief
+            Queues one draw for this frame.
+
+         \param[in] mesh     The mesh to draw.
+         \param[in] material The material to draw it with.
+         \param[in] model    The object's world-space model matrix.
+
+         \details
+            Call once per visible object per frame (the ECS extraction
+            step). The queue is consumed and cleared at the end of
+            Update(). Pass GetDefaultMaterial() (or let the caller's own
+            fallback logic do so - see RenderExtractSystem) rather than an
+            Invalid MaterialHandle; DrawRenderQueue always binds a
+            material descriptor set per draw.
+         *********************************************************************/
         ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model);
 
-        // Temporary: spawns a grid of spinning cubes so you can test camera + multi-draw
-        // before the ECS components exist.
+        /*********************************************************************
+         \brief  Enables/disables the temporary demo scene.
+         \param[in] enable true to spawn/keep spawning the demo scene each
+                            frame.
+         \note  Temporary: spawns a grid of spinning cubes so you can test
+                camera + multi-draw before the ECS components exist.
+         *********************************************************************/
         void EnableDemoScene(bool enable) { m_demoScene = enable; }
 
-        // Optional hook invoked while the frame's render pass is still open (after the scene
-        // draw, before endRendering). Lets Core forward to layers (e.g. the Editor's ImGui).
+        /*********************************************************************
+         \brief  Registers a callback invoked while the frame's render
+                 pass is still open (after the scene draw, before
+                 endRendering).
+         \param[in] cb The callback to invoke.
+         \note  Lets Core forward to layers (e.g. the Editor's ImGui).
+         *********************************************************************/
         void SetOverlayCallback(std::function<void()> cb) { m_overlayCallback = std::move(cb); }
 
-        // Renderer data members accessors
+        /*********************************************************************
+         \brief  Builds the plain-data bundle ImGui's Vulkan backend needs
+                 to initialize itself.
+         \return A filled-in ImGuiVulkanContext.
+         *********************************************************************/
         ENGINE_API ImGuiVulkanContext   GetImguiContext()       const;
+
+        /*********************************************************************
+         \brief  Accessor for the current frame's command buffer.
+         \return The current command buffer.
+         *********************************************************************/
         ENGINE_API vk::CommandBuffer    GetCurrentCommandBuff() const;
 
     private:
