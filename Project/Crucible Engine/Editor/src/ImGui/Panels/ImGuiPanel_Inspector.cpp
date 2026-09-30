@@ -101,13 +101,17 @@ void Crucible::Inspector::DrawMeshRendererSection(MeshRenderer& renderer) {
 	ImGui::Checkbox("Visible", &renderer.visible);
 	ImGui::ColorEdit4("Colour", &renderer.colour.x);
 
-	// Meshes are procedural (Renderer::CreateMesh from a primitive generator, or a future model
-	// loader), not asset-indexed like textures, so there's no drag-drop swap for this slot yet -
-	// just a read-only display of which GPU mesh is bound.
-	ImGui::BeginDisabled(true);
-	int meshId = renderer.mesh.IsValid() ? static_cast<int>(renderer.mesh.id) : -1;
-	ImGui::InputInt("Mesh Handle", &meshId);
-	ImGui::EndDisabled();
+	// Meshes are procedural (Renderer::CreateMesh from a primitive generator, or a .glb load),
+	// not asset-indexed like textures, so there's no drag-drop swap for this slot yet - just a
+	// read-only display of which GPU mesh is bound. The Renderer owns the id->name mapping
+	// (GpuMesh::debugName, set when the mesh was created - see Renderer::CreateMesh's doc
+	// comment) rather than this panel guessing or keeping its own map, so this always reflects
+	// whatever the Renderer actually has, however the mesh got there.
+	if (renderer.mesh.IsValid()) {
+		ImGui::Text("Mesh: %s (id %u)", m_renderer.GetMeshName(renderer.mesh).c_str(), renderer.mesh.id);
+	} else {
+		ImGui::TextDisabled("Mesh: none");
+	}
 }
 
 void Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {

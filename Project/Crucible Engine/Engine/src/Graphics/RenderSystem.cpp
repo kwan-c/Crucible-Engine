@@ -7,6 +7,7 @@
 #include <cstring>      // memcpy
 #include <limits>       // numeric_limits
 #include <algorithm>    // clamp, stable_sort
+#include <filesystem>   // path::stem - fallback mesh name when a .glb doesn't set mesh.name
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -44,7 +45,8 @@ namespace Crucible {
         CreateDefaultTextures();
         m_defaultMaterial = CreateMaterial(MaterialData{});   // Invalid textures -> both placeholders, neutral factors
 
-        m_cubeMesh = CreateMesh(Primitives::MakeCube());
+        CreatePrimitiveMeshes();
+
         MaterialData demoMaterialData;
         demoMaterialData.albedo = CreateTexture("../../../Assets/Textures/Orange_Milk.jpg");
         m_demoMaterial = CreateMaterial(demoMaterialData);
@@ -53,7 +55,12 @@ namespace Crucible {
         std::string const cacheKeyPrefix = "GLB:" + demoModelPath + ":";
 
         if (GLTFAsset glb = GLTFLoader::LoadGLBFile(demoModelPath); glb.ok) {
-            m_glbMesh = CreateMesh(glb.mesh);
+            // Prefer the glTF file's own mesh name (Cannon.glb's is "CannonMesh"); fall back to
+            // the filename when the asset didn't set one (glTF's mesh.name is optional).
+            std::string const meshName = !glb.meshName.empty()
+                ? glb.meshName
+                : std::filesystem::path(demoModelPath).stem().string();
+            m_glbMesh = CreateMesh(glb.mesh, meshName);
 
             MaterialData glbMaterialData;
             if (glb.material) {
@@ -173,13 +180,18 @@ namespace Crucible {
         constexpr int   half    = 3;
         constexpr float spacing = 2.0f;
 
+        int i = 0;
+
         for (int x = -half; x <= half; ++x) {
             for (int z = -half; z <= half; ++z) {
                 const float phase = static_cast<float>(x * 7 + z * 3);
                 glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(x * spacing, 0.0f, z * spacing));
                 model = glm::rotate(model, (m_time + phase) * glm::radians(20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
                 model = glm::rotate(model, (m_time + phase) * glm::radians(10.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-                Submit(m_cubeMesh, m_demoMaterial, model);
+                Submit(m_primitiveMeshes[i], m_demoMaterial, model);
+
+                i++;
+                i = i % m_primitiveMeshes.size();
             }
         }
 
@@ -191,6 +203,19 @@ namespace Crucible {
         }
 
     }   // Renderer::SubmitDemoScene()
+
+    void Renderer::CreatePrimitiveMeshes() {
+
+        m_primitiveMeshes.emplace_back(CreateMesh(Primitives::MakeCube(), "Cube"));
+        m_primitiveMeshes.emplace_back(CreateMesh(Primitives::MakeCapsule(), "Capsule"));
+        m_primitiveMeshes.emplace_back(CreateMesh(Primitives::MakeCone(), "Cone"));
+        m_primitiveMeshes.emplace_back(CreateMesh(Primitives::MakeCylinder(), "Cylinder"));
+        m_primitiveMeshes.emplace_back(CreateMesh(Primitives::MakeDisc(), "Disc"));
+        m_primitiveMeshes.emplace_back(CreateMesh(Primitives::MakePlane(), "Plane"));
+        m_primitiveMeshes.emplace_back(CreateMesh(Primitives::MakePyramid(), "Pyramid"));
+        m_primitiveMeshes.emplace_back(CreateMesh(Primitives::MakeSphere(), "Sphere"));
+
+    }   // Renderer::CreatePrimitiveMeshes()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  VULKAN SET-UP FUNCTIONS
@@ -417,20 +442,20 @@ namespace Crucible {
 
     }   // Renderer::DrawRenderQueue()
 
-    MeshHandle Renderer::CreateMesh(const MeshData& data) {
+    MeshHandle Renderer::CreateMesh(const MeshData& data, const std::string& debugName) {
 
         MeshHandle handle{ static_cast<uint32_t>(m_meshes.size()) };
         m_meshes.emplace_back();       // reserve slot (indexCount == 0 => not yet renderable)
-        UploadMesh(handle, data);      // ... filled in synchronously, right here
+        UploadMesh(handle, data, debugName);      // ... filled in synchronously, right here
         return handle;
 
     }   // Renderer::CreateMesh()
 
-    MeshHandle Renderer::CreateMeshAsync(MeshData data) {
+    MeshHandle Renderer::CreateMeshAsync(MeshData data, const std::string& debugName) {
 
         MeshHandle handle{ static_cast<uint32_t>(m_meshes.size()) };
         m_meshes.emplace_back();       // reserve slot; RecordCommandBuffer skips it until uploaded
-        m_pendingMeshUploads.push_back({ handle, std::move(data) });
+        m_pendingMeshUploads.push_back({ handle, std::move(data), debugName });
         return handle;
 
     }   // Renderer::CreateMeshAsync()
@@ -440,18 +465,19 @@ namespace Crucible {
         for (uint32_t n = 0; n < kMaxMeshUploadsPerFrame && !m_pendingMeshUploads.empty(); ++n) {
             PendingMeshUpload pending = std::move(m_pendingMeshUploads.front());
             m_pendingMeshUploads.pop_front();
-            UploadMesh(pending.handle, pending.data);
+            UploadMesh(pending.handle, pending.data, pending.debugName);
         }
 
     }   // Renderer::ProcessPendingMeshUploads()
 
-    void Renderer::UploadMesh(MeshHandle handle, const MeshData& data) {
+    void Renderer::UploadMesh(MeshHandle handle, const MeshData& data, const std::string& debugName) {
 
         if (data.vertices.empty() || data.indices.empty()) {
             throw std::runtime_error("[Renderer] UploadMesh: mesh has no vertices or indices");
         }
 
         GpuMesh mesh;
+        mesh.debugName = debugName.empty() ? ("Mesh " + std::to_string(handle.id)) : debugName;
 
         vk::DeviceSize vbSize = sizeof(Vertex) * data.vertices.size();
         mesh.vertexBuffer.Create(m_context, vbSize,
@@ -470,6 +496,14 @@ namespace Crucible {
         m_meshes[handle.id] = std::move(mesh);
 
     }   // Renderer::UploadMesh()
+
+    const std::string& Renderer::GetMeshName(MeshHandle handle) const {
+
+        static const std::string kUnknown = "(unknown mesh)";
+        if (!handle.IsValid() || handle.id >= m_meshes.size()) { return kUnknown; }
+        return m_meshes[handle.id].debugName;
+
+    }   // Renderer::GetMeshName()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  VIEWPORTS (offscreen render targets for the Editor)
@@ -631,7 +665,7 @@ namespace Crucible {
             vp.uniformBuffers.back().Create(m_context, sizeof(FrameUniforms),
                 vk::BufferUsageFlagBits::eUniformBuffer,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            vp.uniformBuffersMapped.emplace_back(vp.uniformBuffers.back().GetMemory().mapMemory(0, sizeof(FrameUniforms)));
+            vp.uniformBuffersMapped.emplace_back(vp.uniformBuffers.back().Map());
         }
 
         std::vector<vk::DescriptorSetLayout> layouts(maxFrames, *m_pipeline.GetDescriptorSetLayout());
@@ -670,7 +704,7 @@ namespace Crucible {
             m_uniformBuffers.back().Create(m_context, bufferSize,
                 vk::BufferUsageFlagBits::eUniformBuffer,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            m_uniformBuffersMapped.emplace_back(m_uniformBuffers.back().GetMemory().mapMemory(0, bufferSize));
+            m_uniformBuffersMapped.emplace_back(m_uniformBuffers.back().Map());
         }
 
     }   // Renderer::CreateUniformBuffers()
@@ -731,9 +765,9 @@ namespace Crucible {
         VulkanBuffer stagingBuff;
         stagingBuff.Create(m_context, imageSize, vk::BufferUsageFlagBits::eTransferSrc,
             vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-        void* mapped = stagingBuff.GetMemory().mapMemory(0, imageSize);
+        void* mapped = stagingBuff.Map();
         memcpy(mapped, pixels, imageSize);
-        stagingBuff.GetMemory().unmapMemory();
+        stagingBuff.Unmap();
 
         GpuTexture tex;
         tex.width = width;
@@ -854,15 +888,16 @@ namespace Crucible {
 
     void Renderer::CreateMaterialDescriptorPool() {
 
-        // Sized for the worst case up front (kMaxMaterials materials, each one set with five
-        // combined-image-samplers), same fixed-capacity style as CreateViewportDescriptorPool.
+        // One block's worth (kMaterialsPerDescriptorPool materials, each a set of five
+        // combined-image-samplers) - see CreateMaterial() for what happens when it fills up.
         vk::DescriptorPoolSize poolSize{
             .type = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = kMaxMaterials * 5 };
+            .descriptorCount = kMaterialsPerDescriptorPool * 5 };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-            .maxSets = kMaxMaterials, .poolSizeCount = 1, .pPoolSizes = &poolSize };
-        m_materialDescriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
+            .maxSets = kMaterialsPerDescriptorPool, .poolSizeCount = 1, .pPoolSizes = &poolSize };
+        m_materialDescriptorPools.emplace_back(m_context.GetDevice(), poolInfo);
+        m_materialsInCurrentPool = 0;
 
     }   // Renderer::CreateMaterialDescriptorPool()
 
@@ -902,13 +937,24 @@ namespace Crucible {
 
     MaterialHandle Renderer::CreateMaterial(const MaterialData& data) {
 
+        // A VkDescriptorPool's maxSets is fixed at creation and can't grow, so once the current
+        // block is full (or there isn't one yet, on the very first call) allocate a fresh block
+        // instead of ever trying to over-allocate from a full pool - that would throw a raw
+        // vk::OutOfPoolMemoryError with no indication of what actually went wrong. This makes
+        // material count effectively unbounded (limited only by actual GPU memory/descriptor
+        // budget, same as every other resource here), in blocks of kMaterialsPerDescriptorPool.
+        if (m_materialDescriptorPools.empty() || m_materialsInCurrentPool >= kMaterialsPerDescriptorPool) {
+            CreateMaterialDescriptorPool();
+        }
+
         vk::DescriptorSetLayout layout = *m_pipeline.GetMaterialDescriptorSetLayout();
         vk::DescriptorSetAllocateInfo allocInfo{
-            .descriptorPool = m_materialDescriptorPool,
+            .descriptorPool = m_materialDescriptorPools.back(),
             .descriptorSetCount = 1,
             .pSetLayouts = &layout
         };
         std::vector<vk::raii::DescriptorSet> sets = m_context.GetDevice().allocateDescriptorSets(allocInfo);
+        ++m_materialsInCurrentPool;
 
         GpuMaterial mat;
         mat.data = data;

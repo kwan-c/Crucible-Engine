@@ -41,6 +41,12 @@ namespace Crucible {
             VulkanBuffer vertexBuffer;
             VulkanBuffer indexBuffer;
             uint32_t     indexCount = 0;
+
+            // Human-readable label, purely for tools (Editor UI, RenderDoc/Nsight captures via a
+            // future debug-object-name call, log messages) - never used to look a mesh up, and
+            // never required to be unique. See GetMeshName()'s doc comment for who's meant to
+            // read this and why it lives here rather than in the Editor.
+            std::string  debugName;
         };
 
         // GPU-side texture: an image + its view, indexed by TextureHandle. No per-texture
@@ -100,15 +106,30 @@ namespace Crucible {
         // a handle for use in an entity's MeshRenderer component (ECS/Components/Components.h;
         // extracted into a Submit() call every frame by Graphics/RenderExtractSystem.h). Use for
         // meshes needed right away: built-in primitives, or a handful of assets loaded at startup.
-        ENGINE_API MeshHandle CreateMesh(const MeshData& data);
+        // debugName is optional and purely descriptive (see GetMeshName()) - pass the source
+        // asset's own name when you have one (a glTF mesh's "name", say), otherwise leave it
+        // empty and a generic "Mesh <id>" is used.
+        ENGINE_API MeshHandle CreateMesh(const MeshData& data, const std::string& debugName = {});
 
         // Returns a handle immediately; the actual GPU upload is throttled across frames
         // (see kMaxMeshUploadsPerFrame) instead of blocking. Use this for meshes streamed in at
         // runtime (e.g. the Resource Manager's .glb loader) so a burst of loaded models doesn't
         // stall a single frame. The mesh simply isn't drawn until its upload completes.
-        ENGINE_API MeshHandle CreateMeshAsync(MeshData data);
+        ENGINE_API MeshHandle CreateMeshAsync(MeshData data, const std::string& debugName = {});
 
-        MeshHandle            GetCubeMesh() const { return m_cubeMesh; }
+        // The Renderer is the source of truth for "which mesh is id 3" - not any one Editor
+        // panel. A name is descriptive metadata about a GPU resource, so it lives right next to
+        // the resource (GpuMesh::debugName) instead of a separate map some panel keeps in sync by
+        // hand: there's no single place in the Editor where "a mesh was just created" happens (a
+        // primitive in Renderer's own constructor, a .glb load, gameplay code later), so any
+        // panel-owned map would inevitably drift, and every panel wanting to show a name (today
+        // just Inspector, maybe Hierarchy or a future asset browser tomorrow) would otherwise need
+        // its own copy kept in sync independently. Centralizing it here also means it's available
+        // to anything that isn't a panel at all - a debug log line, a future
+        // vkSetDebugUtilsObjectNameEXT call for RenderDoc/Nsight captures, and so on.
+        // Returns a reference into m_meshes - same lifetime caveat as GetMaterialData(): valid
+        // until the next structural change to the mesh list, so don't hold it across frames.
+        ENGINE_API const std::string& GetMeshName(MeshHandle handle) const;
 
         // ---- Textures ----
         // Loads an image file from disk and uploads it to the GPU, returning a handle for use in
@@ -200,7 +221,8 @@ namespace Crucible {
         Camera                      m_camera;
         std::vector<GpuMesh>        m_meshes;
         std::vector<RenderItem>     m_renderQueue;
-        MeshHandle                  m_cubeMesh;
+        std::vector<MeshHandle>     m_primitiveMeshes;
+        void CreatePrimitiveMeshes();
         MaterialHandle              m_demoMaterial;   // demo-scene cubes' material (see SubmitDemoScene)
 
         MeshHandle                  m_glbMesh;
@@ -214,17 +236,26 @@ namespace Crucible {
         std::unordered_map<std::string, uint32_t>   m_textureCacheByKey;   // path or explicit cacheKey -> TextureHandle::id
         vk::raii::Sampler                           m_materialSampler = nullptr;
 
-        // Pool BEFORE the sets it allocates (matches m_descriptorPool/m_descriptorSets below):
-        // members are destroyed in REVERSE declaration order, so declaring the pool first means
-        // it is destroyed LAST - after every GpuMaterial's vk::raii::DescriptorSet has already run
-        // its own destructor (which frees itself against this pool). The opposite order compiles
-        // fine but destroys the pool while sets allocated from it still exist, which is exactly
-        // the "Couldn't find VkDescriptorPool"/"Invalid VkDescriptorSet" validation errors this
-        // fixes - vk::raii::DescriptorPool's destructor doesn't know about (and can't invalidate)
-        // vk::raii::DescriptorSet objects living in a separate, unrelated vector.
-        vk::raii::DescriptorPool                    m_materialDescriptorPool = nullptr;
+        // Pool(s) BEFORE the sets they allocate (matches m_descriptorPool/m_descriptorSets
+        // below): members are destroyed in REVERSE declaration order, so declaring the pools
+        // first means they are destroyed LAST - after every GpuMaterial's vk::raii::DescriptorSet
+        // has already run its own destructor (which frees itself against whichever pool allocated
+        // it). The opposite order compiles fine but destroys a pool while sets allocated from it
+        // still exist, which is exactly the "Couldn't find VkDescriptorPool"/"Invalid
+        // VkDescriptorSet" validation errors this fixed once already - see the fix's own commit
+        // for the exact symptom if this ever regresses.
+        //
+        // A VkDescriptorPool can't be resized once created, so unbounded material counts mean
+        // unbounded POOLS, not one pool sized "big enough": m_materials.size() used to be capped
+        // hard at a single pool's fixed maxSets (kMaterialsPerDescriptorPool), and CreateMaterial
+        // had no check for that at all - the (kMaterialsPerDescriptorPool + 1)-th material would
+        // throw a raw vk::OutOfPoolMemoryError with no indication of what actually went wrong.
+        // CreateMaterial now allocates a fresh pool block on demand instead (see its own comment),
+        // so every pool after the first is a plain vector growth, same as any other resource here.
+        std::vector<vk::raii::DescriptorPool>       m_materialDescriptorPools;
+        uint32_t                                    m_materialsInCurrentPool = 0;   // toward the current (last) pool's cap
         std::vector<GpuMaterial>                    m_materials;
-        static constexpr uint32_t                   kMaxMaterials = 256;
+        static constexpr uint32_t                   kMaterialsPerDescriptorPool = 256;
 
         TextureHandle                               m_defaultWhiteTexture;    // (255,255,255,255)
         TextureHandle                               m_defaultNormalTexture;   // flat tangent-space normal (128,128,255,255)
@@ -244,7 +275,7 @@ namespace Crucible {
         vk::raii::Sampler                          m_viewportSampler = nullptr;
 
         // Pending async mesh uploads (see CreateMeshAsync).
-        struct PendingMeshUpload { MeshHandle handle; MeshData data; };
+        struct PendingMeshUpload { MeshHandle handle; MeshData data; std::string debugName; };
         std::deque<PendingMeshUpload> m_pendingMeshUploads;
         static constexpr uint32_t     kMaxMeshUploadsPerFrame = 2;
 
@@ -255,7 +286,7 @@ namespace Crucible {
         void CreateDescriptorSets();
         void SubmitDemoScene();
         void ProcessPendingMeshUploads();
-        void UploadMesh(MeshHandle handle, const MeshData& data);
+        void UploadMesh(MeshHandle handle, const MeshData& data, const std::string& debugName);
 
         // Records the bind-and-draw loop over m_renderQueue against whatever color/depth
         // attachments are currently bound (the swapchain, or a Viewport). Shared by the direct-
@@ -283,6 +314,9 @@ namespace Crucible {
         TextureHandle CreateSolidColorTexture(uint8_t r, uint8_t g, uint8_t b, uint8_t a, bool isSRGB);
         void CreateDefaultTextures();
         void CreateMaterialSampler();
+        // Allocates ONE new descriptor pool block (kMaterialsPerDescriptorPool materials' worth)
+        // and appends it to m_materialDescriptorPools. Called once up front for the first block,
+        // and again by CreateMaterial() whenever the current block is full - see that function.
         void CreateMaterialDescriptorPool();
         // Writes all five combined-image-sampler bindings of `set` from `data`, substituting
         // m_defaultWhiteTexture/m_defaultNormalTexture for any Invalid handle in `data`.

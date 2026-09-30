@@ -297,6 +297,7 @@ GLTFAsset GLTFLoader::LoadGLB(const std::vector<unsigned char>& fileBytes) {
 
     if (!doc.HasMember("meshes") || doc["meshes"].Empty()) { asset.error = "glTF has no meshes"; return asset; }
     rapidjson::Value const& mesh0 = doc["meshes"][0];
+    if (mesh0.HasMember("name") && mesh0["name"].IsString()) { asset.meshName = mesh0["name"].GetString(); }
     if (!mesh0.HasMember("primitives") || mesh0["primitives"].Empty()) { asset.error = "first mesh has no primitives"; return asset; }
     rapidjson::Value const& prim0 = mesh0["primitives"][0];
 

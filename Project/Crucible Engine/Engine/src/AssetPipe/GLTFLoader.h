@@ -71,6 +71,10 @@ namespace Crucible {
         std::string error;   // set when ok is false; empty otherwise
 
         MeshData                    mesh;
+        std::string                 meshName;   // meshes[0]'s own "name", if the file set one
+                                                 // (glTF's mesh.name is optional); empty otherwise
+                                                 // - the caller decides the fallback (a filename,
+                                                 // usually) rather than this header inventing one.
         std::vector<GLTFImage>      images;     // indexed by GLTFMaterial's *Image fields
         std::optional<GLTFMaterial> material;   // unset if the primitive referenced no material
     };
