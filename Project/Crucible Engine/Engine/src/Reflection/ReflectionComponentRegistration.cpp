@@ -105,9 +105,47 @@ RTTR_REGISTRATION
 
     rttr::registration::class_<MeshRenderer>("MeshRenderer")
         .constructor<>()
-        .property("visible", &MeshRenderer::visible)
-        .property("colour",  &MeshRenderer::colour)
+        .property("visible",       &MeshRenderer::visible)
+        .property("colour",        &MeshRenderer::colour)
             (rttr::metadata(MetaDataTypes::COLOUR, true))
+        // Asset ids, not the runtime handles: handles are meaningless after a reload, ids are
+        // resolved back to handles by ResourceManager (see MeshRenderer's doc comment).
+        .property("meshAsset",     &MeshRenderer::meshAsset)
+        .property("materialAsset", &MeshRenderer::materialAsset)
+    ;
+
+    // Light type by name, same reasoning as ShapeType below: the scene file
+    // says "Spot", not 2.
+    rttr::registration::enumeration<LightType>("LightType")
+    (
+        rttr::value("Directional", LightType::Directional),
+        rttr::value("Point",       LightType::Point),
+        rttr::value("Spot",        LightType::Spot)
+    );
+
+    rttr::registration::class_<Light>("Light")
+        .constructor<>()
+        .property("type",         &Light::type)
+        .property("colour",       &Light::colour)
+        .property("intensity",    &Light::intensity)
+        .property("range",        &Light::range)
+        .property("innerConeDeg", &Light::innerConeDeg)
+        .property("outerConeDeg", &Light::outerConeDeg)
+        .property("enabled",      &Light::enabled)
+    ;
+
+    // Skybox::cubemap is a runtime GPU handle (meaningless after a reload),
+    // so like MeshRenderer::mesh it is not registered; skyboxAsset (the
+    // asset id, resolved by ResourceManager) is what gets saved.
+    rttr::registration::class_<Skybox>("Skybox")
+        .constructor<>()
+        .property("visible",          &Skybox::visible)
+        .property("intensity",        &Skybox::intensity)
+        .property("ambientSky",       &Skybox::ambientSky)
+        .property("ambientGround",    &Skybox::ambientGround)
+        .property("ambientIntensity", &Skybox::ambientIntensity)
+        .property("exposure",         &Skybox::exposure)
+        .property("skyboxAsset",      &Skybox::skyboxAsset)
     ;
 
     rttr::registration::class_<Audio>("Audio")

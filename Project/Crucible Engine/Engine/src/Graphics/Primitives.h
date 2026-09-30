@@ -1,4 +1,53 @@
 #pragma once
+/*************************************************************************
+* \file:         Primitives.h
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                Procedural whitebox primitives (Cube, Plane, Disc,
+*                Cylinder, Cone, Pyramid, Sphere, Capsule).
+*
+* \details
+*                Everything here builds a CPU-side MeshData (Vertex + index
+*                list) for Renderer::CreateMesh(), the same path the
+*                built-in cube goes through. These exist so designers can
+*                block out levels before a real asset pipeline (.glb
+*                import) exists.
+*
+*                Conventions used throughout this file:
+*                  - Y is up. A "cap" or "disc" lying flat sits in the XZ
+*                    plane.
+*                  - Round shapes (cylinder/cone/sphere/capsule/disc) take
+*                    a segment count and use ANALYTIC normals (computed
+*                    from the shape's geometry, not averaged), so shading
+*                    stays correct at any resolution. Flat-faced shapes
+*                    (cube, pyramid) duplicate vertices per face instead.
+*                  - Any seam where a flat normal meets a curved one (e.g.
+*                    a cylinder's end cap vs its side) duplicates the
+*                    vertex, once per side of the seam, so the two faces
+*                    don't blend normals.
+*                  - Winding: every triangle here is CCW when viewed from
+*                    the direction its normal points (standard right-hand-
+*                    rule convention), calibrated directly against
+*                    MakeCube()'s own (already-correct, already-rendering)
+*                    winding - see the "Lower/Upper ring" pattern below.
+*                  - Tangent (xyz = direction of increasing U, w =
+*                    bitangent handedness sign; see Vertex's own doc
+*                    comment in Vulkan/VulkanPipeline.h) is derived
+*                    analytically per shape from its own UV parametrization,
+*                    the same way normals are. A flat cap's UV is polar (so
+*                    a UV-gradient-matched tangent would be discontinuous
+*                    at its center); those caps instead use a fixed, still-
+*                    orthonormal +X tangent, noted at each call site -
+*                    adequate given caps are rarely the focus of a normal
+*                    map in a whitebox tool.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
 
 #include <algorithm>
 #include <cmath>
@@ -6,36 +55,13 @@
 
 #include "RenderTypes.h"
 
-// ------------------------------------------------------------------------------------------ //
-//  Procedural whitebox primitives.
-//
-//  Everything here builds a CPU-side MeshData (Vertex + index list) for Renderer::CreateMesh(),
-//  the same path the built-in cube goes through. These exist so designers can block out levels
-//  before a real asset pipeline (.glb import) exists.
-//
-//  Conventions used throughout this file:
-//   - Y is up. A "cap" or "disc" lying flat sits in the XZ plane.
-//   - Round shapes (cylinder/cone/sphere/capsule/disc) take a segment count and use ANALYTIC
-//     normals (computed from the shape's geometry, not averaged), so shading stays correct at
-//     any resolution. Flat-faced shapes (cube, pyramid) duplicate vertices per face instead.
-//   - Any seam where a flat normal meets a curved one (e.g. a cylinder's end cap vs its side)
-//     duplicates the vertex, once per side of the seam, so the two faces don't blend normals.
-//   - Winding: every triangle here is CCW when viewed from the direction its normal points
-//     (standard right-hand-rule convention), calibrated directly against MakeCube()'s own
-//     (already-correct, already-rendering) winding - see the "Lower/Upper ring" pattern below.
-//   - Tangent (xyz = direction of increasing U, w = bitangent handedness sign; see Vertex's own
-//     doc comment in Vulkan/VulkanPipeline.h) is derived analytically per shape from its own UV
-//     parametrization, the same way normals are. A flat cap's UV is polar (so a UV-gradient-
-//     matched tangent would be discontinuous at its center); those caps instead use a fixed,
-//     still-orthonormal +X tangent, noted at each call site - adequate given caps are rarely the
-//     focus of a normal map in a whitebox tool.
-// ------------------------------------------------------------------------------------------ //
-
 namespace Crucible::Primitives {
 
     namespace Detail {
         inline constexpr float kTwoPi = 6.28318530717958647692f;
 
+        // Builds one Vertex from its five components; exists purely so every MakeXxx() function
+        // below reads as a flat list of vertex data instead of repeating aggregate-init braces.
         inline Vertex MakeVertex(glm::vec3 pos, glm::vec3 normal, glm::vec2 uv, glm::vec3 color,
             glm::vec4 tangent) {
             return Vertex{ pos, normal, uv, color, tangent };
@@ -58,18 +84,28 @@ namespace Crucible::Primitives {
         }
     }
 
-    // ------------------------------------------------------------------------------------------ //
-    //  Cube - one duplicated quad (4 verts) per face, so each face gets a true flat normal AND a
-    //  real per-face UV (the old shared-corner cube approximated normals via corner direction and
-    //  never had real UVs at all - vec2(0) everywhere - which made it untexturable; this version
-    //  fixes both, following the same per-face vertex-duplication style as MakePyramid).
-    // ------------------------------------------------------------------------------------------ //
+    /*************************************************************************
+     \brief
+        Builds a unit cube: one duplicated quad (4 verts) per face, so each
+        face gets a true flat normal AND a real per-face UV.
+
+     \param[in] color Vertex color tint applied to every vertex.
+     \return A CPU-side MeshData ready for Renderer::CreateMesh().
+
+     \details
+        The old shared-corner cube approximated normals via corner
+        direction and never had real UVs at all - vec2(0) everywhere -
+        which made it untexturable; this version fixes both, following the
+        same per-face vertex-duplication style as MakePyramid(). Each
+        face's four corners (c0..c3) are wound so (c0,c1,c2)+(c0,c2,c3)
+        faces outward along `normal` (verified per-face via
+        cross(c1-c0, c2-c0) against the original hand-authored cube's own
+        winding), with u = c0->c3, v = c0->c1 (so tangent = dP/du =
+        normalize(c3-c0), matching every face's hand-derived w = -1 - see
+        the design notes for the cross-product check per face).
+     *************************************************************************/
     inline MeshData MakeCube(glm::vec3 color = { 0.8f, 0.8f, 0.8f }) {
         struct Face { glm::vec3 c0, c1, c2, c3, normal; glm::vec4 tangent; };
-        // c0..c3 wound so (c0,c1,c2)+(c0,c2,c3) faces outward along `normal` (verified per-face
-        // via cross(c1-c0, c2-c0) against the original hand-authored cube's own winding), with
-        // u = c0->c3, v = c0->c1 (so tangent = dP/du = normalize(c3-c0), matching every face's
-        // hand-derived w = -1 - see the design notes for the cross-product check per face).
         const Face faces[6] = {
             // +Y (top)
             { {-0.5f,0.5f,-0.5f}, {-0.5f,0.5f,0.5f}, {0.5f,0.5f,0.5f}, {0.5f,0.5f,-0.5f},
@@ -105,16 +141,28 @@ namespace Crucible::Primitives {
         return mesh;
     }
 
-    // ------------------------------------------------------------------------------------------ //
-    //  Plane - a flat, optionally-subdivided grid in the XZ plane, normal +Y.
-    // ------------------------------------------------------------------------------------------ //
+    /*************************************************************************
+     \brief
+        Builds a flat, optionally-subdivided grid in the XZ plane, normal
+        +Y.
+
+     \param[in] width          Grid width along X.
+     \param[in] depth          Grid depth along Z.
+     \param[in] widthSegments  Number of subdivisions along X (clamped >= 1).
+     \param[in] depthSegments  Number of subdivisions along Z (clamped >= 1).
+     \param[in] color          Vertex color tint applied to every vertex.
+     \return A CPU-side MeshData ready for Renderer::CreateMesh().
+
+     \details
+        dP/du = +X regardless of position on a flat linear grid; see the
+        file header for the tangent w-sign convention.
+     *************************************************************************/
     inline MeshData MakePlane(float width = 1.0f, float depth = 1.0f,
         uint32_t widthSegments = 1, uint32_t depthSegments = 1,
         glm::vec3 color = { 0.8f, 0.8f, 0.8f }) {
         widthSegments = std::max(widthSegments, 1u);
         depthSegments = std::max(depthSegments, 1u);
 
-        // dP/du = +X regardless of position on a flat linear grid; see file header for the w sign.
         constexpr glm::vec4 kTangent{ 1.0f, 0.0f, 0.0f, -1.0f };
 
         MeshData mesh;
@@ -145,9 +193,16 @@ namespace Crucible::Primitives {
         return mesh;
     }
 
-    // ------------------------------------------------------------------------------------------ //
-    //  Disc - a flat circle in the XZ plane, normal +Y. Centre vertex + a ring, fan-triangulated.
-    // ------------------------------------------------------------------------------------------ //
+    /*************************************************************************
+     \brief
+        Builds a flat circle in the XZ plane, normal +Y: a centre vertex
+        plus a ring, fan-triangulated.
+
+     \param[in] radius   Disc radius.
+     \param[in] segments Number of ring segments (clamped >= 3).
+     \param[in] color    Vertex color tint applied to every vertex.
+     \return A CPU-side MeshData ready for Renderer::CreateMesh().
+     *************************************************************************/
     inline MeshData MakeDisc(float radius = 0.5f, uint32_t segments = 16,
         glm::vec3 color = { 0.8f, 0.8f, 0.8f }) {
         segments = std::max(segments, 3u);
@@ -175,11 +230,22 @@ namespace Crucible::Primitives {
         return mesh;
     }
 
-    // ------------------------------------------------------------------------------------------ //
-    //  Cylinder - centred at the origin, extending +-height/2 along Y. Side uses analytic radial
-    //  normals/tangents; the two caps are separate flat rings (duplicated verts at the seam) so a
-    //  cap's +-Y normal never blends with the side's radial one.
-    // ------------------------------------------------------------------------------------------ //
+    /*************************************************************************
+     \brief
+        Builds a cylinder centred at the origin, extending +-height/2 along
+        Y.
+
+     \param[in] radius         Cylinder radius.
+     \param[in] height         Cylinder height along Y.
+     \param[in] radialSegments Number of radial segments (clamped >= 3).
+     \param[in] color          Vertex color tint applied to every vertex.
+     \return A CPU-side MeshData ready for Renderer::CreateMesh().
+
+     \details
+        The side uses analytic radial normals/tangents; the two caps are
+        separate flat rings (duplicated verts at the seam) so a cap's +-Y
+        normal never blends with the side's radial one.
+     *************************************************************************/
     inline MeshData MakeCylinder(float radius = 0.5f, float height = 1.0f, uint32_t radialSegments = 16,
         glm::vec3 color = { 0.8f, 0.8f, 0.8f }) {
         radialSegments = std::max(radialSegments, 3u);
@@ -247,11 +313,22 @@ namespace Crucible::Primitives {
         return mesh;
     }
 
-    // ------------------------------------------------------------------------------------------ //
-    //  Cone - base circle at y = -height/2 (-Y cap), apex at y = +height/2. The apex is duplicated
-    //  once per radial wedge so each side triangle gets the correct smoothly-varying analytic
-    //  normal/tangent right up to the tip (no averaged/singular normal at the point).
-    // ------------------------------------------------------------------------------------------ //
+    /*************************************************************************
+     \brief
+        Builds a cone: base circle at y = -height/2 (-Y cap), apex at
+        y = +height/2.
+
+     \param[in] radius         Base radius.
+     \param[in] height         Cone height along Y.
+     \param[in] radialSegments Number of radial segments (clamped >= 3).
+     \param[in] color          Vertex color tint applied to every vertex.
+     \return A CPU-side MeshData ready for Renderer::CreateMesh().
+
+     \details
+        The apex is duplicated once per radial wedge so each side triangle
+        gets the correct smoothly-varying analytic normal/tangent right up
+        to the tip (no averaged/singular normal at the point).
+     *************************************************************************/
     inline MeshData MakeCone(float radius = 0.5f, float height = 1.0f, uint32_t radialSegments = 16,
         glm::vec3 color = { 0.8f, 0.8f, 0.8f }) {
         radialSegments = std::max(radialSegments, 3u);
@@ -312,11 +389,21 @@ namespace Crucible::Primitives {
         return mesh;
     }
 
-    // ------------------------------------------------------------------------------------------ //
-    //  Pyramid - a simple flat-faced 4-sided (square-base) pyramid. Unlike the round shapes this
-    //  is deliberately faceted (like the cube): each of the 5 faces gets its own duplicated
-    //  vertices and a proper cross-product face normal, no "resolution" parameter needed.
-    // ------------------------------------------------------------------------------------------ //
+    /*************************************************************************
+     \brief
+        Builds a simple flat-faced 4-sided (square-base) pyramid.
+
+     \param[in] baseSize Side length of the square base.
+     \param[in] height   Pyramid height along Y.
+     \param[in] color    Vertex color tint applied to every vertex.
+     \return A CPU-side MeshData ready for Renderer::CreateMesh().
+
+     \details
+        Unlike the round shapes this is deliberately faceted (like the
+        cube): each of the 5 faces gets its own duplicated vertices and a
+        proper cross-product face normal, no "resolution" parameter
+        needed.
+     *************************************************************************/
     inline MeshData MakePyramid(float baseSize = 1.0f, float height = 1.0f,
         glm::vec3 color = { 0.8f, 0.8f, 0.8f }) {
         const float h = baseSize * 0.5f;
@@ -372,11 +459,22 @@ namespace Crucible::Primitives {
         return mesh;
     }
 
-    // ------------------------------------------------------------------------------------------ //
-    //  Sphere - standard UV sphere. Poles collapse to a single position per row (still get a
-    //  correct analytic normal/tangent each); the ring-strip formula naturally produces a couple
-    //  of harmless zero-area triangles there instead of needing a special-cased fan.
-    // ------------------------------------------------------------------------------------------ //
+    /*************************************************************************
+     \brief
+        Builds a standard UV sphere.
+
+     \param[in] longitudeSegments Number of longitude segments (clamped >= 3).
+     \param[in] latitudeSegments  Number of latitude segments (clamped >= 2).
+     \param[in] radius            Sphere radius.
+     \param[in] color             Vertex color tint applied to every vertex.
+     \return A CPU-side MeshData ready for Renderer::CreateMesh().
+
+     \details
+        Poles collapse to a single position per row (still get a correct
+        analytic normal/tangent each); the ring-strip formula naturally
+        produces a couple of harmless zero-area triangles there instead of
+        needing a special-cased fan.
+     *************************************************************************/
     inline MeshData MakeSphere(float radius = 0.5f, uint32_t longitudeSegments = 16, uint32_t latitudeSegments = 8,
         glm::vec3 color = { 0.8f, 0.8f, 0.8f }) {
         longitudeSegments = std::max(longitudeSegments, 3u);
@@ -417,15 +515,30 @@ namespace Crucible::Primitives {
         return mesh;
     }
 
-    // ------------------------------------------------------------------------------------------ //
-    //  Capsule - a cylindrical body with two hemispherical caps. Built as a single latitude sweep
-    //  (top hemisphere, then bottom hemisphere) so the middle "cylinder" band falls out for free:
-    //  a hemisphere's own equator row already has a purely radial normal, so connecting the top
-    //  hemisphere's equator ring straight to the bottom hemisphere's equator ring reproduces an
-    //  exact cylindrical side with a fully continuous normal field - no seam duplication needed
-    //  anywhere on a capsule, unlike the cylinder/cone. Same reasoning applies to the tangent:
-    //  it's the sphere's azimuthal formula throughout, unaffected by the per-hemisphere Y offset.
-    // ------------------------------------------------------------------------------------------ //
+    /*************************************************************************
+     \brief
+        Builds a capsule: a cylindrical body with two hemispherical caps.
+
+     \param[in] radius         Capsule radius.
+     \param[in] cylinderHeight Height of the straight cylindrical body
+                                (excludes the two hemispherical caps).
+     \param[in] radialSegments Number of radial segments (clamped >= 3).
+     \param[in] capSegments    Number of latitude segments per hemisphere
+                                cap (clamped >= 1).
+     \param[in] color          Vertex color tint applied to every vertex.
+     \return A CPU-side MeshData ready for Renderer::CreateMesh().
+
+     \details
+        Built as a single latitude sweep (top hemisphere, then bottom
+        hemisphere) so the middle "cylinder" band falls out for free: a
+        hemisphere's own equator row already has a purely radial normal,
+        so connecting the top hemisphere's equator ring straight to the
+        bottom hemisphere's equator ring reproduces an exact cylindrical
+        side with a fully continuous normal field - no seam duplication
+        needed anywhere on a capsule, unlike the cylinder/cone. Same
+        reasoning applies to the tangent: it's the sphere's azimuthal
+        formula throughout, unaffected by the per-hemisphere Y offset.
+     *************************************************************************/
     inline MeshData MakeCapsule(float radius = 0.5f, float cylinderHeight = 1.0f,
         uint32_t radialSegments = 16, uint32_t capSegments = 8,
         glm::vec3 color = { 0.8f, 0.8f, 0.8f }) {

@@ -1,3 +1,18 @@
+/*************************************************************************
+* \file:         RenderSystem.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See RenderSystem.h for what Renderer owns and its full
+*                public API documentation.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
+
 #include "RenderSystem.h"
 
 // STL
@@ -8,6 +23,11 @@
 #include <limits>       // numeric_limits
 #include <algorithm>    // clamp, stable_sort
 #include <filesystem>   // path::stem - fallback mesh name when a .glb doesn't set mesh.name
+#include <array>
+#include <cmath>
+#include <memory>       // unique_ptr (stb_image pixel ownership in CreateCubemap)
+
+#include <glm/gtc/packing.hpp>   // packHalf4x16 - RGBA16F cubemap texels
 
 #define STB_IMAGE_IMPLEMENTATION
 #include <stb_image.h>
@@ -29,10 +49,13 @@ namespace Crucible {
 
         m_pipeline.CreateDescriptorSetLayout(m_context);
         m_pipeline.CreateMaterialDescriptorSetLayout(m_context);
+        m_pipeline.CreateSkyboxDescriptorSetLayout(m_context);
         m_pipeline.CreatePipeline(m_context, m_swapchain);
+        m_pipeline.CreateSkyboxPipeline(m_context, m_swapchain);
         m_frameManager.Init(m_context, m_swapchain);
 
         CreateUniformBuffers();
+        CreateLightBuffers();   // before CreateDescriptorSets(): set 0's binding 1 points at these
 
         CreateDescriptorPool();
         CreateDescriptorSets();
@@ -44,6 +67,13 @@ namespace Crucible {
         CreateMaterialDescriptorPool();
         CreateDefaultTextures();
         m_defaultMaterial = CreateMaterial(MaterialData{});   // Invalid textures -> both placeholders, neutral factors
+
+        CreateSkyboxSampler();
+        CreateCubemapDescriptorPool();
+        CreateDefaultSkybox();
+        m_defaultEnvironment.skybox = m_defaultSkybox;
+        m_environment = m_defaultEnvironment;
+        m_lightQueue.reserve(kMaxLights);
 
         CreatePrimitiveMeshes();
 
@@ -134,7 +164,11 @@ namespace Crucible {
         // EXECUTE GRAPHICS CALLS
         DrawFrame();
 
+        // Everything submitted for this frame is consumed; lights and environment are per-frame
+        // state exactly like the render queue (see SubmitLight/SetEnvironment).
         m_renderQueue.clear();
+        m_lightQueue.clear();
+        m_environment = m_defaultEnvironment;
 
     }   // Renderer::Update()
 
@@ -144,6 +178,9 @@ namespace Crucible {
         FrameContext fc = m_frameManager.BeginFrame(m_context, m_swapchain, err);
         if (err) { return; }
 
+        // Lights first: UpdateFrameUniforms (and the viewports' uniforms, filled while recording)
+        // read the light count this writes.
+        UpdateLightBuffer(m_frameManager.GetFrameIndex());
         UpdateFrameUniforms(m_frameManager.GetFrameIndex());
 
         // Record and submit command buffer.
@@ -169,12 +206,48 @@ namespace Crucible {
         ubo.view = m_camera.GetView();
         ubo.proj = m_camera.GetProjection();
         ubo.cameraPosWS = glm::vec4(m_camera.position, 0.0f);
+        FillEnvironmentUniforms(ubo);
 
         memcpy(m_uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
 
     }   // Renderer::UpdateFrameUniforms()
 
     void Renderer::SubmitDemoScene() {
+
+        // Demo lighting: a dimmed sun, three coloured point lights orbiting the grid, and a
+        // spotlight sweeping over its centre - enough to see every light type at once. (With
+        // the demo scene off and no Light entities, the fallback sun in UpdateLightBuffer()
+        // lights the scene instead.)
+        {
+            LightData sun;
+            sun.type      = LightType::Directional;
+            sun.direction = -glm::vec3(0.2f, 0.8f, 0.5f);
+            sun.intensity = 1.5f;
+            SubmitLight(sun);
+
+            const glm::vec3 colours[3] = { { 1.0f, 0.35f, 0.2f }, { 0.25f, 1.0f, 0.4f }, { 0.3f, 0.5f, 1.0f } };
+            for (int k = 0; k < 3; ++k) {
+                const float angle = m_time * 0.6f + static_cast<float>(k) * 2.0943951f;   // 120 degrees apart
+                LightData point;
+                point.type      = LightType::Point;
+                point.position  = glm::vec3(std::cos(angle) * 5.0f, 1.5f, std::sin(angle) * 5.0f);
+                point.colour    = colours[k];
+                point.intensity = 20.0f;
+                point.range     = 9.0f;
+                SubmitLight(point);
+            }
+
+            LightData spot;
+            spot.type         = LightType::Spot;
+            spot.position     = glm::vec3(0.0f, 7.0f, 0.0f);
+            spot.direction    = glm::vec3(std::sin(m_time * 0.5f) * 0.6f, -1.0f, std::cos(m_time * 0.5f) * 0.6f);
+            spot.colour       = glm::vec3(1.0f, 0.9f, 0.7f);
+            spot.intensity    = 80.0f;
+            spot.range        = 20.0f;
+            spot.innerConeDeg = 12.0f;
+            spot.outerConeDeg = 22.0f;
+            SubmitLight(spot);
+        }
 
         // 7x7 grid of cubes on the XZ plane, each spinning at a slightly different phase.
         constexpr int   half    = 3;
@@ -198,7 +271,7 @@ namespace Crucible {
         if (m_glbMesh.IsValid()) {
             glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f));
             model = glm::rotate(model, m_time * glm::radians(15.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::scale(model, glm::vec3(2.0f));   // the sample asset is a 1x1x1 unit cube
+            model = glm::scale(model, glm::vec3(1.0f));
             Submit(m_glbMesh, m_glbMaterial.IsValid() ? m_glbMaterial : GetDefaultMaterial(), model);
         }
 
@@ -440,6 +513,10 @@ namespace Crucible {
             cmd.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
         }
 
+        // Sky last: it's depth-tested against everything drawn above, so only uncovered pixels
+        // pay for it. Viewport/scissor are dynamic state and stay set across the pipeline switch.
+        DrawSkybox(cmd, cameraSet);
+
     }   // Renderer::DrawRenderQueue()
 
     MeshHandle Renderer::CreateMesh(const MeshData& data, const std::string& debugName) {
@@ -611,12 +688,15 @@ namespace Crucible {
         // Sized up front for the worst case (kMaxViewports simultaneously alive, each with its
         // own set per frame in flight) so viewport creation never has to touch pool capacity.
         uint32_t maxSets = kMaxViewports * m_frameManager.MaxFramesInFlight();
-        vk::DescriptorPoolSize poolSize{
-            .type = vk::DescriptorType::eUniformBuffer,
-            .descriptorCount = maxSets };
+        // Each set 0 = one FrameUniforms UBO (binding 0) + one light storage buffer (binding 1).
+        std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
+            { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxSets },
+            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxSets }
+        } };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-            .maxSets = maxSets, .poolSizeCount = 1, .pPoolSizes = &poolSize };
+            .maxSets = maxSets,
+            .poolSizeCount = static_cast<uint32_t>(poolSizes.size()), .pPoolSizes = poolSizes.data() };
 
         m_viewportDescriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
 
@@ -684,6 +764,9 @@ namespace Crucible {
             m_context.GetDevice().updateDescriptorSets(write, {});
         }
 
+        // Binding 1: the SAME per-frame light buffers the window's own sets use.
+        WriteLightBufferDescriptors(vp.descriptorSets);
+
     }   // Renderer::CreateViewportUniformsAndDescriptors()
 
     void Renderer::UpdateViewportUniforms(Viewport& vp, uint32_t frameIndex) {
@@ -692,6 +775,7 @@ namespace Crucible {
         ubo.view = vp.camera.GetView();
         ubo.proj = vp.camera.GetProjection();
         ubo.cameraPosWS = glm::vec4(vp.camera.position, 0.0f);
+        FillEnvironmentUniforms(ubo);
         memcpy(vp.uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
 
     }   // Renderer::UpdateViewportUniforms()
@@ -712,12 +796,15 @@ namespace Crucible {
     void Renderer::CreateDescriptorPool() {
 
         uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
-        vk::DescriptorPoolSize poolSize{ 
-            .type = vk::DescriptorType::eUniformBuffer, 
-            .descriptorCount = maxFrames };
+        // Each set 0 = one FrameUniforms UBO (binding 0) + one light storage buffer (binding 1).
+        std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
+            { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFrames },
+            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames }
+        } };
         vk::DescriptorPoolCreateInfo poolInfo{ 
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 
-            .maxSets = maxFrames, .poolSizeCount = 1, .pPoolSizes = &poolSize };
+            .maxSets = maxFrames,
+            .poolSizeCount = static_cast<uint32_t>(poolSizes.size()), .pPoolSizes = poolSizes.data() };
 
         m_descriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
 
@@ -751,6 +838,8 @@ namespace Crucible {
 
             m_context.GetDevice().updateDescriptorSets(descriptorWrite, {});
         }
+
+        WriteLightBufferDescriptors(m_descriptorSets);
 
     }   // Renderer::CreateDescriptorSets()
 
@@ -1005,13 +1094,444 @@ namespace Crucible {
 
     }   // Renderer::GetMaterialData()
 
-    void Renderer::CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height) {
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  LIGHTS & ENVIRONMENT
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    namespace {
+
+        // CPU-side LightData -> the shader's GpuLight (see both structs in RenderTypes.h).
+        GpuLight ToGpuLight(const LightData& light) {
+
+            glm::vec3 direction = light.direction;
+            const float length = glm::length(direction);
+            direction = (length > 1e-6f) ? direction / length : glm::vec3(0.0f, -1.0f, 0.0f);
+
+            // smoothstep(cosOuter, cosInner, x) in the shader needs cosOuter < cosInner strictly,
+            // i.e. outer > inner - keep at least a sliver of falloff even if someone sets them
+            // equal (or backwards) in the Inspector.
+            const float outerDeg = glm::clamp(light.outerConeDeg, 0.1f, 89.9f);
+            const float innerDeg = glm::clamp(light.innerConeDeg, 0.0f, outerDeg - 0.1f);
+
+            GpuLight gpu;
+            gpu.positionRange   = glm::vec4(light.position, std::max(light.range, 1e-3f));
+            gpu.directionType   = glm::vec4(direction, static_cast<float>(light.type));
+            gpu.colourIntensity = glm::vec4(light.colour, std::max(light.intensity, 0.0f));
+            gpu.spotParams      = glm::vec4(std::cos(glm::radians(innerDeg)), std::cos(glm::radians(outerDeg)), 0.0f, 0.0f);
+            return gpu;
+        }
+
+        // The light used when nothing was submitted: the old shader's one hardcoded light
+        // (towards (0.2, 0.8, 0.5), radiance 3.0), so scenes without Light entities look as they
+        // did before the lighting system existed.
+        const glm::vec3 kFallbackSunTowards = glm::normalize(glm::vec3(0.2f, 0.8f, 0.5f));
+
+        LightData MakeFallbackSun() {
+            LightData sun;
+            sun.type      = LightType::Directional;
+            sun.direction = -kFallbackSunTowards;
+            sun.intensity = 3.0f;
+            return sun;
+        }
+
+        // World-space direction through the centre of texel (x, y) of cube face `face`, using the
+        // Vulkan/OpenGL cube-map face selection table (face order +X, -X, +Y, -Y, +Z, -Z; row 0 =
+        // t near 0). Inverse of what the sampler does, so procedural/equirect faces generated with
+        // this line up with SamplerCube lookups by construction.
+        glm::vec3 CubeFaceTexelDirection(uint32_t face, uint32_t x, uint32_t y, uint32_t size) {
+
+            const float u = 2.0f * (static_cast<float>(x) + 0.5f) / static_cast<float>(size) - 1.0f;
+            const float v = 2.0f * (static_cast<float>(y) + 0.5f) / static_cast<float>(size) - 1.0f;
+
+            glm::vec3 d;
+            switch (face) {
+                case 0:  d = glm::vec3( 1.0f,   -v,   -u); break;   // +X
+                case 1:  d = glm::vec3(-1.0f,   -v,    u); break;   // -X
+                case 2:  d = glm::vec3(    u, 1.0f,    v); break;   // +Y
+                case 3:  d = glm::vec3(    u,-1.0f,   -v); break;   // -Y
+                case 4:  d = glm::vec3(    u,   -v, 1.0f); break;   // +Z
+                default: d = glm::vec3(   -u,   -v,-1.0f); break;   // -Z
+            }
+            return glm::normalize(d);
+        }
+
+        // RGBA float -> one RGBA16F texel. Clamped to half's finite range (an HDRI's sun can
+        // exceed 65504) and NaN-scrubbed, so one bad source pixel can't poison the sky.
+        uint64_t PackHalfTexel(glm::vec4 c) {
+            for (int i = 0; i < 4; ++i) {
+                if (!(c[i] == c[i])) { c[i] = 0.0f; }   // NaN
+                c[i] = glm::clamp(c[i], 0.0f, 65504.0f);
+            }
+            return glm::packHalf4x16(c);
+        }
+
+        // The built-in sky's colour for a world direction: zenith-to-horizon gradient above,
+        // darker ground below, and a soft glow + small disc around the fallback sun.
+        glm::vec3 ProceduralSkyColour(const glm::vec3& d) {
+
+            const glm::vec3 zenith  { 0.10f, 0.24f, 0.55f };
+            const glm::vec3 horizon { 0.62f, 0.74f, 0.90f };
+            const glm::vec3 ground  { 0.16f, 0.15f, 0.14f };
+
+            glm::vec3 colour;
+            if (d.y >= 0.0f) {
+                colour = glm::mix(horizon, zenith, std::pow(d.y, 0.5f));
+            } else {
+                colour = glm::mix(horizon * 0.8f, ground, std::pow(std::min(-d.y * 4.0f, 1.0f), 0.6f));
+            }
+
+            const float s = std::max(glm::dot(d, kFallbackSunTowards), 0.0f);
+            colour += glm::vec3(1.0f, 0.85f, 0.6f) * (std::pow(s, 64.0f) * 0.5f + std::pow(s, 1500.0f) * 6.0f);
+            return colour;
+        }
+
+    }   // anonymous namespace
+
+    void Renderer::SubmitLight(const LightData& light) {
+
+        if (m_lightQueue.size() >= kMaxLights) {
+            if (!m_warnedTooManyLights) {
+                CRU_WARN("[Renderer] More than {} lights submitted in one frame; extras are ignored.", kMaxLights);
+                m_warnedTooManyLights = true;
+            }
+            return;
+        }
+        m_lightQueue.push_back(ToGpuLight(light));
+
+    }   // Renderer::SubmitLight()
+
+    void Renderer::SetEnvironment(const EnvironmentSettings& settings) {
+
+        m_environment = settings;
+
+    }   // Renderer::SetEnvironment()
+
+    void Renderer::CreateLightBuffers() {
+
+        for (uint32_t i = 0; i < m_frameManager.MaxFramesInFlight(); ++i) {
+            m_lightBuffers.emplace_back();
+            m_lightBuffers.back().Create(m_context, sizeof(GpuLight) * kMaxLights,
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_lightBuffersMapped.emplace_back(m_lightBuffers.back().Map());
+        }
+
+    }   // Renderer::CreateLightBuffers()
+
+    void Renderer::WriteLightBufferDescriptors(std::vector<vk::raii::DescriptorSet>& sets) {
+
+        for (size_t i = 0; i < sets.size() && i < m_lightBuffers.size(); ++i) {
+            vk::DescriptorBufferInfo bufferInfo{
+                .buffer = *m_lightBuffers[i].GetBuffer(),
+                .offset = 0,
+                .range  = sizeof(GpuLight) * kMaxLights };
+            vk::WriteDescriptorSet write{
+                .dstSet          = *sets[i],
+                .dstBinding      = 1,
+                .dstArrayElement = 0,
+                .descriptorCount = 1,
+                .descriptorType  = vk::DescriptorType::eStorageBuffer,
+                .pBufferInfo     = &bufferInfo };
+            m_context.GetDevice().updateDescriptorSets(write, {});
+        }
+
+    }   // Renderer::WriteLightBufferDescriptors()
+
+    void Renderer::UpdateLightBuffer(uint32_t frameIndex) {
+
+        // Same frame-in-flight safety as the uniform buffers: BeginFrame() has already waited on
+        // this frame index's fence, so the GPU is done reading m_lightBuffers[frameIndex].
+        if (m_lightQueue.empty()) {
+            const GpuLight fallback = ToGpuLight(MakeFallbackSun());
+            memcpy(m_lightBuffersMapped[frameIndex], &fallback, sizeof(GpuLight));
+            m_frameLightCount = 1;
+            return;
+        }
+
+        m_frameLightCount = static_cast<uint32_t>(m_lightQueue.size());   // already capped by SubmitLight
+        memcpy(m_lightBuffersMapped[frameIndex], m_lightQueue.data(), sizeof(GpuLight) * m_frameLightCount);
+
+    }   // Renderer::UpdateLightBuffer()
+
+    void Renderer::FillEnvironmentUniforms(FrameUniforms& ubo) const {
+
+        const EnvironmentSettings& env = m_environment;
+        ubo.ambientSky    = glm::vec4(env.ambientSky * env.ambientIntensity, 0.0f);
+        ubo.ambientGround = glm::vec4(env.ambientGround * env.ambientIntensity, 0.0f);
+        ubo.renderParams  = glm::vec4(std::max(env.exposure, 0.0f), std::max(env.skyboxIntensity, 0.0f), 0.0f, 0.0f);
+        ubo.lightParams   = glm::uvec4(m_frameLightCount, 0u, 0u, 0u);
+
+    }   // Renderer::FillEnvironmentUniforms()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  SKYBOX / CUBEMAPS
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void Renderer::CreateSkyboxSampler() {
+
+        // Clamp-to-edge so bilinear filtering at a face's border never wraps around to that
+        // face's opposite edge (seamless cube filtering across faces is the default in Vulkan).
+        vk::SamplerCreateInfo samplerInfo{
+            .magFilter               = vk::Filter::eLinear,
+            .minFilter               = vk::Filter::eLinear,
+            .mipmapMode              = vk::SamplerMipmapMode::eLinear,
+            .addressModeU            = vk::SamplerAddressMode::eClampToEdge,
+            .addressModeV            = vk::SamplerAddressMode::eClampToEdge,
+            .addressModeW            = vk::SamplerAddressMode::eClampToEdge,
+            .anisotropyEnable        = vk::False,
+            .compareEnable           = vk::False,
+            .minLod                  = 0.0f,
+            .maxLod                  = 0.0f,
+            .borderColor             = vk::BorderColor::eIntOpaqueBlack,
+            .unnormalizedCoordinates = vk::False
+        };
+        m_skyboxSampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
+
+    }   // Renderer::CreateSkyboxSampler()
+
+    void Renderer::CreateCubemapDescriptorPool() {
+
+        // eFreeDescriptorSet is required, not optional: each GpuCubemap's vk::raii::DescriptorSet
+        // frees itself back to this pool in its destructor.
+        vk::DescriptorPoolSize poolSize{
+            .type            = vk::DescriptorType::eCombinedImageSampler,
+            .descriptorCount = kMaxCubemaps };
+        vk::DescriptorPoolCreateInfo poolInfo{
+            .flags         = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .maxSets       = kMaxCubemaps,
+            .poolSizeCount = 1,
+            .pPoolSizes    = &poolSize };
+        m_cubemapDescriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
+
+    }   // Renderer::CreateCubemapDescriptorPool()
+
+    CubemapHandle Renderer::UploadCubemapFaces(const void* faceData, uint32_t faceSize, vk::Format format,
+                                               uint32_t bytesPerTexel, const std::string& debugName) {
+
+        if (m_cubemaps.size() >= kMaxCubemaps) {
+            throw std::runtime_error("[Renderer] UploadCubemapFaces: kMaxCubemaps exceeded; raise the limit if you genuinely need more.");
+        }
+
+        const vk::DeviceSize faceBytes  = vk::DeviceSize{ faceSize } * faceSize * bytesPerTexel;
+        const vk::DeviceSize totalBytes = faceBytes * 6;
+
+        VulkanBuffer stagingBuff;
+        stagingBuff.Create(m_context, totalBytes, vk::BufferUsageFlagBits::eTransferSrc,
+            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+        memcpy(stagingBuff.Map(), faceData, static_cast<size_t>(totalBytes));
+        stagingBuff.Unmap();
+
+        GpuCubemap cube;
+        cube.faceSize  = faceSize;
+        cube.debugName = debugName;
+        cube.image.Create(m_context, faceSize, faceSize, format,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            /*arrayLayers*/ 6, vk::ImageCreateFlagBits::eCubeCompatible);
+
+        vk::raii::CommandBuffer commandBuffer = BeginSingleTimeCommand();
+        TransitionImageLayout_I(commandBuffer, cube.image.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 6);
+        CopyBufferToImage(commandBuffer, stagingBuff.GetBuffer(), cube.image.GetImage(), faceSize, faceSize, 6);
+        TransitionImageLayout_I(commandBuffer, cube.image.GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, 6);
+        EndSingleTimeCommand(std::move(commandBuffer));
+
+        vk::ImageViewCreateInfo viewInfo{
+            .image            = cube.image.GetImage(),
+            .viewType         = vk::ImageViewType::eCube,
+            .format           = format,
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 6 }
+        };
+        cube.view = vk::raii::ImageView(m_context.GetDevice(), viewInfo);
+
+        vk::DescriptorSetLayout layout = *m_pipeline.GetSkyboxDescriptorSetLayout();
+        vk::DescriptorSetAllocateInfo allocInfo{
+            .descriptorPool     = m_cubemapDescriptorPool,
+            .descriptorSetCount = 1,
+            .pSetLayouts        = &layout
+        };
+        std::vector<vk::raii::DescriptorSet> sets = m_context.GetDevice().allocateDescriptorSets(allocInfo);
+        cube.descriptorSet = std::move(sets.front());
+
+        vk::DescriptorImageInfo imageInfo{
+            .sampler     = *m_skyboxSampler,
+            .imageView   = *cube.view,
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+        vk::WriteDescriptorSet write{
+            .dstSet          = *cube.descriptorSet,
+            .dstBinding      = 0,
+            .dstArrayElement = 0,
+            .descriptorCount = 1,
+            .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
+            .pImageInfo      = &imageInfo };
+        m_context.GetDevice().updateDescriptorSets(write, {});
+
+        const CubemapHandle handle{ static_cast<uint32_t>(m_cubemaps.size()) };
+        m_cubemaps.push_back(std::move(cube));
+        return handle;
+
+    }   // Renderer::UploadCubemapFaces()
+
+    void Renderer::CreateDefaultSkybox() {
+
+        // Small is fine: the procedural sky is a smooth gradient, and linear filtering hides the
+        // texel size everywhere except the (deliberately soft) sun glow.
+        constexpr uint32_t kSize = 128;
+        std::vector<uint64_t> texels(static_cast<size_t>(kSize) * kSize * 6);
+
+        size_t i = 0;
+        for (uint32_t face = 0; face < 6; ++face) {
+            for (uint32_t y = 0; y < kSize; ++y) {
+                for (uint32_t x = 0; x < kSize; ++x) {
+                    const glm::vec3 dir = CubeFaceTexelDirection(face, x, y, kSize);
+                    texels[i++] = PackHalfTexel(glm::vec4(ProceduralSkyColour(dir), 1.0f));
+                }
+            }
+        }
+
+        m_defaultSkybox = UploadCubemapFaces(texels.data(), kSize, vk::Format::eR16G16B16A16Sfloat, 8, "Default Sky");
+
+    }   // Renderer::CreateDefaultSkybox()
+
+    CubemapHandle Renderer::CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB) {
+
+        std::string cacheKey = isSRGB ? "faces[srgb]:" : "faces[unorm]:";
+        for (const std::string& path : facePaths) { cacheKey += path + "|"; }
+        if (auto it = m_cubemapCacheByKey.find(cacheKey); it != m_cubemapCacheByKey.end()) {
+            return CubemapHandle{ it->second };
+        }
+
+        using StbPixels = std::unique_ptr<stbi_uc, void(*)(void*)>;
+        std::vector<StbPixels> faces;
+        faces.reserve(6);
+        int faceSize = 0;
+
+        for (size_t f = 0; f < 6; ++f) {
+            int w{}, h{}, channels{};
+            stbi_uc* pixels = stbi_load(facePaths[f].c_str(), &w, &h, &channels, STBI_rgb_alpha);
+            if (!pixels) {
+                throw std::runtime_error("[Renderer] CreateCubemap: failed to load face image (" + facePaths[f] + ")");
+            }
+            faces.emplace_back(pixels, stbi_image_free);
+
+            if (w != h) {
+                throw std::runtime_error("[Renderer] CreateCubemap: face is not square (" + facePaths[f] + ")");
+            }
+            if (f == 0) { faceSize = w; }
+            else if (w != faceSize) {
+                throw std::runtime_error("[Renderer] CreateCubemap: face size differs from face 0 (" + facePaths[f] + ")");
+            }
+        }
+
+        const size_t faceBytes = static_cast<size_t>(faceSize) * faceSize * 4;
+        std::vector<unsigned char> packed(faceBytes * 6);
+        for (size_t f = 0; f < 6; ++f) {
+            memcpy(packed.data() + f * faceBytes, faces[f].get(), faceBytes);
+        }
+
+        const vk::Format format = isSRGB ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+        const CubemapHandle handle = UploadCubemapFaces(packed.data(), static_cast<uint32_t>(faceSize), format, 4,
+            std::filesystem::path(facePaths[0]).parent_path().filename().string());
+
+        m_cubemapCacheByKey.emplace(cacheKey, handle.id);
+        return handle;
+
+    }   // Renderer::CreateCubemap()
+
+    CubemapHandle Renderer::CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize) {
+
+        faceSize = std::max(faceSize, 1u);
+        const std::string cacheKey = "equirect:" + path + "@" + std::to_string(faceSize);
+        if (auto it = m_cubemapCacheByKey.find(cacheKey); it != m_cubemapCacheByKey.end()) {
+            return CubemapHandle{ it->second };
+        }
+
+        // stbi_loadf returns linear floats for every format: .hdr as-is (true HDR), LDR images
+        // converted through stb's default 2.2 gamma - so one path serves both.
+        int w{}, h{}, channels{};
+        float* pixels = stbi_loadf(path.c_str(), &w, &h, &channels, STBI_rgb_alpha);
+        if (!pixels) {
+            throw std::runtime_error("[Renderer] CreateCubemapFromEquirect: failed to load (" + path + ")");
+        }
+        std::unique_ptr<float, void(*)(void*)> owner(pixels, stbi_image_free);
+
+        // Bilinear lookup, wrapping horizontally (longitude is periodic) and clamping vertically.
+        auto fetch = [&](int x, int y) -> glm::vec4 {
+            x = ((x % w) + w) % w;
+            y = std::clamp(y, 0, h - 1);
+            const float* p = pixels + (static_cast<size_t>(y) * w + x) * 4;
+            return glm::vec4(p[0], p[1], p[2], 1.0f);
+        };
+        auto sample = [&](float u, float v) -> glm::vec4 {
+            const float fx = u * static_cast<float>(w) - 0.5f;
+            const float fy = v * static_cast<float>(h) - 0.5f;
+            const int   x0 = static_cast<int>(std::floor(fx));
+            const int   y0 = static_cast<int>(std::floor(fy));
+            const float tx = fx - static_cast<float>(x0);
+            const float ty = fy - static_cast<float>(y0);
+            const glm::vec4 top    = glm::mix(fetch(x0, y0),     fetch(x0 + 1, y0),     tx);
+            const glm::vec4 bottom = glm::mix(fetch(x0, y0 + 1), fetch(x0 + 1, y0 + 1), tx);
+            return glm::mix(top, bottom, ty);
+        };
+
+        constexpr float kInvTwoPi = 0.15915494309f;
+        constexpr float kInvPi    = 0.31830988618f;
+
+        std::vector<uint64_t> texels(static_cast<size_t>(faceSize) * faceSize * 6);
+        size_t i = 0;
+        for (uint32_t face = 0; face < 6; ++face) {
+            for (uint32_t y = 0; y < faceSize; ++y) {
+                for (uint32_t x = 0; x < faceSize; ++x) {
+                    const glm::vec3 d = CubeFaceTexelDirection(face, x, y, faceSize);
+                    // Longitude from +X towards +Z (turning right, in this right-handed Y-up
+                    // world) runs left-to-right across the panorama; latitude runs top (+Y) to
+                    // bottom (-Y).
+                    const float u = std::atan2(d.z, d.x) * kInvTwoPi + 0.5f;
+                    const float v = std::acos(glm::clamp(d.y, -1.0f, 1.0f)) * kInvPi;
+                    texels[i++] = PackHalfTexel(sample(u, v));
+                }
+            }
+        }
+
+        const CubemapHandle handle = UploadCubemapFaces(texels.data(), faceSize, vk::Format::eR16G16B16A16Sfloat, 8,
+            std::filesystem::path(path).stem().string());
+
+        m_cubemapCacheByKey.emplace(cacheKey, handle.id);
+        return handle;
+
+    }   // Renderer::CreateCubemapFromEquirect()
+
+    void Renderer::DrawSkybox(vk::CommandBuffer cmd, vk::DescriptorSet frameSet) {
+
+        if (!m_environment.drawSkybox) { return; }
+
+        CubemapHandle sky = m_environment.skybox;
+        if (!sky.IsValid() || sky.id >= m_cubemaps.size()) { sky = m_defaultSkybox; }
+        if (!sky.IsValid() || sky.id >= m_cubemaps.size()) { return; }
+
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetSkyboxPipeline());
+
+        // Set 0 must be rebound even though the mesh pass just bound the same set: the skybox
+        // layout has no push-constant range, so it isn't "compatible" with the main layout for
+        // set 0 and the earlier binding is disturbed by this pipeline's layout.
+        const std::array<vk::DescriptorSet, 2> sets{ frameSet, *m_cubemaps[sky.id].descriptorSet };
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetSkyboxLayout(), 0, sets, nullptr);
+        cmd.draw(36, 1, 0, 0);
+
+    }   // Renderer::DrawSkybox()
+
+    void Renderer::CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height,
+        uint32_t layerCount) {
+
+        // With bufferRowLength/bufferImageHeight 0 (tightly packed), a multi-layer copy reads
+        // each layer from the buffer immediately after the previous one - exactly how
+        // UploadCubemapFaces lays out its six faces.
 
         vk::BufferImageCopy region{
             .bufferOffset = 0,
             .bufferRowLength = 0,
             .bufferImageHeight = 0,
-            .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1},
+            .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = layerCount},
             .imageOffset = {0, 0, 0},
             .imageExtent = {width, height, 1} 
         };
@@ -1043,14 +1563,14 @@ namespace Crucible {
     }   // Renderer::EndSingleTimeCommand()
 
     void Renderer::TransitionImageLayout_I(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image,
-        vk::ImageLayout oldLayout, vk::ImageLayout newLayout) {
+        vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t layerCount) {
 
         vk::ImageMemoryBarrier barrier{ .oldLayout = oldLayout,
                                        .newLayout = newLayout,
                                        .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
                                        .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
                                        .image = image,
-                                       .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1} };
+                                       .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = layerCount} };
 
         vk::PipelineStageFlags sourceStage;
         vk::PipelineStageFlags destinationStage;

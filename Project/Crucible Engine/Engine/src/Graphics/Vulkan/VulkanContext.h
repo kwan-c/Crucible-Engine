@@ -1,4 +1,28 @@
 #pragma once
+/*************************************************************************
+* \file:         VulkanContext.h
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                Owns the core Vulkan instance/device/queue objects plus
+*                the one shared VmaAllocator every GPU resource
+*                suballocates from.
+*
+* \details
+*                Declares VulkanContext: instance creation, debug
+*                messenger, surface, physical/logical device selection,
+*                and the single VmaAllocator (see VulkanResource.h/.cpp)
+*                every VulkanBuffer/VulkanImage suballocates its GPU memory
+*                from instead of each doing its own vkAllocateMemory.
+*                Move-only and non-copyable - see the deleted special
+*                members below.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
 
 #if defined(__INTELLISENSE__) || !defined(USE_CPP20_MODULES)
     #include <vulkan/vulkan_raii.hpp>
@@ -20,33 +44,96 @@
 
 namespace Crucible {
 
+    /*************************************************************************
+     \brief
+        Owns the core Vulkan instance/device/queue objects plus the single
+        VmaAllocator every GPU resource suballocates from.
+
+     \details
+        Move-only in spirit but actually non-movable: VulkanContext owns
+        the one VmaAllocator for the whole engine (see m_allocator below);
+        it is never meaningfully copyable or movable (nothing in the
+        codebase does either - every user takes it by reference), so this
+        says so explicitly rather than letting the user-declared
+        destructor silently suppress the implicit move members too.
+     *************************************************************************/
     class VulkanContext {
 
     public:
+        /*********************************************************************
+         \brief  Creates the instance, debug messenger, surface, physical
+                 and logical device, and the shared VmaAllocator, in that
+                 order.
+         \param[in] window The window to create the Vulkan surface from.
+         *********************************************************************/
         VulkanContext(WindowManager& window);
+
+        /*********************************************************************
+         \brief  Destroys the VmaAllocator (before the implicit destruction
+                 of the device/instance below runs) - see the allocator
+                 member's own doc comment for why the ordering matters.
+         *********************************************************************/
         ~VulkanContext();
+
+        /*********************************************************************
+         \brief  Waits for the device to go idle before teardown.
+         *********************************************************************/
         void ShutDown();
 
-        // VulkanContext owns the one VmaAllocator for the whole engine (see m_allocator below);
-        // it is never meaningfully copyable or movable (nothing in the codebase does either -
-        // every user takes it by reference), so say so explicitly rather than let the destructor
-        // we just declared silently suppress the implicit move members too.
         VulkanContext(const VulkanContext&)            = delete;
         VulkanContext& operator=(const VulkanContext&) = delete;
         VulkanContext(VulkanContext&&)                 = delete;
         VulkanContext& operator=(VulkanContext&&)      = delete;
 
+        /*********************************************************************
+         \brief  Accessor.
+         \return Reference to the owned vk::raii::Instance.
+         *********************************************************************/
         const vk::raii::Instance&       GetInstance() const;
+
+        /*********************************************************************
+         \brief  Accessor.
+         \return Reference to the selected vk::raii::PhysicalDevice.
+         *********************************************************************/
         const vk::raii::PhysicalDevice& GetPhysicalDevice() const;
+
+        /*********************************************************************
+         \brief  Accessor.
+         \return Reference to the owned vk::raii::Device.
+         *********************************************************************/
         const vk::raii::Device&         GetDevice() const;
+
+        /*********************************************************************
+         \brief  Accessor.
+         \return Reference to the owned graphics vk::raii::Queue.
+         *********************************************************************/
         const vk::raii::Queue&          GetGraphicsQueue() const;
 
+        /*********************************************************************
+         \brief  Accessor.
+         \return The window surface (non-owning).
+         *********************************************************************/
         vk::SurfaceKHR                  GetSurface() const;
+
+        /*********************************************************************
+         \brief  Accessor.
+         \return The queue family index used for graphics + presentation.
+         *********************************************************************/
         uint32_t                        GetGraphicsQueueFamily() const;
 
-        // The single suballocator every VulkanBuffer/VulkanImage allocates its GPU memory from
-        // (see VulkanResource.h/.cpp) instead of each doing its own vkAllocateMemory. Valid from
-        // the end of construction until just before ~VulkanContext() tears down the device.
+        /*********************************************************************
+         \brief
+            The single suballocator every VulkanBuffer/VulkanImage
+            allocates its GPU memory from (see VulkanResource.h/.cpp)
+            instead of each doing its own vkAllocateMemory.
+
+         \return
+            The VmaAllocator handle.
+
+         \note
+            Valid from the end of construction until just before
+            ~VulkanContext() tears down the device.
+         *********************************************************************/
         VmaAllocator                     GetAllocator() const;
 
     private:
