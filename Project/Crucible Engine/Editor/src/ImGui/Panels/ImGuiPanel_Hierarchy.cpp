@@ -5,7 +5,7 @@
 #include <ImGui/ImGuiManager.h>
 #include <ECS/World.h>
 #include <ECS/Components/Components.h>
-#include "Graphics/Primitives.h"
+#include "Resources/ResourceManager.h"
 #include <Scene/SceneManager.h>
 
 #include "ImGui/Panels/ImGuiPanel_Hierarchy.h"
@@ -29,31 +29,31 @@ void Crucible::Hierarchy::Update(float) {
 			if (ImGui::BeginMenu("+")) {
 				if (ImGui::BeginMenu("3D Objects")) {
 					if (ImGui::MenuItem("Create Cube")) {
-						CreatePrimitive(PrimitiveType::Cube);
+						CreatePrimitive("Cube");
 					}
 					if (ImGui::MenuItem("Create Sphere")) {
-						CreatePrimitive(PrimitiveType::Sphere);
+						CreatePrimitive("Sphere");
 					}
 					if (ImGui::MenuItem("Create Cylinder")) {
-						CreatePrimitive(PrimitiveType::Cylinder);
+						CreatePrimitive("Cylinder");
 					}
 					if (ImGui::MenuItem("Create Cone")) {
-						CreatePrimitive(PrimitiveType::Cone);
+						CreatePrimitive("Cone");
 					}
 					if (ImGui::MenuItem("Create Pyramid")) {
-						CreatePrimitive(PrimitiveType::Pyramid);
+						CreatePrimitive("Pyramid");
 					}
 					if (ImGui::MenuItem("Create Capsule")) {
-						CreatePrimitive(PrimitiveType::Capsule);
+						CreatePrimitive("Capsule");
 					}
 					ImGui::EndMenu();
 				}
 				if (ImGui::BeginMenu("2D Objects")) {
 					if (ImGui::MenuItem("Create Plane")) {
-						CreatePrimitive(PrimitiveType::Plane);
+						CreatePrimitive("Plane");
 					}
 					if (ImGui::MenuItem("Create Disc")) {
-						CreatePrimitive(PrimitiveType::Disc);
+						CreatePrimitive("Disc");
 					}
 					ImGui::EndMenu();
 				}
@@ -105,85 +105,15 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 	ImGui::PopID();
 }
 
-void Crucible::Hierarchy::CreatePrimitive(PrimitiveType type) {
+void Crucible::Hierarchy::CreatePrimitive(const std::string& meshName) {
 
 	auto e = m_world.CreateEntity();
 	MeshRenderer mr{};
 
-	switch (type) {
-	case PrimitiveType::Cube:
-		if (!m_cubeMesh.IsValid()) {
-			m_cubeMesh = m_renderer.CreateMesh(Primitives::MakeCube(), "Cube");
-		}
-
-		mr.mesh = m_cubeMesh;
-		mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
-		m_world.AddComponent<MeshRenderer>(e, mr);
-		break;
-	case PrimitiveType::Sphere:
-		if (!m_sphereMesh.IsValid()) {
-			m_sphereMesh = m_renderer.CreateMesh(Primitives::MakeSphere(), "Sphere");
-		}
-
-		mr.mesh = m_sphereMesh;
-		mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
-		m_world.AddComponent<MeshRenderer>(e, mr);
-		break;
-	case PrimitiveType::Cylinder:
-		if (!m_cylinderMesh.IsValid()) {
-			m_cylinderMesh = m_renderer.CreateMesh(Primitives::MakeCylinder(), "Cylinder");
-		}
-
-		mr.mesh = m_cylinderMesh;
-		mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
-		m_world.AddComponent<MeshRenderer>(e, mr);
-		break;
-	case PrimitiveType::Cone:
-		if (!m_coneMesh.IsValid()) {
-			m_coneMesh = m_renderer.CreateMesh(Primitives::MakeCone(), "Cone");
-		}
-
-		mr.mesh = m_coneMesh;
-		mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
-		m_world.AddComponent<MeshRenderer>(e, mr);
-		break;
-	case PrimitiveType::Pyramid:
-		if (!m_pyramidMesh.IsValid()) {
-			m_pyramidMesh = m_renderer.CreateMesh(Primitives::MakePyramid(), "Pyramid");
-		}
-
-		mr.mesh = m_pyramidMesh;
-		mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
-		m_world.AddComponent<MeshRenderer>(e, mr);
-		break;
-	case PrimitiveType::Capsule:
-		if (!m_capsuleMesh.IsValid()) {
-			m_capsuleMesh = m_renderer.CreateMesh(Primitives::MakeCapsule(), "Capsule");
-		}
-
-		mr.mesh = m_capsuleMesh;
-		mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
-		m_world.AddComponent<MeshRenderer>(e, mr);
-		break;
-	case PrimitiveType::Plane:
-		if (!m_planeMesh.IsValid()) {
-			m_planeMesh = m_renderer.CreateMesh(Primitives::MakePlane(), "Plane");
-		}
-
-		mr.mesh = m_planeMesh;
-		mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
-		m_world.AddComponent<MeshRenderer>(e, mr);
-		break;
-	case PrimitiveType::Disc:
-		if (!m_discMesh.IsValid()) {
-			m_discMesh = m_renderer.CreateMesh(Primitives::MakeDisc(), "Disc");
-		}
-
-		mr.mesh = m_discMesh;
-		mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
-		m_world.AddComponent<MeshRenderer>(e, mr);
-		break;
-	}
+	auto id = m_resource.BuiltinId(meshName.c_str());
+	mr.mesh = m_resource.GetMesh(id);
+	mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
+	m_world.AddComponent<MeshRenderer>(e, mr);
 
 	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
 		inspector->SetSelectedEntity(e);

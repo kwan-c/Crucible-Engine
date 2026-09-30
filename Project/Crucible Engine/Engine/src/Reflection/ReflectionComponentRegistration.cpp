@@ -127,6 +127,7 @@ RTTR_REGISTRATION
         .constructor<>()
         .property("type",         &Light::type)
         .property("colour",       &Light::colour)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
         .property("intensity",    &Light::intensity)
         .property("range",        &Light::range)
         .property("innerConeDeg", &Light::innerConeDeg)
@@ -142,7 +143,9 @@ RTTR_REGISTRATION
         .property("visible",          &Skybox::visible)
         .property("intensity",        &Skybox::intensity)
         .property("ambientSky",       &Skybox::ambientSky)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
         .property("ambientGround",    &Skybox::ambientGround)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
         .property("ambientIntensity", &Skybox::ambientIntensity)
         .property("exposure",         &Skybox::exposure)
         .property("skyboxAsset",      &Skybox::skyboxAsset)
@@ -213,13 +216,17 @@ RTTR_REGISTRATION
             (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
                 rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("velocity",      &CharacterController::m_velocity)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("moveVelocity",  &CharacterController::m_moveVelocity)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("verticalSpeed", &CharacterController::m_verticalSpeed)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("jumpHeight",    &CharacterController::m_jumpHeight)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
     ;
 
     // HierarchyNode and WorldTransform are intentionally NOT registered for

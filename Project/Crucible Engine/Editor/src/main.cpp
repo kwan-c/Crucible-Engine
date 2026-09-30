@@ -16,7 +16,7 @@ int main()
     // Panels (e.g. the Inspector's mesh/material pickers) reach the ResourceManager through
     // EditorManager - see EditorManager::GetResources().
     Crucible::EditorManager::GetInstance().SetResources(&core.GetResources());
-    core.PushLayer(std::make_unique<Crucible::ImGuiLayer>(core.GetRenderer(), core.GetWorld(), core.Scenes()));
+    core.PushLayer(std::make_unique<Crucible::ImGuiLayer>(core));
 
     core.Run();
     return 0;

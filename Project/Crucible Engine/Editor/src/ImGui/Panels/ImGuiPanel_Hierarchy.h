@@ -17,36 +17,24 @@
 #include "ECS/World.h"
 #include "ECS/Components/Components.h"
 #include "ECS/Systems/Query.h"
-#include "Graphics/RenderSystem.h"
 
 #include <optional>
+#include <string>
 
 namespace Crucible {
 
 	class Hierarchy : public EditorPanel {
 	public:
-		explicit Hierarchy(World& world, Renderer& renderer, SceneManager& scenes) : m_world(world), m_renderer(renderer), m_scenes(scenes) {}
+		explicit Hierarchy(World& world, ResourceManager& resource, SceneManager& scenes) : m_world(world), m_resource(resource), m_scenes(scenes) {}
 
 		// REQUIRED Overrides
 		void Init() override;
 		void Update(float dt) override;
 
 	private:
-		enum class PrimitiveType { Cube, Sphere, Cylinder, Cone, Pyramid, Capsule, Plane, Disc };
-
 		World& m_world;
 		SceneManager& m_scenes;
-		Renderer& m_renderer;
-
-
-		MeshHandle m_cubeMesh{};   // created on first use, shared by every cube
-		MeshHandle m_sphereMesh{};
-		MeshHandle m_cylinderMesh{};
-		MeshHandle m_coneMesh{};
-		MeshHandle m_pyramidMesh{};
-		MeshHandle m_capsuleMesh{};
-		MeshHandle m_planeMesh{};
-		MeshHandle m_discMesh{};
+		ResourceManager& m_resource;
 
 		// Every entity carries HierarchyNode (it's a Mandatory<> component - see Components.h),
 		// so this query matches the whole scene; roots are filtered out of it below by parent ==
@@ -58,7 +46,7 @@ namespace Crucible {
 
 		// Creating Primitives (cube, sphere, etc.) is a common editor action, so the "+" menu in the toolbar
 		// calls this to spawn a new entity with a MeshRenderer and the requested primitive mesh.
-		void CreatePrimitive(PrimitiveType type);
+		void CreatePrimitive(const std::string& meshName);
 	};
 
 }

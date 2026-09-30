@@ -242,6 +242,14 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			std::uint32_t v = value.get_value<std::uint32_t>();
 			if (ImGui::DragScalar(name, ImGuiDataType_U32, &v)) { newValue = v; edited = true; }
 		}
+		else if (type == rttr::type::get<std::uint64_t>()) {
+			// Shown as hex, same format as the guid= line in .meta files.
+			std::uint64_t v = value.get_value<std::uint64_t>();
+			if (ImGui::InputScalar(name, ImGuiDataType_U64, &v, nullptr, nullptr, "%016llX",
+				ImGuiInputTextFlags_CharsHexadecimal)) {
+				newValue = v; edited = true;
+			}
+		}
 		else if (type == rttr::type::get<float>()) {
 			float v = value.get_value<float>();
 			rttr::variant const range = prop.get_metadata(MetaDataTypes::SLIDER);

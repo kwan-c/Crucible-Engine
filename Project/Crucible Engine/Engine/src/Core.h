@@ -64,7 +64,7 @@ namespace Crucible
         EcsEventBridge& EcsBridge() noexcept { return *m_ecsEvents; }
 
         // Open scene: Save/SaveAs now, New/Load deferred to the next frame.
-        SceneManager& Scenes() noexcept { return *m_scenes; }
+        SceneManager& GetScenes() noexcept { return *m_scenes; }
 
         // Attaches a layer (calls OnAttach) and takes ownership. Layers are updated in the
         // order pushed, and detached in reverse order when Core shuts down.
