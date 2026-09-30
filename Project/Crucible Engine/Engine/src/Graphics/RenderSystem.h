@@ -450,6 +450,15 @@ namespace Crucible {
         CubemapHandle GetDefaultSkybox() const { return m_defaultSkybox; }
 
         /*********************************************************************
+         \brief  The built-in primitive meshes (Cube, Capsule, Cone,
+                 Cylinder, Disc, Plane, Pyramid, Sphere), created at
+                 startup. Names via GetMeshName(). ResourceManager
+                 registers each under a fixed built-in asset id.
+         \return The handles, in creation order.
+         *********************************************************************/
+        const std::vector<MeshHandle>& GetPrimitiveMeshes() const { return m_primitiveMeshes; }
+
+        /*********************************************************************
          \brief
             Creates an offscreen render target (color+depth image, own
             camera, own per-frame-in-flight uniform buffer/descriptor

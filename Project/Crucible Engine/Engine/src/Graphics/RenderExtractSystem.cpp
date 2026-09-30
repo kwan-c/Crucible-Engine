@@ -23,6 +23,7 @@
 // forward declaration is not enough - see IECSSystems.h's note on RunAfter/RunBefore), hence
 // this include living in the .cpp rather than the header.
 #include "ECS/HierarchyTransformSystem.h"
+#include "Resources/ResourceManager.h"
 
 namespace Crucible {
 
@@ -46,16 +47,26 @@ namespace Crucible {
 
             // Skip: hidden, not yet computed this frame (e.g. spawned during PreRender - see
             // WorldTransform's own doc comment), or no mesh uploaded yet (model still loading).
-            if (!meshRenderer.visible || !worldTransform.valid || !meshRenderer.mesh.IsValid()) { return; }
+            if (!meshRenderer.visible || !worldTransform.valid) { return; }
 
-            // Invalid material (never assigned, or its texture/material asset is still
-            // loading) falls back to the Renderer's default material rather than skipping
-            // the draw - an untextured/neutral-grey cube beats an invisible one.
-            const MaterialHandle material = meshRenderer.material.IsValid()
-                ? meshRenderer.material
-                : m_renderer.GetDefaultMaterial();
+            // Asset ids win over handles when set (see MeshRenderer): one cached hash lookup
+            // each, loading the asset on first use. This is what makes scene-loaded entities -
+            // which carry ids but no handles - draw without any extra resolve step.
+            MeshHandle     mesh     = meshRenderer.mesh;
+            MaterialHandle material = meshRenderer.material;
+            if (m_resources) {
+                if (meshRenderer.meshAsset != 0)     { mesh     = m_resources->GetMesh(meshRenderer.meshAsset); }
+                if (meshRenderer.materialAsset != 0) { material = m_resources->GetMaterial(meshRenderer.materialAsset); }
+            }
 
-            m_renderer.Submit(meshRenderer.mesh, material, worldTransform.matrix);
+            if (!mesh.IsValid()) { return; }
+
+            // Invalid material (never assigned, or its asset failed to load) falls back to the
+            // Renderer's default material rather than skipping the draw - an untextured/neutral-
+            // grey cube beats an invisible one.
+            if (!material.IsValid()) { material = m_renderer.GetDefaultMaterial(); }
+
+            m_renderer.Submit(mesh, material, worldTransform.matrix);
 
         });
 
@@ -89,7 +100,9 @@ namespace Crucible {
         m_skyboxQuery->ForEach([this](Entity, const Skybox& skybox) {
 
             EnvironmentSettings env;
-            env.skybox           = skybox.cubemap;   // Invalid -> the Renderer's built-in sky
+            env.skybox           = (m_resources && skybox.skyboxAsset != 0)
+                                       ? m_resources->GetCubemap(skybox.skyboxAsset)
+                                       : skybox.cubemap;   // Invalid -> the Renderer's built-in sky
             env.drawSkybox       = skybox.visible;
             env.skyboxIntensity  = skybox.intensity;
             env.ambientSky       = skybox.ambientSky;

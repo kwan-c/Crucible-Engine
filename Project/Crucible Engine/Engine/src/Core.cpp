@@ -12,6 +12,7 @@
 #include "Scene/Scene.h"
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/RenderExtractSystem.h"
+#include "Resources/ResourceManager.h"
 
 // STL
 #include <algorithm>
@@ -128,6 +129,13 @@ namespace Crucible {
         m_input.Init();
         m_input.AttachWindow(m_window->GetNativeHandle());
 
+        // Shared asset index + resource cache. Before RegisterEngineSystems(): the render
+        // extraction system resolves MeshRenderer/Skybox asset ids through the ResourceManager.
+        m_assets = std::make_unique<AssetManager>();
+        if (!m_assets->Init()) { CRU_WARN("[Core] AssetManager found no asset root; asset ids will not resolve"); }
+        m_resources = std::make_unique<ResourceManager>(*m_assets, *m_renderer);
+        m_resources->Init();
+
 
         // Event buses: report listener failures through the engine log, and let the
         // system manager merge each system's outboxes into them at every stage flush.
@@ -189,7 +197,7 @@ namespace Crucible {
         //sample system registeration
         m_systems.RegisterSystem<ECSPhysicsSystem>();
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
-        m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer);   // second in PreRender: Submit()s meshes
+        m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
     }
 
     void Core::CleanUp() {

@@ -55,6 +55,8 @@
 
 namespace Crucible
 {
+	class ResourceManager;   // Resources/ResourceManager.h - only the .cpp needs the full type
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4251 4275)   // STL members; IECSSystem is a header-only interface
@@ -74,7 +76,8 @@ namespace Crucible
 				 member destruction order), so a plain reference is safe.
 		 \param[in] renderer The Core-owned Renderer to extract into.
 		 *********************************************************************/
-		explicit RenderExtractSystem(Renderer& renderer) : m_renderer(renderer) {}
+		explicit RenderExtractSystem(Renderer& renderer, ResourceManager* resources = nullptr)
+			: m_renderer(renderer), m_resources(resources) {}
 
 		/*********************************************************************
 		 \brief  PreRender: after HierarchyTransformSystem has filled this
@@ -115,6 +118,7 @@ namespace Crucible
 		using SkyboxQuery  = Query<const Skybox>;
 
 		Renderer& m_renderer;
+		ResourceManager* m_resources = nullptr;   // resolves asset ids (MeshRenderer/Skybox); may be null
 		std::optional<ExtractQuery> m_query;         // built once, on first Update() (needs a World&)
 		std::optional<LightQuery>   m_lightQuery;    // same
 		std::optional<SkyboxQuery>  m_skyboxQuery;   // same

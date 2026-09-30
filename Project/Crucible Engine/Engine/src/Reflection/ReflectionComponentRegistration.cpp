@@ -105,8 +105,12 @@ RTTR_REGISTRATION
 
     rttr::registration::class_<MeshRenderer>("MeshRenderer")
         .constructor<>()
-        .property("visible", &MeshRenderer::visible)
-        .property("colour",  &MeshRenderer::colour)
+        .property("visible",       &MeshRenderer::visible)
+        .property("colour",        &MeshRenderer::colour)
+        // Asset ids, not the runtime handles: handles are meaningless after a reload, ids are
+        // resolved back to handles by ResourceManager (see MeshRenderer's doc comment).
+        .property("meshAsset",     &MeshRenderer::meshAsset)
+        .property("materialAsset", &MeshRenderer::materialAsset)
     ;
 
     // Light type by name, same reasoning as ShapeType below: the scene file
@@ -130,8 +134,8 @@ RTTR_REGISTRATION
     ;
 
     // Skybox::cubemap is a runtime GPU handle (meaningless after a reload),
-    // so like MeshRenderer::mesh it is deliberately not registered until
-    // asset GUID -> handle resolution exists.
+    // so like MeshRenderer::mesh it is not registered; skyboxAsset (the
+    // asset id, resolved by ResourceManager) is what gets saved.
     rttr::registration::class_<Skybox>("Skybox")
         .constructor<>()
         .property("visible",          &Skybox::visible)
@@ -140,6 +144,7 @@ RTTR_REGISTRATION
         .property("ambientGround",    &Skybox::ambientGround)
         .property("ambientIntensity", &Skybox::ambientIntensity)
         .property("exposure",         &Skybox::exposure)
+        .property("skyboxAsset",      &Skybox::skyboxAsset)
     ;
 
     rttr::registration::class_<Audio>("Audio")

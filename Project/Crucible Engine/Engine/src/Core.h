@@ -16,9 +16,12 @@
 #include <ECS/Systems/EventBus/EventBuses.h>
 #include <ECS/Systems/EventBus/EcsEvents.h>
 #include <Configuration/EngineConfig.h>
+#include "AssetPipe/Assetmanager.h"
+#include "Resources/ResourceManager.h"
 
 namespace Crucible
 {
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4251)   // STL member in an exported class; only used inside Engine.dll
@@ -39,6 +42,10 @@ namespace Crucible
         void Run();
 
         Renderer& GetRenderer() const { return *m_renderer; }
+        // Both valid only after Init(). The engine's shared asset index (AssetManager) and the
+        // GUID -> Renderer-handle cache built on top of it (ResourceManager).
+        AssetManager&    GetAssets() const { return *m_assets; }
+        ResourceManager& GetResources() const { return *m_resources; }
 
         World& GetWorld() noexcept { return *m_world; }
         const World& GetWorld() const noexcept { return *m_world; }
@@ -72,6 +79,8 @@ namespace Crucible
         EventBuses m_events;
 
         std::unique_ptr<World> m_world;
+        std::unique_ptr<AssetManager>    m_assets;      // created in Init()
+        std::unique_ptr<ResourceManager> m_resources;   // created in Init(), after m_assets
 
         // World hooks -> gameplay-bus events; created right after the World.
         std::unique_ptr<EcsEventBridge> m_ecsEvents;

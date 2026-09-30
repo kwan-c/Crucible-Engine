@@ -121,6 +121,15 @@ namespace Crucible
 		// field, not a separate ECS component, because Query's "optional" component matching is
 		// an unimplemented no-op - see Query.h).
 		MaterialHandle material{};
+
+		// Asset ids (the .meta GUID, or a ResourceManager built-in id such as "Cube"); 0 = none.
+		// These are what scene files save and what the Inspector's pickers set (via
+		// ResourceManager::AssignMesh/AssignMaterial). When non-zero they WIN over the handles
+		// above: RenderExtractSystem resolves them through the ResourceManager every frame, so an
+		// entity loaded from a scene (ids only, handles Invalid) draws with no extra step. Leave
+		// them 0 for procedural/runtime-created meshes and materials - the handles are used as-is.
+		std::uint64_t meshAsset = 0;
+		std::uint64_t materialAsset = 0;
 	};
 	
 	/*************************************************************************
@@ -181,6 +190,9 @@ namespace Crucible
 		Math::vec3    ambientGround{ 0.20f, 0.18f, 0.16f };
 		float         ambientIntensity = 1.f;
 		float         exposure = 1.f;
+		// Texture asset id of an equirectangular sky (.hdr ideally), resolved through
+		// ResourceManager::GetCubemap. Saved in scenes; when non-zero it wins over `cubemap`.
+		std::uint64_t skyboxAsset = 0;
 	};
 
 	/*************************************************************************

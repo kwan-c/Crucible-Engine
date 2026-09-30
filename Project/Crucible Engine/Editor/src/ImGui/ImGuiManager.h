@@ -37,6 +37,7 @@ namespace Crucible {
 
 	class Core;
 	class World;   // forward-declared: EditorManager::Init/ImGuiManager::Init only take a reference
+	class ResourceManager;   // Resources/ResourceManager.h - include it where you call into it
 
 	class EditorPanel {
 	public:
@@ -113,6 +114,12 @@ namespace Crucible {
 		// dead objects.
 		void Shutdown();
 
+		// The engine's ResourceManager (asset id <-> Renderer handle, mesh/material pickers).
+		// Set once from main.cpp (core.GetResources()) before the ImGui layer is pushed; panels
+		// fetch it here instead of threading one more reference through every constructor.
+		void             SetResources(ResourceManager* resources) { m_resources = resources; }
+		ResourceManager* GetResources() const { return m_resources; }
+
 		std::map<ImguiPanels, std::shared_ptr<EditorPanel>> m_panels;
 
 		// This function assumes the caller gives the correct type.
@@ -127,6 +134,7 @@ namespace Crucible {
 
 	private:
 		static std::unique_ptr<EditorManager> s_Instance;
+		ResourceManager* m_resources = nullptr;
 	};
 
 	namespace ImGuiManager {
