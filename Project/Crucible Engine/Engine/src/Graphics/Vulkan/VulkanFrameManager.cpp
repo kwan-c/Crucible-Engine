@@ -103,6 +103,7 @@ namespace Crucible {
         };
         auto result = context.GetGraphicsQueue().presentKHR(presentInfoKHR);
         if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || window.m_framebufferResized) {
+            window.m_framebufferResized = false;
             swapchain.Recreate(context);
         }
         else {

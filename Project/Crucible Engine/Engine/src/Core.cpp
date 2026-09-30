@@ -31,8 +31,9 @@ namespace Crucible {
         m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() },
-        m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) }
-    {
+        m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
+        m_scenes{ std::make_unique<SceneManager>(*m_world) }
+    {   
         // Layers draw inside the renderer's open render pass via OnRender().
         m_renderer->SetOverlayCallback([this] {
             for (auto& layer : m_layers) layer->OnRender();
@@ -64,62 +65,7 @@ namespace Crucible {
         {
             Crucible::AssetManager assets;
             assets.Init();
-
-            World& world = *m_world;
-
-            const std::filesystem::path scenePath  = assets.Resolve("Scenes/demo.scene");
-            const std::filesystem::path prefabPath = assets.Resolve("Prefabs/Crate.prefab");
-
-            Scene scene;
-
-            if (std::filesystem::exists(scenePath))
-            {
-                // Normal path: the scene already exists, so load it. Loading
-                // restores each entity's guid, so a later save produces the
-                // same file and the .meta stays untouched.
-                scene.Load(world, scenePath);
-            }
-            else
-            {
-                // First run only: build a world by hand and write it out.
-                const Entity a = world.CreateEntity();
-                world.AddComponent<Transform>(a, Transform{ Math::vec3{ 1.f, 2.f, 3.f } });
-                world.AddComponent<RigidBody>(a, RigidBody{ Math::vec3{ 0.f, -9.8f, 0.f }, 5.f });
-
-                const Entity b = world.CreateEntity();
-                world.AddComponent<Transform>(b, Transform{ Math::vec3{ 7.f, 0.f, 0.f } });
-                world.AddComponent<MeshRenderer>(b,
-                    MeshRenderer{ false, Math::vec4{ 1.f, 0.5f, 0.25f, 1.f } });
-
-                scene.SetName("demo");
-                scene.Save(world, scenePath);
-                Prefab::SaveFrom(world, b, prefabPath, "Crate");
-
-                // Both files were created after Init() indexed the folder, so
-                // index them now rather than on the next launch.
-                assets.Refresh();
-            }
-
-            // Stamp two copies of the prefab on top. Additive - nothing that
-            // is already in the world is touched.
-            Prefab crate;
-            if (crate.Load(prefabPath))
-            {
-                crate.Instantiate(world);
-                crate.Instantiate(world);
-            }
-
-            std::size_t total = 0;
-            for (const Archetype* archetype : world.Archetypes().All())
-            {
-                if (archetype != nullptr)
-                {
-                    total += archetype->Entities().size();
-                }
-            }
-
-            CRU_INFO("[Scene] {} entities live (expect 4: 2 from the scene + 2 prefab copies)",
-                     total);
+            m_scenes->RequestLoad(assets.Resolve("Scenes/demo.scene"));
         }
         // ===========================================
         // Input attaches before anything else installs GLFW callbacks. ImGui's backend
@@ -164,6 +110,10 @@ namespace Crucible {
             m_input.BeginFrame();
             m_window->PollEvents();
             m_events.engine.DeliverPending();   // window/input events queued by callbacks
+
+            // Scene swaps destroy every entity - only safe here, before any
+            // system or layer is iterating the world.
+            m_scenes->ApplyPending();
 
             m_world->SetDeltaTime(dt);
             m_world->AdvanceTick();

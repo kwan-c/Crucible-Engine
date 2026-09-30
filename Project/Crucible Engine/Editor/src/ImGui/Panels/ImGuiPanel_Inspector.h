@@ -29,10 +29,11 @@
 #include <functional>
 
 namespace Crucible {
+	class SceneManager;
 
 	class Inspector : public EditorPanel {
 	public:
-		Inspector(World& world, Renderer& renderer) : m_world(world), m_renderer(renderer) {}
+		Inspector(World& world, Renderer& renderer, SceneManager& scenes) : m_world(world), m_renderer(renderer), m_scenes(scenes) {}
 
 		// REQUIRED Overrides
 		void Init() override;
@@ -50,14 +51,18 @@ namespace Crucible {
 		static bool DrawInstance(rttr::instance obj);   // true if a value changed
 
 		void DrawEntityInspector(Entity entity);
-		void DrawTransformSection(Transform& transform);
-		void DrawMeshRendererSection(MeshRenderer& renderer);
-		void DrawMaterialSection(MeshRenderer& renderer);
+
+		// These functions will return true if the user changed a value, so the caller can mark the scene dirty and/or trigger a re-render.
+		bool DrawTransformSection(Transform& transform);
+		bool DrawMeshRendererSection(MeshRenderer& renderer);
+		bool DrawMaterialSection(MeshRenderer& renderer);
 
 		std::function<void()> m_draw;
 
 		World&    m_world;
 		Renderer& m_renderer;
+		SceneManager& m_scenes;
+
 		Entity    m_selected = kNullEntity;
 
 		// This panel's own asset index, purely to resolve a dropped texture's virtual path to a

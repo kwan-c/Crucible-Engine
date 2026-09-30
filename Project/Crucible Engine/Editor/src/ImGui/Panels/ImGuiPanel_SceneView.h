@@ -15,12 +15,13 @@
 #include <Graphics/CameraController.h>
 
 namespace Crucible {
+	class SceneManager;
 
 	class SceneView : public EditorPanel {
 	public:
 		enum class GizmoMode { Translate, Rotate, Scale };
 
-		explicit SceneView(Renderer& renderer) : m_viewport(renderer) {}
+		explicit SceneView(Renderer& renderer, SceneManager& scene) : m_viewport(renderer), m_scenes(scene) {}
 
 		// REQUIRED Overrides
 		void Init() override;
@@ -41,6 +42,8 @@ namespace Crucible {
 
 		ViewportPanel       m_viewport;
 		FlyCameraController m_flyController;
+
+		SceneManager& m_scenes;
 
 		ImVec2    m_viewportSize{ 0.0f, 0.0f };
 		bool      m_hovered = false;

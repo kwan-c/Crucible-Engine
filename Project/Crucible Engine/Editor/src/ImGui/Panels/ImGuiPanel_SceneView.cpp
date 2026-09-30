@@ -4,6 +4,7 @@
 */
 
 #include "ImGui/Panels/ImGuiPanel_SceneView.h"
+#include "Scene/SceneManager.h"
 #include "ImGui/EditorWidgets.h"
 #include "Diagnostics/Logger.h"
 
@@ -137,6 +138,9 @@ void Crucible::SceneView::DrawToolbar() {
 
 	ImGui::SameLine();
 	ImGui::TextDisabled("|  %d x %d", static_cast<int>(m_viewportSize.x), static_cast<int>(m_viewportSize.y));
+
+	ImGui::SameLine();
+	ImGui::TextDisabled("|  Current Scene: %s", m_scenes.CurrentName().c_str());
 
 	if (m_flying) {
 		ImGui::SameLine();

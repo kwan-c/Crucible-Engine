@@ -6,6 +6,7 @@
 #include "ImGuiPanel_Inspector.h"
 #include "ImGui/EditorWidgets.h"
 #include "Diagnostics/Logger.h"
+#include "Scene/SceneManager.h"
 
 namespace {
 
@@ -62,26 +63,34 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	ImGui::Text("Entity %u", entity.index);
 	ImGui::Separator();
 
+	bool changed = false;
+
 	// Re-fetched fresh every frame rather than cached: see the header comment on why
 	// SetSelectedEntity stores an Entity instead of a component reference.
 	if (Transform* transform = m_world.GetComponent<Transform>(entity)) {
 		if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-			DrawTransformSection(*transform);
+			changed |= DrawTransformSection(*transform);
 		}
 	}
 
 	if (MeshRenderer* renderer = m_world.GetComponent<MeshRenderer>(entity)) {
 		if (ImGui::CollapsingHeader("Mesh Renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
-			DrawMeshRendererSection(*renderer);
+			changed |= DrawMeshRendererSection(*renderer);
 		}
 		if (ImGui::CollapsingHeader("Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-			DrawMaterialSection(*renderer);
+			changed |= DrawMaterialSection(*renderer);
 		}
+	}
+
+	if (changed) {
+		m_scenes.MarkDirty();
 	}
 }
 
-void Crucible::Inspector::DrawTransformSection(Transform& transform) {
-	ImGui::DragFloat3("Position", &transform.positions.x, 0.05f);
+bool Crucible::Inspector::DrawTransformSection(Transform& transform) {
+	bool changed = false;
+
+	changed |= ImGui::DragFloat3("Position", &transform.positions.x, 0.05f);
 
 	// Edited as Euler degrees, stored as a quaternion - matches this component's own
 	// default-construction pattern (Math::quat(Math::vec3(0,0,0))). Re-derived from the
@@ -92,14 +101,19 @@ void Crucible::Inspector::DrawTransformSection(Transform& transform) {
 	Math::vec3 euler = glm::degrees(glm::eulerAngles(transform.rotation));
 	if (ImGui::DragFloat3("Rotation", &euler.x, 0.5f)) {
 		transform.rotation = Math::quat(glm::radians(euler));
+		changed = true;
 	}
 
 	ImGui::DragFloat3("Scale", &transform.scale.x, 0.05f);
+
+	return changed;
 }
 
-void Crucible::Inspector::DrawMeshRendererSection(MeshRenderer& renderer) {
-	ImGui::Checkbox("Visible", &renderer.visible);
-	ImGui::ColorEdit4("Colour", &renderer.colour.x);
+bool Crucible::Inspector::DrawMeshRendererSection(MeshRenderer& renderer) {
+	bool changed = false;
+
+	changed |= ImGui::Checkbox("Visible", &renderer.visible);
+	changed |= ImGui::ColorEdit4("Colour", &renderer.colour.x);
 
 	// Meshes are procedural (Renderer::CreateMesh from a primitive generator, or a .glb load),
 	// not asset-indexed like textures, so there's no drag-drop swap for this slot yet - just a
@@ -112,17 +126,20 @@ void Crucible::Inspector::DrawMeshRendererSection(MeshRenderer& renderer) {
 	} else {
 		ImGui::TextDisabled("Mesh: none");
 	}
+
+	return changed;
 }
 
-void Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
+bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 	// No material assigned yet: offer to create one from the Renderer's neutral defaults rather
 	// than drawing an empty section. CreateMaterial() writes the new handle straight onto the
 	// component; every widget below then edits it.
 	if (!renderer.material.IsValid()) {
 		if (ImGui::Button("Add Material")) {
 			renderer.material = m_renderer.CreateMaterial(MaterialData{});
+			return true;
 		}
-		return;
+		return false;
 	}
 
 	// GetMaterialData returns the live GPU-side copy; edit a local copy and only push it back
@@ -177,6 +194,8 @@ void Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 	if (changed) {
 		m_renderer.UpdateMaterial(renderer.material, data);
 	}
+
+	return changed;
 }
 
 bool Crucible::Inspector::DrawInstance(rttr::instance obj) {

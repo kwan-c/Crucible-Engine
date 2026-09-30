@@ -116,7 +116,7 @@ namespace {
 }
 // ---- dock layout (end) ----
 
-void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& renderer, World& world) {
+void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& renderer, World& world, SceneManager& scenes) {
 	
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -180,7 +180,7 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& r
 	// friends) is ready - the Scene/Game views create their offscreen viewport texture lazily,
 	// on their first Update() with a non-zero size, but they still need a live Renderer&
 	// reference to do it.
-	EditorManager::GetInstance().Init(renderer, world);
+	EditorManager::GetInstance().Init(renderer, world, scenes);
 
 	CRU_INFO("ImGui Successfully Initialized");
 }
@@ -289,16 +289,16 @@ Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 	return *s_Instance;
 }
 
-void Crucible::EditorManager::Init(Renderer& renderer, World& world)
+void Crucible::EditorManager::Init(Renderer& renderer, World& world, SceneManager& scenes)
 {
 	// Add in Editor Panels here...
 	//
 	// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
-	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(renderer);
+	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(renderer, scenes);
 	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(renderer);
-	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>();
-	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(world);
-	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(world, renderer);
+	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(scenes);
+	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(world, renderer, scenes);
+	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(world, renderer, scenes);
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	//m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();

@@ -17,6 +17,7 @@
 #include "ECS/World.h"
 #include "ECS/Components/Components.h"
 #include "ECS/Systems/Query.h"
+#include "Graphics/RenderSystem.h"
 
 #include <optional>
 
@@ -24,22 +25,40 @@ namespace Crucible {
 
 	class Hierarchy : public EditorPanel {
 	public:
-		explicit Hierarchy(World& world) : m_world(world) {}
+		explicit Hierarchy(World& world, Renderer& renderer, SceneManager& scenes) : m_world(world), m_renderer(renderer), m_scenes(scenes) {}
 
 		// REQUIRED Overrides
 		void Init() override;
 		void Update(float dt) override;
 
 	private:
-		// Draws one entity's row (and, if expanded, its children) recursively.
-		void DrawEntityNode(Entity entity);
+		enum class PrimitiveType { Cube, Sphere, Cylinder, Cone, Pyramid, Capsule, Plane, Disc };
 
 		World& m_world;
+		SceneManager& m_scenes;
+		Renderer& m_renderer;
+
+
+		MeshHandle m_cubeMesh{};   // created on first use, shared by every cube
+		MeshHandle m_sphereMesh{};
+		MeshHandle m_cylinderMesh{};
+		MeshHandle m_coneMesh{};
+		MeshHandle m_pyramidMesh{};
+		MeshHandle m_capsuleMesh{};
+		MeshHandle m_planeMesh{};
+		MeshHandle m_discMesh{};
 
 		// Every entity carries HierarchyNode (it's a Mandatory<> component - see Components.h),
 		// so this query matches the whole scene; roots are filtered out of it below by parent ==
 		// kNullEntity. Built once and reused (see World::CreateQuery's own note on why).
 		std::optional<Query<const HierarchyNode>> m_query;
+
+		// Draws one entity's row (and, if expanded, its children) recursively.
+		void DrawEntityNode(Entity entity);
+
+		// Creating Primitives (cube, sphere, etc.) is a common editor action, so the "+" menu in the toolbar
+		// calls this to spawn a new entity with a MeshRenderer and the requested primitive mesh.
+		void CreatePrimitive(PrimitiveType type);
 	};
 
 }

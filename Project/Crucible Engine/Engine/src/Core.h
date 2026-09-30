@@ -8,14 +8,16 @@
 
 #include "EngineExport.h"	// DLL export
 #include "Systems/Layer.h"
+#include "Scene/SceneManager.h"
 #include "Systems/WindowManager.h"
 #include "Graphics/RenderSystem.h"
 #include "Input/InputSystem.h"
+
+#include <Configuration/EngineConfig.h>
 #include <ECS/World.h>
 #include <ECS/Systems/ECSSystemManager.h>
 #include <ECS/Systems/EventBus/EventBuses.h>
 #include <ECS/Systems/EventBus/EcsEvents.h>
-#include <Configuration/EngineConfig.h>
 
 namespace Crucible
 {
@@ -52,6 +54,10 @@ namespace Crucible
         // Opt-in entity/component events on the gameplay bus, e.g. EcsBridge().OnRemoved<MeshRenderer>(...).
         // (Not called "EcsEvents()" - that would hide the EcsEvents namespace inside Core.)
         EcsEventBridge& EcsBridge() noexcept { return *m_ecsEvents; }
+
+        // Open scene: Save/SaveAs now, New/Load deferred to the next frame.
+        SceneManager& Scenes() noexcept { return *m_scenes; }
+
         // Attaches a layer (calls OnAttach) and takes ownership. Layers are updated in the
         // order pushed, and detached in reverse order when Core shuts down.
         void PushLayer(std::unique_ptr<Layer> layer);
@@ -75,6 +81,8 @@ namespace Crucible
 
         // World hooks -> gameplay-bus events; created right after the World.
         std::unique_ptr<EcsEventBridge> m_ecsEvents;
+
+        std::unique_ptr<SceneManager> m_scenes;
 
         ECSSystemManager m_systems;
 
