@@ -144,6 +144,20 @@ namespace Crucible {
         void CreateSkyboxPipeline(VulkanContext& context, VulkanSwapchain& swapchain);
 
         /*********************************************************************
+         \brief
+            Creates the two debug-line pipelines (Assets/Shaders/
+            DebugLine.spv): line-list topology, DebugVertex input, no
+            culling, no depth write; one depth-tested (LESS_OR_EQUAL), one
+            always on top.
+
+         \param[in] context   The VulkanContext to create them through.
+         \param[in] swapchain Supplies the attachment formats.
+
+         \note  Requires CreateDescriptorSetLayout() first (layout = set 0).
+         *********************************************************************/
+        void CreateDebugLinePipelines(VulkanContext& context, VulkanSwapchain& swapchain);
+
+        /*********************************************************************
          \brief  Creates the graphics pipeline itself: shader stages,
                  fixed-function state, pipeline layout, and dynamic
                  rendering attachment formats.
@@ -206,6 +220,20 @@ namespace Crucible {
          *********************************************************************/
         const vk::raii::DescriptorSetLayout&    GetSkyboxDescriptorSetLayout() const;
 
+        /*********************************************************************
+         \brief  Accessor.
+         \param[in] depthTested true = the depth-tested pipeline, false =
+                                 the always-on-top one.
+         \return Const reference to that debug-line pipeline.
+         *********************************************************************/
+        const vk::raii::Pipeline&               GetDebugLinePipeline(bool depthTested) const;
+
+        /*********************************************************************
+         \brief  Accessor.
+         \return The debug-line pipeline layout (set 0 only).
+         *********************************************************************/
+        const vk::raii::PipelineLayout&         GetDebugLineLayout() const;
+
     private:
         std::vector<char> ReadFile(std::string const& filename);
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(VulkanContext& context, std::vector<char> const& code);
@@ -219,6 +247,10 @@ namespace Crucible {
         vk::raii::Pipeline              m_skyboxPipeline = nullptr;
         vk::raii::PipelineLayout        m_skyboxPipelineLayout = nullptr;
         vk::raii::DescriptorSetLayout   m_skyboxDescriptorSetLayout = nullptr;
+
+        vk::raii::Pipeline              m_debugLinePipeline = nullptr;
+        vk::raii::Pipeline              m_debugLineOnTopPipeline = nullptr;
+        vk::raii::PipelineLayout        m_debugLineLayout = nullptr;
 
     };  // VULKAN PIPELINE CLASS
 

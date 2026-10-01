@@ -296,7 +296,7 @@ void Crucible::EditorManager::Init(Core& core)
 	// Add in Editor Panels here...
 	//
 	// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
-	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(core.GetRenderer(), core.GetScenes());
+	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(core.GetRenderer(), core.GetScenes(), core.GetWorld());
 	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(core.GetRenderer());
 	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(core.GetScenes());
 	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(core.GetWorld(), core.GetResources(), core.GetScenes());

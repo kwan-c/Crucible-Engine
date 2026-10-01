@@ -143,6 +143,46 @@ namespace Crucible {
         "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
 
     // ------------------------------------------------------------------------------------------ //
+    //  Render proxies, culling, picking
+    // ------------------------------------------------------------------------------------------ //
+
+    /*************************************************************************
+     \brief  Handle to a persistent render proxy (Renderer::CreateRenderProxy).
+     *************************************************************************/
+    struct RenderProxyHandle {
+        static constexpr uint32_t Invalid = 0xFFFFFFFFu;
+        uint32_t id = Invalid;
+        bool IsValid() const { return id != Invalid; }
+    };
+
+    /*************************************************************************
+     \brief  One view's culling result for the last frame.
+     \details
+        - proxies / proxiesVisible: registered proxies in the spatial index,
+          and how many of them were in this view's frustum.
+        - immediate / immediateVisible: the same for Submit() items.
+        - movingProxies: proxies currently in the index's brute-force
+          "active" array (see SpatialIndex) rather than its tree.
+     *************************************************************************/
+    struct RenderCullStats {
+        uint32_t proxies = 0;
+        uint32_t proxiesVisible = 0;
+        uint32_t immediate = 0;
+        uint32_t immediateVisible = 0;
+        uint32_t movingProxies = 0;
+    };
+
+    /*************************************************************************
+     \brief  Result of Renderer::Raycast().
+     *************************************************************************/
+    struct RenderRaycastHit {
+        uint64_t   userData = 0;            //!< the proxy's userData (RenderExtractSystem: packed Entity)
+        float      distance = 0.0f;         //!< along the normalized ray direction
+        glm::vec3  point{ 0.0f };           //!< world-space hit point
+        MeshHandle mesh;                    //!< the mesh that was hit
+    };
+
+    // ------------------------------------------------------------------------------------------ //
     //  Lights & environment
     // ------------------------------------------------------------------------------------------ //
 

@@ -125,6 +125,12 @@ namespace Crucible {
             assert(result == vk::Result::eSuccess);
         }
 
+        // Move on to the next frame-in-flight slot. Without this the index stayed 0 forever: only
+        // one frame was ever in flight, and BeginFrame() always waited for the previous frame's
+        // GPU work to finish before the CPU could record the next one. Every per-frame resource
+        // (uniform, light and debug buffers, descriptor sets, command buffers) is indexed by this,
+        // and BeginFrame() waits on the slot's own fence before any of them is rewritten.
+        m_frameIndex = (m_frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 
     }   // VulkanFrameManager::EndFrame()
 

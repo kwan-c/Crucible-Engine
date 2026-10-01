@@ -43,11 +43,34 @@ namespace Crucible {
         // HierarchyTransformSystem's own NodeQuery / m_nodes).
         if (!m_query) { m_query.emplace(world.CreateQuery<const WorldTransform, const MeshRenderer>()); }
 
-        m_query->ForEach([this](Entity, const WorldTransform& worldTransform, const MeshRenderer& meshRenderer) {
+        // Meshes are PERSISTENT render proxies, not per-frame Submit()s: the Renderer keeps them in
+        // its SpatialIndex for per-view culling and editor picking. Every frame each entity's proxy
+        // is refreshed (SetRenderProxy is a no-op when nothing changed), and proxies whose entity
+        // wasn't seen this frame are destroyed.
+        ++m_frame;
+        m_query->ForEach([this](Entity entity, const WorldTransform& worldTransform, const MeshRenderer& meshRenderer) {
 
-            // Skip: hidden, not yet computed this frame (e.g. spawned during PreRender - see
-            // WorldTransform's own doc comment), or no mesh uploaded yet (model still loading).
-            if (!meshRenderer.visible || !worldTransform.valid) { return; }
+            if (entity.index >= m_records.size()) { m_records.resize(static_cast<size_t>(entity.index) + 1); }
+            ProxyRecord& record = m_records[entity.index];
+            if (!record.proxy.IsValid()) {
+                record.proxy      = m_renderer.CreateRenderProxy(EntityToUserData(entity));   // Raycast() hands this back
+                record.generation = entity.generation;
+                m_activeRecords.push_back(entity.index);
+            } else if (record.generation != entity.generation) {
+                // The slot was reused by a new entity before the sweep noticed the old one died:
+                // replace the proxy (the index is already in m_activeRecords).
+                m_renderer.DestroyRenderProxy(record.proxy);
+                record.proxy      = m_renderer.CreateRenderProxy(EntityToUserData(entity));
+                record.generation = entity.generation;
+            }
+            record.seenFrame = m_frame;
+
+            // Hidden, or not yet computed this frame (e.g. spawned during PreRender - see
+            // WorldTransform's own doc comment): keep the proxy, but out of culling and picking.
+            if (!meshRenderer.visible || !worldTransform.valid) {
+                m_renderer.SetRenderProxy(record.proxy, {}, {}, worldTransform.matrix, false);
+                return;
+            }
 
             // Asset ids win over handles when set (see MeshRenderer): one cached hash lookup
             // each, loading the asset on first use. This is what makes scene-loaded entities -
@@ -59,16 +82,24 @@ namespace Crucible {
                 if (meshRenderer.materialAsset != 0) { material = m_resources->GetMaterial(meshRenderer.materialAsset); }
             }
 
-            if (!mesh.IsValid()) { return; }
-
             // Invalid material (never assigned, or its asset failed to load) falls back to the
             // Renderer's default material rather than skipping the draw - an untextured/neutral-
             // grey cube beats an invisible one.
             if (!material.IsValid()) { material = m_renderer.GetDefaultMaterial(); }
 
-            m_renderer.Submit(mesh, material, worldTransform.matrix);
+            m_renderer.SetRenderProxy(record.proxy, mesh, material, worldTransform.matrix, mesh.IsValid());
 
         });
+
+        // Sweep: entities that no longer have a MeshRenderer (or no longer exist).
+        for (size_t i = m_activeRecords.size(); i-- > 0;) {
+            ProxyRecord& record = m_records[m_activeRecords[i]];
+            if (record.seenFrame == m_frame) { continue; }
+            m_renderer.DestroyRenderProxy(record.proxy);
+            record = ProxyRecord{};
+            m_activeRecords[i] = m_activeRecords.back();
+            m_activeRecords.pop_back();
+        }
 
         // Lights: position = the world matrix's translation, direction = its local -Z axis (see
         // the Light component's doc comment). Normalizing the axis (done in SubmitLight) strips

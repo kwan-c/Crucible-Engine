@@ -82,6 +82,7 @@ namespace Crucible {
 		void EnsureCreated(uint32_t width, uint32_t height) {
 			if (!m_handle.IsValid() && width > 0 && height > 0) {
 				m_handle = m_renderer.CreateViewport(width, height);
+				m_renderer.SetViewportDebugDraw(m_handle, m_debugDraw);   // apply a SetDebugDraw() made before creation
 				RefreshTexture();
 			}
 		}
@@ -127,6 +128,32 @@ namespace Crucible {
 		 \note  Throws if IsValid() is false - see IsValid()'s own note.
 		 *********************************************************************/
 		Camera& GetCamera() { return m_renderer.GetViewportCamera(m_handle); }
+
+		/*********************************************************************
+		 \brief  Shows or hides DebugDraw lines in this view (see
+				 Renderer::SetViewportDebugDraw). Safe to call before the
+				 viewport exists; applied when it is created.
+		 \param[in] enabled true to draw debug lines here.
+		 *********************************************************************/
+		void SetDebugDraw(bool enabled) {
+			m_debugDraw = enabled;
+			if (m_handle.IsValid()) { m_renderer.SetViewportDebugDraw(m_handle, enabled); }
+		}
+
+		/*********************************************************************
+		 \brief  Whether debug lines are drawn in this view.
+		 \return The last value given to SetDebugDraw().
+		 *********************************************************************/
+		bool GetDebugDraw() const { return m_debugDraw; }
+
+		/*********************************************************************
+		 \brief  Last frame's culling numbers for this view (zeros until the
+				 viewport exists).
+		 \return The view's RenderCullStats.
+		 *********************************************************************/
+		RenderCullStats GetCullStats() const {
+			return m_handle.IsValid() ? m_renderer.GetViewportCullStats(m_handle) : RenderCullStats{};
+		}
 
 		/*********************************************************************
 		 \brief
@@ -180,6 +207,7 @@ namespace Crucible {
 		ViewportHandle  m_handle{};
 		VkDescriptorSet m_textureId = nullptr;   // ImGui_ImplVulkan's ImTextureID is this cast to void*
 		uint32_t        m_lastWidth = 0, m_lastHeight = 0;
+		bool            m_debugDraw = false;
 	};
 
 }   // NAMESPACE CRUCIBLE
