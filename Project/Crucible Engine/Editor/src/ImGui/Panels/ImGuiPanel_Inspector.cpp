@@ -88,7 +88,7 @@ namespace {
 		// Already has a RigidBody: this collider makes it a dynamic body, which needs Moving.
 		// (Without one, the NonMoving default is right for static scenery.)
 		if (world.HasComponent<Crucible::RigidBody>(entity)) {
-			collider.m_layer = Crucible::PhysicsLayer::Moving;
+			collider.m_layer = Crucible::PhysicsLayer::NonMoving;
 		}
 	}
 

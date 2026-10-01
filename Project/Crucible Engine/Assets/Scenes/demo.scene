@@ -75,15 +75,15 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 1.0,
-                        "y": 2.0,
-                        "z": 3.0
+                        "x": -546.8335571289063,
+                        "y": -22448.19140625,
+                        "z": 2765.49462890625
                     },
                     "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
+                        "x": -0.33046022057533264,
+                        "y": -0.08032723516225815,
+                        "z": -0.06745827943086624,
+                        "w": 0.9379728436470032
                     },
                     "scale": {
                         "x": 1.0,
@@ -93,14 +93,51 @@
                 },
                 "RigidBody": {
                     "velocity": {
-                        "x": 0.0,
-                        "y": -9.800000190734863,
-                        "z": 0.0
+                        "x": -0.13689488172531128,
+                        "y": -5.633314609527588,
+                        "z": 0.692205548286438
                     },
                     "mass": 5.0,
-                    "useGravity": true,
+                    "useGravity": false,
                     "drag": 0.0,
-                    "angularDrag": 0.05000000074505806
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 2.0,
+                        "y": 2.0,
+                        "z": 2.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
                 }
             }
         },
@@ -109,15 +146,15 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 1.5499999523162842,
-                        "y": 1.7400000095367432,
-                        "z": 0.25
+                        "x": 0.30000001192092896,
+                        "y": 4.026475429534912,
+                        "z": 0.0
                     },
                     "rotation": {
-                        "x": -0.6190939545631409,
+                        "x": -9.09495460714449e-13,
                         "y": -0.0,
                         "z": 0.0,
-                        "w": 0.7853169441223145
+                        "w": 1.0
                     },
                     "scale": {
                         "x": 1.0,
@@ -134,27 +171,35 @@
                     "mass": 1.0,
                     "useGravity": false,
                     "drag": 0.0,
-                    "angularDrag": 0.05000000074505806
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
                 },
                 "MeshRenderer": {
                     "visible": true,
                     "colour": {
-                        "x": 0.501960813999176,
-                        "y": 0.501960813999176,
-                        "z": 0.501960813999176,
-                        "w": 0.501960813999176
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 0.7450980544090271
                     },
                     "meshAsset": 15775344583901223439,
                     "materialAsset": 16599319152200482817
                 },
                 "Collider": {
-                    "type": "Box",
+                    "type": "Sphere",
                     "size": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
+                        "x": 20.0,
+                        "y": 20.0,
+                        "z": 20.0
                     },
-                    "radius": 0.5,
+                    "radius": 1.25,
                     "height": 2.0,
                     "center": {
                         "x": 0.0,
@@ -164,19 +209,6 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
-                },
-                "Light": {
-                    "type": "Point",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 0.7450980544090271,
-                        "z": 1.0
-                    },
-                    "intensity": 9.399999618530273,
-                    "range": 10.0,
-                    "innerConeDeg": 20.0,
-                    "outerConeDeg": 30.0,
-                    "enabled": true
                 }
             }
         }
