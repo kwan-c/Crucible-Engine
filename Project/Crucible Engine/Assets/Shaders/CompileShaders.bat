@@ -1,4 +1,7 @@
-C:\VulkanSDK\1.4.357.0\Bin\slangc.exe DefaultShader2.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -entry vertMain -entry fragMain -o DefaultShader.spv
-C:\VulkanSDK\1.4.357.0\Bin\slangc.exe Skybox.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -entry skyVert -entry skyFrag -o Skybox.spv
-C:\VulkanSDK\1.4.357.0\Bin\slangc.exe DebugLine.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -entry lineVert -entry lineFrag -o DebugLine.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe DefaultShader2.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry vertMain -entry fragMain -o DefaultShader.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe Skybox.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry skyVert -entry skyFrag -o Skybox.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe DebugLine.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry lineVert -entry lineFrag -o DebugLine.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe Shadow.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry shadowVert -o Shadow.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe OutlineMask.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry maskVert -entry maskFrag -o OutlineMask.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe OutlineComposite.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry compositeVert -entry compositeFrag -o OutlineComposite.spv
 pause

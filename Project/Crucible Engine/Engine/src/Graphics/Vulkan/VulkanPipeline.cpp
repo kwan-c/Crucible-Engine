@@ -32,6 +32,13 @@ namespace Crucible {
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetSkyboxDescriptorSetLayout() const { return m_skyboxDescriptorSetLayout; }
     const vk::raii::Pipeline&               VulkanPipeline::GetDebugLinePipeline(bool depthTested) const { return depthTested ? m_debugLinePipeline : m_debugLineOnTopPipeline; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetDebugLineLayout()        const { return m_debugLineLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetShadowPipeline()         const { return m_shadowPipeline; }
+    const vk::raii::PipelineLayout&         VulkanPipeline::GetShadowLayout()           const { return m_shadowLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetOutlineMaskPipeline()    const { return m_outlineMaskPipeline; }
+    const vk::raii::PipelineLayout&         VulkanPipeline::GetOutlineMaskLayout()      const { return m_outlineMaskLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetOutlineCompositePipeline() const { return m_outlineCompositePipeline; }
+    const vk::raii::PipelineLayout&         VulkanPipeline::GetOutlineCompositeLayout() const { return m_outlineCompositeLayout; }
+    const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetOutlineDescriptorSetLayout() const { return m_outlineDescriptorSetLayout; }
 
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN PIPELINE
@@ -39,7 +46,7 @@ namespace Crucible {
 
     void VulkanPipeline::CreateDescriptorSetLayout(VulkanContext& context) {
 
-        std::array<vk::DescriptorSetLayoutBinding, 2> bindings{ {
+        std::array<vk::DescriptorSetLayoutBinding, 5> bindings{ {
             {
                 .binding            = 0,
                 .descriptorType     = vk::DescriptorType::eUniformBuffer,
@@ -55,6 +62,29 @@ namespace Crucible {
                 // viewport's set for that frame - lights are world state, not per-camera.
                 .binding            = 1,
                 .descriptorType     = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+            },
+            {
+                // This frame's instances (StructuredBuffer<InstanceData>): every object drawn by
+                // every pass of every view, one model matrix each. Per frame in flight, shared
+                // like the light buffer.
+                .binding            = 2,
+                .descriptorType     = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eVertex
+            },
+            {
+                // The sun's cascaded shadow map (Texture2DArray, one layer per cascade).
+                .binding            = 3,
+                .descriptorType     = vk::DescriptorType::eSampledImage,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+            },
+            {
+                // Its comparison sampler (SamplerComparisonState).
+                .binding            = 4,
+                .descriptorType     = vk::DescriptorType::eSampler,
                 .descriptorCount    = 1,
                 .stageFlags         = vk::ShaderStageFlagBits::eFragment
             }
@@ -160,13 +190,13 @@ namespace Crucible {
             .stencilTestEnable = vk::False
         };
 
-        // Pipeline layout object. Set 0 = per-frame camera UBO (view/proj). Set 1 = the current
-        // draw's material (five texture bindings - see CreateMaterialDescriptorSetLayout). A
-        // push constant carries the per-draw model matrix AND the material's scalar factors
-        // (PushConstants, RenderTypes.h), readable from both stages since the model matrix is
-        // vertex-only but the factors are fragment-only.
+        // Pipeline layout object. Set 0 = per-view frame data (camera, lights, instances, shadow
+        // map). Set 1 = the current draw's material (five texture bindings - see
+        // CreateMaterialDescriptorSetLayout). The push constant carries the material's scalar
+        // factors (PushConstants, RenderTypes.h) - fragment only, since the per-object model
+        // matrix now comes from the instance buffer.
         vk::PushConstantRange pushConstantRange{
-            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            .stageFlags = vk::ShaderStageFlagBits::eFragment,
             .offset     = 0,
             .size       = sizeof(PushConstants)
         };
@@ -408,6 +438,209 @@ namespace Crucible {
         m_debugLineOnTopPipeline = build(false);
 
     }   // VulkanPipeline::CreateDebugLinePipelines()
+
+    void VulkanPipeline::CreateShadowPipeline(VulkanContext& context, vk::Format depthFormat) {
+
+        vk::raii::ShaderModule shaderModule = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/Shadow.spv"));
+
+        // Vertex stage only: with no fragment shader the rasterizer still writes depth, which is
+        // all a shadow map needs.
+        vk::PipelineShaderStageCreateInfo stage{ .stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "shadowVert" };
+
+        // Same vertex buffers as the main pass, but only location 0 (position) is read.
+        auto binding    = Vertex::GetBindingDescription();
+        auto attributes = Vertex::GetAttributeDescriptions();
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+            .vertexBindingDescriptionCount   = 1,
+            .pVertexBindingDescriptions      = &binding,
+            .vertexAttributeDescriptionCount = 1,
+            .pVertexAttributeDescriptions    = &attributes[0]
+        };
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        vk::PipelineDynamicStateCreateInfo dynamicState{
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates    = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+
+        // No culling: open meshes (planes, cards) must still cast. Slope-scaled bias pushes
+        // steep surfaces back so they don't self-shadow; the shader adds a normal offset on top.
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable        = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode             = vk::PolygonMode::eFill,
+            .cullMode                = vk::CullModeFlagBits::eNone,
+            .frontFace               = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable         = vk::True,
+            .depthBiasConstantFactor = 1.0f,
+            .depthBiasClamp          = 0.0f,
+            .depthBiasSlopeFactor    = 1.75f,
+            .lineWidth               = 1.0f
+        };
+        vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        vk::PipelineColorBlendStateCreateInfo  colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 0 };
+        vk::PipelineDepthStencilStateCreateInfo depthStencil{
+            .depthTestEnable       = vk::True,
+            .depthWriteEnable      = vk::True,
+            .depthCompareOp        = vk::CompareOp::eLessOrEqual,
+            .depthBoundsTestEnable = vk::False,
+            .stencilTestEnable     = vk::False
+        };
+
+        vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(uint32_t) };
+        vk::DescriptorSetLayout setLayout = *m_descriptorSetLayout;
+        vk::PipelineLayoutCreateInfo layoutInfo{
+            .setLayoutCount = 1, .pSetLayouts = &setLayout,
+            .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
+        m_shadowLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
+
+        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+            {
+                .stageCount          = 1,
+                .pStages             = &stage,
+                .pVertexInputState   = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState      = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState   = &multisampling,
+                .pDepthStencilState  = &depthStencil,
+                .pColorBlendState    = &colorBlending,
+                .pDynamicState       = &dynamicState,
+                .layout              = m_shadowLayout,
+                .renderPass          = nullptr
+            },
+            {.colorAttachmentCount = 0, .depthAttachmentFormat = depthFormat }
+        };
+        m_shadowPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+
+    }   // VulkanPipeline::CreateShadowPipeline()
+
+    void VulkanPipeline::CreateOutlinePipelines(VulkanContext& context, VulkanSwapchain& swapchain) {
+
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        vk::PipelineDynamicStateCreateInfo dynamicState{
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates    = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable        = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode             = vk::PolygonMode::eFill,
+            .cullMode                = vk::CullModeFlagBits::eNone,
+            .frontFace               = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable         = vk::False,
+            .lineWidth               = 1.0f
+        };
+        vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        vk::PipelineDepthStencilStateCreateInfo noDepth{ .depthTestEnable = vk::False, .depthWriteEnable = vk::False };
+
+        // ---- Mask: the selected object's instances -> R8, no depth (shows through walls) ----
+        {
+            vk::raii::ShaderModule module = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/OutlineMask.spv"));
+            vk::PipelineShaderStageCreateInfo stages[] = {
+                { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "maskVert" },
+                { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "maskFrag" }
+            };
+            auto binding    = Vertex::GetBindingDescription();
+            auto attributes = Vertex::GetAttributeDescriptions();
+            vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+                .vertexBindingDescriptionCount   = 1,
+                .pVertexBindingDescriptions      = &binding,
+                .vertexAttributeDescriptionCount = 1,
+                .pVertexAttributeDescriptions    = &attributes[0]
+            };
+            vk::PipelineColorBlendAttachmentState blend{ .blendEnable = vk::False, .colorWriteMask = vk::ColorComponentFlagBits::eR };
+            vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
+
+            vk::DescriptorSetLayout setLayout = *m_descriptorSetLayout;
+            vk::PipelineLayoutCreateInfo layoutInfo{ .setLayoutCount = 1, .pSetLayouts = &setLayout };
+            m_outlineMaskLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
+
+            const vk::Format maskFormat = kOutlineMaskFormat;
+            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+                {
+                    .stageCount          = 2,
+                    .pStages             = stages,
+                    .pVertexInputState   = &vertexInputInfo,
+                    .pInputAssemblyState = &inputAssembly,
+                    .pViewportState      = &viewportState,
+                    .pRasterizationState = &rasterizer,
+                    .pMultisampleState   = &multisampling,
+                    .pDepthStencilState  = &noDepth,
+                    .pColorBlendState    = &colorBlending,
+                    .pDynamicState       = &dynamicState,
+                    .layout              = m_outlineMaskLayout,
+                    .renderPass          = nullptr
+                },
+                {.colorAttachmentCount = 1, .pColorAttachmentFormats = &maskFormat }
+            };
+            m_outlineMaskPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        }
+
+        // ---- Composite: fullscreen triangle, edge of the mask -> outline colour, blended ----
+        {
+            vk::DescriptorSetLayoutBinding maskBinding{
+                .binding         = 0,
+                .descriptorType  = vk::DescriptorType::eSampledImage,
+                .descriptorCount = 1,
+                .stageFlags      = vk::ShaderStageFlagBits::eFragment
+            };
+            vk::DescriptorSetLayoutCreateInfo setInfo{ .bindingCount = 1, .pBindings = &maskBinding };
+            m_outlineDescriptorSetLayout = vk::raii::DescriptorSetLayout(context.GetDevice(), setInfo);
+
+            vk::raii::ShaderModule module = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/OutlineComposite.spv"));
+            vk::PipelineShaderStageCreateInfo stages[] = {
+                { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "compositeVert" },
+                { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "compositeFrag" }
+            };
+            vk::PipelineVertexInputStateCreateInfo vertexInputInfo{};   // fullscreen triangle from the vertex index
+
+            // Straight alpha blending over the finished scene.
+            vk::PipelineColorBlendAttachmentState blend{
+                .blendEnable         = vk::True,
+                .srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
+                .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+                .colorBlendOp        = vk::BlendOp::eAdd,
+                .srcAlphaBlendFactor = vk::BlendFactor::eZero,
+                .dstAlphaBlendFactor = vk::BlendFactor::eOne,
+                .alphaBlendOp        = vk::BlendOp::eAdd,
+                .colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+            };
+            vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
+
+            vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(OutlineCompositePush) };
+            vk::DescriptorSetLayout setLayout = *m_outlineDescriptorSetLayout;
+            vk::PipelineLayoutCreateInfo layoutInfo{
+                .setLayoutCount = 1, .pSetLayouts = &setLayout,
+                .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
+            m_outlineCompositeLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
+
+            const vk::Format colorFormat = swapchain.GetSurfaceFormat().format;
+            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+                {
+                    .stageCount          = 2,
+                    .pStages             = stages,
+                    .pVertexInputState   = &vertexInputInfo,
+                    .pInputAssemblyState = &inputAssembly,
+                    .pViewportState      = &viewportState,
+                    .pRasterizationState = &rasterizer,
+                    .pMultisampleState   = &multisampling,
+                    .pDepthStencilState  = &noDepth,
+                    .pColorBlendState    = &colorBlending,
+                    .pDynamicState       = &dynamicState,
+                    .layout              = m_outlineCompositeLayout,
+                    .renderPass          = nullptr
+                },
+                {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat }
+            };
+            m_outlineCompositePipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        }
+
+    }   // VulkanPipeline::CreateOutlinePipelines()
 
     void VulkanPipeline::CleanUp() {
 

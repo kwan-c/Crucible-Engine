@@ -120,6 +120,7 @@ namespace Crucible {
             data.range        = light.range;
             data.innerConeDeg = light.innerConeDeg;
             data.outerConeDeg = light.outerConeDeg;
+            data.castShadows  = light.castShadows;
             m_renderer.SubmitLight(data);
 
         });

@@ -83,6 +83,7 @@ namespace Crucible {
 			if (!m_handle.IsValid() && width > 0 && height > 0) {
 				m_handle = m_renderer.CreateViewport(width, height);
 				m_renderer.SetViewportDebugDraw(m_handle, m_debugDraw);   // apply a SetDebugDraw() made before creation
+				m_renderer.SetViewportOutline(m_handle, m_outline);       // likewise SetOutline()
 				RefreshTexture();
 			}
 		}
@@ -147,6 +148,19 @@ namespace Crucible {
 		bool GetDebugDraw() const { return m_debugDraw; }
 
 		/*********************************************************************
+		 \brief  Shows or hides the selection outline in this view (see
+				 Renderer::SetViewportOutline / SetOutlinedObject). Safe to
+				 call before the viewport exists.
+		 *********************************************************************/
+		void SetOutline(bool enabled) {
+			m_outline = enabled;
+			if (m_handle.IsValid()) { m_renderer.SetViewportOutline(m_handle, enabled); }
+		}
+
+		/// The last value given to SetOutline().
+		bool GetOutline() const { return m_outline; }
+
+		/*********************************************************************
 		 \brief  Last frame's culling numbers for this view (zeros until the
 				 viewport exists).
 		 \return The view's RenderCullStats.
@@ -208,6 +222,7 @@ namespace Crucible {
 		VkDescriptorSet m_textureId = nullptr;   // ImGui_ImplVulkan's ImTextureID is this cast to void*
 		uint32_t        m_lastWidth = 0, m_lastHeight = 0;
 		bool            m_debugDraw = false;
+		bool            m_outline = false;
 	};
 
 }   // NAMESPACE CRUCIBLE

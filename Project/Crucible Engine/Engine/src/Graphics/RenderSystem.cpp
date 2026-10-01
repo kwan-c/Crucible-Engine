@@ -53,10 +53,15 @@ namespace Crucible {
         m_pipeline.CreatePipeline(m_context, m_swapchain);
         m_pipeline.CreateSkyboxPipeline(m_context, m_swapchain);
         m_pipeline.CreateDebugLinePipelines(m_context, m_swapchain);
+        m_pipeline.CreateShadowPipeline(m_context, kShadowFormat);
+        m_pipeline.CreateOutlinePipelines(m_context, m_swapchain);
         m_frameManager.Init(m_context, m_swapchain);
 
         CreateUniformBuffers();
-        CreateLightBuffers();   // before CreateDescriptorSets(): set 0's binding 1 points at these
+        // Before CreateDescriptorSets(): set 0's shared bindings point at these.
+        CreateLightBuffers();
+        CreateInstanceBuffers();
+        CreateShadowResources();
 
         CreateDescriptorPool();
         CreateDescriptorSets();
@@ -171,6 +176,7 @@ namespace Crucible {
         // state exactly like the render queue (see SubmitLight/SetEnvironment).
         m_renderQueue.clear();
         m_lightQueue.clear();
+        m_shadowLightIndex = -1;
         m_environment = m_defaultEnvironment;
 
         // Age/clear debug lines, and tell DebugDraw whether anything will show them next frame -
@@ -190,11 +196,25 @@ namespace Crucible {
         FrameContext fc = m_frameManager.BeginFrame(m_context, m_swapchain, err);
         if (err) { return; }
 
-        // Lights first: UpdateFrameUniforms (and the viewports' uniforms, filled while recording)
-        // read the light count this writes.
-        UpdateLightBuffer(m_frameManager.GetFrameIndex());
-        UpdateDebugBuffer(m_frameManager.GetFrameIndex());
-        UpdateFrameUniforms(m_frameManager.GetFrameIndex());
+        const uint32_t frameIndex = m_frameManager.GetFrameIndex();
+
+        // Lights first: every view's uniforms read the light count and shadow light this picks.
+        UpdateLightBuffer(frameIndex);
+        UpdateDebugBuffer(frameIndex);
+
+        // PREPARE: cull and batch every view (main pass, shadow cascades, selection mask) before
+        // recording anything, so the instance buffer's final size is known up front and it never
+        // has to grow while commands already reference it.
+        m_instanceScratch.clear();
+        if (m_viewports.empty()) {
+            const vk::Extent2D extent = m_swapchain.GetExtent();
+            PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, m_uniformBuffersMapped[frameIndex]);
+        } else {
+            for (auto& [id, vp] : m_viewports) {
+                PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.uniformBuffersMapped[frameIndex]);
+            }
+        }
+        UploadInstances(frameIndex);
 
         // Record and submit command buffer.
         RecordCommandBuffer(fc);
@@ -209,22 +229,6 @@ namespace Crucible {
 
     }   // Renderer::Submit()
 
-    void Renderer::UpdateFrameUniforms(uint32_t frameIndex) {
-
-        // Keep the projection in sync with the swapchain (handles window resize; skips minimised 0-height).
-        const vk::Extent2D extent = m_swapchain.GetExtent();
-        m_camera.SetAspect(static_cast<float>(extent.width), static_cast<float>(extent.height));
-
-        FrameUniforms ubo{};
-        ubo.view = m_camera.GetView();
-        ubo.proj = m_camera.GetProjection();
-        ubo.cameraPosWS = glm::vec4(m_camera.position, 0.0f);
-        FillEnvironmentUniforms(ubo);
-
-        memcpy(m_uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
-
-    }   // Renderer::UpdateFrameUniforms()
-
     void Renderer::SubmitDemoScene() {
 
         // Demo lighting: a dimmed sun, three coloured point lights orbiting the grid, and a
@@ -236,6 +240,7 @@ namespace Crucible {
             sun.type      = LightType::Directional;
             sun.direction = -glm::vec3(0.2f, 0.8f, 0.5f);
             sun.intensity = 1.5f;
+            sun.castShadows = true;
             SubmitLight(sun);
 
             const glm::vec3 colours[3] = { { 1.0f, 0.35f, 0.2f }, { 0.25f, 1.0f, 0.4f }, { 0.3f, 0.5f, 1.0f } };
@@ -345,9 +350,12 @@ namespace Crucible {
         // supporting viewports at all is the one `m_viewports.empty()` check further down.
         for (auto& [id, vp] : m_viewports) {
 
-            vp.camera.SetAspect(static_cast<float>(vp.extent.width), static_cast<float>(vp.extent.height));
-            UpdateViewportUniforms(vp, frameIndex);
-            BuildVisibleItems(vp.camera, vp.cullStats);   // this view's camera, this view's list
+            const vk::DescriptorSet frameSet = *vp.descriptorSets[frameIndex];
+
+            // Passes that feed this view's main pass: its shadow cascades into the shared shadow
+            // map, and the selected object into its outline mask.
+            DrawShadowCascades(fc, frameSet, vp.draws);
+            if (vp.outline && !vp.draws.outline.empty()) { DrawOutlineMask(fc, vp, frameSet); }
 
             TransitionImageLayout(
                 fc, vp.colorImage.GetImage(), vk::ImageAspectFlagBits::eColor,
@@ -386,8 +394,10 @@ namespace Crucible {
             };
 
             fc.frame.commandBuffer.beginRendering(renderingInfo);
-            DrawRenderQueue(*fc.frame.commandBuffer, vp.extent, *vp.descriptorSets[frameIndex], vp.debugDraw, m_visibleItems);
+            DrawRenderQueue(*fc.frame.commandBuffer, vp.extent, frameSet, vp.debugDraw, vp.draws.main);
             fc.frame.commandBuffer.endRendering();
+
+            if (vp.outline && !vp.draws.outline.empty()) { DrawOutlineComposite(fc, vp); }
 
             // Hand off to the Editor as a sampled texture (ImGui_ImplVulkan_AddTexture expects this layout).
             TransitionImageLayout(
@@ -399,6 +409,9 @@ namespace Crucible {
         }
 
         // ---- Swapchain (window) pass -----------------------------------------------------------
+        // The window's shadow cascades (only drawn when no viewports exist - see below).
+        if (m_viewports.empty()) { DrawShadowCascades(fc, *m_descriptorSets[frameIndex], m_windowDraws); }
+
         TransitionImageLayout(
             fc,
             m_swapchain.GetImages()[fc.imageIndex],
@@ -457,8 +470,7 @@ namespace Crucible {
         // viewport for it. In the Editor, the Scene/Game panels already drew the scene above and
         // display it themselves via ImGui::Image(); this pass then holds only the ImGui overlay.
         if (m_viewports.empty()) {
-            BuildVisibleItems(m_camera, m_windowCullStats);
-            DrawRenderQueue(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_debugInWindow, m_visibleItems);
+            DrawRenderQueue(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_debugInWindow, m_windowDraws.main);
         }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
@@ -483,50 +495,41 @@ namespace Crucible {
     }   // Renderer::RecordCommandBuffer()
 
     void Renderer::DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, bool drawDebug,
-                                   const std::vector<RenderItem>& items) {
+                                   const std::vector<DrawBatch>& batches) {
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
 
-        // Camera data (view/proj) is bound once for the whole pass, at set 0.
+        // Per-view data (camera, lights, instances, shadow map) is bound once for the whole pass.
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.GetLayout(), 0, cameraSet, nullptr);
 
-        // Draw every submitted object. Queue is sorted by (material, mesh), so both the material
-        // descriptor set (set 1) and the mesh's vertex/index buffers rebind only on change.
+        // One instanced draw per batch (PrepareView/AppendBatches). Batches are in (material, mesh)
+        // order, so the material set (set 1) and the mesh's buffers rebind only on change.
         MeshHandle     boundMesh;       // starts Invalid
         MaterialHandle boundMaterial;   // starts Invalid
-        for (const RenderItem& item : items) {
+        for (const DrawBatch& batch : batches) {
 
-            if (!item.mesh.IsValid() || item.mesh.id >= m_meshes.size()) { continue; }
-            const GpuMesh& mesh = m_meshes[item.mesh.id];
-            if (mesh.indexCount == 0) { continue; }   // still uploading (CreateMeshAsync); skip for now
+            const GpuMesh&     mesh = m_meshes[batch.mesh.id];          // validated in AppendBatches
+            const GpuMaterial& mat  = m_materials[batch.material.id];   // default-substituted there too
 
-            // Every draw needs SOME material set bound (the pipeline layout declares set 1
-            // unconditionally) - fall back to the default material rather than skipping the draw
-            // or leaving set 1 unbound.
-            MaterialHandle material = item.material.IsValid() && item.material.id < m_materials.size()
-                ? item.material : m_defaultMaterial;
-            const GpuMaterial& mat = m_materials[material.id];
-
-            if (!(material == boundMaterial)) {
+            if (!(batch.material == boundMaterial)) {
                 cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.GetLayout(), 1, *mat.descriptorSet, nullptr);
-                boundMaterial = material;
+                // The material's scalar factors, recorded into the command buffer (so an Inspector
+                // slider change needs no GPU synchronization). Constant across the batch.
+                const PushConstants pc{ mat.data.factors };
+                cmd.pushConstants<PushConstants>(m_pipeline.GetLayout(), vk::ShaderStageFlagBits::eFragment, 0, pc);
+                boundMaterial = batch.material;
             }
 
-            if (!(item.mesh == boundMesh)) {
+            if (!(batch.mesh == boundMesh)) {
                 cmd.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), {0});
                 cmd.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
-                boundMesh = item.mesh;
+                boundMesh = batch.mesh;
             }
 
-            // Per-object model matrix + the current material's scalar factors go in one push
-            // constant (recorded into the command buffer, so there are no per-frame-in-flight
-            // synchronisation concerns - unlike the descriptor set bound above).
-            PushConstants pc{ item.model, mat.data.factors };
-            cmd.pushConstants<PushConstants>(m_pipeline.GetLayout(),
-                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, pc);
-            cmd.drawIndexed(mesh.indexCount, 1, 0, 0, 0);
+            // SV_VulkanInstanceID = firstInstance + i, which indexes the instance buffer directly.
+            cmd.drawIndexed(mesh.indexCount, batch.instanceCount, 0, 0, batch.firstInstance);
         }
 
         // Sky last: it's depth-tested against everything drawn above, so only uncovered pixels
@@ -674,6 +677,27 @@ namespace Crucible {
 
     }   // Renderer::SetViewportDebugDraw()
 
+    void Renderer::SetViewportOutline(ViewportHandle handle, bool enabled) {
+
+        GetViewportOrThrow(handle).outline = enabled;
+
+    }   // Renderer::SetViewportOutline()
+
+    void Renderer::SetOutlinedObject(std::uint64_t userData) {
+
+        if (userData == m_outlineUserData) { return; }
+        m_outlineUserData = userData;
+        m_outlineProxy    = 0xFFFFFFFFu;   // re-resolved lazily (ResolveOutlineProxy)
+
+    }   // Renderer::SetOutlinedObject()
+
+    void Renderer::SetOutlineStyle(const glm::vec4& color, float thicknessPixels) {
+
+        m_outlineStyle.color     = color;
+        m_outlineStyle.thickness = glm::clamp(thicknessPixels, 1.0f, 3.0f);
+
+    }   // Renderer::SetOutlineStyle()
+
     Camera& Renderer::GetViewportCamera(ViewportHandle handle) {
 
         return GetViewportOrThrow(handle).camera;
@@ -731,10 +755,13 @@ namespace Crucible {
         // Sized up front for the worst case (kMaxViewports simultaneously alive, each with its
         // own set per frame in flight) so viewport creation never has to touch pool capacity.
         uint32_t maxSets = kMaxViewports * m_frameManager.MaxFramesInFlight();
-        // Each set 0 = one FrameUniforms UBO (binding 0) + one light storage buffer (binding 1).
-        std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
+        // Each set 0 = FrameUniforms UBO (binding 0), light + instance storage buffers (1, 2),
+        // shadow map image + comparison sampler (3, 4).
+        std::array<vk::DescriptorPoolSize, 4> poolSizes{ {
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxSets },
-            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxSets }
+            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxSets * 2 },
+            { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxSets },
+            { .type = vk::DescriptorType::eSampler,       .descriptorCount = maxSets }
         } };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
@@ -742,6 +769,14 @@ namespace Crucible {
             .poolSizeCount = static_cast<uint32_t>(poolSizes.size()), .pPoolSizes = poolSizes.data() };
 
         m_viewportDescriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
+
+        // One outline-composite set per viewport (binding 0 = its mask image).
+        vk::DescriptorPoolSize outlineSize{ .type = vk::DescriptorType::eSampledImage, .descriptorCount = kMaxViewports };
+        vk::DescriptorPoolCreateInfo outlinePoolInfo{
+            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .maxSets = kMaxViewports,
+            .poolSizeCount = 1, .pPoolSizes = &outlineSize };
+        m_outlineDescriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), outlinePoolInfo);
 
     }   // Renderer::CreateViewportDescriptorPool()
 
@@ -778,6 +813,20 @@ namespace Crucible {
         };
         vp.depthView = vk::raii::ImageView(m_context.GetDevice(), depthViewInfo);
 
+        // Selection-outline mask, same size (cheap: one byte per pixel).
+        vp.maskImage.Create(m_context, width, height, VulkanPipeline::kOutlineMaskFormat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        vk::ImageViewCreateInfo maskViewInfo{
+            .image = vp.maskImage.GetImage(),
+            .viewType = vk::ImageViewType::e2D,
+            .format = VulkanPipeline::kOutlineMaskFormat,
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1 }
+        };
+        vp.maskView = vk::raii::ImageView(m_context.GetDevice(), maskViewInfo);
+        WriteOutlineDescriptor(vp);   // no-op on first creation (the set doesn't exist yet)
+
     }   // Renderer::CreateViewportImages()
 
     void Renderer::CreateViewportUniformsAndDescriptors(Viewport& vp) {
@@ -807,21 +856,32 @@ namespace Crucible {
             m_context.GetDevice().updateDescriptorSets(write, {});
         }
 
-        // Binding 1: the SAME per-frame light buffers the window's own sets use.
-        WriteLightBufferDescriptors(vp.descriptorSets);
+        // Bindings 1-4: the SAME per-frame light/instance buffers and shadow map the window's
+        // own sets use.
+        WriteSharedFrameDescriptors(vp.descriptorSets);
+
+        // The outline composite's set (binding 0 = this viewport's mask).
+        vk::DescriptorSetLayout outlineLayout = *m_pipeline.GetOutlineDescriptorSetLayout();
+        vk::DescriptorSetAllocateInfo outlineAlloc{
+            .descriptorPool     = m_outlineDescriptorPool,
+            .descriptorSetCount = 1,
+            .pSetLayouts        = &outlineLayout
+        };
+        vp.outlineSet = std::move(m_context.GetDevice().allocateDescriptorSets(outlineAlloc).front());
+        WriteOutlineDescriptor(vp);
 
     }   // Renderer::CreateViewportUniformsAndDescriptors()
 
-    void Renderer::UpdateViewportUniforms(Viewport& vp, uint32_t frameIndex) {
+    void Renderer::WriteOutlineDescriptor(Viewport& vp) {
 
-        FrameUniforms ubo{};
-        ubo.view = vp.camera.GetView();
-        ubo.proj = vp.camera.GetProjection();
-        ubo.cameraPosWS = glm::vec4(vp.camera.position, 0.0f);
-        FillEnvironmentUniforms(ubo);
-        memcpy(vp.uniformBuffersMapped[frameIndex], &ubo, sizeof(ubo));
+        if (!*vp.outlineSet || !*vp.maskView) { return; }
+        vk::DescriptorImageInfo imageInfo{ .imageView = *vp.maskView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+        vk::WriteDescriptorSet write{
+            .dstSet = *vp.outlineSet, .dstBinding = 0, .dstArrayElement = 0,
+            .descriptorCount = 1, .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &imageInfo };
+        m_context.GetDevice().updateDescriptorSets(write, {});
 
-    }   // Renderer::UpdateViewportUniforms()
+    }   // Renderer::WriteOutlineDescriptor()
 
     void Renderer::CreateUniformBuffers() {
 
@@ -839,10 +899,13 @@ namespace Crucible {
     void Renderer::CreateDescriptorPool() {
 
         uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
-        // Each set 0 = one FrameUniforms UBO (binding 0) + one light storage buffer (binding 1).
-        std::array<vk::DescriptorPoolSize, 2> poolSizes{ {
+        // Each set 0 = FrameUniforms UBO (binding 0), light + instance storage buffers (1, 2),
+        // shadow map image + comparison sampler (3, 4).
+        std::array<vk::DescriptorPoolSize, 4> poolSizes{ {
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFrames },
-            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames }
+            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 2 },
+            { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxFrames },
+            { .type = vk::DescriptorType::eSampler,       .descriptorCount = maxFrames }
         } };
         vk::DescriptorPoolCreateInfo poolInfo{ 
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, 
@@ -882,7 +945,7 @@ namespace Crucible {
             m_context.GetDevice().updateDescriptorSets(descriptorWrite, {});
         }
 
-        WriteLightBufferDescriptors(m_descriptorSets);
+        WriteSharedFrameDescriptors(m_descriptorSets);
 
     }   // Renderer::CreateDescriptorSets()
 
@@ -1239,6 +1302,10 @@ namespace Crucible {
             }
             return;
         }
+        // The first enabled directional light that asks for shadows gets the cascaded shadow map.
+        if (m_shadowLightIndex < 0 && light.castShadows && light.type == LightType::Directional) {
+            m_shadowLightIndex = static_cast<int32_t>(m_lightQueue.size());
+        }
         m_lightQueue.push_back(ToGpuLight(light));
 
     }   // Renderer::SubmitLight()
@@ -1261,24 +1328,36 @@ namespace Crucible {
 
     }   // Renderer::CreateLightBuffers()
 
-    void Renderer::WriteLightBufferDescriptors(std::vector<vk::raii::DescriptorSet>& sets) {
+    void Renderer::WriteSharedFrameDescriptors(std::vector<vk::raii::DescriptorSet>& sets) {
 
-        for (size_t i = 0; i < sets.size() && i < m_lightBuffers.size(); ++i) {
-            vk::DescriptorBufferInfo bufferInfo{
+        for (size_t i = 0; i < sets.size() && i < m_lightBuffers.size() && i < m_instanceBuffers.size(); ++i) {
+            vk::DescriptorBufferInfo lightInfo{
                 .buffer = *m_lightBuffers[i].GetBuffer(),
                 .offset = 0,
                 .range  = sizeof(GpuLight) * kMaxLights };
-            vk::WriteDescriptorSet write{
-                .dstSet          = *sets[i],
-                .dstBinding      = 1,
-                .dstArrayElement = 0,
-                .descriptorCount = 1,
-                .descriptorType  = vk::DescriptorType::eStorageBuffer,
-                .pBufferInfo     = &bufferInfo };
-            m_context.GetDevice().updateDescriptorSets(write, {});
+            vk::DescriptorBufferInfo instanceInfo{
+                .buffer = *m_instanceBuffers[i].GetBuffer(),
+                .offset = 0,
+                .range  = vk::WholeSize };
+            vk::DescriptorImageInfo shadowImageInfo{
+                .imageView   = *m_shadowArrayView,
+                .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+            vk::DescriptorImageInfo shadowSamplerInfo{ .sampler = *m_shadowSampler };
+
+            const std::array<vk::WriteDescriptorSet, 4> writes{ {
+                { .dstSet = *sets[i], .dstBinding = 1, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &lightInfo },
+                { .dstSet = *sets[i], .dstBinding = 2, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &instanceInfo },
+                { .dstSet = *sets[i], .dstBinding = 3, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &shadowImageInfo },
+                { .dstSet = *sets[i], .dstBinding = 4, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eSampler, .pImageInfo = &shadowSamplerInfo }
+            } };
+            m_context.GetDevice().updateDescriptorSets(writes, {});
         }
 
-    }   // Renderer::WriteLightBufferDescriptors()
+    }   // Renderer::WriteSharedFrameDescriptors()
 
     void Renderer::UpdateLightBuffer(uint32_t frameIndex) {
 
@@ -1287,12 +1366,15 @@ namespace Crucible {
         if (m_lightQueue.empty()) {
             const GpuLight fallback = ToGpuLight(MakeFallbackSun());
             memcpy(m_lightBuffersMapped[frameIndex], &fallback, sizeof(GpuLight));
-            m_frameLightCount = 1;
+            m_frameLightCount  = 1;
+            m_shadowLightIndex = 0;   // the fallback sun always casts
+            m_shadowLightDir   = glm::vec3(fallback.directionType);
             return;
         }
 
         m_frameLightCount = static_cast<uint32_t>(m_lightQueue.size());   // already capped by SubmitLight
         memcpy(m_lightBuffersMapped[frameIndex], m_lightQueue.data(), sizeof(GpuLight) * m_frameLightCount);
+        if (m_shadowLightIndex >= 0) { m_shadowLightDir = glm::vec3(m_lightQueue[m_shadowLightIndex].directionType); }
 
     }   // Renderer::UpdateLightBuffer()
 
@@ -1654,6 +1736,448 @@ namespace Crucible {
 
     }   // Renderer::GetViewportCullStats()
 
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  FRAME PREPARATION & INSTANCING
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void Renderer::PrepareView(Camera& camera, vk::Extent2D extent, RenderCullStats& stats, ViewDrawList& out,
+                               bool outline, void* uniformDst) {
+
+        out.Clear();
+        camera.SetAspect(static_cast<float>(extent.width), static_cast<float>(extent.height));   // ignores 0 height
+
+        FrameUniforms ubo{};
+        ubo.view        = camera.GetView();
+        ubo.proj        = camera.GetProjection();
+        ubo.cameraPosWS = glm::vec4(camera.position, 0.0f);
+        FillEnvironmentUniforms(ubo);
+
+        // ---- Main pass: what the camera sees, one instanced draw per (material, mesh) run ----
+        BuildVisibleItems(camera, stats);
+        AppendBatches(m_visibleItems, out.main, true);
+        stats.drawCalls = static_cast<uint32_t>(out.main.size());
+
+        // ---- Shadow cascades: what each cascade's light-space box contains ----
+        const ShadowSettings& settings = m_shadowSettings;
+        if (settings.enabled && m_shadowLightIndex >= 0 && static_cast<uint32_t>(m_shadowLightIndex) < m_frameLightCount) {
+            const uint32_t count = glm::clamp(settings.cascadeCount, 1u, kMaxShadowCascades);
+            std::array<glm::mat4, kMaxShadowCascades> cascadeViewProj{};
+            ComputeShadowCascades(camera, count, ubo, cascadeViewProj);
+
+            glm::vec3 mn, mx;
+            for (uint32_t c = 0; c < count; ++c) {
+                m_casterItems.clear();
+                const Frustum frustum = Frustum::FromViewProjection(cascadeViewProj[c]);
+                m_spatial.QueryFrustum(frustum, [&](SpatialIndex::Handle h) {
+                    const RenderProxy& p = m_proxies[static_cast<uint32_t>(m_spatial.GetUserData(h))];
+                    m_casterItems.push_back(RenderItem{ p.mesh, MaterialHandle{}, p.model });
+                });
+                for (const RenderItem& item : m_renderQueue) {
+                    if (GetMeshBounds(item.mesh, mn, mx) && !frustum.Intersects(AABB::Transform(AABB(mn, mx), item.model))) { continue; }
+                    m_casterItems.push_back(RenderItem{ item.mesh, MaterialHandle{}, item.model });
+                }
+                // Depth only: the material doesn't matter, so batch by mesh alone.
+                std::sort(m_casterItems.begin(), m_casterItems.end(), [](const RenderItem& a, const RenderItem& b) { return a.mesh < b.mesh; });
+                stats.shadowCasters   += AppendBatches(m_casterItems, out.shadow[c], false);
+                stats.shadowDrawCalls += static_cast<uint32_t>(out.shadow[c].size());
+            }
+            out.cascadeCount   = count;
+            ubo.lightParams.y  = static_cast<uint32_t>(m_shadowLightIndex) + 1u;
+            ubo.lightParams.z  = count;
+        }
+
+        // ---- Selection outline mask: just the selected object ----
+        if (outline) {
+            const uint32_t id = ResolveOutlineProxy();
+            if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid) {
+                m_casterItems.clear();
+                m_casterItems.push_back(RenderItem{ m_proxies[id].mesh, MaterialHandle{}, m_proxies[id].model });
+                AppendBatches(m_casterItems, out.outline, false);
+            }
+        }
+
+        memcpy(uniformDst, &ubo, sizeof(ubo));
+
+    }   // Renderer::PrepareView()
+
+    uint32_t Renderer::AppendBatches(const std::vector<RenderItem>& items, std::vector<DrawBatch>& batches, bool byMaterial) {
+
+        uint32_t added = 0;
+        for (const RenderItem& item : items) {
+
+            // Skip what can't be drawn: no mesh, or one still uploading (CreateMeshAsync).
+            if (!item.mesh.IsValid() || item.mesh.id >= m_meshes.size() || m_meshes[item.mesh.id].indexCount == 0) { continue; }
+
+            // The main pass always needs SOME material set bound (the pipeline layout declares set 1
+            // unconditionally), so substitute the default rather than skip. Depth-only passes don't
+            // care, and leaving it Invalid lets their batches merge across materials.
+            MaterialHandle material;
+            if (byMaterial) {
+                material = item.material.IsValid() && item.material.id < m_materials.size() ? item.material : m_defaultMaterial;
+            }
+
+            const uint32_t index = static_cast<uint32_t>(m_instanceScratch.size());
+            m_instanceScratch.push_back(InstanceData{ item.model });
+            ++added;
+
+            if (!batches.empty()) {
+                DrawBatch& last = batches.back();
+                if (last.mesh == item.mesh && last.material == material && last.firstInstance + last.instanceCount == index) {
+                    ++last.instanceCount;
+                    continue;
+                }
+            }
+            batches.push_back(DrawBatch{ item.mesh, material, index, 1 });
+        }
+        return added;
+
+    }   // Renderer::AppendBatches()
+
+    void Renderer::CreateInstanceBuffers() {
+
+        const uint32_t frames = m_frameManager.MaxFramesInFlight();
+        for (uint32_t i = 0; i < frames; ++i) {
+            m_instanceBuffers.emplace_back();
+            m_instanceBuffers.back().Create(m_context, vk::DeviceSize{ kInitialInstanceCapacity } * sizeof(InstanceData),
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_instanceBuffersMapped.push_back(m_instanceBuffers.back().Map());
+            m_instanceCapacity.push_back(kInitialInstanceCapacity);
+        }
+        m_instanceScratch.reserve(kInitialInstanceCapacity);
+
+    }   // Renderer::CreateInstanceBuffers()
+
+    void Renderer::UploadInstances(uint32_t frameIndex) {
+
+        const size_t count = m_instanceScratch.size();
+
+        // Grow (power of two). Safe to recreate here: BeginFrame() already waited on this frame
+        // index's fence, so the GPU is done with the old buffer, and nothing recorded this frame
+        // references it yet. Only this frame index's sets point at it, so only they are rewritten.
+        if (count > m_instanceCapacity[frameIndex]) {
+            uint32_t capacity = m_instanceCapacity[frameIndex];
+            while (capacity < count) { capacity *= 2; }
+            m_instanceBuffers[frameIndex].Create(m_context, vk::DeviceSize{ capacity } * sizeof(InstanceData),
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_instanceBuffersMapped[frameIndex] = m_instanceBuffers[frameIndex].Map();
+            m_instanceCapacity[frameIndex]      = capacity;
+
+            vk::DescriptorBufferInfo info{ .buffer = *m_instanceBuffers[frameIndex].GetBuffer(), .offset = 0, .range = vk::WholeSize };
+            auto repoint = [&](const vk::raii::DescriptorSet& set) {
+                vk::WriteDescriptorSet write{
+                    .dstSet = *set, .dstBinding = 2, .dstArrayElement = 0, .descriptorCount = 1,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &info };
+                m_context.GetDevice().updateDescriptorSets(write, {});
+            };
+            repoint(m_descriptorSets[frameIndex]);
+            for (auto& [id, vp] : m_viewports) { repoint(vp.descriptorSets[frameIndex]); }
+        }
+
+        if (count > 0) { memcpy(m_instanceBuffersMapped[frameIndex], m_instanceScratch.data(), count * sizeof(InstanceData)); }
+
+    }   // Renderer::UploadInstances()
+
+    void Renderer::DrawMeshBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches) {
+
+        MeshHandle bound;
+        for (const DrawBatch& batch : batches) {
+            const GpuMesh& mesh = m_meshes[batch.mesh.id];
+            if (!(batch.mesh == bound)) {
+                cmd.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), { 0 });
+                cmd.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+                bound = batch.mesh;
+            }
+            cmd.drawIndexed(mesh.indexCount, batch.instanceCount, 0, 0, batch.firstInstance);
+        }
+
+    }   // Renderer::DrawMeshBatches()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  CASCADED SHADOW MAPS
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void Renderer::CreateShadowResources() {
+
+        m_shadowImage.Create(m_context, kShadowMapSize, kShadowMapSize, kShadowFormat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            kMaxShadowCascades);
+
+        // One view of every layer for sampling (Texture2DArray), one per layer to render into.
+        vk::ImageViewCreateInfo arrayViewInfo{
+            .image            = m_shadowImage.GetImage(),
+            .viewType         = vk::ImageViewType::e2DArray,
+            .format           = kShadowFormat,
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .baseArrayLayer = 0, .layerCount = kMaxShadowCascades }
+        };
+        m_shadowArrayView = vk::raii::ImageView(m_context.GetDevice(), arrayViewInfo);
+        for (uint32_t layer = 0; layer < kMaxShadowCascades; ++layer) {
+            vk::ImageViewCreateInfo layerViewInfo{
+                .image            = m_shadowImage.GetImage(),
+                .viewType         = vk::ImageViewType::e2D,
+                .format           = kShadowFormat,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .baseArrayLayer = layer, .layerCount = 1 }
+            };
+            m_shadowLayerViews[layer] = vk::raii::ImageView(m_context.GetDevice(), layerViewInfo);
+        }
+
+        // Comparison sampler: returns the fraction of the (bilinear) 2x2 footprint whose stored depth
+        // passes ref <= stored, i.e. is lit. Outside the map = border white = depth 1 = lit.
+        vk::SamplerCreateInfo samplerInfo{
+            .magFilter               = vk::Filter::eLinear,
+            .minFilter               = vk::Filter::eLinear,
+            .mipmapMode              = vk::SamplerMipmapMode::eNearest,
+            .addressModeU            = vk::SamplerAddressMode::eClampToBorder,
+            .addressModeV            = vk::SamplerAddressMode::eClampToBorder,
+            .addressModeW            = vk::SamplerAddressMode::eClampToEdge,
+            .anisotropyEnable        = vk::False,
+            .compareEnable           = vk::True,
+            .compareOp               = vk::CompareOp::eLessOrEqual,
+            .minLod                  = 0.0f,
+            .maxLod                  = 0.0f,
+            .borderColor             = vk::BorderColor::eFloatOpaqueWhite,
+            .unnormalizedCoordinates = vk::False
+        };
+        m_shadowSampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
+
+        // Rest state is SHADER_READ_ONLY (see the member comment), so a view that skips shadows can
+        // still bind it. Its contents are never read until a shadow pass has written them.
+        vk::raii::CommandBuffer cmd = BeginSingleTimeCommand();
+        vk::ImageMemoryBarrier2 barrier{
+            .srcStageMask        = vk::PipelineStageFlagBits2::eTopOfPipe,
+            .srcAccessMask       = {},
+            .dstStageMask        = vk::PipelineStageFlagBits2::eFragmentShader,
+            .dstAccessMask       = vk::AccessFlagBits2::eShaderSampledRead,
+            .oldLayout           = vk::ImageLayout::eUndefined,
+            .newLayout           = vk::ImageLayout::eShaderReadOnlyOptimal,
+            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
+            .image               = m_shadowImage.GetImage(),
+            .subresourceRange    = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .baseArrayLayer = 0, .layerCount = kMaxShadowCascades }
+        };
+        cmd.pipelineBarrier2(vk::DependencyInfo{ .imageMemoryBarrierCount = 1, .pImageMemoryBarriers = &barrier });
+        EndSingleTimeCommand(std::move(cmd));
+
+    }   // Renderer::CreateShadowResources()
+
+    void Renderer::ComputeShadowCascades(const Camera& camera, uint32_t count, FrameUniforms& ubo,
+                                         std::array<glm::mat4, kMaxShadowCascades>& outViewProj) const {
+
+        const ShadowSettings& settings = m_shadowSettings;
+        const float nearZ  = std::max(camera.nearZ, 1e-3f);
+        const float farZ   = glm::clamp(settings.distance, nearZ + 0.1f, camera.farZ);
+        const float lambda = glm::clamp(settings.splitLambda, 0.0f, 1.0f);
+        const float size   = static_cast<float>(kShadowMapSize);
+
+        // Half-diagonal of the view frustum's cross-section per unit of depth.
+        const float tanHalf  = std::tan(glm::radians(camera.fovY) * 0.5f);
+        const float diagRate = tanHalf * std::sqrt(1.0f + camera.aspect * camera.aspect);
+
+        const glm::vec3 forward = camera.Forward();
+        const glm::vec3 L       = glm::normalize(m_shadowLightDir);   // direction the light travels
+        const glm::vec3 up      = std::abs(L.y) > 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        const float     ext     = std::max(settings.casterExtension, 0.0f);
+
+        float sliceNear = nearZ;
+        for (uint32_t c = 0; c < count; ++c) {
+
+            // "Practical" split scheme: blend of logarithmic and uniform splits.
+            const float p         = static_cast<float>(c + 1) / static_cast<float>(count);
+            const float logSplit  = nearZ * std::pow(farZ / nearZ, p);
+            const float uniSplit  = nearZ + (farZ - nearZ) * p;
+            const float sliceFar  = lambda * logSplit + (1.0f - lambda) * uniSplit;
+
+            // Smallest sphere around the slice whose centre is on the view axis: equidistant from the
+            // near and far rings, clamped into the slice. It depends only on the slice, not on where
+            // the camera looks, so its size never changes as the camera turns - with the snapping
+            // below, that is what keeps shadow edges from shimmering.
+            const float a  = sliceNear * diagRate;   // near ring radius
+            const float b  = sliceFar  * diagRate;   // far ring radius
+            float centreZ  = (sliceFar * sliceFar + b * b - sliceNear * sliceNear - a * a) / (2.0f * (sliceFar - sliceNear));
+            centreZ        = glm::clamp(centreZ, sliceNear, sliceFar);
+            float radius   = std::max(std::sqrt((centreZ - sliceNear) * (centreZ - sliceNear) + a * a),
+                                      std::sqrt((sliceFar - centreZ) * (sliceFar - centreZ) + b * b));
+            radius         = std::ceil(radius * 16.0f) / 16.0f;   // quantize against float drift
+
+            const glm::vec3 centre = camera.position + forward * centreZ;
+
+            // Ortho box around the sphere, pulled back toward the light by `ext` so casters between
+            // the light and the sphere (off-screen towers, cliffs) still land in the map.
+            const glm::mat4 lightView = glm::lookAt(centre - L * (radius + ext), centre, up);
+            glm::mat4       lightProj = glm::ortho(-radius, radius, -radius, radius, 0.0f, 2.0f * radius + ext);
+
+            // Texel snapping: shift the projection so the world origin lands exactly on a texel. The
+            // map then only ever moves in whole texels as the camera moves.
+            glm::vec4 origin = lightProj * lightView * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+            origin *= size * 0.5f;
+            const glm::vec2 snapOffset = (glm::round(glm::vec2(origin)) - glm::vec2(origin)) * (2.0f / size);
+            lightProj[3][0] += snapOffset.x;
+            lightProj[3][1] += snapOffset.y;
+
+            outViewProj[c]           = lightProj * lightView;
+            ubo.shadowViewProj[c]    = outViewProj[c];
+            ubo.cascadeSplits[c]     = sliceFar;
+            ubo.cascadeTexelSize[c]  = 2.0f * radius / size;
+
+            sliceNear = sliceFar;
+        }
+
+        ubo.shadowParams = glm::vec4(1.0f / size, settings.depthBias, settings.normalBias, glm::clamp(settings.fadeFraction, 0.0f, 1.0f));
+
+    }   // Renderer::ComputeShadowCascades()
+
+    void Renderer::DrawShadowCascades(FrameContext& fc, vk::DescriptorSet frameSet, const ViewDrawList& draws) {
+
+        if (draws.cascadeCount == 0) { return; }
+        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
+
+        // Shared by every view: wait for whatever sampled it last (an earlier view this frame, or a
+        // previous frame - barriers cover all earlier submissions on the queue too). Its old
+        // contents are discarded (UNDEFINED) since every layer is cleared below.
+        TransitionImageLayout(fc, m_shadowImage.GetImage(), vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            kMaxShadowCascades);
+
+        const vk::Extent2D extent{ kShadowMapSize, kShadowMapSize };
+        for (uint32_t c = 0; c < draws.cascadeCount; ++c) {
+
+            vk::RenderingAttachmentInfo depth{
+                .imageView   = m_shadowLayerViews[c],
+                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+                .loadOp      = vk::AttachmentLoadOp::eClear,
+                .storeOp     = vk::AttachmentStoreOp::eStore,
+                .clearValue  = vk::ClearDepthStencilValue(1.0f, 0)
+            };
+            vk::RenderingInfo renderingInfo{
+                .renderArea       = { .offset = { 0, 0 }, .extent = extent },
+                .layerCount       = 1,
+                .pDepthAttachment = &depth
+            };
+            cmd.beginRendering(renderingInfo);
+
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetShadowPipeline());
+            // Same flipped viewport as every other pass, so the shader's uv mapping is uniform.
+            cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(kShadowMapSize), static_cast<float>(kShadowMapSize),
+                                            -static_cast<float>(kShadowMapSize), 0.0f, 1.0f));
+            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetShadowLayout(), 0, frameSet, nullptr);
+            cmd.pushConstants<uint32_t>(*m_pipeline.GetShadowLayout(), vk::ShaderStageFlagBits::eVertex, 0, c);
+            DrawMeshBatches(cmd, draws.shadow[c]);
+
+            cmd.endRendering();
+        }
+
+        TransitionImageLayout(fc, m_shadowImage.GetImage(), vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eLateFragmentTests, vk::PipelineStageFlagBits2::eFragmentShader,
+            kMaxShadowCascades);
+
+    }   // Renderer::DrawShadowCascades()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  SELECTION OUTLINE
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    uint32_t Renderer::ResolveOutlineProxy() {
+
+        constexpr uint32_t kNone = 0xFFFFFFFFu;
+        if (m_outlineUserData == 0) { return kNone; }
+
+        if (m_outlineProxy < m_proxies.size() && m_proxies[m_outlineProxy].alive
+            && m_proxies[m_outlineProxy].userData == m_outlineUserData) {
+            return m_outlineProxy;
+        }
+        // Stale or never looked up: one linear scan (selection changes are rare; a selected entity
+        // with no proxy, e.g. a light, costs one cheap scan per frame).
+        m_outlineProxy = kNone;
+        for (uint32_t i = 0; i < m_proxies.size(); ++i) {
+            if (m_proxies[i].alive && m_proxies[i].userData == m_outlineUserData) { m_outlineProxy = i; break; }
+        }
+        return m_outlineProxy;
+
+    }   // Renderer::ResolveOutlineProxy()
+
+    void Renderer::DrawOutlineMask(FrameContext& fc, Viewport& vp, vk::DescriptorSet frameSet) {
+
+        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
+
+        // Last frame's composite sampled it; contents are re-cleared, so discard them.
+        TransitionImageLayout(fc, vp.maskImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+
+        vk::RenderingAttachmentInfo color{
+            .imageView   = vp.maskView,
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp      = vk::AttachmentLoadOp::eClear,
+            .storeOp     = vk::AttachmentStoreOp::eStore,
+            .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f)
+        };
+        vk::RenderingInfo renderingInfo{
+            .renderArea           = { .offset = { 0, 0 }, .extent = vp.extent },
+            .layerCount           = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments    = &color
+        };
+        cmd.beginRendering(renderingInfo);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineMaskPipeline());
+        // Same flipped viewport as the main pass, so mask pixels line up with the scene's.
+        cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(vp.extent.height), static_cast<float>(vp.extent.width),
+                                        -static_cast<float>(vp.extent.height), 0.0f, 1.0f));
+        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), vp.extent));
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineMaskLayout(), 0, frameSet, nullptr);
+        DrawMeshBatches(cmd, vp.draws.outline);
+        cmd.endRendering();
+
+        TransitionImageLayout(fc, vp.maskImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
+
+    }   // Renderer::DrawOutlineMask()
+
+    void Renderer::DrawOutlineComposite(FrameContext& fc, Viewport& vp) {
+
+        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
+
+        // The main pass's writes must land before blending reads them back.
+        TransitionImageLayout(fc, vp.colorImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eColorAttachmentOptimal,
+            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+
+        vk::RenderingAttachmentInfo color{
+            .imageView   = vp.colorView,
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp      = vk::AttachmentLoadOp::eLoad,
+            .storeOp     = vk::AttachmentStoreOp::eStore
+        };
+        vk::RenderingInfo renderingInfo{
+            .renderArea           = { .offset = { 0, 0 }, .extent = vp.extent },
+            .layerCount           = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments    = &color
+        };
+        cmd.beginRendering(renderingInfo);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineCompositePipeline());
+        // Fullscreen triangle: orientation doesn't matter, the shader works in pixel coordinates.
+        cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(vp.extent.width), static_cast<float>(vp.extent.height), 0.0f, 1.0f));
+        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), vp.extent));
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineCompositeLayout(), 0, *vp.outlineSet, nullptr);
+        cmd.pushConstants<OutlineCompositePush>(*m_pipeline.GetOutlineCompositeLayout(), vk::ShaderStageFlagBits::eFragment, 0, m_outlineStyle);
+        cmd.draw(3, 1, 0, 0);
+        cmd.endRendering();
+
+    }   // Renderer::DrawOutlineComposite()
+
     namespace {
 
         // Möller-Trumbore, double-sided (picking should hit a plane from below too). t is in units
@@ -1904,7 +2428,7 @@ namespace Crucible {
     void Renderer::TransitionImageLayout(FrameContext fc, vk::Image image, vk::ImageAspectFlags aspectMask,
         vk::ImageLayout old_layout, vk::ImageLayout new_layout,
         vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
-        vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask) {
+        vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask, uint32_t layerCount) {
 
         vk::ImageMemoryBarrier2 barrier = {
             .srcStageMask = src_stage_mask,
@@ -1921,7 +2445,7 @@ namespace Crucible {
                    .baseMipLevel = 0,
                    .levelCount = 1,
                    .baseArrayLayer = 0,
-                   .layerCount = 1}
+                   .layerCount = layerCount}
         };
         vk::DependencyInfo dependency_info = {
             .dependencyFlags = {},

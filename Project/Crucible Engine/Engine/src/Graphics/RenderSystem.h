@@ -131,6 +131,26 @@ namespace Crucible {
         // An offscreen render target: its own color+depth image, camera, and per-frame-in-flight
         // uniform buffer/descriptor set, so several can be drawn per frame with different cameras
         // (Scene view vs. Game view) without stepping on each other's data.
+        // One instanced draw: `instanceCount` objects sharing a mesh (and, for the main pass, a
+        // material), whose matrices sit contiguously in this frame's instance buffer from
+        // `firstInstance` on.
+        struct DrawBatch {
+            MeshHandle     mesh;
+            MaterialHandle material;
+            uint32_t       firstInstance = 0;
+            uint32_t       instanceCount = 0;
+        };
+
+        // Everything one view draws this frame, built by PrepareView() before recording starts
+        // (so the instance buffer's final size is known before any command references it).
+        struct ViewDrawList {
+            std::vector<DrawBatch>                                main;
+            std::array<std::vector<DrawBatch>, kMaxShadowCascades> shadow;
+            uint32_t                                              cascadeCount = 0;   // 0 = no shadow pass
+            std::vector<DrawBatch>                                outline;            // selected object (mask pass)
+            void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); }
+        };
+
         struct Viewport {
             vk::Extent2D        extent{};
 
@@ -146,7 +166,16 @@ namespace Crucible {
             std::vector<vk::raii::DescriptorSet> descriptorSets;
 
             bool                debugDraw = false;   // draw DebugDraw lines into this view (SetViewportDebugDraw)
+            bool                outline = false;     // draw the selection outline (SetViewportOutline)
             RenderCullStats     cullStats;           // last frame's culling result for this view
+
+            // Selection outline: R8 mask of the selected object (same size as colorImage), and
+            // the composite pass's descriptor set pointing at it.
+            VulkanImage             maskImage;
+            vk::raii::ImageView     maskView = nullptr;
+            vk::raii::DescriptorSet outlineSet = nullptr;
+
+            ViewDrawList        draws;               // this frame's batches (PrepareView)
         };
 
     public:
@@ -177,12 +206,6 @@ namespace Crucible {
          *********************************************************************/
         void DrawFrame();
 
-        /*********************************************************************
-         \brief  Refreshes the given frame-in-flight's camera uniform
-                 buffer from the main camera's current view/projection.
-         \param[in] frameIndex Index of the frame in flight to update.
-         *********************************************************************/
-        void UpdateFrameUniforms(uint32_t frameIndex);
 
         /*********************************************************************
          \brief  Accessor for the active (main) camera.
@@ -531,6 +554,37 @@ namespace Crucible {
         ENGINE_API void           SetViewportDebugDraw(ViewportHandle handle, bool enabled);
 
         /*********************************************************************
+         \brief  Shows or hides the selection outline (SetOutlinedObject) in
+                 one viewport. Off by default; the Editor turns it on for the
+                 Scene view only.
+         *********************************************************************/
+        ENGINE_API void           SetViewportOutline(ViewportHandle handle, bool enabled);
+
+        /*********************************************************************
+         \brief
+            Which object gets the orange selection outline, by the userData
+            its render proxy was created with (RenderExtractSystem uses the
+            packed Entity). 0 = none.
+         \details
+            Drawn only in viewports with SetViewportOutline(true): the
+            object is rendered into a mask with no depth test (so it shows
+            through walls), then the mask's edge is blended on top.
+         *********************************************************************/
+        ENGINE_API void           SetOutlinedObject(std::uint64_t userData);
+
+        /*********************************************************************
+         \brief  Outline colour (sRGB, a = opacity) and thickness in pixels
+                 (1..3).
+         *********************************************************************/
+        ENGINE_API void           SetOutlineStyle(const glm::vec4& color, float thicknessPixels);
+
+        /*********************************************************************
+         \brief  The sun's cascaded shadow settings (see ShadowSettings).
+                 Changes apply next frame.
+         *********************************************************************/
+        ShadowSettings&           GetShadowSettings() { return m_shadowSettings; }
+
+        /*********************************************************************
          \brief  Shows or hides DebugDraw lines when the scene is drawn
                  straight to the window (the Game build, where there are no
                  viewports). Off by default; turn on for gameplay debugging.
@@ -710,6 +764,8 @@ namespace Crucible {
         std::vector<uint32_t>       m_proxiesAwaitingBounds;
         SpatialIndex                m_spatial{ 0.25f };
         std::vector<RenderItem>     m_visibleItems;     // scratch: one view's culled + sorted draw list
+        std::vector<RenderItem>     m_casterItems;      // scratch: one shadow cascade's casters
+        ViewDrawList                m_windowDraws;      // the window pass's batches (no viewports)
         RenderCullStats             m_windowCullStats;
         std::vector<MeshHandle>     m_primitiveMeshes;
         void CreatePrimitiveMeshes();
@@ -790,14 +846,45 @@ namespace Crucible {
         bool                                        m_debugInWindow = false;
         bool                                        m_warnedDebugOverflow = false;
 
+        // Instances: every object drawn this frame by every pass of every view, one model matrix
+        // each (set 0, binding 2). Built on the CPU by PrepareView(), copied in one go by
+        // UploadInstances() into this frame's host-visible buffer, which grows (power of two) as
+        // needed. Shared by the window's and every viewport's set 0 for that frame index.
+        std::vector<InstanceData>                   m_instanceScratch;
+        std::vector<VulkanBuffer>                   m_instanceBuffers;
+        std::vector<void*>                          m_instanceBuffersMapped;
+        std::vector<uint32_t>                       m_instanceCapacity;     // in instances
+        static constexpr uint32_t                   kInitialInstanceCapacity = 16384;
+
+        // Cascaded sun shadows: one D32 array image (a layer per cascade) shared by every view -
+        // each view renders its own cascades into it right before its main pass. It rests in
+        // SHADER_READ_ONLY whenever it isn't being rendered, so it is always valid to sample.
+        static constexpr vk::Format                 kShadowFormat = vk::Format::eD32Sfloat;
+        static constexpr uint32_t                   kShadowMapSize = 2048;
+        ShadowSettings                              m_shadowSettings;
+        VulkanImage                                 m_shadowImage;
+        vk::raii::ImageView                         m_shadowArrayView = nullptr;
+        std::array<vk::raii::ImageView, kMaxShadowCascades> m_shadowLayerViews{ nullptr, nullptr, nullptr, nullptr };
+        vk::raii::Sampler                           m_shadowSampler = nullptr;
+        int32_t                                     m_shadowLightIndex = -1;          // into this frame's light buffer
+        glm::vec3                                   m_shadowLightDir{ 0.0f, -1.0f, 0.0f };
+
+        // Selection outline (SetOutlinedObject / SetViewportOutline).
+        std::uint64_t                               m_outlineUserData = 0;
+        uint32_t                                    m_outlineProxy = 0xFFFFFFFFu;     // cached lookup of m_outlineUserData
+        OutlineCompositePush                        m_outlineStyle;
+
         vk::raii::DescriptorPool                    m_descriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet>        m_descriptorSets;
 
-        // Viewports (see ViewportHandle). Empty in a standalone Engine/Game build.
+        // Viewports (see ViewportHandle). Empty in a standalone Engine/Game build. The pools are
+        // declared BEFORE m_viewports so they are destroyed after the viewports' descriptor sets
+        // (same destruction-order rule as the material pools above).
         static constexpr uint32_t                  kMaxViewports = 8;
+        vk::raii::DescriptorPool                   m_viewportDescriptorPool = nullptr;
+        vk::raii::DescriptorPool                   m_outlineDescriptorPool = nullptr;
         std::unordered_map<uint32_t, Viewport>     m_viewports;
         uint32_t                                   m_nextViewportId = 0;
-        vk::raii::DescriptorPool                   m_viewportDescriptorPool = nullptr;
         vk::raii::Sampler                          m_viewportSampler = nullptr;
 
         // Pending async mesh uploads (see CreateMeshAsync).
@@ -814,11 +901,45 @@ namespace Crucible {
         void ProcessPendingMeshUploads();
         void UploadMesh(MeshHandle handle, const MeshData& data, const std::string& debugName);
 
-        // Records the bind-and-draw loop over m_renderQueue against whatever color/depth
+        // Records the bind-and-draw loop over a view's main batches against whatever color/depth
         // attachments are currently bound (the swapchain, or a Viewport). Shared by the direct-
         // to-window path and the offscreen-viewport path so they can never drift apart.
         void DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, bool drawDebug,
-                             const std::vector<RenderItem>& items);
+                             const std::vector<DrawBatch>& batches);
+
+        // ---- Frame preparation (before recording) ----
+        // Culls and batches everything one view draws this frame (main pass, shadow cascades,
+        // selection mask) into `out`, appending instances to m_instanceScratch, and writes the
+        // view's FrameUniforms to `uniformDst`.
+        void PrepareView(Camera& camera, vk::Extent2D extent, RenderCullStats& stats, ViewDrawList& out,
+                         bool outline, void* uniformDst);
+        // Appends `items` (already sorted) as batches: consecutive items with the same mesh (and
+        // material, if byMaterial) become one instanced draw. Returns the number of instances.
+        uint32_t AppendBatches(const std::vector<RenderItem>& items, std::vector<DrawBatch>& batches, bool byMaterial);
+        // Copies m_instanceScratch into this frame's instance buffer, growing it (and repointing
+        // binding 2 of this frame's sets) if needed.
+        void UploadInstances(uint32_t frameIndex);
+        void CreateInstanceBuffers();
+        // Points set 0's shared bindings (1 lights, 2 instances, 3/4 shadow map) of each per-frame
+        // set at this frame's resources.
+        void WriteSharedFrameDescriptors(std::vector<vk::raii::DescriptorSet>& sets);
+
+        // ---- Shadows ----
+        void CreateShadowResources();
+        // Fits cascade `count` cascades to `camera` (stable: bounding spheres + texel snapping)
+        // and writes their matrices/splits into `ubo`. Returns each cascade's view-projection.
+        void ComputeShadowCascades(const Camera& camera, uint32_t count, FrameUniforms& ubo,
+                                   std::array<glm::mat4, kMaxShadowCascades>& outViewProj) const;
+        // Renders a view's cascades into the shared shadow map (barriers included).
+        void DrawShadowCascades(FrameContext& fc, vk::DescriptorSet frameSet, const ViewDrawList& draws);
+        void DrawMeshBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches);
+
+        // ---- Selection outline ----
+        // The selected proxy's id, or 0xFFFFFFFF (re-finds it if the cached id went stale).
+        uint32_t ResolveOutlineProxy();
+        void WriteOutlineDescriptor(Viewport& vp);
+        void DrawOutlineMask(FrameContext& fc, Viewport& vp, vk::DescriptorSet frameSet);
+        void DrawOutlineComposite(FrameContext& fc, Viewport& vp);
 
         // ---- Culling / proxies ----
         // Fills m_visibleItems with what `camera` can see (proxies via the spatial index + immediate
@@ -840,7 +961,6 @@ namespace Crucible {
         void CreateViewportDescriptorPool();
         void CreateViewportImages(Viewport& vp, uint32_t width, uint32_t height);
         void CreateViewportUniformsAndDescriptors(Viewport& vp);
-        void UpdateViewportUniforms(Viewport& vp, uint32_t frameIndex);
         Viewport& GetViewportOrThrow(ViewportHandle handle);
         const Viewport& GetViewportOrThrow(ViewportHandle handle) const;
 
@@ -855,8 +975,6 @@ namespace Crucible {
         // Everything FrameUniforms holds besides view/proj/cameraPos: ambient, exposure, skybox
         // intensity, light count. Shared by the window and viewport paths so they can't drift.
         void FillEnvironmentUniforms(FrameUniforms& ubo) const;
-        // Points binding 1 (the light buffer) of each per-frame set 0 at m_lightBuffers[i].
-        void WriteLightBufferDescriptors(std::vector<vk::raii::DescriptorSet>& sets);
         void CreateSkyboxSampler();
         void CreateCubemapDescriptorPool();
         void CreateDefaultSkybox();
@@ -900,7 +1018,8 @@ namespace Crucible {
         void TransitionImageLayout(FrameContext fc, vk::Image image, vk::ImageAspectFlags aspectMask,
                                    vk::ImageLayout old_layout, vk::ImageLayout new_layout,
                                    vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
-                                   vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask);
+                                   vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask,
+                                   uint32_t layerCount = 1);
 
     };  // RENDERER CLASS
 

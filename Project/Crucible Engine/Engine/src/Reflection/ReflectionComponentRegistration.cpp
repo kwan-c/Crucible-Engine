@@ -133,6 +133,7 @@ RTTR_REGISTRATION
         .property("innerConeDeg", &Light::innerConeDeg)
         .property("outerConeDeg", &Light::outerConeDeg)
         .property("enabled",      &Light::enabled)
+        .property("castShadows",  &Light::castShadows)
     ;
 
     // Skybox::cubemap is a runtime GPU handle (meaningless after a reload),

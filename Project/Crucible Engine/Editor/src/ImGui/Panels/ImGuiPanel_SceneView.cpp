@@ -30,6 +30,7 @@ void Crucible::SceneView::Init() {
 	// Debug lines (colliders, velocities, grid...) show in the Scene view only: the Game view's
 	// viewport keeps the Renderer's default (off), and the Game build has no viewports at all.
 	m_viewport.SetDebugDraw(true);
+	m_viewport.SetOutline(true);
 }
 
 void Crucible::SceneView::Update(float dt) {
@@ -168,8 +169,10 @@ void Crucible::SceneView::DrawToolbar() {
 		ImGui::SameLine();
 		ImGui::TextDisabled("|  Drawn %u / %u", stats.proxiesVisible + stats.immediateVisible, stats.proxies + stats.immediate);
 		if (ImGui::IsItemHovered()) {
-			ImGui::SetTooltip("Entities: %u of %u in view (%u moving)\nImmediate (demo) items: %u of %u",
-				stats.proxiesVisible, stats.proxies, stats.movingProxies, stats.immediateVisible, stats.immediate);
+			ImGui::SetTooltip("Entities: %u of %u in view (%u moving)\nImmediate (demo) items: %u of %u\n"
+				"Draw calls: %u (instanced)\nShadow casters: %u in %u draws",
+				stats.proxiesVisible, stats.proxies, stats.movingProxies, stats.immediateVisible, stats.immediate,
+				stats.drawCalls, stats.shadowCasters, stats.shadowDrawCalls);
 		}
 	}
 
@@ -241,7 +244,10 @@ namespace {
 
 void Crucible::SceneView::SyncSelection() {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
-	DebugDrawSystem::SetSelectedEntity(inspector ? inspector->GetSelectedEntity() : kNullEntity);
+	const Entity selected = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+	DebugDrawSystem::SetSelectedEntity(selected);
+	// Picks up selections made elsewhere (Hierarchy, Inspector) too.
+	m_renderer.SetOutlinedObject(selected == kNullEntity ? 0 : EntityToUserData(selected));
 }
 
 void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
@@ -298,6 +304,7 @@ void Crucible::SceneView::Select(Entity entity) {
 		inspector->SetSelectedEntity(entity);
 	}
 	DebugDrawSystem::SetSelectedEntity(entity);
+	m_renderer.SetOutlinedObject(entity == kNullEntity ? 0 : EntityToUserData(entity));
 }
 
 void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
@@ -371,4 +378,6 @@ void Crucible::SceneView::DrawGizmoMenu() {
 
 	ImGui::Separator();
 	ImGui::Checkbox("Icons (lights, sky, empties)", &m_showIcons);
+	bool outline = m_viewport.GetOutline();
+	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
 }
