@@ -1,4 +1,26 @@
+/*************************************************************************
+* \file:         VulkanContext.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See VulkanContext.h for what this class owns and why.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
+
 #include "VulkanContext.h"
+
+// Compile VMA's implementation exactly once, here. VulkanContext.h already pulled in
+// <vk_mem_alloc.h> for declarations (no VMA_IMPLEMENTATION defined there); the library's own
+// implementation block sits OUTSIDE that header's include guard specifically so a second,
+// macro-guarded #include like this one re-triggers it in one chosen translation unit, same idea
+// as this codebase's own "#define STB_IMAGE_IMPLEMENTATION" in RenderSystem.cpp.
+#define VMA_IMPLEMENTATION
+#include <vk_mem_alloc.h>
 
 #include <iostream>
 
@@ -30,6 +52,7 @@ namespace Crucible {
 
     vk::SurfaceKHR                  VulkanContext::GetSurface()             const { return m_surface; }
     uint32_t                        VulkanContext::GetGraphicsQueueFamily() const { return m_queueIndex; }
+    VmaAllocator                    VulkanContext::GetAllocator()           const { return m_allocator; }
 
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN CONTEXT
@@ -42,14 +65,28 @@ namespace Crucible {
         CreateSurface(window);
         PickPhysicalDevice();
         CreateLogicalDevice();
+        CreateAllocator();
 
     }   // VulkanContext::VulkanContext()
+
+    VulkanContext::~VulkanContext() {
+
+        // Every VulkanBuffer/VulkanImage suballocated from m_allocator has already freed its
+        // allocation by this point (see the declaration-order note on m_allocator in the header),
+        // so it's safe to tear the allocator itself down now, before the implicit destruction of
+        // m_device/m_instance/etc. below runs.
+        if (m_allocator != VK_NULL_HANDLE) {
+            vmaDestroyAllocator(m_allocator);
+            m_allocator = VK_NULL_HANDLE;
+        }
+
+    }   // VulkanContext::~VulkanContext()
 
     void VulkanContext::ShutDown() {
 
         m_device.waitIdle();
 
-    }   // VulkanContext::~VulkanContext()
+    }   // VulkanContext::ShutDown()
 
     void VulkanContext::CreateInstance() {
 
@@ -221,6 +258,29 @@ namespace Crucible {
         m_graphicsQueue = vk::raii::Queue(m_device, m_queueIndex, 0);
 
     }   // VulkanContext::CreateLogicalDevice()
+
+    /*!
+        \brief
+        Creates the single VmaAllocator that every VulkanBuffer/VulkanImage suballocates its GPU
+        memory from (see VulkanResource.h/.cpp), replacing what used to be one individual
+        vkAllocateMemory call per buffer/image. Must run after CreateLogicalDevice(): VMA needs a
+        live instance/physical device/device to query memory properties and (if used) wire up
+        extension function pointers.
+    */
+    void VulkanContext::CreateAllocator() {
+
+        VmaAllocatorCreateInfo allocatorInfo{
+            .physicalDevice   = *m_physicalDevice,
+            .device           = *m_device,
+            .instance         = *m_instance,
+            .vulkanApiVersion = VK_API_VERSION_1_4,   // matches vk::ApiVersion14 in CreateInstance()
+        };
+
+        if (vmaCreateAllocator(&allocatorInfo, &m_allocator) != VK_SUCCESS) {
+            throw std::runtime_error("[Renderer] Failed to create VmaAllocator.");
+        }
+
+    }   // VulkanContext::CreateAllocator()
 
     // ------------------------------------------------------------------------------------------------------------- //
     // HELPER FUNCTIONS

@@ -10,16 +10,63 @@
                         "x": 7.0,
                         "y": 0.0,
                         "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
                     }
                 },
                 "MeshRenderer": {
                     "visible": false,
                     "colour": {
-                        "w": 1.0,
                         "x": 1.0,
                         "y": 0.5,
-                        "z": 0.25
+                        "z": 0.25,
+                        "w": 1.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                }
+            }
+        },
+        {
+            "id": "2D7E10D261084001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 9.5,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
                     }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.501960813999176,
+                        "y": 0.501960813999176,
+                        "z": 0.501960813999176,
+                        "w": 0.501960813999176
+                    },
+                    "meshAsset": 11405041502999969793,
+                    "materialAsset": 8315413830416039937
                 }
             }
         },
@@ -28,18 +75,140 @@
             "components": {
                 "Transform": {
                     "positions": {
+                        "x": -546.8335571289063,
+                        "y": -22448.19140625,
+                        "z": 2765.49462890625
+                    },
+                    "rotation": {
+                        "x": -0.33046022057533264,
+                        "y": -0.08032723516225815,
+                        "z": -0.06745827943086624,
+                        "w": 0.9379728436470032
+                    },
+                    "scale": {
                         "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": -0.13689488172531128,
+                        "y": -5.633314609527588,
+                        "z": 0.692205548286438
+                    },
+                    "mass": 5.0,
+                    "useGravity": false,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 1.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 2.0,
                         "y": 2.0,
-                        "z": 3.0
+                        "z": 2.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "885408D263ED4001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.30000001192092896,
+                        "y": 4.026475429534912,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -9.09495460714449e-13,
+                        "y": -0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
                     }
                 },
                 "RigidBody": {
                     "velocity": {
                         "x": 0.0,
-                        "y": -9.800000190734863,
+                        "y": 0.0,
                         "z": 0.0
                     },
-                    "mass": 5.0
+                    "mass": 1.0,
+                    "useGravity": false,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 0.7450980544090271
+                    },
+                    "meshAsset": 15775344583901223439,
+                    "materialAsset": 16599319152200482817
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 20.0,
+                        "y": 20.0,
+                        "z": 20.0
+                    },
+                    "radius": 1.25,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
                 }
             }
         }

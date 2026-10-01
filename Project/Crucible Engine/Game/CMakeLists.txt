@@ -20,7 +20,7 @@ add_executable(Game
 
 # Set warning level and fix runtime library conflicts
 if(MSVC)
-    target_compile_options(Game PRIVATE /W4 /permissive-)
+    target_compile_options(Game PRIVATE /W4 /permissive- /MP)
 else()
     target_compile_options(Game PRIVATE -Wall -Wextra -Wpedantic)
 endif()

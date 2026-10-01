@@ -1,3 +1,17 @@
+/*************************************************************************
+* \file:         VulkanFrameManager.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          30 September 2026
+* \version       1.0
+* \brief
+*                See VulkanFrameManager.h for what this class owns and why.
+*
+* \history
+*    -v1.0       initial implementation
+*
+**************************************************************************/
+
 #include "VulkanFrameManager.h"
 
 namespace Crucible {
@@ -103,6 +117,7 @@ namespace Crucible {
         };
         auto result = context.GetGraphicsQueue().presentKHR(presentInfoKHR);
         if ((result == vk::Result::eSuboptimalKHR) || (result == vk::Result::eErrorOutOfDateKHR) || window.m_framebufferResized) {
+            window.m_framebufferResized = false;
             swapchain.Recreate(context);
         }
         else {
@@ -110,6 +125,12 @@ namespace Crucible {
             assert(result == vk::Result::eSuccess);
         }
 
+        // Move on to the next frame-in-flight slot. Without this the index stayed 0 forever: only
+        // one frame was ever in flight, and BeginFrame() always waited for the previous frame's
+        // GPU work to finish before the CPU could record the next one. Every per-frame resource
+        // (uniform, light and debug buffers, descriptor sets, command buffers) is indexed by this,
+        // and BeginFrame() waits on the slot's own fence before any of them is rewritten.
+        m_frameIndex = (m_frameIndex + 1) % MAX_FRAMES_IN_FLIGHT;
 
     }   // VulkanFrameManager::EndFrame()
 

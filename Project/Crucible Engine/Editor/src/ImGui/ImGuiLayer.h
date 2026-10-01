@@ -9,14 +9,17 @@
 #include "Systems/Layer.h"
 #include "ImGui/ImGuiManager.h"
 #include <Graphics/RenderSystem.h>
+#include <Core.h>
 
 namespace Crucible {
 
+	class World;   // forward-declared: a reference doesn't need the full (heavy) ECS/World.h here
+
 	class ImGuiLayer : public Layer {
 	public:
-		explicit ImGuiLayer(Renderer& ren) : m_context{ ren.GetImguiContext()}, m_ren{ren} {}
+		ImGuiLayer(Core& core) : m_context{ core.GetRenderer().GetImguiContext() }, m_core(core) {}
 
-		void OnAttach() override { ImGuiManager::Init(m_context, m_ren); }
+		void OnAttach() override { ImGuiManager::Init(m_context, m_core); }
 
 		// Build the UI for this frame (no GPU work yet).
 		void OnUpdate(float dt) override {
@@ -26,13 +29,13 @@ namespace Crucible {
 		}
 
 		// Called by the renderer inside the open render pass.
-		void OnRender() override { ImGuiManager::Draw(m_ren); }
+		void OnRender() override { ImGuiManager::Draw(m_core.GetRenderer()); }
 
 		void OnDetach() override { ImGuiManager::Exit(); }
 
 	private:
 		ImGuiVulkanContext		m_context;
-		Renderer&				m_ren;
+		Core& m_core;
 	};
 
 }

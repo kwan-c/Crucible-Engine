@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <format>
 #include <string_view>
@@ -61,6 +62,45 @@ namespace Crucible::Debug
                                int line,
                                const std::string_view& message);
 
+    // Same as LogMessage, but marks the line as front-facing: something the person
+    // USING the engine/editor should see (a scene failed to save, a dropped asset was
+    // the wrong type), as opposed to developer detail. It still goes to every sink;
+    // listeners such as the editor Console use the flag to decide what to show.
+    // Use the CRU_USER_* macros rather than calling this directly.
+    ENGINE_API void LogUserMessage(const Level& level,
+                                   const char* file,
+                                   int line,
+                                   const std::string_view& message);
+
+    // ---- Listeners -------------------------------------------------------------
+    //
+    // A listener is told about every line that passes the level filter, after the
+    // sinks have written it. This is how code OUTSIDE Engine.dll (the editor's
+    // Console panel) receives log output without the sink classes being exported.
+
+    struct LogRecord
+    {
+        Level            level;
+        bool             userFacing;   // logged through CRU_USER_*
+        double           seconds;      // ElapsedSeconds() at the time of the call
+        std::string_view file;         // file name only ("Core.cpp"); empty if none
+        int              line;
+        std::string_view message;      // the message alone - no timestamp/level prefix
+    };
+    // The string_views are only valid during the call: copy what you keep.
+
+    // A plain function pointer + user data, rather than std::function, so nothing
+    // with a library-specific layout crosses the DLL boundary.
+    //
+    // Called on whichever thread logged, while the logger's lock is held, so it
+    // must be quick and thread-safe. Anything it logs itself is dropped (the lock
+    // is not recursive; dropping beats deadlocking).
+    using LogListener = void (*)(const LogRecord& record, void* userData);
+    using ListenerId  = std::uint32_t;   // 0 is never a valid id
+
+    ENGINE_API ListenerId AddListener(LogListener listener, void* userData);
+    ENGINE_API void       RemoveListener(ListenerId id);   // unknown ids are ignored
+
     // Records one setting, so a log file always says how the run was configured.
     //     LogSetting("Window", "width", "1200");
     // There is a template version below that accepts any printable value.
@@ -111,6 +151,17 @@ namespace Crucible::Debug
 #define CRU_INFO(...)  CRU_LOG(::Crucible::Debug::Level::Info,    __VA_ARGS__)
 #define CRU_WARN(...)  CRU_LOG(::Crucible::Debug::Level::Warning, __VA_ARGS__)
 #define CRU_ERROR(...) CRU_LOG(::Crucible::Debug::Level::Error,   __VA_ARGS__)
+
+// Front-facing versions: identical output, but flagged for the person using the
+// editor, so the Console panel shows them by default. Use these for things the
+// user did or must act on ("Saved scene 'demo'", "Model failed to load"); keep
+// the plain macros for developer detail.
+#define CRU_USER_LOG(level, ...) \
+    ::Crucible::Debug::LogUserMessage((level), __FILE__, __LINE__, ::std::format(__VA_ARGS__))
+
+#define CRU_USER_INFO(...)  CRU_USER_LOG(::Crucible::Debug::Level::Info,    __VA_ARGS__)
+#define CRU_USER_WARN(...)  CRU_USER_LOG(::Crucible::Debug::Level::Warning, __VA_ARGS__)
+#define CRU_USER_ERROR(...) CRU_USER_LOG(::Crucible::Debug::Level::Error,   __VA_ARGS__)
 
 #define CRU_FATAL(...) \
     ::Crucible::Debug::FatalExit(::std::format(__VA_ARGS__), __FILE__, __LINE__)

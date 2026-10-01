@@ -16,6 +16,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_internal.h>   // DockBuilder* API
 #include <iostream>
+#include <Core.h>
 
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
@@ -116,7 +117,7 @@ namespace {
 }
 // ---- dock layout (end) ----
 
-void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& renderer) {
+void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Core& core) {
 	
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
@@ -142,9 +143,10 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& r
 	ImGui_ImplGlfw_InitForVulkan(context.window, true);
 
 	ImGui_ImplVulkan_InitInfo initInfo = {};
+
 	initInfo.Instance = context.instance;
-    initInfo.PhysicalDevice = context.physicalDevice;
-    initInfo.Device = context.device;
+	initInfo.PhysicalDevice = context.physicalDevice;
+	initInfo.Device = context.device;
 	initInfo.QueueFamily = context.graphicsQueueFamily;
 	initInfo.Queue = context.graphicsQueue;
 
@@ -180,7 +182,7 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Renderer& r
 	// friends) is ready - the Scene/Game views create their offscreen viewport texture lazily,
 	// on their first Update() with a non-zero size, but they still need a live Renderer&
 	// reference to do it.
-	EditorManager::GetInstance().Init(renderer);
+	EditorManager::GetInstance().Init(core);
 
 	CRU_INFO("ImGui Successfully Initialized");
 }
@@ -289,16 +291,16 @@ Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 	return *s_Instance;
 }
 
-void Crucible::EditorManager::Init(Renderer& renderer)
+void Crucible::EditorManager::Init(Core& core)
 {
 	// Add in Editor Panels here...
 	//
 	// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
-	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(renderer);
-	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(renderer);
-	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>();
-	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>();
-	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>();
+	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(core.GetRenderer(), core.GetScenes(), core.GetWorld());
+	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(core.GetRenderer());
+	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(core.GetScenes());
+	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(core.GetWorld(), core.GetResources(), core.GetScenes());
+	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(core.GetWorld(), core.GetRenderer(), core.GetScenes());
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	//m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();

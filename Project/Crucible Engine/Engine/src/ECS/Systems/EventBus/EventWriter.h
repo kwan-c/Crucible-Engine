@@ -224,7 +224,7 @@ namespace Crucible
 			if (HasRoute(m_allowed, route)) return;
 			std::string message = std::string("EventWriter: '") + m_producer + "' called " + call +
 				" but does not own that event route";
-			if (route == EventRoute::Gameplay)
+			if (HasRoute(route, EventRoute::Gameplay))
 				message += " - gameplay events come from the scripting layer; a system that really owns gameplay "
 					"decisions must declare SystemDesc::EmitsGameplayEvents() in Describe()";
 			throw std::logic_error(message);

@@ -11,6 +11,9 @@
 #include "Scene/Prefab.h"
 #include "Scene/Scene.h"
 #include "ECS/HierarchyTransformSystem.h"
+#include "Graphics/RenderExtractSystem.h"
+#include "Graphics/DebugDrawSystem.h"
+#include "Resources/ResourceManager.h"
 
 // STL
 #include <algorithm>
@@ -30,8 +33,9 @@ namespace Crucible {
         m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() },
-        m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) }
-    {
+        m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
+        m_scenes{ std::make_unique<SceneManager>(*m_world) }
+    {   
         // Layers draw inside the renderer's open render pass via OnRender().
         m_renderer->SetOverlayCallback([this] {
             for (auto& layer : m_layers) layer->OnRender();
@@ -63,62 +67,7 @@ namespace Crucible {
         {
             Crucible::AssetManager assets;
             assets.Init();
-
-            World& world = *m_world;
-
-            const std::filesystem::path scenePath  = assets.Resolve("Scenes/demo.scene");
-            const std::filesystem::path prefabPath = assets.Resolve("Prefabs/Crate.prefab");
-
-            Scene scene;
-
-            if (std::filesystem::exists(scenePath))
-            {
-                // Normal path: the scene already exists, so load it. Loading
-                // restores each entity's guid, so a later save produces the
-                // same file and the .meta stays untouched.
-                scene.Load(world, scenePath);
-            }
-            else
-            {
-                // First run only: build a world by hand and write it out.
-                const Entity a = world.CreateEntity();
-                world.AddComponent<Transform>(a, Transform{ Math::vec3{ 1.f, 2.f, 3.f } });
-                world.AddComponent<RigidBody>(a, RigidBody{ Math::vec3{ 0.f, -9.8f, 0.f }, 5.f });
-
-                const Entity b = world.CreateEntity();
-                world.AddComponent<Transform>(b, Transform{ Math::vec3{ 7.f, 0.f, 0.f } });
-                world.AddComponent<MeshRenderer>(b,
-                    MeshRenderer{ false, Math::vec4{ 1.f, 0.5f, 0.25f, 1.f } });
-
-                scene.SetName("demo");
-                scene.Save(world, scenePath);
-                Prefab::SaveFrom(world, b, prefabPath, "Crate");
-
-                // Both files were created after Init() indexed the folder, so
-                // index them now rather than on the next launch.
-                assets.Refresh();
-            }
-
-            // Stamp two copies of the prefab on top. Additive - nothing that
-            // is already in the world is touched.
-            Prefab crate;
-            if (crate.Load(prefabPath))
-            {
-                crate.Instantiate(world);
-                crate.Instantiate(world);
-            }
-
-            std::size_t total = 0;
-            for (const Archetype* archetype : world.Archetypes().All())
-            {
-                if (archetype != nullptr)
-                {
-                    total += archetype->Entities().size();
-                }
-            }
-
-            CRU_INFO("[Scene] {} entities live (expect 4: 2 from the scene + 2 prefab copies)",
-                     total);
+            m_scenes->RequestLoad(assets.Resolve("Scenes/demo.scene"));
         }
         // ===========================================
         // Input attaches before anything else installs GLFW callbacks. ImGui's backend
@@ -126,6 +75,13 @@ namespace Crucible {
         // replaces ImGui's - which is how its text fields go dead.
         m_input.Init();
         m_input.AttachWindow(m_window->GetNativeHandle());
+
+        // Shared asset index + resource cache. Before RegisterEngineSystems(): the render
+        // extraction system resolves MeshRenderer/Skybox asset ids through the ResourceManager.
+        m_assets = std::make_unique<AssetManager>();
+        if (!m_assets->Init()) { CRU_WARN("[Core] AssetManager found no asset root; asset ids will not resolve"); }
+        m_resources = std::make_unique<ResourceManager>(*m_assets, *m_renderer);
+        m_resources->Init();
 
 
         // Event buses: report listener failures through the engine log, and let the
@@ -145,18 +101,6 @@ namespace Crucible {
 
     void Core::Run() {
 
-        // Real frame time, not an assumed 60 FPS: nothing here caps the actual frame rate (no
-        // glfwSwapInterval, no sleep/limiter), and the swapchain's present mode is chosen
-        // dynamically (VulkanSwapchain::ChoosePresentMode() prefers Mailbox, which does not
-        // block the app the way Fifo/vsync does). A hard-coded "1.f / 60.f" here silently
-        // assumed the app always ran at exactly 60 FPS - so at whatever *actual* frame rate
-        // Mailbox let it run at (which can be very high with an empty-ish scene and no cap),
-        // every animation driven by dt (cube spin, the editor fly-camera, ...) played back
-        // proportionally too fast or too slow. It happened to look "corrected" after toggling
-        // fullscreen because that forces a swapchain recreate (via the resize it causes), and
-        // depending on the platform/compositor a fullscreen-negotiated surface can end up stuck
-        // on a hard-blocking present mode afterwards even once back in windowed mode - which
-        // only ever fixed the SYMPTOM (actual FPS settling near 60) rather than the cause.
         double lastTime = glfwGetTime();
 
         while (!m_window->ShouldClose()) {
@@ -176,6 +120,10 @@ namespace Crucible {
             m_window->PollEvents();
             m_events.engine.DeliverPending();   // window/input events queued by callbacks
 
+            // Scene swaps destroy every entity - only safe here, before any
+            // system or layer is iterating the world.
+            m_scenes->ApplyPending();
+
             m_world->SetDeltaTime(dt);
             m_world->AdvanceTick();
             m_systems.Update(*m_world);         // each stage delivers its own events
@@ -184,7 +132,6 @@ namespace Crucible {
 
             for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
-            //m_window->SwapBuffers();
         }
         m_renderer->ShutDown();
     }
@@ -201,6 +148,8 @@ namespace Crucible {
         //sample system registeration
         m_systems.RegisterSystem<ECSPhysicsSystem>();
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
+        m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
+        m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
     }
 
     void Core::CleanUp() {

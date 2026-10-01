@@ -13,14 +13,19 @@
 #include "ImGui/ImGuiManager.h"
 #include <Graphics/ViewportPanel.h>
 #include <Graphics/CameraController.h>
+#include <ECS/Core/ECSCore.h>   // Entity
+
+#include <vector>
 
 namespace Crucible {
+	class SceneManager;
+	class World;
 
 	class SceneView : public EditorPanel {
 	public:
 		enum class GizmoMode { Translate, Rotate, Scale };
 
-		explicit SceneView(Renderer& renderer) : m_viewport(renderer) {}
+		SceneView(Renderer& renderer, SceneManager& scene, World& world) : m_viewport(renderer), m_scenes(scene), m_world(world), m_renderer(renderer) {}
 
 		// REQUIRED Overrides
 		void Init() override;
@@ -39,8 +44,29 @@ namespace Crucible {
 		void DrawToolbar();
 		void UpdateEditorCamera(float dt);
 
+		// ---- Editor-only debug visuals (Scene view only; never in the Game view or Game build) ----
+		// Gizmos popup: DebugDraw category toggles, icon toggle, velocity arrow scale.
+		void DrawGizmoMenu();
+		// Screen-space icons for lights, the skybox and mesh-less entities, drawn with ImGui over
+		// the viewport image; fills m_iconHits for click picking.
+		void DrawIcons(ImVec2 viewMin, ImVec2 viewSize);
+		// Left click (not a drag, not flying): an icon under the cursor wins; otherwise a ray from
+		// the cursor picks the nearest mesh (Renderer::Raycast); empty space clears the selection.
+		void HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize);
+		void Select(Entity entity);
+		// Mirrors the Inspector's selection into DebugDrawSystem (selection box, light gizmos).
+		void SyncSelection();
+
+		struct IconHit { Entity entity; ImVec2 pos; float depth; };
+		std::vector<IconHit> m_iconHits;
+		bool                 m_showIcons = true;
+
 		ViewportPanel       m_viewport;
 		FlyCameraController m_flyController;
+
+		SceneManager& m_scenes;
+		World&        m_world;
+		Renderer&     m_renderer;
 
 		ImVec2    m_viewportSize{ 0.0f, 0.0f };
 		bool      m_hovered = false;

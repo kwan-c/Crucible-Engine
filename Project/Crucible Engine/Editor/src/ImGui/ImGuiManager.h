@@ -36,6 +36,9 @@ enum class ImguiPanels
 namespace Crucible {
 
 	class Core;
+	class World;   // forward-declared: EditorManager::Init/ImGuiManager::Init only take a reference
+	class SceneManager;
+	class ResourceManager;   // Resources/ResourceManager.h - include it where you call into it
 
 	class EditorPanel {
 	public:
@@ -99,8 +102,9 @@ namespace Crucible {
 
 		// Builds the panel set. Call once, from ImGuiManager::Init(), after the ImGui Vulkan
 		// backend is ready - the Scene/Game views need a live Renderer& to construct their
-		// ViewportPanel (see ImGuiPanel_SceneView.h / ImGuiPanel_GameView.h).
-		void Init(Renderer& renderer);
+		// ViewportPanel (see ImGuiPanel_SceneView.h / ImGuiPanel_GameView.h), and Hierarchy/
+		// Inspector need a live World& to list/select entities and edit their components.
+		void Init(Core& core);
 
 		// Drops every panel (and, with them, any GPU-owning members like ViewportPanel) while
 		// the Renderer and the ImGui Vulkan backend are still alive. MUST be called from
@@ -110,6 +114,12 @@ namespace Crucible {
 		// Renderer and the window, which would leave ViewportPanel::Shutdown() reaching into
 		// dead objects.
 		void Shutdown();
+
+		// The engine's ResourceManager (asset id <-> Renderer handle, mesh/material pickers).
+		// Set once from main.cpp (core.GetResources()) before the ImGui layer is pushed; panels
+		// fetch it here instead of threading one more reference through every constructor.
+		void             SetResources(ResourceManager* resources) { m_resources = resources; }
+		ResourceManager* GetResources() const { return m_resources; }
 
 		std::map<ImguiPanels, std::shared_ptr<EditorPanel>> m_panels;
 
@@ -125,10 +135,11 @@ namespace Crucible {
 
 	private:
 		static std::unique_ptr<EditorManager> s_Instance;
+		ResourceManager* m_resources = nullptr;
 	};
 
 	namespace ImGuiManager {
-		void Init(const ImGuiVulkanContext& context, Renderer& renderer);
+		void Init(const ImGuiVulkanContext& context, Core& core);
 		void Update(float dt);
 		void BeginFrame();
 		void Render();                    // finalize the UI (call once per frame, from Layer::OnUpdate)

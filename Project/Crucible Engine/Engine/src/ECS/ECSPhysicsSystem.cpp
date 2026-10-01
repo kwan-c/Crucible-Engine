@@ -91,7 +91,10 @@ namespace {
         return x.m_type == y.m_type && Same(x.m_halfExtents, y.m_halfExtents) && x.m_radius == y.m_radius
             && x.m_halfHeight == y.m_halfHeight && Same(x.m_center, y.m_center)
             && a.m_motion == b.m_motion && a.m_layer == b.m_layer && a.m_mass == b.m_mass
-            && a.m_friction == b.m_friction && a.m_restitution == b.m_restitution;
+            && a.m_friction == b.m_friction && a.m_restitution == b.m_restitution
+            && a.m_gravityFactor == b.m_gravityFactor
+            && a.m_linearDamping == b.m_linearDamping && a.m_angularDamping == b.m_angularDamping
+            && a.m_lockedAxes == b.m_lockedAxes;
 
     }   // SameRecipe()
 
@@ -370,7 +373,23 @@ namespace Crucible {
         desc.m_friction    = collider.m_friction;
         desc.m_restitution = collider.m_bounciness;
         desc.m_userData    = EntityToUserData(record.entity);
-        if (rigidbody != nullptr) desc.m_mass = rigidbody->mass;
+        if (rigidbody != nullptr) {
+            desc.m_mass           = rigidbody->mass;
+            desc.m_gravityFactor  = rigidbody->useGravity ? 1.0f : 0.0f;
+            desc.m_linearDamping  = rigidbody->drag;
+            desc.m_angularDamping = rigidbody->angularDrag;
+
+            const RigidBodyConstraints& frozen = rigidbody->constraints;
+            desc.m_lockedAxes = static_cast<std::uint8_t>(
+                  (frozen.freezePositionX ? AxisLock::PositionX : 0) | (frozen.freezePositionY ? AxisLock::PositionY : 0)
+                | (frozen.freezePositionZ ? AxisLock::PositionZ : 0) | (frozen.freezeRotationX ? AxisLock::RotationX : 0)
+                | (frozen.freezeRotationY ? AxisLock::RotationY : 0) | (frozen.freezeRotationZ ? AxisLock::RotationZ : 0));
+
+            // Everything frozen: nothing left to simulate, and Jolt cannot run a
+            // dynamic body with no free axis. Static is what it effectively is -
+            // it still blocks other bodies and can still be teleported via Transform.
+            if (desc.m_lockedAxes == AxisLock::All) desc.m_motion = BodyMotion::Static;
+        }
 
         // Two NonMoving bodies never collide, so a crate left on that layer falls
         // through the floor and through other crates. Easy mistake, hard symptom.

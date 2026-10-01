@@ -43,6 +43,7 @@
 #include "Reflection/ReflectionExternalRegistration.h"
 
 #include "ECS/Components/Components.h"
+#include "Resources/ResourceManager.h"   // ResourceKind, for ASSET_REF metadata
 
 RTTR_REGISTRATION
 {
@@ -105,8 +106,54 @@ RTTR_REGISTRATION
 
     rttr::registration::class_<MeshRenderer>("MeshRenderer")
         .constructor<>()
-        .property("visible", &MeshRenderer::visible)
-        .property("colour",  &MeshRenderer::colour)
+        .property("visible",       &MeshRenderer::visible)
+        .property("colour",        &MeshRenderer::colour)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
+        // Asset ids, not the runtime handles: handles are meaningless after a reload, ids are
+        // resolved back to handles by ResourceManager (see MeshRenderer's doc comment).
+        .property("meshAsset",     &MeshRenderer::meshAsset)
+            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Mesh))
+        .property("materialAsset", &MeshRenderer::materialAsset)
+            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Material))
+    ;
+
+    // Light type by name, same reasoning as ShapeType below: the scene file
+    // says "Spot", not 2.
+    rttr::registration::enumeration<LightType>("LightType")
+    (
+        rttr::value("Directional", LightType::Directional),
+        rttr::value("Point",       LightType::Point),
+        rttr::value("Spot",        LightType::Spot)
+    );
+
+    rttr::registration::class_<Light>("Light")
+        .constructor<>()
+        .property("type",         &Light::type)
+        .property("colour",       &Light::colour)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
+        .property("intensity",    &Light::intensity)
+        .property("range",        &Light::range)
+        .property("innerConeDeg", &Light::innerConeDeg)
+        .property("outerConeDeg", &Light::outerConeDeg)
+        .property("enabled",      &Light::enabled)
+        .property("castShadows",  &Light::castShadows)
+    ;
+
+    // Skybox::cubemap is a runtime GPU handle (meaningless after a reload),
+    // so like MeshRenderer::mesh it is not registered; skyboxAsset (the
+    // asset id, resolved by ResourceManager) is what gets saved.
+    rttr::registration::class_<Skybox>("Skybox")
+        .constructor<>()
+        .property("visible",          &Skybox::visible)
+        .property("intensity",        &Skybox::intensity)
+        .property("ambientSky",       &Skybox::ambientSky)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
+        .property("ambientGround",    &Skybox::ambientGround)
+            (rttr::metadata(MetaDataTypes::COLOUR, true))
+        .property("ambientIntensity", &Skybox::ambientIntensity)
+        .property("exposure",         &Skybox::exposure)
+        .property("skyboxAsset",      &Skybox::skyboxAsset)
+            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Texture))
     ;
 
     rttr::registration::class_<AudioSource>("AudioSource")
@@ -115,10 +162,26 @@ RTTR_REGISTRATION
         .property("loop", &AudioSource::loop)
     ;
 
+    // Nested in RigidBody, so the Inspector shows it as a "constraints" tree and the
+    // scene file as a "constraints": { ... } object.
+    rttr::registration::class_<RigidBodyConstraints>("RigidBodyConstraints")
+        .constructor<>()
+        .property("freezePositionX", &RigidBodyConstraints::freezePositionX)
+        .property("freezePositionY", &RigidBodyConstraints::freezePositionY)
+        .property("freezePositionZ", &RigidBodyConstraints::freezePositionZ)
+        .property("freezeRotationX", &RigidBodyConstraints::freezeRotationX)
+        .property("freezeRotationY", &RigidBodyConstraints::freezeRotationY)
+        .property("freezeRotationZ", &RigidBodyConstraints::freezeRotationZ)
+    ;
+
     rttr::registration::class_<RigidBody>("RigidBody")
         .constructor<>()
-        .property("velocity", &RigidBody::velocity)
-        .property("mass",     &RigidBody::mass)
+        .property("velocity",    &RigidBody::velocity)
+        .property("mass",        &RigidBody::mass)
+        .property("useGravity",  &RigidBody::useGravity)
+        .property("drag",        &RigidBody::drag)
+        .property("angularDrag", &RigidBody::angularDrag)
+        .property("constraints", &RigidBody::constraints)
     ;
 
     // -----------------
@@ -171,15 +234,20 @@ RTTR_REGISTRATION
         .property("pushStrength", &CharacterController::m_pushStrength)
         .property("layer",        &CharacterController::m_layer)
         .property("isGrounded",    &CharacterController::m_isGrounded)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("velocity",      &CharacterController::m_velocity)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("moveVelocity",  &CharacterController::m_moveVelocity)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("verticalSpeed", &CharacterController::m_verticalSpeed)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
         .property("jumpHeight",    &CharacterController::m_jumpHeight)
-            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true))
+            (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+                rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
     ;
 
     // HierarchyNode and WorldTransform are intentionally NOT registered for

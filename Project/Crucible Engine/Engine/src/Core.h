@@ -8,17 +8,23 @@
 
 #include "EngineExport.h"	// DLL export
 #include "Systems/Layer.h"
+#include "Scene/SceneManager.h"
 #include "Systems/WindowManager.h"
 #include "Graphics/RenderSystem.h"
 #include "Input/InputSystem.h"
+
+#include <Configuration/EngineConfig.h>
 #include <ECS/World.h>
 #include <ECS/Systems/ECSSystemManager.h>
 #include <ECS/Systems/EventBus/EventBuses.h>
 #include <ECS/Systems/EventBus/EcsEvents.h>
 #include <Configuration/EngineConfig.h>
+#include "AssetPipe/Assetmanager.h"
+#include "Resources/ResourceManager.h"
 
 namespace Crucible
 {
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4251)   // STL member in an exported class; only used inside Engine.dll
@@ -39,6 +45,10 @@ namespace Crucible
         void Run();
 
         Renderer& GetRenderer() const { return *m_renderer; }
+        // Both valid only after Init(). The engine's shared asset index (AssetManager) and the
+        // GUID -> Renderer-handle cache built on top of it (ResourceManager).
+        AssetManager&    GetAssets() const { return *m_assets; }
+        ResourceManager& GetResources() const { return *m_resources; }
 
         World& GetWorld() noexcept { return *m_world; }
         const World& GetWorld() const noexcept { return *m_world; }
@@ -52,6 +62,10 @@ namespace Crucible
         // Opt-in entity/component events on the gameplay bus, e.g. EcsBridge().OnRemoved<MeshRenderer>(...).
         // (Not called "EcsEvents()" - that would hide the EcsEvents namespace inside Core.)
         EcsEventBridge& EcsBridge() noexcept { return *m_ecsEvents; }
+
+        // Open scene: Save/SaveAs now, New/Load deferred to the next frame.
+        SceneManager& GetScenes() noexcept { return *m_scenes; }
+
         // Attaches a layer (calls OnAttach) and takes ownership. Layers are updated in the
         // order pushed, and detached in reverse order when Core shuts down.
         void PushLayer(std::unique_ptr<Layer> layer);
@@ -72,9 +86,13 @@ namespace Crucible
         EventBuses m_events;
 
         std::unique_ptr<World> m_world;
+        std::unique_ptr<AssetManager>    m_assets;      // created in Init()
+        std::unique_ptr<ResourceManager> m_resources;   // created in Init(), after m_assets
 
         // World hooks -> gameplay-bus events; created right after the World.
         std::unique_ptr<EcsEventBridge> m_ecsEvents;
+
+        std::unique_ptr<SceneManager> m_scenes;
 
         ECSSystemManager m_systems;
 
