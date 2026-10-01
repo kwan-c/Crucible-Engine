@@ -105,6 +105,25 @@ namespace Crucible {
 
     };  // SHAPEDESC STRUCT
 
+    /*
+        Bits for BodyDesc::m_lockedAxes (Unity's RigidbodyConstraints). A locked
+        axis is one the simulation may not move the body along / turn it around,
+        in WORLD space. Same bit order as Jolt's EAllowedDOFs, so the axes Jolt
+        is allowed to use are just the ones not locked.
+    */
+    namespace AxisLock {
+        inline constexpr std::uint8_t None      = 0;
+        inline constexpr std::uint8_t PositionX = 1u << 0;
+        inline constexpr std::uint8_t PositionY = 1u << 1;
+        inline constexpr std::uint8_t PositionZ = 1u << 2;
+        inline constexpr std::uint8_t RotationX = 1u << 3;
+        inline constexpr std::uint8_t RotationY = 1u << 4;
+        inline constexpr std::uint8_t RotationZ = 1u << 5;
+        inline constexpr std::uint8_t Position  = PositionX | PositionY | PositionZ;
+        inline constexpr std::uint8_t Rotation  = RotationX | RotationY | RotationZ;
+        inline constexpr std::uint8_t All       = Position | Rotation;
+    }   // NAMESPACE AXISLOCK
+
     struct BodyDesc {
 
         ShapeDesc     m_shape       {};
@@ -115,6 +134,10 @@ namespace Crucible {
         float         m_mass        = 0.0f;    // 0 = derive it from the shape, which is almost always what you want
         float         m_friction    = 0.2f;    // Jolt's defaults. 0 is ice, 1 is glue
         float         m_restitution = 0.0f;    // bounciness. 0 is a sandbag, 1 is a superball
+        float         m_gravityFactor  = 1.0f; // multiplies world gravity for this body. 0 = it floats
+        float         m_linearDamping  = 0.0f; // Unity's drag: speed lost per second. 0 matches Unity's default
+        float         m_angularDamping = 0.05f;// Unity's angularDrag: spin lost per second (Unity and Jolt both default to 0.05)
+        std::uint8_t  m_lockedAxes     = AxisLock::None; // AxisLock bits. Dynamic bodies only; locking ALL of them is refused (make it Static)
         std::uint64_t m_userData    = 0;       // yours. The ECS binding puts the Entity in here
 
     };  // BODYDESC STRUCT

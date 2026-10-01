@@ -79,10 +79,28 @@ namespace Crucible {
         creation.mRestitution = std::clamp(desc.m_restitution, 0.0f, 1.0f);
         creation.mUserData    = desc.m_userData;
 
-        // Unity's drag defaults to 0; Jolt's damping defaults to 0.05, which
-        // gently brakes everything. Match Unity, or a thrown crate quietly loses
-        // the speed it was given and nobody can see why.
-        creation.mLinearDamping = 0.0f;
+        // Damping comes from the description (RigidBody::drag / angularDrag). Its
+        // defaults match Unity: linear 0, because Jolt's own 0.05 gently brakes
+        // everything and a thrown crate would quietly lose the speed it was given.
+        // Negative damping would ADD energy every step, so it is clamped away.
+        creation.mLinearDamping  = std::max(desc.m_linearDamping, 0.0f);
+        creation.mAngularDamping = std::max(desc.m_angularDamping, 0.0f);
+
+        // Jolt's per-body gravity multiplier; 0 is Unity's useGravity = false.
+        creation.mGravityFactor  = desc.m_gravityFactor;
+
+        // Frozen axes (Unity's Rigidbody constraints). Only a dynamic body is
+        // simulated, so only it has axes to lock. Jolt crashes on a dynamic body
+        // with no free axis at all - its own advice is a static body instead,
+        // which is what the ECS binding does - so that is refused here, not passed on.
+        if (motion == JPH::EMotionType::Dynamic && desc.m_lockedAxes != AxisLock::None) {
+            const std::uint8_t allowed = static_cast<std::uint8_t>(~desc.m_lockedAxes & AxisLock::All);
+            if (allowed == 0) {
+                CRU_ERROR("Physics::CreateBody: every axis is locked on a dynamic body - make it Static instead");
+                return BodyHandle{};
+            }
+            creation.mAllowedDOFs = static_cast<JPH::EAllowedDOFs>(allowed);
+        }
 
         // Unity sets mass directly. Jolt would rather work it out from the shape's
         // volume, which is what m_mass = 0 asks for. Given a real mass,

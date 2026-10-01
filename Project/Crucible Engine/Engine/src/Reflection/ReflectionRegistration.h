@@ -110,5 +110,20 @@ enum class MetaDataTypes {
 	/*!
 	* @brief    Draw this vec3/vec4 with a colour picker instead of drag fields.
 	*/
-	COLOUR
+	COLOUR,
+
+	/*!
+	* @brief    This uint64 is an asset id (ResourceManager AssetId). The Inspector
+	*			draws it as a picker of that kind of asset (combo + drag-drop
+	*			target) instead of a raw hex field. Serialization is unchanged:
+	*			the id is still saved as a plain number.
+	*
+	* @values	a Crucible::ResourceKind - which assets the picker lists
+	*
+	* @usage	.property("meshAsset", &MeshRenderer::meshAsset)
+				(
+					rttr::metadata(MetaDataTypes::ASSET_REF, Crucible::ResourceKind::Mesh)
+				)
+	*/
+	ASSET_REF
 };

@@ -208,10 +208,31 @@ namespace Crucible
 	 \brief
 		Linear motion state used by ECSPhysicsSystem to integrate Transform.
 	 *************************************************************************/
+	// Unity's Rigidbody.constraints. Each flag stops the SIMULATION moving the body along
+	// (position) or turning it around (rotation) that WORLD axis - gravity, hits and pushes
+	// included. Gameplay can still teleport it by writing the Transform.
+	// All six frozen = nothing left to simulate: the body becomes static (part of the arena).
+	struct RigidBodyConstraints
+	{
+		bool freezePositionX = false;
+		bool freezePositionY = false;
+		bool freezePositionZ = false;
+		bool freezeRotationX = false;
+		bool freezeRotationY = false;
+		bool freezeRotationZ = false;
+	};
+
 	struct RigidBody
 	{
 	    Math::vec3 velocity{ 0.f,0.f,0.f };
 		float mass = 1.f;
+
+		// Unity's Rigidbody.useGravity / drag / angularDrag, with Unity's defaults.
+		bool  useGravity  = true;    // false: the body floats, but still collides and can be pushed
+		float drag        = 0.f;     // linear damping, 1/s. 0 = keeps its speed; higher = slows down faster
+		float angularDrag = 0.05f;   // rotational damping, 1/s. Stops a knocked-over crate spinning forever
+
+		RigidBodyConstraints constraints{};   // frozen axes; e.g. freeze rotation X+Z so a player body never tips over
 	};
 
 	// Bind each component above to its ComponentKind (see ComponentKind.h)

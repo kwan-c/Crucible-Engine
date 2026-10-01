@@ -38,8 +38,12 @@ namespace Crucible {
 		bool                  m_continueAfterSaveAs = false;   // Save As was opened from the unsaved prompt
 		bool				  m_quitConfirmed = false;
 
+		// Save if the scene has a file, otherwise open Save As
+		void SaveScene();
+		void OpenSceneFunc();
 		void DrawOpenScenePopup();
 		void DrawSaveAsPopup();
+		void SaveEditedMaterials();   // writes Inspector-edited .mat files; called on every scene save
 		void DrawUnsavedChangesPopup();
 
 		SceneManager& m_scenes;

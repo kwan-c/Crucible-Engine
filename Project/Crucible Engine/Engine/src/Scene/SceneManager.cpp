@@ -13,7 +13,7 @@ namespace Crucible {
 	bool SceneManager::Save() {
 		if (!HasPath())
 		{
-			CRU_WARN("SceneManager: '{}' has never been saved - use SaveAs", m_scene.Name());
+			CRU_USER_WARN("SceneManager: '{}' has never been saved - use SaveAs", m_scene.Name());
 			return false;
 		}
 
@@ -27,12 +27,13 @@ namespace Crucible {
 		if (!m_scene.Save(m_world, file))
 		{
 			m_scene.SetName(oldName);
-			CRU_ERROR("SceneManager: failed to save '{}' to {}", m_scene.Name(), file.string());
+			CRU_USER_ERROR("SceneManager: failed to save '{}' to {}", m_scene.Name(), file.string());
 			return false;
 		}
 
 		m_path = file;
 		m_dirty = false;
+		CRU_USER_INFO("Saved scene '{}'", m_scene.Name());
 
 		// TODO: once Core owns an AssetManager, call Refresh() here so a
 		// brand-new file shows up in the Asset Browser without a restart.
@@ -51,7 +52,7 @@ namespace Crucible {
 		std::error_code ec;
 		if (!std::filesystem::is_regular_file(file, ec))
 		{
-			CRU_ERROR("SceneManager: cannot load '{}' - file does not exist", file.string());
+			CRU_USER_ERROR("SceneManager: cannot load '{}' - file does not exist", file.string());
 			return false;
 		}
 
@@ -94,12 +95,13 @@ namespace Crucible {
 		// still exactly as they were.
 		if (!m_scene.Load(m_world, file))
 		{
-			CRU_ERROR("SceneManager: failed to load '{}' - keeping '{}'", file.string(), m_scene.Name());
+			CRU_USER_ERROR("SceneManager: failed to load '{}' - keeping '{}'", file.string(), m_scene.Name());
 			return;
 		}
 
 		m_path = file;
 		m_dirty = false;
+		CRU_USER_INFO("Loaded scene '{}'", m_scene.Name());
 
 		NotifyChanged();
 	}

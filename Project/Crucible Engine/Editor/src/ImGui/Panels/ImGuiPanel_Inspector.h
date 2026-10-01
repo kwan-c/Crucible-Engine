@@ -26,7 +26,9 @@
 #include "ECS/Components/Components.h"
 #include "AssetPipe/Assetmanager.h"
 
+#include <cstdint>
 #include <functional>
+#include <unordered_set>
 
 namespace Crucible {
 	class SceneManager;
@@ -47,15 +49,17 @@ namespace Crucible {
 		void SetSelectedEntity(Entity entity) { m_selected = entity; m_draw = nullptr; }
 		Entity GetSelectedEntity() const { return m_selected; }
 
+		// Writes every material edited since its last save (the ones shown with a '*').
+		// Called by the Menu whenever the scene is saved. Returns how many failed to save.
+		std::size_t SaveUnsavedMaterials();
+
 	private:
 		static bool DrawInstance(rttr::instance obj);   // true if a value changed
 
 		void DrawEntityInspector(Entity entity);
+		void DrawAddComponentButton(Entity entity);
 
-		// These functions will return true if the user changed a value, so the caller can mark the scene dirty and/or trigger a re-render.
-		//bool DrawTransformSection(Transform& transform);
-		//bool DrawMeshRendererSection(MeshRenderer& renderer);
-		//bool DrawMaterialSection(MeshRenderer& renderer);
+		ImGuiTextFilter m_addComponentFilter;
 
 		template <typename T> bool DrawComponentExtras(T&) { return false; }
 		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
@@ -73,5 +77,9 @@ namespace Crucible {
 		// filesystem path for Renderer::CreateTexture - mirrors AssetBrowser::m_assets (see that
 		// panel's Init() for why each panel keeps its own for now instead of sharing one).
 		AssetManager m_assets;
+
+		// .mat asset ids edited in the Inspector but not yet written with "Save Material".
+		// Edits are live on the GPU immediately; the file is only written on the button.
+		std::unordered_set<std::uint64_t> m_unsavedMaterials;
 	};
 }

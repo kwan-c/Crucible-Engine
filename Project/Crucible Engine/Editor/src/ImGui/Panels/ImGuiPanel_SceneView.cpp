@@ -140,7 +140,17 @@ void Crucible::SceneView::DrawToolbar() {
 	ImGui::TextDisabled("|  %d x %d", static_cast<int>(m_viewportSize.x), static_cast<int>(m_viewportSize.y));
 
 	ImGui::SameLine();
-	ImGui::TextDisabled("|  Current Scene: %s", m_scenes.CurrentName().c_str());
+
+	bool isChanged = m_scenes.IsDirty();
+	ImGui::TextDisabled("| ");
+	ImGui::SameLine();
+
+	if (isChanged) {
+		ImGui::TextColored(ImVec4(1.f, .6f, .3f, 1.f), "Current Scene: %s *", m_scenes.CurrentName().c_str());
+	}
+	else {
+		ImGui::TextDisabled("Current Scene: %s", m_scenes.CurrentName().c_str());
+	}
 
 	if (m_flying) {
 		ImGui::SameLine();

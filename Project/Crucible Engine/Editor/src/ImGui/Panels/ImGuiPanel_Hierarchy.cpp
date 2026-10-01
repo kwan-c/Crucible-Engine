@@ -111,7 +111,9 @@ void Crucible::Hierarchy::CreatePrimitive(const std::string& meshName) {
 	MeshRenderer mr{};
 
 	auto id = m_resource.BuiltinId(meshName.c_str());
-	mr.mesh = m_resource.GetMesh(id);
+	// AssignMesh sets BOTH meshAsset (what the scene file saves) and the runtime mesh handle.
+	// Setting only mr.mesh left meshAsset = 0, so the mesh was lost on save/reload.
+	m_resource.AssignMesh(mr, id);
 	mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
 	m_world.AddComponent<MeshRenderer>(e, mr);
 

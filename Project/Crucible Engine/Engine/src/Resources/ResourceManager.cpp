@@ -138,7 +138,7 @@ namespace Crucible {
 
         if (m_warned[id]) { return; }
         m_warned[id] = true;
-        CRU_WARN("[Resources] {} ({})", message, GetName(id));
+        CRU_USER_WARN("[Resources] {} ({})", message, GetName(id));
 
     }   // ResourceManager::WarnOnce()
 
@@ -293,6 +293,14 @@ namespace Crucible {
 
     }   // ResourceManager::GetName()
 
+    bool ResourceManager::IsMaterialFile(AssetId id) const {
+
+        if (id == 0) { return false; }
+        const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+        return entry && entry->type == AssetType::Material;
+
+    }   // ResourceManager::IsMaterialFile()
+
     std::vector<ResourceInfo> ResourceManager::List(ResourceKind kind) const {
 
         std::vector<ResourceInfo> builtins;
@@ -351,6 +359,8 @@ namespace Crucible {
 
         renderer.meshAsset = id;
         renderer.mesh      = GetMesh(id);
+        CRU_DEBUG("[Resources] AssignMesh: {} -> handle {}", GetName(id),
+                  renderer.mesh.IsValid() ? std::to_string(renderer.mesh.id) : std::string("INVALID"));
 
     }   // ResourceManager::AssignMesh()
 
@@ -363,8 +373,32 @@ namespace Crucible {
 
     void ResourceManager::Resolve(MeshRenderer& renderer) {
 
-        if (renderer.meshAsset != 0)     { renderer.mesh     = GetMesh(renderer.meshAsset); }
-        if (renderer.materialAsset != 0) { renderer.material = GetMaterial(renderer.materialAsset); }
+        // Called every frame by the Inspector, so log only when the handle actually changes.
+        if (renderer.meshAsset != 0) {
+            const MeshHandle mesh = GetMesh(renderer.meshAsset);
+            if (mesh.id != renderer.mesh.id) {
+                if (mesh.IsValid()) {
+                    CRU_DEBUG("[Resources] Resolve: mesh {} -> handle {}", GetName(renderer.meshAsset), mesh.id);
+                } else {
+                    // GetMesh caches failures, and WarnOnce only reports the FIRST failure, so
+                    // picking a broken asset a second time would otherwise be completely silent.
+                    CRU_USER_WARN("[Resources] Resolve: mesh {} has no usable mesh, entity will not draw "
+                             "(failed to load earlier; failures are cached until restart)",
+                             GetName(renderer.meshAsset));
+                }
+            }
+            renderer.mesh = mesh;
+        }
+
+        if (renderer.materialAsset != 0) {
+            const MaterialHandle material = GetMaterial(renderer.materialAsset);
+            if (material.id != renderer.material.id && !material.IsValid()) {
+                CRU_USER_WARN("[Resources] Resolve: material {} is not usable, drawing with the default "
+                         "material (failed to load earlier; failures are cached until restart)",
+                         GetName(renderer.materialAsset));
+            }
+            renderer.material = material;
+        }
 
     }   // ResourceManager::Resolve()
 
@@ -518,6 +552,12 @@ namespace Crucible {
         for (const SlotDesc& slot : kSlots) {
             const TextureHandle handle = data.*slot.member;
             const AssetId textureId = handle.IsValid() ? FindId(handle) : 0;
+            if (handle.IsValid() && textureId == 0) {
+                // Bound, but not created through GetTexture (e.g. a texture embedded in a .glb, or
+                // one loaded straight from a path), so there is no GUID to write. It will be
+                // missing when the .mat is loaded again.
+                CRU_USER_WARN("[Resources] SerializeMaterial: '{}' texture has no asset id - saved as empty", slot.key);
+            }
             writer.Key(slot.key);
             writer.String(textureId ? ToHex(textureId).c_str() : "");
         }
@@ -538,7 +578,7 @@ namespace Crucible {
         if (path.size() < 4 || path.compare(path.size() - 4, 4, ".mat") != 0) { path += ".mat"; }
 
         if (!m_assets.WriteText(path, SerializeMaterial(data))) {
-            CRU_WARN("[Resources] Could not write material {}", path);
+            CRU_USER_ERROR("[Resources] Could not write material {}", path);
             return 0;
         }
 
@@ -547,9 +587,10 @@ namespace Crucible {
         RefreshCatalog();
         const AssetId id = GetIdForPath(path);
         if (id == 0) {
-            CRU_WARN("[Resources] Wrote {} but it did not appear in the asset index", path);
+            CRU_USER_ERROR("[Resources] Wrote {} but it did not appear in the asset index", path);
             return 0;
         }
+        CRU_USER_INFO("[Resources] Created material asset {} ({:016X})", path, id);
 
         // Overwriting a material that's already loaded: update it in place so every entity using
         // it sees the change and the handle stays the same.
@@ -571,13 +612,14 @@ namespace Crucible {
         const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
         auto it = m_materials.find(id);
         if (!entry || entry->type != AssetType::Material || it == m_materials.end() || !it->second.IsValid()) {
-            CRU_WARN("[Resources] SaveMaterial: {} is not a loaded .mat material", GetName(id));
+            CRU_USER_WARN("[Resources] SaveMaterial: {} is not a loaded .mat material", GetName(id));
             return false;
         }
 
         const std::string path = entry->virtualPath;   // copy: entry pointers die on Refresh()
         const bool ok = m_assets.WriteText(path, SerializeMaterial(m_renderer.GetMaterialData(it->second)));
-        if (!ok) { CRU_WARN("[Resources] Could not write material {}", path); }
+        if (!ok) { CRU_USER_ERROR("[Resources] Could not write material {}", path); }
+        else     { CRU_USER_INFO("[Resources] Saved material {}", path); }
         return ok;
 
     }   // ResourceManager::SaveMaterial()

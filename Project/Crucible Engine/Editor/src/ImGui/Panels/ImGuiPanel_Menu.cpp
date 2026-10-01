@@ -5,6 +5,8 @@
 
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
 #include "Scene/SceneManager.h"
+#include "Diagnostics/Logger.h"
+#include "ImGui/Panels/ImGuiPanel_Inspector.h"
 
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -33,6 +35,19 @@ void Crucible::Menu::Update(float) {
 		RequestGuarded(GuardedAction::Exit);   // not dirty -> quits straight away
 	}
 
+	// Keyboard shortcuts. Checked here every frame, NOT inside BeginMenu("File"),
+	// which only runs while the File menu is open. Skipped while any popup is up,
+	// so pressing Ctrl+S while typing a name in "Save Scene As" doesn't save behind it.
+	if (!ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+	{
+		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
+			SaveScene();
+		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal))
+			OpenSceneFunc();
+		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, ImGuiInputFlags_RouteGlobal))
+			RequestGuarded(GuardedAction::New);
+	}
+
 	if (ImGui::BeginMainMenuBar())
 	{
 		// ---------------- File ----------------
@@ -43,18 +58,13 @@ void Crucible::Menu::Update(float) {
 			}
 
 			if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
-				m_sceneFiles.clear();
-				std::error_code ec;
-				for (const auto& e : std::filesystem::directory_iterator(m_assets.Resolve("Scenes"), ec))
-					if (e.is_regular_file() && e.path().extension() == ".scene")
-						m_sceneFiles.push_back(e.path().filename().string());
-				m_openScenePopup = true;
+				OpenSceneFunc();
 			}
 
 
 			if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
 				if (!m_scenes.HasPath()) m_openSaveAsPopup = true;   // never saved -> ask for a name
-				else                     m_scenes.Save();
+				else                     { SaveScene(); }
 			}
 
 			if (ImGui::MenuItem("Save Scene As..."))
@@ -202,6 +212,22 @@ void Crucible::Menu::DrawOpenScenePopup()
 	ImGui::EndPopup();
 }
 
+// A scene file only stores which material each entity uses (an asset id), not the material's
+// values - those live in the .mat files. So saving the scene also writes any material edited in
+// the Inspector since its last save, otherwise "saved" scenes would reload with old materials.
+// Runs before the scene save and independently of it: a failed material is logged and left
+// marked unsaved, but does not block the scene from saving.
+void Crucible::Menu::SaveEditedMaterials()
+{
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (!inspector) {
+		CRU_WARN("[Menu] No Inspector panel - edited materials were not saved with the scene");
+		return;
+	}
+	if (std::size_t const failed = inspector->SaveUnsavedMaterials())
+		CRU_USER_WARN("[Menu] {} edited material(s) could not be saved - see the errors above", failed);
+}
+
 void Crucible::Menu::DrawSaveAsPopup()
 {
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -212,6 +238,7 @@ void Crucible::Menu::DrawSaveAsPopup()
 
 	if (ImGui::Button("Save", ImVec2(120.0f, 0.0f)) && m_saveAsName[0] != '\0')
 	{
+		SaveEditedMaterials();
 		bool const ok = m_scenes.SaveAs(m_assets.Resolve(std::string("Scenes/") + m_saveAsName + ".scene"));
 		m_assets.Refresh();
 
@@ -245,6 +272,7 @@ void Crucible::Menu::DrawUnsavedChangesPopup()
 	{
 		if (m_scenes.HasPath())
 		{
+			SaveEditedMaterials();
 			if (m_scenes.Save())                        // on failure: stay put, error already logged
 				RunAction(m_guardedAction, m_guardedPath);
 			m_guardedAction = GuardedAction::None;
@@ -271,4 +299,20 @@ void Crucible::Menu::DrawUnsavedChangesPopup()
 		ImGui::CloseCurrentPopup();
 	}
 	ImGui::EndPopup();
+}
+
+void Crucible::Menu::SaveScene()
+{
+	if (!m_scenes.HasPath()) { m_openSaveAsPopup = true; return; }   // never saved -> ask for a name
+	SaveEditedMaterials();
+	m_scenes.Save();
+}
+
+void Crucible::Menu::OpenSceneFunc() {
+	m_sceneFiles.clear();
+	std::error_code ec;
+	for (const auto& e : std::filesystem::directory_iterator(m_assets.Resolve("Scenes"), ec))
+		if (e.is_regular_file() && e.path().extension() == ".scene")
+			m_sceneFiles.push_back(e.path().filename().string());
+	m_openScenePopup = true;
 }

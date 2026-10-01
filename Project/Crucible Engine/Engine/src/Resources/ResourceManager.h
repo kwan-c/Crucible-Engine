@@ -236,6 +236,13 @@ namespace Crucible {
         std::string GetName(AssetId id) const;
 
         /*********************************************************************
+         \brief  Whether an id is a .mat file on disk - i.e. a material whose
+                 edits can be saved with SaveMaterial. False for 0, built-ins
+                 ("Default Material") and materials embedded in a model.
+         *********************************************************************/
+        bool IsMaterialFile(AssetId id) const;
+
+        /*********************************************************************
          \brief  Every resource of a kind that can be picked: built-ins
                  first, then indexed assets (loaded or not), sorted by name.
          \param[in] kind Which kind to list.

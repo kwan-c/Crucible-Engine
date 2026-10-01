@@ -20,9 +20,18 @@ namespace Crucible::Debug
 {
     namespace   // everything in here is private to this file
     {
+        struct ListenerEntry
+        {
+            ListenerId  id;
+            LogListener fn;
+            void*       userData;
+        };
+
         struct LoggerState
         {
             std::vector<std::unique_ptr<ISink>> sinks;
+            std::vector<ListenerEntry>          listeners;
+            ListenerId                          nextListenerId = 1;
             std::mutex                          mutex;
 
             Level minLevel   = Level::Trace;
@@ -174,6 +183,8 @@ namespace Crucible::Debug
         // gets reported as a leak.
         state.sinks.clear();
         state.sinks.shrink_to_fit();
+        state.listeners.clear();
+        state.listeners.shrink_to_fit();
 
         state.startedAt.clear();
         state.startedAt.shrink_to_fit();
@@ -220,53 +231,119 @@ namespace Crucible::Debug
 
     // --------------------------------------------------------------- Logging
 
+    namespace
+    {
+        // True while this thread is inside a listener callback. A listener that
+        // logs would try to take the (non-recursive) mutex it is already under.
+        thread_local bool t_inListener = false;
+
+        void Dispatch(const Level& level,
+                      const char* file,
+                      int line,
+                      const std::string_view& message,
+                      bool userFacing)
+        {
+            if (t_inListener)
+            {
+                return;     // see LogListener's comment: dropped, not deadlocked
+            }
+
+            auto& state = State();
+
+            // Logging before Init would otherwise be silently lost. Start a
+            // default session instead so nothing disappears.
+            if (!state.initialised)
+            {
+                Init();
+            }
+
+            const std::scoped_lock lock{ state.mutex };
+
+            if (level < state.minLevel)
+            {
+                return;
+            }
+
+            const double seconds = SecondsSince(state.startTick);
+
+            std::string out = std::format("[{}] [+{:8.3f}s] [{}]",
+                                          LocalTimestamp(),
+                                          seconds,
+                                          LevelName(level));
+
+            if (state.showSource && file != nullptr)
+            {
+                out += std::format(" [{}:{}]", FileNameOnly(file), line);
+            }
+
+            out += ' ';
+            out += message;
+
+            // Anything at Error or worse is flushed immediately: if the process
+            // dies a moment later, this line is already safely on disk.
+            const bool urgent = (level >= Level::Error);
+
+            for (auto& sink : state.sinks)
+            {
+                sink->Write(out);
+
+                if (urgent)
+                {
+                    sink->Flush();
+                }
+            }
+
+            if (!state.listeners.empty())
+            {
+                const LogRecord record{ level, userFacing, seconds, FileNameOnly(file), line, message };
+
+                t_inListener = true;
+                for (const auto& listener : state.listeners)
+                {
+                    listener.fn(record, listener.userData);
+                }
+                t_inListener = false;
+            }
+        }
+    }
+
     void LogMessage(const Level& level,
                     const char* file,
                     int line,
                     const std::string_view& message)
     {
-        auto& state = State();
+        Dispatch(level, file, line, message, false);
+    }
 
-        // Logging before Init would otherwise be silently lost. Start a
-        // default session instead so nothing disappears.
-        if (!state.initialised)
+    void LogUserMessage(const Level& level,
+                        const char* file,
+                        int line,
+                        const std::string_view& message)
+    {
+        Dispatch(level, file, line, message, true);
+    }
+
+    ListenerId AddListener(LogListener listener, void* userData)
+    {
+        if (listener == nullptr)
         {
-            Init();
+            return 0;
         }
 
+        auto& state = State();
         const std::scoped_lock lock{ state.mutex };
 
-        if (level < state.minLevel)
-        {
-            return;
-        }
+        const ListenerId id = state.nextListenerId++;
+        state.listeners.push_back({ id, listener, userData });
+        return id;
+    }
 
-        std::string out = std::format("[{}] [+{:8.3f}s] [{}]",
-                                      LocalTimestamp(),
-                                      SecondsSince(state.startTick),
-                                      LevelName(level));
+    void RemoveListener(ListenerId id)
+    {
+        auto& state = State();
+        const std::scoped_lock lock{ state.mutex };
 
-        if (state.showSource && file != nullptr)
-        {
-            out += std::format(" [{}:{}]", FileNameOnly(file), line);
-        }
-
-        out += ' ';
-        out += message;
-
-        // Anything at Error or worse is flushed immediately: if the process
-        // dies a moment later, this line is already safely on disk.
-        const bool urgent = (level >= Level::Error);
-
-        for (auto& sink : state.sinks)
-        {
-            sink->Write(out);
-
-            if (urgent)
-            {
-                sink->Flush();
-            }
-        }
+        std::erase_if(state.listeners, [id](const ListenerEntry& entry) { return entry.id == id; });
     }
 
     void LogSetting(const std::string_view& system,

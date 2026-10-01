@@ -43,6 +43,7 @@
 #include "Reflection/ReflectionExternalRegistration.h"
 
 #include "ECS/Components/Components.h"
+#include "Resources/ResourceManager.h"   // ResourceKind, for ASSET_REF metadata
 
 RTTR_REGISTRATION
 {
@@ -111,7 +112,9 @@ RTTR_REGISTRATION
         // Asset ids, not the runtime handles: handles are meaningless after a reload, ids are
         // resolved back to handles by ResourceManager (see MeshRenderer's doc comment).
         .property("meshAsset",     &MeshRenderer::meshAsset)
+            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Mesh))
         .property("materialAsset", &MeshRenderer::materialAsset)
+            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Material))
     ;
 
     // Light type by name, same reasoning as ShapeType below: the scene file
@@ -149,6 +152,7 @@ RTTR_REGISTRATION
         .property("ambientIntensity", &Skybox::ambientIntensity)
         .property("exposure",         &Skybox::exposure)
         .property("skyboxAsset",      &Skybox::skyboxAsset)
+            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Texture))
     ;
 
     rttr::registration::class_<Audio>("Audio")
@@ -157,10 +161,26 @@ RTTR_REGISTRATION
         .property("loop", &Audio::loop)
     ;
 
+    // Nested in RigidBody, so the Inspector shows it as a "constraints" tree and the
+    // scene file as a "constraints": { ... } object.
+    rttr::registration::class_<RigidBodyConstraints>("RigidBodyConstraints")
+        .constructor<>()
+        .property("freezePositionX", &RigidBodyConstraints::freezePositionX)
+        .property("freezePositionY", &RigidBodyConstraints::freezePositionY)
+        .property("freezePositionZ", &RigidBodyConstraints::freezePositionZ)
+        .property("freezeRotationX", &RigidBodyConstraints::freezeRotationX)
+        .property("freezeRotationY", &RigidBodyConstraints::freezeRotationY)
+        .property("freezeRotationZ", &RigidBodyConstraints::freezeRotationZ)
+    ;
+
     rttr::registration::class_<RigidBody>("RigidBody")
         .constructor<>()
-        .property("velocity", &RigidBody::velocity)
-        .property("mass",     &RigidBody::mass)
+        .property("velocity",    &RigidBody::velocity)
+        .property("mass",        &RigidBody::mass)
+        .property("useGravity",  &RigidBody::useGravity)
+        .property("drag",        &RigidBody::drag)
+        .property("angularDrag", &RigidBody::angularDrag)
+        .property("constraints", &RigidBody::constraints)
     ;
 
     // -----------------
