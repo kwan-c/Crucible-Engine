@@ -30,6 +30,8 @@ namespace Crucible {
     const vk::raii::Pipeline&               VulkanPipeline::GetSkyboxPipeline()         const { return m_skyboxPipeline; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetSkyboxLayout()           const { return m_skyboxPipelineLayout; }
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetSkyboxDescriptorSetLayout() const { return m_skyboxDescriptorSetLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetDebugLinePipeline(bool depthTested) const { return depthTested ? m_debugLinePipeline : m_debugLineOnTopPipeline; }
+    const vk::raii::PipelineLayout&         VulkanPipeline::GetDebugLineLayout()        const { return m_debugLineLayout; }
 
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN PIPELINE
@@ -310,6 +312,102 @@ namespace Crucible {
         m_skyboxPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 
     }   // VulkanPipeline::CreateSkyboxPipeline()
+
+    void VulkanPipeline::CreateDebugLinePipelines(VulkanContext& context, VulkanSwapchain& swapchain) {
+
+        vk::raii::ShaderModule shaderModule = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/DebugLine.spv"));
+
+        vk::PipelineShaderStageCreateInfo shaderStages[] = {
+            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "lineVert" },
+            { .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "lineFrag" }
+        };
+
+        // DebugVertex (DebugDraw.h): vec3 position + RGBA8 colour, 16 bytes. The colour is read as
+        // UNORM so the shader receives 0..1 floats with no unpacking.
+        vk::VertexInputBindingDescription binding{ .binding = 0, .stride = 16, .inputRate = vk::VertexInputRate::eVertex };
+        std::array<vk::VertexInputAttributeDescription, 2> attributes{ {
+            { .location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat, .offset = 0 },
+            { .location = 1, .binding = 0, .format = vk::Format::eR8G8B8A8Unorm,   .offset = 12 }
+        } };
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+            .vertexBindingDescriptionCount   = 1,
+            .pVertexBindingDescriptions      = &binding,
+            .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size()),
+            .pVertexAttributeDescriptions    = attributes.data()
+        };
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eLineList };
+
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        vk::PipelineDynamicStateCreateInfo dynamicState{
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates    = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+
+        // lineWidth 1: wider lines need the optional wideLines feature, which isn't enabled.
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable        = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode             = vk::PolygonMode::eFill,
+            .cullMode                = vk::CullModeFlagBits::eNone,
+            .frontFace               = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable         = vk::False,
+            .lineWidth               = 1.0f
+        };
+        vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+            .blendEnable    = vk::False,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+        };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{
+            .logicOpEnable   = vk::False,
+            .logicOp         = vk::LogicOp::eCopy,
+            .attachmentCount = 1,
+            .pAttachments    = &colorBlendAttachment
+        };
+
+        // Set 0 only (view/proj from FrameUniforms), no push constants.
+        vk::DescriptorSetLayout setLayout = *m_descriptorSetLayout;
+        vk::PipelineLayoutCreateInfo pipelineLayoutInfo{ .setLayoutCount = 1, .pSetLayouts = &setLayout };
+        m_debugLineLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
+
+        auto swapchainFormat = swapchain.GetSurfaceFormat().format;
+        auto depthFormat     = swapchain.GetDepthFormat();
+
+        // Two pipelines differing only in depth state: depth-tested lines hide behind geometry
+        // (LESS_OR_EQUAL so a line lying exactly on a surface still shows), on-top lines ignore
+        // depth. Neither writes depth, so debug lines never occlude anything.
+        auto build = [&](bool depthTested) {
+            vk::PipelineDepthStencilStateCreateInfo depthStencil{
+                .depthTestEnable       = depthTested ? vk::True : vk::False,
+                .depthWriteEnable      = vk::False,
+                .depthCompareOp        = vk::CompareOp::eLessOrEqual,
+                .depthBoundsTestEnable = vk::False,
+                .stencilTestEnable     = vk::False
+            };
+            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+                {
+                    .stageCount          = 2,
+                    .pStages             = shaderStages,
+                    .pVertexInputState   = &vertexInputInfo,
+                    .pInputAssemblyState = &inputAssembly,
+                    .pViewportState      = &viewportState,
+                    .pRasterizationState = &rasterizer,
+                    .pMultisampleState   = &multisampling,
+                    .pDepthStencilState  = &depthStencil,
+                    .pColorBlendState    = &colorBlending,
+                    .pDynamicState       = &dynamicState,
+                    .layout              = m_debugLineLayout,
+                    .renderPass          = nullptr
+                },
+                {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat, .depthAttachmentFormat = depthFormat }
+            };
+            return vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        };
+        m_debugLinePipeline      = build(true);
+        m_debugLineOnTopPipeline = build(false);
+
+    }   // VulkanPipeline::CreateDebugLinePipelines()
 
     void VulkanPipeline::CleanUp() {
 

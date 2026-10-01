@@ -122,6 +122,18 @@ namespace Crucible
 		std::optional<ExtractQuery> m_query;         // built once, on first Update() (needs a World&)
 		std::optional<LightQuery>   m_lightQuery;    // same
 		std::optional<SkyboxQuery>  m_skyboxQuery;   // same
+
+		// One render proxy per MeshRenderer entity, indexed by Entity::index (a flat array, so the
+		// per-frame lookup is O(1) even with tens of thousands of enemies). An entity not seen in
+		// a frame (destroyed, or its MeshRenderer removed) has its proxy destroyed in the sweep.
+		struct ProxyRecord {
+			RenderProxyHandle proxy;
+			std::uint32_t     generation = 0;
+			std::uint64_t     seenFrame  = 0;
+		};
+		std::vector<ProxyRecord>   m_records;
+		std::vector<std::uint32_t> m_activeRecords;   // entity indices that currently own a proxy
+		std::uint64_t              m_frame = 0;
 	};
 
 #ifdef _MSC_VER

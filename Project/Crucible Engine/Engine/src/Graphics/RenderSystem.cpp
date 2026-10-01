@@ -52,6 +52,7 @@ namespace Crucible {
         m_pipeline.CreateSkyboxDescriptorSetLayout(m_context);
         m_pipeline.CreatePipeline(m_context, m_swapchain);
         m_pipeline.CreateSkyboxPipeline(m_context, m_swapchain);
+        m_pipeline.CreateDebugLinePipelines(m_context, m_swapchain);
         m_frameManager.Init(m_context, m_swapchain);
 
         CreateUniformBuffers();
@@ -145,23 +146,25 @@ namespace Crucible {
         // Finish a few queued async mesh uploads (see CreateMeshAsync) before drawing this frame.
         ProcessPendingMeshUploads();
 
-        // QUERY & CULL
-        //   (Frustum culling would go here: m_camera.GetViewProjection() gives you the planes.)
-
-        // POPULATE RENDER QUEUE
-        //   The ECS extraction system calls Submit() before Update(). The demo scene is a stand-in.
+        // POPULATE
+        //   Persistent proxies were updated by RenderExtractSystem (SetRenderProxy) during the ECS
+        //   update; immediate Submit() items (the demo scene) are added here.
         if (m_demoScene) { SubmitDemoScene(); }
 
-        // SORT & BATCH
-        //   Group by (material, mesh) so both the material descriptor set and the mesh's
-        //   vertex/index buffers are rebound as rarely as possible.
-        std::stable_sort(m_renderQueue.begin(), m_renderQueue.end(),
-            [](const RenderItem& a, const RenderItem& b) {
-                if (!(a.material == b.material)) { return a.material < b.material; }
-                return a.mesh < b.mesh;
-            });
+        // Proxies whose mesh was still uploading last frame: try to get their bounds now.
+        if (!m_proxiesAwaitingBounds.empty()) {
+            std::vector<uint32_t> pending;
+            pending.swap(m_proxiesAwaitingBounds);
+            for (uint32_t id : pending) {
+                if (id < m_proxies.size() && m_proxies[id].alive && m_proxies[id].awaitingBounds) { RefreshProxyBounds(id); }
+            }
+        }
 
-        // EXECUTE GRAPHICS CALLS
+        if (DebugDraw::ShouldDraw(DebugCategory::Bounds)) { DrawProxyBoundsDebug(); }
+
+        // CULL, SORT & DRAW
+        //   Per view, inside RecordCommandBuffer: each camera gets its own visible list
+        //   (BuildVisibleItems), so the Scene and Game views never cull with each other's camera.
         DrawFrame();
 
         // Everything submitted for this frame is consumed; lights and environment are per-frame
@@ -169,6 +172,15 @@ namespace Crucible {
         m_renderQueue.clear();
         m_lightQueue.clear();
         m_environment = m_defaultEnvironment;
+
+        // Age/clear debug lines, and tell DebugDraw whether anything will show them next frame -
+        // when nothing does, every DebugDraw call becomes a cheap early-out.
+        bool debugVisible = m_viewports.empty() && m_debugInWindow;
+        for (const auto& [id, vp] : m_viewports) { debugVisible = debugVisible || vp.debugDraw; }
+        DebugDraw::EndFrame(dt, debugVisible);
+
+        // Lets objects that have stopped moving settle back into the spatial index's tree.
+        m_spatial.EndFrame();
 
     }   // Renderer::Update()
 
@@ -181,6 +193,7 @@ namespace Crucible {
         // Lights first: UpdateFrameUniforms (and the viewports' uniforms, filled while recording)
         // read the light count this writes.
         UpdateLightBuffer(m_frameManager.GetFrameIndex());
+        UpdateDebugBuffer(m_frameManager.GetFrameIndex());
         UpdateFrameUniforms(m_frameManager.GetFrameIndex());
 
         // Record and submit command buffer.
@@ -334,6 +347,7 @@ namespace Crucible {
 
             vp.camera.SetAspect(static_cast<float>(vp.extent.width), static_cast<float>(vp.extent.height));
             UpdateViewportUniforms(vp, frameIndex);
+            BuildVisibleItems(vp.camera, vp.cullStats);   // this view's camera, this view's list
 
             TransitionImageLayout(
                 fc, vp.colorImage.GetImage(), vk::ImageAspectFlagBits::eColor,
@@ -372,7 +386,7 @@ namespace Crucible {
             };
 
             fc.frame.commandBuffer.beginRendering(renderingInfo);
-            DrawRenderQueue(*fc.frame.commandBuffer, vp.extent, *vp.descriptorSets[frameIndex]);
+            DrawRenderQueue(*fc.frame.commandBuffer, vp.extent, *vp.descriptorSets[frameIndex], vp.debugDraw, m_visibleItems);
             fc.frame.commandBuffer.endRendering();
 
             // Hand off to the Editor as a sampled texture (ImGui_ImplVulkan_AddTexture expects this layout).
@@ -443,7 +457,8 @@ namespace Crucible {
         // viewport for it. In the Editor, the Scene/Game panels already drew the scene above and
         // display it themselves via ImGui::Image(); this pass then holds only the ImGui overlay.
         if (m_viewports.empty()) {
-            DrawRenderQueue(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex]);
+            BuildVisibleItems(m_camera, m_windowCullStats);
+            DrawRenderQueue(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_debugInWindow, m_visibleItems);
         }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
@@ -467,7 +482,8 @@ namespace Crucible {
 
     }   // Renderer::RecordCommandBuffer()
 
-    void Renderer::DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet) {
+    void Renderer::DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, bool drawDebug,
+                                   const std::vector<RenderItem>& items) {
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
@@ -480,7 +496,7 @@ namespace Crucible {
         // descriptor set (set 1) and the mesh's vertex/index buffers rebind only on change.
         MeshHandle     boundMesh;       // starts Invalid
         MaterialHandle boundMaterial;   // starts Invalid
-        for (const RenderItem& item : m_renderQueue) {
+        for (const RenderItem& item : items) {
 
             if (!item.mesh.IsValid() || item.mesh.id >= m_meshes.size()) { continue; }
             const GpuMesh& mesh = m_meshes[item.mesh.id];
@@ -516,6 +532,9 @@ namespace Crucible {
         // Sky last: it's depth-tested against everything drawn above, so only uncovered pixels
         // pay for it. Viewport/scissor are dynamic state and stay set across the pipeline switch.
         DrawSkybox(cmd, cameraSet);
+
+        // Debug lines last, over everything (the depth-tested ones still respect mesh depth).
+        if (drawDebug) { DrawDebugLines(cmd, cameraSet); }
 
     }   // Renderer::DrawRenderQueue()
 
@@ -570,9 +589,27 @@ namespace Crucible {
 
         mesh.indexCount = static_cast<uint32_t>(data.indices.size());
 
+        mesh.boundsMin = mesh.boundsMax = data.vertices.front().pos;
+        mesh.cpuPositions.reserve(data.vertices.size());
+        for (const Vertex& v : data.vertices) {
+            mesh.boundsMin = glm::min(mesh.boundsMin, v.pos);
+            mesh.boundsMax = glm::max(mesh.boundsMax, v.pos);
+            mesh.cpuPositions.push_back(v.pos);
+        }
+        mesh.cpuIndices = data.indices;
+
         m_meshes[handle.id] = std::move(mesh);
 
     }   // Renderer::UploadMesh()
+
+    bool Renderer::GetMeshBounds(MeshHandle handle, glm::vec3& outMin, glm::vec3& outMax) const {
+
+        if (!handle.IsValid() || handle.id >= m_meshes.size() || m_meshes[handle.id].indexCount == 0) { return false; }
+        outMin = m_meshes[handle.id].boundsMin;
+        outMax = m_meshes[handle.id].boundsMax;
+        return true;
+
+    }   // Renderer::GetMeshBounds()
 
     const std::string& Renderer::GetMeshName(MeshHandle handle) const {
 
@@ -630,6 +667,12 @@ namespace Crucible {
         m_viewports.erase(it);
 
     }   // Renderer::DestroyViewport()
+
+    void Renderer::SetViewportDebugDraw(ViewportHandle handle, bool enabled) {
+
+        GetViewportOrThrow(handle).debugDraw = enabled;
+
+    }   // Renderer::SetViewportDebugDraw()
 
     Camera& Renderer::GetViewportCamera(ViewportHandle handle) {
 
@@ -1500,6 +1543,265 @@ namespace Crucible {
         return handle;
 
     }   // Renderer::CreateCubemapFromEquirect()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  RENDER PROXIES, CULLING, PICKING
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    RenderProxyHandle Renderer::CreateRenderProxy(std::uint64_t userData) {
+
+        uint32_t id;
+        if (!m_freeProxies.empty()) { id = m_freeProxies.back(); m_freeProxies.pop_back(); }
+        else { id = static_cast<uint32_t>(m_proxies.size()); m_proxies.emplace_back(); }
+
+        m_proxies[id] = RenderProxy{};
+        m_proxies[id].alive = true;
+        m_proxies[id].userData = userData;
+        return RenderProxyHandle{ id };
+
+    }   // Renderer::CreateRenderProxy()
+
+    void Renderer::SetRenderProxy(RenderProxyHandle handle, MeshHandle mesh, MaterialHandle material, const glm::mat4& model, bool visible) {
+
+        if (!handle.IsValid() || handle.id >= m_proxies.size() || !m_proxies[handle.id].alive) { return; }
+        RenderProxy& p = m_proxies[handle.id];
+
+        const bool sameMatrix = memcmp(&p.model, &model, sizeof(glm::mat4)) == 0;
+        if (sameMatrix && p.mesh == mesh && p.material == material && p.visible == visible) { return; }   // the common case
+
+        const bool boundsChange = !sameMatrix || !(p.mesh == mesh) || p.visible != visible;
+        p.mesh     = mesh;
+        p.material = material;
+        p.model    = model;
+        p.visible  = visible;
+        if (boundsChange) { RefreshProxyBounds(handle.id); }   // a material-only change never touches the index
+
+    }   // Renderer::SetRenderProxy()
+
+    void Renderer::DestroyRenderProxy(RenderProxyHandle handle) {
+
+        if (!handle.IsValid() || handle.id >= m_proxies.size() || !m_proxies[handle.id].alive) { return; }
+        RenderProxy& p = m_proxies[handle.id];
+        if (p.spatial != SpatialIndex::kInvalid) { m_spatial.Remove(p.spatial); }
+        p = RenderProxy{};
+        m_freeProxies.push_back(handle.id);
+
+    }   // Renderer::DestroyRenderProxy()
+
+    void Renderer::RefreshProxyBounds(uint32_t id) {
+
+        RenderProxy& p = m_proxies[id];
+        p.awaitingBounds = false;
+
+        auto removeFromIndex = [&] {
+            if (p.spatial != SpatialIndex::kInvalid) { m_spatial.Remove(p.spatial); p.spatial = SpatialIndex::kInvalid; }
+        };
+
+        if (!p.visible || !p.mesh.IsValid()) { removeFromIndex(); return; }
+
+        glm::vec3 mn, mx;
+        if (!GetMeshBounds(p.mesh, mn, mx)) {
+            // Mesh not uploaded yet (CreateMeshAsync): not drawable anyway; retry next frame.
+            removeFromIndex();
+            p.awaitingBounds = true;
+            m_proxiesAwaitingBounds.push_back(id);
+            return;
+        }
+
+        const AABB world = AABB::Transform(AABB(mn, mx), p.model);
+        if (p.spatial == SpatialIndex::kInvalid) { p.spatial = m_spatial.Insert(world, id); }
+        else                                     { m_spatial.Update(p.spatial, world); }
+
+    }   // Renderer::RefreshProxyBounds()
+
+    void Renderer::BuildVisibleItems(const Camera& camera, RenderCullStats& stats) {
+
+        m_visibleItems.clear();
+        stats = RenderCullStats{};
+
+        const Frustum frustum = Frustum::FromViewProjection(camera.GetProjection() * camera.GetView());
+
+        // Proxies: tree branches / the moving-object array, per SpatialIndex.
+        m_spatial.QueryFrustum(frustum, [&](SpatialIndex::Handle h) {
+            const RenderProxy& p = m_proxies[static_cast<uint32_t>(m_spatial.GetUserData(h))];
+            m_visibleItems.push_back(RenderItem{ p.mesh, p.material, p.model });
+        });
+        stats.proxies        = m_spatial.GetCount();
+        stats.proxiesVisible = static_cast<uint32_t>(m_visibleItems.size());
+        stats.movingProxies  = m_spatial.GetActiveCount();
+
+        // Immediate items: brute force (there are few, and they have no persistent identity).
+        glm::vec3 mn, mx;
+        for (const RenderItem& item : m_renderQueue) {
+            if (GetMeshBounds(item.mesh, mn, mx) && !frustum.Intersects(AABB::Transform(AABB(mn, mx), item.model))) { continue; }
+            m_visibleItems.push_back(item);
+        }
+        stats.immediate        = static_cast<uint32_t>(m_renderQueue.size());
+        stats.immediateVisible = static_cast<uint32_t>(m_visibleItems.size()) - stats.proxiesVisible;
+
+        // Group by (material, mesh) so the material set and mesh buffers rebind as rarely as possible.
+        std::sort(m_visibleItems.begin(), m_visibleItems.end(), [](const RenderItem& a, const RenderItem& b) {
+            if (!(a.material == b.material)) { return a.material < b.material; }
+            return a.mesh < b.mesh;
+        });
+
+    }   // Renderer::BuildVisibleItems()
+
+    RenderCullStats Renderer::GetViewportCullStats(ViewportHandle handle) const {
+
+        auto it = m_viewports.find(handle.id);
+        return it == m_viewports.end() ? RenderCullStats{} : it->second.cullStats;
+
+    }   // Renderer::GetViewportCullStats()
+
+    namespace {
+
+        // Möller-Trumbore, double-sided (picking should hit a plane from below too). t is in units
+        // of `dir`, so it carries over unchanged between world and object space.
+        bool RayTriangle(const glm::vec3& o, const glm::vec3& dir, const glm::vec3& a, const glm::vec3& b, const glm::vec3& c, float& t) {
+            const glm::vec3 e1 = b - a, e2 = c - a;
+            const glm::vec3 p = glm::cross(dir, e2);
+            const float det = glm::dot(e1, p);
+            if (std::abs(det) < 1e-12f) { return false; }
+            const float inv = 1.0f / det;
+            const glm::vec3 s = o - a;
+            const float u = glm::dot(s, p) * inv;
+            if (u < 0.0f || u > 1.0f) { return false; }
+            const glm::vec3 q = glm::cross(s, e1);
+            const float v = glm::dot(dir, q) * inv;
+            if (v < 0.0f || u + v > 1.0f) { return false; }
+            t = glm::dot(e2, q) * inv;
+            return t >= 0.0f;
+        }
+
+    }   // anonymous namespace
+
+    bool Renderer::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const {
+
+        const float len = glm::length(direction);
+        if (len < 1e-8f || maxDistance <= 0.0f) { return false; }
+        const Ray ray{ origin, direction / len };
+
+        bool found = false;
+        float best = maxDistance;
+
+        m_spatial.RayCast(ray, maxDistance, [&](SpatialIndex::Handle h, float tBox) {
+            if (tBox >= best) { return best; }
+            const RenderProxy& p = m_proxies[static_cast<uint32_t>(m_spatial.GetUserData(h))];
+            if (!p.mesh.IsValid() || p.mesh.id >= m_meshes.size()) { return best; }
+            const GpuMesh& mesh = m_meshes[p.mesh.id];
+
+            float tHit = -1.0f;
+            if (mesh.cpuIndices.empty()) {
+                tHit = tBox;   // no geometry kept: the tight box is the best we can do
+            } else {
+                // Into object space: t is preserved because the mapping is affine.
+                const glm::mat4 inv = glm::inverse(p.model);
+                const glm::vec3 o = glm::vec3(inv * glm::vec4(ray.origin, 1.0f));
+                const glm::vec3 d = glm::vec3(inv * glm::vec4(ray.direction, 0.0f));
+                const auto& pos = mesh.cpuPositions;
+                const auto& idx = mesh.cpuIndices;
+                for (size_t i = 0; i + 2 < idx.size(); i += 3) {
+                    float t;
+                    if (RayTriangle(o, d, pos[idx[i]], pos[idx[i + 1]], pos[idx[i + 2]], t) && t < best && (tHit < 0.0f || t < tHit)) { tHit = t; }
+                }
+            }
+
+            if (tHit >= 0.0f && tHit < best) {
+                best = tHit;
+                found = true;
+                outHit.userData = p.userData;
+                outHit.distance = tHit;
+                outHit.point    = ray.origin + ray.direction * tHit;
+                outHit.mesh     = p.mesh;
+            }
+            return best;
+        });
+
+        return found;
+
+    }   // Renderer::Raycast()
+
+    void Renderer::DrawProxyBoundsDebug() {
+
+        DebugStyle settled;
+        settled.category = DebugCategory::Bounds;
+        settled.color    = { 0.35f, 0.55f, 1.0f, 1.0f };
+        DebugStyle moving = settled;
+        moving.color     = { 1.0f, 0.55f, 0.15f, 1.0f };
+
+        for (const RenderProxy& p : m_proxies) {
+            if (!p.alive || p.spatial == SpatialIndex::kInvalid) { continue; }
+            const AABB& b = m_spatial.GetBounds(p.spatial);
+            DebugDraw::AABB(b.min, b.max, m_spatial.IsActive(p.spatial) ? moving : settled);
+        }
+
+    }   // Renderer::DrawProxyBoundsDebug()
+
+    void Renderer::UpdateDebugBuffer(uint32_t frameIndex) {
+
+        DebugDraw::Collect(m_debugTested, m_debugOnTop);
+
+        // Clamp (whole segments only) so a runaway debug loop can't allocate unbounded memory.
+        size_t total = m_debugTested.size() + m_debugOnTop.size();
+        if (total > kMaxDebugVertices) {
+            if (!m_warnedDebugOverflow) {
+                CRU_WARN("[Renderer] More than {} debug line vertices in one frame; the rest are dropped.", kMaxDebugVertices);
+                m_warnedDebugOverflow = true;
+            }
+            const size_t keepTested = std::min<size_t>(m_debugTested.size(), kMaxDebugVertices) & ~size_t{ 1 };
+            m_debugTested.resize(keepTested);
+            m_debugOnTop.resize(std::min(m_debugOnTop.size(), (kMaxDebugVertices - keepTested)) & ~size_t{ 1 });
+            total = m_debugTested.size() + m_debugOnTop.size();
+        }
+
+        m_debugTestedCount = static_cast<uint32_t>(m_debugTested.size());
+        m_debugOnTopCount  = static_cast<uint32_t>(m_debugOnTop.size());
+        if (total == 0) { return; }
+
+        if (m_debugBuffers.empty()) {
+            const uint32_t frames = m_frameManager.MaxFramesInFlight();
+            m_debugBuffers.resize(frames);
+            m_debugBuffersMapped.assign(frames, nullptr);
+            m_debugBufferCapacity.assign(frames, 0);
+        }
+
+        // Grow this frame's buffer (power of two, at least 8K vertices). Safe to recreate here:
+        // BeginFrame() already waited on this frame index's fence, so the GPU is done with it.
+        if (m_debugBufferCapacity[frameIndex] < total) {
+            uint32_t capacity = 8192;
+            while (capacity < total) { capacity *= 2; }
+            m_debugBuffers[frameIndex].Create(m_context, vk::DeviceSize{ capacity } * sizeof(DebugVertex),
+                vk::BufferUsageFlagBits::eVertexBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_debugBuffersMapped[frameIndex]  = m_debugBuffers[frameIndex].Map();
+            m_debugBufferCapacity[frameIndex] = capacity;
+        }
+
+        auto* dst = static_cast<DebugVertex*>(m_debugBuffersMapped[frameIndex]);
+        if (!m_debugTested.empty()) { memcpy(dst, m_debugTested.data(), m_debugTested.size() * sizeof(DebugVertex)); }
+        if (!m_debugOnTop.empty())  { memcpy(dst + m_debugTested.size(), m_debugOnTop.data(), m_debugOnTop.size() * sizeof(DebugVertex)); }
+
+    }   // Renderer::UpdateDebugBuffer()
+
+    void Renderer::DrawDebugLines(vk::CommandBuffer cmd, vk::DescriptorSet frameSet) {
+
+        if (m_debugTestedCount + m_debugOnTopCount == 0) { return; }
+        const uint32_t frameIndex = m_frameManager.GetFrameIndex();
+
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDebugLineLayout(), 0, frameSet, nullptr);
+        cmd.bindVertexBuffers(0, *m_debugBuffers[frameIndex].GetBuffer(), { 0 });
+
+        if (m_debugTestedCount > 0) {
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDebugLinePipeline(true));
+            cmd.draw(m_debugTestedCount, 1, 0, 0);
+        }
+        if (m_debugOnTopCount > 0) {
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDebugLinePipeline(false));
+            cmd.draw(m_debugOnTopCount, 1, m_debugTestedCount, 0);
+        }
+
+    }   // Renderer::DrawDebugLines()
 
     void Renderer::DrawSkybox(vk::CommandBuffer cmd, vk::DescriptorSet frameSet) {
 

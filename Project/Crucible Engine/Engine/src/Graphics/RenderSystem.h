@@ -51,6 +51,8 @@
 
 #include "Camera.h"
 #include "RenderTypes.h"
+#include "DebugDraw.h"
+#include "Spatial/SpatialIndex.h"
 
 // Imgui
 #include "Vulkan/ImGuiContext.h"
@@ -83,6 +85,16 @@ namespace Crucible {
             // never required to be unique. See GetMeshName()'s doc comment for who's meant to
             // read this and why it lives here rather than in the Editor.
             std::string  debugName;
+
+            // Object-space bounding box of the vertex positions (computed at upload), for
+            // selection boxes and future culling - see GetMeshBounds().
+            glm::vec3    boundsMin{ 0.0f };
+            glm::vec3    boundsMax{ 0.0f };
+
+            // CPU copy of the geometry, for exact ray picking (Raycast). Positions + indices only:
+            // 12 bytes per vertex + 4 per index, per MESH (instances share it).
+            std::vector<glm::vec3> cpuPositions;
+            std::vector<uint32_t>  cpuIndices;
         };
 
         // GPU-side texture: an image + its view, indexed by TextureHandle. No per-texture
@@ -132,6 +144,9 @@ namespace Crucible {
             std::vector<VulkanBuffer>            uniformBuffers;
             std::vector<void*>                   uniformBuffersMapped;
             std::vector<vk::raii::DescriptorSet> descriptorSets;
+
+            bool                debugDraw = false;   // draw DebugDraw lines into this view (SetViewportDebugDraw)
+            RenderCullStats     cullStats;           // last frame's culling result for this view
         };
 
     public:
@@ -256,6 +271,16 @@ namespace Crucible {
             the mesh list, so don't hold it across frames.
          *********************************************************************/
         ENGINE_API const std::string& GetMeshName(MeshHandle handle) const;
+
+        /*********************************************************************
+         \brief  Object-space bounding box of a mesh's vertices.
+         \param[in]  handle The mesh.
+         \param[out] outMin Minimum corner.
+         \param[out] outMax Maximum corner.
+         \return false (outputs untouched) if the handle is invalid or the
+                 mesh hasn't finished uploading.
+         *********************************************************************/
+        ENGINE_API bool GetMeshBounds(MeshHandle handle, glm::vec3& outMin, glm::vec3& outMax) const;
 
         /*********************************************************************
          \brief
@@ -498,6 +523,22 @@ namespace Crucible {
         ENGINE_API void           DestroyViewport(ViewportHandle handle);
 
         /*********************************************************************
+         \brief  Shows or hides DebugDraw lines in one viewport (off by
+                 default: the Editor turns it on for the Scene view only).
+         \param[in] handle  The viewport.
+         \param[in] enabled true to draw debug lines into it.
+         *********************************************************************/
+        ENGINE_API void           SetViewportDebugDraw(ViewportHandle handle, bool enabled);
+
+        /*********************************************************************
+         \brief  Shows or hides DebugDraw lines when the scene is drawn
+                 straight to the window (the Game build, where there are no
+                 viewports). Off by default; turn on for gameplay debugging.
+         \param[in] enabled true to draw debug lines into the window.
+         *********************************************************************/
+        void                      SetDebugDrawInWindow(bool enabled) { m_debugInWindow = enabled; }
+
+        /*********************************************************************
          \brief  Accessor for a viewport's independent camera.
          \param[in] handle The viewport to look up.
          \return Mutable reference to that viewport's Camera.
@@ -537,6 +578,76 @@ namespace Crucible {
             material descriptor set per draw.
          *********************************************************************/
         ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model);
+
+        // ---- Render proxies (persistent, culled objects) -------------------------------------
+
+        /*********************************************************************
+         \brief
+            Registers a persistent renderable object (normally one per ECS
+            entity with a MeshRenderer - RenderExtractSystem does this).
+
+         \param[in] userData Returned by Raycast() hits (RenderExtractSystem
+                             stores the packed Entity).
+         \return A handle for SetRenderProxy/DestroyRenderProxy.
+
+         \details
+            Unlike Submit() (re-sent every frame, culled brute force), a
+            proxy stays registered and lives in the Renderer's SpatialIndex,
+            so each view's frustum culling and editor ray picking are tree/
+            array queries instead of loops over everything. It starts hidden
+            until SetRenderProxy() gives it a mesh.
+         *********************************************************************/
+        ENGINE_API RenderProxyHandle CreateRenderProxy(std::uint64_t userData);
+
+        /*********************************************************************
+         \brief
+            Sets what a proxy draws and where. Cheap to call every frame:
+            identical values are a no-op, and a move only touches the
+            spatial index (see SpatialIndex for how moving objects are
+            handled).
+
+         \param[in] handle   The proxy.
+         \param[in] mesh     Mesh to draw (Invalid = nothing).
+         \param[in] material Material (Invalid = the default material).
+         \param[in] model    World matrix.
+         \param[in] visible  false hides it (removed from culling/picking).
+         *********************************************************************/
+        ENGINE_API void SetRenderProxy(RenderProxyHandle handle, MeshHandle mesh, MaterialHandle material,
+                                       const glm::mat4& model, bool visible);
+
+        /*********************************************************************
+         \brief  Unregisters a proxy; its handle may be reused.
+         *********************************************************************/
+        ENGINE_API void DestroyRenderProxy(RenderProxyHandle handle);
+
+        /*********************************************************************
+         \brief
+            Exact ray pick against every visible proxy: candidates come from
+            the spatial index (box tests), then the ray is tested against the
+            mesh's actual triangles.
+
+         \param[in]  origin      Ray start (world space).
+         \param[in]  direction   Ray direction (any length).
+         \param[in]  maxDistance Ignore hits farther than this.
+         \param[out] outHit      Nearest hit (userData, distance, point).
+         \return true if anything was hit.
+         *********************************************************************/
+        ENGINE_API bool Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const;
+
+        /*********************************************************************
+         \brief  Last frame's culling numbers for an editor viewport.
+         *********************************************************************/
+        ENGINE_API RenderCullStats GetViewportCullStats(ViewportHandle handle) const;
+
+        /*********************************************************************
+         \brief  Last frame's culling numbers for the window pass (Game build).
+         *********************************************************************/
+        const RenderCullStats& GetWindowCullStats() const { return m_windowCullStats; }
+
+        /*********************************************************************
+         \brief  The spatial index behind culling/picking (read-only).
+         *********************************************************************/
+        const SpatialIndex& GetSpatialIndex() const { return m_spatial; }
 
         /*********************************************************************
          \brief  Enables/disables the temporary demo scene.
@@ -581,7 +692,25 @@ namespace Crucible {
         // Scene
         Camera                      m_camera;
         std::vector<GpuMesh>        m_meshes;
-        std::vector<RenderItem>     m_renderQueue;
+        std::vector<RenderItem>     m_renderQueue;      // immediate Submit() items, this frame only
+
+        // Persistent render proxies + the spatial index they live in (see CreateRenderProxy).
+        struct RenderProxy {
+            MeshHandle           mesh;
+            MaterialHandle       material;
+            glm::mat4            model{ 1.0f };
+            std::uint64_t        userData = 0;
+            SpatialIndex::Handle spatial = SpatialIndex::kInvalid;   // kInvalid = not in the index (hidden / no bounds yet)
+            bool                 visible = false;
+            bool                 alive = false;
+            bool                 awaitingBounds = false;              // mesh still uploading (CreateMeshAsync)
+        };
+        std::vector<RenderProxy>    m_proxies;
+        std::vector<uint32_t>       m_freeProxies;
+        std::vector<uint32_t>       m_proxiesAwaitingBounds;
+        SpatialIndex                m_spatial{ 0.25f };
+        std::vector<RenderItem>     m_visibleItems;     // scratch: one view's culled + sorted draw list
+        RenderCullStats             m_windowCullStats;
         std::vector<MeshHandle>     m_primitiveMeshes;
         void CreatePrimitiveMeshes();
         MaterialHandle              m_demoMaterial;   // demo-scene cubes' material (see SubmitDemoScene)
@@ -648,6 +777,19 @@ namespace Crucible {
         std::vector<VulkanBuffer>                   m_lightBuffers;
         std::vector<void*>                          m_lightBuffersMapped;
 
+        // Debug lines: one host-visible vertex buffer per frame in flight, grown on demand (see
+        // UpdateDebugBuffer). Depth-tested vertices first, then the on-top ones.
+        static constexpr uint32_t                   kMaxDebugVertices = 2'000'000;
+        std::vector<VulkanBuffer>                   m_debugBuffers;
+        std::vector<void*>                          m_debugBuffersMapped;
+        std::vector<uint32_t>                       m_debugBufferCapacity;   // in vertices
+        std::vector<DebugVertex>                    m_debugTested;           // scratch, reused every frame
+        std::vector<DebugVertex>                    m_debugOnTop;
+        uint32_t                                    m_debugTestedCount = 0;
+        uint32_t                                    m_debugOnTopCount = 0;
+        bool                                        m_debugInWindow = false;
+        bool                                        m_warnedDebugOverflow = false;
+
         vk::raii::DescriptorPool                    m_descriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet>        m_descriptorSets;
 
@@ -675,7 +817,24 @@ namespace Crucible {
         // Records the bind-and-draw loop over m_renderQueue against whatever color/depth
         // attachments are currently bound (the swapchain, or a Viewport). Shared by the direct-
         // to-window path and the offscreen-viewport path so they can never drift apart.
-        void DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet);
+        void DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, bool drawDebug,
+                             const std::vector<RenderItem>& items);
+
+        // ---- Culling / proxies ----
+        // Fills m_visibleItems with what `camera` can see (proxies via the spatial index + immediate
+        // items brute force), sorted by (material, mesh), and records the counts in `stats`.
+        void BuildVisibleItems(const Camera& camera, RenderCullStats& stats);
+        // Re-derives a proxy's world box and (re)inserts/updates/removes it in the spatial index.
+        void RefreshProxyBounds(uint32_t proxyId);
+        // Draws every proxy's box (DebugCategory::Bounds): settled = blue, moving = orange.
+        void DrawProxyBoundsDebug();
+
+        // ---- Debug lines (DebugDraw.h) ----
+        // Copies this frame's DebugDraw lines into m_debugBuffers[frameIndex] (growing it if
+        // needed) and records the depth-tested / on-top vertex counts.
+        void UpdateDebugBuffer(uint32_t frameIndex);
+        // Draws them into the currently-open rendering pass (after meshes + sky).
+        void DrawDebugLines(vk::CommandBuffer cmd, vk::DescriptorSet frameSet);
 
         void CreateViewportSampler();
         void CreateViewportDescriptorPool();
