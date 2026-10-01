@@ -170,8 +170,9 @@ namespace Crucible {
         // --- the listener (Unity's AudioListener) ---
 
         // Where the ears are and which way they face. Usually the camera's
-        // world transform, set every frame. `forward` and `up` must be unit
-        // length and at right angles, or FMOD rejects the call.
+        // world transform, set every frame. `forward` and `up` are normalised
+        // for you, but they must be at right angles - the camera's own pair
+        // always is - or left and right come out wrong.
         void SetListener(const Math::vec3& position, const Math::vec3& forward, const Math::vec3& up);
 
         // --- buses (Unity's AudioMixerGroup volume) ---

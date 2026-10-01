@@ -47,7 +47,11 @@ add_custom_command(TARGET Editor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:rttr_core>" "$<TARGET_FILE_DIR:Editor>"
 
-    COMMENT "Copying Engine.dll, glfw3.dll and rttr_core.dll to Editor output directory..."
+    # Engine.dll's audio calls FMOD, so Windows will not start Editor.exe without this beside it.
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/fmod/bin/fmod.dll" "$<TARGET_FILE_DIR:Editor>"
+
+    COMMENT "Copying Engine.dll, glfw3.dll, rttr_core.dll and fmod.dll to Editor output directory..."
 )
 
 # Debugger working directory (Visual Studio)
