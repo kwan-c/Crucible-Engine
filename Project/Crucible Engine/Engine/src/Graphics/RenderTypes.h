@@ -27,6 +27,7 @@
 *
 **************************************************************************/
 
+#include <cstddef>   // offsetof
 #include <cstdint>
 #include <vector>
 
@@ -124,12 +125,25 @@ namespace Crucible {
           - renderParams: x = exposure (multiplier applied before
             tonemapping), y = skybox intensity, zw unused.
           - lightParams:  x = number of valid entries in the light storage
-            buffer (set 0, binding 1) this frame, yzw unused.
+            buffer (set 0, binding 1) this frame, y = index + 1 of the
+            shadow-casting light (0 = no shadows), z = cascade count.
+
+        Shadow members (Renderer::ComputeShadowCascades), per view:
+          - shadowViewProj[i]: world -> light clip space of cascade i
+          - cascadeSplits:     view-space far distance of each cascade
+          - cascadeTexelSize:  world size of one shadow texel, per cascade
+                               (scales the normal-offset bias)
+          - shadowParams:      x = 1/resolution, y = depth bias (NDC),
+                               z = normal-offset bias in texels,
+                               w = fade-out fraction of the shadow distance
 
      \note
-        Shared by BOTH shaders that bind set 0 (DefaultShader2.slang and
-        Skybox.slang) - all three copies must stay identical.
+        DefaultShader2.slang has the full copy. Skybox, DebugLine, Shadow
+        and OutlineMask declare only the prefix they read, which is valid
+        as long as members are only ever appended, never reordered.
      *************************************************************************/
+    constexpr uint32_t kMaxShadowCascades = 4;
+
     struct FrameUniforms {
         glm::mat4  view{ 1.0f };
         glm::mat4  proj{ 1.0f };
@@ -138,9 +152,40 @@ namespace Crucible {
         glm::vec4  ambientGround{ 0.0f, 0.0f, 0.0f, 0.0f };
         glm::vec4  renderParams{ 1.0f, 1.0f, 0.0f, 0.0f };
         glm::uvec4 lightParams{ 0u, 0u, 0u, 0u };
+        glm::mat4  shadowViewProj[kMaxShadowCascades]{ glm::mat4(1.0f), glm::mat4(1.0f), glm::mat4(1.0f), glm::mat4(1.0f) };
+        glm::vec4  cascadeSplits{ 0.0f };
+        glm::vec4  cascadeTexelSize{ 0.0f };
+        glm::vec4  shadowParams{ 0.0f };
     };
-    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5,
+    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 3,
         "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
+    static_assert(offsetof(FrameUniforms, shadowViewProj) == 208 && offsetof(FrameUniforms, shadowParams) == 496,
+        "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
+
+    /*************************************************************************
+     \brief
+        One drawn object, as the vertex shaders see it (set 0, binding 2:
+        StructuredBuffer<InstanceData>). 64 bytes under std430 and C++.
+     \details
+        Every pass (main, shadow cascades, selection mask) of every view
+        appends its objects to one per-frame array; a draw covers a
+        contiguous run, addressed by drawIndexed's firstInstance.
+     *************************************************************************/
+    struct InstanceData {
+        glm::mat4 model{ 1.0f };
+    };
+    static_assert(sizeof(InstanceData) == 64, "InstanceData must match the shaders' std430 stride.");
+
+    /*************************************************************************
+     \brief  Push constant of the selection outline's composite pass
+             (OutlineComposite.slang's CompositePush).
+     *************************************************************************/
+    struct OutlineCompositePush {
+        glm::vec4 color{ 1.0f, 0.55f, 0.1f, 1.0f };   // sRGB-authored, a = opacity
+        float     thickness = 2.0f;                   // pixels (shader clamps to 3)
+        float     pad[3]{};
+    };
+    static_assert(sizeof(OutlineCompositePush) == 32, "OutlineCompositePush must match OutlineComposite.slang.");
 
     // ------------------------------------------------------------------------------------------ //
     //  Render proxies, culling, picking
@@ -163,6 +208,10 @@ namespace Crucible {
         - immediate / immediateVisible: the same for Submit() items.
         - movingProxies: proxies currently in the index's brute-force
           "active" array (see SpatialIndex) rather than its tree.
+        - drawCalls: instanced draws of the main pass (one per run of equal
+          material + mesh), versus proxiesVisible + immediateVisible objects.
+        - shadowCasters / shadowDrawCalls: instances and draws over all of
+          this view's shadow cascades.
      *************************************************************************/
     struct RenderCullStats {
         uint32_t proxies = 0;
@@ -170,6 +219,40 @@ namespace Crucible {
         uint32_t immediate = 0;
         uint32_t immediateVisible = 0;
         uint32_t movingProxies = 0;
+        uint32_t drawCalls = 0;
+        uint32_t shadowCasters = 0;
+        uint32_t shadowDrawCalls = 0;
+    };
+
+    /*************************************************************************
+     \brief
+        Cascaded shadow map settings for the sun (Renderer::
+        GetShadowSettings()). The shadowed light is the first enabled
+        directional light with castShadows (Light component), or the
+        fallback sun when the scene has no lights.
+
+     \details
+        - cascadeCount: 1..kMaxShadowCascades. Each cascade re-renders its
+          casters, so this is the main cost knob.
+        - distance: shadows end (fading out) this far from the camera,
+          clamped to the camera's far plane. Shorter = sharper.
+        - splitLambda: 0 = even cascade splits, 1 = logarithmic (most
+          resolution near the camera). 0.75 is a common balance.
+        - casterExtension: how far toward the light, beyond a cascade's
+          bounds, casters are still included (tall things off-screen).
+        - depthBias: constant bias in light-space NDC depth.
+        - normalBias: offset along the surface normal, in shadow texels.
+        - fadeFraction: fraction of `distance` over which shadows fade out.
+     *************************************************************************/
+    struct ShadowSettings {
+        bool     enabled = true;
+        uint32_t cascadeCount = 3;
+        float    distance = 80.0f;
+        float    splitLambda = 0.75f;
+        float    casterExtension = 100.0f;
+        float    depthBias = 0.0002f;
+        float    normalBias = 1.5f;
+        float    fadeFraction = 0.1f;
     };
 
     /*************************************************************************
@@ -228,6 +311,7 @@ namespace Crucible {
         float      range = 10.0f;
         float      innerConeDeg = 20.0f;
         float      outerConeDeg = 30.0f;
+        bool       castShadows = false;  // honoured for Directional only (cascaded shadow maps)
     };
 
     /*************************************************************************
@@ -334,13 +418,13 @@ namespace Crucible {
 
     /*************************************************************************
      \brief
-        Per-draw push constant: the model matrix plus the current
-        material's scalar factors.
+        Per-draw push constant: the current material's scalar factors.
 
      \details
-        Set 0's camera UBO already carries view/proj, so only the model
-        matrix needs to travel per draw. Bundling the material's scalar
-        factors in here too means a designer dragging a tint/roughness
+        The model matrix used to live here too; with instancing it moved
+        to the per-frame instance buffer (InstanceData), since one draw now
+        covers every object sharing a mesh and material. Keeping the
+        material's scalar factors here means a designer dragging a tint/roughness
         slider in the Inspector is visible next frame with no GPU
         synchronization at all - unlike the five texture bindings in the
         material's descriptor set (set 1), which live in real GPU-resident
@@ -355,7 +439,6 @@ namespace Crucible {
         enforced by the static_assert below.
      *************************************************************************/
     struct PushConstants {
-        glm::mat4        model{ 1.0f };
         MaterialFactors  factors{};
     };
     static_assert(sizeof(PushConstants) <= 128,

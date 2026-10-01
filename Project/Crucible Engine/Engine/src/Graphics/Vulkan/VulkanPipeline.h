@@ -96,8 +96,10 @@ namespace Crucible {
     public:
         /*********************************************************************
          \brief  Creates the set-0 descriptor set layout: binding 0 = the
-                 per-frame FrameUniforms UBO, binding 1 = the per-frame
-                 light storage buffer.
+                 per-view FrameUniforms UBO, binding 1 = the per-frame
+                 light storage buffer, binding 2 = the per-frame instance
+                 buffer (InstanceData), binding 3 = the shadow-map array
+                 (sampled image), binding 4 = its comparison sampler.
          \param[in] context The VulkanContext to create the layout through.
          *********************************************************************/
         void CreateDescriptorSetLayout(VulkanContext& context);
@@ -156,6 +158,35 @@ namespace Crucible {
          \note  Requires CreateDescriptorSetLayout() first (layout = set 0).
          *********************************************************************/
         void CreateDebugLinePipelines(VulkanContext& context, VulkanSwapchain& swapchain);
+
+        /*********************************************************************
+         \brief
+            Creates the shadow caster pipeline (Shadow.spv): depth only,
+            position-only vertex input, no culling, slope-scaled depth bias.
+            Layout = set 0 + a 4-byte vertex push constant (cascade index).
+         \param[in] context     The VulkanContext to create it through.
+         \param[in] depthFormat The shadow map's format.
+         \note  Requires CreateDescriptorSetLayout() first.
+         *********************************************************************/
+        void CreateShadowPipeline(VulkanContext& context, vk::Format depthFormat);
+
+        /*********************************************************************
+         \brief
+            Creates the two selection-outline pipelines:
+              - mask (OutlineMask.spv): selected object -> R8 mask, no depth;
+                layout = set 0 only.
+              - composite (OutlineComposite.spv): fullscreen triangle,
+                alpha-blended onto the viewport colour image; layout = its
+                own set (binding 0 = the mask) + a fragment push constant
+                (OutlineCompositePush).
+         \param[in] context   The VulkanContext to create them through.
+         \param[in] swapchain Supplies the colour format for the composite.
+         \note  Requires CreateDescriptorSetLayout() first.
+         *********************************************************************/
+        void CreateOutlinePipelines(VulkanContext& context, VulkanSwapchain& swapchain);
+
+        /// Format of the per-viewport selection mask (an attachment of the mask pipeline).
+        static constexpr vk::Format kOutlineMaskFormat = vk::Format::eR8Unorm;
 
         /*********************************************************************
          \brief  Creates the graphics pipeline itself: shader stages,
@@ -234,6 +265,14 @@ namespace Crucible {
          *********************************************************************/
         const vk::raii::PipelineLayout&         GetDebugLineLayout() const;
 
+        const vk::raii::Pipeline&               GetShadowPipeline() const;            ///< Depth-only caster pipeline.
+        const vk::raii::PipelineLayout&         GetShadowLayout() const;              ///< Set 0 + cascade push constant.
+        const vk::raii::Pipeline&               GetOutlineMaskPipeline() const;       ///< Selection -> R8 mask.
+        const vk::raii::PipelineLayout&         GetOutlineMaskLayout() const;         ///< Set 0 only.
+        const vk::raii::Pipeline&               GetOutlineCompositePipeline() const;  ///< Mask -> orange edge.
+        const vk::raii::PipelineLayout&         GetOutlineCompositeLayout() const;    ///< Mask set + push constant.
+        const vk::raii::DescriptorSetLayout&    GetOutlineDescriptorSetLayout() const;///< Binding 0 = mask image.
+
     private:
         std::vector<char> ReadFile(std::string const& filename);
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(VulkanContext& context, std::vector<char> const& code);
@@ -251,6 +290,15 @@ namespace Crucible {
         vk::raii::Pipeline              m_debugLinePipeline = nullptr;
         vk::raii::Pipeline              m_debugLineOnTopPipeline = nullptr;
         vk::raii::PipelineLayout        m_debugLineLayout = nullptr;
+
+        vk::raii::Pipeline              m_shadowPipeline = nullptr;
+        vk::raii::PipelineLayout        m_shadowLayout = nullptr;
+
+        vk::raii::Pipeline              m_outlineMaskPipeline = nullptr;
+        vk::raii::PipelineLayout        m_outlineMaskLayout = nullptr;
+        vk::raii::Pipeline              m_outlineCompositePipeline = nullptr;
+        vk::raii::PipelineLayout        m_outlineCompositeLayout = nullptr;
+        vk::raii::DescriptorSetLayout   m_outlineDescriptorSetLayout = nullptr;
 
     };  // VULKAN PIPELINE CLASS
 

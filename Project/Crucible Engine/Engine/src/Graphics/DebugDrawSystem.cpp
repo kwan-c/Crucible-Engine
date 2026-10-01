@@ -38,7 +38,6 @@ namespace Crucible {
 		const glm::vec4 kSlow            { 1.00f, 0.90f, 0.20f, 1.0f };
 		const glm::vec4 kFast            { 1.00f, 0.20f, 0.20f, 1.0f };
 		const glm::vec4 kGrid            { 0.32f, 0.32f, 0.34f, 1.0f };
-		const glm::vec4 kSelection       { 1.00f, 0.55f, 0.10f, 1.0f };
 
 		constexpr float kFastSpeed = 20.0f;   // m/s at which the arrow is fully red
 
@@ -218,16 +217,8 @@ namespace Crucible {
 		style.category  = DebugCategory::Selection;
 		style.depthTest = false;
 		DebugDraw::Axes(wt->matrix, 1.0f, style);
-
-		if (const MeshRenderer* mr = world.Read<MeshRenderer>(selected)) {
-			MeshHandle mesh = mr->mesh;
-			if (mr->meshAsset != 0 && m_resources) { mesh = m_resources->GetMesh(mr->meshAsset); }
-			glm::vec3 mn, mx;
-			if (m_renderer.GetMeshBounds(mesh, mn, mx)) {
-				style.color = kSelection;
-				DebugDraw::TransformedBox(mn, mx, wt->matrix, style);
-			}
-		}
+		// The selected mesh itself gets the Renderer's orange silhouette outline instead of a box
+		// (Renderer::SetOutlinedObject, driven by the Scene view).
 
 	}   // DebugDrawSystem::DrawSelection()
 

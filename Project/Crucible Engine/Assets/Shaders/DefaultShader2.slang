@@ -23,7 +23,20 @@ struct FrameUniforms {
     float4   ambientSky;      // rgb = ambient radiance for up-facing surfaces, w unused
     float4   ambientGround;   // rgb = ambient radiance for down-facing surfaces, w unused
     float4   renderParams;    // x = exposure, y = skybox intensity
-    uint4    lightParams;     // x = number of valid lights in `lights`
+    uint4    lightParams;     // x = number of valid lights in `lights`,
+                              // y = index+1 of the shadow-casting light (0 = no shadows),
+                              // z = number of shadow cascades in use (0..kMaxCascades)
+    // ---- Cascaded shadow maps (Renderer::ComputeShadowCascades) ----
+    float4x4 shadowViewProj[4];   // world -> light clip space, one per cascade
+    float4   cascadeSplits;       // view-space far distance of each cascade
+    float4   cascadeTexelSize;    // world-space size of one shadow-map texel, per cascade
+    float4   shadowParams;        // x = 1/shadow-map resolution, y = depth bias (NDC),
+                                  // z = normal-offset bias (in texels), w = fade-out fraction
+};
+
+// One instance (set 0, binding 2). Must match Crucible::InstanceData (RenderTypes.h).
+struct InstanceData {
+    float4x4 model;
 };
 
 // One light. Must match Crucible::GpuLight (RenderTypes.h) - four float4s, identical under std430.
@@ -49,8 +62,9 @@ struct MaterialFactors {
 };
 
 // Per-draw data. Must match Crucible::PushConstants exactly (RenderSystem.cpp's DrawRenderQueue).
+// The model matrix moved out to the instance buffer (one draw now covers many objects); only the
+// material's factors - constant across a batch, since batches never cross materials - remain.
 struct PushConstants {
-    float4x4         model;
     MaterialFactors  factors;
 };
 
@@ -60,6 +74,17 @@ ConstantBuffer<FrameUniforms> frame;
 // This frame's lights (Renderer::UpdateLightBuffer). Only the first frame.lightParams.x are valid.
 [[vk::binding(1, 0)]]
 StructuredBuffer<GpuLight> lights;
+
+// Every object drawn this frame, by every view and pass (Renderer::UploadInstances). A draw's
+// instances are contiguous; drawIndexed's firstInstance points at the first one, and
+// SV_VulkanInstanceID (gl_InstanceIndex) already includes that offset.
+[[vk::binding(2, 0)]]
+StructuredBuffer<InstanceData> instances;
+
+// The sun's cascaded shadow map (one layer per cascade) and a comparison sampler
+// (LESS_OR_EQUAL, linear filtering = hardware 2x2 PCF per tap).
+[[vk::binding(3, 0)]] Texture2DArray<float>  shadowMap;
+[[vk::binding(4, 0)]] SamplerComparisonState shadowSampler;
 
 [[vk::push_constant]]
 ConstantBuffer<PushConstants> pc;
@@ -83,10 +108,11 @@ struct VSOutput {
 };
 
 [shader("vertex")]
-VSOutput vertMain(VSInput input) {
+VSOutput vertMain(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     VSOutput output;
 
-    float4 worldPos4 = mul(pc.model, float4(input.inPosition, 1.0));
+    float4x4 model = instances[instanceID].model;
+    float4 worldPos4 = mul(model, float4(input.inPosition, 1.0));
     output.worldPos = worldPos4.xyz;
     output.pos = mul(frame.proj, mul(frame.view, worldPos4));
     output.color = input.inColor;
@@ -98,7 +124,7 @@ VSOutput vertMain(VSInput input) {
     // under non-uniform scale. Both use the same simplified transform here so they stay mutually
     // consistent (a correctly-lit-but-slightly-wrong-under-non-uniform-scale TBN beats a
     // correctly-transformed normal paired with a now-non-orthogonal tangent).
-    float3x3 modelUpper = (float3x3)pc.model;
+    float3x3 modelUpper = (float3x3)model;
     output.normalWS    = normalize(mul(modelUpper, input.inNormal));
     output.tangentWS   = normalize(mul(modelUpper, input.inTangent.xyz));
     output.tangentSign = input.inTangent.w;
@@ -159,6 +185,49 @@ float3 EvaluateBRDF(float3 N, float3 V, float3 L, float3 radiance,
     float3 diffuse  = kd * albedo / kPi;
 
     return (diffuse + specular) * radiance * NdotL;
+}
+
+// Fraction of the shadow-casting light that reaches worldPos (1 = fully lit). geomN is the
+// interpolated vertex normal (not the normal-mapped one): the normal offset pushes the lookup
+// point off the surface along it, which removes acne without a large depth bias.
+float SampleShadow(float3 worldPos, float3 geomN, float3 L) {
+    uint cascadeCount = frame.lightParams.z;
+    if (cascadeCount == 0) { return 1.0; }
+
+    // glm::lookAt is right-handed: the camera looks down -Z, so view depth is -z.
+    float viewDepth = -mul(frame.view, float4(worldPos, 1.0)).z;
+    float lastSplit = frame.cascadeSplits[cascadeCount - 1];
+    if (viewDepth >= lastSplit) { return 1.0; }
+
+    uint c = 0;
+    while (c + 1 < cascadeCount && viewDepth >= frame.cascadeSplits[c]) { ++c; }
+
+    // Bigger offset at grazing angles, where a texel covers the most surface depth.
+    float  NdotL     = saturate(dot(geomN, L));
+    float  offset    = frame.cascadeTexelSize[c] * frame.shadowParams.z * (2.0 - NdotL);
+    float4 lightClip = mul(frame.shadowViewProj[c], float4(worldPos + geomN * offset, 1.0));
+    float3 ndc       = lightClip.xyz / lightClip.w;
+
+    // The shadow pass uses the same flipped viewport as every other pass, so +Y NDC is the
+    // top row: v = 0.5 - 0.5 * y.
+    float2 uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    if (any(uv < 0.0) || any(uv > 1.0) || ndc.z > 1.0) { return 1.0; }
+
+    float  ref   = ndc.z - frame.shadowParams.y;
+    float  texel = frame.shadowParams.x;
+    float  lit   = 0.0;
+    // 3x3 taps, each a hardware-filtered 2x2 compare: a soft 4x4-texel kernel for 9 fetches.
+    [unroll] for (int y = -1; y <= 1; ++y) {
+        [unroll] for (int x = -1; x <= 1; ++x) {
+            lit += shadowMap.SampleCmpLevelZero(shadowSampler, float3(uv + float2(x, y) * texel, float(c)), ref);
+        }
+    }
+    lit /= 9.0;
+
+    // Fade out over the last part of the shadow distance instead of a hard edge.
+    float fadeStart = lastSplit * (1.0 - frame.shadowParams.w);
+    float fade = saturate((viewDepth - fadeStart) / max(lastSplit - fadeStart, 1e-3));
+    return lerp(lit, 1.0, fade);
 }
 
 // Contribution of one GpuLight at this surface point.
@@ -259,8 +328,13 @@ float4 fragMain(VSOutput inVert) : SV_Target {
     // one - a fallback directional "sun" - when the scene has no Light entities.)
     float3 direct = float3(0.0, 0.0, 0.0);
     uint   lightCount = frame.lightParams.x;
+    uint   shadowed   = frame.lightParams.y;   // index + 1, 0 = none
     for (uint i = 0; i < lightCount; ++i) {
-        direct += EvaluateLight(lights[i], inVert.worldPos, Nmapped, V, albedo, metallic, roughness, F0);
+        float3 c = EvaluateLight(lights[i], inVert.worldPos, Nmapped, V, albedo, metallic, roughness, F0);
+        if (i + 1 == shadowed && any(c > 0.0)) {
+            c *= SampleShadow(inVert.worldPos, N, -lights[i].directionType.xyz);
+        }
+        direct += c;
     }
 
     // Ambient: diffuse from the hemisphere around the normal, specular from the hemisphere around

@@ -162,6 +162,9 @@ namespace Crucible
 		float      innerConeDeg = 20.f;
 		float      outerConeDeg = 30.f;
 		bool       enabled = true;
+		// Directional lights only (for now): the first enabled directional
+		// light with castShadows renders cascaded shadow maps.
+		bool       castShadows = true;
 	};
 
 	/*************************************************************************
