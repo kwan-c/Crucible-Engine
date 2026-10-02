@@ -2,20 +2,20 @@
 * \file:         ECSPlayerControllerSystem.cpp
 * \author:       Hugo
 * \date          2 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Implementation of ECSPlayerControllerSystem. See the
 *                header for what happens each frame.
 *
 * \history
-*    -v1.0       WASD, Space, camera-relative
+*    -v1.0       WASD, Space, camera-relative (the Renderer's camera)
+*    -v1.1       reads the CameraComponent entity; SimulationOnly
 *
 **************************************************************************/
 #include "ECSPlayerControllerSystem.h"
 
 // Crucible engine
-#include "Graphics/Camera.h"
-#include "Graphics/RenderSystem.h"
+#include "Components/Components.h"
 #include "Input/InputSystem.h"
 #include "Math/Math.h"
 #include "Physics/PhysicsComponents.h"
@@ -24,12 +24,14 @@
 
 namespace Crucible {
 
-    ECSPlayerControllerSystem::ECSPlayerControllerSystem(const Renderer& renderer) : m_renderer(renderer) {}
+    void ECSPlayerControllerSystem::Describe(SystemDesc& desc) const {
+        desc.SimulationOnly();      // Playing only; Edit and Paused leave the keyboard to the editor
+    }
 
     /*!
         \brief
         Reads the keyboard once, turns it into a world direction using the
-        camera, and hands it to every local player's CharacterController.
+        main camera, and hands it to every local player's CharacterController.
     */
     void ECSPlayerControllerSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
 
@@ -45,32 +47,45 @@ namespace Crucible {
 
         // IsPressed, not IsDown: one jump per press. Holding Space would
         // otherwise jump again the moment the mech lands - a pogo stick.
-        bool jump = Input::IsPressed(KeyCode::Space);
+        const bool jump = Input::IsPressed(KeyCode::Space);
 
-        // While the right mouse button is held, the editor's Scene view is
-        // flying its own camera on these same keys, so the mech ignores them.
-        // Zeroed rather than returning early: SimpleMove KEEPS its last value,
-        // so an early return would leave the mech walking on by itself.
-        // TEMPORARY: delete this once the editor has a Play button. In the
-        // game itself it also freezes the mech while RMB is held, which will
-        // clash the day RMB becomes "aim".
-        if (Input::IsDown(KeyCode::MouseRight)) {
-            right   = 0.0f;
-            forward = 0.0f;
-            jump    = false;
-        }
+        // THE CAMERA -------------------------------------------------------------- //
+        // Unity's Camera.main: the enabled camera with the highest priority, the
+        // first one found on a tie. The SAME rule RenderExtractSystem uses to pick
+        // what the Game view shows - if one changes, change the other, or W walks
+        // relative to a camera nobody is looking through.
+        //
+        // WorldTransform, not Transform: the camera is usually a child of the
+        // mech, and its Transform is then only its offset from the mech. It is
+        // last frame's (HierarchyTransformSystem fills it in PreRender, after
+        // this), which is one frame of camera turn - nothing anyone can feel.
+        bool       found        = false;
+        int        bestPriority = 0;
+        Math::vec3 cameraRight  = Math::vec3(1.0f, 0.0f, 0.0f);   // no camera: W is world -Z, D is world +X
 
-        // THE CAMERA ---------------------------------------------------------------- //
-        // The camera's forward points down at the ground, and walking along it
-        // would push the mech into the floor and make it slower the steeper the
-        // camera looks. So the up part is removed and what is left made length 1
-        // again: "away from the camera, along the ground". Camera pitch is
-        // clamped to +-89 degrees, so the flattened vector is never zero.
-        // When the camera becomes an entity, these two lines are the only ones
-        // that change - read its Transform instead of the Renderer.
-        const Camera& camera = m_renderer.GetCamera();
-        const Math::vec3 cameraForward = glm::normalize(Math::vec3(camera.Forward().x, 0.0f, camera.Forward().z));
-        const Math::vec3 cameraRight   = glm::normalize(Math::vec3(camera.Right().x,   0.0f, camera.Right().z));
+        world.CreateQuery<const WorldTransform, const CameraComponent>()
+            .ForEach([&](Entity, const WorldTransform& worldTransform, const CameraComponent& camera) {
+
+                if (!camera.enabled || !worldTransform.valid) return;
+                if (found && camera.priority <= bestPriority) return;
+
+                // Column 0 of a world matrix is the entity's local +X axis in
+                // world space: the camera's right. Flattened, because a tilted
+                // or rolled camera would otherwise steer the mech into the floor.
+                const Math::vec3 flat(worldTransform.matrix[0].x, 0.0f, worldTransform.matrix[0].z);
+                if (glm::dot(flat, flat) < 1.0e-6f) return;     // rolled onto its side: no usable heading
+
+                found        = true;
+                bestPriority = camera.priority;
+                cameraRight  = glm::normalize(flat);
+            });
+
+        // Forward comes from right, not from the camera's own forward. A camera
+        // looking straight down at the mech has a forward of (0, -1, 0), which
+        // flattens to nothing; its right is still perfectly level. Up x right is
+        // the direction 90 degrees to the left of right, along the ground -
+        // with a right-handed, Y-up world that is exactly "away from the camera".
+        const Math::vec3 cameraForward = glm::cross(Math::vec3(0.0f, 1.0f, 0.0f), cameraRight);
 
         // W+D gives a vector about 1.41 long, so diagonal walking would be 41%
         // faster. Shrink it back to 1. Only when over 1, so a gamepad stick

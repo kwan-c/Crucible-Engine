@@ -156,7 +156,7 @@ namespace Crucible {
     void Core::RegisterEngineSystems()
     {
         //sample system registeration
-        m_systems.RegisterSystem<ECSPlayerControllerSystem>(*m_renderer);               // Update: keyboard -> CharacterController, before physics moves it; the renderer's camera sets "forward" until the camera is an entity
+        m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
         m_systems.RegisterSystem<ECSPhysicsSystem>();
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
