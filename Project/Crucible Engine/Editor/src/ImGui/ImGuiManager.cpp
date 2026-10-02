@@ -11,6 +11,7 @@
 */
 
 #include "ImGui/ImGuiManager.h"
+#include "ImGui/EditorWidgets.h"
 #include "Diagnostics/Logger.h"
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_glfw.h>
@@ -256,6 +257,7 @@ void Crucible::ImGuiManager::BeginFrame() {
 }
 
 void Crucible::ImGuiManager::Render() {
+	EditorWidgets::EndFrameMouseLock();   // apply/release the infinite-drag cursor lock for this frame
 	ImGui::Render();
 }
 

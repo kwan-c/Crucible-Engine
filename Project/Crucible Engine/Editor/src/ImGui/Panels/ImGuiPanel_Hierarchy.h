@@ -20,6 +20,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace Crucible {
 
@@ -40,6 +41,25 @@ namespace Crucible {
 		// so this query matches the whole scene; roots are filtered out of it below by parent ==
 		// kNullEntity. Built once and reused (see World::CreateQuery's own note on why).
 		std::optional<Query<const HierarchyNode>> m_query;
+		// Actions requested by the right-click menu or a shortcut. They change the World, which is not
+		// allowed while m_query is iterating, so they are stored and run after the loop.
+		enum class PendingAction { None, Copy, Paste, Duplicate, Delete };
+		PendingAction m_pendingAction = PendingAction::None;
+		Entity        m_pendingTarget = kNullEntity;
+
+		// One copied entity: its component snapshot, and the index of its parent in the same list
+		// (-1 for the top entity). Parents always come before their children.
+		struct ClipNode { int parent; std::string snapshot; };
+		std::vector<ClipNode> m_clipboard;
+
+		void RequestAction(PendingAction action, Entity target) { m_pendingAction = action; m_pendingTarget = target; }
+		void RunPendingAction();
+		std::vector<ClipNode> CopySubtree(Entity root) const;
+		// Creates the clipboard's entities under `parent` (kNullEntity = root), records one undo
+		// step, selects the new top entity and returns it.
+		// siblingIndex >= 0 moves the new top entity to that position among its siblings.
+		Entity PasteSubtree(std::vector<ClipNode> const& nodes, Entity parent, std::string const& label, int siblingIndex = -1);
+		void DeleteEntity(Entity entity);
 
 		// Draws one entity's row (and, if expanded, its children) recursively.
 		void DrawEntityNode(Entity entity);

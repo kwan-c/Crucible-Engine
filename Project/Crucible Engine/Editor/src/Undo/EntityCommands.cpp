@@ -188,4 +188,74 @@ namespace Crucible {
         history.Rebind(m_entity, entity);
     }
 
+
+    // =======================================================================
+    //  DeleteEntityCommand
+    // =======================================================================
+
+    std::unique_ptr<DeleteEntityCommand> DeleteEntityCommand::Capture(UndoHistory& history, Entity entity, std::string label)
+    {
+        auto command = std::unique_ptr<DeleteEntityCommand>(new DeleteEntityCommand());
+        command->m_label = std::move(label);
+
+        World& world = history.GetWorld();
+        if (!world.IsAlive(entity))
+        {
+            return command;
+        }
+
+        // Depth-first, parent before children, children first-to-last - the
+        // order Undo needs to rebuild the tree with the same sibling order.
+        auto visit = [&](auto&& self, Entity node) -> void
+        {
+            const Entity parent = world.GetParent(node);
+            command->m_nodes.push_back(Node{
+                history.KeyOf(node),
+                parent == kNullEntity ? kNullEntity : history.KeyOf(parent),
+                world.GetSiblingIndex(node),
+                EntityState::Capture(world, node) });
+
+            world.ForEachChild(node, [&](Entity child) { self(self, child); });
+        };
+        visit(visit, entity);
+
+        return command;
+    }
+
+    void DeleteEntityCommand::Undo(UndoHistory& history)
+    {
+        World& world = history.GetWorld();
+
+        for (const Node& node : m_nodes)
+        {
+            const Entity entity = world.CreateEntity();
+            EntityState::Apply(world, entity, node.snapshot);
+            history.Rebind(node.key, entity);
+
+            if (!(node.parent == kNullEntity))
+            {
+                const Entity parent = history.Resolve(node.parent);
+                // false: the snapshot holds the LOCAL Transform; keep it as-is
+                // (same reasoning as Scene loading).
+                if (world.IsAlive(parent) && world.TrySetParent(entity, parent, false) == ParentResult::Ok)
+                {
+                    world.SetSiblingIndex(entity, node.siblingIndex);
+                }
+                else
+                {
+                    CRU_WARN("Undo: could not re-parent restored entity {} - left as a root", entity.index);
+                }
+            }
+        }
+    }
+
+    void DeleteEntityCommand::Redo(UndoHistory& history)
+    {
+        if (m_nodes.empty())
+        {
+            return;
+        }
+        // Destroys the descendants too, exactly like the original delete.
+        history.GetWorld().DestroyEntity(history.Resolve(m_nodes.front().key));
+    }
 }

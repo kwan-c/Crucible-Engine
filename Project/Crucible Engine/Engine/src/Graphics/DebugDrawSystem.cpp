@@ -213,10 +213,12 @@ namespace Crucible {
 		const WorldTransform* wt = world.Read<WorldTransform>(selected);
 		if (!wt || !wt->valid) { return; }
 
-		DebugStyle style;
-		style.category  = DebugCategory::Selection;
-		style.depthTest = false;
-		DebugDraw::Axes(wt->matrix, 1.0f, style);
+		// XYZ axis arrows on the selection are disabled: the transform gizmo already shows the
+		// axes. Uncomment to bring them back.
+		// DebugStyle style;
+		// style.category  = DebugCategory::Selection;
+		// style.depthTest = false;
+		// DebugDraw::Axes(wt->matrix, 1.0f, style);
 		// The selected mesh itself gets the Renderer's orange silhouette outline instead of a box
 		// (Renderer::SetOutlinedObject, driven by the Scene view).
 
