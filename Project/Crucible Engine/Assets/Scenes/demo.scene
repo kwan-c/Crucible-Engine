@@ -75,9 +75,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -546.8335571289063,
-                        "y": -22448.19140625,
-                        "z": 2765.49462890625
+                        "x": -599.4677734375,
+                        "y": -24633.22265625,
+                        "z": 3032.933349609375
                     },
                     "rotation": {
                         "x": -0.33046022057533264,
@@ -191,6 +191,18 @@
                     },
                     "meshAsset": 15775344583901223439,
                     "materialAsset": 16599319152200482817
+                },
+                "AudioSource": {
+                    "clip": 15519598733947043843,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": true,
+                    "loop": true,
+                    "volume": 1.0,
+                    "pitch": 0.972000002861023,
+                    "spatialBlend": 0.0,
+                    "minDistance": 1.0,
+                    "maxDistance": 500.0
                 },
                 "Collider": {
                     "type": "Sphere",

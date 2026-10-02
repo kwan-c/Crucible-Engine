@@ -305,7 +305,7 @@ void Crucible::EditorManager::Init(Core& core)
 	// The editor never "plays": AudioSources stay silent while editing; asset previews still work.
 	// The Play/Pause panel below (when it exists) must turn this off on Play and back on on Stop.
 	ECSAudioSystem* audio = core.Systems().FindSystem<ECSAudioSystem>();   // null if audio is not registered
-	if (audio) audio->SetEditMode(true);
+	if (audio) audio->SetEditMode(false);
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(audio);   // null is fine: previews just do nothing
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	//m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();
