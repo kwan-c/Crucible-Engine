@@ -67,10 +67,11 @@ namespace Crucible
 		Light = 8,            // Graphics: point/spot/directional light
 		Skybox = 9,           // Graphics: scene sky + ambient + exposure
 		AudioListener = 10,   // Audio: where the ears are (Audio/AudioComponents.h)
-
 		Camera = 11,          // Graphics: the game camera (struct CameraComponent)
+		PlayerController = 12,   // Physics: keyboard -> CharacterController, local player only (Physics/PhysicsComponents.h)
 
-		MAXCOMPONENT = 12
+
+		MAXCOMPONENT = 13
 	};
 
 
@@ -172,5 +173,6 @@ namespace Crucible
  X(Skybox)                                                                     \
  X(AudioListener)                                                              \
  X(CameraComponent)                                                            \
+ X(PlayerController)                                                           \
 
 }
