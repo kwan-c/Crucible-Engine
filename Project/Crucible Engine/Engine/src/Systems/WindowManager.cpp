@@ -1,15 +1,9 @@
 #include "WindowManager.h"
 #include <iostream>
 
-namespace {
-
-    void static processInput(GLFWwindow* window)
-    {
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            glfwSetWindowShouldClose(window, true);
-    }
-}
-
+// No "Esc closes the window" here any more: Esc frees the game's locked cursor (see the end of
+// ImGuiManager::Update). Quitting is the window's X or Alt+F4, as in Unity, until the game has
+// a pause menu with a Quit button.
 
 namespace Crucible {
 
@@ -46,7 +40,7 @@ namespace Crucible {
         return true;
     }
 
-    void WindowManager::PollEvents() { glfwPollEvents(); processInput(m_pWindow); }
+    void WindowManager::PollEvents() { glfwPollEvents(); }
     bool WindowManager::ShouldClose() const { return glfwWindowShouldClose(m_pWindow); }
 
     void WindowManager::FramebufferResizeCallback(GLFWwindow* window, int width, int height)
