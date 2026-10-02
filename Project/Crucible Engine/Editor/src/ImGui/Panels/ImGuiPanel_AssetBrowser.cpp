@@ -477,10 +477,24 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	ImVec2 const p1(p0.x + tileSize.x, p0.y + tileSize.y);
 
 	// ---- interaction (all on the one invisible button covering the tile) ----
-	ImGui::InvisibleButton("##Tile", tileSize);
+	// InvisibleButton returns true on release, and only when the press also started on this tile.
+	bool const released = ImGui::InvisibleButton("##Tile", tileSize);
 	bool const hovered = ImGui::IsItemHovered();
 
-	if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+	// Unity's rule: a click selects, a drag does not. The press only counts as a click if the
+	// mouse never moved past ImGui's drag threshold - the same threshold BeginDragDropSource
+	// below uses to start a drag - so dragging an asset onto the Inspector's picker leaves the
+	// Inspector showing the entity instead of swapping it for the asset. The farthest distance
+	// is kept until the next press, so it is still readable on the release frame.
+	ImGuiIO const& io = ImGui::GetIO();
+	bool const dragged = io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] >= io.MouseDragThreshold * io.MouseDragThreshold;
+	if (released && !dragged) {
+		m_selected = item.virtualPath;
+		ShowInInspector(item);
+	}
+
+	// Right-click selects straight away, so the context menu is about this tile.
+	if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
 		m_selected = item.virtualPath;
 		ShowInInspector(item);
 	}
