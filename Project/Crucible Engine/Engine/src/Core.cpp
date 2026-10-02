@@ -2,6 +2,7 @@
 #include "AssetPipe/Assetmanager.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Diagnostics/Logger.h"
+#include "ECS/ECSAudioSystem.h"
 #include "ECS/ECSPhysicsSystem.h"
 #include "ECS/Components/Components.h"
 #include "Json/JsonWrapper.h"
@@ -150,6 +151,7 @@ namespace Crucible {
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
+        m_systems.RegisterSystem<ECSAudioSystem>(*m_assets);                             // PreRender: owns the FMOD audio engine; resolves clip paths through m_assets
     }
 
     void Core::CleanUp() {

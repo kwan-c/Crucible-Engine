@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.2
+* \version       1.4
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -29,6 +29,7 @@
 	* -v1.2       GLM: Transform's identity rotation is a constant (w, x, y, z)
 	*             instead of an Euler-angle constructor	
 	* -v1.3       Audio renamed to AudioSource (clashed with class Crucible::Audio)
+	* -v1.4       AudioSource moved to Audio/AudioComponents.h
 	*
 	*
 	**************************************************************************/
@@ -39,6 +40,7 @@
 #include"ComponentKind.h"
 #include"Math/Math.h"
 #include"Physics/PhysicsComponents.h"
+#include"Audio/AudioComponents.h"
 #include"../Core/ECSCore.h"   // Entity (HierarchyNode links)
 #include"Graphics/MeshHandle.h"   // MeshHandle - deliberately NOT RenderTypes.h, which pulls in Vulkan
 #include"Graphics/MaterialHandle.h"   // MaterialHandle - same reasoning: header-only, no Vulkan
@@ -201,17 +203,6 @@ namespace Crucible
 	};
 
 	/*************************************************************************
-	 \brief  Playback state for an entity's audio source.
-	 \note   Named AudioSource (Unity's name), not Audio: the audio system
-	         class is Crucible::Audio, and one namespace cannot hold both.
-	 *************************************************************************/
-	struct AudioSource
-	{
-		bool play = false;
-		bool loop = false;
-	};
-
-	/*************************************************************************
 	 \brief
 		Linear motion state used by ECSPhysicsSystem to integrate Transform.
 	 *************************************************************************/
@@ -247,7 +238,6 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(Transform, Transform);
 	CRUCIBLE_COMPONENT(RigidBody, RigidBody);
 	CRUCIBLE_COMPONENT(MeshRenderer, MeshRenderer);
-	CRUCIBLE_COMPONENT(AudioSource, AudioSource);
 	CRUCIBLE_COMPONENT(HierarchyNode, HierarchyNode);
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 	CRUCIBLE_COMPONENT(Light, Light);

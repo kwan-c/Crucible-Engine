@@ -29,8 +29,15 @@
 
 namespace Crucible {
 
+	class ECSAudioSystem;
+
 	class AssetBrowser : public EditorPanel {
 	public:
+		// The audio system plays previews of audio files: select one and the Inspector shows
+		// Unity's clip preview (Play/Stop, Auto Play). Null is allowed: the browser works,
+		// previews do nothing.
+		explicit AssetBrowser(ECSAudioSystem* audio = nullptr) : m_audio(audio) {}
+
 		// REQUIRED Overrides
 		void Init() override;
 		void Update(float dt) override;
@@ -68,12 +75,20 @@ namespace Crucible {
 		void DrawItemContextMenu(Item const& item);
 		void DrawFooter();
 
+		// Selection -> Inspector. An audio file shows the clip preview there; anything else
+		// takes the preview back out, the way Unity's Inspector follows the selection.
+		void ShowInInspector(Item const& item);
+		void DrawAudioPreview(std::string const& name);
+
 		void NavigateTo(std::string const& folder);   // deferred until the end of the frame
 		void CreateFolder();
 		std::string AbsolutePathOf(std::string const& virtualPath) const;
 
-		AssetManager m_assets;                  // the browser's own index (see note in Init)
-		bool         m_ready = false;
+		AssetManager    m_assets;               // the browser's own index (see note in Init)
+		bool            m_ready = false;
+		ECSAudioSystem* m_audio = nullptr;      // not owned; Core owns it and outlives every panel
+		bool            m_audioInInspector = false;   // the Inspector is showing our clip preview
+		bool            m_autoPlay = false;           // Unity's Auto Play toggle: play on select. Off, as in Unity
 
 		FolderNode        m_root;
 		std::vector<Item> m_items;              // what the grid shows right now

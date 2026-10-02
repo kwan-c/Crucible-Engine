@@ -88,7 +88,8 @@ namespace Crucible {
     enum class ResourceKind : std::uint8_t {
         Mesh,
         Material,
-        Texture
+        Texture,
+        Audio      // audio files; listed for the Inspector's picker only - the renderer never loads them
     };
 
     /*************************************************************************

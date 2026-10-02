@@ -17,6 +17,7 @@
 #include <imgui_internal.h>   // DockBuilder* API
 #include <iostream>
 #include <Core.h>
+#include "ECS/ECSAudioSystem.h"
 
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
@@ -301,7 +302,11 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(core.GetScenes());
 	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(core.GetWorld(), core.GetResources(), core.GetScenes());
 	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(core.GetWorld(), core.GetRenderer(), core.GetScenes());
-	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>();
+	// The editor never "plays": AudioSources stay silent while editing; asset previews still work.
+	// The Play/Pause panel below (when it exists) must turn this off on Play and back on on Stop.
+	ECSAudioSystem* audio = core.Systems().FindSystem<ECSAudioSystem>();   // null if audio is not registered
+	if (audio) audio->SetEditMode(true);
+	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(audio);   // null is fine: previews just do nothing
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	//m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();
 

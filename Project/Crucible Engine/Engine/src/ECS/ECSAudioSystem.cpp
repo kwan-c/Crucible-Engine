@@ -1,0 +1,518 @@
+/*************************************************************************
+* \file:         ECSAudioSystem.cpp
+* \author:       Hugo
+* \date          1 October 2026
+* \version       1.1
+* \brief
+*                Implementation of ECSAudioSystem. See the header for
+*                what happens each frame.
+*
+* \details
+*                The system keeps one Record per entity with an
+*                AudioSource: the voices it started and the values it
+*                last sent them. Each frame the component is compared
+*                against that record, and only differences reach FMOD.
+*                An entity the query no longer finds - destroyed, or its
+*                AudioSource removed - has its voices stopped and its
+*                record dropped, the same "absence is the signal" rule
+*                ECSPhysicsSystem uses.
+*
+*                Clips are loaded the first time a source needs one and
+*                kept, shared by every source that names the same file.
+*
+* \history
+*    -v1.0       owns Audio, ticks it, editor preview
+*    -v1.1       AudioSource and AudioListener components; edit mode
+*
+**************************************************************************/
+#include "ECSAudioSystem.h"
+
+// STL
+#include <map>
+#include <optional>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+// Crucible engine
+#include "AssetPipe/Assetmanager.h"
+#include "Components/Components.h"
+#include "Diagnostics/Logger.h"
+#include "ECS/HierarchyTransformSystem.h"
+#include "Systems/Query.h"
+#include "World.h"
+
+namespace {
+
+    using namespace Crucible;
+
+    // Read-only on purpose: a mutable query stamps every AudioSource as
+    // changed every frame. The few writes go through GetComponent instead,
+    // and only when a value actually changed.
+    using SourceQuery   = Query<const AudioSource, const WorldTransform>;
+    using ListenerQuery = Query<const AudioListener, const WorldTransform>;
+
+    // The engine's convention, the same one lights use: position is the
+    // world matrix's translation, forward its local -Z axis, up its local +Y.
+    Math::vec3 PositionOf(const WorldTransform& world) { return Math::vec3(world.matrix[3]); }
+    Math::vec3 ForwardOf(const WorldTransform& world)  { return -Math::vec3(world.matrix[2]); }
+    Math::vec3 UpOf(const WorldTransform& world)       { return Math::vec3(world.matrix[1]); }
+
+    bool Same(const Math::vec3& a, const Math::vec3& b) { return a.x == b.x && a.y == b.y && a.z == b.z; }
+
+    // An AudioSource's settings in the form Audio::Play takes. `loop` is
+    // passed separately because a one-shot never loops, whatever the
+    // component says.
+    AudioPlayDesc ToPlayDesc(const AudioSource& source, const Math::vec3& position, bool loop) {
+
+        AudioPlayDesc desc;
+        desc.m_bus          = source.m_bus;
+        desc.m_volume       = source.m_volume;
+        desc.m_pitch        = source.m_pitch;
+        desc.m_loop         = loop;
+        desc.m_spatialBlend = source.m_spatialBlend;
+        desc.m_position     = position;
+        desc.m_minDistance  = source.m_minDistance;
+        desc.m_maxDistance  = source.m_maxDistance;
+        return desc;
+
+    }   // ToPlayDesc()
+
+    // --- one entity's audio, as the system remembers it --------------------- //
+
+    struct Record {
+
+        Entity                  entity   {};
+        AudioVoice              voice    {};        // the Play() voice
+        std::vector<AudioVoice> oneShots;           // PlayOneShot voices still sounding
+
+        // What the voices were last told, so only changes are sent.
+        float                   volume   = 1.0f;
+        float                   pitch    = 1.0f;
+        Math::vec3              position = Math::vec3(0.0f, 0.0f, 0.0f);
+
+        bool                    awake     = false;  // playOnAwake has had its one chance
+        std::uint64_t           seenFrame = 0;      // the last frame the query found this entity
+
+    };  // RECORD STRUCT
+
+    // An isPlaying value to write back, and the requests it has now dealt
+    // with. Collected during the query and written after it, so nothing is
+    // written into a component while the query is walking over it.
+    struct WriteBack {
+
+        Entity entity    {};
+        bool   isPlaying = false;
+
+    };  // WRITEBACK STRUCT
+
+}   // ANONYMOUS NAMESPACE
+
+namespace Crucible {
+
+    // ------------------------------------------------------------------- //
+    // STATE
+    // ------------------------------------------------------------------- //
+
+    struct ECSAudioSystem::State {
+
+        explicit State(AssetManager& assetManager) : assets(assetManager) {}
+
+        AssetManager& assets;
+        Audio         audio;
+        World*        world    = nullptr;
+        bool          editMode = false;
+
+        std::optional<SourceQuery>   sources;
+        std::optional<ListenerQuery> listeners;
+
+        std::unordered_map<std::uint64_t, Record> records;      // keyed by EntityToUserData(entity)
+        std::vector<WriteBack>                    writeBacks;   // reused every frame
+
+        // One clip per file per load type, shared by every source naming it.
+        // A failed load is kept too (as an invalid handle), so a missing file
+        // is reported once rather than on every Play.
+        std::map<std::pair<std::uint64_t, AudioClipLoadType>, AudioClip> clips;
+
+        std::uint64_t frame               = 0;
+        bool          warnedNoListener    = false;
+        bool          warnedManyListeners = false;
+
+        // The editor's one preview. Kept apart from everything components
+        // play, so stopping a preview can never stop a game sound.
+        AudioClip     previewClip;
+        AudioVoice    previewVoice;
+        std::string   previewPath;     // which asset previewClip is, so selecting it again keeps it
+
+        void      BindWorld(World& ecs);
+        void      SyncListener();
+        void      SyncSource(Record& record, const AudioSource& source, const WorldTransform& transform);
+        AudioClip ClipFor(const AudioSource& source);
+        void      Silence(Record& record);
+        void      RemoveAll();
+
+    };  // ECSAUDIOSYSTEM::STATE STRUCT
+
+    // ------------------------------------------------------------------- //
+    // LIFECYCLE
+    // ------------------------------------------------------------------- //
+
+    ECSAudioSystem::ECSAudioSystem(AssetManager& assets) : m_state{ std::make_unique<State>(assets) } {}
+
+    ECSAudioSystem::~ECSAudioSystem() { Shutdown(); }
+
+    // A machine with no sound device still runs the game - silently. Audio's
+    // own log line above this one says why.
+    void ECSAudioSystem::Init() {
+        if (!m_state->audio.Init())
+            CRU_ERROR("ECSAudioSystem: audio did not start - the game will run silent");
+    }
+
+    void ECSAudioSystem::Shutdown() noexcept {
+
+        if (!m_state) return;
+        State& s = *m_state;
+
+        s.RemoveAll();
+
+        // A Query holds pointers into the World's archetypes and must not
+        // outlive it, so a restart builds fresh ones.
+        s.sources.reset();
+        s.listeners.reset();
+        s.world = nullptr;
+
+        // Audio::Shutdown releases every clip - the cached ones and the
+        // preview - so the handles only need forgetting.
+        s.clips.clear();
+        s.previewClip  = AudioClip{};
+        s.previewVoice = AudioVoice{};
+        s.previewPath.clear();
+        s.audio.Shutdown();
+
+    }   // ECSAudioSystem::Shutdown()
+
+    void ECSAudioSystem::Describe(SystemDesc& desc) const {
+
+        // Main thread, always. Init starts COM on the thread that calls it, and
+        // the editor's preview calls come from the ImGui thread, which is the
+        // main thread. Keeping every FMOD call on one thread means never having
+        // to ask whether a call is safe from another.
+        desc.Uses<SourceQuery>()                             // reads AudioSource + WorldTransform
+            .Uses<ListenerQuery>()                           // reads AudioListener + WorldTransform
+            .Writes<AudioSource>()                           // isPlaying, and spent requests, through GetComponent
+            .RunAfterIfPresent<HierarchyTransformSystem>()   // WorldTransform must already be this frame's
+            .Affinity(SystemAffinity::MainThread);
+
+    }   // ECSAudioSystem::Describe()
+
+    Audio& ECSAudioSystem::GetAudio()          { return m_state->audio; }
+    bool   ECSAudioSystem::IsEditMode() const  { return m_state->editMode; }
+
+    /*!
+        \brief
+        Turns edit mode on (silent, the editor) or off (playing, the game).
+    */
+    void ECSAudioSystem::SetEditMode(bool editing) {
+
+        State& s = *m_state;
+        if (s.editMode == editing) return;
+        s.editMode = editing;
+
+        for (auto& [key, record] : s.records) {
+            if (editing) s.Silence(record);     // Stop: everything goes quiet
+            else         record.awake = false;  // Play: every source wakes again, as at a scene start
+        }
+
+    }   // ECSAudioSystem::SetEditMode()
+
+    // ------------------------------------------------------------------- //
+    // THE FRAME
+    // ------------------------------------------------------------------- //
+
+    /*!
+        \brief
+        One frame of audio: ears, then sources, then FMOD's tick.
+    */
+    void ECSAudioSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
+
+        State& s = *m_state;
+        if (!s.audio.IsInitialised()) return;
+
+        s.BindWorld(world);
+        ++s.frame;
+
+        s.SyncListener();
+
+        s.writeBacks.clear();
+        s.sources->ForEach([&](Entity entity, const AudioSource& source, const WorldTransform& transform) {
+
+            auto [it, inserted] = s.records.try_emplace(EntityToUserData(entity));
+            Record& record = it->second;
+            if (inserted) record.entity = entity;
+            record.seenFrame = s.frame;
+
+            s.SyncSource(record, source, transform);
+        });
+
+        // After the walk, not during it: isPlaying, and the requests that are
+        // now spent. Only components with something to change are touched.
+        for (const WriteBack& write : s.writeBacks) {
+            if (AudioSource* source = world.GetComponent<AudioSource>(write.entity)) {
+                source->m_isPlaying       = write.isPlaying;
+                source->m_request         = AudioRequest::None;
+                source->m_pendingOneShots = 0;
+            }
+        }
+
+        // Not seen this frame: the entity was destroyed, or lost its
+        // AudioSource. Unity stops the sound with it, and so do we.
+        for (auto it = s.records.begin(); it != s.records.end();) {
+            if (it->second.seenFrame != s.frame) {
+                s.Silence(it->second);
+                it = s.records.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+
+        s.audio.Update();       // once, after every change above
+
+    }   // ECSAudioSystem::Update()
+
+    // A different world means a different scene: every voice belongs to
+    // entities that are gone, so they all stop.
+    void ECSAudioSystem::State::BindWorld(World& ecs) {
+
+        if (world == &ecs && sources.has_value()) return;
+
+        RemoveAll();
+        world = &ecs;
+        sources.emplace(ecs.CreateQuery<const AudioSource, const WorldTransform>());
+        listeners.emplace(ecs.CreateQuery<const AudioListener, const WorldTransform>());
+        warnedNoListener    = false;
+        warnedManyListeners = false;
+
+    }   // ECSAudioSystem::State::BindWorld()
+
+    /*!
+        \brief
+        Puts the ears on the first AudioListener. Unity allows one; with more,
+        the first wins and the log says so once.
+    */
+    void ECSAudioSystem::State::SyncListener() {
+
+        std::uint32_t count = 0;
+        listeners->ForEach([&](Entity, const AudioListener&, const WorldTransform& transform) {
+            if (count++ == 0) audio.SetListener(PositionOf(transform), ForwardOf(transform), UpOf(transform));
+        });
+
+        // Only worth saying when something can actually be heard.
+        if (editMode || records.empty()) return;
+
+        if (count == 0 && !warnedNoListener) {
+            CRU_WARN("ECSAudioSystem: no entity has an AudioListener - 3D sounds are heard from the world origin");
+            warnedNoListener = true;
+        }
+        if (count > 1 && !warnedManyListeners) {
+            CRU_WARN("ECSAudioSystem: {} entities have an AudioListener - only the first is used", count);
+            warnedManyListeners = true;
+        }
+
+    }   // ECSAudioSystem::State::SyncListener()
+
+    /*!
+        \brief
+        Makes one entity's voices match its AudioSource: requests first, then
+        changes to what is already sounding, then isPlaying.
+    */
+    void ECSAudioSystem::State::SyncSource(Record& record, const AudioSource& source, const WorldTransform& transform) {
+
+        const Math::vec3 position = PositionOf(transform);
+        AudioRequest     request  = source.m_request;
+        std::uint8_t     oneShots = source.m_pendingOneShots;
+
+        // AWAKE ------------------------------------------------------------------ //
+        // The first frame a source exists is its Awake, as when Unity enables
+        // it. playOnAwake is a Play request on that frame and never again -
+        // unless a script already asked for something itself.
+        if (!record.awake) {
+            record.awake = true;
+            if (source.m_playOnAwake && request == AudioRequest::None) request = AudioRequest::Play;
+        }
+
+        // Editing: requests are dropped, not saved for later, so nothing
+        // queued while building the scene fires the moment Play is pressed.
+        if (editMode) {
+            request  = AudioRequest::None;
+            oneShots = 0;
+        }
+
+        // REQUESTS --------------------------------------------------------------- //
+        if (request == AudioRequest::Stop) {
+            Silence(record);
+        }
+        else if (request == AudioRequest::Play) {
+            audio.Stop(record.voice);               // Unity's Play restarts; it does not stack
+            const AudioClip clip = ClipFor(source);
+            record.voice = clip.IsValid() ? audio.Play(clip, ToPlayDesc(source, position, source.m_loop)) : AudioVoice{};
+        }
+
+        if (oneShots > 0) {
+            const AudioClip clip = ClipFor(source);
+            for (std::uint8_t i = 0; i < oneShots && clip.IsValid(); ++i) {
+                const AudioVoice shot = audio.Play(clip, ToPlayDesc(source, position, false));
+                if (shot.IsValid()) record.oneShots.push_back(shot);
+            }
+        }
+
+        // Anything just started has the component's current values.
+        if (request == AudioRequest::Play || oneShots > 0) {
+            record.volume   = source.m_volume;
+            record.pitch    = source.m_pitch;
+            record.position = position;
+        }
+
+        // LIVE CHANGES ----------------------------------------------------------- //
+        // Volume, pitch and position reach a sound while it plays, as in Unity.
+        // Loop, spatialBlend, distances, output and clip take effect at the
+        // next Play: Audio has no live setter for them yet.
+        std::erase_if(record.oneShots, [&](const AudioVoice& shot) { return !audio.IsPlaying(shot); });
+
+        const bool playing = audio.IsPlaying(record.voice);
+        if (playing || !record.oneShots.empty()) {
+
+            const auto eachVoice = [&](const auto& apply) {
+                apply(record.voice);
+                for (const AudioVoice& shot : record.oneShots) apply(shot);
+            };
+
+            if (source.m_volume != record.volume) {
+                eachVoice([&](const AudioVoice& voice) { audio.SetVolume(voice, source.m_volume); });
+                record.volume = source.m_volume;
+            }
+            if (source.m_pitch != record.pitch) {
+                eachVoice([&](const AudioVoice& voice) { audio.SetPitch(voice, source.m_pitch); });
+                record.pitch = source.m_pitch;
+            }
+            if (source.m_spatialBlend > 0.0f && !Same(position, record.position)) {
+                eachVoice([&](const AudioVoice& voice) { audio.SetPosition(voice, position); });
+                record.position = position;
+            }
+        }
+
+        // WRITE BACK -------------------------------------------------------------- //
+        // Only when something changed, so a silent source is never stamped as
+        // changed. Requests are cleared even in edit mode, so they are spent.
+        const bool requested = source.m_request != AudioRequest::None || source.m_pendingOneShots != 0;
+        if (requested || source.m_isPlaying != playing)
+            writeBacks.push_back(WriteBack{ record.entity, playing });
+
+    }   // ECSAudioSystem::State::SyncSource()
+
+    /*!
+        \brief
+        The clip an AudioSource names, loading it the first time it is needed.
+        \return
+        An invalid handle for "no clip", a missing file, or one that will not
+        load - each reported once.
+    */
+    AudioClip ECSAudioSystem::State::ClipFor(const AudioSource& source) {
+
+        if (source.m_clip == 0) return AudioClip{};
+
+        const auto key = std::make_pair(source.m_clip, source.m_loadType);
+        if (const auto found = clips.find(key); found != clips.end()) return found->second;
+
+        // The id is the asset's guid from its .meta file, so a renamed or
+        // moved file is still found.
+        AudioClip clip;
+        const AssetEntry* entry = assets.FindByGuid(xresource::instance_guid{ source.m_clip });
+        if (entry == nullptr)
+            CRU_WARN("ECSAudioSystem: no asset has id {:016X} - deleted, or its .meta was lost", source.m_clip);
+        else if (entry->type != AssetType::Audio)
+            CRU_WARN("ECSAudioSystem: {} is not an audio file", entry->virtualPath);
+        else
+            clip = audio.LoadClip(entry->absolutePath, source.m_loadType);
+
+        clips.emplace(key, clip);
+        return clip;
+
+    }   // ECSAudioSystem::State::ClipFor()
+
+    // Unity's Stop: the Play() voice and every one-shot.
+    void ECSAudioSystem::State::Silence(Record& record) {
+        audio.Stop(record.voice);
+        for (const AudioVoice& shot : record.oneShots) audio.Stop(shot);
+        record.voice = AudioVoice{};
+        record.oneShots.clear();
+    }
+
+    void ECSAudioSystem::State::RemoveAll() {
+        for (auto& [key, record] : records) Silence(record);
+        records.clear();
+    }
+
+    // ------------------------------------------------------------------- //
+    // EDITOR PREVIEW
+    // ------------------------------------------------------------------- //
+
+    /*!
+        \brief
+        Makes one audio asset the preview clip, without playing it.
+        \param virtualPath
+        The asset's path inside Assets, e.g. "Audio/cannon5.wav".
+        \return
+        True if that clip is now loaded.
+    */
+    bool ECSAudioSystem::LoadPreview(const std::string& virtualPath) {
+
+        State& s = *m_state;
+        if (s.previewClip.IsValid() && s.previewPath == virtualPath) return true;   // already the one: leave it playing
+
+        UnloadPreview();
+
+        // Streamed: opening it only reads the header, so selecting a long
+        // track is instant, and a preview is only ever one voice - the one
+        // thing a stream cannot do is overlap.
+        s.previewClip = s.audio.LoadClip(s.assets.Resolve(virtualPath).string(), AudioClipLoadType::Streaming);
+        if (!s.previewClip.IsValid()) return false;     // LoadClip has already said why
+
+        s.previewPath = virtualPath;
+        return true;
+
+    }   // ECSAudioSystem::LoadPreview()
+
+    void ECSAudioSystem::PlayPreview() {
+
+        State& s = *m_state;
+        if (!s.previewClip.IsValid()) return;
+
+        // Stop first, so pressing Play mid-clip starts it over rather than
+        // asking a stream to play twice.
+        s.audio.Stop(s.previewVoice);
+
+        AudioPlayDesc desc;
+        desc.m_bus     = AudioBus::Master;          // so the Music and SFX sliders do not change what you hear
+        s.previewVoice = s.audio.Play(s.previewClip, desc);
+
+    }   // ECSAudioSystem::PlayPreview()
+
+    void ECSAudioSystem::StopPreview() {
+        m_state->audio.Stop(m_state->previewVoice);
+        m_state->previewVoice = AudioVoice{};
+    }
+
+    // Unloading also stops the voice, so there is no separate Stop here.
+    void ECSAudioSystem::UnloadPreview() {
+        State& s = *m_state;
+        s.audio.UnloadClip(s.previewClip);
+        s.previewClip  = AudioClip{};
+        s.previewVoice = AudioVoice{};
+        s.previewPath.clear();
+    }
+
+    bool  ECSAudioSystem::IsPreviewPlaying() const { return m_state->audio.IsPlaying(m_state->previewVoice); }
+    float ECSAudioSystem::GetPreviewLength() const { return m_state->audio.GetClipLength(m_state->previewClip); }
+
+}   // NAMESPACE CRUCIBLE

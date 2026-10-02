@@ -310,7 +310,8 @@ namespace Crucible {
             switch (kind) {
                 case ResourceKind::Mesh:     { auto it = m_meshes.find(id);    return it != m_meshes.end()    && it->second.IsValid(); }
                 case ResourceKind::Material: { auto it = m_materials.find(id); return it != m_materials.end() && it->second.IsValid(); }
-                default:                     { auto it = m_textures.find(id);  return it != m_textures.end()  && (it->second.srgb.IsValid() || it->second.linear.IsValid()); }
+                case ResourceKind::Audio:    return false;   // never loaded here; ECSAudioSystem loads audio itself
+                default:                    { auto it = m_textures.find(id);  return it != m_textures.end()  && (it->second.srgb.IsValid() || it->second.linear.IsValid()); }
             }
         };
 
@@ -340,6 +341,9 @@ namespace Crucible {
                 break;
             case ResourceKind::Texture:
                 addAssets(AssetType::Texture, "", false);
+                break;
+            case ResourceKind::Audio:
+                addAssets(AssetType::Audio, "", false);
                 break;
         }
 

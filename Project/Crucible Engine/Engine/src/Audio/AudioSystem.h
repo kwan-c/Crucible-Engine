@@ -149,6 +149,10 @@ namespace Crucible {
         // stay invalid afterwards rather than becoming someone else's clip.
         void UnloadClip(const AudioClip& clip);
 
+        // Unity's AudioClip.length: how long one play-through lasts, in
+        // seconds. 0 for a stale or invalid handle.
+        float GetClipLength(const AudioClip& clip) const;
+
         // --- voices (Unity's AudioSource.Play and friends) ---
 
         // Starts one voice. Keep the handle to control it later, or ignore it

@@ -45,6 +45,12 @@ namespace Crucible {
 		template<typename T> void SetTarget(T& obj) { m_draw = [&obj] { DrawInstance(obj); }; m_selected = kNullEntity; }
 		void ClearTarget() { m_draw = nullptr; m_selected = kNullEntity; }
 
+		// Any panel's own UI, drawn in the Inspector instead of an entity - e.g. the Asset
+		// Browser's audio clip preview (Unity shows a selected asset here too). Replaced by the
+		// next SetSelectedEntity/SetTarget/ClearTarget, like the rttr path above.
+		void SetCustomTarget(std::function<void()> draw) { m_draw = std::move(draw); m_selected = kNullEntity; }
+		bool HasCustomTarget() const { return m_draw != nullptr; }
+
 		// The Hierarchy panel calls this when the user clicks an entity.
 		void SetSelectedEntity(Entity entity) { m_selected = entity; m_draw = nullptr; }
 		Entity GetSelectedEntity() const { return m_selected; }

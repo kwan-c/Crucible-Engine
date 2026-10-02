@@ -186,6 +186,7 @@ namespace {
 			case Crucible::ResourceKind::Mesh:     return "mesh";
 			case Crucible::ResourceKind::Material: return "material";
 			case Crucible::ResourceKind::Texture:  return "texture";
+			case Crucible::ResourceKind::Audio:    return "audio";
 		}
 		return "unknown";
 	}

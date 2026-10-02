@@ -7,6 +7,8 @@
 #include "ImGui/EditorWidgets.h"
 #include "AssetPipe/AssetRegistry.h"
 #include "Diagnostics/Logger.h"
+#include "ECS/ECSAudioSystem.h"
+#include "ImGui/Panels/ImGuiPanel_Inspector.h"
 
 #include <algorithm>
 #include <cctype>
@@ -156,6 +158,17 @@ void Crucible::AssetBrowser::Refresh() {
 }
 
 void Crucible::AssetBrowser::Update(float) {
+	// Something else took the Inspector (an entity was picked in the Hierarchy): the clip
+	// preview is no longer on screen, so stop it and let the clip go. Checked before Begin so
+	// it still happens while this panel is collapsed.
+	if (m_audioInInspector) {
+		auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+		if (!inspector || !inspector->HasCustomTarget()) {
+			if (m_audio) m_audio->UnloadPreview();
+			m_audioInInspector = false;
+		}
+	}
+
 	if (!ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		ImGui::End();
 		return;
@@ -467,8 +480,10 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	ImGui::InvisibleButton("##Tile", tileSize);
 	bool const hovered = ImGui::IsItemHovered();
 
-	if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right))
+	if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
 		m_selected = item.virtualPath;
+		ShowInInspector(item);
+	}
 
 	if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
 		if (item.isFolder)
@@ -533,6 +548,16 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	if (item.isFolder && ImGui::MenuItem("Open"))
 		NavigateTo(item.virtualPath);
 
+	// Greyed out rather than hidden when there is no audio system, so it is obvious the
+	// feature exists and something is missing.
+	// The right-click already selected it, so the preview clip is this one; these are the
+	// Inspector's Play/Stop button, one menu away.
+	if (item.type == AssetType::Audio) {
+		if (ImGui::MenuItem("Play", nullptr, false, m_audio != nullptr) && m_audio->LoadPreview(item.virtualPath)) m_audio->PlayPreview();
+		if (ImGui::MenuItem("Stop", nullptr, false, m_audio != nullptr)) m_audio->StopPreview();
+		ImGui::Separator();
+	}
+
 	if (m_search[0] != '\0' && ImGui::MenuItem("Go to Folder"))
 		NavigateTo(ParentOf(item.virtualPath));
 
@@ -551,6 +576,51 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	}
 
 	ImGui::EndPopup();
+}
+
+void Crucible::AssetBrowser::ShowInInspector(Item const& item) {
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (!inspector) return;
+
+	if (!item.isFolder && item.type == AssetType::Audio && m_audio != nullptr) {
+		if (!m_audio->LoadPreview(item.virtualPath)) return;   // the log already says why
+		if (m_autoPlay) m_audio->PlayPreview();
+
+		// Captures `this`: the Inspector only calls it while drawing, and every panel is
+		// destroyed together in EditorManager::Shutdown, so it never outlives the browser.
+		inspector->SetCustomTarget([this, name = item.name] { DrawAudioPreview(name); });
+		m_audioInInspector = true;
+	}
+	else if (m_audioInInspector) {
+		// Another asset was picked: the clip preview leaves the Inspector, as in Unity.
+		inspector->ClearTarget();
+		if (m_audio) m_audio->UnloadPreview();
+		m_audioInInspector = false;
+	}
+}
+
+// Unity's AudioClip preview: what it is, how long, and a Play/Stop button.
+void Crucible::AssetBrowser::DrawAudioPreview(std::string const& name) {
+	ImGui::TextUnformatted(name.c_str());
+	ImGui::TextDisabled("Audio clip, %.2f s", m_audio ? m_audio->GetPreviewLength() : 0.0f);
+	ImGui::Separator();
+
+	if (m_audio == nullptr) {
+		ImGui::TextDisabled("No audio system - previews are off.");
+		return;
+	}
+
+	// One button that is Play or Stop depending on what is happening now, so it flips back
+	// to Play by itself when the clip ends.
+	if (m_audio->IsPreviewPlaying()) {
+		if (ImGui::Button("Stop", ImVec2(80.0f, 0.0f))) m_audio->StopPreview();
+	}
+	else {
+		if (ImGui::Button("Play", ImVec2(80.0f, 0.0f))) m_audio->PlayPreview();
+	}
+
+	ImGui::SameLine();
+	ImGui::Checkbox("Auto Play", &m_autoPlay);
 }
 
 void Crucible::AssetBrowser::DrawFooter() {

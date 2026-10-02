@@ -88,4 +88,19 @@ namespace Crucible {
 
     }   // Audio::UnloadClip()
 
+    float Audio::GetClipLength(const AudioClip& clip) const {
+
+        const Impl::Clip* slot = m_impl->Slot(clip);
+        if (slot == nullptr) return 0.0f;
+
+        // FMOD answers in whole milliseconds; a stream reads this from the
+        // file's header, so it is cheap for music too.
+        unsigned int milliseconds = 0;
+        if (!Impl::Check(slot->m_sound->getLength(&milliseconds, FMOD_TIMEUNIT_MS), "Audio::GetClipLength: Sound::getLength"))
+            return 0.0f;
+
+        return static_cast<float>(milliseconds) / 1000.0f;
+
+    }   // Audio::GetClipLength()
+
 }   // NAMESPACE CRUCIBLE

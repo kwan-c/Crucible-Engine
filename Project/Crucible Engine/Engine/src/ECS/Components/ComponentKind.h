@@ -66,8 +66,9 @@ namespace Crucible
 		WorldTransform = 7,   // computed by HierarchyTransformSystem
 		Light = 8,            // Graphics: point/spot/directional light
 		Skybox = 9,           // Graphics: scene sky + ambient + exposure
+		AudioListener = 10,   // Audio: where the ears are (Audio/AudioComponents.h)
 
-		MAXCOMPONENT = 10
+		MAXCOMPONENT = 11
 	};
 
 
@@ -167,5 +168,6 @@ namespace Crucible
  X(WorldTransform)                                                             \
  X(Light)                                                                      \
  X(Skybox)                                                                     \
+ X(AudioListener)                                                              \
 
 }
