@@ -2,7 +2,7 @@
 * \file:         ECSPlayerControllerSystem.h
 * \author:       Hugo
 * \date          2 October 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Keyboard and mouse in: walks and jumps the mech that
 *                carries a PlayerController, and turns the third-person
@@ -12,7 +12,8 @@
 *                Each Update():
 *                  1. locks the cursor if Play or Resume just started
 *                  2. while the cursor is locked, turns every CameraOrbit
-*                     pivot with the mouse
+*                     pivot with the mouse, and turns its parent mech to
+*                     face the same way if m_faceCamera is on
 *                  3. reads WASD and Space, and turns WASD into a direction
 *                     relative to the main camera entity, flat on the ground
 *                  4. calls SimpleMove() and Jump() on every entity with a
@@ -33,6 +34,7 @@
 *    -v1.1       reads the CameraComponent entity; SimulationOnly, so the
 *                right-mouse-button guard for the editor is gone
 *    -v1.2       third-person camera: CameraOrbit and the cursor lock
+*    -v1.3       the mech turns to face the camera (m_faceCamera)
 *
 **************************************************************************/
 #pragma once

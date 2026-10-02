@@ -6,8 +6,8 @@
   \brief
     RTTR registration for PlayerController.
   \details
-    Both fields are designer settings, so both are saved and both are
-    editable in the Inspector. There is no runtime state to hide: the
+    Every field is a designer setting, so every field is saved and
+    editable in the Inspector (faceCamera shows as a checkbox). There is no runtime state to hide: the
     "what is it doing right now" values (isGrounded, velocity) live on the
     CharacterController next to it, not here.
 
@@ -41,5 +41,6 @@ RTTR_REGISTRATION
         .constructor<>()
         .property("moveSpeed",  &PlayerController::m_moveSpeed)
         .property("jumpHeight", &PlayerController::m_jumpHeight)
+        .property("faceCamera", &PlayerController::m_faceCamera)
     ;
 }

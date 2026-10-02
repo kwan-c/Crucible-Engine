@@ -178,6 +178,13 @@ namespace Crucible {
         float m_moveSpeed  = 6.0f;      // m/s on the ground. Diagonals are no faster
         float m_jumpHeight = 1.5f;      // metres, measured from the feet. 0 disables jumping
 
+        // Turn the whole mech to face where the camera looks (yaw only - it stays
+        // upright). Needs the CameraOrbit pivot to be a child of this entity. Off:
+        // the mech keeps its rotation and the camera orbits freely round it.
+        // Safe to flip mid-Play: the pivot cancels the mech's turn, so the view
+        // never jumps either way.
+        bool  m_faceCamera = true;
+
     };  // PLAYERCONTROLLER STRUCT
 
     CRUCIBLE_COMPONENT(PlayerController, PlayerController)

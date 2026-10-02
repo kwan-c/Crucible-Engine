@@ -2,7 +2,7 @@
 * \file:         ECSPlayerControllerSystem.cpp
 * \author:       Hugo
 * \date          2 October 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Implementation of ECSPlayerControllerSystem. See the
 *                header for what happens each frame.
@@ -11,6 +11,7 @@
 *    -v1.0       WASD, Space, camera-relative (the Renderer's camera)
 *    -v1.1       reads the CameraComponent entity; SimulationOnly
 *    -v1.2       third-person camera: CameraOrbit and the cursor lock
+*    -v1.3       the mech turns to face the camera (m_faceCamera)
 *
 **************************************************************************/
 #include "ECSPlayerControllerSystem.h"
@@ -83,9 +84,37 @@ namespace Crucible {
                 // other order tilts the horizon as soon as both are non-zero.
                 // Pitch is negated: turning around +X by a positive angle tips the
                 // view UP, and + pitch means looking down on the mech.
-                const Math::quat rotation =
-                    glm::angleAxis(glm::radians(orbit.m_yaw),    Math::vec3(0.0f, 1.0f, 0.0f)) *
-                    glm::angleAxis(glm::radians(-orbit.m_pitch), Math::vec3(1.0f, 0.0f, 0.0f));
+                // This is the rotation the camera should end up with in the WORLD.
+                const Math::quat yawRotation   = glm::angleAxis(glm::radians(orbit.m_yaw),    Math::vec3(0.0f, 1.0f, 0.0f));
+                const Math::quat pitchRotation = glm::angleAxis(glm::radians(-orbit.m_pitch), Math::vec3(1.0f, 0.0f, 0.0f));
+                const Math::quat worldRotation = yawRotation * pitchRotation;
+
+                // THE MECH. The pivot is a child of the mech, so whatever the mech's
+                // rotation is gets added on top of the pivot's own. Turning the mech
+                // to the camera AND giving the pivot the full yaw would turn the
+                // camera twice - and every frame the mech chases it, it runs away
+                // further. So the mech's rotation is cancelled out below, whatever it
+                // is: toggle on or off, flipped mid-Play or not, the view never jumps.
+                // Assumes the mech is at the top of the hierarchy, so its Transform
+                // rotation IS its world rotation - the Mech -> Pivot -> Camera setup.
+                Math::quat parentRotation = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);   // no parent: nothing to cancel
+                const Entity mech = world.GetParent(pivot);
+                if (const Transform* mechTransform = world.Read<Transform>(mech)) {
+                    parentRotation = mechTransform->rotation;
+
+                    // Toggle on: the mech turns to the camera's yaw. Yaw only - a
+                    // mech that pitched with the camera would lie down to look at the
+                    // floor. Written only when it changed, same reason as the pivot.
+                    const PlayerController* player = world.Read<PlayerController>(mech);
+                    if (player != nullptr && player->m_faceCamera && yawRotation != parentRotation) {
+                        if (Transform* writable = world.GetComponent<Transform>(mech)) writable->rotation = yawRotation;
+                        parentRotation = yawRotation;
+                    }
+                }
+
+                // Undo the parent's turn: parent x local = world, so local =
+                // inverse(parent) x world. Facing the camera, that leaves just the pitch.
+                const Math::quat rotation = glm::inverse(parentRotation) * worldRotation;
 
                 // Written every frame, not only when the mouse moves, so the saved
                 // angles take effect on the first frame of Play and an Inspector
