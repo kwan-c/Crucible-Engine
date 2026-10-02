@@ -71,6 +71,10 @@ namespace Crucible {
 		// Creating Primitives (cube, sphere, etc.) is a common editor action, so the "+" menu in the toolbar
 		// calls this to spawn a new entity with a MeshRenderer and the requested primitive mesh.
 		void CreatePrimitive(const std::string& meshName);
+
+		// Creating Light Objects (directional, point, spot) is a common editor action, so the "+" menu in the toolbar
+		// calls this to spawn a new entity with a Light component and the requested light type.
+		void CreateLightObject(const std::string& lightType);
 	};
 
 }

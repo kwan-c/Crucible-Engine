@@ -69,6 +69,18 @@ void Crucible::Hierarchy::Update(float dt) {
 					}
 					ImGui::EndMenu();
 				}
+				if (ImGui::BeginMenu("Light Objects")) {
+					if (ImGui::MenuItem("Create Directional Light")) {
+						CreateLightObject("Directional");
+					}
+					if (ImGui::MenuItem("Create Point Light")) {
+						CreateLightObject("Point");
+					}
+					if (ImGui::MenuItem("Create Spot Light")) {
+						CreateLightObject("Spot");
+					}
+					ImGui::EndMenu();
+				}
 				ImGui::EndMenu();
 			}
 
@@ -368,4 +380,41 @@ void Crucible::Hierarchy::CreatePrimitive(const std::string& meshName) {
 		history.KeyOf(e), EntityState::Capture(m_world, e), "Create " + meshName));
 
 	m_scenes.MarkDirty();   // records that there are unsaved changes
+}
+
+void Crucible::Hierarchy::CreateLightObject(const std::string& lightType) {
+
+	auto e = m_world.CreateEntity();
+	Light light{};
+
+	if (lightType == "Directional") {
+		light.type = LightType::Directional;
+		light.intensity = 1.f;
+	}
+	else if (lightType == "Point") {
+		light.type = LightType::Point;
+		light.intensity = 10.f;
+	}
+	else if (lightType == "Spot") {
+		light.type = LightType::Spot;
+		light.intensity = 10.f;
+	}
+	else {
+		CRU_USER_WARN("Unknown light type: {}", lightType);
+		return;
+	}
+
+	m_world.AddComponent<Light>(e, light);
+
+	// Select first: that commits any Inspector edit still open on the previous entity, so it
+	// lands in the history BEFORE this create - the order they actually happened in.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(e);
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create " + lightType));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+
 }
