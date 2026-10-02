@@ -294,6 +294,9 @@ Crucible::EditorManager& Crucible::EditorManager::GetInstance()
 
 void Crucible::EditorManager::Init(Core& core)
 {
+	// Clears itself whenever a scene is created or opened (SceneManager::OnSceneChanged).
+	m_history.Init(core.GetWorld(), core.GetScenes());
+
 	// Add in Editor Panels here...
 	//
 	// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
@@ -316,7 +319,37 @@ void Crucible::EditorManager::Init(Core& core)
 
 void Crucible::EditorManager::Shutdown()
 {
+	m_history.Clear();
 	m_panels.clear();
+}
+
+void Crucible::EditorManager::Undo()
+{
+	if (auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR)) { inspector->CommitPendingEdit(); }
+	if (!m_history.CanUndo()) { return; }
+	SelectAfterHistoryStep(m_history.Undo());
+}
+
+void Crucible::EditorManager::Redo()
+{
+	if (auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR)) { inspector->CommitPendingEdit(); }
+	if (!m_history.CanRedo()) { return; }
+	SelectAfterHistoryStep(m_history.Redo());
+}
+
+void Crucible::EditorManager::SelectAfterHistoryStep(Entity entity)
+{
+	auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (!inspector) { return; }
+
+	World& world = m_history.GetWorld();
+	if (entity.IsValid() && world.IsAlive(entity)) {
+		inspector->SetSelectedEntity(entity);
+	}
+	else if (inspector->GetSelectedEntity().IsValid() && !world.IsAlive(inspector->GetSelectedEntity())) {
+		// Undoing a Create destroyed the entity that was selected.
+		inspector->ClearTarget();
+	}
 }
 
 float Crucible::EditorPanel::PushFontSize(float const fontScale)

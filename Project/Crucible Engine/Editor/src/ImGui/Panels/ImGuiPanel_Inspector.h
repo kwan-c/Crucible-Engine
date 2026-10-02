@@ -28,6 +28,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <string>
 #include <unordered_set>
 
 namespace Crucible {
@@ -42,8 +43,8 @@ namespace Crucible {
 		void Update(float dt) override;
 
 		// The generic rttr-instance path (see file header comment).
-		template<typename T> void SetTarget(T& obj) { m_draw = [&obj] { DrawInstance(obj); }; m_selected = kNullEntity; }
-		void ClearTarget() { m_draw = nullptr; m_selected = kNullEntity; }
+		template<typename T> void SetTarget(T& obj) { CommitPendingEdit(); m_draw = [&obj] { DrawInstance(obj); }; m_selected = kNullEntity; }
+		void ClearTarget() { CommitPendingEdit(); m_draw = nullptr; m_selected = kNullEntity; }
 
 		// Any panel's own UI, drawn in the Inspector instead of an entity - e.g. the Asset
 		// Browser's audio clip preview (Unity shows a selected asset here too). Replaced by the
@@ -52,7 +53,11 @@ namespace Crucible {
 		bool HasCustomTarget() const { return m_draw != nullptr; }
 
 		// The Hierarchy panel calls this when the user clicks an entity.
-		void SetSelectedEntity(Entity entity) { m_selected = entity; m_draw = nullptr; }
+		void SetSelectedEntity(Entity entity) { if (!(entity == m_selected)) { CommitPendingEdit(); } m_selected = entity; m_draw = nullptr; }
+		
+		// Turns the edit in progress, if any, into one undo step. Runs automatically when the
+		// edited widget is released, when the selection changes, and before Undo / Redo.
+		void CommitPendingEdit();
 		Entity GetSelectedEntity() const { return m_selected; }
 
 		// Writes every material edited since its last save (the ones shown with a '*').
@@ -87,5 +92,16 @@ namespace Crucible {
 		// .mat asset ids edited in the Inspector but not yet written with "Save Material".
 		// Edits are live on the GPU immediately; the file is only written on the button.
 		std::unordered_set<std::uint64_t> m_unsavedMaterials;
+
+		// ---- Undo: the edit in progress ----
+		// m_editBefore is re-captured every frame nothing is being edited, so it always holds
+		// the entity as it was just before an edit starts. The first change opens the edit
+		// (NoteEdit); it is committed once no ImGui widget is active, so a whole slider drag
+		// becomes ONE undo step rather than one per frame.
+		void NoteEdit(std::string label);
+		std::string m_editBefore;
+		std::string m_editLabel;
+		Entity      m_editEntity = kNullEntity;
+		bool        m_editOpen = false;
 	};
 }

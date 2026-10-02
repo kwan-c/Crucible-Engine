@@ -19,6 +19,7 @@
 
 #include "Graphics/Vulkan/ImGuiContext.h"
 #include "Graphics/RenderSystem.h"
+#include "Undo/UndoHistory.h"
 
 enum class ImguiPanels
 {
@@ -121,6 +122,17 @@ namespace Crucible {
 		void             SetResources(ResourceManager* resources) { m_resources = resources; }
 		ResourceManager* GetResources() const { return m_resources; }
 
+		// ---- Undo / Redo ----
+		// One history for the whole editor (20 steps, see UndoHistory.h). Panels push to it
+		// after they change the scene; Ctrl+Z / Ctrl+Y and Edit > Undo / Redo call Undo()/Redo().
+		UndoHistory& GetHistory() { return m_history; }
+
+		// Undo / redo the newest step, then select the entity it touched (Unity's behaviour).
+		// Both first commit any Inspector edit still in progress, so a drag that finished this
+		// frame becomes its own step instead of being swallowed by the undo.
+		void Undo();
+		void Redo();
+
 		std::map<ImguiPanels, std::shared_ptr<EditorPanel>> m_panels;
 
 		// This function assumes the caller gives the correct type.
@@ -136,6 +148,9 @@ namespace Crucible {
 	private:
 		static std::unique_ptr<EditorManager> s_Instance;
 		ResourceManager* m_resources = nullptr;
+		UndoHistory      m_history;
+
+		void SelectAfterHistoryStep(Entity entity);
 	};
 
 	namespace ImGuiManager {

@@ -46,6 +46,27 @@ target_link_libraries(imgui_backends PUBLIC imgui glfw Vulkan::Vulkan)
 
 set_target_properties(imgui_backends PROPERTIES FOLDER "ThirdParty")
 
+# ----------------------------------- #
+# ImGuizmo (static, linked by Editor only)
+# ----------------------------------- #
+# Built here instead of via ImGuizmo's own CMakeLists, which would fetch its own ImGui for the
+# example. Linking our imgui target makes ImGuizmo compile against the same imgui.h/imconfig.h
+# as the Editor, so ImGui's context and data layout match.
+
+add_library(imguizmo STATIC
+    ImGuizmo/src/ImGuizmo.cpp
+    ImGuizmo/src/GraphEditor.cpp
+    ImGuizmo/src/ImCurveEdit.cpp
+    ImGuizmo/src/ImGradient.cpp
+    ImGuizmo/src/ImSequencer.cpp
+    ImGuizmo/src/ImVectorEditor.cpp
+)
+
+target_include_directories(imguizmo PUBLIC ImGuizmo/src)
+target_link_libraries(imguizmo PUBLIC imgui)
+
+set_target_properties(imguizmo PROPERTIES FOLDER "ThirdParty")
+
 
 # ----------------------------------- #
 # VMA (Vulkan Memory Allocator)
@@ -190,7 +211,7 @@ target_link_libraries(EngineThirdParty INTERFACE
 )
 
 # ----------------------------------- #
-# Editor-only dependencies (ImGui).
+# Editor-only dependencies (ImGui, ImGuizmo).
 # Link this from Editor ONLY - never from Engine or Game.
 # ----------------------------------- #
 
@@ -199,4 +220,5 @@ add_library(EditorThirdParty INTERFACE)
 target_link_libraries(EditorThirdParty INTERFACE
     imgui
     imgui_backends
+    imguizmo
 )
