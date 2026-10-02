@@ -40,8 +40,6 @@ target_link_libraries(Editor PRIVATE Engine EditorThirdParty)
 
 # Copy Engine.dll to Editor output directory (ImGui is static, so no imgui.dll)
 add_custom_command(TARGET Editor POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE:Engine>" "$<TARGET_FILE_DIR:Editor>"
 
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "$<TARGET_FILE:glfw>" "$<TARGET_FILE_DIR:Editor>"
