@@ -42,9 +42,12 @@ namespace Crucible {
 		constexpr float kFastSpeed = 20.0f;   // m/s at which the arrow is fully red
 
 		// One Collider at the pose physics gives it: Transform position/rotation, then m_center in
-		// the body's local frame (Jolt's RotatedTranslatedShape). Colliders are not scaled.
-		void DrawCollider(const Transform& t, const Collider& c, const DebugStyle& style) {
+		// the body's local frame (Jolt's RotatedTranslatedShape). Sizes are scaled by Transform::scale
+		// through ScaledCollider (PhysicsComponents.h), the same call physics builds bodies with, so
+		// the wireframe is always the shape that actually collides.
+		void DrawCollider(const Transform& t, const Collider& typed, const DebugStyle& style) {
 
+			const Collider c = ScaledCollider(typed, t.scale);
 			const glm::vec3 center = t.positions + t.rotation * c.m_center;
 			switch (c.m_type) {
 				case ShapeType::Box:

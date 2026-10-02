@@ -106,13 +106,13 @@ namespace {
             && a.m_pushStrength == b.m_pushStrength && a.m_layer == b.m_layer;
     }   // SameRecipe()
 
-    // One bit per message. A crate can be both badly scaled and on the wrong
-    // layer, and hearing about only the first one is how the second gets missed.
+    // One bit per message. An entity can have both a Collider and a
+    // CharacterController AND sit on the wrong layer, and hearing about only
+    // the first one is how the second gets missed.
     enum WarnBit : std::uint32_t {
         kWarnNaN          = 1u << 0,
         kWarnLayer        = 1u << 1,
-        kWarnScale        = 1u << 2,
-        kWarnTwoColliders = 1u << 3,
+        kWarnTwoColliders = 1u << 2,
     };
 
     // Once per entity per message, ever. A warning that repeats every frame
@@ -418,7 +418,10 @@ namespace Crucible {
 
         // A RigidBody makes it dynamic; a collider on its own is part of the arena.
         BodyDesc desc;
-        desc.m_shape       = ToShapeDesc(collider);
+        // Scaled first, Unity-style: the floor cube at scale (15, 0.1, 15) gets a
+        // 15 x 0.1 x 15 collider. A scale edit changes the shape, SameRecipe sees
+        // that below, and the body is rebuilt - nothing extra needed for it.
+        desc.m_shape       = ToShapeDesc(ScaledCollider(collider, transform.scale));
         desc.m_position    = transform.positions;
         desc.m_rotation    = transform.rotation;
         desc.m_motion      = rigidbody != nullptr ? BodyMotion::Dynamic : BodyMotion::Static;
@@ -448,9 +451,6 @@ namespace Crucible {
         // through the floor and through other crates. Easy mistake, hard symptom.
         if (rigidbody != nullptr && collider.m_layer == PhysicsLayer::NonMoving)
             WarnOnce(record.warned, kWarnLayer, record.entity, "has a RigidBody but sits on the NonMoving layer, which collides with nothing that matters - set Collider::m_layer to Moving");
-
-        if (!Same(transform.scale, Math::vec3(1.0f, 1.0f, 1.0f)))
-            WarnOnce(record.warned, kWarnScale, record.entity, "has a Transform scale other than 1 - colliders are not scaled yet, so the collider will not match the mesh");
 
         // NEW, OR A SETTING CHANGED: (RE)BUILD ---------------------------------- //
         if (!record.body.IsValid() || !SameRecipe(desc, record.recipe)) {

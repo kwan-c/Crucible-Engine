@@ -1,6 +1,8 @@
 #pragma once
 
 // STL
+#include <algorithm>    // ScaledCollider()
+#include <cmath>        // ScaledCollider()
 #include <cstdint>
 
 // Crucible engine
@@ -56,6 +58,52 @@ namespace Crucible {
     };  // COLLIDER STRUCT
 
     CRUCIBLE_COMPONENT(Collider, Collider)
+
+    /*!
+        \brief
+        The collider as it really is in the world: its sizes multiplied by the
+        entity's Transform scale, the way Unity always does it. A cube mesh
+        scaled to (15, 0.1, 15) with the default 1m Collider gets a 15 x 0.1 x 15
+        collider - what you see is what you hit.
+
+        The ONE place this rule lives. Physics builds bodies from it and debug
+        draw draws wireframes from it; two copies would drift apart and the
+        wireframe would lie about what the mech actually walks into.
+        \param collider
+        The component as the designer typed it, in the entity's local units.
+        \param scale
+        Transform::scale. Negative axes count as positive: a mirrored crate is
+        still the same size.
+        \return
+        A copy with every size scaled. The component itself is never changed,
+        so editing the scale back to 1 gives back the typed sizes.
+    */
+    inline Collider ScaledCollider(const Collider& collider, const Math::vec3& scale) {
+
+        const Math::vec3 size(std::abs(scale.x), std::abs(scale.y), std::abs(scale.z));
+
+        Collider scaled = collider;
+        scaled.m_size   = collider.m_size * size;       // per axis
+        scaled.m_center = collider.m_center * scale;    // signed: a mirrored offset flips side with the mesh
+
+        // Round shapes cannot stretch into an egg, so they grow to fit the
+        // biggest axis instead - Unity's rule. A sphere uses all three axes; a
+        // capsule stands along Y, so Y sets its height and only X and Z its radius.
+        switch (collider.m_type) {
+            case ShapeType::Box:
+                break;
+            case ShapeType::Sphere:
+                scaled.m_radius = collider.m_radius * std::max({ size.x, size.y, size.z });
+                break;
+            case ShapeType::Capsule:
+                scaled.m_radius = collider.m_radius * std::max(size.x, size.z);
+                scaled.m_height = collider.m_height * size.y;
+                break;
+        }
+
+        return scaled;
+
+    }   // ScaledCollider()
 
     /*
         Unity's CharacterController: a capsule that walks. It slides along walls,
