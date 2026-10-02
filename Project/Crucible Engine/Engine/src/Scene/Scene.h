@@ -3,7 +3,7 @@
   \author     Tok Duan Jie Nelson
   \par        Email: t.duanjienelson@digipen.edu
   \date       29 September 2026
-  \version    1.0
+  \version    1.1
   \brief
     Saves a World to a .scene file and loads one back.
   \details
@@ -29,6 +29,10 @@
     Scene.cpp, Prefab.h, EntityIO.h
   \history
     - 1.0 (29 September 2026): Initial version.
+    - 1.1 (2 October 2026): In-memory snapshots for play mode
+      (CaptureSnapshot / RestoreSnapshot) and EntityOf, the guid -> Entity
+      lookup, as a separate section of Scene.cpp. Save and Load are
+      unchanged.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -47,6 +51,22 @@
 namespace Crucible {
 
     class World;
+
+    /*************************************************************************
+     \brief  An in-memory copy of a scene, taken by Scene::CaptureSnapshot.
+     \details
+        The same JSON a .scene file holds (compact), in the same layout Save
+        writes. Play mode keeps one from Play to Stop. Nothing is written
+        to disk.
+     *************************************************************************/
+    struct SceneSnapshot
+    {
+        std::string document;          //!< compact .scene JSON
+        std::size_t entityCount = 0;   //!< entities in document, checked at capture
+
+        //! False for a default-constructed snapshot (nothing captured).
+        bool IsValid() const noexcept { return !document.empty(); }
+    };
 
     /*************************************************************************
      \brief  Format version written into every .scene file.
@@ -125,6 +145,40 @@ namespace Crucible {
         bool Load(World& world, const std::filesystem::path& file);
 
         /*********************************************************************
+         \brief
+            Save the world into memory instead of a file.
+
+         \param[in]  world The world to copy. Non-const for the same reason
+                           as Save; nothing is modified.
+         \param[out] out   Replaced on success, untouched on failure.
+         \return true if the snapshot was built and checked.
+
+         \details
+            Exactly what Save would write, including edits never saved. Like
+            Save, every live entity gets a guid (an unsaved one gets a new
+            guid, which later Saves keep). The text is parsed back and
+            checked before this returns, so RestoreSnapshot can rely on it.
+         *********************************************************************/
+        bool CaptureSnapshot(World& world, SceneSnapshot& out);
+
+        /*********************************************************************
+         \brief
+            Replace the world's contents with a snapshot.
+
+         \param[in,out] world    The world to rebuild.
+         \param[in]     snapshot From CaptureSnapshot.
+         \return true if the world was rebuilt.
+
+         \details
+            The snapshot is parsed and checked before anything is destroyed,
+            so a bad one leaves the world exactly as it was. Every entity
+            gets back the guid it had at capture, and the scene its name -
+            but NOT its Entity handle: all handles held anywhere are stale
+            afterwards. Find an entity again with EntityOf(guid).
+         *********************************************************************/
+        bool RestoreSnapshot(World& world, const SceneSnapshot& snapshot);
+
+        /*********************************************************************
          \brief  Drop the entity-to-guid mapping.
          \details
             Call when the world has been reset behind this object's back.
@@ -148,6 +202,17 @@ namespace Crucible {
                  entity yet (it gets one on the next Save).
          *********************************************************************/
         xresource::instance_guid IdOf(Entity entity) const;
+
+        /*********************************************************************
+         \brief  The entity saved under a guid - the reverse of IdOf.
+         \return The entity, or kNullEntity if this scene has no entity with
+                 that guid (or the guid is zero).
+         \details
+            How a guid remembered before a reload or a play-mode Stop finds
+            its entity's new handle. A search of the guid map: fine for the
+            few lookups a Stop makes, not meant for per-frame use.
+         *********************************************************************/
+        Entity EntityOf(const xresource::instance_guid& id) const;
 
         /*********************************************************************
          \brief  How many entities this scene currently has guids for.

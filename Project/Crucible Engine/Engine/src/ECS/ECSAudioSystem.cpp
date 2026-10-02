@@ -2,7 +2,7 @@
 * \file:         ECSAudioSystem.cpp
 * \author:       Hugo
 * \date          1 October 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Implementation of ECSAudioSystem. See the header for
 *                what happens each frame.
@@ -24,6 +24,7 @@
 *    -v1.0       owns Audio, ticks it, editor preview
 *    -v1.1       AudioSource and AudioListener components; edit mode
 *    -v1.2       with no AudioListener entity, the ears follow the camera
+*    -v1.3       SetPaused: voices freeze, requests wait for Resume
 *
 **************************************************************************/
 #include "ECSAudioSystem.h"
@@ -125,6 +126,7 @@ namespace Crucible {
         Audio           audio;
         World*        world    = nullptr;
         bool          editMode = false;
+        bool          paused   = false;         // play-mode Pause: voices frozen, requests wait
 
         std::optional<SourceQuery>   sources;
         std::optional<ListenerQuery> listeners;
@@ -210,6 +212,24 @@ namespace Crucible {
 
     Audio& ECSAudioSystem::GetAudio()          { return m_state->audio; }
     bool   ECSAudioSystem::IsEditMode() const  { return m_state->editMode; }
+    bool   ECSAudioSystem::IsPaused() const    { return m_state->paused; }
+
+    /*!
+        \brief
+        Freezes (true) or resumes (false) every voice an AudioSource started.
+    */
+    void ECSAudioSystem::SetPaused(bool paused) {
+
+        State& s = *m_state;
+        if (s.paused == paused) return;
+        s.paused = paused;
+
+        for (auto& [key, record] : s.records) {
+            s.audio.SetPaused(record.voice, paused);
+            for (const AudioVoice& shot : record.oneShots) s.audio.SetPaused(shot, paused);
+        }
+
+    }   // ECSAudioSystem::SetPaused()
 
     /*!
         \brief
@@ -339,6 +359,12 @@ namespace Crucible {
         changes to what is already sounding, then isPlaying.
     */
     void ECSAudioSystem::State::SyncSource(Record& record, const AudioSource& source, const WorldTransform& transform) {
+
+        // Paused: nothing starts, stops or changes, and the component is left
+        // alone, so its requests (and playOnAwake) run at Resume. Live changes
+        // made meanwhile reach the voices then too: the record still holds
+        // what they were last sent.
+        if (paused) return;
 
         const Math::vec3 position = PositionOf(transform);
         AudioRequest     request  = source.m_request;

@@ -22,12 +22,14 @@
 
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
+#include "ImGui/Panels/ImGuiPanel_PlayPause.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "ImGui/Panels/ImGuiPanel_Hierarchy.h"
 #include "ImGui/Panels/ImGuiPanel_SceneView.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/Panels/ImGuiPanel_Console.h"
+#include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
 
 
 std::unique_ptr<Crucible::EditorManager> Crucible::EditorManager::s_Instance;
@@ -307,22 +309,80 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(core.GetScenes());
 	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(core.GetWorld(), core.GetResources(), core.GetScenes());
 	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(core.GetWorld(), core.GetRenderer(), core.GetScenes());
-	// The editor never "plays": AudioSources stay silent while editing; asset previews still work.
-	// The Play/Pause panel below (when it exists) must turn this off on Play and back on on Stop.
+	// AudioSources stay silent while editing and sound in play mode; Core switches the audio
+	// system's edit/pause modes on Play, Pause, Resume and Stop. Asset previews always work.
 	ECSAudioSystem* audio = core.Systems().FindSystem<ECSAudioSystem>();   // null if audio is not registered
-	if (audio) audio->SetEditMode(false);
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(audio);   // null is fine: previews just do nothing
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
-	//m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>();
+	m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>(core);   // queues Play/Pause/Resume/Stop on Core
 
 	for (auto& panel : m_panels)
 		panel.second->Init();
+
+	// Selection and undo history across Play / Stop (see OnPlayStateChanged).
+	m_core = &core;
+	m_playStateChanged = core.Events().engine.Subscribe<EngineEvents::PlayStateChanged>(
+		[this](const EngineEvents::PlayStateChanged& change) { OnPlayStateChanged(change); });
 }
 
 void Crucible::EditorManager::Shutdown()
 {
+	m_playStateChanged.Reset();
+	m_core = nullptr;
 	m_history.Clear();
 	m_panels.clear();
+}
+
+void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateChanged& change)
+{
+	if (m_core == nullptr) { return; }
+
+	auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	World& world = m_core->GetWorld();
+	SceneManager& scenes = m_core->GetScenes();
+
+	bool const started = change.from == PlayState::Edit && change.to != PlayState::Edit;
+	bool const stopped = change.from != PlayState::Edit && change.to == PlayState::Edit;
+
+	if (started) {
+		// Finish an edit in progress while it still belongs to edit mode, then remember the
+		// selection by guid - the Play snapshot has just given every live entity one.
+		if (inspector) { inspector->CommitPendingEdit(); }
+		Entity const selected = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+		m_selectionBeforePlay = (selected.IsValid() && world.IsAlive(selected)) ? scenes.Current().IdOf(selected).m_Value : 0;
+		m_history.BeginPlaySession();
+		return;
+	}
+
+	if (!stopped) { return; }   // Pause / Resume: same world, same handles
+
+	// A play-mode edit still open goes into the play-mode history, which is dropped next.
+	if (inspector) { inspector->CommitPendingEdit(); }
+	m_history.EndPlaySession(change.sceneRestored);
+
+	if (inspector) {
+		// Every handle from before is stale after a restore: find the pre-Play selection
+		// again by guid. Without a restore the world was kept, so keep a selection that
+		// is still alive.
+		Entity restored = kNullEntity;
+		if (change.sceneRestored && m_selectionBeforePlay != 0) {
+			restored = scenes.Current().EntityOf(xresource::instance_guid{ m_selectionBeforePlay });
+		}
+		else if (!change.sceneRestored && world.IsAlive(inspector->GetSelectedEntity())) {
+			restored = inspector->GetSelectedEntity();
+		}
+
+		if (restored.IsValid() && world.IsAlive(restored)) {
+			inspector->SetSelectedEntity(restored);
+		}
+		else if (inspector->GetSelectedEntity().IsValid()) {
+			inspector->ClearTarget();   // a stale or play-mode-only selection; an asset preview is left alone
+		}
+	}
+
+	// The Scene view's outline reads this every frame; don't let it hold a stale handle meanwhile.
+	DebugDrawSystem::SetSelectedEntity(inspector ? inspector->GetSelectedEntity() : kNullEntity);
+	m_selectionBeforePlay = 0;
 }
 
 void Crucible::EditorManager::Undo()

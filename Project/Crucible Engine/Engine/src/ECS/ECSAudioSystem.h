@@ -2,7 +2,7 @@
 * \file:         ECSAudioSystem.h
 * \author:       Hugo
 * \date          1 October 2026
-* \version       1.0
+* \version       1.3
 * \brief
 *                The ECS side of audio: owns the engine's one
 *                Crucible::Audio and ticks it once per frame.
@@ -28,6 +28,7 @@
 *    -v1.0       owns Audio, ticks it, editor preview
 *    -v1.1       AudioSource and AudioListener components; edit mode
 *    -v1.2       with no AudioListener entity, the ears follow the camera
+*    -v1.3       SetPaused for play-mode Pause; Core drives edit mode
 *
 **************************************************************************/
 #pragma once
@@ -87,16 +88,22 @@ namespace Crucible {
 
         ENGINE_API Audio& GetAudio();
 
-        // The editor has no Play button yet, and systems run while you edit,
-        // so AudioSources would start sounding as the scene is built. In edit
+        // Audio keeps running while you edit (previews need it), so
+        // AudioSources would start sounding as the scene is built. In edit
         // mode they are still tracked but never started: playOnAwake and
         // Play/PlayOneShot requests are dropped, and anything sounding stops.
-        // Previews are not affected. The game never calls this; the editor
-        // turns it on at startup (EditorManager::Init). A future Play button
-        // must turn it off on Play - which lets every playOnAwake fire, as at
-        // a scene start - and back on on Stop.
+        // Previews are not affected. Core owns this: on in Edit, off on Play -
+        // which lets every playOnAwake fire, as at a scene start - and back
+        // on at Stop (see Core::RequestPlay / RequestStop).
         ENGINE_API void SetEditMode(bool editing);
         ENGINE_API bool IsEditMode() const;
+
+        // Play-mode Pause. Every voice a source started freezes where it is,
+        // and requests (Play, Stop, PlayOneShot, playOnAwake) wait in the
+        // component until Resume instead of being dropped. Previews are not
+        // affected. Core turns it on at Pause and off at Resume and Stop.
+        ENGINE_API void SetPaused(bool paused);
+        ENGINE_API bool IsPaused() const;
 
         // Unity's clip preview, the one at the bottom of the Inspector when a
         // clip is selected. One clip at a time: loading another unloads the

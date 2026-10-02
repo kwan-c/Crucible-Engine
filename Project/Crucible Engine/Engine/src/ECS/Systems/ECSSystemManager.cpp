@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Implementation of ECSSystemManager: drives every
 *                registered system's Init/Update/Shutdown, in order.
@@ -39,6 +39,8 @@
 *                engine/network outboxes; gameplay outbox removed
 *    -v1.6       gameplay outbox back; the writer grants the gameplay route
 *                only to systems that declared EmitsGameplayEvents()
+*    -v1.7       SimulationOnly() systems skipped (Update and replay) while
+*                the simulation is off; ResetSimulationSystems()
 *
 **************************************************************************/
 
@@ -223,6 +225,7 @@ namespace Crucible
 	{
 		SystemSlot& slot = m_slots[index];
 		if (slot.disabled) return;
+		if (!m_simulationActive && m_schedule.descs[index].simulationOnly) return;   // simulation off (Edit/Paused)
 
 		slot.failedThisFrame = false;
 
@@ -269,6 +272,7 @@ namespace Crucible
 			{
 				SystemSlot& slot = m_slots[index];
 				if (slot.disabled) continue;
+				if (!m_simulationActive && m_schedule.descs[index].simulationOnly) continue;   // did not run this frame
 
 				try
 				{
@@ -396,6 +400,21 @@ namespace Crucible
 		m_initialized = false;
 	}
 
+	void ECSSystemManager::ResetSimulationSystems() noexcept
+	{
+		for (std::size_t index = 0; index < m_slots.size() && index < m_schedule.descs.size(); ++index)
+		{
+			if (!m_schedule.descs[index].simulationOnly) continue;
+
+			SystemSlot& slot = m_slots[index];
+			slot.commands.Clear();
+			slot.ClearOutboxes();
+			slot.consecutiveFailures = 0;
+			slot.failedThisFrame = false;
+			if (slot.initialised) slot.disabled = false;   // disabled by failures, not by a failed Init()
+		}
+	}
+
 	void ECSSystemManager::LogSchedule() const
 	{
 		CRU_INFO("ECS schedule: {} systems, {} stages (serial execution)", m_schedule.serialOrder.size(), m_schedule.stages.size());
@@ -411,9 +430,10 @@ namespace Crucible
 						: desc.access.exclusive ? std::string("exclusive")
 						: "reads " + ComponentList(desc.access.reads) + " writes " + ComponentList(desc.access.writes);
 
-					CRU_INFO("  {} batch {}: {} [priority {}, {}, {}{}]", StageName(stage.stage), batchIndex,
+					CRU_INFO("  {} batch {}: {} [priority {}, {}, {}{}{}]", StageName(stage.stage), batchIndex,
 						m_schedule.names[index], desc.priority, AffinityName(desc.affinity), access,
-						desc.emitsGameplayEvents ? ", emits gameplay events" : "");
+						desc.emitsGameplayEvents ? ", emits gameplay events" : "",
+						desc.simulationOnly ? ", simulation only" : "");
 				}
 			}
 		}

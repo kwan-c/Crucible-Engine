@@ -13,12 +13,15 @@
 
 #include <imgui.h>
 
+#include <cstdint>
 #include <string>
 #include <map>
 #include <memory>
 
 #include "Graphics/Vulkan/ImGuiContext.h"
 #include "Graphics/RenderSystem.h"
+#include "ECS/Systems/EventBus/Subscription.h"
+#include "Systems/PlayState.h"
 #include "Undo/UndoHistory.h"
 
 enum class ImguiPanels
@@ -127,6 +130,9 @@ namespace Crucible {
 		// after they change the scene; Ctrl+Z / Ctrl+Y and Edit > Undo / Redo call Undo()/Redo().
 		UndoHistory& GetHistory() { return m_history; }
 
+		// The engine (play mode requests, event buses). Null before Init() and after Shutdown().
+		Core* GetCore() const { return m_core; }
+
 		// Undo / redo the newest step, then select the entity it touched (Unity's behaviour).
 		// Both first commit any Inspector edit still in progress, so a drag that finished this
 		// frame becomes its own step instead of being swallowed by the undo.
@@ -151,6 +157,16 @@ namespace Crucible {
 		UndoHistory      m_history;
 
 		void SelectAfterHistoryStep(Entity entity);
+
+		// ---- Play mode ----
+		// Stop rebuilds the world from the Play snapshot, so every Entity handle changes.
+		// At Play the selection is remembered by scene guid and the undo history is put
+		// aside; at Stop both are brought back, pointed at the restored entities.
+		void OnPlayStateChanged(const EngineEvents::PlayStateChanged& change);
+
+		Core*         m_core = nullptr;
+		Subscription  m_playStateChanged;            // EngineEvents::PlayStateChanged on the engine bus
+		std::uint64_t m_selectionBeforePlay = 0;     // scene guid of the entity selected at Play; 0 = none
 	};
 
 	namespace ImGuiManager {
