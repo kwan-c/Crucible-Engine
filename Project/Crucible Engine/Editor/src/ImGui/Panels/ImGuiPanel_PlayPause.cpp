@@ -147,15 +147,26 @@ void PlayPause::Update(float)
         float const controlsX = std::max(8.0f, (ImGui::GetWindowWidth() - controlsWidth) * 0.5f);
         ImGui::SetCursorPos(ImVec2(controlsX, padding));
 
-        if (TransportButton("##Play", running ? "Exit Play Mode" : "Play",
-                            TransportIcon::Play, kPlayColor, running && !paused, !waiting, buttonSize)) {
+        // Unity's shortcuts: Ctrl+P is the Play button (Play, or Exit Play Mode), Ctrl+Shift+P
+        // the Pause button. Global, so they work from any panel - and mid-game, since a locked
+        // cursor only blocks ImGui's mouse, not its keyboard. Read before the buttons, then
+        // put AFTER them in each || so the button is always drawn; same rules as the button
+        // (nothing while a request waits, no pause unless running). ImGui matches modifiers
+        // exactly, so Ctrl+Shift+P never also counts as Ctrl+P.
+        bool const playKey  = ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_P, ImGuiInputFlags_RouteGlobal);
+        bool const pauseKey = ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P, ImGuiInputFlags_RouteGlobal);
+
+        if (TransportButton("##Play", running ? "Exit Play Mode (Ctrl+P)" : "Play (Ctrl+P)",
+                            TransportIcon::Play, kPlayColor, running && !paused, !waiting, buttonSize)
+            || (playKey && !waiting)) {
             if (running) m_core.RequestStop();
             else         m_core.RequestPlay();
         }
 
         ImGui::SameLine();
-        if (TransportButton("##Pause", paused ? "Resume" : "Pause",
-                            TransportIcon::Pause, kPauseColor, paused, running && !waiting, buttonSize)) {
+        if (TransportButton("##Pause", paused ? "Resume (Ctrl+Shift+P)" : "Pause (Ctrl+Shift+P)",
+                            TransportIcon::Pause, kPauseColor, paused, running && !waiting, buttonSize)
+            || (pauseKey && running && !waiting)) {
             if (paused) m_core.RequestResume();
             else        m_core.RequestPause();
         }
