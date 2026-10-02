@@ -3,49 +3,6 @@
     "name": "Physics demo scene",
     "entities": [
         {
-            "id": "23BA38D2CE250003",
-            "parent": "4BBA38D2CE250001",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.699999988079071,
-                        "z": 2.9000000953674316
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
-                },
-                "Camera": {
-                    "enabled": true,
-                    "fovY": 60.0,
-                    "nearZ": 0.10000000149011612,
-                    "farZ": 1000.0,
-                    "priority": 0
-                }
-            }
-        },
-        {
             "id": "4BBA38D2CE250001",
             "components": {
                 "Transform": {
@@ -74,7 +31,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "CharacterController": {
@@ -145,6 +102,92 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "AE07E0D2D61A4003",
+            "parent": "4BBA38D2CE250001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                }
+            }
+        },
+        {
+            "id": "E607E0D2D61A4001",
+            "parent": "AE07E0D2D61A4003",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 1.9500000476837158
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 0
                 }
             }
         }

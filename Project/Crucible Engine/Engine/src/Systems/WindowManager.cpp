@@ -1,16 +1,6 @@
 #include "WindowManager.h"
 #include <iostream>
 
-namespace {
-
-    void static processInput(GLFWwindow* window)
-    {
-        if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS)
-            glfwSetWindowShouldClose(window, true);
-    }
-}
-
-
 namespace Crucible {
 
     WindowManager::WindowManager(int w, int h, const std::string& title) {
@@ -46,7 +36,7 @@ namespace Crucible {
         return true;
     }
 
-    void WindowManager::PollEvents() { glfwPollEvents(); processInput(m_pWindow); }
+    void WindowManager::PollEvents() { glfwPollEvents(); }
     bool WindowManager::ShouldClose() const { return glfwWindowShouldClose(m_pWindow); }
 
     void WindowManager::FramebufferResizeCallback(GLFWwindow* window, int width, int height)
