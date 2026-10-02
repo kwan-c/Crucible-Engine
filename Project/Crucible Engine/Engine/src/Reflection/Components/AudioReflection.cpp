@@ -51,6 +51,12 @@ RTTR_REGISTRATION
         rttr::value("DecompressOnLoad", AudioClipLoadType::DecompressOnLoad),
         rttr::value("Streaming", AudioClipLoadType::Streaming)
         );
+
+    rttr::registration::enumeration<AudioRolloffMode>("AudioRolloffMode")
+    (
+        rttr::value("Logarithmic", AudioRolloffMode::Logarithmic),
+        rttr::value("Linear", AudioRolloffMode::Linear)
+        );
     
     rttr::registration::class_<AudioSource>("AudioSource")
     .constructor<>()
@@ -68,6 +74,7 @@ RTTR_REGISTRATION
     (rttr::metadata(MetaDataTypes::SLIDER, vec2{ 0.0f, 1.0f }))
     .property("minDistance", &AudioSource::m_minDistance)
     .property("maxDistance", &AudioSource::m_maxDistance)
+    .property("rolloffMode", &AudioSource::m_rolloffMode)
     .property("isPlaying", &AudioSource::m_isPlaying)
     (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
         rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
