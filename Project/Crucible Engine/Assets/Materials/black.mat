@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "albedoTint": [0.0235294122248888, 0.03921568766236305, 0.003921568859368563, 1.0],
+  "emissiveFactor": [0.0, 0.0, 0.0],
+  "metallic": 1.0,
+  "roughness": 1.0,
+  "textures": {
+    "albedo": "",
+    "normal": "",
+    "metallicRoughness": "",
+    "emissive": "",
+    "occlusion": ""
+  }
+}
