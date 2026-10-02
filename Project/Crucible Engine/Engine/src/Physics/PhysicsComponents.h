@@ -182,6 +182,43 @@ namespace Crucible {
 
     CRUCIBLE_COMPONENT(PlayerController, PlayerController)
 
+    /*
+        The third-person camera. The mouse turns the entity this sits on, and
+        that entity is a PIVOT - an empty point the camera hangs off - not the
+        camera itself:
+
+            Mech            CharacterController, PlayerController
+            '- Pivot        CameraOrbit, local position about (0, 1.5, 0): shoulder height
+               '- Camera    CameraComponent, local position about (0, 0, 5): 5m behind
+
+        Turning the pivot swings "5m behind me" around, so the camera circles
+        the mech and the hierarchy does all the maths; nothing ever touches the
+        camera entity. Unity's Starter Assets do the same with PlayerCameraRoot.
+        Putting this on the camera instead would only spin it in place - it
+        would look away from the mech rather than go round it.
+
+        ECSPlayerControllerSystem writes the pivot's Transform.rotation from
+        m_yaw and m_pitch every frame while Playing, so rotate the pivot with
+        these two fields, not with the gizmo. They are saved: what they hold
+        in the editor is the view the game starts with.
+    */
+    struct CameraOrbit {
+
+        // SETTINGS ---------------------------------------------------------- //
+
+        float m_sensitivity = 0.1f;     // degrees turned per pixel of mouse movement
+        float m_minPitch    = -30.0f;   // degrees. Below 0 the camera dips under the pivot and looks up
+        float m_maxPitch    =  70.0f;   // degrees. Short of 90, or at the top the view flips over
+
+        // STATE: the current view, in degrees -------------------------------- //
+
+        float m_yaw         = 0.0f;     // round the mech. + turns the view left, as the mouse moving left does
+        float m_pitch       = 0.0f;     // + raises the camera to look down on the mech, as the mouse moving down does
+
+    };  // CAMERAORBIT STRUCT
+
+    CRUCIBLE_COMPONENT(CameraOrbit, CameraOrbit)
+
     // ------------------------------------------------------------------- //
     // ENTITY <-> USER DATA
     // ------------------------------------------------------------------- //

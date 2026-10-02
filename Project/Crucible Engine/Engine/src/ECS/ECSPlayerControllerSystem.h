@@ -2,18 +2,21 @@
 * \file:         ECSPlayerControllerSystem.h
 * \author:       Hugo
 * \date          2 October 2026
-* \version       1.1
+* \version       1.2
 * \brief
-*                Keyboard in, CharacterController out: walks and jumps the
-*                mech that carries a PlayerController.
+*                Keyboard and mouse in: walks and jumps the mech that
+*                carries a PlayerController, and turns the third-person
+*                camera pivot that carries a CameraOrbit.
 *
 * \details
-*                Each Update(), for every entity with a PlayerController
-*                and a CharacterController:
-*                  1. reads WASD and Space
-*                  2. turns WASD into a direction relative to the main
-*                     camera entity, flat on the ground
-*                  3. calls SimpleMove() and Jump() on the controller
+*                Each Update():
+*                  1. locks the cursor if Play or Resume just started
+*                  2. while the cursor is locked, turns every CameraOrbit
+*                     pivot with the mouse
+*                  3. reads WASD and Space, and turns WASD into a direction
+*                     relative to the main camera entity, flat on the ground
+*                  4. calls SimpleMove() and Jump() on every entity with a
+*                     PlayerController and a CharacterController
 *
 *                It never touches physics. ECSPhysicsSystem runs later in
 *                the frame (PostUpdate) and does the actual moving, the
@@ -21,15 +24,21 @@
 *                script tells it to.
 *
 *                It only runs while Playing, like a Unity script's Update:
-*                in Edit and Paused the keyboard belongs to the editor.
+*                in Edit and Paused the keyboard and mouse belong to the
+*                editor. Freeing the cursor again (Esc, Pause, Stop) is the
+*                editor's job - see EditorManager in ImGuiManager.cpp.
 *
 * \history
 *    -v1.0       WASD, Space, camera-relative (the Renderer's camera)
 *    -v1.1       reads the CameraComponent entity; SimulationOnly, so the
 *                right-mouse-button guard for the editor is gone
+*    -v1.2       third-person camera: CameraOrbit and the cursor lock
 *
 **************************************************************************/
 #pragma once
+
+// STL
+#include <cstdint>
 
 // Crucible engine
 #include "Systems/IECSSystems.h"
@@ -52,6 +61,15 @@ namespace Crucible {
         // PostUpdate, so the mech moves on the same frame the key goes down
         // instead of one frame late.
         SystemStage Stage() const override { return SystemStage::Update; }
+
+    private:
+
+        // The World's tick from the last time Update ran. The tick goes up by
+        // one every frame whether or not this system runs, so a jump of more
+        // than one means frames went by without us - Edit or Paused - and Play
+        // or Resume has just started. That is the moment to lock the cursor.
+        // Nothing tells a system "you were just switched back on", hence this.
+        std::uint64_t m_lastTick = 0;
 
     };  // ECSPLAYERCONTROLLERSYSTEM CLASS
 

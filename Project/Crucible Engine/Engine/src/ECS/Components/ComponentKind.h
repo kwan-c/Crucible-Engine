@@ -69,9 +69,10 @@ namespace Crucible
 		AudioListener = 10,   // Audio: where the ears are (Audio/AudioComponents.h)
 		Camera = 11,          // Graphics: the game camera (struct CameraComponent)
 		PlayerController = 12,   // Physics: keyboard -> CharacterController, local player only (Physics/PhysicsComponents.h)
+		CameraOrbit = 13,        // Physics: mouse -> third-person camera pivot (Physics/PhysicsComponents.h)
 
 
-		MAXCOMPONENT = 13
+		MAXCOMPONENT = 14
 	};
 
 
@@ -174,5 +175,6 @@ namespace Crucible
  X(AudioListener)                                                              \
  X(CameraComponent)                                                            \
  X(PlayerController)                                                           \
+ X(CameraOrbit)                                                                \
 
 }
