@@ -10,6 +10,9 @@
 
 #include "ImGui/Panels/ImGuiPanel_Hierarchy.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "Undo/EntityCommands.h"
+
+#include <memory>
 
 void Crucible::Hierarchy::Init() {
 	m_panelName = "Hierarchy";
@@ -117,8 +120,14 @@ void Crucible::Hierarchy::CreatePrimitive(const std::string& meshName) {
 	mr.colour = { .5f, .5f, .5f, .5f };        // default colour is (0,0,0,0)
 	m_world.AddComponent<MeshRenderer>(e, mr);
 
+	// Select first: that commits any Inspector edit still open on the previous entity, so it
+	// lands in the history BEFORE this create - the order they actually happened in.
 	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
 		inspector->SetSelectedEntity(e);
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create " + meshName));
 
 	m_scenes.MarkDirty();   // records that there are unsaved changes
 }

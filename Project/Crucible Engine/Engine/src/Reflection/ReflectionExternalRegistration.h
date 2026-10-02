@@ -39,7 +39,8 @@ namespace rttr::detail {
 }
 
 // NOTE (Nelson, 29 Sep 2026): the RTTR_REGISTRATION block that used to sit
-// here has moved to Reflection/ReflectionComponentRegistration.cpp.
+// here has moved to Reflection/MathReflection.cpp (components each have
+// their own file under Reflection/Components/).
 //
 // RTTR_REGISTRATION expands to a fixed-name struct and function, so a
 // translation unit may only contain one. Living in a header, this one was
@@ -52,7 +53,7 @@ namespace rttr::detail {
 // they are compile-time traits and every translation unit needs to see them.
 // The registration is runtime data and belongs in exactly one .cpp.
 // Disabled, not deleted: kept for reference. The live math registrations
-// are in ReflectionComponentRegistration.cpp. Re-enabling this block causes
+// are in MathReflection.cpp. Re-enabling this block causes
 //   'rttr__auto__register__': 'struct' type redefinition
 // because that .cpp includes this header and has its own block.
 #if 0

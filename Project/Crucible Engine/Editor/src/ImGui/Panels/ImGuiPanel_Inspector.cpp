@@ -9,8 +9,11 @@
 #include "Scene/SceneManager.h"
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
+#include "Undo/EntityCommands.h"
 
 #include <algorithm>
+#include <memory>
+#include <utility>
 #include <cstdint>
 #include <cstdio>
 #include <string>
@@ -312,8 +315,20 @@ void Crucible::Inspector::Init() {
 void Crucible::Inspector::Update(float) {
 	if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		if (m_selected.IsValid() && m_world.IsAlive(m_selected)) {
+			// Undo: while nothing is being edited, keep a fresh "before" snapshot ready.
+			if (!m_editOpen) {
+				m_editBefore = EntityState::Capture(m_world, m_selected);
+				m_editEntity = m_selected;
+			}
+
 			DrawEntityInspector(m_selected);
 			DrawAddComponentButton(m_selected);
+
+			// A drag keeps its widget active across many frames: commit once it is released,
+			// so the whole drag is one undo step. A checkbox or menu click commits this frame.
+			if (m_editOpen && !ImGui::IsAnyItemActive()) {
+				CommitPendingEdit();
+			}
 		} else if (m_draw) {
 			m_draw();
 		} else {
@@ -334,6 +349,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// which would invalidate the component pointers the loop is still using.
 	// Local, so it can never run twice or on another entity.
 	std::function<void()> deferredRemove;
+	std::string           removeLabel;   // "Remove Collider", for the Edit menu
 
 	// One collapsible section per component the entity has. Skips the two the World manages
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
@@ -349,14 +365,15 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 				if constexpr (RemovableComponent<T>) {                                                       \
 					if (ImGui::BeginPopupContextItem("##ComponentMenu")) {                                   \
 						if (ImGui::MenuItem("Remove Component"))                                             \
-							deferredRemove = MakeComponentRemover<T>(m_world, entity);                       \
+							{ deferredRemove = MakeComponentRemover<T>(m_world, entity); removeLabel = "Remove " + header; }  \
 						ImGui::EndPopup();                                                                   \
 					}                                                                                        \
 				}                                                                                            \
 				if (open)                                                                                    \
 				{                                                                                            \
-					changed |= DrawInstance(*component);                                                     \
-					changed |= DrawComponentExtras(*component);                                              \
+					bool const fieldEdited  = DrawInstance(*component);  \
+					bool const extrasEdited = DrawComponentExtras(*component);  \
+					if (fieldEdited || extrasEdited) { changed = true; NoteEdit("Edit " + header); }  \
 				}                                                                                            \
 				ImGui::PopID();                                                                              \
 			}                                                                                                \
@@ -365,7 +382,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 CRUCIBLE_COMPONENT_LIST(CRU_INSPECT_COMPONENT)
 #undef CRU_INSPECT_COMPONENT
 
-		if (deferredRemove) { deferredRemove(); changed = true; }
+		if (deferredRemove) { deferredRemove(); changed = true; NoteEdit(removeLabel); }
 
 		if (changed) {
 			m_scenes.MarkDirty();
@@ -394,7 +411,10 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 				any = true;																					        \
 				char const* const blocked = AddBlockedReason<T>(m_world, entity);                                   \
 				ImGui::BeginDisabled(blocked != nullptr);                                                           \
-				if (ImGui::Selectable(std::string(name).c_str())) AddNewComponent<T>(m_world, m_scenes, entity);    \
+				if (ImGui::Selectable(std::string(name).c_str())) {  \
+				    AddNewComponent<T>(m_world, m_scenes, entity);  \
+				    NoteEdit("Add " + std::string(name));  \
+				}  \
 				ImGui::EndDisabled();                                                                               \
 				if (blocked) ImGui::SetItemTooltip("%s", blocked);                                                  \
 			}                                                                                                       \
@@ -715,4 +735,34 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
 
 	ImGui::SeparatorText("Material");
 	return DrawMaterialSection(renderer);   // your existing function, returning bool
+}
+
+// ===========================================================================
+//  Undo
+// ===========================================================================
+
+void Crucible::Inspector::NoteEdit(std::string label) {
+	// Keep the FIRST label of an edit, so a drag reads as the field it started on.
+	if (!m_editOpen) {
+		m_editOpen = true;
+		m_editLabel = std::move(label);
+	}
+}
+
+void Crucible::Inspector::CommitPendingEdit() {
+	if (!m_editOpen) { return; }
+	m_editOpen = false;
+	std::string label = std::exchange(m_editLabel, std::string{});
+
+	if (!m_world.IsAlive(m_editEntity)) { return; }   // destroyed mid-edit: nothing to record
+
+	// Compare snapshots rather than trusting the "changed" flags: a material-only edit, or a
+	// value dragged away and back again, changes nothing a scene would save, so no step.
+	std::string after = EntityState::Capture(m_world, m_editEntity);
+	if (after == m_editBefore) { return; }
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<EntityStateCommand>(
+		history.KeyOf(m_editEntity), std::move(m_editBefore), std::move(after), std::move(label)));
+	m_editBefore.clear();
 }

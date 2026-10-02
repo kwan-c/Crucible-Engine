@@ -46,6 +46,19 @@ void Crucible::Menu::Update(float) {
 			OpenSceneFunc();
 		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, ImGuiInputFlags_RouteGlobal))
 			RequestGuarded(GuardedAction::New);
+
+		// Undo / Redo. Not while a widget is held (mid-drag). While typing in a text field,
+		// ImGui's InputText keeps Ctrl+Z for its own text undo: its focused route outranks
+		// this global one.
+		if (!ImGui::IsAnyItemActive())
+		{
+			EditorManager& editor = EditorManager::GetInstance();
+			if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+				editor.Undo();
+			if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_Y, ImGuiInputFlags_RouteGlobal) ||
+				ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_Z, ImGuiInputFlags_RouteGlobal))
+				editor.Redo();
+		}
 	}
 
 	if (ImGui::BeginMainMenuBar())
@@ -84,9 +97,13 @@ void Crucible::Menu::Update(float) {
 		// ---------------- Edit ----------------
 		if (ImGui::BeginMenu("Edit"))
 		{
-			// Greyed-out placeholders (enabled = false).
-			ImGui::MenuItem("Undo", "Ctrl+Z", false, false);
-			ImGui::MenuItem("Redo", "Ctrl+Y", false, false);
+			// Names what would be undone ("Undo Edit Transform"); greyed out when there is nothing.
+			EditorManager& editor = EditorManager::GetInstance();
+			UndoHistory const& history = editor.GetHistory();
+			std::string const undoText = history.CanUndo() ? "Undo " + history.UndoLabel() : std::string("Undo");
+			std::string const redoText = history.CanRedo() ? "Redo " + history.RedoLabel() : std::string("Redo");
+			if (ImGui::MenuItem(undoText.c_str(), "Ctrl+Z", false, history.CanUndo())) { editor.Undo(); }
+			if (ImGui::MenuItem(redoText.c_str(), "Ctrl+Y", false, history.CanRedo())) { editor.Redo(); }
 			ImGui::EndMenu();
 		}
 
