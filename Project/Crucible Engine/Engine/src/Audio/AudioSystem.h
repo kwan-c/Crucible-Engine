@@ -87,6 +87,16 @@ namespace Crucible {
 
     };  // AUDIOCLIPLOADTYPE ENUM
 
+    // Unity's AudioSource "Volume Rolloff": how a 3D sound fades between
+    // minDistance and maxDistance. Only matters when spatialBlend is above 0.
+    enum class AudioRolloffMode : std::uint8_t {
+
+        Logarithmic,    // volume = minDistance / distance: steep close up, long tail, and it
+                        // stops fading at maxDistance rather than going silent. Real-world falloff
+        Linear          // a straight line from full volume at minDistance to silence at maxDistance
+
+    };  // AUDIOROLLOFFMODE ENUM
+
     /*
         Everything Play needs, in one place, so a call reads Play(clip, desc)
         rather than eight bare numbers. The fields are AudioSource's, with
@@ -101,7 +111,8 @@ namespace Crucible {
         float      m_spatialBlend = 0.0f;                           // 0 = 2D, same in both ears (music). 1 = 3D, placed in the world
         Math::vec3 m_position     = Math::vec3(0.0f, 0.0f, 0.0f);   // world position in metres. Ignored at spatialBlend 0
         float      m_minDistance  = 1.0f;                           // full volume closer than this
-        float      m_maxDistance  = 500.0f;                         // stops getting quieter further than this
+        float      m_maxDistance  = 500.0f;                         // Logarithmic: stops getting quieter here. Linear: silent here
+        AudioRolloffMode m_rolloffMode = AudioRolloffMode::Logarithmic;   // Unity's default
 
     };  // AUDIOPLAYDESC STRUCT
 

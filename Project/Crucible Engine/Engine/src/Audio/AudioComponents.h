@@ -49,7 +49,8 @@ namespace Crucible {
         float             m_pitch        = 1.0f;                                  // 1 normal, 2 an octave up and twice as fast
         float             m_spatialBlend = 0.0f;                                  // 0 = 2D, 1 = 3D from this entity's position
         float             m_minDistance  = 1.0f;                                  // full volume closer than this (3D only)
-        float             m_maxDistance  = 500.0f;                                // stops getting quieter further than this
+        float             m_maxDistance  = 500.0f;                                // Logarithmic: stops getting quieter here. Linear: silent here
+        AudioRolloffMode  m_rolloffMode  = AudioRolloffMode::Logarithmic;         // Unity's "Volume Rolloff". Linear to fade to silence
 
         // --- result: written by ECSAudioSystem, read it, never write it ---
 

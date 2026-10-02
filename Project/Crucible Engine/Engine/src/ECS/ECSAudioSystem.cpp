@@ -77,6 +77,7 @@ namespace {
         desc.m_position     = position;
         desc.m_minDistance  = source.m_minDistance;
         desc.m_maxDistance  = source.m_maxDistance;
+        desc.m_rolloffMode  = source.m_rolloffMode;
         return desc;
 
     }   // ToPlayDesc()

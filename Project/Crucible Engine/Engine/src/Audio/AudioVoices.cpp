@@ -67,7 +67,13 @@ namespace Crucible {
 
         Impl::Check(channel->setVolume(Clamp01(desc.m_volume)),                            "Audio::Play: Channel::setVolume");
         Impl::Check(channel->setPitch(desc.m_pitch),                                       "Audio::Play: Channel::setPitch");
-        Impl::Check(channel->setMode(desc.m_loop ? FMOD_LOOP_NORMAL : FMOD_LOOP_OFF),      "Audio::Play: Channel::setMode");
+        // Loop and rolloff in one call: setMode only changes the groups of flags it is given,
+        // so the FMOD_3D the clip was created with is left as it is. INVERSE is FMOD's default
+        // and Unity's Logarithmic; it is still set explicitly so a reused channel cannot keep
+        // the previous voice's Linear.
+        const FMOD_MODE loop    = desc.m_loop ? FMOD_LOOP_NORMAL : FMOD_LOOP_OFF;
+        const FMOD_MODE rolloff = desc.m_rolloffMode == AudioRolloffMode::Linear ? FMOD_3D_LINEARROLLOFF : FMOD_3D_INVERSEROLLOFF;
+        Impl::Check(channel->setMode(loop | rolloff),                                      "Audio::Play: Channel::setMode");
         Impl::Check(channel->set3DLevel(Clamp01(desc.m_spatialBlend)),                     "Audio::Play: Channel::set3DLevel");
         Impl::Check(channel->set3DAttributes(&position, &velocity),                        "Audio::Play: Channel::set3DAttributes");
         Impl::Check(channel->set3DMinMaxDistance(desc.m_minDistance, desc.m_maxDistance),  "Audio::Play: Channel::set3DMinMaxDistance");
