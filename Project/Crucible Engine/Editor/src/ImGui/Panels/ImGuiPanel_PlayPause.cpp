@@ -15,11 +15,7 @@ namespace {
                          bool selected, bool enabled, ImVec2 size)
     {
         ImGui::BeginDisabled(!enabled);
-        if (selected) {
-            ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.42f, 0.68f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.23f, 0.49f, 0.76f, 1.0f));
-            ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.14f, 0.35f, 0.59f, 1.0f));
-        }
+
 
         bool const clicked = ImGui::Button(id, size);
         ImVec2 const min = ImGui::GetItemRectMin();
@@ -47,7 +43,6 @@ namespace {
             break;
         }
 
-        if (selected) ImGui::PopStyleColor(3);
         ImGui::EndDisabled();
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("%s", tooltip);
@@ -105,6 +100,11 @@ void PlayPause::Update(float)
     ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
     ImGuiWindowFlags const flags = ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoSavedSettings;
+
+    ImGui::PushStyleColor(
+        ImGuiCol_WindowBg,
+        ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
+
     if (ImGui::BeginViewportSideBar(m_panelName.c_str(), ImGui::GetMainViewport(),
                                   ImGuiDir_Up, buttonHeight + padding * 2.0f, flags)) {
         float const controlsX = std::max(8.0f, (ImGui::GetWindowWidth() - controlsWidth) * 0.5f);
@@ -155,6 +155,7 @@ void PlayPause::Update(float)
             ImVec2(pos.x + size.x, pos.y + size.y - 1.0f), ImGui::GetColorU32(ImGuiCol_Border));
     }
     ImGui::End();
+    ImGui::PopStyleColor();
     ImGui::PopStyleVar(4);
 }
 
