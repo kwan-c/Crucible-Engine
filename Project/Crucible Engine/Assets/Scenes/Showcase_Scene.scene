@@ -3,6 +3,53 @@
     "name": "Showcase_Scene",
     "entities": [
         {
+            "id": "012F00D2C82BC001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 4.849999904632568,
+                        "y": 2.700000047683716,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.5,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                }
+            }
+        },
+        {
             "id": "055928D2B85A4007",
             "components": {
                 "Transform": {
@@ -131,7 +178,7 @@
                 "Light": {
                     "type": "Point",
                     "colour": {
-                        "x": 0.3764705955982208,
+                        "x": 0.9333333373069763,
                         "y": 0.32156863808631897,
                         "z": 0.125490203499794
                     },
@@ -461,6 +508,36 @@
                     },
                     "meshAsset": 3578055278504480029,
                     "materialAsset": 1609630718813667395
+                }
+            }
+        },
+        {
+            "id": "3D20A8D2CA174001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.0499999523162842,
+                        "y": 5.900000095367432,
+                        "z": 6.949999809265137
+                    },
+                    "rotation": {
+                        "x": -0.1736481785774231,
+                        "y": -0.0,
+                        "z": 0.0,
+                        "w": 0.9848077297210693
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 0
                 }
             }
         },
@@ -887,6 +964,25 @@
                         "z": 15.0
                     }
                 },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": false,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": true,
+                        "freezePositionY": true,
+                        "freezePositionZ": true,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
                 "MeshRenderer": {
                     "visible": true,
                     "colour": {
@@ -897,6 +993,24 @@
                     },
                     "meshAsset": 3578055278504480029,
                     "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 15.25,
+                        "y": 0.20000000298023224,
+                        "z": 15.449999809265137
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
                 }
             }
         },

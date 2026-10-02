@@ -44,6 +44,7 @@
 **************************************************************************/
 #pragma once
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -219,6 +220,13 @@ namespace Crucible
 		std::vector<PendingRequest>       m_requests;     // applied in order at the next safe point
 		SceneManager::Snapshot            m_snapshot;     // the scene at Play; empty when not restorable
 		std::string                       m_lastError;
+
+		// Level switch during a play session: the old scene's bodies must leave Jolt before the
+		// new scene's bodies are built. Subscribed in the constructor (SceneManager::OnSceneChanged).
+		void OnSceneChangedDuringPlay();
+		// SceneManager has no unsubscribe, so the listener checks this token is still alive before
+		// touching `this` (a PlayMode destroyed before its SceneManager is then simply skipped).
+		std::shared_ptr<int>              m_lifetime = std::make_shared<int>(0);
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)

@@ -86,6 +86,40 @@ namespace Crucible
 		: m_world(world), m_scenes(scenes), m_events(events), m_systems(systems)
 	{
 		m_systems.SetSimulationActive(false);   // the engine starts in Edit
+
+		std::weak_ptr<int> const alive = m_lifetime;
+		m_scenes.OnSceneChanged([this, alive] {
+			if (alive.expired()) return;   // this PlayMode is gone
+			OnSceneChangedDuringPlay();
+		});
+	}
+
+	/*!
+		\brief
+		A scene was loaded or created (SceneManager::ApplyLoad / ApplyNew). In Edit there is no Jolt
+		world, so nothing to do. During Play or Pause it is a level switch: restart the physics
+		session so Jolt starts empty, the same way Stop then Play would.
+
+		Without this, the old level's bodies stayed in Jolt until the next Sync noticed their
+		entities were gone - and that Sync builds the NEW bodies before removing the old ones, so
+		both levels briefly shared Jolt's fixed body limit (a body that fails to create is not
+		retried), gameplay queries could hit the old level for a frame, and the fixed-step clock
+		carried over from the old level.
+
+		Runs inside SceneManager::ApplyPending, which Core calls before UpdateSystems, so the new
+		level's first physics update builds every body into a fresh world. Not called by Stop's
+		RestoreSnapshot - Stop already ends the session itself (ApplyStop).
+	*/
+	void PlayMode::OnSceneChangedDuringPlay()
+	{
+		if (m_state == PlayState::Edit) return;
+
+		if (ECSPhysicsSystem* physics = FindPhysics())
+		{
+			physics->EndSession();     // every body and character out, Jolt shut down, clock reset
+			physics->BeginSession();   // a new, empty Jolt world
+			CRU_INFO("PlayMode: scene changed during play - physics world restarted for '{}'", m_scenes.CurrentName());
+		}
 	}
 
 	PlayMode::~PlayMode()

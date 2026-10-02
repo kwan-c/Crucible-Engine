@@ -11,18 +11,44 @@ namespace Crucible {
 namespace {
     enum class TransportIcon { Play, Pause, Stop };
 
-    bool TransportButton(const char* id, const char* tooltip, TransportIcon icon,
+    // One colour per state, used everywhere the state shows: the button, the status label
+    // and the toolbar's tint/underline. Green = playing, amber = paused, red = stop.
+    ImVec4 const kPlayColor  (0.30f, 0.78f, 0.42f, 1.0f);
+    ImVec4 const kPauseColor (0.96f, 0.72f, 0.22f, 1.0f);
+    ImVec4 const kStopColor  (0.92f, 0.36f, 0.32f, 1.0f);
+
+    ImVec4 Scale(ImVec4 c, float k) { return ImVec4(c.x * k, c.y * k, c.z * k, c.w); }
+    ImVec4 Mix(ImVec4 a, ImVec4 b, float t) {
+        return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t);
+    }
+
+    // selected = this button IS the current state (Play while playing, Pause while paused):
+    //   filled with its accent colour, dark icon - unmistakable at a glance.
+    // not selected = neutral button with the icon in its accent colour, so the three are still
+    //   told apart by colour as well as shape. Disabled buttons fade (BeginDisabled's alpha also
+    //   applies to the icon, since its colour goes through GetColorU32).
+    bool TransportButton(const char* id, const char* tooltip, TransportIcon icon, ImVec4 accent,
                          bool selected, bool enabled, ImVec2 size)
     {
         ImGui::BeginDisabled(!enabled);
 
+        int pushed = 0;
+        if (selected) {
+            ImGui::PushStyleColor(ImGuiCol_Button,        Scale(accent, 0.85f));
+            ImGui::PushStyleColor(ImGuiCol_ButtonHovered, accent);
+            ImGui::PushStyleColor(ImGuiCol_ButtonActive,  Scale(accent, 0.70f));
+            ImGui::PushStyleColor(ImGuiCol_Border,        accent);
+            pushed = 4;
+        }
 
         bool const clicked = ImGui::Button(id, size);
+        ImGui::PopStyleColor(pushed);
+
         ImVec2 const min = ImGui::GetItemRectMin();
         ImVec2 const max = ImGui::GetItemRectMax();
         ImVec2 const center((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
         float const radius = size.y * 0.22f;
-        ImU32 const color = ImGui::GetColorU32(ImGuiCol_Text);
+        ImU32 const color = ImGui::GetColorU32(selected ? ImVec4(0.07f, 0.07f, 0.08f, 1.0f) : accent);
         ImDrawList* draw = ImGui::GetWindowDrawList();
 
         switch (icon) {
@@ -101,47 +127,58 @@ void PlayPause::Update(float)
     ImGuiWindowFlags const flags = ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoSavedSettings;
 
-    ImGui::PushStyleColor(
-        ImGuiCol_WindowBg,
-        ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg));
+    // The engine's state, not a copy: buttons only queue requests, and the UI follows
+    // once Core has applied them (next frame). While one is waiting, the buttons rest.
+    PlayState const state = m_core.GetPlayState();
+    bool const waiting = m_core.HasPendingPlayRequest();
+    bool const running = state != PlayState::Edit;
+    bool const paused = state == PlayState::Paused;
+
+    // The state's colour: none in Edit, green while playing, amber while paused.
+    ImVec4 const stateColor = paused ? kPauseColor : running ? kPlayColor : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+
+    // Tint the whole toolbar strip while in play mode, so the state reads from across the
+    // screen (Unity tints its editor for the same reason) - easy to forget you're still playing.
+    ImVec4 const barBg = ImGui::GetStyleColorVec4(ImGuiCol_MenuBarBg);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, running ? Mix(barBg, stateColor, 0.18f) : barBg);
 
     if (ImGui::BeginViewportSideBar(m_panelName.c_str(), ImGui::GetMainViewport(),
                                   ImGuiDir_Up, buttonHeight + padding * 2.0f, flags)) {
         float const controlsX = std::max(8.0f, (ImGui::GetWindowWidth() - controlsWidth) * 0.5f);
         ImGui::SetCursorPos(ImVec2(controlsX, padding));
 
-        // The engine's state, not a copy: buttons only queue requests, and the UI follows
-        // once Core has applied them (next frame). While one is waiting, the buttons rest.
-        PlayState const state = m_core.GetPlayState();
-        bool const waiting = m_core.HasPendingPlayRequest();
-        bool const running = state != PlayState::Edit;
-        bool const paused = state == PlayState::Paused;
-
         if (TransportButton("##Play", running ? "Exit Play Mode" : "Play",
-                            TransportIcon::Play, running, !waiting, buttonSize)) {
+                            TransportIcon::Play, kPlayColor, running && !paused, !waiting, buttonSize)) {
             if (running) m_core.RequestStop();
             else         m_core.RequestPlay();
         }
 
         ImGui::SameLine();
         if (TransportButton("##Pause", paused ? "Resume" : "Pause",
-                            TransportIcon::Pause, paused, running && !waiting, buttonSize)) {
+                            TransportIcon::Pause, kPauseColor, paused, running && !waiting, buttonSize)) {
             if (paused) m_core.RequestResume();
             else        m_core.RequestPause();
         }
 
         ImGui::SameLine();
-        if (TransportButton("##Stop", "Stop", TransportIcon::Stop, false,
+        if (TransportButton("##Stop", "Stop", TransportIcon::Stop, kStopColor, false,
                             running && !waiting, buttonSize))
             m_core.RequestStop();
 
         // Only show status when it fits without crowding the centered controls. A failed
         // request is shown in place of the status until the next transition succeeds.
         const char* status = ToString(state);
-        if (controlsX > ImGui::CalcTextSize("Playing").x + 24.0f) {
+        if (controlsX > ImGui::CalcTextSize("Playing").x + 40.0f) {   // + room for the status dot
             ImGui::SetCursorPos(ImVec2(8.0f, padding + ImGui::GetStyle().FramePadding.y));
             if (m_error.empty()) {
-                ImGui::TextDisabled("%s", status);
+                // A filled dot in the state's colour, then the state name in the same colour.
+                float const dot = ImGui::GetTextLineHeight() * 0.28f;
+                ImVec2 const at = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddCircleFilled(
+                    ImVec2(at.x + dot, at.y + ImGui::GetTextLineHeight() * 0.5f), dot, ImGui::GetColorU32(stateColor));
+                ImGui::Dummy(ImVec2(dot * 2.0f + 6.0f, 0.0f));
+                ImGui::SameLine(0.0f, 0.0f);
+                ImGui::TextColored(stateColor, "%s", status);
             } else {
                 ImGui::TextColored(ImVec4(0.95f, 0.45f, 0.40f, 1.0f), "%s", status);
                 if (ImGui::IsItemHovered())
@@ -151,8 +188,14 @@ void PlayPause::Update(float)
 
         ImVec2 const pos = ImGui::GetWindowPos();
         ImVec2 const size = ImGui::GetWindowSize();
-        ImGui::GetWindowDrawList()->AddLine(ImVec2(pos.x, pos.y + size.y - 1.0f),
-            ImVec2(pos.x + size.x, pos.y + size.y - 1.0f), ImGui::GetColorU32(ImGuiCol_Border));
+        // Underline: the normal border in Edit, a 2px line in the state's colour in play mode.
+        if (running) {
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(pos.x, pos.y + size.y - 2.0f),
+                ImVec2(pos.x + size.x, pos.y + size.y), ImGui::GetColorU32(stateColor));
+        } else {
+            ImGui::GetWindowDrawList()->AddLine(ImVec2(pos.x, pos.y + size.y - 1.0f),
+                ImVec2(pos.x + size.x, pos.y + size.y - 1.0f), ImGui::GetColorU32(ImGuiCol_Border));
+        }
     }
     ImGui::End();
     ImGui::PopStyleColor();
