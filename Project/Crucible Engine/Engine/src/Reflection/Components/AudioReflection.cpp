@@ -32,14 +32,48 @@
 
 #include "Reflection/ReflectionRegistration.h"
 #include "ECS/Components/Components.h"
+#include "Resources/ResourceManager.h"
 
 RTTR_REGISTRATION
 {
     using namespace Crucible;
+    using namespace Crucible::Math;
 
-    rttr::registration::class_<Audio>("Audio")
-        .constructor<>()
-        .property("play", &Audio::play)
-        .property("loop", &Audio::loop)
+    rttr::registration::enumeration<AudioBus>("AudioBus")
+    (
+        rttr::value("Master", AudioBus::Master),
+        rttr::value("Music", AudioBus::Music),
+        rttr::value("SFX", AudioBus::SFX)
+        );
+    
+    rttr::registration::enumeration<AudioClipLoadType>("AudioClipLoadType")
+    (
+        rttr::value("DecompressOnLoad", AudioClipLoadType::DecompressOnLoad),
+        rttr::value("Streaming", AudioClipLoadType::Streaming)
+        );
+    
+    rttr::registration::class_<AudioSource>("AudioSource")
+    .constructor<>()
+    .property("clip", &AudioSource::m_clip)
+    (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Audio))
+    .property("loadType", &AudioSource::m_loadType)
+    .property("output", &AudioSource::m_bus)
+    .property("playOnAwake", &AudioSource::m_playOnAwake)
+    .property("loop", &AudioSource::m_loop)
+    .property("volume", &AudioSource::m_volume)
+    (rttr::metadata(MetaDataTypes::SLIDER, vec2{ 0.0f, 1.0f }))
+    .property("pitch", &AudioSource::m_pitch)
+    (rttr::metadata(MetaDataTypes::SLIDER, vec2{ 0.0f, 3.0f }))      // FMOD cannot play backwards, so no negative pitch
+    .property("spatialBlend", &AudioSource::m_spatialBlend)
+    (rttr::metadata(MetaDataTypes::SLIDER, vec2{ 0.0f, 1.0f }))
+    .property("minDistance", &AudioSource::m_minDistance)
+    .property("maxDistance", &AudioSource::m_maxDistance)
+    .property("isPlaying", &AudioSource::m_isPlaying)
+    (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+        rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
+        ;
+    
+    rttr::registration::class_<AudioListener>("AudioListener")
+    .constructor<>()
     ;
 }
