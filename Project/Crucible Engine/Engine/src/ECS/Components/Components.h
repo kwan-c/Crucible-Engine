@@ -204,6 +204,31 @@ namespace Crucible
 
 	/*************************************************************************
 	 \brief
+		A game camera. The Game view (and the window, in a standalone build)
+		looks through the enabled camera with the highest priority; with no
+		enabled camera in the scene, nothing is rendered there.
+	 \details
+		Placement comes from the entity's Transform: position = where it is,
+		looking down its local -Z axis with local +Y up (the same convention
+		as Light). The aspect ratio is not stored - it always follows the
+		render target.
+		Named CameraComponent only because Crucible::Camera is already the
+		Renderer's camera class; it is shown and saved as "Camera".
+		The editor's Scene-view camera is NOT one of these: it is owned by
+		the Scene view panel, never appears in the hierarchy, and so cannot
+		be edited or deleted with the scene.
+	 *************************************************************************/
+	struct CameraComponent
+	{
+		bool  enabled  = true;
+		float fovY     = 60.f;     // vertical field of view, degrees
+		float nearZ    = 0.1f;     // near clip plane, metres
+		float farZ     = 1000.f;   // far clip plane, metres
+		int   priority = 0;        // highest enabled camera wins (ties: the first one found)
+	};
+
+	/*************************************************************************
+	 \brief
 		Linear motion state used by ECSPhysicsSystem to integrate Transform.
 	 *************************************************************************/
 	// Unity's Rigidbody.constraints. Each flag stops the SIMULATION moving the body along
@@ -242,6 +267,14 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 	CRUCIBLE_COMPONENT(Light, Light);
 	CRUCIBLE_COMPONENT(Skybox, Skybox);
+	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
+	// used as the scene-file key is "Camera", not "CameraComponent".
+	template<>
+	struct ComponentTraits<CameraComponent>
+	{
+		static constexpr ComponentKind kind = ComponentKind::Camera;
+		static constexpr std::string_view name = "Camera";
+	};
 
 	// Links span several entities: only World may write them.
 	template <> struct WorldManaged<HierarchyNode> : std::true_type {};

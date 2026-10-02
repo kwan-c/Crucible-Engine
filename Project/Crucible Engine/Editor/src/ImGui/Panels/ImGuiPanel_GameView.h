@@ -4,10 +4,9 @@
 * @brief		The editor's Game view: what the player sees through the game camera.
 *
 * Owns a ViewportPanel (see Graphics/ViewportPanel.h) like the Scene view does, but does NOT
-* drive its own camera: every frame it mirrors the Renderer's main camera (Renderer::GetCamera(),
-* the one gameplay/ECS actually controls) into the viewport's own camera before drawing. See the
-* "referencing" note above GameView::Update() in the .cpp for why that copy is needed instead of
-* just reusing the main camera object directly.
+* drive its own camera: every frame it mirrors the Renderer's main camera - the scene's active
+* Camera entity (CameraComponent, handed over by RenderExtractSystem) - into the viewport's own
+* camera before drawing. With no camera in the scene it shows "No cameras rendering".
 *
 * The aspect-ratio dropdown already letterboxes the image area, so GetViewportSize() is the
 * resolution the game camera renders at.

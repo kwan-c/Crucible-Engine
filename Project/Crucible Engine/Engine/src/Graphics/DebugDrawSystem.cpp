@@ -93,7 +93,7 @@ namespace Crucible {
 
 	void DebugDrawSystem::Describe(SystemDesc& desc) const {
 
-		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer>()
+		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent>()
 			.RunAfter<HierarchyTransformSystem>()        // WorldTransform must be this frame's
 			.Affinity(SystemAffinity::MainThread);       // Renderer/ResourceManager aren't thread-safe
 
@@ -221,6 +221,37 @@ namespace Crucible {
 		// DebugDraw::Axes(wt->matrix, 1.0f, style);
 		// The selected mesh itself gets the Renderer's orange silhouette outline instead of a box
 		// (Renderer::SetOutlinedObject, driven by the Scene view).
+
+		// A selected camera shows what it sees: its view frustum (16:9, far end capped so a
+		// 1000 m far plane doesn't fill the scene with lines).
+		if (const CameraComponent* cam = world.Read<CameraComponent>(selected)) {
+			DebugStyle style;
+			style.category  = DebugCategory::Selection;
+			style.depthTest = false;
+			style.color     = { 0.85f, 0.85f, 0.85f, 1.0f };
+
+			const glm::vec3 p(wt->matrix[3]);
+			const glm::vec3 f = glm::normalize(-glm::vec3(wt->matrix[2]));
+			const glm::vec3 u = glm::normalize( glm::vec3(wt->matrix[1]));
+			const glm::vec3 r = glm::normalize(glm::cross(f, u));
+			const float tanY  = std::tan(glm::radians(std::clamp(cam->fovY, 1.0f, 179.0f)) * 0.5f);
+			const float tanX  = tanY * (16.0f / 9.0f);
+			const float nearD = std::max(cam->nearZ, 0.001f);
+			const float farD  = std::min(std::max(cam->farZ, nearD + 0.01f), 5.0f);
+
+			glm::vec3 n[4], fa[4];
+			const float sx[4] = { -1.0f, 1.0f, 1.0f, -1.0f }, sy[4] = { -1.0f, -1.0f, 1.0f, 1.0f };
+			for (int i = 0; i < 4; ++i) {
+				const glm::vec3 dir = f + r * (sx[i] * tanX) + u * (sy[i] * tanY);
+				n[i]  = p + dir * nearD;
+				fa[i] = p + dir * farD;
+			}
+			for (int i = 0; i < 4; ++i) {
+				DebugDraw::Line(n[i],  n[(i + 1) % 4],  style);
+				DebugDraw::Line(fa[i], fa[(i + 1) % 4], style);
+				DebugDraw::Line(n[i],  fa[i],           style);
+			}
+		}
 
 	}   // DebugDrawSystem::DrawSelection()
 

@@ -84,6 +84,7 @@ namespace Crucible {
 				m_handle = m_renderer.CreateViewport(width, height);
 				m_renderer.SetViewportDebugDraw(m_handle, m_debugDraw);   // apply a SetDebugDraw() made before creation
 				m_renderer.SetViewportOutline(m_handle, m_outline);       // likewise SetOutline()
+				m_renderer.SetViewportActive(m_handle, m_active);         // likewise SetActive()
 				RefreshTexture();
 			}
 		}
@@ -161,6 +162,17 @@ namespace Crucible {
 		bool GetOutline() const { return m_outline; }
 
 		/*********************************************************************
+		 \brief  Pauses or resumes rendering into this view (see
+				 Renderer::SetViewportActive). Safe to call before the
+				 viewport exists, and cheap to call every frame.
+		 *********************************************************************/
+		void SetActive(bool active) {
+			if (m_active == active) { return; }
+			m_active = active;
+			if (m_handle.IsValid()) { m_renderer.SetViewportActive(m_handle, active); }
+		}
+
+		/*********************************************************************
 		 \brief  Last frame's culling numbers for this view (zeros until the
 				 viewport exists).
 		 \return The view's RenderCullStats.
@@ -223,6 +235,7 @@ namespace Crucible {
 		uint32_t        m_lastWidth = 0, m_lastHeight = 0;
 		bool            m_debugDraw = false;
 		bool            m_outline = false;
+		bool            m_active = true;
 	};
 
 }   // NAMESPACE CRUCIBLE

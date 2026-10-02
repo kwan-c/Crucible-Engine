@@ -33,7 +33,6 @@
 #include <stb_image.h>
 
 #include "Primitives.h"             // Primitives::MakeCube() and the rest of the whitebox set
-#include "AssetPipe/GLTFLoader.h"   // GLTFLoader::LoadGLBFile - loads the demo scene's one real model
 #include "Diagnostics/Logger.h"
 
 #ifdef NDEBUG
@@ -83,78 +82,19 @@ namespace Crucible {
 
         CreatePrimitiveMeshes();
 
-        MaterialData demoMaterialData;
-        demoMaterialData.albedo = CreateTexture("../../../Assets/Textures/Orange_Milk.jpg");
-        m_demoMaterial = CreateMaterial(demoMaterialData);
-
-        std::string const demoModelPath = "../../../Assets/Models/Cannon.glb";
-        std::string const cacheKeyPrefix = "GLB:" + demoModelPath + ":";
-
-        if (GLTFAsset glb = GLTFLoader::LoadGLBFile(demoModelPath); glb.ok) {
-            // Prefer the glTF file's own mesh name (Cannon.glb's is "CannonMesh"); fall back to
-            // the filename when the asset didn't set one (glTF's mesh.name is optional).
-            std::string const meshName = !glb.meshName.empty()
-                ? glb.meshName
-                : std::filesystem::path(demoModelPath).stem().string();
-            m_glbMesh = CreateMesh(glb.mesh, meshName);
-
-            MaterialData glbMaterialData;
-            if (glb.material) {
-                GLTFMaterial const& gm = *glb.material;
-                glbMaterialData.factors.albedoTint     = gm.baseColorFactor;
-                glbMaterialData.factors.emissiveFactor = gm.emissiveFactor;
-                glbMaterialData.factors.metallicFactor  = gm.metallicFactor;
-                glbMaterialData.factors.roughnessFactor = gm.roughnessFactor;
-
-                // Same sRGB/linear split as Inspector's material widget (Editor/src/ImGui/
-                // Panels/ImGuiPanel_Inspector.cpp): albedo/emissive are colour data, the rest
-                // are linear. Only the maps this sample asset actually has are non-null; the
-                // others simply stay unset and CreateMaterial substitutes its own placeholders.
-                if (gm.hasBaseColor) {
-                    auto const& img = glb.images[gm.baseColorImage];
-                    glbMaterialData.albedo = CreateTextureFromMemory(img.bytes.data(), img.bytes.size(), true, cacheKeyPrefix + "albedo");
-                }
-                if (gm.hasNormal) {
-                    auto const& img = glb.images[gm.normalImage];
-                    glbMaterialData.normal = CreateTextureFromMemory(img.bytes.data(), img.bytes.size(), false, cacheKeyPrefix + "normal");
-                }
-                if (gm.hasMetallicRoughness) {
-                    auto const& img = glb.images[gm.metallicRoughnessImage];
-                    glbMaterialData.metallicRoughness = CreateTextureFromMemory(img.bytes.data(), img.bytes.size(), false, cacheKeyPrefix + "metallicRoughness");
-                }
-                if (gm.hasEmissive) {
-                    auto const& img = glb.images[gm.emissiveImage];
-                    glbMaterialData.emissive = CreateTextureFromMemory(img.bytes.data(), img.bytes.size(), true, cacheKeyPrefix + "emissive");
-                }
-                if (gm.hasOcclusion) {
-                    auto const& img = glb.images[gm.occlusionImage];
-                    glbMaterialData.occlusion = CreateTextureFromMemory(img.bytes.data(), img.bytes.size(), false, cacheKeyPrefix + "occlusion");
-                }
-            }
-            m_glbMaterial = CreateMaterial(glbMaterialData);
-
-            CRU_INFO("[Renderer] Loaded {}: {} vertices, {} indices",
-                demoModelPath, glb.mesh.vertices.size(), glb.mesh.indices.size());
-        } else {
-            CRU_WARN("[Renderer] Could not load {}: {}", demoModelPath, glb.error);
-        }
-
         m_renderQueue.reserve(1024);
     }
 
     void Renderer::ShutDown() { m_context.ShutDown(); }
 
-    void Renderer::Update(float dt) {
-
-        m_time += dt;
+    void Renderer::Update([[maybe_unused]] float dt) {
 
         // Finish a few queued async mesh uploads (see CreateMeshAsync) before drawing this frame.
         ProcessPendingMeshUploads();
 
         // POPULATE
         //   Persistent proxies were updated by RenderExtractSystem (SetRenderProxy) during the ECS
-        //   update; immediate Submit() items (the demo scene) are added here.
-        //if (m_demoScene) { SubmitDemoScene(); }
+        //   update; immediate Submit() items were queued by whoever called Submit().
 
         // Proxies whose mesh was still uploading last frame: try to get their bounds now.
         if (!m_proxiesAwaitingBounds.empty()) {
@@ -206,11 +146,19 @@ namespace Crucible {
         // recording anything, so the instance buffer's final size is known up front and it never
         // has to grow while commands already reference it.
         m_instanceScratch.clear();
+        m_windowDraws.Clear();
         if (m_viewports.empty()) {
-            const vk::Extent2D extent = m_swapchain.GetExtent();
-            PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, m_uniformBuffersMapped[frameIndex]);
+            // No camera entity in the scene: nothing to look through, so the window shows only
+            // its clear colour (plus any overlay).
+            if (m_hasMainCamera) {
+                const vk::Extent2D extent = m_swapchain.GetExtent();
+                PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, m_uniformBuffersMapped[frameIndex]);
+            } else {
+                m_windowCullStats = RenderCullStats{};
+            }
         } else {
             for (auto& [id, vp] : m_viewports) {
+                if (!vp.active) { vp.draws.Clear(); continue; }
                 PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.uniformBuffersMapped[frameIndex]);
             }
         }
@@ -228,72 +176,6 @@ namespace Crucible {
         m_renderQueue.push_back(RenderItem{ mesh, material, model });
 
     }   // Renderer::Submit()
-
-    void Renderer::SubmitDemoScene() {
-
-        // Demo lighting: a dimmed sun, three coloured point lights orbiting the grid, and a
-        // spotlight sweeping over its centre - enough to see every light type at once. (With
-        // the demo scene off and no Light entities, the fallback sun in UpdateLightBuffer()
-        // lights the scene instead.)
-        {
-            LightData sun;
-            sun.type      = LightType::Directional;
-            sun.direction = -glm::vec3(0.2f, 0.8f, 0.5f);
-            sun.intensity = 1.5f;
-            sun.castShadows = true;
-            SubmitLight(sun);
-
-            const glm::vec3 colours[3] = { { 1.0f, 0.35f, 0.2f }, { 0.25f, 1.0f, 0.4f }, { 0.3f, 0.5f, 1.0f } };
-            for (int k = 0; k < 3; ++k) {
-                const float angle = m_time * 0.6f + static_cast<float>(k) * 2.0943951f;   // 120 degrees apart
-                LightData point;
-                point.type      = LightType::Point;
-                point.position  = glm::vec3(std::cos(angle) * 5.0f, 1.5f, std::sin(angle) * 5.0f);
-                point.colour    = colours[k];
-                point.intensity = 20.0f;
-                point.range     = 9.0f;
-                SubmitLight(point);
-            }
-
-            LightData spot;
-            spot.type         = LightType::Spot;
-            spot.position     = glm::vec3(0.0f, 7.0f, 0.0f);
-            spot.direction    = glm::vec3(std::sin(m_time * 0.5f) * 0.6f, -1.0f, std::cos(m_time * 0.5f) * 0.6f);
-            spot.colour       = glm::vec3(1.0f, 0.9f, 0.7f);
-            spot.intensity    = 80.0f;
-            spot.range        = 20.0f;
-            spot.innerConeDeg = 12.0f;
-            spot.outerConeDeg = 22.0f;
-            SubmitLight(spot);
-        }
-
-        // 7x7 grid of cubes on the XZ plane, each spinning at a slightly different phase.
-        constexpr int   half    = 3;
-        constexpr float spacing = 2.0f;
-
-        int i = 0;
-
-        for (int x = -half; x <= half; ++x) {
-            for (int z = -half; z <= half; ++z) {
-                const float phase = static_cast<float>(x * 7 + z * 3);
-                glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(x * spacing, 0.0f, z * spacing));
-                model = glm::rotate(model, (m_time + phase) * glm::radians(20.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-                model = glm::rotate(model, (m_time + phase) * glm::radians(10.0f), glm::vec3(1.0f, 0.0f, 0.0f));
-                Submit(m_primitiveMeshes[i], m_demoMaterial, model);
-
-                i++;
-                i = i % m_primitiveMeshes.size();
-            }
-        }
-
-        if (m_glbMesh.IsValid()) {
-            glm::mat4 model = glm::translate(glm::mat4(1.0f), glm::vec3(0.0f, 3.0f, 0.0f));
-            model = glm::rotate(model, m_time * glm::radians(15.0f), glm::vec3(0.0f, 1.0f, 0.0f));
-            model = glm::scale(model, glm::vec3(1.0f));
-            Submit(m_glbMesh, m_glbMaterial.IsValid() ? m_glbMaterial : GetDefaultMaterial(), model);
-        }
-
-    }   // Renderer::SubmitDemoScene()
 
     void Renderer::CreatePrimitiveMeshes() {
 
@@ -349,6 +231,8 @@ namespace Crucible {
         // Empty in a standalone Engine/Game build: this loop simply doesn't run, so the cost of
         // supporting viewports at all is the one `m_viewports.empty()` check further down.
         for (auto& [id, vp] : m_viewports) {
+
+            if (!vp.active) { continue; }   // paused (SetViewportActive): keeps its last image
 
             const vk::DescriptorSet frameSet = *vp.descriptorSets[frameIndex];
 
@@ -469,7 +353,7 @@ namespace Crucible {
         // Only draw the scene straight to the window when nobody has registered an offscreen
         // viewport for it. In the Editor, the Scene/Game panels already drew the scene above and
         // display it themselves via ImGui::Image(); this pass then holds only the ImGui overlay.
-        if (m_viewports.empty()) {
+        if (m_viewports.empty() && m_hasMainCamera) {
             DrawRenderQueue(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_debugInWindow, m_windowDraws.main);
         }
 
@@ -682,6 +566,12 @@ namespace Crucible {
         GetViewportOrThrow(handle).outline = enabled;
 
     }   // Renderer::SetViewportOutline()
+
+    void Renderer::SetViewportActive(ViewportHandle handle, bool active) {
+
+        GetViewportOrThrow(handle).active = active;
+
+    }   // Renderer::SetViewportActive()
 
     void Renderer::SetOutlinedObject(std::uint64_t userData) {
 

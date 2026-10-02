@@ -75,6 +75,9 @@ namespace Crucible {
 		// Creating Light Objects (directional, point, spot) is a common editor action, so the "+" menu in the toolbar
 		// calls this to spawn a new entity with a Light component and the requested light type.
 		void CreateLightObject(const std::string& lightType);
+
+		// Spawns a new entity with a Camera component (the Game view looks through it).
+		void CreateCameraObject();
 	};
 
 }

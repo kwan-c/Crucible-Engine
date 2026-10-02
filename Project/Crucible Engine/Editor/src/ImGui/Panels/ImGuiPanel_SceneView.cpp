@@ -170,7 +170,7 @@ void Crucible::SceneView::DrawToolbar() {
 		ImGui::SameLine();
 		ImGui::TextDisabled("|  Drawn %u / %u", stats.proxiesVisible + stats.immediateVisible, stats.proxies + stats.immediate);
 		if (ImGui::IsItemHovered()) {
-			ImGui::SetTooltip("Entities: %u of %u in view (%u moving)\nImmediate (demo) items: %u of %u\n"
+			ImGui::SetTooltip("Entities: %u of %u in view (%u moving)\nImmediate items: %u of %u\n"
 				"Draw calls: %u (instanced)\nShadow casters: %u in %u draws",
 				stats.proxiesVisible, stats.proxies, stats.movingProxies, stats.immediateVisible, stats.immediate,
 				stats.drawCalls, stats.shadowCasters, stats.shadowDrawCalls);
@@ -245,6 +245,10 @@ namespace {
 		dl->AddEllipse(p, ImVec2(3.5f, 8.0f), col, 0.0f, 0, 1.2f);
 		dl->AddLine(ImVec2(p.x - 8.0f, p.y), ImVec2(p.x + 8.0f, p.y), col, 1.2f);
 	}
+	void GlyphCamera(ImDrawList* dl, ImVec2 p, ImU32 col) {
+		dl->AddRect(ImVec2(p.x - 8.0f, p.y - 4.5f), ImVec2(p.x + 3.0f, p.y + 4.5f), col, 1.5f, 0, 1.5f);          // body
+		dl->AddTriangle(ImVec2(p.x + 3.0f, p.y), ImVec2(p.x + 8.0f, p.y - 4.0f), ImVec2(p.x + 8.0f, p.y + 4.0f), col, 1.5f);   // lens hood
+	}
 	void GlyphDiamond(ImDrawList* dl, ImVec2 p, ImU32 col) {
 		dl->AddQuad(ImVec2(p.x, p.y - 6.0f), ImVec2(p.x + 6.0f, p.y), ImVec2(p.x, p.y + 6.0f), ImVec2(p.x - 6.0f, p.y), col, 1.5f);
 	}
@@ -301,8 +305,14 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 			place(e, wt, [&](ImVec2 p) { GlyphGlobe(dl, p, IM_COL32(120, 190, 255, 255)); });
 		});
 
+	m_world.CreateQuery<const WorldTransform, const CameraComponent>().ForEach(
+		[&](Entity e, const WorldTransform& wt, const CameraComponent& cam) {
+			const ImU32 col = cam.enabled ? IM_COL32(235, 235, 235, 255) : IM_COL32(128, 128, 128, 255);
+			place(e, wt, [&](ImVec2 p) { GlyphCamera(dl, p, col); });
+		});
+
 	// Anything else with nothing to click on in the scene (empties, collider-only, characters...).
-	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox>().Build().ForEach(
+	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent>().Build().ForEach(
 		[&](Entity e, const WorldTransform& wt) {
 			place(e, wt, [&](ImVec2 p) { GlyphDiamond(dl, p, IM_COL32(200, 200, 200, 255)); });
 		});
@@ -388,7 +398,7 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	ImGui::EndDisabled();
 
 	ImGui::Separator();
-	ImGui::Checkbox("Icons (lights, sky, empties)", &m_showIcons);
+	ImGui::Checkbox("Icons (lights, cameras, sky, empties)", &m_showIcons);
 	bool outline = m_viewport.GetOutline();
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
 }

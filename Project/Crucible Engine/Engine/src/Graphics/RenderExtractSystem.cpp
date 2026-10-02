@@ -13,6 +13,7 @@
 *
 **************************************************************************/
 
+#include <algorithm>
 #include "RenderExtractSystem.h"
 
 // IECSSystems.h only forward-declares World (it's a heavy header most systems don't need in
@@ -32,6 +33,7 @@ namespace Crucible {
         desc.Uses<ExtractQuery>()                    // reads WorldTransform + MeshRenderer
             .Uses<LightQuery>()                      // reads WorldTransform + Light
             .Uses<SkyboxQuery>()                     // reads Skybox
+            .Uses<CameraQuery>()                     // reads WorldTransform + CameraComponent
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer; not thread-safe today
 
@@ -144,6 +146,31 @@ namespace Crucible {
             m_renderer.SetEnvironment(env);
 
         });
+
+        // Main camera: the enabled CameraComponent with the highest priority (first found on a
+        // tie). None -> the Renderer is told so, and the Game view / window draw no scene.
+        if (!m_cameraQuery) { m_cameraQuery.emplace(world.CreateQuery<const WorldTransform, const CameraComponent>()); }
+
+        bool   found = false;
+        int    bestPriority = 0;
+        Camera best;
+        m_cameraQuery->ForEach([&](Entity, const WorldTransform& worldTransform, const CameraComponent& cam) {
+
+            if (!cam.enabled || !worldTransform.valid) { return; }
+            if (found && cam.priority <= bestPriority) { return; }
+
+            found        = true;
+            bestPriority = cam.priority;
+            best.SetPose(worldTransform.matrix);
+            // Clamp so a half-typed Inspector value can never produce a degenerate projection.
+            best.fovY  = glm::clamp(cam.fovY, 1.0f, 179.0f);
+            best.nearZ = std::max(cam.nearZ, 0.001f);
+            best.farZ  = std::max(cam.farZ, best.nearZ + 0.01f);
+
+        });
+
+        if (found) { m_renderer.SetMainCamera(best); }
+        else       { m_renderer.ClearMainCamera(); }
 
     }   // RenderExtractSystem::Update()
 

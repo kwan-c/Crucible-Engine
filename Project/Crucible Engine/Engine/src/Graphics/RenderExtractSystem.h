@@ -116,12 +116,14 @@ namespace Crucible
 		using ExtractQuery = Query<const WorldTransform, const MeshRenderer>;
 		using LightQuery   = Query<const WorldTransform, const Light>;
 		using SkyboxQuery  = Query<const Skybox>;
+		using CameraQuery  = Query<const WorldTransform, const CameraComponent>;
 
 		Renderer& m_renderer;
 		ResourceManager* m_resources = nullptr;   // resolves asset ids (MeshRenderer/Skybox); may be null
 		std::optional<ExtractQuery> m_query;         // built once, on first Update() (needs a World&)
 		std::optional<LightQuery>   m_lightQuery;    // same
 		std::optional<SkyboxQuery>  m_skyboxQuery;   // same
+		std::optional<CameraQuery>  m_cameraQuery;   // same
 
 		// One render proxy per MeshRenderer entity, indexed by Entity::index (a flat array, so the
 		// per-frame lookup is O(1) even with tens of thousands of enemies). An entity not seen in
