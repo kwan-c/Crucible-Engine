@@ -9,6 +9,7 @@
 #include "Diagnostics/Logger.h"
 #include "ECS/ECSAudioSystem.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "Core.h"
 
 #include <algorithm>
 #include <cctype>
@@ -150,8 +151,13 @@ void Crucible::AssetBrowser::Init() {
 		CRU_WARN("[AssetBrowser] AssetManager::Init() failed: Assets folder not found");
 }
 
+bool Crucible::AssetBrowser::IsRefreshAllowed() const {
+	Core* core = EditorManager::GetInstance().GetCore();
+	return core == nullptr || (!core->IsInPlaySession() && !core->HasPendingPlayRequest());
+}
+
 void Crucible::AssetBrowser::Refresh() {
-	if (!m_ready) return;
+	if (!m_ready || !IsRefreshAllowed()) return;
 	m_assets.Refresh();
 	RebuildFolderTree();
 	m_listingDirty = true;
@@ -176,10 +182,12 @@ void Crucible::AssetBrowser::Update(float) {
 
 	if (!m_ready) {
 		ImGui::TextDisabled("Assets folder not found.");
+		ImGui::BeginDisabled(!IsRefreshAllowed());
 		if (ImGui::Button("Retry")) {
 			m_ready = m_assets.Init();
 			if (m_ready) Refresh();
 		}
+		ImGui::EndDisabled();
 		ImGui::End();
 		return;
 	}
@@ -210,7 +218,7 @@ void Crucible::AssetBrowser::Update(float) {
 
 	// Shortcuts while any part of the browser is focused (and the search box is not being typed in).
 	if (ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !ImGui::GetIO().WantTextInput) {
-		if (ImGui::IsKeyPressed(ImGuiKey_F5, false))
+		if (IsRefreshAllowed() && ImGui::IsKeyPressed(ImGuiKey_F5, false))
 			Refresh();
 		if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) && !m_currentFolder.empty() && m_search[0] == '\0')
 			NavigateTo(ParentOf(m_currentFolder));
@@ -339,6 +347,7 @@ void Crucible::AssetBrowser::NavigateTo(std::string const& folder) {
 }
 
 void Crucible::AssetBrowser::CreateFolder() {
+	if (!IsRefreshAllowed()) return; // Creating a folder also refreshes the index.
 	std::string const base = m_currentFolder.empty() ? "New Folder" : m_currentFolder + "/New Folder";
 	std::string candidate = base;
 	std::error_code ec;
@@ -362,8 +371,12 @@ void Crucible::AssetBrowser::DrawToolbar() {
 	float const fullWidth = ImGui::GetContentRegionAvail().x;
 	bool const searching = m_search[0] != '\0';
 
+	bool const canRefresh = IsRefreshAllowed();
+	ImGui::BeginDisabled(!canRefresh);
 	if (ImGui::Button("Refresh")) Refresh();
-	ImGui::SetItemTooltip("Rescan the Assets folder (F5)");
+	ImGui::EndDisabled();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip("%s", canRefresh ? "Rescan the Assets folder (F5)" : "Stop Play Mode to refresh assets");
 
 	ImGui::SameLine();
 	ImGui::BeginDisabled(m_currentFolder.empty() || searching);
@@ -459,10 +472,10 @@ void Crucible::AssetBrowser::DrawGrid() {
 	// Right-click on empty space.
 	if (ImGui::BeginPopupContextWindow("##GridContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
 		bool const searching = m_search[0] != '\0';
-		if (ImGui::MenuItem("New Folder", nullptr, false, !searching)) CreateFolder();
+		if (ImGui::MenuItem("New Folder", nullptr, false, !searching && IsRefreshAllowed())) CreateFolder();
 		if (ImGui::MenuItem("Show in Explorer")) ShowInExplorer(AbsolutePathOf(m_currentFolder), false);
 		ImGui::Separator();
-		if (ImGui::MenuItem("Refresh", "F5")) Refresh();
+		if (ImGui::MenuItem("Refresh", "F5", false, IsRefreshAllowed())) Refresh();
 		ImGui::EndPopup();
 	}
 }

@@ -3,7 +3,7 @@
   \author     Tok Duan Jie Nelson
   \par        Email: t.duanjienelson@digipen.edu
   \date       1 October 2026
-  \version    1.0
+  \version    1.1
   \brief
     Undo/redo stack implementation.
   \details
@@ -16,6 +16,7 @@
     UndoHistory.h, EntityCommands.cpp
   \history
     - 1.0 (1 October 2026): Initial version.
+    - 1.1 (2 October 2026): BeginPlaySession / EndPlaySession for play mode.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -113,6 +114,84 @@ namespace Crucible {
         m_redo.clear();
         m_keyToLive.clear();
         m_liveToKey.clear();
+    }
+
+    // =======================================================================
+    //  Play mode
+    // =======================================================================
+
+    void UndoHistory::BeginPlaySession()
+    {
+        if (m_stash.active || m_scenes == nullptr)
+        {
+            return;
+        }
+
+        // Stop rebuilds the world, so handles will not survive it; scene guids
+        // will. The Play snapshot has just given every live entity one.
+        m_stash.guidOfKey.clear();
+        const Scene& scene = m_scenes->Current();
+        const auto remember = [&](const std::deque<std::unique_ptr<EditorCommand>>& commands)
+        {
+            for (const auto& command : commands)
+            {
+                const EntityKey key = command->Target();
+                if (!key.IsValid())
+                {
+                    continue;
+                }
+
+                // An entity that is currently undone (dead) has no guid; its
+                // redo recreates it and rebinds the key anyway.
+                const xresource::instance_guid id = scene.IdOf(Resolve(key));
+                if (id.m_Value != 0)
+                {
+                    m_stash.guidOfKey.emplace(key, id.m_Value);
+                }
+            }
+        };
+        remember(m_undo);
+        remember(m_redo);
+
+        m_stash.undo      = std::move(m_undo);
+        m_stash.redo      = std::move(m_redo);
+        m_stash.keyToLive = std::move(m_keyToLive);
+        m_stash.liveToKey = std::move(m_liveToKey);
+        m_stash.active    = true;
+        Clear();   // moved-from containers: make them definitely empty
+    }
+
+    void UndoHistory::EndPlaySession(bool worldRestored)
+    {
+        if (!m_stash.active)
+        {
+            return;
+        }
+
+        // Play-mode steps edited the play world, which is gone.
+        m_undo      = std::move(m_stash.undo);
+        m_redo      = std::move(m_stash.redo);
+        m_keyToLive = std::move(m_stash.keyToLive);
+        m_liveToKey = std::move(m_stash.liveToKey);
+        const auto guidOfKey = std::move(m_stash.guidOfKey);
+        m_stash = PlayStash{};
+
+        if (!worldRestored || m_scenes == nullptr)
+        {
+            Clear();
+            return;
+        }
+
+        // Point every kept step at its entity's handle in the restored world.
+        const Scene& scene = m_scenes->Current();
+        for (const auto& [key, guid] : guidOfKey)
+        {
+            const Entity live = scene.EntityOf(xresource::instance_guid{ guid });
+            if (live.IsValid())
+            {
+                Rebind(key, live);
+            }
+        }
     }
 
     const std::string& UndoHistory::UndoLabel() const

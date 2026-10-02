@@ -114,6 +114,11 @@ namespace Crucible {
         Impl::Check(Impl::ToChannel(voice)->set3DAttributes(&where, &velocity), "Audio::SetPosition: Channel::set3DAttributes");
     }
 
+    void Audio::SetPaused(const AudioVoice& voice, bool paused) {
+        if (!m_impl->m_initialised || !voice.IsValid()) return;
+        Impl::Check(Impl::ToChannel(voice)->setPaused(paused), "Audio::SetPaused: Channel::setPaused");
+    }
+
     // ------------------------------------------------------------------- //
     // THE LISTENER AND THE BUSES
     // ------------------------------------------------------------------- //

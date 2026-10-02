@@ -49,6 +49,8 @@ namespace Crucible {
 		void Refresh();
 
 	private:
+		bool IsRefreshAllowed() const;
+
 		struct Item {
 			std::string    name;          // file or folder name, e.g. "player.png"
 			std::string    virtualPath;   // relative to the asset root, forward slashes

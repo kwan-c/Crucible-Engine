@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Declares IECSSystem: the base interface every ECS
 *                system (physics, rendering, audio, ...) must implement
@@ -34,6 +34,8 @@
 *                EmitEngine/EmitNetwork) instead of per-bus outboxes
 *    -v1.6       SystemDesc::EmitsGameplayEvents() - the declaration that
 *                authorises ctx.events.EmitGameplay for a system
+*    -v1.7       SystemDesc::SimulationOnly() - runs only while the
+*                simulation is active (play mode)
 *
 **************************************************************************/
 #pragma once
@@ -110,6 +112,10 @@ namespace Crucible
 		// true = this system owns gameplay decisions and may use ctx.events.EmitGameplay(...).
 		// Native engine systems leave it false: gameplay events come from scripting.
 		bool emitsGameplayEvents = false;
+
+		// true = runs only while the simulation is active (Playing); see
+		// ECSSystemManager::SetSimulationActive. Physics and gameplay set it.
+		bool simulationOnly = false;
 
 		std::vector<SystemDependency> runAfter;    // systems that must run before this one
 		std::vector<SystemDependency> runBefore;   // systems that must run after this one
@@ -237,6 +243,19 @@ namespace Crucible
 		SystemDesc& EmitsGameplayEvents()
 		{
 			emitsGameplayEvents = true;
+			return *this;
+		}
+
+		/*********************************************************************
+		 \brief  This system simulates: it runs only while the simulation is
+				 active (Playing), not in Edit or Paused.
+		 \details The system stays registered and alive throughout; the
+				  manager just skips its Update (and its command replay)
+				  while ECSSystemManager::SetSimulationActive(false).
+		 *********************************************************************/
+		SystemDesc& SimulationOnly()
+		{
+			simulationOnly = true;
 			return *this;
 		}
 	};

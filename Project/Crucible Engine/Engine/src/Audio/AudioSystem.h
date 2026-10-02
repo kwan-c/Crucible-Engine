@@ -171,6 +171,10 @@ namespace Crucible {
         void SetPitch(const AudioVoice& voice, float pitch);
         void SetPosition(const AudioVoice& voice, const Math::vec3& position);   // for a sound that follows something
 
+        // Freezes a voice where it is (true) or carries on from there (false).
+        // A paused voice still counts as playing. The editor's Pause button.
+        void SetPaused(const AudioVoice& voice, bool paused);
+
         // --- the listener (Unity's AudioListener) ---
 
         // Where the ears are and which way they face. Usually the camera's

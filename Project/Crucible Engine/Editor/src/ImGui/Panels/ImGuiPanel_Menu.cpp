@@ -12,6 +12,8 @@
 #include <cstdio>
 #include <filesystem>
 
+#include "Core.h"
+
 namespace {
 	GLFWwindow* MainWindow() {
 		// The ImGui GLFW backend stores the GLFWwindow* in the main viewport.
@@ -34,6 +36,17 @@ void Crucible::Menu::Update(float) {
 		glfwSetWindowShouldClose(window, GLFW_FALSE);
 		RequestGuarded(GuardedAction::Exit);   // not dirty -> quits straight away
 	}
+
+	// Exit asked for during play mode: Stop has run since (it restores the edited scene and
+	// its unsaved-changes flag), so now ask about saving as usual.
+	if (m_exitAfterStop && !m_scenes.IsPlaySessionActive())
+	{
+		m_exitAfterStop = false;
+		RequestGuarded(GuardedAction::Exit);
+	}
+
+	// Scene files are edit-mode only: the world holds runtime state until Stop.
+	bool const playing = m_scenes.IsPlaySessionActive();
 
 	// Keyboard shortcuts. Checked here every frame, NOT inside BeginMenu("File"),
 	// which only runs while the File menu is open. Skipped while any popup is up,
@@ -66,22 +79,25 @@ void Crucible::Menu::Update(float) {
 		// ---------------- File ----------------
 		if (ImGui::BeginMenu("File"))
 		{
-			if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
+			if (ImGui::MenuItem("New Scene", "Ctrl+N", false, !playing)) {
 				RequestGuarded(GuardedAction::New);
 			}
 
-			if (ImGui::MenuItem("Open Scene...", "Ctrl+O")) {
+			if (ImGui::MenuItem("Open Scene...", "Ctrl+O", false, !playing)) {
 				OpenSceneFunc();
 			}
 
 
-			if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
+			if (ImGui::MenuItem("Save Scene", "Ctrl+S", false, !playing)) {
 				if (!m_scenes.HasPath()) m_openSaveAsPopup = true;   // never saved -> ask for a name
 				else                     { SaveScene(); }
 			}
 
-			if (ImGui::MenuItem("Save Scene As..."))
+			if (ImGui::MenuItem("Save Scene As...", nullptr, false, !playing))
 				m_openSaveAsPopup = true;
+
+			if (playing)
+				ImGui::TextDisabled("Stop play mode to open or save scenes");
 
 			ImGui::Separator();
 
@@ -184,8 +200,30 @@ void Crucible::Menu::Update(float) {
 		ImGui::ShowDemoWindow(&m_showDemoWindow);
 }
 
+bool Crucible::Menu::BlockedByPlayMode(const char* what) const
+{
+	if (!m_scenes.IsPlaySessionActive()) { return false; }
+	CRU_USER_WARN("Cannot {} while in play mode - press Stop first", what);
+	return true;
+}
+
 void Crucible::Menu::RequestGuarded(GuardedAction action, std::filesystem::path path)
 {
+	// Leaving during play mode: Stop first, then ask about the EDITED scene's changes
+	// (see Update). The play-mode world itself is never saved.
+	if (action == GuardedAction::Exit && m_scenes.IsPlaySessionActive())
+	{
+		Core* core = EditorManager::GetInstance().GetCore();
+		if (core != nullptr)
+		{
+			core->RequestStop();
+			m_exitAfterStop = true;
+			return;
+		}
+	}
+	if (action == GuardedAction::New && BlockedByPlayMode("create a new scene")) { return; }
+	if (action == GuardedAction::Open && BlockedByPlayMode("open a scene")) { return; }
+
 	if (!m_scenes.IsDirty()) { RunAction(action, path); return; }
 
 	// Dirty: remember what was asked for and ask the user first.
@@ -320,12 +358,14 @@ void Crucible::Menu::DrawUnsavedChangesPopup()
 
 void Crucible::Menu::SaveScene()
 {
+	if (BlockedByPlayMode("save the scene")) { return; }
 	if (!m_scenes.HasPath()) { m_openSaveAsPopup = true; return; }   // never saved -> ask for a name
 	SaveEditedMaterials();
 	m_scenes.Save();
 }
 
 void Crucible::Menu::OpenSceneFunc() {
+	if (BlockedByPlayMode("open a scene")) { return; }
 	m_sceneFiles.clear();
 	std::error_code ec;
 	for (const auto& e : std::filesystem::directory_iterator(m_assets.Resolve("Scenes"), ec))

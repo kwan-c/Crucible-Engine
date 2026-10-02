@@ -8,6 +8,7 @@
 
 #include "EngineExport.h"	// DLL export
 #include "Systems/Layer.h"
+#include "Systems/PlayMode.h"
 #include "Scene/SceneManager.h"
 #include "Systems/WindowManager.h"
 #include "Graphics/RenderSystem.h"
@@ -53,7 +54,10 @@ namespace Crucible
         World& GetWorld() noexcept { return *m_world; }
         const World& GetWorld() const noexcept { return *m_world; }
 
-        // The ECS system driver, e.g. for Systems().RegisterSystem<MySystem>().
+        // Every ECS system, registered once and alive until shutdown. Systems that declare
+        // SystemDesc::SimulationOnly() in Describe() (physics, gameplay) run only while
+        // Playing; the rest (transform hierarchy, render extraction, debug draw, audio) run
+        // in Edit, Playing and Paused.
         ECSSystemManager& Systems() noexcept { return m_systems; }
 
         // The engine / gameplay / network event buses (subscribe from a system's Init()).
@@ -69,6 +73,49 @@ namespace Crucible
         // Attaches a layer (calls OnAttach) and takes ownership. Layers are updated in the
         // order pushed, and detached in reverse order when Core shuts down.
         void PushLayer(std::unique_ptr<Layer> layer);
+
+        // ===================================================================
+        //  Play mode (Unity's Play / Pause / Stop) - see Systems/PlayMode.h
+        // ===================================================================
+        //
+        // Requests are queued and applied at the start of the next frame, after a pending
+        // scene New/Load and before any system runs. Each applied transition is dispatched
+        // on the engine bus (EngineEvents::PlayStateChanged), each failure as
+        // EngineEvents::PlayRequestFailed. Invalid or repeated requests are ignored (false).
+        // During a play session scene New/Load are runtime changes that Stop undoes, and
+        // saving is refused.
+
+        PlayState GetPlayState() const noexcept { return m_playMode->State(); }
+
+        // True from Play to Stop (Playing or Paused).
+        bool IsInPlaySession() const noexcept { return m_playMode->InSession(); }
+
+        // Edit -> Playing: snapshot the open scene in memory (unsaved edits included), then
+        // start a fresh simulation session (physics builds its world from the components).
+        // restoreOnStop = false skips the snapshot: Stop then just ends the session and keeps
+        // the world (the standalone game does this).
+        bool RequestPlay(bool restoreOnStop = true) { return m_playMode->RequestPlay(restoreOnStop); }
+
+        // Playing -> Paused: simulation systems, gameplay event time and runtime audio freeze;
+        // editing, input and rendering carry on.
+        bool RequestPause() { return m_playMode->RequestPause(); }
+
+        // Paused -> Playing: the same session carries on (nothing is reset).
+        bool RequestResume() { return m_playMode->RequestResume(); }
+
+        // Playing/Paused -> Edit: the simulation session ends (physics cleared), runtime
+        // events dropped, and the world rebuilt from the Play snapshot (entities, component
+        // values, guids, scene name, path and dirty flag). Systems stay alive.
+        bool RequestStop() { return m_playMode->RequestStop(); }
+
+        // True while a request is waiting for the next frame (UI can grey its buttons).
+        bool HasPendingPlayRequest() const noexcept { return m_playMode->HasPendingRequest(); }
+
+        // Why the last failed request failed; cleared by the next successful transition.
+        const std::string& LastPlayError() const noexcept { return m_playMode->LastError(); }
+
+        // The play-mode controller itself.
+        PlayMode& GetPlayMode() noexcept { return *m_playMode; }
 
     private:
         EngineConfig m_config;
@@ -94,7 +141,11 @@ namespace Crucible
 
         std::unique_ptr<SceneManager> m_scenes;
 
-        ECSSystemManager m_systems;
+        ECSSystemManager m_systems;     // every system, registered once
+
+        // Play mode: state, requests and the simulation switch. Declared after (so destroyed
+        // before) the World, the buses and the systems.
+        std::unique_ptr<PlayMode> m_playMode;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;

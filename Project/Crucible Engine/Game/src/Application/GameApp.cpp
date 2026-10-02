@@ -9,6 +9,12 @@ bool GameApp::Init()
     }
 
     // Register and initialize game systems...
+    // Gameplay systems: m_engine->Systems().RegisterSystem<T>(...), with
+    // desc.SimulationOnly() in their Describe() so they run only while playing.
+
+    // The game is always playing: start the session at the first frame (after the
+    // startup scene loads). No snapshot - there is no editor to go back to.
+    m_engine->RequestPlay(/*restoreOnStop*/ false);
 
     return true;
 }

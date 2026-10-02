@@ -3,7 +3,7 @@
   \author     Tok Duan Jie Nelson
   \par        Email: t.duanjienelson@digipen.edu
   \date       1 October 2026
-  \version    1.0
+  \version    1.1
   \brief
     The editor's undo/redo stack.
   \details
@@ -16,6 +16,8 @@
       - Doing anything new throws away everything that could be redone.
       - Opening or creating a scene clears the history: the old commands
         refer to entities that no longer exist.
+      - Play mode keeps the edit-mode history aside and brings it back at
+        Stop, pointed at the restored entities; play-mode steps are dropped.
 
     Entity identity. Undoing "Create Cube" destroys the cube; redoing it
     creates a NEW entity with a different handle. Any later command that
@@ -31,12 +33,14 @@
     UndoHistory.cpp, EntityCommands.h, ImGui/ImGuiManager.h
   \history
     - 1.0 (1 October 2026): Initial version.
+    - 1.1 (2 October 2026): BeginPlaySession / EndPlaySession for play mode.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <string>
@@ -154,6 +158,38 @@ namespace Crucible {
          *********************************************************************/
         void Clear();
 
+        // ===================================================================
+        //  Play mode
+        // ===================================================================
+
+        /*********************************************************************
+         \brief
+            Play was pressed: put the edit-mode history aside.
+         \details
+            Call after the Play snapshot was taken (it gives every live
+            entity a scene guid). Each kept step's entity is remembered by
+            that guid. While playing, the history starts empty and records
+            only play-mode edits, which Stop throws away with the play world.
+            Commands are matched to their entity through Target(), which is
+            the one entity every current command edits.
+         *********************************************************************/
+        void BeginPlaySession();
+
+        /*********************************************************************
+         \brief
+            Stop was pressed: drop the play-mode steps, bring the edit-mode
+            history back.
+         \param[in] worldRestored
+            true if Stop rebuilt the world from the Play snapshot: every
+            handle changed, so each kept step is pointed at its entity's new
+            handle (found by guid). false: the world was not restored, so
+            the old steps cannot be trusted and the history is cleared.
+         *********************************************************************/
+        void EndPlaySession(bool worldRestored);
+
+        //! True between BeginPlaySession and EndPlaySession.
+        bool InPlaySession() const { return m_stash.active; }
+
         bool CanUndo() const { return !m_undo.empty(); }
         bool CanRedo() const { return !m_redo.empty(); }
 
@@ -219,6 +255,19 @@ namespace Crucible {
         // is simply its own handle.
         std::unordered_map<Entity, Entity, EntityHash> m_keyToLive;
         std::unordered_map<Entity, Entity, EntityHash> m_liveToKey;
+
+        // The edit-mode history while a play session runs, and the scene guid
+        // of each kept step's entity at Play.
+        struct PlayStash
+        {
+            bool active = false;
+            std::deque<std::unique_ptr<EditorCommand>>     undo;
+            std::deque<std::unique_ptr<EditorCommand>>     redo;
+            std::unordered_map<Entity, Entity, EntityHash> keyToLive;
+            std::unordered_map<Entity, Entity, EntityHash> liveToKey;
+            std::unordered_map<Entity, std::uint64_t, EntityHash> guidOfKey;
+        };
+        PlayStash m_stash;
     };
 
 }
