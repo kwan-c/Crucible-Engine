@@ -110,6 +110,30 @@ namespace Crucible {
 
     CRUCIBLE_COMPONENT(CharacterController, CharacterController)
 
+    /*
+        Marks the mech THIS machine controls: ECSPlayerControllerSystem reads
+        the keyboard and drives the CharacterController on the same entity.
+        Unity's equivalent is a PlayerMovement script calling SimpleMove.
+
+            world.AddComponent(mech, CharacterController{});
+            world.AddComponent(mech, PlayerController{});     // ...and WASD walks it
+
+        A separate component, not a flag on CharacterController, because in
+        multiplayer every mech has a CharacterController but only the local
+        one reads the keyboard. The other mechs are moved by network packets,
+        so they simply never get this component.
+
+        Does nothing without a CharacterController next to it.
+    */
+    struct PlayerController {
+
+        float m_moveSpeed  = 6.0f;      // m/s on the ground. Diagonals are no faster
+        float m_jumpHeight = 1.5f;      // metres, measured from the feet. 0 disables jumping
+
+    };  // PLAYERCONTROLLER STRUCT
+
+    CRUCIBLE_COMPONENT(PlayerController, PlayerController)
+
     // ------------------------------------------------------------------- //
     // ENTITY <-> USER DATA
     // ------------------------------------------------------------------- //

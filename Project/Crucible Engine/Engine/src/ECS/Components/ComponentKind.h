@@ -67,8 +67,9 @@ namespace Crucible
 		Light = 8,            // Graphics: point/spot/directional light
 		Skybox = 9,           // Graphics: scene sky + ambient + exposure
 		AudioListener = 10,   // Audio: where the ears are (Audio/AudioComponents.h)
+		PlayerController = 11,   // Physics: keyboard -> CharacterController, local player only (Physics/PhysicsComponents.h)
 
-		MAXCOMPONENT = 11
+		MAXCOMPONENT = 12
 	};
 
 
@@ -169,5 +170,6 @@ namespace Crucible
  X(Light)                                                                      \
  X(Skybox)                                                                     \
  X(AudioListener)                                                              \
+ X(PlayerController)                                                           \
 
 }
