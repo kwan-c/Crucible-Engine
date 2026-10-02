@@ -50,6 +50,9 @@ RTTR_REGISTRATION
         .property("meshAsset",     &MeshRenderer::meshAsset)
             (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Mesh))
         .property("materialAsset", &MeshRenderer::materialAsset)
-            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Material))
+            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Material),
+             // Picked in the Inspector's Material section instead (with New / Make Unique), so it
+             // is not drawn twice. Still saved and loaded like any other property.
+             rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
     ;
 }

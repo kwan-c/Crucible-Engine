@@ -115,7 +115,8 @@ void Crucible::SceneView::UpdateEditorCamera(float dt) {
 		// Engine/src/Input/InputSystem.h) and isn't attached/updated by Core yet, and this is
 		// editor-only UI input anyway, so there's no reason to route it through the gameplay
 		// input system.
-		ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+		//ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+		EditorWidgets::RequestMouseLock();
 
 		ImGuiIO const& io = ImGui::GetIO();
 		input.look = { io.MouseDelta.x, io.MouseDelta.y };
@@ -372,7 +373,7 @@ void Crucible::SceneView::DrawGizmoMenu() {
 		{ "Velocities",     DebugCategory::Velocities },
 		{ "Light gizmos",   DebugCategory::Lights     },
 		{ "Grid",           DebugCategory::Grid       },
-		{ "Selection",      DebugCategory::Selection  },
+		//{ "Selection",      DebugCategory::Selection  },
 		{ "Gameplay lines", DebugCategory::Gameplay   },
 		{ "Culling bounds", DebugCategory::Bounds     },
 	};

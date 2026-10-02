@@ -10,6 +10,7 @@
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
 #include "Undo/EntityCommands.h"
+#include "../EditorWidgets.h"
 
 #include <algorithm>
 #include <memory>
@@ -450,9 +451,17 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 		}
 	};
 
-	// Writes `data` as a new .mat and points this renderer at it.
-	auto createAsset = [&](MaterialData const& data, std::string const& reason) -> bool {
-		std::string const path = uniquePath("Entity" + std::to_string(m_selected.index) + "_Material");
+	// "Materials/Rock.mat" -> "Rock", so new files and copies get readable names.
+	auto baseName = [](std::string name) {
+		if (auto const slash = name.find_last_of("/\\"); slash != std::string::npos) name.erase(0, slash + 1);
+		if (auto const dot = name.rfind('.'); dot != std::string::npos) name.erase(dot);
+		for (char& c : name) { if (c == ' ') c = '_'; }
+		return name.empty() ? std::string("Material") : name;
+	};
+
+	// Writes `data` as a new Materials/<base>.mat and points this renderer at it.
+	auto createAsset = [&](MaterialData const& data, std::string const& base, std::string const& reason) -> bool {
+		std::string const path = uniquePath(baseName(base));
 		AssetId const id = rm->CreateMaterialAsset(path, data);
 		if (id == 0) {
 			CRU_USER_ERROR("[Inspector] {}: could not create {} - material not saved (see [Resources] log)", reason, path);
@@ -463,14 +472,40 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 		return true;
 	};
 
-	// No material at all: create a real .mat asset rather than an anonymous GPU-only material
-	// (which had no id, so materialAsset stayed 0 and nothing was saved).
+	// ---- Which material ------------------------------------------------------------------------
+	// Picking an existing .mat SHARES it: every object pointing at the same asset id draws with the
+	// same GPU material (ResourceManager caches one per id), and edits below change all of them.
+	// Only "New..." and "Make Unique" create files.
+	std::uint64_t picked = renderer.materialAsset;
+	if (AssetRefField("Material", ResourceKind::Material, picked)) {
+		rm->AssignMaterial(renderer, picked);
+		return true;
+	}
+
+	static char s_newName[64] = "NewMaterial";
+	if (ImGui::Button("New...")) {
+		std::snprintf(s_newName, sizeof(s_newName), "%s", "NewMaterial");
+		ImGui::OpenPopup("New Material");
+	}
+	ImGui::SetItemTooltip("Create a new .mat file in Materials/ and use it on this object");
+	if (ImGui::BeginPopup("New Material")) {
+		if (ImGui::IsWindowAppearing()) { ImGui::SetKeyboardFocusHere(); }
+		bool const enter = ImGui::InputText("Name", s_newName, sizeof(s_newName), ImGuiInputTextFlags_EnterReturnsTrue);
+		if (enter || ImGui::Button("Create")) {
+			ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+			return createAsset(MaterialData{}, s_newName, "New Material");
+		}
+		ImGui::SameLine();
+		if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
+		ImGui::EndPopup();
+	}
+
 	if (!renderer.material.IsValid()) {
 		if (renderer.materialAsset != 0) {
 			ImGui::TextColored(ImVec4(1.f, .6f, .3f, 1.f), "Material %s failed to load", rm->GetName(renderer.materialAsset).c_str());
-		}
-		if (ImGui::Button("Add Material")) {
-			return createAsset(MaterialData{}, "Add Material");
+		} else {
+			ImGui::TextDisabled("Pick a material above (or drag a .mat onto it), or create a new one.");
 		}
 		return false;
 	}
@@ -483,10 +518,28 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 		} else {
 			ImGui::TextDisabled("%s is shared and has no file of its own (read-only).", rm->GetName(renderer.materialAsset).c_str());
 		}
+		ImGui::SameLine();
 		if (ImGui::Button("Make Editable Copy")) {
 			// Factors copy across. Textures copy only if they came from Assets/ - ones embedded in
 			// a .glb have no id and SerializeMaterial will warn and save that slot empty.
-			return createAsset(m_renderer.GetMaterialData(renderer.material), "Make Editable Copy");
+			std::string const source = renderer.materialAsset ? rm->GetName(renderer.materialAsset) : std::string("Material");
+			return createAsset(m_renderer.GetMaterialData(renderer.material), baseName(source), "Make Editable Copy");
+		}
+	}
+	else {
+		// How many objects in the scene use this .mat - edits below change every one of them.
+		int users = 0;
+		m_world.CreateQuery<const MeshRenderer>().ForEach(
+			[&](Entity, MeshRenderer const& other) { if (other.materialAsset == renderer.materialAsset) { ++users; } });
+
+		if (users > 1) {
+			ImGui::TextColored(ImVec4(1.f, .8f, .3f, 1.f), "Shared by %d objects - edits change all of them", users);
+			ImGui::SameLine();
+			if (ImGui::SmallButton("Make Unique")) {
+				return createAsset(m_renderer.GetMaterialData(renderer.material),
+				                   baseName(rm->GetName(renderer.materialAsset)) + "_Copy", "Make Unique");
+			}
+			ImGui::SetItemTooltip("Copy this material to a new .mat used only by this object");
 		}
 	}
 
@@ -622,10 +675,12 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 		else if (type == rttr::type::get<int>()) {
 			int v = value.get_value<int>();
 			if (ImGui::DragInt(name, &v)) { newValue = v; edited = true; }
+			EditorWidgets::InfiniteDrag();
 		}
 		else if (type == rttr::type::get<std::uint32_t>()) {
 			std::uint32_t v = value.get_value<std::uint32_t>();
 			if (ImGui::DragScalar(name, ImGuiDataType_U32, &v)) { newValue = v; edited = true; }
+			EditorWidgets::InfiniteDrag();
 		}
 		else if (type == rttr::type::get<std::uint64_t>()) {
 			// Shown as hex, same format as the guid= line in .meta files.
@@ -638,9 +693,12 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 		else if (type == rttr::type::get<float>()) {
 			float v = value.get_value<float>();
 			rttr::variant const range = prop.get_metadata(MetaDataTypes::SLIDER);
-			edited = range.is_type<Math::vec2>()
+			bool const isSlider = range.is_type<Math::vec2>();
+			edited = isSlider
 				? ImGui::SliderFloat(name, &v, range.get_value<Math::vec2>().x, range.get_value<Math::vec2>().y)
 				: ImGui::DragFloat(name, &v, 0.05f);
+			// Sliders map cursor position to value, so only unbounded drags get the infinite drag.
+			if (!isSlider) EditorWidgets::InfiniteDrag();
 			if (edited) newValue = v;
 		}
 		else if (type == rttr::type::get<std::string>()) {
@@ -664,25 +722,31 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 		else if (type == rttr::type::get<Math::vec2>()) {
 			Math::vec2 v = value.get_value<Math::vec2>();
 			if (ImGui::DragFloat2(name, &v.x, 0.05f)) { newValue = v; edited = true; }
+			EditorWidgets::InfiniteDrag();
 		}
 		else if (type == rttr::type::get<Math::vec3>()) {
 			Math::vec3 v = value.get_value<Math::vec3>();
-			edited = prop.get_metadata(MetaDataTypes::COLOUR).to_bool()
+			bool const isColour = prop.get_metadata(MetaDataTypes::COLOUR).to_bool();
+			edited = isColour
 				? ImGui::ColorEdit3(name, &v.x)
 				: ImGui::DragFloat3(name, &v.x, 0.05f);
+			if (!isColour) EditorWidgets::InfiniteDrag();   // colour pickers keep a normal cursor
 			if (edited) newValue = v;
 		}
 		else if (type == rttr::type::get<Math::vec4>()) {
 			Math::vec4 v = value.get_value<Math::vec4>();
-			edited = prop.get_metadata(MetaDataTypes::COLOUR).to_bool()
+			bool const isColour = prop.get_metadata(MetaDataTypes::COLOUR).to_bool();
+			edited = isColour
 				? ImGui::ColorEdit4(name, &v.x)
 				: ImGui::DragFloat4(name, &v.x, 0.05f);
+			if (!isColour) EditorWidgets::InfiniteDrag();   // colour pickers keep a normal cursor
 			if (edited) newValue = v;
 		}
 		else if (type == rttr::type::get<Math::quat>()) {
 			// Edited as Euler degrees, stored as a quaternion (same trade-off as before).
 			Math::vec3 euler = glm::degrees(glm::eulerAngles(value.get_value<Math::quat>()));
 			if (ImGui::DragFloat3(name, &euler.x, 0.5f)) { newValue = Math::quat(glm::radians(euler)); edited = true; }
+			EditorWidgets::InfiniteDrag();
 		}
 		else if (type == rttr::type::get<RigidBodyConstraints>()) {
 			// Two rows like Unity's Rigidbody "Constraints", instead of a tree of six

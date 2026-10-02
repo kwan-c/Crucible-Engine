@@ -66,4 +66,19 @@ namespace Crucible::EditorWidgets {
 	{
 		ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2.0f);
 	}
+
+
+
+	// Infinite mouse drag (cursor hidden and unbounded). Defined in EditorWidgets.cpp so the
+	// lock state is shared by every panel rather than copied into each one.
+
+	// Call while something wants a hidden, unbounded cursor this frame (fly camera).
+	void RequestMouseLock();
+
+	// Call right after any DragFloat / DragFloat3 / DragInt etc. While dragging, the cursor
+	// wraps from one edge of the window to the opposite one so the drag never runs out.
+	void InfiniteDrag();
+
+	// Call once per frame, after all panels have drawn (ImGuiManager::Render does this).
+	void EndFrameMouseLock();
 }
