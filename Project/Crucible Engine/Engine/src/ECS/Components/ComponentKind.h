@@ -68,7 +68,9 @@ namespace Crucible
 		Skybox = 9,           // Graphics: scene sky + ambient + exposure
 		AudioListener = 10,   // Audio: where the ears are (Audio/AudioComponents.h)
 
-		MAXCOMPONENT = 11
+		Camera = 11,          // Graphics: the game camera (struct CameraComponent)
+
+		MAXCOMPONENT = 12
 	};
 
 
@@ -169,5 +171,6 @@ namespace Crucible
  X(Light)                                                                      \
  X(Skybox)                                                                     \
  X(AudioListener)                                                              \
+ X(CameraComponent)                                                            \
 
 }

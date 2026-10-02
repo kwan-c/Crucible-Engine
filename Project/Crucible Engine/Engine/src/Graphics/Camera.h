@@ -62,12 +62,40 @@ namespace Crucible {
         float nearZ  = 0.1f;
         float farZ   = 1000.0f;
 
+        // Optional explicit orientation (SetPose): when set, yaw/pitch are ignored and the
+        // camera looks along basisForward with basisUp as "up" - so a camera driven by an
+        // entity's world matrix keeps its full rotation, roll included.
+        bool      useBasis = false;
+        glm::vec3 basisForward{ 0.0f, 0.0f, -1.0f };
+        glm::vec3 basisUp{ 0.0f, 1.0f, 0.0f };
+
+        /*********************************************************************
+         \brief  Places the camera from a world matrix: position = its
+                 translation, forward = its local -Z axis, up = its local +Y
+                 axis (the same convention Light entities use). Scale is
+                 ignored.
+         \param[in] world The entity's world matrix.
+         *********************************************************************/
+        void SetPose(const glm::mat4& world) {
+            position = glm::vec3(world[3]);
+            glm::vec3 f = -glm::vec3(world[2]);
+            glm::vec3 u =  glm::vec3(world[1]);
+            const float fl = glm::length(f), ul = glm::length(u);
+            basisForward = fl > 1e-6f ? f / fl : glm::vec3(0.0f, 0.0f, -1.0f);
+            basisUp      = ul > 1e-6f ? u / ul : glm::vec3(0.0f, 1.0f, 0.0f);
+            useBasis     = true;
+        }
+
+        /// The "up" reference the view is built with (WorldUp unless SetPose was used).
+        glm::vec3 UpReference() const { return useBasis ? basisUp : glm::vec3(WorldUp); }
+
         /*********************************************************************
          \brief  The camera's forward-facing unit vector, derived from yaw
                  and pitch.
          \return Normalized forward direction.
          *********************************************************************/
         glm::vec3 Forward() const {
+            if (useBasis) { return basisForward; }
             const float y = glm::radians(yaw), p = glm::radians(pitch);
             return glm::normalize(glm::vec3{ std::cos(y) * std::cos(p), std::sin(p), std::sin(y) * std::cos(p) });
         }
@@ -76,7 +104,7 @@ namespace Crucible {
          \brief  The camera's right-facing unit vector.
          \return Normalized right direction (cross(Forward(), WorldUp)).
          *********************************************************************/
-        glm::vec3 Right() const { return glm::normalize(glm::cross(Forward(), WorldUp)); }
+        glm::vec3 Right() const { return glm::normalize(glm::cross(Forward(), UpReference())); }
 
         /*********************************************************************
          \brief  The camera's local up unit vector (not necessarily WorldUp).
@@ -88,7 +116,7 @@ namespace Crucible {
          \brief  Builds the view matrix from the camera's current placement.
          \return A right-handed lookAt matrix.
          *********************************************************************/
-        glm::mat4 GetView()       const { return glm::lookAt(position, position + Forward(), WorldUp); }
+        glm::mat4 GetView()       const { return glm::lookAt(position, position + Forward(), UpReference()); }
 
         /*********************************************************************
          \brief  Builds the perspective projection matrix from the camera's

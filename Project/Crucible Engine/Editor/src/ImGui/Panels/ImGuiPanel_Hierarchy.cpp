@@ -81,6 +81,9 @@ void Crucible::Hierarchy::Update(float dt) {
 					}
 					ImGui::EndMenu();
 				}
+				if (ImGui::MenuItem("Create Camera")) {
+					CreateCameraObject();
+				}
 				ImGui::EndMenu();
 			}
 
@@ -414,6 +417,26 @@ void Crucible::Hierarchy::CreateLightObject(const std::string& lightType) {
 	UndoHistory& history = EditorManager::GetInstance().GetHistory();
 	history.Push(std::make_unique<CreateEntityCommand>(
 		history.KeyOf(e), EntityState::Capture(m_world, e), "Create " + lightType));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+
+}
+
+void Crucible::Hierarchy::CreateCameraObject() {
+
+	auto e = m_world.CreateEntity();
+	m_world.AddComponent<CameraComponent>(e, CameraComponent{});
+
+	// Somewhere useful rather than the origin: back and up a little, looking down -Z at the origin.
+	if (Transform* t = m_world.Write<Transform>(e)) { t->positions = { 0.f, 1.5f, 6.f }; }
+
+	// Select first, for the same history-ordering reason as CreateLightObject.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(e);
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create Camera"));
 
 	m_scenes.MarkDirty();   // records that there are unsaved changes
 

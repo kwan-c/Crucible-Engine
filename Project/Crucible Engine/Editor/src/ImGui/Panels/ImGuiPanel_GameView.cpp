@@ -81,24 +81,28 @@ void Crucible::GameView::Update(float) {
 		return;
 	}
 
-	// ---- Referencing the Renderer's main camera ----------------------------------------------
-	// Unlike the Scene view (which flies its OWN independent camera around), the Game view must
-	// always show exactly what the "real" game camera sees. That camera lives on the Renderer as
-	// m_camera (Renderer::GetCamera()) - it's the one a future gameplay/ECS camera system (and,
-	// today, the direct-to-window path used by a standalone Game build) actually drives.
-	//
-	// Every offscreen Viewport the Renderer manages owns its OWN Camera on purpose (see the
-	// comment on Renderer::Viewport / GetViewportCamera()), so several panels can be drawn per
-	// frame from different cameras without their view/proj data stepping on each other. That
-	// means the Game view's viewport camera is a *separate object* from the main camera, and the
-	// two don't automatically stay in sync - hence the explicit copy below every frame. Camera is
-	// a plain value type (position/yaw/pitch/lens floats, no GPU handles), so this is just a
-	// cheap struct copy, not a resource reference.
-	//
-	// The aspect ratio copied in here doesn't matter: Renderer::RecordCommandBuffer() overwrites
-	// each viewport camera's aspect from that viewport's own extent (set via Resize() above)
-	// before it uploads the frame's view/proj uniforms, so the Game view's letterboxed aspect
-	// always wins regardless of whatever the main camera's aspect happened to be.
+	// ---- The scene's camera -------------------------------------------------------------------
+	// The Game view shows what the scene's active Camera entity sees. RenderExtractSystem hands
+	// that camera to the Renderer every frame (Renderer::SetMainCamera); with no enabled Camera
+	// component in the scene there is nothing to look through, so - like Unity - the view says so
+	// instead of showing a stale or made-up picture, and its viewport stops rendering entirely.
+	bool const hasCamera = m_renderer.HasMainCamera();
+	m_viewport.SetActive(hasCamera);
+
+	if (!hasCamera) {
+		ImGui::GetWindowDrawList()->AddRectFilled(regionMin, regionMax, IM_COL32(0, 0, 0, 255));
+		EditorWidgets::DrawViewportPlaceholder(min, max, "No cameras rendering",
+			"Add an entity with a Camera component (Hierarchy > + > Create Camera).");
+		ImGui::SetCursorScreenPos(regionMin);
+		ImGui::InvisibleButton("##GameViewport", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
+		m_hovered = ImGui::IsItemHovered();
+		ImGui::End();
+		return;
+	}
+
+	// Each offscreen viewport owns its own Camera object, so copy the main camera in every frame
+	// (a plain struct copy). Its aspect is overwritten from this viewport's own extent by the
+	// Renderer, so the letterboxed aspect chosen in the toolbar always wins.
 	m_viewport.GetCamera() = m_renderer.GetCamera();
 
 	// Placeholder first (covers the gap before the offscreen image exists, e.g. the first frame),

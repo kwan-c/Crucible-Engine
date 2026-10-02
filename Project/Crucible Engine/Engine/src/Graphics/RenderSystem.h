@@ -167,6 +167,7 @@ namespace Crucible {
 
             bool                debugDraw = false;   // draw DebugDraw lines into this view (SetViewportDebugDraw)
             bool                outline = false;     // draw the selection outline (SetViewportOutline)
+            bool                active = true;       // false: not culled, not rendered (SetViewportActive)
             RenderCullStats     cullStats;           // last frame's culling result for this view
 
             // Selection outline: R8 mask of the selected object (same size as colorImage), and
@@ -193,7 +194,7 @@ namespace Crucible {
         void ShutDown();
 
         /*********************************************************************
-         \brief  Advances demo-scene time, drains any pending async mesh
+         \brief  Drains any pending async mesh
                  uploads, populates/sorts the render queue, and draws the
                  frame.
          \param[in] dt Frame delta time, in seconds.
@@ -208,19 +209,22 @@ namespace Crucible {
 
 
         /*********************************************************************
-         \brief  Accessor for the active (main) camera.
-         \return Mutable reference to the main camera.
-         \note  The renderer owns the active camera; a controller (or the
-                ECS) mutates it each frame before Update(). Aspect ratio is
-                kept in sync with the swapchain automatically.
+         \brief
+            The main (game) camera: what the Game view shows, and what is
+            drawn straight to the window in a standalone build.
+         \details
+            It belongs to the scene: RenderExtractSystem sets it every frame
+            from the active CameraComponent entity (SetMainCamera), or
+            clears it when the scene has none (ClearMainCamera). While
+            HasMainCamera() is false the window pass draws no scene and the
+            Game view shows "No cameras rendering". GetCamera() then returns
+            the last camera that was set. Aspect ratio is overwritten from
+            the render target each frame.
          *********************************************************************/
-        Camera&       GetCamera()       { return m_camera; }
-
-        /*********************************************************************
-         \brief  Accessor for the active (main) camera.
-         \return Const reference to the main camera.
-         *********************************************************************/
-        const Camera& GetCamera() const { return m_camera; }
+        void          SetMainCamera(const Camera& camera) { m_camera = camera; m_hasMainCamera = true; }
+        void          ClearMainCamera()                   { m_hasMainCamera = false; }
+        bool          HasMainCamera() const               { return m_hasMainCamera; }
+        const Camera& GetCamera() const                   { return m_camera; }
 
         /*********************************************************************
          \brief
@@ -561,6 +565,13 @@ namespace Crucible {
         ENGINE_API void           SetViewportOutline(ViewportHandle handle, bool enabled);
 
         /*********************************************************************
+         \brief  Pauses or resumes rendering into one viewport. An inactive
+                 viewport costs nothing per frame and keeps its last image
+                 (the Game view uses this while the scene has no camera).
+         *********************************************************************/
+        ENGINE_API void           SetViewportActive(ViewportHandle handle, bool active);
+
+        /*********************************************************************
          \brief
             Which object gets the orange selection outline, by the userData
             its render proxy was created with (RenderExtractSystem uses the
@@ -704,15 +715,6 @@ namespace Crucible {
         const SpatialIndex& GetSpatialIndex() const { return m_spatial; }
 
         /*********************************************************************
-         \brief  Enables/disables the temporary demo scene.
-         \param[in] enable true to spawn/keep spawning the demo scene each
-                            frame.
-         \note  Temporary: spawns a grid of spinning cubes so you can test
-                camera + multi-draw before the ECS components exist.
-         *********************************************************************/
-        void EnableDemoScene(bool enable) { m_demoScene = enable; }
-
-        /*********************************************************************
          \brief  Registers a callback invoked while the frame's render
                  pass is still open (after the scene draw, before
                  endRendering).
@@ -744,7 +746,8 @@ namespace Crucible {
         VulkanFrameManager          m_frameManager;
 
         // Scene
-        Camera                      m_camera;
+        Camera                      m_camera;            // main (game) camera - see SetMainCamera
+        bool                        m_hasMainCamera = false;
         std::vector<GpuMesh>        m_meshes;
         std::vector<RenderItem>     m_renderQueue;      // immediate Submit() items, this frame only
 
@@ -769,13 +772,6 @@ namespace Crucible {
         RenderCullStats             m_windowCullStats;
         std::vector<MeshHandle>     m_primitiveMeshes;
         void CreatePrimitiveMeshes();
-        MaterialHandle              m_demoMaterial;   // demo-scene cubes' material (see SubmitDemoScene)
-
-        MeshHandle                  m_glbMesh;
-        MaterialHandle              m_glbMaterial;
-
-        float                       m_time = 0.0f;
-        bool                        m_demoScene = true;
 
         // Textures + Materials (see the "---- Textures ----"/"---- Materials ----" public API).
         std::vector<GpuTexture>                     m_textures;
@@ -897,7 +893,6 @@ namespace Crucible {
         void CreateUniformBuffers();
         void CreateDescriptorPool();
         void CreateDescriptorSets();
-        void SubmitDemoScene();
         void ProcessPendingMeshUploads();
         void UploadMesh(MeshHandle handle, const MeshData& data, const std::string& debugName);
 
