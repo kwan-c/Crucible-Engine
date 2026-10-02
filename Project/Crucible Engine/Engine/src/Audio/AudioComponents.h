@@ -80,8 +80,9 @@ namespace Crucible {
         Unity's AudioListener: the ears. Sounds are placed relative to this
         entity's world position and facing (local -Z is forward, as for lights).
         It has nothing to set - being on an entity is the whole job. One per
-        scene: with none, 3D sounds are heard from the world origin, and with
-        several only the first is used. ECSAudioSystem warns about both.
+        scene: with none, the ears follow the Renderer's camera (the camera is
+        not an entity yet, so it cannot carry this), and with several only the
+        first is used and ECSAudioSystem warns once.
     */
     struct AudioListener {};
 

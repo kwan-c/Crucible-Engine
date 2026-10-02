@@ -11,7 +11,8 @@
 *                Same split as physics. Crucible::Audio wraps FMOD and
 *                knows nothing about entities; this class is where the
 *                ECS meets it. Each Update():
-*                  1. puts the ears on the AudioListener entity
+*                  1. puts the ears on the AudioListener entity - or, with
+*                     none, on the Renderer's camera
 *                  2. for each AudioSource: plays it on awake, carries
 *                     out Play/Stop/PlayOneShot, passes on volume, pitch
 *                     and position changes, and writes back isPlaying
@@ -26,6 +27,7 @@
 * \history
 *    -v1.0       owns Audio, ticks it, editor preview
 *    -v1.1       AudioSource and AudioListener components; edit mode
+*    -v1.2       with no AudioListener entity, the ears follow the camera
 *
 **************************************************************************/
 #pragma once
@@ -42,6 +44,7 @@
 namespace Crucible {
 
     class AssetManager;
+    class Renderer;
 
     /*
         Only the functions the Editor and Game call are exported (ENGINE_API on
@@ -57,7 +60,13 @@ namespace Crucible {
         // Core's AssetManager, so clips can be named by their virtual path
         // ("Audio/cannon5.wav") and resolved here. It must outlive this system;
         // Core owns both and destroys systems first.
-        explicit ECSAudioSystem(AssetManager& assets);
+        //
+        // The Renderer is optional and only lends its camera: the camera is not
+        // an entity yet, so it cannot carry an AudioListener. With no listener
+        // entity in the scene, the ears follow it - where Unity puts the
+        // AudioListener by default. An AudioListener entity still wins. Once
+        // the camera is an entity, give it the component and drop this.
+        explicit ECSAudioSystem(AssetManager& assets, const Renderer* renderer = nullptr);
         ~ECSAudioSystem() override;
 
         ECSAudioSystem(const ECSAudioSystem&)            = delete;

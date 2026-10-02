@@ -2,7 +2,7 @@
 * \file:         ECSAudioSystem.cpp
 * \author:       Hugo
 * \date          1 October 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Implementation of ECSAudioSystem. See the header for
 *                what happens each frame.
@@ -23,6 +23,7 @@
 * \history
 *    -v1.0       owns Audio, ticks it, editor preview
 *    -v1.1       AudioSource and AudioListener components; edit mode
+*    -v1.2       with no AudioListener entity, the ears follow the camera
 *
 **************************************************************************/
 #include "ECSAudioSystem.h"
@@ -39,6 +40,7 @@
 #include "Components/Components.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/HierarchyTransformSystem.h"
+#include "Graphics/RenderSystem.h"
 #include "Systems/Query.h"
 #include "World.h"
 
@@ -116,10 +118,11 @@ namespace Crucible {
 
     struct ECSAudioSystem::State {
 
-        explicit State(AssetManager& assetManager) : assets(assetManager) {}
+        State(AssetManager& assetManager, const Renderer* rendererToFollow) : assets(assetManager), renderer(rendererToFollow) {}
 
-        AssetManager& assets;
-        Audio         audio;
+        AssetManager&   assets;
+        const Renderer* renderer = nullptr;     // only for its camera, the listener when no entity has one
+        Audio           audio;
         World*        world    = nullptr;
         bool          editMode = false;
 
@@ -157,7 +160,7 @@ namespace Crucible {
     // LIFECYCLE
     // ------------------------------------------------------------------- //
 
-    ECSAudioSystem::ECSAudioSystem(AssetManager& assets) : m_state{ std::make_unique<State>(assets) } {}
+    ECSAudioSystem::ECSAudioSystem(AssetManager& assets, const Renderer* renderer) : m_state{ std::make_unique<State>(assets, renderer) } {}
 
     ECSAudioSystem::~ECSAudioSystem() { Shutdown(); }
 
@@ -298,7 +301,8 @@ namespace Crucible {
     /*!
         \brief
         Puts the ears on the first AudioListener. Unity allows one; with more,
-        the first wins and the log says so once.
+        the first wins and the log says so once. With none, they follow the
+        Renderer's camera, if there is one.
     */
     void ECSAudioSystem::State::SyncListener() {
 
@@ -306,6 +310,14 @@ namespace Crucible {
         listeners->ForEach([&](Entity, const AudioListener&, const WorldTransform& transform) {
             if (count++ == 0) audio.SetListener(PositionOf(transform), ForwardOf(transform), UpOf(transform));
         });
+
+        // No listener entity: the camera, where Unity puts the AudioListener by
+        // default. Every frame, because the camera moves without telling anyone.
+        if (count == 0 && renderer != nullptr) {
+            const Camera& camera = renderer->GetCamera();
+            audio.SetListener(camera.position, camera.Forward(), camera.Up());
+            return;
+        }
 
         // Only worth saying when something can actually be heard.
         if (editMode || records.empty()) return;
