@@ -2,7 +2,7 @@
 * \file:         ECSPlayerControllerSystem.cpp
 * \author:       Hugo
 * \date          2 October 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Implementation of ECSPlayerControllerSystem. See the
 *                header for what happens each frame.
@@ -10,9 +10,14 @@
 * \history
 *    -v1.0       WASD, Space, camera-relative (the Renderer's camera)
 *    -v1.1       reads the CameraComponent entity; SimulationOnly
+*    -v1.2       third-person camera: CameraOrbit and the cursor lock
 *
 **************************************************************************/
 #include "ECSPlayerControllerSystem.h"
+
+// STL
+#include <algorithm>
+#include <cmath>
 
 // Crucible engine
 #include "Components/Components.h"
@@ -30,10 +35,67 @@ namespace Crucible {
 
     /*!
         \brief
-        Reads the keyboard once, turns it into a world direction using the
-        main camera, and hands it to every local player's CharacterController.
+        Locks the cursor when Play or Resume starts, turns the camera pivot
+        with the mouse, then reads the keyboard once, turns it into a world
+        direction using the main camera, and hands it to every local player's
+        CharacterController.
     */
     void ECSPlayerControllerSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
+
+        // THE CURSOR -------------------------------------------------------------- //
+        // A gap in the tick means this system was switched off for a while (Edit
+        // or Paused) and Play or Resume has just begun: hide and capture the
+        // cursor, the way a Unity game sets Cursor.lockState at start. Only on
+        // that first frame - after Esc frees the cursor, clicking the Game view is
+        // what takes it back (the editor's job), not this.
+        const std::uint64_t tick = world.CurrentTick();
+        if (tick != m_lastTick + 1) Input::SetMouseLocked(true);
+        m_lastTick = tick;
+
+        // THE CAMERA PIVOT --------------------------------------------------------- //
+        // The mouse only turns the camera while the cursor is captured. A free
+        // cursor is on its way to the editor's Pause button or the Inspector, and
+        // the view spinning as it travels there would be maddening.
+        // GetMouseDelta is a distance in pixels, so it is NOT multiplied by dt.
+        const Math::vec2 mouse = Input::IsMouseLocked() ? Input::GetMouseDelta() : Math::vec2(0.0f, 0.0f);
+
+        world.CreateQuery<CameraOrbit, const Transform>()
+            .ForEach([&](Entity pivot, CameraOrbit& orbit, const Transform& transform) {
+
+                // Mouse left (x < 0) turns the view left, which is + yaw around Y.
+                // Mouse down (y > 0, pixels count downwards) tilts it down, which
+                // is + pitch. Neither axis is inverted - the common default.
+                orbit.m_yaw   -= mouse.x * orbit.m_sensitivity;
+                orbit.m_pitch += mouse.y * orbit.m_sensitivity;
+
+                // Yaw goes round and round; wrapping it stops a long session
+                // growing it into the millions, where a float has no precision left.
+                orbit.m_yaw = std::fmod(orbit.m_yaw, 360.0f);
+
+                // Deliberately NOT std::clamp: clamp is undefined if a designer types
+                // the limits the wrong way round, and in Debug it asserts mid-Play.
+                // max(min(...)) is always defined; swapped limits just pin the
+                // camera to m_minPitch until the typo is fixed.
+                orbit.m_pitch = std::max(orbit.m_minPitch, std::min(orbit.m_pitch, orbit.m_maxPitch));
+
+                // Yaw around the world's up, then pitch around the pivot's own
+                // sideways axis - the order that keeps the horizon level. The
+                // other order tilts the horizon as soon as both are non-zero.
+                // Pitch is negated: turning around +X by a positive angle tips the
+                // view UP, and + pitch means looking down on the mech.
+                const Math::quat rotation =
+                    glm::angleAxis(glm::radians(orbit.m_yaw),    Math::vec3(0.0f, 1.0f, 0.0f)) *
+                    glm::angleAxis(glm::radians(-orbit.m_pitch), Math::vec3(1.0f, 0.0f, 0.0f));
+
+                // Written every frame, not only when the mouse moves, so the saved
+                // angles take effect on the first frame of Play and an Inspector
+                // edit during Play shows up at once. But only when it differs:
+                // a mutable GetComponent stamps the Transform as changed, and an
+                // untouched camera would otherwise re-stamp itself 60 times a second.
+                if (rotation != transform.rotation) {
+                    if (Transform* writable = world.GetComponent<Transform>(pivot)) writable->rotation = rotation;
+                }
+            });
 
         // THE KEYS ---------------------------------------------------------------- //
         // Each axis is -1, 0 or +1. Holding both A and D cancels out to 0, which

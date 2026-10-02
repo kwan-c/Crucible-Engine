@@ -19,6 +19,7 @@
 #include <iostream>
 #include <Core.h>
 #include "ECS/ECSAudioSystem.h"
+#include "Input/InputSystem.h"   // the game's cursor lock, see the end of ImGuiManager::Update
 
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
@@ -243,6 +244,30 @@ void Crucible::ImGuiManager::Update(float dt) {
 		}
 
 		currentPanel.second->Update(dt);
+	}
+
+	// The game's mouse look, with Unity's Game-view cursor rules. The game locks the cursor
+	// when Play or Resume starts (ECSPlayerControllerSystem); getting it back is the editor's
+	// job: Esc frees it, a left click on the Game view takes it again, and Pause / Stop always
+	// free it. After the panel loop on purpose, so the Game view's hover state is this frame's.
+	if (Core* core = EditorManager::GetInstance().GetCore()) {
+		ImGuiIO& io = ImGui::GetIO();
+		if (core->GetPlayState() == PlayState::Playing) {
+			auto gameView = EditorManager::GetInstance().GetPanel<GameView>(ImguiPanels::GAMESCENE);
+			if (Input::IsMouseLocked() && Input::IsPressed(KeyCode::Escape))
+				Input::SetMouseLocked(false);
+			else if (!Input::IsMouseLocked() && gameView && gameView->IsViewportHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+				Input::SetMouseLocked(true);
+		}
+		else if (Input::IsMouseLocked()) {
+			Input::SetMouseLocked(false);   // Paused or Stopped: the editor needs its pointer back
+		}
+
+		// A locked cursor is hidden but still moves, and ImGui still follows it - so a click
+		// meant for the game (Fire) would also press whatever panel button it is invisibly over.
+		// NoMouse makes the editor ignore the mouse until the cursor is free again.
+		if (Input::IsMouseLocked()) io.ConfigFlags |=  ImGuiConfigFlags_NoMouse;
+		else                        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
 	}
 }
 
