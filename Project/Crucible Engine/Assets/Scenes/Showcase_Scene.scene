@@ -37,6 +37,43 @@
             }
         },
         {
+            "id": "0924E0D2C5C6C001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 23.549999237060547,
+                        "y": 101.44999694824219,
+                        "z": 44.5
+                    },
+                    "rotation": {
+                        "x": -0.5839498043060303,
+                        "y": -0.13218837976455688,
+                        "z": -0.03322882577776909,
+                        "w": 0.8002654314041138
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 5.0,
+                    "range": 0.0,
+                    "innerConeDeg": 0.0,
+                    "outerConeDeg": 0.0,
+                    "enabled": true,
+                    "castShadows": true
+                }
+            }
+        },
+        {
             "id": "0D5928D2B85A4005",
             "components": {
                 "Transform": {
