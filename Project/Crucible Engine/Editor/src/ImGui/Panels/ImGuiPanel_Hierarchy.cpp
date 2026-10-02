@@ -12,8 +12,16 @@
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Undo/EntityCommands.h"
 #include "Diagnostics/Logger.h"
+#include <imgui_internal.h>   // BeginDragDropTargetCustom (drop on empty space)
+#include <cstring>
 
 #include <memory>
+#include <algorithm>
+
+namespace {
+	// Drag-and-drop payload for a Hierarchy row (the dragged Entity, by value).
+	constexpr char const* kEntityPayload = "CRUCIBLE_ENTITY";
+}
 
 void Crucible::Hierarchy::Init() {
 	m_panelName = "Hierarchy";
@@ -79,6 +87,24 @@ void Crucible::Hierarchy::Update(float dt) {
 			if (node.parent == kNullEntity) { DrawEntityNode(entity); }
 		});
 
+		// Drop on the empty space below the tree: make the dragged entity a root again. A custom
+		// target over a plain rectangle (not an item), so right-clicking that space still opens the
+		// window's context menu below.
+		{
+			ImVec2 const min = ImGui::GetCursorScreenPos();
+			ImVec2 const max = ImVec2(min.x + ImGui::GetContentRegionAvail().x,
+			                          min.y + (std::max)(ImGui::GetContentRegionAvail().y, ImGui::GetFrameHeight()));
+			if (ImGui::BeginDragDropTargetCustom(ImRect(min, max), ImGui::GetID("##HierarchyRootDrop"))) {
+				if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
+					Entity dragged{};
+					std::memcpy(&dragged, payload->Data, sizeof(Entity));
+					m_pendingParent = kNullEntity;
+					RequestAction(PendingAction::Reparent, dragged);
+				}
+				ImGui::EndDragDropTarget();
+			}
+		}
+
 		// Right-click on empty space in the panel: paste as a new root entity.
 		if (ImGui::BeginPopupContextWindow("HierarchyContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
 			if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_clipboard.empty())) { RequestAction(PendingAction::Paste, kNullEntity); }
@@ -119,6 +145,22 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 	bool const open = ImGui::TreeNodeEx("##node", flags, "Entity %u", entity.index);
 	if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && inspector) {
 		inspector->SetSelectedEntity(entity);
+	}
+
+	// Drag this row onto another row to make it that entity's child.
+	if (ImGui::BeginDragDropSource()) {
+		ImGui::SetDragDropPayload(kEntityPayload, &entity, sizeof(Entity));
+		ImGui::Text("Entity %u", entity.index);
+		ImGui::EndDragDropSource();
+	}
+	if (ImGui::BeginDragDropTarget()) {
+		if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
+			Entity dragged{};
+			std::memcpy(&dragged, payload->Data, sizeof(Entity));
+			m_pendingParent = entity;
+			RequestAction(PendingAction::Reparent, dragged);   // deferred: we are inside the query loop
+		}
+		ImGui::EndDragDropTarget();
 	}
 
 	// Right-click menu. BeginPopupContextItem opens a popup for the tree node above on right-click
@@ -181,6 +223,11 @@ void Crucible::Hierarchy::RunPendingAction() {
 
 	case PendingAction::Delete:
 		if (targetAlive) { DeleteEntity(target); }
+		break;
+
+	case PendingAction::Reparent:
+		if (targetAlive) { Reparent(target, m_pendingParent); }
+		m_pendingParent = kNullEntity;
 		break;
 	}
 }
@@ -255,6 +302,48 @@ void Crucible::Hierarchy::DeleteEntity(Entity entity) {
 
 	m_scenes.MarkDirty();
 	CRU_USER_INFO("Deleted entity {}", entity.index);
+}
+
+void Crucible::Hierarchy::Reparent(Entity child, Entity parent) {
+	if (child == parent) { return; }                       // dropped onto itself
+	if (m_world.GetParent(child) == parent) { return; }   // dropped where it already is
+	if (!(parent == kNullEntity) && !m_world.IsAlive(parent)) { return; }
+
+	Transform const* local = m_world.Read<Transform>(child);
+	if (!local) { return; }
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	Entity const oldParent = m_world.GetParent(child);
+	ReparentCommand::Placement const before{
+		oldParent == kNullEntity ? kNullEntity : history.KeyOf(oldParent),
+		m_world.GetSiblingIndex(child),
+		*local };
+
+	// Keep the world position (Unity's default), so the object doesn't jump when it is parented.
+	ParentResult result = m_world.TrySetParent(child, parent, true);
+	if (result == ParentResult::UnsupportedTransform) {
+		// The new parent has a zero/negative scale, so no local Transform can keep the world pose.
+		CRU_USER_WARN("Entity {}: can't keep its world position under entity {} ({}) - kept its local Transform instead",
+		              child.index, parent.index, ToString(result));
+		result = m_world.TrySetParent(child, parent, false);
+	}
+	if (result != ParentResult::Ok) {
+		// e.g. WouldCycle: dropping a parent onto one of its own children.
+		CRU_USER_WARN("Can't parent entity {} to entity {}: {}", child.index, parent.index, ToString(result));
+		return;
+	}
+
+	ReparentCommand::Placement const after{
+		parent == kNullEntity ? kNullEntity : history.KeyOf(parent),
+		m_world.GetSiblingIndex(child),
+		*m_world.Read<Transform>(child) };
+
+	std::string const label = parent == kNullEntity ? "Unparent Entity" : "Parent Entity";
+	history.Push(std::make_unique<ReparentCommand>(history.KeyOf(child), before, after, label));
+
+	m_scenes.MarkDirty();
+	if (parent == kNullEntity) { CRU_USER_INFO("Entity {} is now a root", child.index); }
+	else                       { CRU_USER_INFO("Entity {} is now a child of entity {}", child.index, parent.index); }
 }
 
 void Crucible::Hierarchy::CreatePrimitive(const std::string& meshName) {

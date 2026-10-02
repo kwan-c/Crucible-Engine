@@ -154,7 +154,7 @@ namespace Crucible {
         // POPULATE
         //   Persistent proxies were updated by RenderExtractSystem (SetRenderProxy) during the ECS
         //   update; immediate Submit() items (the demo scene) are added here.
-        if (m_demoScene) { SubmitDemoScene(); }
+        //if (m_demoScene) { SubmitDemoScene(); }
 
         // Proxies whose mesh was still uploading last frame: try to get their bounds now.
         if (!m_proxiesAwaitingBounds.empty()) {

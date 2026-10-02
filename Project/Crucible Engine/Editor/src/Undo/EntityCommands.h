@@ -33,6 +33,7 @@
 #include <string>
 
 #include "ECS/Core/ECSCore.h"
+#include "ECS/Components/Components.h"   // Transform
 #include "Undo/UndoHistory.h"
 
 namespace Crucible {
@@ -197,5 +198,48 @@ namespace Crucible {
     private:
         std::unique_ptr<EditorCommand> m_inner;
         std::string                    m_label;
+    };
+
+    /*************************************************************************
+     \brief
+        "This entity was moved to a different parent" (Hierarchy drag and
+        drop). Undo puts it back under the old parent, at its old position
+        among its siblings, with its old local Transform.
+     \details
+        Snapshots (EntityStateCommand) deliberately leave HierarchyNode out,
+        so a reparent needs its own command. The Transform is stored too:
+        keeping the world position while changing parent rewrites the local
+        Transform, and Undo must restore it exactly.
+     *************************************************************************/
+    class ReparentCommand final : public EditorCommand
+    {
+    public:
+        struct Placement {
+            EntityKey     parent;         // kNullEntity = root
+            std::uint32_t siblingIndex;
+            Transform     local;
+        };
+
+        ReparentCommand(EntityKey entity, Placement before, Placement after, std::string label)
+            : m_entity(entity)
+            , m_before(before)
+            , m_after(after)
+            , m_label(std::move(label))
+        {
+        }
+
+        void Undo(UndoHistory& history) override { Apply(history, m_before); }
+        void Redo(UndoHistory& history) override { Apply(history, m_after); }
+
+        EntityKey          Target() const override { return m_entity; }
+        const std::string& Label()  const override { return m_label; }
+
+    private:
+        void Apply(UndoHistory& history, const Placement& placement) const;
+
+        EntityKey   m_entity;
+        Placement   m_before;
+        Placement   m_after;
+        std::string m_label;
     };
 }

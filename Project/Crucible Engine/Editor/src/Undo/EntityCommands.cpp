@@ -258,4 +258,34 @@ namespace Crucible {
         // Destroys the descendants too, exactly like the original delete.
         history.GetWorld().DestroyEntity(history.Resolve(m_nodes.front().key));
     }
+
+    // =======================================================================
+    //  ReparentCommand
+    // =======================================================================
+
+    void ReparentCommand::Apply(UndoHistory& history, const Placement& placement) const
+    {
+        World& world = history.GetWorld();
+        const Entity entity = history.Resolve(m_entity);
+        if (!world.IsAlive(entity))
+        {
+            CRU_WARN("Undo: entity {} is not alive - reparent not applied", entity.index);
+            return;
+        }
+
+        const Entity parent = placement.parent == kNullEntity ? kNullEntity : history.Resolve(placement.parent);
+
+        // false: keep the local Transform as-is; the exact one is written right after anyway.
+        const ParentResult result = world.TrySetParent(entity, parent, false);
+        if (result != ParentResult::Ok)
+        {
+            CRU_WARN("Undo: could not reparent entity {} ({})", entity.index, ToString(result));
+            return;
+        }
+        if (!(parent == kNullEntity))
+        {
+            world.SetSiblingIndex(entity, placement.siblingIndex);
+        }
+        world.AddComponent<Transform>(entity, placement.local);   // overwrites
+    }
 }

@@ -43,9 +43,10 @@ namespace Crucible {
 		std::optional<Query<const HierarchyNode>> m_query;
 		// Actions requested by the right-click menu or a shortcut. They change the World, which is not
 		// allowed while m_query is iterating, so they are stored and run after the loop.
-		enum class PendingAction { None, Copy, Paste, Duplicate, Delete };
+		enum class PendingAction { None, Copy, Paste, Duplicate, Delete, Reparent };
 		PendingAction m_pendingAction = PendingAction::None;
 		Entity        m_pendingTarget = kNullEntity;
+		Entity        m_pendingParent = kNullEntity;   // Reparent only: the new parent (kNullEntity = root)
 
 		// One copied entity: its component snapshot, and the index of its parent in the same list
 		// (-1 for the top entity). Parents always come before their children.
@@ -60,6 +61,9 @@ namespace Crucible {
 		// siblingIndex >= 0 moves the new top entity to that position among its siblings.
 		Entity PasteSubtree(std::vector<ClipNode> const& nodes, Entity parent, std::string const& label, int siblingIndex = -1);
 		void DeleteEntity(Entity entity);
+		// Moves `child` under `parent` (kNullEntity = make it a root), keeping its world position,
+		// and records one undo step. Refused (with a warning) if it would create a cycle.
+		void Reparent(Entity child, Entity parent);
 
 		// Draws one entity's row (and, if expanded, its children) recursively.
 		void DrawEntityNode(Entity entity);
