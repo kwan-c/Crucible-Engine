@@ -73,6 +73,10 @@ add_custom_command(TARGET Engine POST_BUILD
         "$<TARGET_FILE:Engine>"
         "$<TARGET_FILE_DIR:Game>"
 
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "$<TARGET_FILE:Engine>"
+	"$<TARGET_FILE_DIR:Editor>"
+
     COMMENT "Copying Engine.dll to Game output directory..."
 )
 
