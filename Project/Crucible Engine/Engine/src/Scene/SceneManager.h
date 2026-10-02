@@ -29,8 +29,8 @@ namespace Crucible {
 
 		/*********************************************************************
 		 \brief  Save to the current file.
-		 \return false if there is no current file (caller should SaveAs)
-				 or the write failed.
+		 \return false if there is no current file (caller should SaveAs),
+				 the write failed, or a play session is running.
 		 *********************************************************************/
 		bool Save(); // to current path; false if none
 
@@ -39,12 +39,17 @@ namespace Crucible {
 		 \details
 			The scene name is taken from the filename, so the name inside
 			the file always matches the file it lives in.
+		 \note   Refused (false) while a play session is running: the world
+				 then holds runtime state, which Stop throws away.
 		 *********************************************************************/
 		bool SaveAs(const std::filesystem::path& file);
-		
+
 
 		/*********************************************************************
 		 \brief  Ask for an empty, untitled scene at the next safe point.
+		 \note   During a play session this is a runtime scene change (a
+				 level switch): it is applied, and Stop still restores the
+				 scene that was open at Play.
 		 *********************************************************************/
 		void RequestNew();
 
@@ -54,6 +59,8 @@ namespace Crucible {
 			A missing file is rejected here, so the caller gets feedback
 			straight away rather than next frame.
 		 \return false if the file does not exist (nothing is queued).
+		 \note   During a play session this is a runtime scene change, as
+				 for RequestNew.
 		 *********************************************************************/
 		bool RequestLoad(const std::filesystem::path& file);
 
@@ -64,6 +71,52 @@ namespace Crucible {
 			update. If several requests arrive in one frame, the last wins.
 		 *********************************************************************/
 		void ApplyPending();                           // call once per frame, before systems
+
+		// ===================================================================
+		//  Play mode
+		// ===================================================================
+
+		/*********************************************************************
+		 \brief  Everything Stop needs to put the open scene back as it was
+				 when Play was pressed.
+		 *********************************************************************/
+		struct Snapshot
+		{
+			SceneSnapshot         scene;          //!< entities, guids, component values, scene name
+			std::filesystem::path path;           //!< CurrentPath() at capture
+			bool                  dirty = false;  //!< IsDirty() at capture
+
+			bool IsValid() const noexcept { return scene.IsValid(); }
+		};
+
+		/*********************************************************************
+		 \brief  Copy the open scene - unsaved edits included - into memory.
+		 \return false (out untouched) if the copy failed or did not read
+				 back. Nothing is written to disk.
+		 *********************************************************************/
+		bool CaptureSnapshot(Snapshot& out);
+
+		/*********************************************************************
+		 \brief  Put the open scene back to a snapshot: entities and their
+				 serialized component values, guids, name, path and dirty
+				 flag.
+		 \return false if the snapshot was refused; it is checked before the
+				 world is touched, so the world is then unchanged.
+		 \details
+			Every Entity handle held before the call is stale afterwards;
+			find an entity again through Current().EntityOf(guid).
+			OnSceneChanged listeners are NOT called - this is the same scene
+			coming back, not a different one (Core reports it through
+			EngineEvents::PlayStateChanged instead).
+		 *********************************************************************/
+		bool RestoreSnapshot(const Snapshot& snapshot);
+
+		/*********************************************************************
+		 \brief  Core marks the play session here (Play to Stop) so saving
+				 can be refused while the world holds runtime state.
+		 *********************************************************************/
+		void SetPlaySessionActive(bool active) noexcept { m_playSession = active; }
+		bool IsPlaySessionActive() const noexcept { return m_playSession; }
 
 
 		// ===================================================================
@@ -97,6 +150,7 @@ namespace Crucible {
 		 \details
 			Fires after a successful New or Load, never after Save. Every
 			Entity handle held before the callback is stale.
+		 \note   Not called by RestoreSnapshot (play-mode Stop) - see there.
 		 *********************************************************************/
 		void OnSceneChanged(std::function<void()> callback);
 
@@ -114,6 +168,7 @@ namespace Crucible {
 		Scene								 m_scene;
 		std::filesystem::path				 m_path;
 		bool								 m_dirty = false;
+		bool								 m_playSession = false;   // Play..Stop: saving refused
 
 		Pending								 m_pending = Pending::None;
 		std::filesystem::path				 m_pendingPath;

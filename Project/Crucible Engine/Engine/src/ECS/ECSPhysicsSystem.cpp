@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu (v1.0 skeleton),
 *                Hugo (v2.0 physics binding)
 * \date          27 September 2026
-* \version       2.0
+* \version       2.1
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -23,6 +23,8 @@
 * \history
 *    -v1.0       stub implementation, no physics logic yet
 *    -v2.0       the real binding
+*    -v2.1       BeginSession/EndSession: Jolt and every per-session field
+*                start fresh each Play; the object and its queries stay
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -188,8 +190,10 @@ namespace Crucible {
         std::uint64_t frame          = 0;
         std::uint64_t step           = 0;
         std::uint32_t stepsLastFrame = 0;
+        bool          inSession      = false;                   // between BeginSession and EndSession
 
         void BindWorld(World& ecs);
+        void ResetClock();
         void Sync(World& ecs);
         void SyncBody(Record& record, const Transform& transform, const Collider& collider, const RigidBody* rigidbody);
         void SyncCharacter(CharacterRecord& record, const Transform& transform, CharacterController& controller);
@@ -212,17 +216,15 @@ namespace Crucible {
 
     ECSPhysicsSystem::~ECSPhysicsSystem() { Shutdown(); }
 
-    void ECSPhysicsSystem::Init() {
-        if (!m_state->physics.Init(m_state->settings))
-            CRU_ERROR("ECSPhysicsSystem: the physics world did not start - physics components will be ignored");
-    }
+    // Nothing to start here: the Jolt world only exists during a play session
+    // (BeginSession), so the editor pays for no physics threads while editing.
+    void ECSPhysicsSystem::Init() {}
 
     void ECSPhysicsSystem::Shutdown() noexcept {
 
         if (!m_state) return;
 
-        m_state->RemoveAll();
-        m_state->physics.Shutdown();
+        EndSession();
 
         // A Query holds pointers into the World's archetypes, and must not
         // outlive it. Dropping them here means a restart rebuilds them rather
@@ -233,6 +235,47 @@ namespace Crucible {
 
     }   // ECSPhysicsSystem::Shutdown()
 
+    void ECSPhysicsSystem::Describe(SystemDesc& desc) const {
+        desc.SimulationOnly();      // Edit and Pause do not step; access stays undeclared, as before
+    }
+
+    /*!
+        \brief
+        Play: a brand-new Jolt world and a zeroed clock. The records are empty,
+        so the first Update builds every body from the components as they are.
+    */
+    void ECSPhysicsSystem::BeginSession() {
+
+        State& s = *m_state;
+        if (s.inSession) return;
+
+        s.ResetClock();
+        if (!s.physics.Init(s.settings))
+            CRU_ERROR("ECSPhysicsSystem: the physics world did not start - physics components will be ignored");
+        s.inSession = true;
+
+    }   // ECSPhysicsSystem::BeginSession()
+
+    /*!
+        \brief
+        Stop: every body and character out of Jolt, then Jolt itself (and its
+        moved-body list and worker threads), then the clock. The World binding
+        and its queries stay: Stop restores the scene into the same World.
+    */
+    void ECSPhysicsSystem::EndSession() noexcept {
+
+        if (!m_state) return;
+        State& s = *m_state;
+        if (!s.inSession) return;
+
+        s.RemoveAll();
+        s.physics.Shutdown();
+        s.ResetClock();
+        s.inSession = false;
+
+    }   // ECSPhysicsSystem::EndSession()
+
+    bool          ECSPhysicsSystem::IsInSession() const       { return m_state->inSession; }
     Physics&      ECSPhysicsSystem::GetPhysics()              { return m_state->physics; }
     std::uint32_t ECSPhysicsSystem::GetStepsLastFrame() const { return m_state->stepsLastFrame; }
 
@@ -307,6 +350,16 @@ namespace Crucible {
         characters.emplace(ecs.CreateQuery<const Transform, CharacterController>());
 
     }   // ECSPhysicsSystem::State::BindWorld()
+
+    // The fixed-step clock and the counters records are stamped with: a new
+    // session starts from zero, as a new system object used to.
+    void ECSPhysicsSystem::State::ResetClock() {
+        accumulator    = 0.0f;
+        frame          = 0;
+        step           = 0;
+        stepsLastFrame = 0;
+        staticBodyMade = false;
+    }
 
     // ------------------------------------------------------------------- //
     // SYNC: COMPONENTS INTO THE PHYSICS WORLD

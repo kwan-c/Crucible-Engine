@@ -37,6 +37,10 @@ namespace Crucible {
 		bool                  m_openUnsavedPopup = false;
 		bool                  m_continueAfterSaveAs = false;   // Save As was opened from the unsaved prompt
 		bool				  m_quitConfirmed = false;
+		bool                  m_exitAfterStop = false;         // Exit during play mode: Stop first, then ask as usual
+
+		// Scene files are edit-mode only. True (with a user warning) during a play session.
+		bool BlockedByPlayMode(const char* what) const;
 
 		// Save if the scene has a file, otherwise open Save As
 		void SaveScene();

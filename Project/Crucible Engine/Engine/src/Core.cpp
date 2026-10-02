@@ -37,6 +37,9 @@ namespace Crucible {
         m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
         m_scenes{ std::make_unique<SceneManager>(*m_world) }
     {   
+        // Play mode drives the always-on systems too, so it is built once every member exists.
+        m_playMode = std::make_unique<PlayMode>(*m_world, *m_scenes, m_events, m_systems);
+
         // Layers draw inside the renderer's open render pass via OnRender().
         m_renderer->SetOverlayCallback([this] {
             for (auto& layer : m_layers) layer->OnRender();
@@ -97,6 +100,9 @@ namespace Crucible {
 
         m_systems.Init();
 
+        // The engine starts in Edit: AudioSources stay silent until Play (PlayMode switches it).
+        if (ECSAudioSystem* audio = m_systems.FindSystem<ECSAudioSystem>()) audio->SetEditMode(true);
+
         return true;
     }
 
@@ -121,15 +127,17 @@ namespace Crucible {
             m_window->PollEvents();
             m_events.engine.DeliverPending();   // window/input events queued by callbacks
 
-            // Scene swaps destroy every entity - only safe here, before any
-            // system or layer is iterating the world.
+            // The safe point: nothing is iterating the world yet this frame. Scene swaps
+            // destroy every entity, and play-mode transitions snapshot, restore and start or
+            // end the simulation. The scene request goes first, so Play captures the scene just loaded.
             m_scenes->ApplyPending();
+            m_playMode->ApplyRequests();
 
             m_world->SetDeltaTime(dt);
             m_world->AdvanceTick();
-            m_systems.Update(*m_world);         // each stage delivers its own events
+            m_playMode->UpdateSystems();        // every system (SimulationOnly ones only while Playing); each stage delivers its own events
 
-            m_events.TickAll(dt);               // delayed events whose time has come get queued
+            m_playMode->TickEvents(dt);         // delayed events whose time has come get queued (gameplay time only while Playing)
 
             for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
@@ -146,12 +154,13 @@ namespace Crucible {
 
     void Core::RegisterEngineSystems()
     {
-        //sample system registeration
-        m_systems.RegisterSystem<ECSPhysicsSystem>();
+        // Registered once, alive until shutdown. Physics is SimulationOnly: it steps only while
+        // Playing, and PlayMode gives it a fresh Jolt world per session. The rest run in every state.
+        m_systems.RegisterSystem<ECSPhysicsSystem>();            // PostUpdate: steps Jolt, writes Transforms
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
-        m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_renderer);                 // PreRender: owns the FMOD audio engine; m_assets resolves clips, the renderer's camera is the listener until the camera is an entity
+        m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_renderer);                 // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
     }
 
     void Core::CleanUp() {
@@ -160,6 +169,9 @@ namespace Crucible {
         try { m_world->DestroyAllEntities(); }
         catch (const std::exception& e) { CRU_ERROR("Core::CleanUp: destroying entities failed - {}", e.what()); }
 
+        // A play session still running at exit just ends (physics session first), nothing
+        // is restored or saved; then every system shuts down.
+        m_playMode->Shutdown();
         m_systems.Shutdown();
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();

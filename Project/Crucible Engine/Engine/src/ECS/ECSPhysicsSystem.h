@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu (v1.0 skeleton),
 *                Hugo (v2.0 physics binding)
 * \date          27 September 2026
-* \version       2.0
+* \version       2.1
 * \brief
 *                The ECS side of physics: keeps Crucible::Physics in step
 *                with the Transform, Collider and RigidBody components.
@@ -24,6 +24,8 @@
 * \history
 *    -v1.0       skeleton / placeholder system, no physics logic yet
 *    -v2.0       the real binding
+*    -v2.1       play-mode sessions: BeginSession/EndSession (Jolt per
+*                session, the system object kept), SimulationOnly
 *
 **************************************************************************/
 #pragma once
@@ -33,6 +35,7 @@
 #include <memory>
 
 // Crucible engine
+#include "EngineExport.h"
 #include "Physics/PhysicsSystem.h"
 #include "Systems/IECSSystems.h"
 
@@ -50,20 +53,35 @@ namespace Crucible {
 
         // --- IECSSystem ---------------------------------------------------- //
 
-        void Init() override;
+        void Init() override;       // starts nothing: the physics world starts with BeginSession
         void Update(World& world, CommandBuffer& commands) override;
         void Shutdown() noexcept override;
+        void Describe(SystemDesc& desc) const override;   // SimulationOnly: steps only while Playing
 
         // Physics belongs after gameplay has had its say and before rendering
         // reads the results - which is exactly what PostUpdate is for.
         SystemStage Stage() const override { return SystemStage::PostUpdate; }
         int         Priority() const override { return 1; }
 
+        // --- play-mode session (Core's PlayMode drives these) ---------------- //
+
+        // The object lives as long as the engine; a SESSION is one Play..Stop.
+        // BeginSession (Play) starts a fresh Jolt world, so bodies are built
+        // from the components as they are now. EndSession (Stop) removes every
+        // body and character, stops Jolt and resets the fixed-step clock.
+        // Pause needs nothing here: the manager just stops updating physics,
+        // and Resume carries on with the same world, bodies and clock.
+        // Both are no-ops when already in that state, like Physics::Init and
+        // Physics::Shutdown.
+        ENGINE_API void BeginSession();
+        ENGINE_API void EndSession() noexcept;
+        ENGINE_API bool IsInSession() const;
+
         // --- for gameplay and tests ------------------------------------------ //
 
         // The world itself, for raycasts. Gameplay gets here through Core.
-        Physics&      GetPhysics();
-        std::uint32_t GetStepsLastFrame() const;    // 0, 1 or more after a hitch
+        ENGINE_API Physics&      GetPhysics();
+        ENGINE_API std::uint32_t GetStepsLastFrame() const;    // 0, 1 or more after a hitch
 
         // Update with a frame time you choose, instead of World::DeltaTime().
         // This is what a test harness drives, and how you simulate 30 or 144 fps.

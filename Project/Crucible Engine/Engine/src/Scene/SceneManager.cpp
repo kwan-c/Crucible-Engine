@@ -21,6 +21,13 @@ namespace Crucible {
 	}
 
 	bool SceneManager::SaveAs(const std::filesystem::path& file) {
+		// The world holds runtime state until Stop restores the edited scene.
+		if (m_playSession)
+		{
+			CRU_USER_WARN("SceneManager: cannot save '{}' while in play mode - press Stop first", m_scene.Name());
+			return false;
+		}
+
 		const std::string oldName = m_scene.Name();
 		m_scene.SetName(file.stem().string());
 
@@ -104,6 +111,35 @@ namespace Crucible {
 		CRU_USER_INFO("Loaded scene '{}'", m_scene.Name());
 
 		NotifyChanged();
+	}
+
+	// =======================================================================
+	//  Play mode
+	// =======================================================================
+	bool SceneManager::CaptureSnapshot(Snapshot& out) {
+		Snapshot snapshot;
+		if (!m_scene.CaptureSnapshot(m_world, snapshot.scene))
+		{
+			return false;   // Scene already logged why
+		}
+
+		snapshot.path  = m_path;
+		snapshot.dirty = m_dirty;
+		out = std::move(snapshot);
+		return true;
+	}
+
+	bool SceneManager::RestoreSnapshot(const Snapshot& snapshot) {
+		// Scene checks the snapshot before destroying anything, so a false
+		// here with no "part-way" error means the world is untouched.
+		if (!m_scene.RestoreSnapshot(m_world, snapshot.scene))
+		{
+			return false;
+		}
+
+		m_path  = snapshot.path;
+		m_dirty = snapshot.dirty;
+		return true;
 	}
 
 	void SceneManager::OnSceneChanged(std::function<void()> callback) {

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Declares ECSSystemManager: the top-level driver that
 *                owns an ECSSystemRegistry (see IECSSystemRegistry.h)
@@ -49,6 +49,8 @@
 *    -v1.6       gameplay outbox restored behind the writer's gameplay
 *                route, granted only to systems declaring
 *                EmitsGameplayEvents()
+*    -v1.7       SetSimulationActive(): SimulationOnly() systems are skipped
+*                while it is off; ResetSimulationSystems() for a new session
 *
 **************************************************************************/
 #pragma once
@@ -257,6 +259,24 @@ namespace Crucible
          *********************************************************************/
         void SetEventBuses(EventBuses* buses) noexcept { m_events = buses; }
 
+        /*********************************************************************
+         \brief  Turns the simulation on or off. While off, systems that
+                 declared SystemDesc::SimulationOnly() are skipped (no
+                 Update, no command replay); every other system runs as
+                 usual. On by default; Core's play mode switches it.
+         *********************************************************************/
+        void SetSimulationActive(bool active) noexcept { m_simulationActive = active; }
+        bool IsSimulationActive() const noexcept { return m_simulationActive; }
+
+        /*********************************************************************
+         \brief  Gives every SimulationOnly() system a clean slate for a new
+                 play session: clears its commands and event outboxes and
+                 its failure count, and re-enables it if failures disabled
+                 it. A system whose Init() failed stays disabled.
+         \note   Call while systems are not running (between frames).
+         *********************************************************************/
+        void ResetSimulationSystems() noexcept;
+
     private:
 
         struct SystemSlot
@@ -310,6 +330,7 @@ namespace Crucible
         EventBuses* m_events = nullptr;           // owned by Core; nullptr = events discarded
 
         bool m_initialized = false;
+        bool m_simulationActive = true;           // false: SimulationOnly() systems are skipped
         bool m_iterating = false;                 // inside Init() or Update()
         std::thread::id m_mainThread{};           // thread that called Init(); MainThread systems run only here
     };
