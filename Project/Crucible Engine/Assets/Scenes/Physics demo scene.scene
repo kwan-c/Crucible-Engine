@@ -3,13 +3,13 @@
     "name": "Physics demo scene",
     "entities": [
         {
-            "id": "4BBA38D2CE250001",
+            "id": "164D08D31F92C017",
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
+                        "x": 10.39033031463623,
+                        "y": 1.505852460861206,
+                        "z": -0.4193919897079468
                     },
                     "rotation": {
                         "x": 0.0,
@@ -18,9 +18,28 @@
                         "w": 1.0
                     },
                     "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
                     }
                 },
                 "MeshRenderer": {
@@ -31,37 +50,37 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
                 },
-                "CharacterController": {
-                    "height": 2.0,
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
                     "radius": 0.5,
+                    "height": 1.0,
                     "center": {
                         "x": 0.0,
                         "y": 0.0,
                         "z": 0.0
                     },
-                    "slopeLimit": 45.0,
-                    "stepOffset": 0.30000001192092896,
-                    "pushStrength": 100.0,
-                    "layer": "Player"
-                },
-                "PlayerController": {
-                    "moveSpeed": 6.0,
-                    "jumpHeight": 1.5,
-                    "faceCamera": false
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
                 }
             }
         },
         {
-            "id": "ABBA38D2CE314005",
+            "id": "1E4D08D31F60800B",
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": -1.399999976158142,
-                        "z": 0.0
+                        "y": 7.094874382019043,
+                        "z": 11.73509407043457
                     },
                     "rotation": {
                         "x": 0.0,
@@ -70,9 +89,170 @@
                         "w": 1.0
                     },
                     "scale": {
-                        "x": 9.800000190734863,
+                        "x": 4.718999862670898,
+                        "y": 4.718999862670898,
+                        "z": 4.718999862670898
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
                         "y": 1.0,
-                        "z": 12.449999809265137
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "1E4D08D31F92C01D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 10.972949981689453,
+                        "y": 1.505852460861206,
+                        "z": 1.000910997390747
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "364D08D31FFD8033",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 7.298184394836426,
+                        "y": 3.1049344539642334,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.7071067690849304,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
                     }
                 },
                 "MeshRenderer": {
@@ -103,6 +283,820 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "364D08D31FFD8037",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 2.0007762908935547,
+                        "y": 3.1049344539642334,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.7071067690849304,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "3E4D08D31FFD802D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 3.3371875286102295,
+                        "y": 1.5560156106948853,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "464D08D31F7EC011",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 9.805431365966797,
+                        "y": 1.505852460861206,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "464D08D31F92C015",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 10.39033031463623,
+                        "y": 1.505852460861206,
+                        "z": 0.39781612157821655
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "4BBA38D2CE250001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.7760439515113831,
+                        "y": 1.5595861673355103,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.6500000953674316,
+                    "radius": 0.44999998807907104,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.824999988079071,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                }
+            }
+        },
+        {
+            "id": "564D08D31F92C01F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 11.579315185546875,
+                        "y": 1.505852460861206,
+                        "z": -1.5488090515136719
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "6E4D08D31FFD802B",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.6822975277900696,
+                        "y": 1.5560156106948853,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "764D08D31F92C025",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 11.579315185546875,
+                        "y": 1.505852460861206,
+                        "z": 1.610072135925293
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "8E4D08D31F92C023",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 11.579315185546875,
+                        "y": 1.505852460861206,
+                        "z": 0.5253812074661255
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "9E4D08D31F6AC00F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -2.9012269973754883,
+                        "y": 12.429717063903809,
+                        "z": 11.73509407043457
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 4.718999862670898,
+                        "y": 4.718999862670898,
+                        "z": 4.718999862670898
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "9E4D08D31F92C013",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 4.61259126663208,
+                        "y": 1.2068445682525635,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 5.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 6913985107136102423
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "ABBA38D2CE314005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 29.33296775817871,
+                        "y": 0.3844780921936035,
+                        "z": 32.562889099121094
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 2114766385531437077
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
                 }
             }
         },
@@ -150,15 +1144,720 @@
             }
         },
         {
+            "id": "AE4D08D31F2F8005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -9.94743824005127,
+                        "y": 1.2000000476837158,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.399999976158142,
+                        "y": 0.4000000059604645,
+                        "z": 1.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 6726452403956826127
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
+                }
+            }
+        },
+        {
+            "id": "AE4D08D31F92C01B",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 10.972949981689453,
+                        "y": 1.505852460861206,
+                        "z": -0.019495129585266113
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "AE4D08D31F92C021",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 11.579315185546875,
+                        "y": 1.505852460861206,
+                        "z": -0.4746187925338745
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "B64D08D31FFD8035",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 4.65203857421875,
+                        "y": 3.1049344539642334,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.7071067690849304,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "BE4D08D31EF60001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -7.139538764953613,
+                        "y": 0.4000000059604645,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.399999976158142,
+                        "y": 0.4000000059604645,
+                        "z": 1.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 6726452403956826127
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
+                }
+            }
+        },
+        {
+            "id": "BE4D08D31F478009",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -7.139538764953613,
+                        "y": 0.4950000047683716,
+                        "z": -3.209291458129883
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.399999976158142,
+                        "y": 0.6000000238418579,
+                        "z": 2.482377767562866
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 4396596060807954433
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
+                }
+            }
+        },
+        {
+            "id": "BE4D08D31F92C019",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 10.972949981689453,
+                        "y": 1.505852460861206,
+                        "z": -0.935664713382721
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4700000286102295,
+                        "y": 2.3996071815490723,
+                        "z": 0.4700000286102295
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Capsule",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 1.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "C64D08D31F2F8007",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -11.346036911010742,
+                        "y": 1.600000023841858,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.399999976158142,
+                        "y": 0.4000000059604645,
+                        "z": 1.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 6726452403956826127
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
+                }
+            }
+        },
+        {
+            "id": "C64D08D31F60800D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 2.0998573303222656,
+                        "y": 12.429717063903809,
+                        "z": 11.73509407043457
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 4.718999862670898,
+                        "y": 4.718999862670898,
+                        "z": 4.718999862670898
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "CE4D08D31FFD8029",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -1.9738526344299316,
+                        "y": 1.5560156106948853,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "DE4D08D31FFD802F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 5.969193935394287,
+                        "y": 1.5560156106948853,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
             "id": "E607E0D2D61A4001",
             "parent": "AE07E0D2D61A4003",
             "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 0.0,
+                        "x": 0.6971226334571838,
                         "y": 1.0,
-                        "z": 1.9500000476837158
+                        "z": 2.867896795272827
                     },
                     "rotation": {
                         "x": 0.0,
@@ -189,6 +1888,200 @@
                     "nearZ": 0.10000000149011612,
                     "farZ": 1000.0,
                     "priority": 0
+                }
+            }
+        },
+        {
+            "id": "EE4D08D31F2F8003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.54460334777832,
+                        "y": 0.800000011920929,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.399999976158142,
+                        "y": 0.4000000059604645,
+                        "z": 1.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 6726452403956826127
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
+                }
+            }
+        },
+        {
+            "id": "F64D08D31FFD8031",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 8.565046310424805,
+                        "y": 1.5560156106948853,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "FE4D08D31FFD8039",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.6500965356826782,
+                        "y": 3.1049344539642334,
+                        "z": -12.981210708618164
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.7071067690849304,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 0.22439877688884735,
+                        "y": 2.6042847633361816,
+                        "z": 0.9081616997718811
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
                 }
             }
         }
