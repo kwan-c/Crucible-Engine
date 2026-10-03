@@ -46,6 +46,11 @@
                     "stepOffset": 0.30000001192092896,
                     "pushStrength": 100.0,
                     "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
                 }
             }
         },
@@ -513,23 +518,25 @@
         },
         {
             "id": "3D20A8D2CA174001",
+            "parent": "5ECD50D324848001",
+            "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 1.0499999523162842,
-                        "y": 5.900000095367432,
-                        "z": 6.949999809265137
+                        "x": 0.6898608207702637,
+                        "y": 0.9764950275421143,
+                        "z": 1.5209702253341675
                     },
                     "rotation": {
-                        "x": -0.1736481785774231,
-                        "y": -0.0,
+                        "x": 0.0,
+                        "y": 0.0,
                         "z": 0.0,
-                        "w": 0.9848077297210693
+                        "w": 1.0
                     },
                     "scale": {
                         "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
+                        "y": 0.9999998807907104,
+                        "z": 0.9999998807907104
                     }
                 },
                 "Camera": {
@@ -756,6 +763,49 @@
                     },
                     "meshAsset": 15775344583901223439,
                     "materialAsset": 5573530899351273491
+                }
+            }
+        },
+        {
+            "id": "5ECD50D324848001",
+            "parent": "012F00D2C82BC001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
                 }
             }
         },
