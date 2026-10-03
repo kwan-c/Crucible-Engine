@@ -6,6 +6,15 @@
 #include <string>
 #include <vector>
 #include <filesystem>
+#include <atomic>
+#include <bitset>
+#include <cassert>
+#include <cmath>
+#include <limits>
+#include <mutex>
+#include <stdexcept>
+#include <thread>
+#include <unordered_set>
 
 // ---- Third-party ----
 #define GLFW_INCLUDE_VULKAN

@@ -19,7 +19,6 @@ How to Run Engine:
 2. Within generated "/Build" Folder, will exist the sln solution file labelled "Crucible.sln"
 3. Run the solution file and build within Visual Studio to launch engine
 
-Additional information will be showcased in the tech demo video submitted
 
 
 
