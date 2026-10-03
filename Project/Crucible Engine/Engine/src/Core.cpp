@@ -56,25 +56,6 @@ namespace Crucible {
     {
         std::cout << "The Hearth smoulders...\n";
 
-        // ======== asset debugging (Removable) ==========
-        {
-            Crucible::AssetManager assets;
-            std::cout << "\n\n";
-            assets.Init();
-            assets.PrintIndex();
-
-            auto tex = assets.Load("Textures/Orange_Milk.jpg");
-            assets.PrintLoaded();
-        }
-        // ===========================================
-
-        // ======== scene / prefab debugging (Removable) ==========
-        {
-            Crucible::AssetManager assets;
-            assets.Init();
-            m_scenes->RequestLoad(assets.Resolve("Scenes/demo.scene"));
-        }
-        // ===========================================
         // Input attaches before anything else installs GLFW callbacks. ImGui's backend
         // chains to callbacks that are already registered, but anything installed after it
         // replaces ImGui's - which is how its text fields go dead.
@@ -87,6 +68,22 @@ namespace Crucible {
         if (!m_assets->Init()) { CRU_WARN("[Core] AssetManager found no asset root; asset ids will not resolve"); }
         m_resources = std::make_unique<ResourceManager>(*m_assets, *m_renderer);
         m_resources->Init();
+
+        // ======== asset debugging (Removable) ==========
+        // On the shared index. A second AssetManager here used to run its own reconcile -
+        // writing .meta files a second time on every launch - before m_assets even existed.
+        {
+            std::cout << "\n\n";
+            m_assets->PrintIndex();
+
+            auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
+            m_assets->PrintLoaded();
+        }
+        // ===========================================
+
+        // ======== startup scene (Removable) ==========
+        m_scenes->RequestLoad(m_assets->Resolve("Scenes/demo.scene"));
+        // ===========================================
 
 
         // Event buses: report listener failures through the engine log, and let the

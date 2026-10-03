@@ -13,10 +13,17 @@
 *
 * Interaction:
 *	click          select
-*	double-click   open folder (files: logs for now; later hand off to an editor per type)
+*	double-click   folder: open it.  .scene: open the scene (same guard as File > Open).
+*	               script (.lua/.cs): open that file in VS Code.  Anything else: logged.
 *	drag           starts a drag-drop with EditorWidgets::kAssetPayload (virtual path)
-*	right-click    context menu (Show in Explorer, Copy Path, Copy GUID, New Folder, Refresh)
+*	right-click    context menu (Rename, Show in Explorer, Copy Path, Copy GUID, New Folder,
+*	               Create Scene - inside Scenes/ only -, Create Script - inside Scripts/
+*	               only - and Refresh)
+*	F2             rename the selection (a file's .meta moves with it, so its guid is kept)
 *	Backspace      go to parent folder,  F5  refresh
+*
+* Uses Core's shared AssetManager (core.GetAssets()) - the same index the engine resolves
+* asset ids through - so anything created or renamed here is visible everywhere at once.
 */
 
 #include "ImGui/ImGuiManager.h"
@@ -25,18 +32,21 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Crucible {
 
 	class ECSAudioSystem;
+	class SceneManager;
 
 	class AssetBrowser : public EditorPanel {
 	public:
 		// The audio system plays previews of audio files: select one and the Inspector shows
 		// Unity's clip preview (Play/Stop, Auto Play). Null is allowed: the browser works,
 		// previews do nothing.
-		explicit AssetBrowser(ECSAudioSystem* audio = nullptr) : m_audio(audio) {}
+		AssetBrowser(AssetManager& assets, SceneManager& scenes, ECSAudioSystem* audio = nullptr)
+			: m_assets(assets), m_scenes(scenes), m_audio(audio) {}
 
 		// REQUIRED Overrides
 		void Init() override;
@@ -86,7 +96,28 @@ namespace Crucible {
 		void CreateFolder();
 		std::string AbsolutePathOf(std::string const& virtualPath) const;
 
-		AssetManager    m_assets;               // the browser's own index (see note in Init)
+		// ---- Open (double-click) ----
+		void OpenItem(Item const& item);
+
+		// ---- Create Scene (only offered inside Scenes/) ----
+		bool IsInScenesFolder(std::string const& folder) const;
+		void CreateScene();
+
+		// ---- Create Script (only offered inside Scripts/) ----
+		// An empty .lua file, then straight into rename like Create Scene.
+		bool IsInScriptsFolder(std::string const& folder) const;
+		void CreateScript();
+
+		// ---- Rename (F2 / right-click) ----
+		// The field is drawn over the tile's label; the rename itself happens after the frame's
+		// drawing (ApplyPendingRename), so the item list never changes mid-loop.
+		void BeginRename(std::string const& virtualPath);
+		void DrawRenameField(ImVec2 labelPos, float width);
+		void ApplyPendingRename();
+		bool RenameOnDisk(std::string const& from, std::string const& newName, std::string& outVirtualPath);
+
+		AssetManager&   m_assets;               // Core's shared index (core.GetAssets())
+		SceneManager&   m_scenes;               // to open scenes, and to follow a rename of the open one
 		bool            m_ready = false;
 		ECSAudioSystem* m_audio = nullptr;      // not owned; Core owns it and outlives every panel
 		bool            m_audioInInspector = false;   // the Inspector is showing our clip preview
@@ -100,6 +131,12 @@ namespace Crucible {
 		std::string                m_currentFolder;   // "" = Assets root
 		std::optional<std::string> m_navigateTo;
 		std::string                m_selected;
+
+		std::string m_renaming;                 // virtual path being renamed ("" = none)
+		char        m_renameBuffer[256] = {};
+		bool        m_renameFocus = false;      // give the field keyboard focus on its first frame
+		int         m_renameIdleFrames = 0;     // frames the field has existed without focus
+		std::optional<std::pair<std::string, std::string>> m_pendingRename;   // { from, typed name }
 
 		char  m_search[128] = {};
 		float m_tileSize = 72.0f;

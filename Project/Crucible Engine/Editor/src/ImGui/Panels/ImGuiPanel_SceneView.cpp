@@ -12,8 +12,14 @@
 #include "Graphics/DebugDraw.h"
 #include "Graphics/DebugDrawSystem.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "Undo/EntityCommands.h"
+
+#include <ImGuizmo.h>
+#include <glm/gtc/type_ptr.hpp>
 
 #include <cmath>
+#include <memory>
+#include <string>
 
 #include <algorithm>
 
@@ -34,15 +40,24 @@ void Crucible::SceneView::Init() {
 }
 
 void Crucible::SceneView::Update(float dt) {
+	// Cursor on the gizmo (or dragging it), going by last frame's Manipulate. ImGuizmo only
+	// takes a click when NO ImGui item is hovered (ImGuizmo.cpp, CanActivate:
+	// !ImGui::IsAnyItemHovered()), and the invisible viewport button below always is - so while
+	// the gizmo is hot that button is left out (see below). NoMove keeps a floating Scene window
+	// from being dragged around by the same click once nothing else claims it.
+	bool const gizmoHot = m_gizmoDrawn && ImGuizmo::IsOver();
+
 	// Zero padding so the scene image fills the window edge to edge.
 	ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-	bool const visible = ImGui::Begin(m_panelName.c_str(), nullptr, m_flags);
+	bool const visible = ImGui::Begin(m_panelName.c_str(), nullptr, m_flags | (gizmoHot ? ImGuiWindowFlags_NoMove : 0));
 	ImGui::PopStyleVar();
 
 	if (!visible) {
 		// Tab hidden behind another tab, or window collapsed: nothing to render this frame.
 		m_hovered = m_focused = false;
 		m_flying = false;
+		m_gizmoDrawn = false;
+		EndGizmoDrag();
 		ImGui::End();
 		return;
 	}
@@ -65,10 +80,19 @@ void Crucible::SceneView::Update(float dt) {
 	m_viewport.DrawImage(avail);
 
 	// One invisible item covering the image area, so hover / click / drop queries work on it.
+	// Not while the gizmo is hot: a hovered button stops ImGuizmo from ever starting a drag
+	// (see gizmoHot above). A Dummy (no id, so never "hovered") keeps the layout, and still
+	// gives the drag-drop target below an item to attach to.
 	ImGui::SetCursorScreenPos(min);
-	ImGui::InvisibleButton("##SceneViewport", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)),
-		ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
-	m_hovered = ImGui::IsItemHovered();
+	ImVec2 const viewportItemSize(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f));
+	if (gizmoHot) {
+		ImGui::Dummy(viewportItemSize);
+		m_hovered = ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(min, max);
+	} else {
+		ImGui::InvisibleButton("##SceneViewport", viewportItemSize,
+			ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle);
+		m_hovered = ImGui::IsItemHovered();
+	}
 	m_focused = ImGui::IsWindowFocused();
 
 	// Fly-camera latch: starts the moment RMB goes down while the cursor is over the viewport,
@@ -88,7 +112,9 @@ void Crucible::SceneView::Update(float dt) {
 	SyncSelection();
 	m_iconHits.clear();
 	if (m_showIcons) { DrawIcons(min, avail); }
+	DrawGizmo(min, avail);   // before picking, so a click on the gizmo is known to be the gizmo's
 	HandleClickPicking(min, avail);
+	if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_gizmoClaimedClick = false; }
 
 	if (ImGui::BeginDragDropTarget()) {
 		if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) {
@@ -145,6 +171,11 @@ void Crucible::SceneView::DrawToolbar() {
 	if (ToolbarToggle("Rotate", m_gizmoMode == GizmoMode::Rotate))   m_gizmoMode = GizmoMode::Rotate;
 	ImGui::SameLine();
 	if (ToolbarToggle("Scale", m_gizmoMode == GizmoMode::Scale))     m_gizmoMode = GizmoMode::Scale;
+	ImGui::SameLine();
+	// Axes for Move and Rotate: the world's, or the object's own. Scale always uses its own.
+	if (ToolbarToggle(m_gizmoSpace == GizmoSpace::Local ? "Local" : "World", m_gizmoSpace == GizmoSpace::Local))
+		m_gizmoSpace = (m_gizmoSpace == GizmoSpace::Local) ? GizmoSpace::World : GizmoSpace::Local;
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Gizmo axes: World or Local. Hold Ctrl while dragging to snap."); }
 
 	// Unity-style W / E / R shortcuts while the Scene view is focused (and no text box is active).
 	// Suppressed while flying: W/E are also the fly-camera's forward/up-move keys, and R would be
@@ -331,6 +362,7 @@ void Crucible::SceneView::Select(Entity entity) {
 void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
 
 	if (!m_hovered || m_flying || !m_viewport.IsValid()) { return; }
+	if (m_gizmoClaimedClick || ImGuizmo::IsUsing()) { return; }   // that press grabbed the gizmo
 	if (!ImGui::IsMouseReleased(ImGuiMouseButton_Left)) { return; }
 
 	// A click, not the end of a drag (camera orbit, future gizmo drags).
@@ -401,4 +433,108 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	ImGui::Checkbox("Icons (lights, cameras, sky, empties)", &m_showIcons);
 	bool outline = m_viewport.GetOutline();
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
+}
+
+// ------------------------------------------------------------------ gizmo
+
+void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	Entity const entity = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+
+	// Nothing to manipulate. Also finishes a drag whose entity went away mid-drag.
+	if (!m_viewport.IsValid() || viewSize.x <= 0.0f || viewSize.y <= 0.0f || m_flying
+		|| !entity.IsValid() || !m_world.IsAlive(entity) || !m_world.HasComponent<Transform>(entity)) {
+		m_gizmoDrawn = false;
+		EndGizmoDrag();
+		return;
+	}
+	if (m_gizmoWasUsing && !(entity == m_gizmoEntity)) { EndGizmoDrag(); }   // selection changed mid-drag
+
+	Camera& camera = m_viewport.GetCamera();
+	glm::mat4 const view = camera.GetView();
+	glm::mat4 const projection = camera.GetProjection();   // GLM, Y up: what ImGuizmo expects (see Camera.h)
+
+	// Transform is LOCAL (relative to the parent); the gizmo works in world space. The parent
+	// chain is composed from the Transforms themselves, the same way HierarchyTransformSystem
+	// does (Detail::ComposeTRS, parent * local), rather than read from WorldTransform: that is
+	// only refreshed once a frame, so mid-drag it would lag a frame behind the mouse.
+	glm::mat4 parentWorld(1.0f);
+	for (Entity p = m_world.GetParent(entity); p.IsValid(); p = m_world.GetParent(p)) {
+		if (Transform const* t = m_world.Read<Transform>(p)) {
+			parentWorld = Detail::ComposeTRS(t->positions, t->rotation, t->scale) * parentWorld;
+		}
+	}
+	Transform const& local = *m_world.Read<Transform>(entity);
+	glm::mat4 world = parentWorld * Detail::ComposeTRS(local.positions, local.rotation, local.scale);
+
+	ImGuizmo::OPERATION operation = ImGuizmo::TRANSLATE;
+	float snapStep = 0.5f;          // Ctrl-snap: half a unit...
+	char const* verb = "Move";
+	if (m_gizmoMode == GizmoMode::Rotate) { operation = ImGuizmo::ROTATE; snapStep = 15.0f; verb = "Rotate"; }   // ...15 degrees...
+	if (m_gizmoMode == GizmoMode::Scale)  { operation = ImGuizmo::SCALE;  snapStep = 0.1f;  verb = "Scale"; }    // ...0.1
+	ImGuizmo::MODE const mode = (m_gizmoMode == GizmoMode::Scale || m_gizmoSpace == GizmoSpace::Local) ? ImGuizmo::LOCAL : ImGuizmo::WORLD;
+	float const snap[3] = { snapStep, snapStep, snapStep };
+	bool const snapping = ImGui::GetIO().KeyCtrl;   // Unity: hold Ctrl to snap
+
+	ImGuizmo::SetOrthographic(false);
+	ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+	ImGuizmo::SetRect(viewMin.x, viewMin.y, viewSize.x, viewSize.y);
+	ImGuizmo::SetGizmoSizeClipSpace(0.25f);
+
+	bool const changed = ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection),
+		operation, mode, glm::value_ptr(world), nullptr, snapping ? snap : nullptr);
+	bool const usingGizmo = ImGuizmo::IsUsing();
+	m_gizmoDrawn = true;
+
+	// A press on the gizmo is a drag - never also a pick of whatever is behind it.
+	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && (usingGizmo || ImGuizmo::IsOver())) {
+		m_gizmoClaimedClick = true;
+	}
+
+	if (usingGizmo && !m_gizmoWasUsing) {
+		// The drag starts: close any Inspector edit first so the two stay separate undo steps,
+		// then remember the entity as it is now. The whole drag becomes one step.
+		if (inspector) { inspector->CommitPendingEdit(); }
+		m_gizmoEntity = entity;
+		m_gizmoBefore = EntityState::Capture(m_world, entity);
+		m_gizmoVerb = verb;
+	}
+
+	if (changed) {
+		Math::vec3 translation, scale;
+		Math::quat rotation;
+		// Back to local space. DecomposeTRS refuses a collapsed or mirrored matrix (scale
+		// dragged through zero), leaving the Transform as it was rather than writing NaNs.
+		if (Detail::DecomposeTRS(glm::inverse(parentWorld) * world, translation, rotation, scale)) {
+			if (Transform* t = m_world.GetComponent<Transform>(entity)) {
+				// Only the part being dragged is written back, so a move never nudges the
+				// rotation or scale through float round-off.
+				switch (m_gizmoMode) {
+				case GizmoMode::Translate: t->positions = translation; break;
+				case GizmoMode::Rotate:    t->rotation  = rotation;    break;
+				case GizmoMode::Scale:     t->scale     = scale;       break;
+				}
+				m_scenes.MarkDirty();
+			}
+		}
+	}
+
+	if (!usingGizmo && m_gizmoWasUsing) { EndGizmoDrag(); }
+	m_gizmoWasUsing = usingGizmo;
+}
+
+void Crucible::SceneView::EndGizmoDrag() {
+	if (m_gizmoEntity.IsValid() && !m_gizmoBefore.empty() && m_world.IsAlive(m_gizmoEntity)) {
+		std::string after = EntityState::Capture(m_world, m_gizmoEntity);
+		if (after != m_gizmoBefore) {
+			// Pushed in play mode too: the history keeps play-mode steps separately and drops
+			// them on Stop (UndoHistory::BeginPlaySession / EndPlaySession).
+			UndoHistory& history = EditorManager::GetInstance().GetHistory();
+			history.Push(std::make_unique<EntityStateCommand>(
+				history.KeyOf(m_gizmoEntity), std::move(m_gizmoBefore), std::move(after), m_gizmoVerb));
+		}
+	}
+	m_gizmoEntity = kNullEntity;
+	m_gizmoBefore.clear();
+	m_gizmoWasUsing = false;
 }

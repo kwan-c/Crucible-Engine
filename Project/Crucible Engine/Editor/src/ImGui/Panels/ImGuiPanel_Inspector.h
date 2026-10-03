@@ -36,7 +36,8 @@ namespace Crucible {
 
 	class Inspector : public EditorPanel {
 	public:
-		Inspector(World& world, Renderer& renderer, SceneManager& scenes) : m_world(world), m_renderer(renderer), m_scenes(scenes) {}
+		Inspector(World& world, Renderer& renderer, SceneManager& scenes, AssetManager& assets)
+			: m_world(world), m_renderer(renderer), m_scenes(scenes), m_assets(assets) {}
 
 		// REQUIRED Overrides
 		void Init() override;
@@ -84,10 +85,9 @@ namespace Crucible {
 
 		Entity    m_selected = kNullEntity;
 
-		// This panel's own asset index, purely to resolve a dropped texture's virtual path to a
-		// filesystem path for Renderer::CreateTexture - mirrors AssetBrowser::m_assets (see that
-		// panel's Init() for why each panel keeps its own for now instead of sharing one).
-		AssetManager m_assets;
+		// Core's shared asset index (core.GetAssets()), used to resolve a dropped texture's virtual
+		// path to a filesystem path for Renderer::CreateTexture.
+		AssetManager& m_assets;
 
 		// .mat asset ids edited in the Inspector but not yet written with "Save Material".
 		// Edits are live on the GPU immediately; the file is only written on the button.

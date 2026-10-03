@@ -10,11 +10,17 @@
 #include "ECS/ECSAudioSystem.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Core.h"
+#include "ImGui/Panels/ImGuiPanel_Menu.h"
+#include "Json/JsonWrapper.h"
+#include "Scene/Scene.h"          // kSceneVersion
+#include "Scene/SceneManager.h"
 
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+#include <string_view>
 #include <system_error>
 
 #ifdef _WIN32
@@ -128,6 +134,123 @@ namespace {
 		CRU_WARN("[AssetBrowser] Show in Explorer is only implemented on Windows");
 #endif
 	}
+
+	// ------------------------------------------------------------------ rename helpers
+
+	std::string Trim(std::string const& s)
+	{
+		std::size_t const first = s.find_first_not_of(" \t");
+		if (first == std::string::npos) return {};
+		std::size_t const last = s.find_last_not_of(" \t");
+		return s.substr(first, last - first + 1);
+	}
+
+	// nullptr if 'name' is a usable file or folder name on Windows, otherwise why it is not.
+	char const* InvalidNameReason(std::string const& name)
+	{
+		if (name.empty()) return "the name is empty";
+		if (name.find_first_of("\\/:*?\"<>|") != std::string::npos) return "names cannot contain \\ / : * ? \" < > |";
+		for (char const c : name)
+			if (static_cast<unsigned char>(c) < 32) return "names cannot contain control characters";
+		if (name.back() == '.' || name.back() == ' ') return "names cannot end with a dot or a space";
+
+		// CON, PRN, AUX, NUL, COM1-9, LPT1-9 - with any extension - are device names on Windows.
+		std::string stem = ToLowerCopy(name.substr(0, name.find('.')));
+		static constexpr std::string_view kReserved[] = { "con", "prn", "aux", "nul" };
+		for (std::string_view const r : kReserved)
+			if (stem == r) return "that name is reserved by Windows";
+		if (stem.size() == 4 && (stem.rfind("com", 0) == 0 || stem.rfind("lpt", 0) == 0) && stem[3] >= '1' && stem[3] <= '9')
+			return "that name is reserved by Windows";
+		return nullptr;
+	}
+
+	// Two absolute paths naming the same location, ignoring separator style and (Windows
+	// file systems being case-insensitive) case. Works for paths that no longer exist.
+	std::string PathKey(fs::path const& p)
+	{
+		return ToLowerCopy(fs::path(p).lexically_normal().make_preferred().string());
+	}
+
+	bool SamePath(fs::path const& a, fs::path const& b) { return PathKey(a) == PathKey(b); }
+
+	// True if 'inner' is 'folder' itself or anything below it.
+	bool IsInside(fs::path const& inner, fs::path const& folder)
+	{
+		std::string const in = PathKey(inner), f = PathKey(folder);
+		return in == f || (in.size() > f.size() && in.compare(0, f.size(), f) == 0
+			&& (in[f.size()] == '\\' || in[f.size()] == '/'));
+	}
+
+	// ------------------------------------------------------------------ VS Code
+
+#ifdef _WIN32
+	// Starts a program without waiting for it. hideWindow: no console flash (for cmd.exe).
+	bool LaunchDetached(std::wstring commandLine, bool hideWindow)
+	{
+		STARTUPINFOW startup{};
+		startup.cb = sizeof(startup);
+		PROCESS_INFORMATION process{};
+		if (!CreateProcessW(nullptr, commandLine.data(), nullptr, nullptr, FALSE,
+			hideWindow ? CREATE_NO_WINDOW : 0, nullptr, nullptr, &startup, &process))
+			return false;
+		CloseHandle(process.hThread);
+		CloseHandle(process.hProcess);
+		return true;
+	}
+
+	// Code.exe in its usual install places (per-user first, then machine-wide), or empty.
+	fs::path FindVSCodeExe()
+	{
+		struct Place { wchar_t const* variable; wchar_t const* subPath; };
+		static constexpr Place kPlaces[] = {
+			{ L"LOCALAPPDATA",      L"Programs\\Microsoft VS Code\\Code.exe" },
+			{ L"ProgramFiles",      L"Microsoft VS Code\\Code.exe" },
+			{ L"ProgramFiles(x86)", L"Microsoft VS Code\\Code.exe" },
+		};
+		wchar_t buffer[MAX_PATH];
+		for (Place const& place : kPlaces) {
+			DWORD const length = GetEnvironmentVariableW(place.variable, buffer, MAX_PATH);
+			if (length == 0 || length >= MAX_PATH) continue;
+			fs::path const exe = fs::path(buffer) / place.subPath;
+			std::error_code ec;
+			if (fs::is_regular_file(exe, ec)) return exe;
+		}
+		return {};
+	}
+#endif
+
+	// Opens one file in VS Code (just the file, no folder). Falls back to whatever Windows
+	// has associated with the extension when VS Code cannot be found.
+	void OpenInVSCode(fs::path const& file)
+	{
+#ifdef _WIN32
+		std::wstring const quotedFile = L"\"" + file.wstring() + L"\"";
+		std::string const name = file.filename().string();
+
+		// 1. A standard install: start Code.exe directly - no console window at all.
+		if (fs::path const exe = FindVSCodeExe(); !exe.empty()
+			&& LaunchDetached(L"\"" + exe.wstring() + L"\" " + quotedFile, false)) {
+			CRU_USER_INFO("Opened {} in VS Code", name);
+			return;
+		}
+
+		// 2. A custom install location with 'code' on PATH: code.cmd is a batch file, so it
+		//    runs through cmd.exe, hidden. The doubled quotes are cmd /c's quoting rule.
+		wchar_t found[MAX_PATH];
+		if (SearchPathW(nullptr, L"code.cmd", nullptr, MAX_PATH, found, nullptr) > 0
+			&& LaunchDetached(L"cmd.exe /c \"\"" + std::wstring(found) + L"\" " + quotedFile + L"\"", true)) {
+			CRU_USER_INFO("Opened {} in VS Code", name);
+			return;
+		}
+
+		// 3. No VS Code: the default program for the extension, so the click still does something.
+		CRU_USER_WARN("VS Code was not found (install it, or put 'code' on PATH) - opening {} with the default program", name);
+		if (reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", file.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32)
+			CRU_USER_WARN("Could not open {}", name);
+#else
+		CRU_WARN("[AssetBrowser] Opening scripts in VS Code is only implemented on Windows ({})", file.string());
+#endif
+	}
 }
 
 // ------------------------------------------------------------------ panel lifetime
@@ -141,10 +264,10 @@ void Crucible::AssetBrowser::Init() {
 	m_dockRatio = 0.30f;
 	m_makeFocus = true;   // be the visible tab in the bottom area (Console is behind it)
 
-	// NOTE: the browser keeps its own AssetManager for now, because Core only creates a
-	// temporary one in Core::Init(). Once Core owns an AssetManager (e.g. Core::GetAssets()),
-	// use that instead so the editor and the engine share one index.
-	m_ready = m_assets.Init();
+	// Core's shared AssetManager, already initialised by Core::Init(). A private copy here used
+	// to run its own reconcile (writing .meta files a second time) and went stale whenever this
+	// panel created a file, so the engine could not see what the browser showed.
+	m_ready = m_assets.IsInitialized() || m_assets.Init();
 	if (m_ready)
 		RebuildFolderTree();
 	else
@@ -222,14 +345,20 @@ void Crucible::AssetBrowser::Update(float) {
 			Refresh();
 		if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) && !m_currentFolder.empty() && m_search[0] == '\0')
 			NavigateTo(ParentOf(m_currentFolder));
+		if (ImGui::IsKeyPressed(ImGuiKey_F2, false) && !m_selected.empty() && m_renaming.empty())
+			BeginRename(m_selected);
 	}
 
 	ImGui::End();
+
+	// After drawing, like navigation below: renaming refreshes the index and the item list.
+	ApplyPendingRename();
 
 	// Apply navigation after drawing, so the item list never changes mid-loop.
 	if (m_navigateTo) {
 		m_currentFolder = *m_navigateTo;
 		m_navigateTo.reset();
+		m_renaming.clear();
 		m_search[0] = '\0';
 		m_listingDirty = true;
 		m_syncTree = true;
@@ -453,6 +582,13 @@ void Crucible::AssetBrowser::DrawFolderTree(FolderNode const& node) {
 }
 
 void Crucible::AssetBrowser::DrawGrid() {
+	// A rename whose tile is no longer listed (search changed, file vanished) is dropped.
+	// Checked here, against this frame's fresh listing, not after drawing: Create Scene starts
+	// a rename on a file the listing only picks up next frame.
+	if (!m_renaming.empty() && std::none_of(m_items.begin(), m_items.end(),
+		[this](Item const& item) { return item.virtualPath == m_renaming; }))
+		m_renaming.clear();
+
 	if (m_items.empty())
 		ImGui::TextDisabled(m_search[0] != '\0' ? "No assets match the search." : "This folder is empty.");
 
@@ -473,6 +609,8 @@ void Crucible::AssetBrowser::DrawGrid() {
 	if (ImGui::BeginPopupContextWindow("##GridContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
 		bool const searching = m_search[0] != '\0';
 		if (ImGui::MenuItem("New Folder", nullptr, false, !searching && IsRefreshAllowed())) CreateFolder();
+		if (IsInScenesFolder(m_currentFolder) && ImGui::MenuItem("Create Scene", nullptr, false, !searching && IsRefreshAllowed())) CreateScene();
+		if (IsInScriptsFolder(m_currentFolder) && ImGui::MenuItem("Create Script", nullptr, false, !searching && IsRefreshAllowed())) CreateScript();
 		if (ImGui::MenuItem("Show in Explorer")) ShowInExplorer(AbsolutePathOf(m_currentFolder), false);
 		ImGui::Separator();
 		if (ImGui::MenuItem("Refresh", "F5", false, IsRefreshAllowed())) Refresh();
@@ -482,6 +620,11 @@ void Crucible::AssetBrowser::DrawGrid() {
 
 void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	ImGui::PushID(item.virtualPath.c_str());
+	// A group, so the rename field drawn over the label below still leaves the row layout
+	// exactly as one tile-sized item (SameLine places the next tile after the group).
+	ImGui::BeginGroup();
+
+	bool const renamingThis = !m_renaming.empty() && m_renaming == item.virtualPath;
 
 	float const size = m_tileSize;
 	float const labelHeight = ImGui::GetTextLineHeight();
@@ -491,6 +634,7 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 
 	// ---- interaction (all on the one invisible button covering the tile) ----
 	// InvisibleButton returns true on release, and only when the press also started on this tile.
+	if (renamingThis) ImGui::SetNextItemAllowOverlap();   // let the rename field on top take the mouse
 	bool const released = ImGui::InvisibleButton("##Tile", tileSize);
 	bool const hovered = ImGui::IsItemHovered();
 
@@ -512,16 +656,12 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 		ShowInInspector(item);
 	}
 
-	if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-		if (item.isFolder)
-			NavigateTo(item.virtualPath);
-		else   // TODO: open the right editor per type (scene -> load scene, material -> material editor, ...)
-			CRU_INFO("[AssetBrowser] Open {} ({}): no editor for this type yet", item.virtualPath, ToString(item.type));
-	}
+	if (hovered && !renamingThis && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+		OpenItem(item);
 
 	DrawItemContextMenu(item);
 
-	if (!item.isFolder && ImGui::BeginDragDropSource()) {
+	if (!item.isFolder && !renamingThis && ImGui::BeginDragDropSource()) {
 		ImGui::SetDragDropPayload(EditorWidgets::kAssetPayload, item.virtualPath.c_str(), item.virtualPath.size() + 1);
 		ImGui::TextUnformatted(item.name.c_str());
 		ImGui::TextDisabled("%s", ToString(item.type));
@@ -561,10 +701,16 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 			IM_COL32(255, 255, 255, 235), item.badge.c_str());
 	}
 
-	std::string const label = Ellipsize(item.name, size - 4.0f);
-	float const labelWidth = ImGui::CalcTextSize(label.c_str()).x;
-	dl->AddText(ImVec2(p0.x + (size - labelWidth) * 0.5f, p0.y + size + 2.0f), ImGui::GetColorU32(ImGuiCol_Text), label.c_str());
+	if (renamingThis) {
+		DrawRenameField(ImVec2(p0.x, p0.y + size), size);
+	}
+	else {
+		std::string const label = Ellipsize(item.name, size - 4.0f);
+		float const labelWidth = ImGui::CalcTextSize(label.c_str()).x;
+		dl->AddText(ImVec2(p0.x + (size - labelWidth) * 0.5f, p0.y + size + 2.0f), ImGui::GetColorU32(ImGuiCol_Text), label.c_str());
+	}
 
+	ImGui::EndGroup();
 	ImGui::PopID();
 }
 
@@ -572,8 +718,8 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	if (!ImGui::BeginPopupContextItem("##ItemContext"))
 		return;
 
-	if (item.isFolder && ImGui::MenuItem("Open"))
-		NavigateTo(item.virtualPath);
+	if ((item.isFolder || item.type == AssetType::Scene || item.type == AssetType::Script) && ImGui::MenuItem("Open"))
+		OpenItem(item);
 
 	// Greyed out rather than hidden when there is no audio system, so it is obvious the
 	// feature exists and something is missing.
@@ -587,6 +733,9 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 
 	if (m_search[0] != '\0' && ImGui::MenuItem("Go to Folder"))
 		NavigateTo(ParentOf(item.virtualPath));
+
+	if (ImGui::MenuItem("Rename", "F2", false, IsRefreshAllowed()))
+		BeginRename(item.virtualPath);
 
 	if (ImGui::MenuItem("Show in Explorer"))
 		ShowInExplorer(AbsolutePathOf(item.virtualPath), true);
@@ -662,4 +811,260 @@ void Crucible::AssetBrowser::DrawFooter() {
 		ImGui::SameLine();
 		ImGui::TextDisabled("  %s, %s", ToString(entry->type), FormatBytes(entry->sizeBytes).c_str());
 	}
+}
+
+// ------------------------------------------------------------------ open (double-click)
+
+void Crucible::AssetBrowser::OpenItem(Item const& item) {
+	if (item.isFolder) {
+		NavigateTo(item.virtualPath);
+		return;
+	}
+
+	switch (item.type) {
+	case AssetType::Scene: {
+		fs::path const file = AbsolutePathOf(item.virtualPath);
+		if (m_scenes.HasPath() && SamePath(m_scenes.CurrentPath(), file)) {
+			CRU_USER_INFO("'{}' is already the open scene", item.name);
+			return;
+		}
+		// Through the Menu, so it is exactly File > Open: refused during play mode, and the
+		// "unsaved changes?" prompt first when the current scene is dirty.
+		if (auto menu = EditorManager::GetInstance().GetPanel<Menu>(ImguiPanels::MENU))
+			menu->RequestOpenScene(file);
+		else
+			m_scenes.RequestLoad(file);
+		return;
+	}
+	case AssetType::Script:
+		OpenInVSCode(AbsolutePathOf(item.virtualPath));
+		return;
+	default:
+		CRU_INFO("[AssetBrowser] Open {} ({}): no editor for this type yet", item.virtualPath, ToString(item.type));
+		return;
+	}
+}
+
+// ------------------------------------------------------------------ create scene
+
+bool Crucible::AssetBrowser::IsInScenesFolder(std::string const& folder) const {
+	std::string const f = ToLowerCopy(folder);
+	return f == "scenes" || f.rfind("scenes/", 0) == 0;
+}
+
+void Crucible::AssetBrowser::CreateScene() {
+	if (!IsRefreshAllowed() || !IsInScenesFolder(m_currentFolder)) return;
+
+	std::string const base = m_currentFolder + "/New Scene";
+	std::string stem = base;
+	std::error_code ec;
+	for (int i = 1; fs::exists(AbsolutePathOf(stem + ".scene"), ec) && i < 1000; ++i)
+		stem = base + " " + std::to_string(i);
+	std::string const virtualPath = stem + ".scene";
+
+	// An empty scene in exactly the shape Scene::Save writes, so it opens like any other.
+	JsonWrapper doc;
+	doc.Set("version", kSceneVersion);
+	doc.Set("name", fs::path(virtualPath).stem().string());
+	doc.EnsureArray("entities");
+	if (!doc.SaveToFile(AbsolutePathOf(virtualPath))) {
+		CRU_USER_WARN("Could not create scene '{}'", virtualPath);
+		return;
+	}
+
+	Refresh();
+	CRU_USER_INFO("Created scene {}", virtualPath);
+	BeginRename(virtualPath);   // Unity: type its name straight away
+}
+
+// ------------------------------------------------------------------ create script
+
+bool Crucible::AssetBrowser::IsInScriptsFolder(std::string const& folder) const {
+	std::string const f = ToLowerCopy(folder);
+	return f == "scripts" || f.rfind("scripts/", 0) == 0;
+}
+
+void Crucible::AssetBrowser::CreateScript() {
+	if (!IsRefreshAllowed() || !IsInScriptsFolder(m_currentFolder)) return;
+
+	// No spaces in the default name: a Lua script's name usually ends up as a module /
+	// table name too.
+	std::string const base = m_currentFolder + "/NewScript";
+	std::string stem = base;
+	std::error_code ec;
+	for (int i = 1; fs::exists(AbsolutePathOf(stem + ".lua"), ec) && i < 1000; ++i)
+		stem = base + std::to_string(i);
+	std::string const virtualPath = stem + ".lua";
+
+	// Empty on purpose; the scripting system decides what a script has to contain.
+	std::ofstream file(fs::path(AbsolutePathOf(virtualPath)), std::ios::binary);
+	if (!file) {
+		CRU_USER_WARN("Could not create script '{}'", virtualPath);
+		return;
+	}
+	file.close();
+
+	Refresh();   // indexes it and writes its .meta
+	CRU_USER_INFO("Created script {}", virtualPath);
+	BeginRename(virtualPath);
+}
+
+// ------------------------------------------------------------------ rename
+
+void Crucible::AssetBrowser::BeginRename(std::string const& virtualPath) {
+	if (!IsRefreshAllowed()) {
+		CRU_USER_WARN("Cannot rename while in play mode - press Stop first");
+		return;
+	}
+
+	// Files edit the name without the extension (renaming player.png edits "player"), so the
+	// asset's type can't change by accident. Folders edit the whole name.
+	std::error_code ec;
+	fs::path const p(virtualPath);
+	bool const isFolder = fs::is_directory(AbsolutePathOf(virtualPath), ec);
+	std::string const editable = isFolder ? p.filename().string() : p.stem().string();
+
+	std::snprintf(m_renameBuffer, sizeof(m_renameBuffer), "%s", editable.c_str());
+	m_renaming = virtualPath;
+	m_selected = virtualPath;
+	m_renameFocus = true;
+	m_renameIdleFrames = 0;
+}
+
+void Crucible::AssetBrowser::DrawRenameField(ImVec2 labelPos, float width) {
+	ImGui::SetCursorScreenPos(labelPos);
+	ImGui::SetNextItemWidth(width);
+	if (m_renameFocus) {
+		ImGui::SetKeyboardFocusHere();
+		m_renameFocus = false;
+	}
+
+	bool const enter = ImGui::InputText("##Rename", m_renameBuffer, sizeof(m_renameBuffer),
+		ImGuiInputTextFlags_EnterReturnsTrue | ImGuiInputTextFlags_AutoSelectAll);
+
+	if (enter) {
+		m_pendingRename.emplace(m_renaming, m_renameBuffer);
+		m_renaming.clear();
+	}
+	else if (ImGui::IsItemDeactivated()) {
+		// Esc cancels; clicking anywhere else keeps the new name (Unity does the same).
+		if (!ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+			m_pendingRename.emplace(m_renaming, m_renameBuffer);
+		m_renaming.clear();
+	}
+	else if (!ImGui::IsItemActive() && ++m_renameIdleFrames > 2) {
+		m_renaming.clear();   // the field never got focus: don't leave it stranded open
+	}
+}
+
+void Crucible::AssetBrowser::ApplyPendingRename() {
+	if (!m_pendingRename) return;
+	auto const [from, typed] = std::move(*m_pendingRename);
+	m_pendingRename.reset();
+
+	std::string to;
+	if (!RenameOnDisk(from, Trim(typed), to)) return;
+
+	Refresh();
+	m_selected = to;
+
+	// Renamed the folder being browsed, or one of its parents: follow it.
+	if (m_currentFolder == from)
+		m_currentFolder = to;
+	else if (m_currentFolder.rfind(from + "/", 0) == 0)
+		m_currentFolder = to + m_currentFolder.substr(from.size());
+	m_listingDirty = true;
+	m_syncTree = true;
+
+	CRU_USER_INFO("Renamed {} -> {}", from, to);
+}
+
+bool Crucible::AssetBrowser::RenameOnDisk(std::string const& from, std::string const& newName, std::string& outVirtualPath) {
+	std::error_code ec;
+	fs::path const src = AbsolutePathOf(from);
+	bool const isFolder = fs::is_directory(src, ec);
+
+	std::string const extension = isFolder ? std::string{} : fs::path(from).extension().string();
+	std::string const finalName = newName + extension;
+	std::string const parent = ParentOf(from);
+	std::string const to = parent.empty() ? finalName : parent + "/" + finalName;
+
+	if (to == from) return false;   // unchanged: nothing to do, no message
+	// An empty name would still be a valid-looking file name (".png"), so check it on its own.
+	if (char const* why = newName.empty() ? "the name is empty" : InvalidNameReason(finalName)) {
+		CRU_USER_WARN("Cannot rename '{}' to '{}': {}", from, finalName, why);
+		return false;
+	}
+
+	fs::path const dst = AbsolutePathOf(to);
+	// fs::exists is case-insensitive on Windows, so "a.png" -> "A.png" finds itself: allowed.
+	if (fs::exists(dst, ec) && !SamePath(src, dst)) {
+		CRU_USER_WARN("Cannot rename '{}': '{}' already exists", from, finalName);
+		return false;
+	}
+
+	fs::rename(src, dst, ec);
+	if (ec) {
+		CRU_USER_WARN("Cannot rename '{}': {}", from, ec.message());
+		return false;
+	}
+
+	// A file's .meta moves with it, so the asset keeps its guid directly - nothing depends on
+	// the content-hash rename detection. (A folder's .meta files are inside it: they moved.)
+	if (!isFolder) {
+		fs::path const srcMeta = AssetRegistry::MetaPathFor(src);
+		if (fs::exists(srcMeta, ec)) {
+			fs::rename(srcMeta, AssetRegistry::MetaPathFor(dst), ec);
+			if (ec) {
+				std::error_code undo;
+				fs::rename(dst, src, undo);   // put the asset back rather than split it from its guid
+				CRU_USER_WARN("Cannot rename '{}': its .meta could not be moved ({})", from, ec.message());
+				return false;
+			}
+		}
+	}
+
+	// Keep each moved .meta's "path=" hint truthful. Only a hint, but teammates read it in git.
+	auto const rewriteHint = [](fs::path const& metaPath, std::string const& virtualPath) {
+		AssetMeta meta;
+		if (AssetRegistry::ReadMeta(metaPath, meta))
+			AssetRegistry::WriteMeta(metaPath, meta, virtualPath);
+	};
+	if (isFolder) {
+		for (fs::recursive_directory_iterator it(dst, fs::directory_options::skip_permission_denied, ec), end; it != end; it.increment(ec)) {
+			if (ec || !AssetRegistry::IsMetaFile(it->path())) continue;
+			fs::path const asset = fs::path(it->path()).replace_extension();   // drop ".meta"
+			rewriteHint(it->path(), to + "/" + asset.lexically_relative(dst).generic_string());
+		}
+	}
+	else {
+		rewriteHint(AssetRegistry::MetaPathFor(dst), to);
+	}
+
+	// A scene's display name lives inside the file. Keep it equal to the file name, the way
+	// Unity names scenes - otherwise the renamed file would still open as its old name.
+	if (!isFolder && ToLowerCopy(extension) == ".scene") {
+		JsonWrapper doc;
+		if (doc.ReadFromFile(dst)) {
+			doc.Set("name", fs::path(finalName).stem().string());
+			doc.SaveToFile(dst);
+		}
+	}
+
+	// The open scene's file - or the folder holding it - moved: keep saving to the right place.
+	if (m_scenes.HasPath() && IsInside(m_scenes.CurrentPath(), src)) {
+		// Keep the components below the renamed part exactly as they were (their original
+		// case): skip as many components as 'src' has, then append the rest to 'dst'. For a
+		// file rename nothing is left over and the result is 'dst' itself.
+		fs::path const current = fs::path(m_scenes.CurrentPath()).lexically_normal().make_preferred();
+		fs::path const oldBase = fs::path(src).lexically_normal().make_preferred();
+		auto rest = current.begin();
+		for (auto part = oldBase.begin(); part != oldBase.end() && rest != current.end(); ++part) ++rest;
+		fs::path moved = dst;
+		for (; rest != current.end(); ++rest) moved /= *rest;
+		m_scenes.RelocateCurrentFile(moved);
+	}
+
+	outVirtualPath = to;
+	return true;
 }

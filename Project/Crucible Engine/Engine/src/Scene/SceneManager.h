@@ -127,6 +127,21 @@ namespace Crucible {
 		const std::string& CurrentName() const			 { return m_scene.Name(); }
 
 		/*********************************************************************
+		 \brief  The open scene's file was renamed or moved on disk (the Asset
+				 Browser's Rename): save to the new place from now on, and show
+				 the new name.
+		 \details Without this, Ctrl+S would recreate the old file name - a
+				  second copy of the scene with no .meta. Touches neither the world
+				  nor the dirty flag, and does not notify listeners: the scene
+				  itself did not change, so the undo history stays.
+		 *********************************************************************/
+		void RelocateCurrentFile(const std::filesystem::path& file)
+		{
+			m_path = file;
+			m_scene.SetName(file.stem().string());
+		}
+
+		/*********************************************************************
 		  \brief  Whether the scene has changed since it was last saved/loaded.
 		  \details
 			 Set by hand through MarkDirty from editor actions. Not derived

@@ -309,9 +309,6 @@ void Crucible::Inspector::Init() {
 	m_dockArea = DockArea::Right;
 	m_dockRatio = 0.25f;
 
-	// Own index for resolving a dropped texture's virtual path to a filesystem path (see
-	// m_assets' doc comment in the header).
-	if (m_assets.Init()) { m_assets.Refresh(); }
 }
 
 void Crucible::Inspector::Update(float) {

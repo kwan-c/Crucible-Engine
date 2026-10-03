@@ -42,14 +42,55 @@ namespace Crucible
 		std::uint64_t hash = 1469598103934665603ull;   // FNV-1a 64-bit offset basis
 		std::vector<char> buffer(HASH_BLOCK_BYTES);
 
+		// The hash ignores line endings: every "\r\n" is hashed as a single "\n".
+		//
+		// Git rewrites line endings on checkout depending on each person's settings
+		// (core.autocrlf, .gitattributes), so the SAME text file - a .scene, a .mat,
+		// an .obj - can be CRLF on one teammate's machine and LF on another's. Hashing
+		// raw bytes gave those two copies different hashes, each engine "corrected"
+		// the committed .meta to its own value, and the .meta flipped on every pull.
+		//
+		// Binary files are unaffected in practice: git never converts them, so every
+		// machine has the same bytes and therefore the same hash. A file with no "\r"
+		// at all hashes exactly as it did before this change. A lone "\r" (not
+		// followed by "\n") is still hashed as itself.
+		const auto mix = [&hash](unsigned char byte)
+		{
+			hash ^= byte;
+			hash *= 1099511628211ull;   // FNV prime
+		};
+
+		bool pendingCR = false;   // a '\r' whose next byte has not been seen yet (it may be in the next block)
+
 		while (file.read(buffer.data(), static_cast<std::streamsize>(buffer.size())) || file.gcount() > 0)
 		{
 			const std::streamsize read = file.gcount();
 			for (std::streamsize i = 0; i < read; ++i)
 			{
-				hash ^= static_cast<unsigned char>(buffer[static_cast<std::size_t>(i)]);
-				hash *= 1099511628211ull;              // FNV prime
+				const auto byte = static_cast<unsigned char>(buffer[static_cast<std::size_t>(i)]);
+
+				if (pendingCR)
+				{
+					pendingCR = false;
+					if (byte != '\n')
+					{
+						mix('\r');   // a lone CR: keep it
+					}
+				}
+
+				if (byte == '\r')
+				{
+					pendingCR = true;   // decide once the next byte is known
+					continue;
+				}
+
+				mix(byte);
 			}
+		}
+
+		if (pendingCR)
+		{
+			mix('\r');   // the file ended on a lone CR
 		}
 
 		return hash;

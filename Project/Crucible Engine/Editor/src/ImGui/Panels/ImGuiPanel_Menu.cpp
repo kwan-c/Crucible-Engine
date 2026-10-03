@@ -23,7 +23,6 @@ namespace {
 
 void Crucible::Menu::Init() {
 	m_panelName = "Menu";
-	m_assets.Init();
 }
 
 void Crucible::Menu::Update(float) {

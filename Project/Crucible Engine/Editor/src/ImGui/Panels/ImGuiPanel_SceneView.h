@@ -15,6 +15,7 @@
 #include <Graphics/CameraController.h>
 #include <ECS/Core/ECSCore.h>   // Entity
 
+#include <string>
 #include <vector>
 
 namespace Crucible {
@@ -24,6 +25,7 @@ namespace Crucible {
 	class SceneView : public EditorPanel {
 	public:
 		enum class GizmoMode { Translate, Rotate, Scale };
+		enum class GizmoSpace { World, Local };   // axes for Move / Rotate (Scale is always Local)
 
 		SceneView(Renderer& renderer, SceneManager& scene, World& world) : m_viewport(renderer), m_scenes(scene), m_world(world), m_renderer(renderer) {}
 
@@ -37,6 +39,7 @@ namespace Crucible {
 		bool      IsViewportHovered() const { return m_hovered; }
 		bool      IsViewportFocused() const { return m_focused; }
 		GizmoMode GetGizmoMode() const { return m_gizmoMode; }
+		GizmoSpace GetGizmoSpace() const { return m_gizmoSpace; }
 		// True while RMB-drag flying is active (WASD/QE move, mouse look, tool hotkeys suppressed).
 		bool      IsFlying() const { return m_flying; }
 
@@ -54,6 +57,11 @@ namespace Crucible {
 		// the cursor picks the nearest mesh (Renderer::Raycast); empty space clears the selection.
 		void HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize);
 		void Select(Entity entity);
+
+		// ---- Move / Rotate / Scale gizmo (ImGuizmo) ----
+		// Drawn on the selected entity. One whole drag = one undo step (EndGizmoDrag pushes it).
+		void DrawGizmo(ImVec2 viewMin, ImVec2 viewSize);
+		void EndGizmoDrag();
 		// Mirrors the Inspector's selection into DebugDrawSystem (selection box, light gizmos).
 		void SyncSelection();
 
@@ -73,6 +81,14 @@ namespace Crucible {
 		bool      m_focused = false;
 		bool      m_flying = false;
 		GizmoMode m_gizmoMode = GizmoMode::Translate;
+		GizmoSpace m_gizmoSpace = GizmoSpace::World;
+
+		bool        m_gizmoDrawn = false;          // DrawGizmo called Manipulate last frame
+		bool        m_gizmoWasUsing = false;
+		bool        m_gizmoClaimedClick = false;   // LMB went down on the gizmo: that click is a drag, not a pick
+		Entity      m_gizmoEntity = kNullEntity;  // the entity being dragged
+		std::string m_gizmoBefore;                // its snapshot when the drag started (for undo)
+		std::string m_gizmoVerb;                  // "Move" / "Rotate" / "Scale", the Edit menu label
 	};
 
 }

@@ -23,7 +23,11 @@ namespace Crucible {
 		void Init() override;
 		void Update(float dt) override;
 
-		explicit Menu(SceneManager& scenes) : m_scenes(scenes) {}
+		Menu(SceneManager& scenes, AssetManager& assets) : m_scenes(scenes), m_assets(assets) {}
+
+		// Opens a scene exactly the way File > Open does: refused during play mode, and asks
+		// first when the current scene has unsaved changes. The Asset Browser's double-click.
+		void RequestOpenScene(const std::filesystem::path& file) { RequestGuarded(GuardedAction::Open, file); }
 
 	private:
 		// Helps to protect actions that the user may not want to do (e.g. New/Open when the current scene has unsaved changes).
@@ -51,7 +55,7 @@ namespace Crucible {
 		void DrawUnsavedChangesPopup();
 
 		SceneManager& m_scenes;
-		AssetManager  m_assets;           // own copy, like AssetBrowser, until Core owns one
+		AssetManager& m_assets;           // Core's shared index (core.GetAssets())
 
 		bool m_openScenePopup = false;
 		bool m_openSaveAsPopup = false;

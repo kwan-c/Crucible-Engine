@@ -16,6 +16,7 @@
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_internal.h>   // DockBuilder* API
+#include <ImGuizmo.h>         // the Scene view's move/rotate/scale gizmo
 #include <iostream>
 #include <Core.h>
 #include "ECS/ECSAudioSystem.h"
@@ -277,8 +278,8 @@ void Crucible::ImGuiManager::BeginFrame() {
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 
-	//ImGuizmo begin frame
-	//ImGuizmo::BeginFrame();
+	// Once per frame, after NewFrame and before any panel draws a gizmo (the Scene view).
+	ImGuizmo::BeginFrame();
 }
 
 void Crucible::ImGuiManager::Render() {
@@ -331,13 +332,13 @@ void Crucible::EditorManager::Init(Core& core)
 	// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
 	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(core.GetRenderer(), core.GetScenes(), core.GetWorld());
 	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(core.GetRenderer());
-	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(core.GetScenes());
+	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(core.GetScenes(), core.GetAssets());
 	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(core.GetWorld(), core.GetResources(), core.GetScenes());
-	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(core.GetWorld(), core.GetRenderer(), core.GetScenes());
+	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(core.GetWorld(), core.GetRenderer(), core.GetScenes(), core.GetAssets());
 	// AudioSources stay silent while editing and sound in play mode; Core switches the audio
 	// system's edit/pause modes on Play, Pause, Resume and Stop. Asset previews always work.
 	ECSAudioSystem* audio = core.Systems().FindSystem<ECSAudioSystem>();   // null if audio is not registered
-	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(audio);   // null is fine: previews just do nothing
+	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(core.GetAssets(), core.GetScenes(), audio);   // audio may be null: previews just do nothing
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>(core);   // queues Play/Pause/Resume/Stop on Core
 

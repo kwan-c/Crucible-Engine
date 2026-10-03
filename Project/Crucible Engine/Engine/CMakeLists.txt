@@ -67,6 +67,7 @@ add_custom_command(TARGET Engine POST_BUILD
     # Ensure Game's output directory exists
     COMMAND ${CMAKE_COMMAND} -E make_directory
         "$<TARGET_FILE_DIR:Game>"
+	"$<TARGET_FILE_DIR:Editor>"
 
     # Copy Engine.dll
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
