@@ -82,7 +82,7 @@ namespace Crucible {
         // ===========================================
 
         // ======== startup scene (Removable) ==========
-        m_scenes->RequestLoad(m_assets->Resolve("Scenes/demo.scene"));
+        m_scenes->RequestLoad(m_assets->Resolve("Scenes/Physics demo scene.scene"));
         // ===========================================
 
 
