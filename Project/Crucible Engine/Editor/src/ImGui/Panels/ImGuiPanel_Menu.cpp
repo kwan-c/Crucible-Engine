@@ -1,6 +1,13 @@
 /*!
 * @file			ImGuiPanel_Menu.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's main menu bar (File / Edit / View / Help).
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/Panels/ImGuiPanel_Menu.h"

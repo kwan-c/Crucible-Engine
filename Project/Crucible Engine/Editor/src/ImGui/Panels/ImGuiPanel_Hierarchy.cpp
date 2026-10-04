@@ -1,6 +1,13 @@
 /*!
 * @file			ImGuiPanel_Hierarchy.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Hierarchy: a clickable tree of every entity in the open scene.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 #include <ImGui/ImGuiManager.h>
 #include <ECS/World.h>

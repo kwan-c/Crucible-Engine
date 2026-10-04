@@ -1,6 +1,13 @@
 /*!
 * @file			ImGuiPanel_Inspector.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's inspector for viewing and editing object properties.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGuiPanel_Inspector.h"

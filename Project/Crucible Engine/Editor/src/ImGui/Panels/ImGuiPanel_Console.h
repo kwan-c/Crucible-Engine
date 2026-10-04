@@ -1,6 +1,10 @@
 #pragma once
 /*!
 * @file			ImGuiPanel_Console.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Console: log output from the engine and editor.
 *
 * Fed by a logger listener (Debug::AddListener in Diagnostics/Logger.h). By default it shows the
@@ -10,6 +14,9 @@
 * Threading: the listener can be called from any thread that logs, so it only appends to a small
 * mutex-protected pending queue. Update() (main thread) drains that queue into the display buffer,
 * so drawing never holds a lock the logger might need.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/ImGuiManager.h"

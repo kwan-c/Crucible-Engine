@@ -1,6 +1,10 @@
 #pragma once
 /*!
 * @file			ImGuiPanel_AssetBrowser.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Asset Browser (Unity's "Project" window).
 *
 * Left:  folder tree of the Assets folder.
@@ -24,6 +28,9 @@
 *
 * Uses Core's shared AssetManager (core.GetAssets()) - the same index the engine resolves
 * asset ids through - so anything created or renamed here is visible everywhere at once.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/ImGuiManager.h"

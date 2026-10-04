@@ -1,3 +1,15 @@
+/*!
+* @file			ImGuiPanel_PlayPause.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
+* @brief		The editor's Play / Pause / Stop toolbar, defined in ImGuiPanel_PlayPause.h.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
+*/
+
 #include "ImGui/Panels/ImGuiPanel_PlayPause.h"
 
 #include <imgui_internal.h> // BeginViewportSideBar reserves space above the dockspace.

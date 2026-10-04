@@ -1,6 +1,10 @@
 #pragma once
 /*!
 * @file			ImGuiPanel_SceneView.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Scene view: the free-camera view of the level you are editing.
 *
 * Owns a ViewportPanel (see Graphics/ViewportPanel.h) that holds the offscreen render target,
@@ -8,6 +12,9 @@
 * the familiar Unity/Unreal "hold RMB over the viewport to fly around" scheme. This view's
 * camera is entirely its own: independent of the Renderer's main camera (see ImGuiPanel_GameView
 * for the view that mirrors that one instead).
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/ImGuiManager.h"

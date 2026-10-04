@@ -1,6 +1,10 @@
 #pragma once
 /*!
 * @file			ImGuiPanel_GameView.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Game view: what the player sees through the game camera.
 *
 * Owns a ViewportPanel (see Graphics/ViewportPanel.h) like the Scene view does, but does NOT
@@ -10,6 +14,9 @@
 *
 * The aspect-ratio dropdown already letterboxes the image area, so GetViewportSize() is the
 * resolution the game camera renders at.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/ImGuiManager.h"

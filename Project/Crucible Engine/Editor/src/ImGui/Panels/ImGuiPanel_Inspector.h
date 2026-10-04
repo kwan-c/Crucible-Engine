@@ -1,6 +1,10 @@
 #pragma once
 /*!
 * @file			ImGuiPanel_Inspector.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's inspector for viewing and editing object properties.
 *
 * Two independent paths live here side by side:
@@ -17,6 +21,9 @@
 * reference captured once - the way the old SetTarget<T> captures &obj - would dangle the moment
 * that happens. DrawEntityInspector instead re-resolves every component fresh, every Update(), via
 * World::GetComponent.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/ImGuiManager.h"

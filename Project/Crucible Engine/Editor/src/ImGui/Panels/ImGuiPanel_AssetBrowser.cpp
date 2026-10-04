@@ -1,6 +1,13 @@
 /*!
 * @file			ImGuiPanel_AssetBrowser.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Asset Browser (Unity's "Project" window).
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
