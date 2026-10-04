@@ -48,6 +48,7 @@
 #include "Vulkan/VulkanPipeline.h"
 #include "Vulkan/VulkanFrameManager.h"
 #include "Vulkan/VulkanResource.h"
+#include "Vulkan/VulkanUploadQueue.h"
 
 #include "Camera.h"
 #include "RenderTypes.h"
@@ -228,9 +229,12 @@ namespace Crucible {
 
         /*********************************************************************
          \brief
-            Uploads mesh data to the GPU immediately (blocks until the
-            copy completes) and returns a handle for use in an entity's
-            MeshRenderer component.
+            Creates the mesh's GPU buffers right away and returns a handle
+            for use in an entity's MeshRenderer component. The copy of the
+            vertex/index data into those buffers is queued (see
+            VulkanUploadQueue) and runs at the start of the next frame's
+            command buffer, ahead of every draw - so the mesh is drawable
+            from that frame on, and this call never waits on the GPU.
 
          \param[in] data      The CPU-side mesh to upload.
          \param[in] debugName Optional, purely descriptive name (see
@@ -250,9 +254,9 @@ namespace Crucible {
 
         /*********************************************************************
          \brief
-            Returns a handle immediately; the actual GPU upload is
-            throttled across frames (see kMaxMeshUploadsPerFrame) instead
-            of blocking.
+            Returns a handle immediately; the mesh's buffers are created
+            and filled a few meshes per frame (see kMaxMeshUploadsPerFrame),
+            so the CPU-side work of a burst of meshes is spread out.
 
          \param[in] data      The CPU-side mesh to upload.
          \param[in] debugName Optional, purely descriptive name - see
@@ -745,6 +749,12 @@ namespace Crucible {
         VulkanPipeline              m_pipeline;
         VulkanFrameManager          m_frameManager;
 
+        // Pending mesh/texture/cubemap copies: recorded into each frame's command buffer ahead of
+        // its passes (RecordCommandBuffer), their staging buffers freed once that frame slot's
+        // fence has signalled (DrawFrame). Declared after m_context (its staging buffers are
+        // suballocated from the context's allocator, so they must be destroyed first).
+        VulkanUploadQueue           m_uploads;
+
         // Scene
         Camera                      m_camera;            // main (game) camera - see SetMainCamera
         bool                        m_hasMainCamera = false;
@@ -959,9 +969,6 @@ namespace Crucible {
         Viewport& GetViewportOrThrow(ViewportHandle handle);
         const Viewport& GetViewportOrThrow(ViewportHandle handle) const;
 
-        void CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height,
-                               uint32_t layerCount = 1);
-
         // ---- Lights/environment/skybox helpers ----
         void CreateLightBuffers();
         // Copies this frame's m_lightQueue (or the fallback sun, if it's empty) into
@@ -983,10 +990,10 @@ namespace Crucible {
         void DrawSkybox(vk::CommandBuffer cmd, vk::DescriptorSet frameSet);
 
         // ---- Texture/Material helpers ----
-        // Shared core of every texture-creation path: uploads already-decoded RGBA8 pixels to a
-        // new device-local image + view (same staging-buffer-and-barrier dance CreateTextureImage
-        // used to do ad hoc for the one hardcoded texture). Format is eR8G8B8A8Srgb or eUnorm
-        // depending on isSRGB - see CreateTexture's doc comment on when each is correct.
+        // Shared core of every texture-creation path: creates a new device-local image + view
+        // for already-decoded RGBA8 pixels and queues the copy into it (m_uploads). Format is
+        // eR8G8B8A8Srgb or eUnorm depending on isSRGB - see CreateTexture's doc comment on when
+        // each is correct.
         TextureHandle UploadTexturePixels(const unsigned char* pixels, uint32_t width, uint32_t height, bool isSRGB);
         // 1x1 solid-color texture, used by CreateDefaultTextures() and directly reusable for any
         // other flat-color placeholder need.
@@ -1004,9 +1011,6 @@ namespace Crucible {
 
         vk::raii::CommandBuffer BeginSingleTimeCommand();
         void EndSingleTimeCommand(vk::raii::CommandBuffer&& cmdBuff);
-
-        void TransitionImageLayout_I(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image, 
-                                   vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t layerCount = 1);
 
         // Generalized from a swapchain-color-only helper so it can also transition the depth
         // image: takes the target image and aspect mask explicitly instead of assuming color.

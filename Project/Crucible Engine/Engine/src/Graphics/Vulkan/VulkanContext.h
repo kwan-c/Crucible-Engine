@@ -146,6 +146,7 @@ namespace Crucible {
         void CreateAllocator();
 
         bool IsDeviceSuitable(const vk::raii::PhysicalDevice& device);
+        uint64_t ScoreDevice(const vk::raii::PhysicalDevice& device);
         std::vector<const char*> GetRequiredInstanceExtensions();
 
         static VKAPI_ATTR vk::Bool32 VKAPI_CALL DebugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT          severity,

@@ -95,7 +95,7 @@ namespace Crucible {
 
     namespace {
 
-        // Shared by VulkanBuffer::Create/UploadStaging and VulkanImage::Create: translates the
+        // Shared by VulkanBuffer::Create and VulkanImage::Create: translates the
         // engine's existing vk::MemoryPropertyFlags "what kind of memory do I want" request into
         // a VmaAllocationCreateInfo.
         //
@@ -199,59 +199,6 @@ namespace Crucible {
         }
 
     }   // VulkanBuffer::Upload()
-
-    void VulkanBuffer::UploadStaging(VulkanContext& context, const void* data, vk::DeviceSize size, vk::raii::CommandPool& commandPool) {
-
-        assert(*m_buffer != vk::Buffer{} && "UploadStaging() called before Create()");
-        assert(m_allocation != VK_NULL_HANDLE && "Buffer has no memory allocated");
-
-        // Staging buffer, suballocated through the same VmaAllocator as everything else. This used
-        // to be its own individual vkAllocateMemory call every single time a mesh or texture was
-        // uploaded (on top of the destination buffer/image's own allocation) - by far the biggest
-        // single contributor to burning through maxMemoryAllocationCount, since it happened twice
-        // per resource and the allocation was thrown away moments later anyway.
-        vk::BufferCreateInfo bufferInfo{
-            .size = size,
-            .usage = vk::BufferUsageFlagBits::eTransferSrc,
-            .sharingMode = vk::SharingMode::eExclusive
-        };
-        vk::raii::Buffer stagingBuffer = vk::raii::Buffer(context.GetDevice(), bufferInfo);
-
-        VmaAllocationCreateInfo stagingAllocCreateInfo = MakeAllocationCreateInfo(vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-
-        VmaAllocation stagingAllocation = VK_NULL_HANDLE;
-        if (vmaAllocateMemoryForBuffer(m_allocator, static_cast<VkBuffer>(*stagingBuffer), &stagingAllocCreateInfo, &stagingAllocation, nullptr) != VK_SUCCESS) {
-            throw std::runtime_error("[Renderer] vmaAllocateMemoryForBuffer (staging) failed.");
-        }
-        if (vmaBindBufferMemory(m_allocator, stagingAllocation, static_cast<VkBuffer>(*stagingBuffer)) != VK_SUCCESS) {
-            vmaFreeMemory(m_allocator, stagingAllocation);
-            throw std::runtime_error("[Renderer] vmaBindBufferMemory (staging) failed.");
-        }
-
-        if (vmaCopyMemoryToAllocation(m_allocator, data, stagingAllocation, 0, size) != VK_SUCCESS) {
-            vmaFreeMemory(m_allocator, stagingAllocation);
-            throw std::runtime_error("[Renderer] vmaCopyMemoryToAllocation (staging) failed.");
-        }
-
-        // Copy over to *this buffer
-        vk::CommandBufferAllocateInfo copyInfo{
-            .commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1
-        };
-        vk::raii::CommandBuffer commandCopyBuffer = std::move(context.GetDevice().allocateCommandBuffers(copyInfo).front());
-
-        commandCopyBuffer.begin({ .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
-        commandCopyBuffer.copyBuffer(*stagingBuffer, *m_buffer, vk::BufferCopy(0, 0, size));
-        commandCopyBuffer.end();
-
-        context.GetGraphicsQueue().submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &*commandCopyBuffer}, nullptr);
-        context.GetGraphicsQueue().waitIdle();
-
-        // The copy above is synchronous (waitIdle'd), so it's safe to free the staging allocation
-        // right here rather than leaking it or deferring cleanup - stagingBuffer (the vk::raii::Buffer)
-        // is freed automatically a few lines below when it goes out of scope.
-        vmaFreeMemory(m_allocator, stagingAllocation);
-
-    }   // VulkanBuffer::UploadStaging()
 
     const vk::raii::Buffer& VulkanBuffer::GetBuffer() const { return m_buffer; }
 

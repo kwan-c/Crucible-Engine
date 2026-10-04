@@ -151,21 +151,14 @@ namespace Crucible {
          \param[in] context Unused (kept for interface symmetry).
          \param[in] data    Source bytes to copy in.
          \param[in] size    Number of bytes to copy.
+
+         \details
+            Host-visible buffers only. A device-local buffer can't be
+            mapped; fill it through VulkanUploadQueue::QueueBuffer()
+            instead, which goes through a staging buffer and a GPU-side
+            copy.
          *********************************************************************/
         void Upload(VulkanContext& context, void const* data, vk::DeviceSize size);
-
-        /*********************************************************************
-         \brief  Uploads via a temporary host-visible staging buffer plus a
-                 GPU-side copy, for device-local destination buffers that
-                 can't be mapped directly.
-         \param[in] context     The VulkanContext to allocate the staging
-                                 buffer through.
-         \param[in] data        Source bytes to copy in.
-         \param[in] size        Number of bytes to copy.
-         \param[in] commandPool Command pool to allocate the one-shot copy
-                                 command buffer from.
-         *********************************************************************/
-        void UploadStaging(VulkanContext& context, void const* data, vk::DeviceSize size, vk::raii::CommandPool& commandPool);
 
         /*********************************************************************
          \brief  Accessor.

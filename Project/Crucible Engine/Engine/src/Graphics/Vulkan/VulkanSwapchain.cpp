@@ -15,6 +15,7 @@
 #include "VulkanSwapchain.h"
 
 #include <array>
+#include <iostream>
 
 namespace Crucible {
 
@@ -159,10 +160,28 @@ namespace Crucible {
 
         assert(!formats.empty());
 
-        const auto formatIt = std::ranges::find_if(formats, [](const auto& format) {
-            return format.format == vk::Format::eB8G8R8A8Srgb && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear; });
+        // Preference order: both are 8-bit sRGB formats and differ only in channel order, which
+        // nothing in the engine depends on (pipelines, viewport images and ImGui all take the
+        // format from here). BGRA is what Windows drivers offer; RGBA is the usual one elsewhere.
+        constexpr std::array<vk::Format, 2> candidates = {
+            vk::Format::eB8G8R8A8Srgb, vk::Format::eR8G8B8A8Srgb
+        };
 
-        return formatIt != formats.end() ? *formatIt : formats[0];
+        for (vk::Format candidate : candidates) {
+            const auto formatIt = std::ranges::find_if(formats, [candidate](const auto& format) {
+                return format.format == candidate && format.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear; });
+
+            if (formatIt != formats.end()) {
+                return *formatIt;
+            }
+        }
+
+        // The shaders output linear colour and rely on an sRGB target to encode it for the
+        // display. Without one the image still renders, but visibly too dark - say why.
+        std::cerr << "[Renderer | Swapchain] No 8-bit sRGB surface format available; falling back to "
+            << to_string(formats[0].format) << ". Colours will look too dark." << std::endl;
+
+        return formats[0];
 
     }   // VulkanSwapchain::ChooseSurfaceFormat()
 
@@ -195,19 +214,18 @@ namespace Crucible {
 
     vk::Format VulkanSwapchain::ChooseDepthFormat(VulkanContext& context) {
 
-        // Preference order: pure 32-bit depth first (no wasted stencil bits), then the packed
-        // depth+stencil formats that are more broadly supported on older/mobile hardware.
-        constexpr std::array<vk::Format, 3> candidates = {
-            vk::Format::eD32Sfloat, vk::Format::eD32SfloatS8Uint, vk::Format::eD24UnormS8Uint
-        };
+        // Pure 32-bit float depth, no stencil. This is the only depth format the renderer
+        // supports: every depth view and layout transition uses the depth aspect alone (a packed
+        // depth+stencil format would need the stencil aspect as well), and the shadow map is D32
+        // regardless (Renderer::kShadowFormat). Desktop GPUs support it as a matter of course, so
+        // a GPU without it gets a clear error here instead of invalid Vulkan usage later.
+        constexpr vk::Format format = vk::Format::eD32Sfloat;
 
-        for (vk::Format format : candidates) {
-            vk::FormatProperties props = context.GetPhysicalDevice().getFormatProperties(format);
-            if (props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eDepthStencilAttachment) {
-                return format;
-            }
+        const vk::FormatProperties props = context.GetPhysicalDevice().getFormatProperties(format);
+        if (!(props.optimalTilingFeatures & vk::FormatFeatureFlagBits::eDepthStencilAttachment)) {
+            throw std::runtime_error("[Renderer | Swapchain] This GPU does not support D32_SFLOAT as a depth attachment, which the renderer requires.");
         }
-        throw std::runtime_error("[Renderer | Swapchain] Failed to find a supported depth format.");
+        return format;
 
     }   // VulkanSwapchain::ChooseDepthFormat()
 

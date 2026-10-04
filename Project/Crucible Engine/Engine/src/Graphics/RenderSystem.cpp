@@ -55,6 +55,7 @@ namespace Crucible {
         m_pipeline.CreateShadowPipeline(m_context, kShadowFormat);
         m_pipeline.CreateOutlinePipelines(m_context, m_swapchain);
         m_frameManager.Init(m_context, m_swapchain);
+        m_uploads.Init(m_context, m_frameManager.GetCommandPool());
 
         CreateUniformBuffers();
         // Before CreateDescriptorSets(): set 0's shared bindings point at these.
@@ -137,6 +138,10 @@ namespace Crucible {
         if (err) { return; }
 
         const uint32_t frameIndex = m_frameManager.GetFrameIndex();
+
+        // BeginFrame() has waited on this frame index's fence, so the GPU is done with the staging
+        // buffers of the uploads recorded the last time this index was used: free them.
+        m_uploads.ReleaseFrame(frameIndex);
 
         // Lights first: every view's uniforms read the light count and shadow light this picks.
         UpdateLightBuffer(frameIndex);
@@ -226,6 +231,10 @@ namespace Crucible {
         const uint32_t frameIndex = m_frameManager.GetFrameIndex();
 
         fc.frame.commandBuffer.begin({});
+
+        // Mesh/texture/cubemap copies queued since the last frame go first, ahead of every pass,
+        // so anything created before this point is filled by the time a draw below reads it.
+        m_uploads.Record(*fc.frame.commandBuffer, frameIndex);
 
         // ---- Offscreen editor viewports -------------------------------------------------------
         // Empty in a standalone Engine/Game build: this loop simply doesn't run, so the cost of
@@ -429,7 +438,7 @@ namespace Crucible {
 
         MeshHandle handle{ static_cast<uint32_t>(m_meshes.size()) };
         m_meshes.emplace_back();       // reserve slot (indexCount == 0 => not yet renderable)
-        UploadMesh(handle, data, debugName);      // ... filled in synchronously, right here
+        UploadMesh(handle, data, debugName);      // ... buffers created and their copies queued, right here
         return handle;
 
     }   // Renderer::CreateMesh()
@@ -466,13 +475,13 @@ namespace Crucible {
         mesh.vertexBuffer.Create(m_context, vbSize,
             vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-        mesh.vertexBuffer.UploadStaging(m_context, data.vertices.data(), vbSize, m_frameManager.GetCommandPool());
+        m_uploads.QueueBuffer(*mesh.vertexBuffer.GetBuffer(), data.vertices.data(), vbSize);
 
         vk::DeviceSize ibSize = sizeof(uint32_t) * data.indices.size();
         mesh.indexBuffer.Create(m_context, ibSize,
             vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
-        mesh.indexBuffer.UploadStaging(m_context, data.indices.data(), ibSize, m_frameManager.GetCommandPool());
+        m_uploads.QueueBuffer(*mesh.indexBuffer.GetBuffer(), data.indices.data(), ibSize);
 
         mesh.indexCount = static_cast<uint32_t>(data.indices.size());
 
@@ -847,13 +856,6 @@ namespace Crucible {
 
         const vk::DeviceSize imageSize = vk::DeviceSize{ width } * height * 4;
 
-        VulkanBuffer stagingBuff;
-        stagingBuff.Create(m_context, imageSize, vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-        void* mapped = stagingBuff.Map();
-        memcpy(mapped, pixels, imageSize);
-        stagingBuff.Unmap();
-
         GpuTexture tex;
         tex.width = width;
         tex.height = height;
@@ -863,11 +865,9 @@ namespace Crucible {
             vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
 
-        vk::raii::CommandBuffer commandBuffer = BeginSingleTimeCommand();
-        TransitionImageLayout_I(commandBuffer, tex.image.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal);
-        CopyBufferToImage(commandBuffer, stagingBuff.GetBuffer(), tex.image.GetImage(), width, height);
-        TransitionImageLayout_I(commandBuffer, tex.image.GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal);
-        EndSingleTimeCommand(std::move(commandBuffer));
+        // Copies `pixels` into a staging buffer now; the GPU-side copy and the transition to
+        // eShaderReadOnlyOptimal are recorded at the start of the next frame (m_uploads).
+        m_uploads.QueueImage(*tex.image.GetImage(), pixels, imageSize, width, height);
 
         vk::ImageViewCreateInfo viewInfo{
             .image = tex.image.GetImage(),
@@ -1330,12 +1330,6 @@ namespace Crucible {
         const vk::DeviceSize faceBytes  = vk::DeviceSize{ faceSize } * faceSize * bytesPerTexel;
         const vk::DeviceSize totalBytes = faceBytes * 6;
 
-        VulkanBuffer stagingBuff;
-        stagingBuff.Create(m_context, totalBytes, vk::BufferUsageFlagBits::eTransferSrc,
-            vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-        memcpy(stagingBuff.Map(), faceData, static_cast<size_t>(totalBytes));
-        stagingBuff.Unmap();
-
         GpuCubemap cube;
         cube.faceSize  = faceSize;
         cube.debugName = debugName;
@@ -1345,11 +1339,9 @@ namespace Crucible {
             vk::MemoryPropertyFlagBits::eDeviceLocal,
             /*arrayLayers*/ 6, vk::ImageCreateFlagBits::eCubeCompatible);
 
-        vk::raii::CommandBuffer commandBuffer = BeginSingleTimeCommand();
-        TransitionImageLayout_I(commandBuffer, cube.image.GetImage(), vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, 6);
-        CopyBufferToImage(commandBuffer, stagingBuff.GetBuffer(), cube.image.GetImage(), faceSize, faceSize, 6);
-        TransitionImageLayout_I(commandBuffer, cube.image.GetImage(), vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, 6);
-        EndSingleTimeCommand(std::move(commandBuffer));
+        // Six faces, tightly packed one after another; see UploadTexturePixels for when the
+        // GPU-side copy actually runs.
+        m_uploads.QueueImage(*cube.image.GetImage(), faceData, totalBytes, faceSize, faceSize, 6);
 
         vk::ImageViewCreateInfo viewInfo{
             .image            = cube.image.GetImage(),
@@ -2236,26 +2228,6 @@ namespace Crucible {
 
     }   // Renderer::DrawSkybox()
 
-    void Renderer::CopyBufferToImage(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Buffer& buffer, vk::raii::Image& image, uint32_t width, uint32_t height,
-        uint32_t layerCount) {
-
-        // With bufferRowLength/bufferImageHeight 0 (tightly packed), a multi-layer copy reads
-        // each layer from the buffer immediately after the previous one - exactly how
-        // UploadCubemapFaces lays out its six faces.
-
-        vk::BufferImageCopy region{
-            .bufferOffset = 0,
-            .bufferRowLength = 0,
-            .bufferImageHeight = 0,
-            .imageSubresource = {.aspectMask = vk::ImageAspectFlagBits::eColor, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = layerCount},
-            .imageOffset = {0, 0, 0},
-            .imageExtent = {width, height, 1} 
-        };
-        commandBuffer.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, region);
-
-    }   // Renderer::CopyBufferToImage()
-
-
     vk::raii::CommandBuffer Renderer::BeginSingleTimeCommand() {
 
         vk::CommandBufferAllocateInfo allocInfo{ .commandPool = m_frameManager.GetCommandPool(), .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1};
@@ -2277,43 +2249,6 @@ namespace Crucible {
         m_context.GetGraphicsQueue().waitIdle();
 
     }   // Renderer::EndSingleTimeCommand()
-
-    void Renderer::TransitionImageLayout_I(vk::raii::CommandBuffer& commandBuffer, const vk::raii::Image& image,
-        vk::ImageLayout oldLayout, vk::ImageLayout newLayout, uint32_t layerCount) {
-
-        vk::ImageMemoryBarrier barrier{ .oldLayout = oldLayout,
-                                       .newLayout = newLayout,
-                                       .srcQueueFamilyIndex = vk::QueueFamilyIgnored,
-                                       .dstQueueFamilyIndex = vk::QueueFamilyIgnored,
-                                       .image = image,
-                                       .subresourceRange = {.aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = layerCount} };
-
-        vk::PipelineStageFlags sourceStage;
-        vk::PipelineStageFlags destinationStage;
-
-        if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal)
-        {
-            barrier.srcAccessMask = {};
-            barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
-
-            sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
-            destinationStage = vk::PipelineStageFlagBits::eTransfer;
-        }
-        else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal)
-        {
-            barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
-            barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
-
-            sourceStage = vk::PipelineStageFlagBits::eTransfer;
-            destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
-        }
-        else
-        {
-            throw std::invalid_argument("unsupported layout transition!");
-        }
-        commandBuffer.pipelineBarrier(sourceStage, destinationStage, {}, {}, {}, barrier);
-
-    }   // Renderer::TransitionImageLayout_I()
 
     void Renderer::TransitionImageLayout(FrameContext fc, vk::Image image, vk::ImageAspectFlags aspectMask,
         vk::ImageLayout old_layout, vk::ImageLayout new_layout,
