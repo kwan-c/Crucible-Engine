@@ -202,9 +202,11 @@ void Crucible::SceneView::DrawToolbar() {
 		ImGui::TextDisabled("|  Drawn %u / %u", stats.proxiesVisible + stats.immediateVisible, stats.proxies + stats.immediate);
 		if (ImGui::IsItemHovered()) {
 			ImGui::SetTooltip("Entities: %u of %u in view (%u moving)\nImmediate items: %u of %u\n"
-				"Draw calls: %u (instanced)\nShadow casters: %u in %u draws",
+				"Draw calls: %u (instanced)\nShadow casters: %u in %u draws\n"
+				"Particles: %u in %u draws\nPoint/spot lights in view: %u",
 				stats.proxiesVisible, stats.proxies, stats.movingProxies, stats.immediateVisible, stats.immediate,
-				stats.drawCalls, stats.shadowCasters, stats.shadowDrawCalls);
+				stats.drawCalls, stats.shadowCasters, stats.shadowDrawCalls,
+				stats.particles, stats.particleDrawCalls, stats.clusteredLights);
 		}
 	}
 
@@ -433,6 +435,17 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	ImGui::Checkbox("Icons (lights, cameras, sky, empties)", &m_showIcons);
 	bool outline = m_viewport.GetOutline();
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
+
+	// Renderer-wide (affects the Game view too): the glow around very bright things.
+	ImGui::Separator();
+	PostSettings& post = m_renderer.GetPostSettings();
+	ImGui::Checkbox("Bloom", &post.bloom);
+	ImGui::BeginDisabled(!post.bloom);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Bloom intensity", &post.bloomIntensity, 0.0f, 2.0f, "%.2f");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Bloom threshold", &post.bloomThreshold, 0.0f, 4.0f, "%.2f");
+	ImGui::EndDisabled();
 }
 
 // ------------------------------------------------------------------ gizmo

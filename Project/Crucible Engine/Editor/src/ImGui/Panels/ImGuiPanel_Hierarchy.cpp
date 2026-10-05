@@ -12,6 +12,7 @@
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Undo/EntityCommands.h"
 #include "Diagnostics/Logger.h"
+#include <Graphics/ParticlePresets.h>
 #include <imgui_internal.h>   // BeginDragDropTargetCustom (drop on empty space)
 #include <cstring>
 
@@ -83,6 +84,12 @@ void Crucible::Hierarchy::Update(float dt) {
 				}
 				if (ImGui::MenuItem("Create Camera")) {
 					CreateCameraObject();
+				}
+				if (ImGui::BeginMenu("Particle Effects")) {
+					for (char const* effect : { "Sparks", "Fire", "Smoke", "Splash" }) {
+						if (ImGui::MenuItem(effect)) { CreateParticleObject(effect); }
+					}
+					ImGui::EndMenu();
 				}
 				ImGui::EndMenu();
 			}
@@ -437,6 +444,36 @@ void Crucible::Hierarchy::CreateCameraObject() {
 	UndoHistory& history = EditorManager::GetInstance().GetHistory();
 	history.Push(std::make_unique<CreateEntityCommand>(
 		history.KeyOf(e), EntityState::Capture(m_world, e), "Create Camera"));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+
+}
+
+void Crucible::Hierarchy::CreateParticleObject(const std::string& effect) {
+
+	ParticlePreset preset;
+	if      (effect == "Sparks") { preset = ParticlePreset::Sparks; }
+	else if (effect == "Fire")   { preset = ParticlePreset::Fire; }
+	else if (effect == "Smoke")  { preset = ParticlePreset::Smoke; }
+	else if (effect == "Splash") { preset = ParticlePreset::Splash; }
+	else {
+		CRU_USER_WARN("Unknown particle effect: {}", effect);
+		return;
+	}
+
+	auto e = m_world.CreateEntity();
+	m_world.AddComponent<ParticleEmitter>(e, MakeParticlePreset(preset));
+
+	// A little above the ground, so the effect is visible straight away.
+	if (Transform* t = m_world.Write<Transform>(e)) { t->positions = { 0.f, 0.5f, 0.f }; }
+
+	// Select first, for the same history-ordering reason as CreateLightObject.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(e);
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create " + effect));
 
 	m_scenes.MarkDirty();   // records that there are unsaved changes
 

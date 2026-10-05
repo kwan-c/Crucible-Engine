@@ -54,6 +54,8 @@ namespace Crucible {
         m_pipeline.CreateDebugLinePipelines(m_context, m_swapchain);
         m_pipeline.CreateShadowPipeline(m_context, kShadowFormat);
         m_pipeline.CreateOutlinePipelines(m_context, m_swapchain);
+        m_pipeline.CreateParticlePipeline(m_context, m_swapchain);
+        m_pipeline.CreatePostPipelines(m_context, m_swapchain);
         m_frameManager.Init(m_context, m_swapchain);
         m_uploads.Init(m_context, m_frameManager.GetCommandPool());
 
@@ -62,17 +64,21 @@ namespace Crucible {
         CreateLightBuffers();
         CreateInstanceBuffers();
         CreateShadowResources();
+        CreateClusterBuffers();
+        CreateParticleResources();
 
         CreateDescriptorPool();
         CreateDescriptorSets();
 
         CreateViewportSampler();
         CreateViewportDescriptorPool();
+        CreatePostDescriptorPool();
 
         CreateMaterialSampler();
         CreateMaterialDescriptorPool();
         CreateDefaultTextures();
         m_defaultMaterial = CreateMaterial(MaterialData{});   // Invalid textures -> both placeholders, neutral factors
+        GetParticleTextureSet(m_defaultWhiteTexture);         // the particle pipeline's fallback texture set
 
         CreateSkyboxSampler();
         CreateCubemapDescriptorPool();
@@ -116,6 +122,8 @@ namespace Crucible {
         // Everything submitted for this frame is consumed; lights and environment are per-frame
         // state exactly like the render queue (see SubmitLight/SetEnvironment).
         m_renderQueue.clear();
+        m_particleQueue.clear();
+        m_particleSubmits.clear();
         m_lightQueue.clear();
         m_shadowLightIndex = -1;
         m_environment = m_defaultEnvironment;
@@ -151,12 +159,21 @@ namespace Crucible {
         // recording anything, so the instance buffer's final size is known up front and it never
         // has to grow while commands already reference it.
         m_instanceScratch.clear();
+        m_particleScratch.clear();
+        m_clusterGridScratch.clear();
+        m_clusterIndexScratch.clear();
+        m_preparedViews = 0;
         m_windowDraws.Clear();
         if (m_viewports.empty()) {
             // No camera entity in the scene: nothing to look through, so the window shows only
             // its clear colour (plus any overlay).
             if (m_hasMainCamera) {
                 const vk::Extent2D extent = m_swapchain.GetExtent();
+                // The window's HDR image and bloom chain follow the swapchain's size.
+                if (m_windowPost.extent != extent && extent.width > 0 && extent.height > 0) {
+                    m_context.GetDevice().waitIdle();
+                    CreatePostTargets(m_windowPost, extent.width, extent.height);
+                }
                 PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, m_uniformBuffersMapped[frameIndex]);
             } else {
                 m_windowCullStats = RenderCullStats{};
@@ -168,6 +185,8 @@ namespace Crucible {
             }
         }
         UploadInstances(frameIndex);
+        UploadParticles(frameIndex);
+        UploadClusters(frameIndex);
 
         // Record and submit command buffer.
         RecordCommandBuffer(fc);
@@ -250,33 +269,29 @@ namespace Crucible {
             DrawShadowCascades(fc, frameSet, vp.draws);
             if (vp.outline && !vp.draws.outline.empty()) { DrawOutlineMask(fc, vp, frameSet); }
 
+            // The scene itself: meshes, sky and particles into this view's HDR image, then bloom.
+            DrawSceneHdr(fc, vp.post, vp.depthImage.GetImage(), *vp.depthView, vp.extent, frameSet, vp.draws);
+
+            // The final pass: tonemap the HDR image into the viewport's (sRGB) colour image, then
+            // the debug lines on top - still depth-tested against the scene's depth.
             TransitionImageLayout(
                 fc, vp.colorImage.GetImage(), vk::ImageAspectFlagBits::eColor,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
                 {}, vk::AccessFlagBits2::eColorAttachmentWrite,
                 vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput
             );
-            TransitionImageLayout(
-                fc, vp.depthImage.GetImage(), vk::ImageAspectFlagBits::eDepth,
-                vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
-                {}, vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-                vk::PipelineStageFlagBits2::eEarlyFragmentTests,
-                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests
-            );
 
             vk::RenderingAttachmentInfo color{
                 .imageView = vp.colorView,
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eStore,
-                .clearValue = vk::ClearColorValue(0.05f, 0.05f, 0.06f, 1.0f)
+                .loadOp = vk::AttachmentLoadOp::eDontCare,   // the tonemap triangle covers every pixel
+                .storeOp = vk::AttachmentStoreOp::eStore
             };
             vk::RenderingAttachmentInfo depth{
                 .imageView = vp.depthView,
                 .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eClear,
-                .storeOp = vk::AttachmentStoreOp::eDontCare,
-                .clearValue = vk::ClearDepthStencilValue(1.0f, 0)
+                .loadOp = vk::AttachmentLoadOp::eLoad,
+                .storeOp = vk::AttachmentStoreOp::eDontCare
             };
             vk::RenderingInfo renderingInfo{
                 .renderArea = {.offset = {0, 0}, .extent = vp.extent},
@@ -287,7 +302,8 @@ namespace Crucible {
             };
 
             fc.frame.commandBuffer.beginRendering(renderingInfo);
-            DrawRenderQueue(*fc.frame.commandBuffer, vp.extent, frameSet, vp.debugDraw, vp.draws.main);
+            DrawTonemap(*fc.frame.commandBuffer, vp.post, vp.extent);
+            if (vp.debugDraw) { DrawDebugLines(*fc.frame.commandBuffer, vp.extent, frameSet); }
             fc.frame.commandBuffer.endRendering();
 
             if (vp.outline && !vp.draws.outline.empty()) { DrawOutlineComposite(fc, vp); }
@@ -303,7 +319,14 @@ namespace Crucible {
 
         // ---- Swapchain (window) pass -----------------------------------------------------------
         // The window's shadow cascades (only drawn when no viewports exist - see below).
-        if (m_viewports.empty()) { DrawShadowCascades(fc, *m_descriptorSets[frameIndex], m_windowDraws); }
+        // Standalone build with a camera: the scene goes through the same HDR pass + bloom as a
+        // viewport, using the swapchain's depth image; the swapchain pass below then tonemaps it.
+        const bool windowScene = m_viewports.empty() && m_hasMainCamera && *m_windowPost.hdrView;
+        if (windowScene) {
+            DrawShadowCascades(fc, *m_descriptorSets[frameIndex], m_windowDraws);
+            DrawSceneHdr(fc, m_windowPost, m_swapchain.GetDepthImage(), m_swapchain.GetDepthImageView(),
+                         m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_windowDraws);
+        }
 
         TransitionImageLayout(
             fc,
@@ -317,9 +340,9 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eColorAttachmentOutput         // dstStage
         );
 
-        // Depth content is fully discarded and re-cleared every frame, so there's nothing to
-        // preserve; go straight from eUndefined to eDepthAttachmentOptimal.
-        TransitionImageLayout(
+        // With no scene drawn above, depth is discarded and re-cleared: go straight from eUndefined
+        // to eDepthAttachmentOptimal. (With a scene, DrawSceneHdr already left it ready to load.)
+        if (!windowScene) TransitionImageLayout(
             fc,
             m_swapchain.GetDepthImage(),
             vk::ImageAspectFlagBits::eDepth,
@@ -344,7 +367,7 @@ namespace Crucible {
         vk::RenderingAttachmentInfo depthAttachmentInfo = {
             .imageView = m_swapchain.GetDepthImageView(),
             .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-            .loadOp = vk::AttachmentLoadOp::eClear,
+            .loadOp = windowScene ? vk::AttachmentLoadOp::eLoad : vk::AttachmentLoadOp::eClear,
             .storeOp = vk::AttachmentStoreOp::eDontCare,   // depth isn't needed after this frame
             .clearValue = clearDepth
         };
@@ -362,8 +385,9 @@ namespace Crucible {
         // Only draw the scene straight to the window when nobody has registered an offscreen
         // viewport for it. In the Editor, the Scene/Game panels already drew the scene above and
         // display it themselves via ImGui::Image(); this pass then holds only the ImGui overlay.
-        if (m_viewports.empty() && m_hasMainCamera) {
-            DrawRenderQueue(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_debugInWindow, m_windowDraws.main);
+        if (windowScene) {
+            DrawTonemap(*fc.frame.commandBuffer, m_windowPost, m_swapchain.GetExtent());
+            if (m_debugInWindow) { DrawDebugLines(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex]); }
         }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
@@ -387,8 +411,9 @@ namespace Crucible {
 
     }   // Renderer::RecordCommandBuffer()
 
-    void Renderer::DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, bool drawDebug,
-                                   const std::vector<DrawBatch>& batches) {
+    void Renderer::DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, const ViewDrawList& draws) {
+
+        const std::vector<DrawBatch>& batches = draws.main;
 
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
@@ -429,8 +454,8 @@ namespace Crucible {
         // pay for it. Viewport/scissor are dynamic state and stay set across the pipeline switch.
         DrawSkybox(cmd, cameraSet);
 
-        // Debug lines last, over everything (the depth-tested ones still respect mesh depth).
-        if (drawDebug) { DrawDebugLines(cmd, cameraSet); }
+        // Particles after everything opaque and the sky: they blend over what is behind them.
+        DrawParticles(cmd, cameraSet, draws.particles);
 
     }   // Renderer::DrawRenderQueue()
 
@@ -654,11 +679,11 @@ namespace Crucible {
         // Sized up front for the worst case (kMaxViewports simultaneously alive, each with its
         // own set per frame in flight) so viewport creation never has to touch pool capacity.
         uint32_t maxSets = kMaxViewports * m_frameManager.MaxFramesInFlight();
-        // Each set 0 = FrameUniforms UBO (binding 0), light + instance storage buffers (1, 2),
-        // shadow map image + comparison sampler (3, 4).
+        // Each set 0 = FrameUniforms UBO (binding 0), five storage buffers (lights 1, instances 2,
+        // particles 5, light-cluster grid 6 and indices 7), shadow map image + comparison sampler (3, 4).
         std::array<vk::DescriptorPoolSize, 4> poolSizes{ {
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxSets },
-            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxSets * 2 },
+            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxSets * 5 },
             { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxSets },
             { .type = vk::DescriptorType::eSampler,       .descriptorCount = maxSets }
         } };
@@ -725,6 +750,9 @@ namespace Crucible {
         };
         vp.maskView = vk::raii::ImageView(m_context.GetDevice(), maskViewInfo);
         WriteOutlineDescriptor(vp);   // no-op on first creation (the set doesn't exist yet)
+
+        // The HDR image the scene is actually drawn into, and its bloom chain.
+        CreatePostTargets(vp.post, width, height);
 
     }   // Renderer::CreateViewportImages()
 
@@ -798,11 +826,11 @@ namespace Crucible {
     void Renderer::CreateDescriptorPool() {
 
         uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
-        // Each set 0 = FrameUniforms UBO (binding 0), light + instance storage buffers (1, 2),
-        // shadow map image + comparison sampler (3, 4).
+        // Each set 0 = FrameUniforms UBO (binding 0), five storage buffers (lights 1, instances 2,
+        // particles 5, light-cluster grid 6 and indices 7), shadow map image + comparison sampler (3, 4).
         std::array<vk::DescriptorPoolSize, 4> poolSizes{ {
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFrames },
-            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 2 },
+            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 5 },
             { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxFrames },
             { .type = vk::DescriptorType::eSampler,       .descriptorCount = maxFrames }
         } };
@@ -1220,7 +1248,11 @@ namespace Crucible {
 
     void Renderer::WriteSharedFrameDescriptors(std::vector<vk::raii::DescriptorSet>& sets) {
 
-        for (size_t i = 0; i < sets.size() && i < m_lightBuffers.size() && i < m_instanceBuffers.size(); ++i) {
+        for (size_t i = 0; i < sets.size() && i < m_lightBuffers.size() && i < m_instanceBuffers.size()
+                           && i < m_particleBuffers.size() && i < m_clusterGridBuffers.size(); ++i) {
+            vk::DescriptorBufferInfo particleInfo{ .buffer = *m_particleBuffers[i].GetBuffer(), .offset = 0, .range = vk::WholeSize };
+            vk::DescriptorBufferInfo clusterGridInfo{ .buffer = *m_clusterGridBuffers[i].GetBuffer(), .offset = 0, .range = vk::WholeSize };
+            vk::DescriptorBufferInfo clusterIndexInfo{ .buffer = *m_clusterIndexBuffers[i].GetBuffer(), .offset = 0, .range = vk::WholeSize };
             vk::DescriptorBufferInfo lightInfo{
                 .buffer = *m_lightBuffers[i].GetBuffer(),
                 .offset = 0,
@@ -1234,7 +1266,13 @@ namespace Crucible {
                 .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
             vk::DescriptorImageInfo shadowSamplerInfo{ .sampler = *m_shadowSampler };
 
-            const std::array<vk::WriteDescriptorSet, 4> writes{ {
+            const std::array<vk::WriteDescriptorSet, 7> writes{ {
+                { .dstSet = *sets[i], .dstBinding = 5, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &particleInfo },
+                { .dstSet = *sets[i], .dstBinding = 6, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &clusterGridInfo },
+                { .dstSet = *sets[i], .dstBinding = 7, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &clusterIndexInfo },
                 { .dstSet = *sets[i], .dstBinding = 1, .descriptorCount = 1,
                   .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &lightInfo },
                 { .dstSet = *sets[i], .dstBinding = 2, .descriptorCount = 1,
@@ -1251,20 +1289,33 @@ namespace Crucible {
 
     void Renderer::UpdateLightBuffer(uint32_t frameIndex) {
 
-        // Same frame-in-flight safety as the uniform buffers: BeginFrame() has already waited on
-        // this frame index's fence, so the GPU is done reading m_lightBuffers[frameIndex].
+        // m_frameLights = what is uploaded: directional lights first (the shader loops over those
+        // directly and finds the rest through the light clusters), each group in submission order.
+        m_frameLights.clear();
+
         if (m_lightQueue.empty()) {
-            const GpuLight fallback = ToGpuLight(MakeFallbackSun());
-            memcpy(m_lightBuffersMapped[frameIndex], &fallback, sizeof(GpuLight));
-            m_frameLightCount  = 1;
-            m_shadowLightIndex = 0;   // the fallback sun always casts
-            m_shadowLightDir   = glm::vec3(fallback.directionType);
-            return;
+            m_frameLights.push_back(ToGpuLight(MakeFallbackSun()));
+            m_frameDirLightCount = 1;
+            m_shadowLightIndex   = 0;   // the fallback sun always casts
+        } else {
+            const auto isDirectional = [](const GpuLight& l) { return static_cast<int>(l.directionType.w + 0.5f) == static_cast<int>(LightType::Directional); };
+            int32_t shadowIndex = -1;
+            for (size_t i = 0; i < m_lightQueue.size(); ++i) {
+                if (!isDirectional(m_lightQueue[i])) { continue; }
+                if (static_cast<int32_t>(i) == m_shadowLightIndex) { shadowIndex = static_cast<int32_t>(m_frameLights.size()); }
+                m_frameLights.push_back(m_lightQueue[i]);
+            }
+            m_frameDirLightCount = static_cast<uint32_t>(m_frameLights.size());
+            for (const GpuLight& l : m_lightQueue) { if (!isDirectional(l)) { m_frameLights.push_back(l); } }
+            m_shadowLightIndex = shadowIndex;   // now an index into the reordered buffer
         }
 
-        m_frameLightCount = static_cast<uint32_t>(m_lightQueue.size());   // already capped by SubmitLight
-        memcpy(m_lightBuffersMapped[frameIndex], m_lightQueue.data(), sizeof(GpuLight) * m_frameLightCount);
-        if (m_shadowLightIndex >= 0) { m_shadowLightDir = glm::vec3(m_lightQueue[m_shadowLightIndex].directionType); }
+        m_frameLightCount = static_cast<uint32_t>(m_frameLights.size());   // already capped by SubmitLight
+        if (m_shadowLightIndex >= 0) { m_shadowLightDir = glm::vec3(m_frameLights[m_shadowLightIndex].directionType); }
+
+        // Same frame-in-flight safety as the uniform buffers: BeginFrame() has already waited on
+        // this frame index's fence, so the GPU is done reading m_lightBuffers[frameIndex].
+        memcpy(m_lightBuffersMapped[frameIndex], m_frameLights.data(), sizeof(GpuLight) * m_frameLightCount);
 
     }   // Renderer::UpdateLightBuffer()
 
@@ -1274,7 +1325,7 @@ namespace Crucible {
         ubo.ambientSky    = glm::vec4(env.ambientSky * env.ambientIntensity, 0.0f);
         ubo.ambientGround = glm::vec4(env.ambientGround * env.ambientIntensity, 0.0f);
         ubo.renderParams  = glm::vec4(std::max(env.exposure, 0.0f), std::max(env.skyboxIntensity, 0.0f), 0.0f, 0.0f);
-        ubo.lightParams   = glm::uvec4(m_frameLightCount, 0u, 0u, 0u);
+        ubo.lightParams   = glm::uvec4(m_frameLightCount, 0u, 0u, m_frameDirLightCount);
 
     }   // Renderer::FillEnvironmentUniforms()
 
@@ -1668,6 +1719,11 @@ namespace Crucible {
             ubo.lightParams.z  = count;
         }
 
+        // ---- Point/spot lights binned into this view's cluster grid; particles ----
+        stats.clusteredLights = BuildLightClusters(camera, extent, ubo);
+        PrepareParticles(camera, out, stats);
+        ++m_preparedViews;
+
         // ---- Selection outline mask: just the selected object ----
         if (outline) {
             const uint32_t id = ResolveOutlineProxy();
@@ -1681,6 +1737,562 @@ namespace Crucible {
         memcpy(uniformDst, &ubo, sizeof(ubo));
 
     }   // Renderer::PrepareView()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  CLUSTERED LIGHTS
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void Renderer::CreateClusterBuffers() {
+
+        static_assert(kMaxClusterViews >= kMaxViewports + 1, "one cluster grid per viewport, plus the window");
+
+        const uint32_t frames = m_frameManager.MaxFramesInFlight();
+        for (uint32_t i = 0; i < frames; ++i) {
+            m_clusterGridBuffers.emplace_back();
+            m_clusterGridBuffers.back().Create(m_context, vk::DeviceSize{ kMaxClusterViews } * kClustersPerView * sizeof(ClusterCell),
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_clusterGridMapped.push_back(m_clusterGridBuffers.back().Map());
+
+            m_clusterIndexBuffers.emplace_back();
+            m_clusterIndexBuffers.back().Create(m_context, vk::DeviceSize{ kMaxClusterIndices } * sizeof(uint32_t),
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_clusterIndexMapped.push_back(m_clusterIndexBuffers.back().Map());
+        }
+        m_clusterCounts.resize(kClustersPerView);
+
+    }   // Renderer::CreateClusterBuffers()
+
+    uint32_t Renderer::BuildLightClusters(const Camera& camera, vk::Extent2D extent, FrameUniforms& ubo) {
+
+        // The grid: kClusterX x kClusterY tiles across the screen, kClusterZ slices in depth. Slices
+        // are logarithmic (each one a constant factor deeper than the last), which keeps cells
+        // roughly cube-shaped from the near plane to the far plane.
+        const float nearZ    = std::max(camera.nearZ, 1e-3f);
+        const float farZ     = std::max(camera.farZ, nearZ * 1.01f);
+        const float logScale = static_cast<float>(kClusterZ) / std::log(farZ / nearZ);
+        const float tanY     = std::tan(glm::radians(camera.fovY) * 0.5f);
+        const float tanX     = tanY * camera.aspect;
+
+        const uint32_t view = std::min(m_preparedViews, kMaxClusterViews - 1);
+        const uint32_t base = view * kClustersPerView;
+        ubo.clusterDims = glm::uvec4(kClusterX, kClusterY, kClusterZ, base);
+        ubo.clusterZ    = glm::vec4(nearZ, logScale, static_cast<float>(std::max(extent.width, 1u)), static_cast<float>(std::max(extent.height, 1u)));
+
+        m_clusterGridScratch.resize(static_cast<size_t>(base) + kClustersPerView);   // zero-initialised cells
+        std::fill(m_clusterCounts.begin(), m_clusterCounts.end(), 0u);
+        m_clusterRanges.clear();
+        m_clusterRangeLights.clear();
+
+        // Pass 1: for each point/spot light, the box of cells its sphere of influence can touch.
+        // A spot light is treated as its whole sphere (conservative: a few extra cells, never a
+        // missing one).
+        for (uint32_t i = m_frameDirLightCount; i < m_frameLightCount; ++i) {
+
+            const GpuLight& light = m_frameLights[i];
+            const glm::vec3 c = glm::vec3(ubo.view * glm::vec4(glm::vec3(light.positionRange), 1.0f));
+            const float r = light.positionRange.w;
+            const float z = -c.z;   // view space looks down -Z; z is depth in front of the camera
+
+            if (z + r <= nearZ || z - r >= farZ) { continue; }
+            const float zMin = std::max(z - r, nearZ);
+            const float zMax = std::min(z + r, farZ);
+
+            // Screen extent of the sphere's view-space bounding box, as NDC (-1..1). A positive edge
+            // is widest on screen where the box is nearest; a negative edge where it is farthest
+            // from the centre line - so each edge is projected at whichever depth pushes it outward.
+            const auto project = [](float lo, float hi, float zNear, float zFar, float tanHalf, float& outLo, float& outHi) {
+                outLo = lo / ((lo < 0.0f ? zNear : zFar) * tanHalf);
+                outHi = hi / ((hi > 0.0f ? zNear : zFar) * tanHalf);
+            };
+            float x0, x1, y0, y1;
+            project(c.x - r, c.x + r, zMin, zMax, tanX, x0, x1);
+            project(c.y - r, c.y + r, zMin, zMax, tanY, y0, y1);
+            if (x1 <= -1.0f || x0 >= 1.0f || y1 <= -1.0f || y0 >= 1.0f) { continue; }   // off screen
+
+            const auto tile = [](float ndc, uint32_t count) {
+                const float t = (ndc * 0.5f + 0.5f) * static_cast<float>(count);
+                return static_cast<uint16_t>(glm::clamp(static_cast<int>(std::floor(t)), 0, static_cast<int>(count) - 1));
+            };
+            const auto slice = [&](float depth) {
+                const float s = std::log(depth / nearZ) * logScale;
+                return static_cast<uint16_t>(glm::clamp(static_cast<int>(std::floor(s)), 0, static_cast<int>(kClusterZ) - 1));
+            };
+            const std::array<uint16_t, 6> range{ tile(x0, kClusterX), tile(x1, kClusterX), tile(y0, kClusterY), tile(y1, kClusterY), slice(zMin), slice(zMax) };
+
+            for (uint32_t cz = range[4]; cz <= range[5]; ++cz) {
+                for (uint32_t cy = range[2]; cy <= range[3]; ++cy) {
+                    uint32_t* row = &m_clusterCounts[cz * kClusterX * kClusterY + cy * kClusterX];
+                    for (uint32_t cx = range[0]; cx <= range[1]; ++cx) { ++row[cx]; }
+                }
+            }
+            m_clusterRanges.push_back(range);
+            m_clusterRangeLights.push_back(i);
+        }
+
+        // Pass 2: give every cell its slice of the index buffer. If the frame's budget of light
+        // references runs out, the remaining cells simply get fewer (or no) lights.
+        uint32_t next = static_cast<uint32_t>(m_clusterIndexScratch.size());
+        ClusterCell* cells = &m_clusterGridScratch[base];
+        for (uint32_t cell = 0; cell < kClustersPerView; ++cell) {
+            const uint32_t want = m_clusterCounts[cell];
+            const uint32_t room = kMaxClusterIndices - next;
+            cells[cell].offset = next;
+            cells[cell].count  = 0;                       // refilled in pass 3
+            m_clusterCounts[cell] = std::min(want, room); // now: capacity of this cell
+            next += m_clusterCounts[cell];
+        }
+        m_clusterIndexScratch.resize(next);
+
+        // Pass 3: write each light's index into every cell of its range.
+        for (size_t n = 0; n < m_clusterRanges.size(); ++n) {
+            const auto&    range = m_clusterRanges[n];
+            const uint32_t light = m_clusterRangeLights[n];
+            for (uint32_t cz = range[4]; cz <= range[5]; ++cz) {
+                for (uint32_t cy = range[2]; cy <= range[3]; ++cy) {
+                    for (uint32_t cx = range[0]; cx <= range[1]; ++cx) {
+                        const uint32_t cell = cz * kClusterX * kClusterY + cy * kClusterX + cx;
+                        if (cells[cell].count < m_clusterCounts[cell]) {
+                            m_clusterIndexScratch[cells[cell].offset + cells[cell].count++] = light;
+                        }
+                    }
+                }
+            }
+        }
+
+        return static_cast<uint32_t>(m_clusterRanges.size());
+
+    }   // Renderer::BuildLightClusters()
+
+    void Renderer::UploadClusters(uint32_t frameIndex) {
+
+        if (!m_clusterGridScratch.empty()) {
+            const size_t cells = std::min<size_t>(m_clusterGridScratch.size(), size_t{ kMaxClusterViews } * kClustersPerView);
+            memcpy(m_clusterGridMapped[frameIndex], m_clusterGridScratch.data(), cells * sizeof(ClusterCell));
+        }
+        if (!m_clusterIndexScratch.empty()) {
+            memcpy(m_clusterIndexMapped[frameIndex], m_clusterIndexScratch.data(), m_clusterIndexScratch.size() * sizeof(uint32_t));
+        }
+
+    }   // Renderer::UploadClusters()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  PARTICLES
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void Renderer::SubmitParticles(const ParticleDrawDesc& desc, const GpuParticle* particles, uint32_t count) {
+
+        if (count == 0 || particles == nullptr) { return; }
+        const uint32_t first = static_cast<uint32_t>(m_particleQueue.size());
+        m_particleQueue.insert(m_particleQueue.end(), particles, particles + count);
+        m_particleSubmits.push_back(ParticleSubmit{ desc, first, count });
+
+    }   // Renderer::SubmitParticles()
+
+    void Renderer::CreateParticleResources() {
+
+        const uint32_t frames = m_frameManager.MaxFramesInFlight();
+        for (uint32_t i = 0; i < frames; ++i) {
+            m_particleBuffers.emplace_back();
+            m_particleBuffers.back().Create(m_context, vk::DeviceSize{ kInitialParticleCapacity } * sizeof(GpuParticle),
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_particleBuffersMapped.push_back(m_particleBuffers.back().Map());
+            m_particleCapacity.push_back(kInitialParticleCapacity);
+        }
+
+        // One set per texture that particles use (binding 0 = the texture).
+        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = kMaxParticleTextures };
+        vk::DescriptorPoolCreateInfo poolInfo{
+            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .maxSets = kMaxParticleTextures,
+            .poolSizeCount = 1, .pPoolSizes = &size };
+        m_particleTexturePool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
+
+    }   // Renderer::CreateParticleResources()
+
+    void Renderer::PrepareParticles(const Camera& camera, ViewDrawList& out, RenderCullStats& stats) {
+
+        if (m_particleSubmits.empty()) { return; }
+
+        const Frustum   frustum = Frustum::FromViewProjection(camera.GetProjection() * camera.GetView());
+        const glm::vec3 eye     = camera.position;
+
+        // Visible batches, far to near: blending is only right when what is behind is drawn first.
+        m_particleOrder.clear();
+        for (uint32_t i = 0; i < m_particleSubmits.size(); ++i) {
+            const ParticleDrawDesc& desc = m_particleSubmits[i].desc;
+            if (!frustum.Intersects(AABB(desc.boundsMin, desc.boundsMax))) { continue; }
+            const glm::vec3 d = (desc.boundsMin + desc.boundsMax) * 0.5f - eye;
+            m_particleOrder.emplace_back(glm::dot(d, d), i);
+        }
+        std::sort(m_particleOrder.begin(), m_particleOrder.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+
+        for (const auto& entry : m_particleOrder) {
+
+            const ParticleSubmit& submit = m_particleSubmits[entry.second];
+            if (m_particleScratch.size() + submit.count > kMaxParticlesPerFrame) {
+                if (!m_warnedParticleOverflow) {
+                    CRU_WARN("[Renderer] More than {} particles drawn in one frame; the rest are dropped.", kMaxParticlesPerFrame);
+                    m_warnedParticleOverflow = true;
+                }
+                break;
+            }
+
+            const uint32_t first = static_cast<uint32_t>(m_particleScratch.size());
+            m_particleScratch.insert(m_particleScratch.end(),
+                m_particleQueue.begin() + submit.first, m_particleQueue.begin() + submit.first + submit.count);
+
+            // Additive particles sum to the same result in any order. Alpha-blended ones don't, so
+            // this view gets its own copy sorted back to front.
+            if (!submit.desc.additive && submit.count > 1) {
+                std::sort(m_particleScratch.begin() + first, m_particleScratch.end(), [&](const GpuParticle& a, const GpuParticle& b) {
+                    const glm::vec3 da = glm::vec3(a.posSize) - eye, db = glm::vec3(b.posSize) - eye;
+                    return glm::dot(da, da) > glm::dot(db, db);
+                });
+            }
+
+            const bool textured = submit.desc.texture.IsValid() && submit.desc.texture.id < m_textures.size();
+            ParticleBatch batch;
+            batch.texture = textured ? submit.desc.texture : m_defaultWhiteTexture;
+            batch.first   = first;
+            batch.count   = submit.count;
+            batch.push.params = glm::vec4(
+                static_cast<float>(std::max(submit.desc.flipbookCols, 1u)), static_cast<float>(std::max(submit.desc.flipbookRows, 1u)),
+                submit.desc.additive ? 1.0f : 0.0f, textured ? 1.0f : 0.0f);
+            out.particles.push_back(batch);
+
+            stats.particles += submit.count;
+            ++stats.particleDrawCalls;
+        }
+
+    }   // Renderer::PrepareParticles()
+
+    void Renderer::UploadParticles(uint32_t frameIndex) {
+
+        const size_t count = m_particleScratch.size();
+
+        // Same growth rule and safety argument as UploadInstances().
+        if (count > m_particleCapacity[frameIndex]) {
+            uint32_t capacity = m_particleCapacity[frameIndex];
+            while (capacity < count) { capacity *= 2; }
+            m_particleBuffers[frameIndex].Create(m_context, vk::DeviceSize{ capacity } * sizeof(GpuParticle),
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_particleBuffersMapped[frameIndex] = m_particleBuffers[frameIndex].Map();
+            m_particleCapacity[frameIndex]      = capacity;
+
+            vk::DescriptorBufferInfo info{ .buffer = *m_particleBuffers[frameIndex].GetBuffer(), .offset = 0, .range = vk::WholeSize };
+            auto repoint = [&](const vk::raii::DescriptorSet& set) {
+                vk::WriteDescriptorSet write{
+                    .dstSet = *set, .dstBinding = 5, .dstArrayElement = 0, .descriptorCount = 1,
+                    .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &info };
+                m_context.GetDevice().updateDescriptorSets(write, {});
+            };
+            repoint(m_descriptorSets[frameIndex]);
+            for (auto& [id, vp] : m_viewports) { repoint(vp.descriptorSets[frameIndex]); }
+        }
+
+        if (count > 0) { memcpy(m_particleBuffersMapped[frameIndex], m_particleScratch.data(), count * sizeof(GpuParticle)); }
+
+    }   // Renderer::UploadParticles()
+
+    vk::DescriptorSet Renderer::GetParticleTextureSet(TextureHandle texture) {
+
+        if (!texture.IsValid() || texture.id >= m_textures.size()) { texture = m_defaultWhiteTexture; }
+
+        if (auto it = m_particleTextureSets.find(texture.id); it != m_particleTextureSets.end()) { return *it->second; }
+
+        // Pool full (more than kMaxParticleTextures different particle textures): fall back to the
+        // white texture's set, which is created first and so always exists.
+        if (m_particleTextureSets.size() >= kMaxParticleTextures) {
+            return *m_particleTextureSets.at(m_defaultWhiteTexture.id);
+        }
+
+        vk::DescriptorSetLayout layout = *m_pipeline.GetSingleTextureSetLayout();
+        vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = m_particleTexturePool, .descriptorSetCount = 1, .pSetLayouts = &layout };
+        vk::raii::DescriptorSet set = std::move(m_context.GetDevice().allocateDescriptorSets(allocInfo).front());
+
+        // Clamped sampling (the viewport sampler), so a flipbook frame never bleeds in from the
+        // opposite edge of the atlas.
+        vk::DescriptorImageInfo imageInfo{
+            .sampler = *m_viewportSampler, .imageView = *m_textures[texture.id].view,
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+        vk::WriteDescriptorSet write{
+            .dstSet = *set, .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo };
+        m_context.GetDevice().updateDescriptorSets(write, {});
+
+        return *m_particleTextureSets.emplace(texture.id, std::move(set)).first->second;
+
+    }   // Renderer::GetParticleTextureSet()
+
+    void Renderer::DrawParticles(vk::CommandBuffer cmd, vk::DescriptorSet frameSet, const std::vector<ParticleBatch>& batches) {
+
+        if (batches.empty()) { return; }
+
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticlePipeline());
+        // Set 0 again: this layout's push-constant range differs from the previous pipeline's, so
+        // the earlier binding doesn't carry over.
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticleLayout(), 0, frameSet, nullptr);
+
+        TextureHandle bound;
+        for (const ParticleBatch& batch : batches) {
+            if (!(batch.texture == bound)) {
+                cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticleLayout(), 1, GetParticleTextureSet(batch.texture), nullptr);
+                bound = batch.texture;
+            }
+            cmd.pushConstants<ParticlePush>(*m_pipeline.GetParticleLayout(),
+                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, batch.push);
+            // Six vertices per particle, no vertex buffer; the vertex index (which includes
+            // firstVertex) tells the shader which particle and which corner.
+            cmd.draw(batch.count * 6, 1, batch.first * 6, 0);
+        }
+
+    }   // Renderer::DrawParticles()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  POST-PROCESSING: HDR SCENE IMAGE -> BLOOM -> TONEMAP
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void Renderer::CreatePostDescriptorPool() {
+
+        // Per PostTargets: the HDR image as a bloom source (1 set, 1 image), one set per bloom
+        // step, and the tonemap set (2 images). One PostTargets per viewport, plus the window's.
+        const uint32_t targets = kMaxViewports + 1;
+        const uint32_t sets    = targets * (kBloomMips + 2);
+        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = targets * (kBloomMips + 3) };
+        vk::DescriptorPoolCreateInfo poolInfo{
+            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .maxSets = sets,
+            .poolSizeCount = 1, .pPoolSizes = &size };
+        m_postDescriptorPool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
+
+    }   // Renderer::CreatePostDescriptorPool()
+
+    void Renderer::CreatePostTargets(PostTargets& t, uint32_t width, uint32_t height) {
+
+        width  = std::max(width, 1u);
+        height = std::max(height, 1u);
+        t.extent = vk::Extent2D{ width, height };
+
+        const vk::Format format = VulkanPipeline::kSceneColorFormat;
+        const auto makeView = [&](VulkanImage& image) {
+            vk::ImageViewCreateInfo info{
+                .image = image.GetImage(), .viewType = vk::ImageViewType::e2D, .format = format,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1 } };
+            return vk::raii::ImageView(m_context.GetDevice(), info);
+        };
+
+        t.hdrImage.Create(m_context, width, height, format, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        t.hdrView = makeView(t.hdrImage);
+
+        // Bloom chain: each step half the size of the one before. Tiny targets get fewer steps.
+        uint32_t steps = 1;
+        while (steps < kBloomMips && (std::min(width, height) >> (steps + 1)) >= 2) { ++steps; }
+        t.bloomCount = steps;
+        for (uint32_t i = 0; i < steps; ++i) {
+            t.bloomExtents[i] = vk::Extent2D{ std::max(width >> (i + 1), 1u), std::max(height >> (i + 1), 1u) };
+            t.bloomImages[i].Create(m_context, t.bloomExtents[i].width, t.bloomExtents[i].height, format, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+                vk::MemoryPropertyFlagBits::eDeviceLocal);
+            t.bloomViews[i] = makeView(t.bloomImages[i]);
+        }
+
+        // The sets are allocated once and re-pointed whenever the images are recreated.
+        if (!*t.hdrSet) {
+            const auto allocate = [&](const vk::raii::DescriptorSetLayout& layout) {
+                vk::DescriptorSetLayout raw = *layout;
+                vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = m_postDescriptorPool, .descriptorSetCount = 1, .pSetLayouts = &raw };
+                return std::move(m_context.GetDevice().allocateDescriptorSets(allocInfo).front());
+            };
+            t.hdrSet = allocate(m_pipeline.GetSingleTextureSetLayout());
+            for (auto& set : t.bloomSets) { set = allocate(m_pipeline.GetSingleTextureSetLayout()); }
+            t.tonemapSet = allocate(m_pipeline.GetTonemapDescriptorSetLayout());
+        }
+
+        const auto write = [&](const vk::raii::DescriptorSet& set, uint32_t binding, const vk::raii::ImageView& view) {
+            vk::DescriptorImageInfo imageInfo{
+                .sampler = *m_viewportSampler, .imageView = *view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+            vk::WriteDescriptorSet w{
+                .dstSet = *set, .dstBinding = binding, .dstArrayElement = 0, .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo };
+            m_context.GetDevice().updateDescriptorSets(w, {});
+        };
+        write(t.hdrSet, 0, t.hdrView);
+        for (uint32_t i = 0; i < steps; ++i) { write(t.bloomSets[i], 0, t.bloomViews[i]); }
+        write(t.tonemapSet, 0, t.hdrView);
+        write(t.tonemapSet, 1, t.bloomViews[0]);
+
+    }   // Renderer::CreatePostTargets()
+
+    void Renderer::DrawSceneHdr(FrameContext& fc, PostTargets& t, vk::Image depthImage, vk::ImageView depthView,
+                                vk::Extent2D extent, vk::DescriptorSet frameSet, const ViewDrawList& draws) {
+
+        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
+
+        // Last sampled by the previous frame's bloom/tonemap; its contents are re-cleared.
+        TransitionImageLayout(fc, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+        TransitionImageLayout(fc, depthImage, vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests);
+
+        vk::RenderingAttachmentInfo color{
+            .imageView   = t.hdrView,
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp      = vk::AttachmentLoadOp::eClear,
+            .storeOp     = vk::AttachmentStoreOp::eStore,
+            .clearValue  = vk::ClearColorValue(0.05f, 0.05f, 0.06f, 1.0f)
+        };
+        vk::RenderingAttachmentInfo depth{
+            .imageView   = depthView,
+            .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+            .loadOp      = vk::AttachmentLoadOp::eClear,
+            .storeOp     = vk::AttachmentStoreOp::eStore,   // the debug lines of the final pass test against it
+            .clearValue  = vk::ClearDepthStencilValue(1.0f, 0)
+        };
+        vk::RenderingInfo renderingInfo{
+            .renderArea           = { .offset = { 0, 0 }, .extent = extent },
+            .layerCount           = 1,
+            .colorAttachmentCount = 1,
+            .pColorAttachments    = &color,
+            .pDepthAttachment     = &depth
+        };
+        cmd.beginRendering(renderingInfo);
+        DrawRenderQueue(cmd, extent, frameSet, draws);
+        cmd.endRendering();
+
+        TransitionImageLayout(fc, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
+
+        DrawBloom(fc, t);
+
+        // The final pass reads and keeps testing this depth: make the scene pass's writes visible.
+        TransitionImageLayout(fc, depthImage, vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eDepthAttachmentOptimal,
+            vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests);
+
+    }   // Renderer::DrawSceneHdr()
+
+    void Renderer::DrawBloom(FrameContext& fc, PostTargets& t) {
+
+        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
+
+        const auto toAttachment = [&](uint32_t i, bool keepContents) {
+            TransitionImageLayout(fc, t.bloomImages[i].GetImage(), vk::ImageAspectFlagBits::eColor,
+                keepContents ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined,
+                vk::ImageLayout::eColorAttachmentOptimal,
+                keepContents ? vk::AccessFlagBits2::eShaderSampledRead : vk::AccessFlags2{},
+                vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+        };
+        const auto toSampled = [&](uint32_t i) {
+            TransitionImageLayout(fc, t.bloomImages[i].GetImage(), vk::ImageAspectFlagBits::eColor,
+                vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
+        };
+        const auto begin = [&](uint32_t i, vk::AttachmentLoadOp loadOp) {
+            vk::RenderingAttachmentInfo color{
+                .imageView   = t.bloomViews[i],
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp      = loadOp,
+                .storeOp     = vk::AttachmentStoreOp::eStore,
+                .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f)
+            };
+            vk::RenderingInfo renderingInfo{
+                .renderArea           = { .offset = { 0, 0 }, .extent = t.bloomExtents[i] },
+                .layerCount           = 1,
+                .colorAttachmentCount = 1,
+                .pColorAttachments    = &color
+            };
+            cmd.beginRendering(renderingInfo);
+            // Plain (unflipped) viewport: these passes work in texture space.
+            cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(t.bloomExtents[i].width), static_cast<float>(t.bloomExtents[i].height), 0.0f, 1.0f));
+            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), t.bloomExtents[i]));
+        };
+
+        // Bloom off: the tonemap pass still samples step 0, so give it a defined (black) image.
+        if (!m_postSettings.bloom || t.bloomCount == 0) {
+            toAttachment(0, false);
+            begin(0, vk::AttachmentLoadOp::eClear);
+            cmd.endRendering();
+            toSampled(0);
+            return;
+        }
+
+        const float exposure = std::max(m_environment.exposure, 0.0f);
+
+        // Down the chain: each step filters the previous one into half the size. The first step
+        // reads the scene and keeps only what is brighter than the threshold.
+        vk::DescriptorSet source       = *t.hdrSet;
+        vk::Extent2D      sourceExtent = t.extent;
+        for (uint32_t i = 0; i < t.bloomCount; ++i) {
+            toAttachment(i, false);
+            begin(i, vk::AttachmentLoadOp::eDontCare);
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomDownPipeline());
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomLayout(), 0, source, nullptr);
+            PostPush push;
+            push.a = glm::vec4(1.0f / static_cast<float>(sourceExtent.width), 1.0f / static_cast<float>(sourceExtent.height),
+                               i == 0 ? std::max(m_postSettings.bloomThreshold, 0.0f) : -1.0f, std::max(m_postSettings.bloomKnee, 1e-4f));
+            push.b = glm::vec4(exposure, 0.0f, 0.0f, 0.0f);
+            cmd.pushConstants<PostPush>(*m_pipeline.GetBloomLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
+            cmd.draw(3, 1, 0, 0);
+            cmd.endRendering();
+            toSampled(i);
+            source       = *t.bloomSets[i];
+            sourceExtent = t.bloomExtents[i];
+        }
+
+        // Back up the chain: each step is blurred up and ADDED onto the next larger one, so step 0
+        // ends up holding glow at every scale - tight around small lights, wide around big ones.
+        for (uint32_t i = t.bloomCount - 1; i > 0; --i) {
+            toAttachment(i - 1, true);
+            begin(i - 1, vk::AttachmentLoadOp::eLoad);
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomUpPipeline());
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomLayout(), 0, *t.bloomSets[i], nullptr);
+            PostPush push;
+            push.a = glm::vec4(1.0f / static_cast<float>(t.bloomExtents[i].width), 1.0f / static_cast<float>(t.bloomExtents[i].height), 0.0f, 0.0f);
+            cmd.pushConstants<PostPush>(*m_pipeline.GetBloomLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
+            cmd.draw(3, 1, 0, 0);
+            cmd.endRendering();
+            toSampled(i - 1);
+        }
+
+    }   // Renderer::DrawBloom()
+
+    void Renderer::DrawTonemap(vk::CommandBuffer cmd, const PostTargets& t, vk::Extent2D extent) {
+
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetTonemapPipeline());
+        cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f));
+        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetTonemapLayout(), 0, *t.tonemapSet, nullptr);
+
+        // The glow is the sum of bloomCount steps; dividing by that keeps bloomIntensity meaning
+        // roughly the same thing whatever the render target's size.
+        const bool  bloom    = m_postSettings.bloom && t.bloomCount > 0;
+        const float strength = bloom ? std::max(m_postSettings.bloomIntensity, 0.0f) / static_cast<float>(t.bloomCount) : 0.0f;
+        PostPush push;
+        push.a = glm::vec4(std::max(m_environment.exposure, 0.0f), strength, 0.0f, 0.0f);
+        cmd.pushConstants<PostPush>(*m_pipeline.GetTonemapLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
+        cmd.draw(3, 1, 0, 0);
+
+    }   // Renderer::DrawTonemap()
 
     uint32_t Renderer::AppendBatches(const std::vector<RenderItem>& items, std::vector<DrawBatch>& batches, bool byMaterial) {
 
@@ -2190,9 +2802,14 @@ namespace Crucible {
 
     }   // Renderer::UpdateDebugBuffer()
 
-    void Renderer::DrawDebugLines(vk::CommandBuffer cmd, vk::DescriptorSet frameSet) {
+    void Renderer::DrawDebugLines(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet frameSet) {
 
         if (m_debugTestedCount + m_debugOnTopCount == 0) { return; }
+
+        // The tonemap triangle drawn just before used a plain viewport; world geometry uses the
+        // flipped one (+Y up), like the scene pass.
+        cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
+        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
         const uint32_t frameIndex = m_frameManager.GetFrameIndex();
 
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDebugLineLayout(), 0, frameSet, nullptr);

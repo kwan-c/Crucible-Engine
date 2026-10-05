@@ -188,6 +188,40 @@ namespace Crucible {
         /// Format of the per-viewport selection mask (an attachment of the mask pipeline).
         static constexpr vk::Format kOutlineMaskFormat = vk::Format::eR8Unorm;
 
+        /// Format the scene (meshes, sky, particles) is rendered in: floating point, so brightness
+        /// above 1 survives until the tonemap pass. The bloom chain uses it too.
+        static constexpr vk::Format kSceneColorFormat = vk::Format::eR16G16B16A16Sfloat;
+
+        /*********************************************************************
+         rief
+            Creates the particle pipeline (Particle.spv): no vertex input
+            (quads come from the vertex index), no culling, depth-tested but
+            not depth-writing, blending (ONE, ONE_MINUS_SRC_ALPHA) so one
+            pipeline does both additive and alpha-blended particles. Renders
+            into the HDR scene image. Layout = set 0 + one texture (the
+            single-texture layout) + a 16-byte push constant (ParticlePush).
+         
+ote  Requires CreateDescriptorSetLayout() and
+                CreateSkyboxDescriptorSetLayout() first.
+         *********************************************************************/
+        void CreateParticlePipeline(VulkanContext& context, VulkanSwapchain& swapchain);
+
+        /*********************************************************************
+         rief
+            Creates the three post-processing pipelines (Post.spv), all a
+            fullscreen triangle with a 32-byte fragment push constant
+            (PostPush):
+              - bloom down: HDR -> HDR, no blending; layout = one texture.
+              - bloom up:   HDR -> HDR, additive;    layout = one texture.
+              - tonemap:    HDR scene + bloom -> the final sRGB image (the
+                swapchain's colour format, with the depth attachment bound
+                but unused, so debug lines can follow in the same pass);
+                layout = the two-texture post layout.
+         
+ote  Requires CreateSkyboxDescriptorSetLayout() first.
+         *********************************************************************/
+        void CreatePostPipelines(VulkanContext& context, VulkanSwapchain& swapchain);
+
         /*********************************************************************
          \brief  Creates the graphics pipeline itself: shader stages,
                  fixed-function state, pipeline layout, and dynamic
@@ -273,6 +307,18 @@ namespace Crucible {
         const vk::raii::PipelineLayout&         GetOutlineCompositeLayout() const;    ///< Mask set + push constant.
         const vk::raii::DescriptorSetLayout&    GetOutlineDescriptorSetLayout() const;///< Binding 0 = mask image.
 
+        const vk::raii::Pipeline&               GetParticlePipeline() const;          ///< Billboard particles.
+        const vk::raii::PipelineLayout&         GetParticleLayout() const;            ///< Set 0 + texture + ParticlePush.
+        const vk::raii::Pipeline&               GetBloomDownPipeline() const;         ///< Half-size blur step.
+        const vk::raii::Pipeline&               GetBloomUpPipeline() const;           ///< Additive upsample step.
+        const vk::raii::PipelineLayout&         GetBloomLayout() const;               ///< One texture + PostPush.
+        const vk::raii::Pipeline&               GetTonemapPipeline() const;           ///< HDR + bloom -> sRGB.
+        const vk::raii::PipelineLayout&         GetTonemapLayout() const;             ///< Two textures + PostPush.
+        const vk::raii::DescriptorSetLayout&    GetTonemapDescriptorSetLayout() const;///< Binding 0 = scene, 1 = bloom.
+        /// One combined image sampler at binding 0 (fragment). The same layout object the skybox's
+        /// cubemap set uses; particles and the bloom passes use it for their one texture.
+        const vk::raii::DescriptorSetLayout&    GetSingleTextureSetLayout() const { return m_skyboxDescriptorSetLayout; }
+
     private:
         std::vector<char> ReadFile(std::string const& filename);
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(VulkanContext& context, std::vector<char> const& code);
@@ -299,6 +345,16 @@ namespace Crucible {
         vk::raii::Pipeline              m_outlineCompositePipeline = nullptr;
         vk::raii::PipelineLayout        m_outlineCompositeLayout = nullptr;
         vk::raii::DescriptorSetLayout   m_outlineDescriptorSetLayout = nullptr;
+
+        vk::raii::Pipeline              m_particlePipeline = nullptr;
+        vk::raii::PipelineLayout        m_particleLayout = nullptr;
+
+        vk::raii::Pipeline              m_bloomDownPipeline = nullptr;
+        vk::raii::Pipeline              m_bloomUpPipeline = nullptr;
+        vk::raii::PipelineLayout        m_bloomLayout = nullptr;
+        vk::raii::Pipeline              m_tonemapPipeline = nullptr;
+        vk::raii::PipelineLayout        m_tonemapLayout = nullptr;
+        vk::raii::DescriptorSetLayout   m_tonemapDescriptorSetLayout = nullptr;
 
     };  // VULKAN PIPELINE CLASS
 

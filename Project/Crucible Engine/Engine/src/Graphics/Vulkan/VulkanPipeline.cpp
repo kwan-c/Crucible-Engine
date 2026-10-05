@@ -39,6 +39,14 @@ namespace Crucible {
     const vk::raii::Pipeline&               VulkanPipeline::GetOutlineCompositePipeline() const { return m_outlineCompositePipeline; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetOutlineCompositeLayout() const { return m_outlineCompositeLayout; }
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetOutlineDescriptorSetLayout() const { return m_outlineDescriptorSetLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetParticlePipeline()       const { return m_particlePipeline; }
+    const vk::raii::PipelineLayout&         VulkanPipeline::GetParticleLayout()         const { return m_particleLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetBloomDownPipeline()      const { return m_bloomDownPipeline; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetBloomUpPipeline()        const { return m_bloomUpPipeline; }
+    const vk::raii::PipelineLayout&         VulkanPipeline::GetBloomLayout()            const { return m_bloomLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetTonemapPipeline()        const { return m_tonemapPipeline; }
+    const vk::raii::PipelineLayout&         VulkanPipeline::GetTonemapLayout()          const { return m_tonemapLayout; }
+    const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetTonemapDescriptorSetLayout() const { return m_tonemapDescriptorSetLayout; }
 
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN PIPELINE
@@ -46,7 +54,7 @@ namespace Crucible {
 
     void VulkanPipeline::CreateDescriptorSetLayout(VulkanContext& context) {
 
-        std::array<vk::DescriptorSetLayoutBinding, 5> bindings{ {
+        std::array<vk::DescriptorSetLayoutBinding, 8> bindings{ {
             {
                 .binding            = 0,
                 .descriptorType     = vk::DescriptorType::eUniformBuffer,
@@ -85,6 +93,28 @@ namespace Crucible {
                 // Its comparison sampler (SamplerComparisonState).
                 .binding            = 4,
                 .descriptorType     = vk::DescriptorType::eSampler,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+            },
+            {
+                // This frame's particles (StructuredBuffer<GpuParticle> in Particle.slang): every
+                // particle drawn by every view. Per frame in flight, shared like the instances.
+                .binding            = 5,
+                .descriptorType     = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eVertex
+            },
+            {
+                // Light clusters: one ClusterCell per cell, for every view drawn this frame.
+                .binding            = 6,
+                .descriptorType     = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+            },
+            {
+                // Light clusters: the light indices the cells point into.
+                .binding            = 7,
+                .descriptorType     = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount    = 1,
                 .stageFlags         = vk::ShaderStageFlagBits::eFragment
             }
@@ -209,7 +239,8 @@ namespace Crucible {
         };
         m_pipelineLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
 
-        auto swapchainFormat = swapchain.GetSurfaceFormat().format;
+        // The scene is drawn into the HDR image, not the swapchain (see kSceneColorFormat).
+        vk::Format swapchainFormat = kSceneColorFormat;
         auto depthFormat     = swapchain.GetDepthFormat();
 
         // Consolidate all information to create Graphics Pipeline.
@@ -318,7 +349,8 @@ namespace Crucible {
         };
         m_skyboxPipelineLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
 
-        auto swapchainFormat = swapchain.GetSurfaceFormat().format;
+        // The scene is drawn into the HDR image, not the swapchain (see kSceneColorFormat).
+        vk::Format swapchainFormat = kSceneColorFormat;
         auto depthFormat     = swapchain.GetDepthFormat();
 
         vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
@@ -641,6 +673,188 @@ namespace Crucible {
         }
 
     }   // VulkanPipeline::CreateOutlinePipelines()
+
+    void VulkanPipeline::CreateParticlePipeline(VulkanContext& context, VulkanSwapchain& swapchain) {
+
+        vk::raii::ShaderModule shaderModule = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/Particle.spv"));
+        vk::PipelineShaderStageCreateInfo stages[] = {
+            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "particleVert" },
+            { .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "particleFrag" }
+        };
+
+        // No vertex buffers: six vertices per particle are generated from the vertex index.
+        vk::PipelineVertexInputStateCreateInfo   vertexInputInfo{};
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        vk::PipelineDynamicStateCreateInfo dynamicState{
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates    = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable        = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode             = vk::PolygonMode::eFill,
+            .cullMode                = vk::CullModeFlagBits::eNone,
+            .frontFace               = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable         = vk::False,
+            .lineWidth               = 1.0f
+        };
+        vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+
+        // Premultiplied blending: result = src + dst * (1 - src.a). The shader writes alpha 0 for
+        // additive particles (pure add) and the real alpha for alpha-blended ones.
+        vk::PipelineColorBlendAttachmentState blend{
+            .blendEnable         = vk::True,
+            .srcColorBlendFactor = vk::BlendFactor::eOne,
+            .dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+            .colorBlendOp        = vk::BlendOp::eAdd,
+            .srcAlphaBlendFactor = vk::BlendFactor::eZero,
+            .dstAlphaBlendFactor = vk::BlendFactor::eOne,
+            .alphaBlendOp        = vk::BlendOp::eAdd,
+            .colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
+        };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
+
+        // Hidden behind meshes, but never hiding anything themselves (no depth write) - otherwise
+        // a transparent quad would cut holes in the particles behind it.
+        vk::PipelineDepthStencilStateCreateInfo depthStencil{
+            .depthTestEnable       = vk::True,
+            .depthWriteEnable      = vk::False,
+            .depthCompareOp        = vk::CompareOp::eLessOrEqual,
+            .depthBoundsTestEnable = vk::False,
+            .stencilTestEnable     = vk::False
+        };
+
+        vk::PushConstantRange push{
+            .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
+            .offset = 0, .size = sizeof(ParticlePush) };
+        std::array<vk::DescriptorSetLayout, 2> setLayouts{ *m_descriptorSetLayout, *m_skyboxDescriptorSetLayout };
+        vk::PipelineLayoutCreateInfo layoutInfo{
+            .setLayoutCount = static_cast<uint32_t>(setLayouts.size()), .pSetLayouts = setLayouts.data(),
+            .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
+        m_particleLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
+
+        const vk::Format colorFormat = kSceneColorFormat;
+        const vk::Format depthFormat = swapchain.GetDepthFormat();
+        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+            {
+                .stageCount          = 2,
+                .pStages             = stages,
+                .pVertexInputState   = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState      = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState   = &multisampling,
+                .pDepthStencilState  = &depthStencil,
+                .pColorBlendState    = &colorBlending,
+                .pDynamicState       = &dynamicState,
+                .layout              = m_particleLayout,
+                .renderPass          = nullptr
+            },
+            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat, .depthAttachmentFormat = depthFormat }
+        };
+        m_particlePipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+
+    }   // VulkanPipeline::CreateParticlePipeline()
+
+    void VulkanPipeline::CreatePostPipelines(VulkanContext& context, VulkanSwapchain& swapchain) {
+
+        vk::raii::ShaderModule shaderModule = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/Post.spv"));
+
+        // Tonemap's set: binding 0 = the HDR scene, binding 1 = the finished bloom.
+        std::array<vk::DescriptorSetLayoutBinding, 2> tonemapBindings{ {
+            { .binding = 0, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment },
+            { .binding = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = 1, .stageFlags = vk::ShaderStageFlagBits::eFragment }
+        } };
+        vk::DescriptorSetLayoutCreateInfo tonemapSetInfo{
+            .bindingCount = static_cast<uint32_t>(tonemapBindings.size()), .pBindings = tonemapBindings.data() };
+        m_tonemapDescriptorSetLayout = vk::raii::DescriptorSetLayout(context.GetDevice(), tonemapSetInfo);
+
+        vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(PostPush) };
+        {
+            vk::DescriptorSetLayout setLayout = *m_skyboxDescriptorSetLayout;   // the single-texture layout
+            vk::PipelineLayoutCreateInfo layoutInfo{
+                .setLayoutCount = 1, .pSetLayouts = &setLayout,
+                .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
+            m_bloomLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
+        }
+        {
+            vk::DescriptorSetLayout setLayout = *m_tonemapDescriptorSetLayout;
+            vk::PipelineLayoutCreateInfo layoutInfo{
+                .setLayoutCount = 1, .pSetLayouts = &setLayout,
+                .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
+            m_tonemapLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
+        }
+
+        // State shared by all three: a fullscreen triangle, nothing culled, no depth test.
+        vk::PipelineVertexInputStateCreateInfo   vertexInputInfo{};
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        vk::PipelineDynamicStateCreateInfo dynamicState{
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates    = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable        = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode             = vk::PolygonMode::eFill,
+            .cullMode                = vk::CullModeFlagBits::eNone,
+            .frontFace               = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable         = vk::False,
+            .lineWidth               = 1.0f
+        };
+        vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        vk::PipelineDepthStencilStateCreateInfo noDepth{ .depthTestEnable = vk::False, .depthWriteEnable = vk::False };
+
+        const vk::ColorComponentFlags rgba = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA;
+
+        auto build = [&](const char* fragEntry, bool additive, const vk::raii::PipelineLayout& layout,
+                         vk::Format colorFormat, vk::Format depthFormat) {
+            vk::PipelineShaderStageCreateInfo stages[] = {
+                { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "postVert" },
+                { .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = fragEntry }
+            };
+            vk::PipelineColorBlendAttachmentState blend{
+                .blendEnable         = additive ? vk::True : vk::False,
+                .srcColorBlendFactor = vk::BlendFactor::eOne,
+                .dstColorBlendFactor = vk::BlendFactor::eOne,
+                .colorBlendOp        = vk::BlendOp::eAdd,
+                .srcAlphaBlendFactor = vk::BlendFactor::eOne,
+                .dstAlphaBlendFactor = vk::BlendFactor::eZero,
+                .alphaBlendOp        = vk::BlendOp::eAdd,
+                .colorWriteMask      = rgba
+            };
+            vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
+            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+                {
+                    .stageCount          = 2,
+                    .pStages             = stages,
+                    .pVertexInputState   = &vertexInputInfo,
+                    .pInputAssemblyState = &inputAssembly,
+                    .pViewportState      = &viewportState,
+                    .pRasterizationState = &rasterizer,
+                    .pMultisampleState   = &multisampling,
+                    .pDepthStencilState  = &noDepth,
+                    .pColorBlendState    = &colorBlending,
+                    .pDynamicState       = &dynamicState,
+                    .layout              = *layout,
+                    .renderPass          = nullptr
+                },
+                {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat, .depthAttachmentFormat = depthFormat }
+            };
+            return vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        };
+
+        m_bloomDownPipeline = build("bloomDownFrag", false, m_bloomLayout, kSceneColorFormat, vk::Format::eUndefined);
+        m_bloomUpPipeline   = build("bloomUpFrag",   true,  m_bloomLayout, kSceneColorFormat, vk::Format::eUndefined);
+        // The tonemap pass keeps the scene's depth attachment bound (unused here) so the debug
+        // lines drawn right after it, in the same pass, can still be depth-tested.
+        m_tonemapPipeline   = build("tonemapFrag",   false, m_tonemapLayout, swapchain.GetSurfaceFormat().format, swapchain.GetDepthFormat());
+
+    }   // VulkanPipeline::CreatePostPipelines()
 
     void VulkanPipeline::CleanUp() {
 

@@ -24,6 +24,7 @@ struct FrameUniforms {
     float4   ambientGround;   // rgb = ambient radiance for down-facing surfaces, w unused
     float4   renderParams;    // x = exposure, y = skybox intensity
     uint4    lightParams;     // x = number of valid lights in `lights`,
+                              // w = how many of them are directional (they come first),
                               // y = index+1 of the shadow-casting light (0 = no shadows),
                               // z = number of shadow cascades in use (0..kMaxCascades)
     // ---- Cascaded shadow maps (Renderer::ComputeShadowCascades) ----
@@ -32,6 +33,10 @@ struct FrameUniforms {
     float4   cascadeTexelSize;    // world-space size of one shadow-map texel, per cascade
     float4   shadowParams;        // x = 1/shadow-map resolution, y = depth bias (NDC),
                                   // z = normal-offset bias (in texels), w = fade-out fraction
+    // ---- Clustered lights (Renderer::BuildLightClusters) ----
+    uint4    clusterDims;         // xyz = clusters across / down / in depth, w = this view's first cell
+    float4   clusterZ;            // x = near plane, y = depth clusters / log(far / near),
+                                  // zw = render target size in pixels
 };
 
 // One instance (set 0, binding 2). Must match Crucible::InstanceData (RenderTypes.h).
@@ -85,6 +90,16 @@ StructuredBuffer<InstanceData> instances;
 // (LESS_OR_EQUAL, linear filtering = hardware 2x2 PCF per tap).
 [[vk::binding(3, 0)]] Texture2DArray<float>  shadowMap;
 [[vk::binding(4, 0)]] SamplerComparisonState shadowSampler;
+
+// Clustered lighting. The view volume is cut into clusterDims.x * y * z cells; each cell lists
+// the point/spot lights that can reach it, so a pixel only loops over the lights near it instead
+// of over every light in the scene. Built on the CPU per view (Renderer::BuildLightClusters).
+struct ClusterCell {
+    uint offset;   // first entry in clusterLightIndices
+    uint count;    // how many entries
+};
+[[vk::binding(6, 0)]] StructuredBuffer<ClusterCell> clusterGrid;
+[[vk::binding(7, 0)]] StructuredBuffer<uint>        clusterLightIndices;
 
 [[vk::push_constant]]
 ConstantBuffer<PushConstants> pc;
@@ -269,18 +284,6 @@ float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness) {
     return F0 + (maxRefl - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
-// Krzysztof Narkowicz's fitted ACES filmic curve: maps unbounded HDR radiance into [0,1] with a
-// gentle shoulder instead of hard-clipping at 1.0 (which multiple lights/HDR skies now exceed).
-// The swapchain/viewport images are *_SRGB, so the hardware does the linear->sRGB encode after.
-float3 TonemapACES(float3 x) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
-}
-
 [shader("fragment")]
 float4 fragMain(VSOutput inVert) : SV_Target {
 
@@ -327,14 +330,33 @@ float4 fragMain(VSOutput inVert) : SV_Target {
     // Direct lighting: every light submitted this frame. (The Renderer always supplies at least
     // one - a fallback directional "sun" - when the scene has no Light entities.)
     float3 direct = float3(0.0, 0.0, 0.0);
-    uint   lightCount = frame.lightParams.x;
-    uint   shadowed   = frame.lightParams.y;   // index + 1, 0 = none
-    for (uint i = 0; i < lightCount; ++i) {
+    // Directional lights reach everything, so they are looped over directly; the Renderer puts
+    // them first in the buffer.
+    uint   dirCount = frame.lightParams.w;
+    uint   shadowed = frame.lightParams.y;   // index + 1, 0 = none
+    for (uint i = 0; i < dirCount; ++i) {
         float3 c = EvaluateLight(lights[i], inVert.worldPos, Nmapped, V, albedo, metallic, roughness, F0);
         if (i + 1 == shadowed && any(c > 0.0)) {
             c *= SampleShadow(inVert.worldPos, N, -lights[i].directionType.xyz);
         }
         direct += c;
+    }
+
+    // Point and spot lights: only the ones listed for this pixel's cluster.
+    {
+        uint3 dims      = frame.clusterDims.xyz;
+        float viewDepth = -mul(frame.view, float4(inVert.worldPos, 1.0)).z;
+        // SV_Position.xy is the pixel position, y down; the cluster grid's y runs up.
+        uint cx = min(uint(inVert.pos.x / frame.clusterZ.z * float(dims.x)), dims.x - 1);
+        uint cy = min(uint((1.0 - inVert.pos.y / frame.clusterZ.w) * float(dims.y)), dims.y - 1);
+        float slice = log(max(viewDepth, frame.clusterZ.x) / frame.clusterZ.x) * frame.clusterZ.y;
+        uint cz = min(uint(max(slice, 0.0)), dims.z - 1);
+
+        ClusterCell cell = clusterGrid[frame.clusterDims.w + cx + cy * dims.x + cz * dims.x * dims.y];
+        for (uint k = 0; k < cell.count; ++k) {
+            uint li = clusterLightIndices[cell.offset + k];
+            direct += EvaluateLight(lights[li], inVert.worldPos, Nmapped, V, albedo, metallic, roughness, F0);
+        }
     }
 
     // Ambient: diffuse from the hemisphere around the normal, specular from the hemisphere around
@@ -346,7 +368,7 @@ float4 fragMain(VSOutput inVert) : SV_Target {
     float3 R      = reflect(-V, Nmapped);
     float3 ambient = (kdA * albedo * HemisphereAmbient(Nmapped) + Fa * HemisphereAmbient(R)) * occlusion;
 
-    float3 hdr   = (direct + ambient + emissive) * frame.renderParams.x;   // exposure
-    float3 color = TonemapACES(hdr);
-    return float4(color, 1.0);
+    // Linear HDR radiance. Exposure, bloom and tonemapping happen once for the whole image in
+    // Post.slang's tonemap pass, after everything (meshes, sky, particles) has been drawn.
+    return float4(direct + ambient + emissive, 1.0);
 }

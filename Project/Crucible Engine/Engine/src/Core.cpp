@@ -15,6 +15,7 @@
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/RenderExtractSystem.h"
 #include "Graphics/DebugDrawSystem.h"
+#include "Graphics/ParticleSystem.h"
 #include "Resources/ResourceManager.h"
 
 // STL
@@ -157,6 +158,7 @@ namespace Crucible {
         m_systems.RegisterSystem<ECSPhysicsSystem>();
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
+        m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
         m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_renderer);                 // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
     }

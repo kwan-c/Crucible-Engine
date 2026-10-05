@@ -70,19 +70,9 @@ VSOutput skyVert(uint vertexID : SV_VulkanVertexID) {
     return output;
 }
 
-// Same curve as DefaultShader2.slang's TonemapACES - keep the two in sync so the sky and lit
-// meshes share one exposure/tonemap response.
-float3 TonemapACES(float3 x) {
-    const float a = 2.51;
-    const float b = 0.03;
-    const float c = 2.43;
-    const float d = 0.59;
-    const float e = 0.14;
-    return saturate((x * (a * x + b)) / (x * (c * x + d) + e));
-}
-
 [shader("fragment")]
 float4 skyFrag(VSOutput input) : SV_Target {
+    // Linear HDR; exposure and tonemapping are applied to the whole image in Post.slang.
     float3 sky = skyTex.Sample(normalize(input.dir)).rgb * frame.renderParams.y;   // skybox intensity
-    return float4(TonemapACES(sky * frame.renderParams.x), 1.0);                   // exposure
+    return float4(sky, 1.0);
 }

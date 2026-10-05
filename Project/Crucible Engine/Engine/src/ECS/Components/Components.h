@@ -227,6 +227,115 @@ namespace Crucible
 		int   priority = 0;        // highest enabled camera wins (ties: the first one found)
 	};
 
+	/// Where a ParticleEmitter's new particles appear, in the emitter's local space.
+	enum class ParticleShape : std::uint8_t
+	{
+		Point,    // all at the emitter
+		Sphere,   // anywhere inside a sphere of shapeRadius
+		Box       // anywhere inside a box of boxExtents (half sizes)
+	};
+
+	/// How a ParticleEmitter's particles are mixed with what is behind them.
+	enum class ParticleBlend : std::uint8_t
+	{
+		Additive,   // colours add up: sparks, fire, magic. Order doesn't matter, never darkens.
+		Alpha       // covers what is behind: smoke, dust, splashes. Sorted back to front.
+	};
+
+	/*************************************************************************
+	 \brief
+		A particle effect: sparks, fire, smoke, a splash... One component,
+		many effects - every kind is the same machine (spawn, move, age, draw
+		as a camera-facing quad) with different numbers, so the differences
+		are these fields rather than different code. MakeParticlePreset()
+		(Graphics/ParticlePresets.h) fills them in for the common effects.
+
+	 \details
+		ParticleSystem simulates the particles on the CPU and hands them to
+		the Renderer each frame. The particles are NOT entities; they live
+		in a pool owned by ParticleSystem, keyed by this entity. The emitter
+		sits at the entity's Transform and emits around its local +Y axis.
+
+		Spawning
+		  - playing / loop / duration: an emitter runs for `duration`
+		    seconds, then restarts (loop) or stops spawning. Particles already
+		    alive always finish their lives.
+		  - rate: particles per second, continuously.
+		  - burstCount: particles all at once at the start of each run.
+		  - maxParticles: hard cap on how many are alive at once.
+		  - shape / shapeRadius / boxExtents: where they appear.
+		  - spreadDeg: half-angle of the cone of directions around local +Y
+		    (0 = straight up, 90 = a hemisphere, 180 = every direction).
+		  - worldSpace: true = once spawned, particles ignore the emitter's
+		    movement (a trail); false = they move with it.
+		Each particle
+		  - lifetimeMin/Max (seconds), speedMin/Max (m/s): picked at random.
+		  - sizeMin/Max: starting width in metres; endSizeScale multiplies it
+		    by the end of its life (0.2 = shrinks, 3 = grows).
+		  - gravityScale: 1 = falls like a rock, 0 = floats, negative = rises.
+		  - drag: how fast it loses speed (1/s).
+		  - spinDeg: random spin up to +- this many degrees per second
+		    (also gives each particle a random starting angle).
+		  - stretch: 0 = square; above 0 the quad is stretched along its
+		    motion by this many seconds of travel (sparks, rain).
+		Look
+		  - colourStart/End + alphaStart/End: blended over its life.
+		  - brightness: multiplies the colour. Above 1 it glows (bloom).
+		  - blend: Additive or Alpha (see ParticleBlend).
+		  - textureAsset: a Texture asset; 0 = a soft round dot.
+		  - flipbookCols/Rows: the texture is an atlas of this many frames,
+		    played once over each particle's life.
+		Lighting the scene
+		  - emitLight: the emitter also adds ONE point light at the middle
+		    of its live particles, fading as they die - not a light per
+		    particle. lightColour / lightIntensity (at full strength) /
+		    lightRange as on a Light component.
+	 *************************************************************************/
+	struct ParticleEmitter
+	{
+		bool          playing = true;
+		bool          loop = true;
+		float         duration = 2.f;
+		float         rate = 20.f;
+		int           burstCount = 0;
+		int           maxParticles = 500;
+
+		ParticleShape shape = ParticleShape::Point;
+		float         shapeRadius = 0.25f;
+		Math::vec3    boxExtents{ 0.5f, 0.5f, 0.5f };
+		float         spreadDeg = 25.f;
+		bool          worldSpace = true;
+
+		float         lifetimeMin = 0.8f;
+		float         lifetimeMax = 1.5f;
+		float         speedMin = 1.f;
+		float         speedMax = 2.f;
+		float         sizeMin = 0.1f;
+		float         sizeMax = 0.2f;
+		float         endSizeScale = 1.f;
+		float         gravityScale = 0.f;
+		float         drag = 0.f;
+		float         spinDeg = 0.f;
+		float         stretch = 0.f;
+
+		Math::vec3    colourStart{ 1.f, 1.f, 1.f };
+		Math::vec3    colourEnd{ 1.f, 1.f, 1.f };
+		float         alphaStart = 1.f;
+		float         alphaEnd = 0.f;
+		float         brightness = 1.f;
+		ParticleBlend blend = ParticleBlend::Additive;
+		std::uint64_t textureAsset = 0;
+		int           flipbookCols = 1;
+		int           flipbookRows = 1;
+
+		bool          emitLight = false;
+		Math::vec3    lightColour{ 1.f, 0.6f, 0.25f };
+		float         lightIntensity = 8.f;
+		float         lightRange = 6.f;
+
+		int           seed = 1;   // different seeds give different-looking runs of the same effect
+	};
+
 	/*************************************************************************
 	 \brief
 		Linear motion state used by ECSPhysicsSystem to integrate Transform.
@@ -267,6 +376,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 	CRUCIBLE_COMPONENT(Light, Light);
 	CRUCIBLE_COMPONENT(Skybox, Skybox);
+	CRUCIBLE_COMPONENT(ParticleEmitter, ParticleEmitter);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
 	template<>

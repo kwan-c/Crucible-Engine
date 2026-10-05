@@ -135,6 +135,15 @@ namespace Crucible {
         // One instanced draw: `instanceCount` objects sharing a mesh (and, for the main pass, a
         // material), whose matrices sit contiguously in this frame's instance buffer from
         // `firstInstance` on.
+        // One particle draw: `count` particles from `first` on in this frame's particle buffer,
+        // all with the same texture and blend mode (one emitter).
+        struct ParticleBatch {
+            TextureHandle texture;
+            uint32_t      first = 0;
+            uint32_t      count = 0;
+            ParticlePush  push;
+        };
+
         struct DrawBatch {
             MeshHandle     mesh;
             MaterialHandle material;
@@ -149,7 +158,25 @@ namespace Crucible {
             std::array<std::vector<DrawBatch>, kMaxShadowCascades> shadow;
             uint32_t                                              cascadeCount = 0;   // 0 = no shadow pass
             std::vector<DrawBatch>                                outline;            // selected object (mask pass)
-            void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); }
+            std::vector<ParticleBatch>                            particles;          // far to near
+            void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); }
+        };
+
+        // Where one view's scene is drawn before it reaches the screen: a floating-point (HDR)
+        // colour image, plus the chain of ever smaller images the bloom is built in. One per
+        // viewport, and one for the window in a standalone build. See DrawSceneHdr/DrawBloom/
+        // DrawTonemap.
+        struct PostTargets {
+            vk::Extent2D                                     extent{};
+            VulkanImage                                      hdrImage;
+            vk::raii::ImageView                              hdrView = nullptr;
+            uint32_t                                         bloomCount = 0;   // steps in use (small targets get fewer)
+            std::array<VulkanImage, kBloomMips>              bloomImages;
+            std::array<vk::raii::ImageView, kBloomMips>      bloomViews{ nullptr, nullptr, nullptr, nullptr, nullptr };
+            std::array<vk::Extent2D, kBloomMips>             bloomExtents{};
+            vk::raii::DescriptorSet                          hdrSet = nullptr;       // the HDR image, as a bloom source
+            std::array<vk::raii::DescriptorSet, kBloomMips>  bloomSets{ nullptr, nullptr, nullptr, nullptr, nullptr };
+            vk::raii::DescriptorSet                          tonemapSet = nullptr;   // HDR image + finished bloom
         };
 
         struct Viewport {
@@ -178,6 +205,7 @@ namespace Crucible {
             vk::raii::DescriptorSet outlineSet = nullptr;
 
             ViewDrawList        draws;               // this frame's batches (PrepareView)
+            PostTargets         post;                // HDR scene image + bloom chain, same size as colorImage
         };
 
     public:
@@ -600,6 +628,30 @@ namespace Crucible {
         ShadowSettings&           GetShadowSettings() { return m_shadowSettings; }
 
         /*********************************************************************
+         \brief  Bloom settings (see PostSettings). Changes apply next frame.
+         *********************************************************************/
+        PostSettings&             GetPostSettings() { return m_postSettings; }
+
+        /*********************************************************************
+         \brief
+            Queues one batch of particles for this frame (normally one
+            emitter - ParticleSystem does this). Like Submit(), forgotten
+            after the frame.
+
+         \param[in] desc      Texture, blend mode, flipbook layout and the
+                              batch's world bounds.
+         \param[in] particles The particles (copied).
+         \param[in] count     How many.
+
+         \details
+            Per view, batches outside the frustum are skipped, the rest are
+            drawn far to near, and alpha-blended batches have their
+            particles sorted back to front. Particles are unlit; to light
+            the scene, also SubmitLight() a point light for the emitter.
+         *********************************************************************/
+        ENGINE_API void SubmitParticles(const ParticleDrawDesc& desc, const GpuParticle* particles, uint32_t count);
+
+        /*********************************************************************
          \brief  Shows or hides DebugDraw lines when the scene is drawn
                  straight to the window (the Game build, where there are no
                  viewports). Off by default; turn on for gameplay debugging.
@@ -880,6 +932,49 @@ namespace Crucible {
         uint32_t                                    m_outlineProxy = 0xFFFFFFFFu;     // cached lookup of m_outlineUserData
         OutlineCompositePush                        m_outlineStyle;
 
+        // Clustered lights. m_frameLights is this frame's light buffer as uploaded (directional
+        // lights first). Every prepared view appends its kClustersPerView cells and their light
+        // indices to the two scratch arrays, which UploadClusters() copies into this frame's
+        // buffers (set 0, bindings 6 and 7 - shared by every set like the light buffer).
+        std::vector<GpuLight>                       m_frameLights;
+        uint32_t                                    m_frameDirLightCount = 0;
+        uint32_t                                    m_preparedViews = 0;      // views prepared so far this frame
+        std::vector<ClusterCell>                    m_clusterGridScratch;
+        std::vector<uint32_t>                       m_clusterIndexScratch;
+        std::vector<uint32_t>                       m_clusterCounts;          // scratch: per cell, one view
+        std::vector<std::array<uint16_t, 6>>        m_clusterRanges;          // scratch: per light, cell range
+        std::vector<uint32_t>                       m_clusterRangeLights;     // scratch: which light each range is
+        std::vector<VulkanBuffer>                   m_clusterGridBuffers;
+        std::vector<void*>                          m_clusterGridMapped;
+        std::vector<VulkanBuffer>                   m_clusterIndexBuffers;
+        std::vector<void*>                          m_clusterIndexMapped;
+        static constexpr uint32_t                   kMaxClusterViews = 9;          // kMaxViewports + the window
+        static constexpr uint32_t                   kMaxClusterIndices = 1u << 19; // light references per frame, all views
+
+        // Particles (SubmitParticles): this frame's submitted batches, the per-view sorted copy
+        // that is uploaded (set 0, binding 5; grows like the instance buffer), and one small
+        // descriptor set per texture used by particles. Pool BEFORE the sets it allocates.
+        struct ParticleSubmit { ParticleDrawDesc desc; uint32_t first = 0; uint32_t count = 0; };
+        std::vector<GpuParticle>                    m_particleQueue;
+        std::vector<ParticleSubmit>                 m_particleSubmits;
+        std::vector<GpuParticle>                    m_particleScratch;
+        std::vector<std::pair<float, uint32_t>>     m_particleOrder;        // scratch: (distance, submit index)
+        std::vector<VulkanBuffer>                   m_particleBuffers;
+        std::vector<void*>                          m_particleBuffersMapped;
+        std::vector<uint32_t>                       m_particleCapacity;     // in particles
+        static constexpr uint32_t                   kInitialParticleCapacity = 16384;
+        static constexpr uint32_t                   kMaxParticlesPerFrame = 1u << 20;
+        static constexpr uint32_t                   kMaxParticleTextures = 128;
+        bool                                        m_warnedParticleOverflow = false;
+        vk::raii::DescriptorPool                    m_particleTexturePool = nullptr;
+        std::unordered_map<uint32_t, vk::raii::DescriptorSet> m_particleTextureSets;   // TextureHandle::id -> set
+
+        // Post-processing (HDR scene image -> bloom -> tonemap). Pool BEFORE m_windowPost and
+        // m_viewports, whose PostTargets hold sets allocated from it.
+        PostSettings                                m_postSettings;
+        vk::raii::DescriptorPool                    m_postDescriptorPool = nullptr;
+        PostTargets                                 m_windowPost;           // the window's own targets (standalone build)
+
         vk::raii::DescriptorPool                    m_descriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet>        m_descriptorSets;
 
@@ -909,8 +1004,40 @@ namespace Crucible {
         // Records the bind-and-draw loop over a view's main batches against whatever color/depth
         // attachments are currently bound (the swapchain, or a Viewport). Shared by the direct-
         // to-window path and the offscreen-viewport path so they can never drift apart.
-        void DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, bool drawDebug,
-                             const std::vector<DrawBatch>& batches);
+        void DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, const ViewDrawList& draws);
+
+        // ---- Particles ----
+        void CreateParticleResources();
+        // Culls this frame's submitted batches against one view, orders them far to near (and
+        // sorts alpha-blended particles back to front), and appends them to m_particleScratch.
+        void PrepareParticles(const Camera& camera, ViewDrawList& out, RenderCullStats& stats);
+        // Copies m_particleScratch into this frame's particle buffer (grows it if needed).
+        void UploadParticles(uint32_t frameIndex);
+        // The descriptor set binding `texture` for the particle pipeline (created on first use).
+        vk::DescriptorSet GetParticleTextureSet(TextureHandle texture);
+        void DrawParticles(vk::CommandBuffer cmd, vk::DescriptorSet frameSet, const std::vector<ParticleBatch>& batches);
+
+        // ---- Clustered lights ----
+        void CreateClusterBuffers();
+        // Bins this frame's point/spot lights into one view's cluster grid (appended to the
+        // scratch arrays) and writes the grid's parameters into `ubo`. Returns how many lights
+        // reach the view.
+        uint32_t BuildLightClusters(const Camera& camera, vk::Extent2D extent, FrameUniforms& ubo);
+        void UploadClusters(uint32_t frameIndex);
+
+        // ---- Post-processing ----
+        void CreatePostDescriptorPool();
+        // (Re)creates a view's HDR image and bloom chain at the given size and points its
+        // descriptor sets at them. The caller makes sure the GPU is idle when replacing.
+        void CreatePostTargets(PostTargets& targets, uint32_t width, uint32_t height);
+        // The scene pass: meshes, sky and particles into the view's HDR image (clearing colour
+        // and depth), then the bloom chain. Leaves the HDR image and bloom ready to be sampled,
+        // and depth holding the scene's depth for the debug lines that follow.
+        void DrawSceneHdr(FrameContext& fc, PostTargets& targets, vk::Image depthImage, vk::ImageView depthView,
+                          vk::Extent2D extent, vk::DescriptorSet frameSet, const ViewDrawList& draws);
+        void DrawBloom(FrameContext& fc, PostTargets& targets);
+        // Draws the fullscreen tonemap triangle into the currently-open (final, sRGB) pass.
+        void DrawTonemap(vk::CommandBuffer cmd, const PostTargets& targets, vk::Extent2D extent);
 
         // ---- Frame preparation (before recording) ----
         // Culls and batches everything one view draws this frame (main pass, shadow cascades,
@@ -960,7 +1087,7 @@ namespace Crucible {
         // needed) and records the depth-tested / on-top vertex counts.
         void UpdateDebugBuffer(uint32_t frameIndex);
         // Draws them into the currently-open rendering pass (after meshes + sky).
-        void DrawDebugLines(vk::CommandBuffer cmd, vk::DescriptorSet frameSet);
+        void DrawDebugLines(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet frameSet);
 
         void CreateViewportSampler();
         void CreateViewportDescriptorPool();

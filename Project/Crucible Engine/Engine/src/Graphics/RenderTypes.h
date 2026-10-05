@@ -156,9 +156,14 @@ namespace Crucible {
         glm::vec4  cascadeSplits{ 0.0f };
         glm::vec4  cascadeTexelSize{ 0.0f };
         glm::vec4  shadowParams{ 0.0f };
+        // Clustered lights (Renderer::BuildLightClusters), per view:
+        glm::uvec4 clusterDims{ 1u, 1u, 1u, 0u };   // xyz = grid size, w = this view's first cell in the grid buffer
+        glm::vec4  clusterZ{ 0.1f, 1.0f, 1.0f, 1.0f };   // x = near, y = depth clusters / log(far/near), zw = target size in pixels
     };
-    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 3,
+    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 5,
         "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
+    static_assert(offsetof(FrameUniforms, clusterDims) == 512 && offsetof(FrameUniforms, clusterZ) == 528,
+        "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
     static_assert(offsetof(FrameUniforms, shadowViewProj) == 208 && offsetof(FrameUniforms, shadowParams) == 496,
         "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
 
@@ -186,6 +191,117 @@ namespace Crucible {
         float     pad[3]{};
     };
     static_assert(sizeof(OutlineCompositePush) == 32, "OutlineCompositePush must match OutlineComposite.slang.");
+
+    // ------------------------------------------------------------------------------------------ //
+    //  Clustered lighting
+    // ------------------------------------------------------------------------------------------ //
+
+    /*************************************************************************
+     rief
+        Size of the light-cluster grid every view is cut into: across, down
+        and in depth (depth slices are spaced logarithmically).
+     \details
+        Each cell lists the point/spot lights that can reach it, so a pixel
+        shades only with the lights near it. Directional lights are not
+        clustered - they reach everything. Built on the CPU once per view
+        per frame (Renderer::BuildLightClusters); the two buffers behind it
+        are set 0, bindings 6 (ClusterCell per cell) and 7 (light indices).
+     *************************************************************************/
+    inline constexpr uint32_t kClusterX = 16;
+    inline constexpr uint32_t kClusterY = 9;
+    inline constexpr uint32_t kClusterZ = 24;
+    inline constexpr uint32_t kClustersPerView = kClusterX * kClusterY * kClusterZ;
+
+    /// One cell of the grid: where its light list starts in the index buffer, and its length.
+    struct ClusterCell {
+        uint32_t offset = 0;
+        uint32_t count = 0;
+    };
+    static_assert(sizeof(ClusterCell) == 8, "ClusterCell must match DefaultShader2.slang.");
+
+    // ------------------------------------------------------------------------------------------ //
+    //  Particles
+    // ------------------------------------------------------------------------------------------ //
+
+    /*************************************************************************
+     rief
+        One particle as the particle shader reads it (set 0, binding 5:
+        StructuredBuffer<GpuParticle> in Particle.slang). 64 bytes.
+     \details
+          - posSize: xyz = world position, w = width in metres
+          - color:   rgb = LINEAR colour, may exceed 1 (glows through
+                     bloom); a = opacity
+          - axisRot: xyz = stretch vector (zero = camera-facing square;
+                     otherwise the quad is stretched along it - sparks),
+                     w = rotation in radians (billboards only)
+          - misc:    x = flipbook frame index
+     *************************************************************************/
+    struct GpuParticle {
+        glm::vec4 posSize{ 0.0f, 0.0f, 0.0f, 0.1f };
+        glm::vec4 color{ 1.0f };
+        glm::vec4 axisRot{ 0.0f };
+        glm::vec4 misc{ 0.0f };
+    };
+    static_assert(sizeof(GpuParticle) == 64, "GpuParticle must match Particle.slang's 64-byte std430 GpuParticle.");
+
+    /*************************************************************************
+     rief
+        How one batch of particles (normally: one emitter) is drawn - see
+        Renderer::SubmitParticles().
+     \details
+          - texture:  Invalid = a procedural soft round dot.
+          - additive: true = colours add up (sparks, fire: order doesn't
+                      matter); false = alpha blending (smoke: the Renderer
+                      sorts these back to front per view).
+          - flipbookCols/Rows: the texture is an atlas of this many frames.
+          - boundsMin/Max: world box around the batch, for frustum culling
+                      and for ordering batches by distance.
+     *************************************************************************/
+    struct ParticleDrawDesc {
+        TextureHandle texture{};
+        bool          additive = true;
+        uint32_t      flipbookCols = 1;
+        uint32_t      flipbookRows = 1;
+        glm::vec3     boundsMin{ 0.0f };
+        glm::vec3     boundsMax{ 0.0f };
+    };
+
+    /// Push constant of the particle pipeline (Particle.slang's ParticlePush).
+    struct ParticlePush {
+        glm::vec4 params{ 1.0f, 1.0f, 1.0f, 0.0f };   // x = cols, y = rows, z = additive, w = textured
+    };
+
+    // ------------------------------------------------------------------------------------------ //
+    //  Post-processing (HDR -> bloom -> tonemap)
+    // ------------------------------------------------------------------------------------------ //
+
+    /// Number of half-size steps in the bloom chain (fewer for very small render targets).
+    inline constexpr uint32_t kBloomMips = 5;
+
+    /*************************************************************************
+     rief
+        Bloom and tonemap settings (Renderer::GetPostSettings()). Exposure
+        itself comes from the scene's Skybox component / EnvironmentSettings.
+     \details
+          - bloom:          false skips the bloom passes entirely.
+          - bloomThreshold: only (exposed) brightness above this glows. 1.0
+                            = only things brighter than "white".
+          - bloomKnee:      softness of that cut-off.
+          - bloomIntensity: strength of the glow added back.
+     *************************************************************************/
+    struct PostSettings {
+        bool  bloom = true;
+        float bloomThreshold = 1.0f;
+        float bloomKnee = 0.5f;
+        float bloomIntensity = 0.35f;
+    };
+
+    /// Push constant shared by the three post passes (Post.slang's PostPush).
+    struct PostPush {
+        glm::vec4 a{ 0.0f };
+        glm::vec4 b{ 0.0f };
+    };
+    static_assert(sizeof(PostPush) == 32, "PostPush must match Post.slang.");
 
     // ------------------------------------------------------------------------------------------ //
     //  Render proxies, culling, picking
@@ -222,6 +338,9 @@ namespace Crucible {
         uint32_t drawCalls = 0;
         uint32_t shadowCasters = 0;
         uint32_t shadowDrawCalls = 0;
+        uint32_t particles = 0;          // particles drawn in this view
+        uint32_t particleDrawCalls = 0;  // one per visible emitter batch
+        uint32_t clusteredLights = 0;    // point/spot lights that reach this view's frustum
     };
 
     /*************************************************************************
