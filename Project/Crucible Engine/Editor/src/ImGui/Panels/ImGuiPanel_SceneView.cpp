@@ -466,6 +466,16 @@ void Crucible::SceneView::DrawRenderingMenu() {
 	ImGui::SetNextItemWidth(140.0f);
 	if (ImGui::Combo("MSAA", &msaaChoice, "Off\0" "2x\0" "4x\0")) { post.msaaSamples = 1u << msaaChoice; }
 
+	// Soft darkening of ambient light in creases, corners and under objects.
+	ImGui::SeparatorText("Ambient occlusion");
+	ImGui::Checkbox("Enabled##ao", &post.ao);
+	ImGui::BeginDisabled(!post.ao);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Radius", &post.aoRadius, 0.1f, 2.0f, "%.2f m");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Strength", &post.aoIntensity, 0.0f, 3.0f, "%.2f");
+	ImGui::EndDisabled();
+
 	ImGui::SeparatorText("Sun shadows");
 	ShadowSettings& shadows = m_renderer.GetShadowSettings();
 	ImGui::Checkbox("Enabled##shadows", &shadows.enabled);

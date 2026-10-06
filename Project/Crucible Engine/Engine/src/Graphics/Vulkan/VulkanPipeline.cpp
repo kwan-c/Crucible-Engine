@@ -41,6 +41,9 @@ namespace Crucible {
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetOutlineDescriptorSetLayout() const { return m_outlineDescriptorSetLayout; }
     const vk::raii::Pipeline&               VulkanPipeline::GetParticlePipeline(uint32_t samples) const { return m_particlePipelines[MsaaIndex(samples)]; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetParticleLayout()         const { return m_particleLayout; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetDepthPrepassPipeline()   const { return m_depthPrepassPipeline; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetAoPipeline()             const { return m_aoPipeline; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetAoBlurPipeline()         const { return m_aoBlurPipeline; }
     const vk::raii::Pipeline&               VulkanPipeline::GetBloomDownPipeline()      const { return m_bloomDownPipeline; }
     const vk::raii::Pipeline&               VulkanPipeline::GetBloomUpPipeline()        const { return m_bloomUpPipeline; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetBloomLayout()            const { return m_bloomLayout; }
@@ -54,7 +57,7 @@ namespace Crucible {
 
     void VulkanPipeline::CreateDescriptorSetLayout(VulkanContext& context) {
 
-        std::array<vk::DescriptorSetLayoutBinding, 8> bindings{ {
+        std::array<vk::DescriptorSetLayoutBinding, 10> bindings{ {
             {
                 .binding            = 0,
                 .descriptorType     = vk::DescriptorType::eUniformBuffer,
@@ -115,6 +118,21 @@ namespace Crucible {
                 // Light clusters: the light indices the cells point into.
                 .binding            = 7,
                 .descriptorType     = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+            },
+            {
+                // The sky as a light source: the current skybox's pre-blurred environment map
+                // (SamplerCube envMap). Re-pointed each frame (Renderer::WriteViewTextures).
+                .binding            = 8,
+                .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+            },
+            {
+                // This view's ambient occlusion image (Sampler2D aoTex). Per view.
+                .binding            = 9,
+                .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
                 .descriptorCount    = 1,
                 .stageFlags         = vk::ShaderStageFlagBits::eFragment
             }
@@ -686,6 +704,69 @@ namespace Crucible {
 
     }   // VulkanPipeline::CreateOutlinePipelines()
 
+    void VulkanPipeline::CreateDepthPrepassPipeline(VulkanContext& context) {
+
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        vk::PipelineDynamicStateCreateInfo dynamicState{
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates    = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+        // Same culling as the main pipeline, so the depth it writes is the depth the scene will have.
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable        = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode             = vk::PolygonMode::eFill,
+            .cullMode                = vk::CullModeFlagBits::eBack,
+            .frontFace               = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable         = vk::False,
+            .lineWidth               = 1.0f
+        };
+        vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        vk::PipelineDepthStencilStateCreateInfo depthStencil{
+            .depthTestEnable       = vk::True,
+            .depthWriteEnable      = vk::True,
+            .depthCompareOp        = vk::CompareOp::eLess,
+            .depthBoundsTestEnable = vk::False,
+            .stencilTestEnable     = vk::False
+        };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 0 };
+
+        // Vertex shader only: with no colour attachment there is nothing for a fragment shader to do.
+        vk::raii::ShaderModule module = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/OutlineMask.spv"));
+        vk::PipelineShaderStageCreateInfo stage{ .stage = vk::ShaderStageFlagBits::eVertex, .module = module, .pName = "maskVert" };
+
+        auto binding    = Vertex::GetBindingDescription();
+        auto attributes = Vertex::GetAttributeDescriptions();
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+            .vertexBindingDescriptionCount   = 1,
+            .pVertexBindingDescriptions      = &binding,
+            .vertexAttributeDescriptionCount = 1,
+            .pVertexAttributeDescriptions    = &attributes[0]
+        };
+
+        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+            {
+                .stageCount          = 1,
+                .pStages             = &stage,
+                .pVertexInputState   = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState      = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState   = &multisampling,
+                .pDepthStencilState  = &depthStencil,
+                .pColorBlendState    = &colorBlending,
+                .pDynamicState       = &dynamicState,
+                .layout              = m_outlineMaskLayout,
+                .renderPass          = nullptr
+            },
+            {.colorAttachmentCount = 0, .depthAttachmentFormat = kAoDepthFormat }
+        };
+        m_depthPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+
+    }   // VulkanPipeline::CreateDepthPrepassPipeline()
+
     void VulkanPipeline::CreateParticlePipeline(VulkanContext& context, VulkanSwapchain& swapchain) {
 
         vk::raii::ShaderModule shaderModule = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/Particle.spv"));
@@ -865,6 +946,10 @@ namespace Crucible {
             };
             return vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
         };
+
+        // Ambient occlusion (run before the scene pass): depth -> occlusion -> smoothed occlusion.
+        m_aoPipeline     = build("aoFrag",     false, m_bloomLayout,   kAoFormat, vk::Format::eUndefined);
+        m_aoBlurPipeline = build("aoBlurFrag", false, m_tonemapLayout, kAoFormat, vk::Format::eUndefined);
 
         m_bloomDownPipeline = build("bloomDownFrag", false, m_bloomLayout, kSceneColorFormat, vk::Format::eUndefined);
         m_bloomUpPipeline   = build("bloomUpFrag",   true,  m_bloomLayout, kSceneColorFormat, vk::Format::eUndefined);

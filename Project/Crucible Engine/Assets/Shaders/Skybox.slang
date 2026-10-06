@@ -3,20 +3,8 @@
 // (VulkanPipeline::CreateSkyboxPipeline): no vertex buffer (the cube comes from SV_VertexID), no
 // culling, depth test LESS_OR_EQUAL, no depth write.
 
-// Per-frame data (descriptor set 0, binding 0). Must match Crucible::FrameUniforms (RenderTypes.h)
-// AND DefaultShader2.slang's copy exactly - both pipelines bind the same set-0 descriptor set.
-struct FrameUniforms {
-    float4x4 view;
-    float4x4 proj;
-    float4   cameraPosWS;
-    float4   ambientSky;
-    float4   ambientGround;
-    float4   renderParams;    // x = exposure, y = skybox intensity
-    uint4    lightParams;
-};
-
-[[vk::binding(0, 0)]]
-ConstantBuffer<FrameUniforms> frame;
+// Per-frame data (FrameUniforms, `frame`) and the fog functions.
+#include "Common.slang"
 
 // Set 1: the cubemap being drawn (one descriptor set per cubemap - Renderer::CreateCubemap*).
 [[vk::binding(0, 1)]]
@@ -73,6 +61,9 @@ VSOutput skyVert(uint vertexID : SV_VulkanVertexID) {
 [shader("fragment")]
 float4 skyFrag(VSOutput input) : SV_Target {
     // Linear HDR; exposure and tonemapping are applied to the whole image in Post.slang.
-    float3 sky = skyTex.Sample(normalize(input.dir)).rgb * frame.renderParams.y;   // skybox intensity
+    float3 dir = normalize(input.dir);
+    float3 sky = skyTex.Sample(dir).rgb * frame.renderParams.y;   // skybox intensity
+    // Fog hides the horizon and thins toward the zenith, so the sky meets the fogged ground.
+    sky = lerp(sky, frame.fogColour.rgb, FogAmountSky(dir));
     return float4(sky, 1.0);
 }

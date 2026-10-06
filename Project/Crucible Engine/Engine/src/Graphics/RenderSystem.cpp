@@ -55,6 +55,7 @@ namespace Crucible {
         m_pipeline.CreateShadowPipeline(m_context, kShadowFormat);
         m_pipeline.CreateOutlinePipelines(m_context, m_swapchain);
         m_pipeline.CreateParticlePipeline(m_context, m_swapchain);
+        m_pipeline.CreateDepthPrepassPipeline(m_context);
         m_pipeline.CreatePostPipelines(m_context, m_swapchain);
         m_frameManager.Init(m_context, m_swapchain);
         m_uploads.Init(m_context, m_frameManager.GetCommandPool());
@@ -182,6 +183,7 @@ namespace Crucible {
                     CreatePostTargets(m_windowPost, extent.width, extent.height);
                 }
                 PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, m_uniformBuffersMapped[frameIndex]);
+                WriteViewTextures(*m_descriptorSets[frameIndex], m_windowPost);
             } else {
                 m_windowCullStats = RenderCullStats{};
             }
@@ -189,6 +191,7 @@ namespace Crucible {
             for (auto& [id, vp] : m_viewports) {
                 if (!vp.active) { vp.draws.Clear(); continue; }
                 PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.uniformBuffersMapped[frameIndex]);
+                WriteViewTextures(*vp.descriptorSets[frameIndex], vp.post);
             }
         }
         UploadInstances(frameIndex);
@@ -277,6 +280,7 @@ namespace Crucible {
             if (vp.outline && !vp.draws.outline.empty()) { DrawOutlineMask(fc, vp, frameSet); }
 
             // The scene itself: meshes, sky and particles into this view's HDR image, then bloom.
+            DrawAmbientOcclusion(fc, vp.post, frameSet, vp.draws);
             DrawSceneHdr(fc, vp.post, vp.depthImage.GetImage(), *vp.depthView, vp.extent, frameSet, vp.draws);
 
             // The final pass: tonemap the HDR image into the viewport's (sRGB) colour image, then
@@ -331,6 +335,7 @@ namespace Crucible {
         const bool windowScene = m_viewports.empty() && m_hasMainCamera && *m_windowPost.hdrView;
         if (windowScene) {
             DrawShadowCascades(fc, *m_descriptorSets[frameIndex], m_windowDraws);
+            DrawAmbientOcclusion(fc, m_windowPost, *m_descriptorSets[frameIndex], m_windowDraws);
             DrawSceneHdr(fc, m_windowPost, m_swapchain.GetDepthImage(), m_swapchain.GetDepthImageView(),
                          m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_windowDraws);
         }
@@ -679,6 +684,12 @@ namespace Crucible {
         };
         m_viewportSampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
 
+        // The same without filtering, for reading depth images (which not every GPU can filter).
+        samplerInfo.magFilter  = vk::Filter::eNearest;
+        samplerInfo.minFilter  = vk::Filter::eNearest;
+        samplerInfo.mipmapMode = vk::SamplerMipmapMode::eNearest;
+        m_pointSampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
+
     }   // Renderer::CreateViewportSampler()
 
     void Renderer::CreateViewportDescriptorPool() {
@@ -688,7 +699,9 @@ namespace Crucible {
         uint32_t maxSets = kMaxViewports * m_frameManager.MaxFramesInFlight();
         // Each set 0 = FrameUniforms UBO (binding 0), five storage buffers (lights 1, instances 2,
         // particles 5, light-cluster grid 6 and indices 7), shadow map image + comparison sampler (3, 4).
-        std::array<vk::DescriptorPoolSize, 4> poolSizes{ {
+        // ... plus two textures: the environment map (8) and the view's ambient occlusion (9).
+        std::array<vk::DescriptorPoolSize, 5> poolSizes{ {
+            { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxSets * 2 },
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxSets },
             { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxSets * 5 },
             { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxSets },
@@ -835,7 +848,9 @@ namespace Crucible {
         uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
         // Each set 0 = FrameUniforms UBO (binding 0), five storage buffers (lights 1, instances 2,
         // particles 5, light-cluster grid 6 and indices 7), shadow map image + comparison sampler (3, 4).
-        std::array<vk::DescriptorPoolSize, 4> poolSizes{ {
+        // ... plus two textures: the environment map (8) and the view's ambient occlusion (9).
+        std::array<vk::DescriptorPoolSize, 5> poolSizes{ {
+            { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxFrames * 2 },
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFrames },
             { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 5 },
             { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxFrames },
@@ -1242,6 +1257,29 @@ namespace Crucible {
             return sun;
         }
 
+        // The reverse of CubeFaceTexelDirection below: which face, and which texel of it, a
+        // direction points at (same face selection table).
+        void DirectionToCubeTexel(const glm::vec3& d, uint32_t size, uint32_t& face, uint32_t& x, uint32_t& y) {
+
+            const glm::vec3 a = glm::abs(d);
+            float u, v, major;
+            if (a.x >= a.y && a.x >= a.z) {
+                major = a.x;
+                if (d.x > 0.0f) { face = 0; u = -d.z; v = -d.y; } else { face = 1; u = d.z; v = -d.y; }
+            } else if (a.y >= a.z) {
+                major = a.y;
+                if (d.y > 0.0f) { face = 2; u = d.x; v = d.z; } else { face = 3; u = d.x; v = -d.z; }
+            } else {
+                major = a.z;
+                if (d.z > 0.0f) { face = 4; u = d.x; v = -d.y; } else { face = 5; u = -d.x; v = -d.y; }
+            }
+            major = std::max(major, 1e-8f);
+            const float fs = static_cast<float>(size);
+            x = static_cast<uint32_t>(glm::clamp((u / major * 0.5f + 0.5f) * fs, 0.0f, fs - 1.0f));
+            y = static_cast<uint32_t>(glm::clamp((v / major * 0.5f + 0.5f) * fs, 0.0f, fs - 1.0f));
+
+        }
+
         // World-space direction through the centre of texel (x, y) of cube face `face`, using the
         // Vulkan/OpenGL cube-map face selection table (face order +X, -X, +Y, -Y, +Z, -Z; row 0 =
         // t near 0). Inverse of what the sampler does, so procedural/equirect faces generated with
@@ -1411,7 +1449,43 @@ namespace Crucible {
         ubo.renderParams  = glm::vec4(std::max(env.exposure, 0.0f), std::max(env.skyboxIntensity, 0.0f), 0.0f, 0.0f);
         ubo.lightParams   = glm::uvec4(m_frameLightCount, 0u, 0u, m_frameDirLightCount);
 
+        ubo.fogColour = glm::vec4(glm::max(env.fogColour, glm::vec3(0.0f)), std::max(env.fogDensity, 0.0f));
+        ubo.fogParams = glm::vec4(std::max(env.fogHeightFalloff, 0.0f), env.fogBaseHeight, std::max(env.fogStart, 0.0f),
+                                  glm::clamp(env.fogMaxOpacity, 0.0f, 1.0f));
+
+        // Light from the sky: as bright as the sky is drawn, times the ambient intensity.
+        const GpuCubemap& sky = CurrentSkyCubemap();
+        ubo.ambientParams = glm::vec4(env.ambientFromSky ? 1.0f : 0.0f, static_cast<float>(sky.envMipCount - 1),
+                                      std::max(env.ambientIntensity, 0.0f) * std::max(env.skyboxIntensity, 0.0f), 0.0f);
+        for (size_t i = 0; i < sky.sh.size(); ++i) { ubo.skySH[i] = sky.sh[i]; }
+
     }   // Renderer::FillEnvironmentUniforms()
+
+    const Renderer::GpuCubemap& Renderer::CurrentSkyCubemap() const {
+
+        const CubemapHandle handle = m_environment.skybox;
+        if (handle.IsValid() && handle.id < m_cubemaps.size()) { return m_cubemaps[handle.id]; }
+        return m_cubemaps[m_defaultSkybox.id];
+
+    }   // Renderer::CurrentSkyCubemap()
+
+    void Renderer::WriteViewTextures(vk::DescriptorSet frameSet, const PostTargets& targets) {
+
+        if (m_cubemaps.empty() || !*targets.aoBlurView) { return; }
+
+        vk::DescriptorImageInfo envInfo{
+            .sampler = *m_envSampler, .imageView = *CurrentSkyCubemap().envView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+        vk::DescriptorImageInfo aoInfo{
+            .sampler = *m_viewportSampler, .imageView = *targets.aoBlurView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+        const std::array<vk::WriteDescriptorSet, 2> writes{ {
+            { .dstSet = frameSet, .dstBinding = 8, .descriptorCount = 1,
+              .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &envInfo },
+            { .dstSet = frameSet, .dstBinding = 9, .descriptorCount = 1,
+              .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &aoInfo }
+        } };
+        m_context.GetDevice().updateDescriptorSets(writes, {});
+
+    }   // Renderer::WriteViewTextures()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  SKYBOX / CUBEMAPS
@@ -1436,6 +1510,10 @@ namespace Crucible {
             .unnormalizedCoordinates = vk::False
         };
         m_skyboxSampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
+
+        // Environment maps are read at a mip level chosen by roughness, blending between levels.
+        samplerInfo.maxLod = vk::LodClampNone;
+        m_envSampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
 
     }   // Renderer::CreateSkyboxSampler()
 
@@ -1478,6 +1556,9 @@ namespace Crucible {
         // GPU-side copy actually runs.
         m_uploads.QueueImage(*cube.image.GetImage(), faceData, totalBytes, faceSize, faceSize, 6);
 
+        // The same sky, prepared as a light source for image-based lighting.
+        BuildEnvironmentLighting(cube, faceData, faceSize, format);
+
         vk::ImageViewCreateInfo viewInfo{
             .image            = cube.image.GetImage(),
             .viewType         = vk::ImageViewType::eCube,
@@ -1513,6 +1594,183 @@ namespace Crucible {
         return handle;
 
     }   // Renderer::UploadCubemapFaces()
+
+    void Renderer::BuildEnvironmentLighting(GpuCubemap& cube, const void* faceData, uint32_t faceSize, vk::Format format) {
+
+        // Done once per cubemap, on the CPU, at a small size (the result is blurry by nature):
+        //   - an "environment map": level 0 is the sky shrunk to at most 128x128 per face, and
+        //     each smaller level is that sky blurred as a rougher surface would reflect it;
+        //   - nine spherical-harmonic coefficients describing the sky's overall diffuse light.
+
+        // 1. Decode the faces to linear floating-point colour.
+        const size_t facePixels = static_cast<size_t>(faceSize) * faceSize;
+        std::vector<glm::vec3> source(facePixels * 6);
+        if (format == vk::Format::eR16G16B16A16Sfloat) {
+            const uint16_t* p = static_cast<const uint16_t*>(faceData);
+            for (size_t i = 0; i < source.size(); ++i) {
+                source[i] = glm::vec3(glm::unpackHalf1x16(p[i * 4]), glm::unpackHalf1x16(p[i * 4 + 1]), glm::unpackHalf1x16(p[i * 4 + 2]));
+            }
+        } else {
+            const bool srgb = format == vk::Format::eR8G8B8A8Srgb;
+            const unsigned char* p = static_cast<const unsigned char*>(faceData);
+            for (size_t i = 0; i < source.size(); ++i) {
+                glm::vec3 c(p[i * 4] / 255.0f, p[i * 4 + 1] / 255.0f, p[i * 4 + 2] / 255.0f);
+                if (srgb) { c = glm::pow(c, glm::vec3(2.2f)); }
+                source[i] = c;
+            }
+        }
+
+        // 2. A chain of plain shrunk copies: base size (power of two, at most 128) down to 4.
+        uint32_t baseSize = 4;
+        while (baseSize * 2 <= std::min(faceSize, 128u)) { baseSize *= 2; }
+        std::vector<uint32_t>               sizes;
+        std::vector<std::vector<glm::vec3>> boxes;
+        for (uint32_t s = baseSize; s >= 4 && sizes.size() < 6; s /= 2) { sizes.push_back(s); }
+
+        boxes.emplace_back(static_cast<size_t>(baseSize) * baseSize * 6);
+        for (uint32_t face = 0; face < 6; ++face) {
+            for (uint32_t y = 0; y < baseSize; ++y) {
+                const uint32_t y0 = y * faceSize / baseSize, y1 = std::max((y + 1) * faceSize / baseSize, y0 + 1);
+                for (uint32_t x = 0; x < baseSize; ++x) {
+                    const uint32_t x0 = x * faceSize / baseSize, x1 = std::max((x + 1) * faceSize / baseSize, x0 + 1);
+                    glm::vec3 sum(0.0f);
+                    for (uint32_t sy = y0; sy < y1; ++sy) {
+                        for (uint32_t sx = x0; sx < x1; ++sx) { sum += source[face * facePixels + static_cast<size_t>(sy) * faceSize + sx]; }
+                    }
+                    boxes[0][(static_cast<size_t>(face) * baseSize + y) * baseSize + x] = sum / static_cast<float>((y1 - y0) * (x1 - x0));
+                }
+            }
+        }
+        for (size_t level = 1; level < sizes.size(); ++level) {
+            const uint32_t s = sizes[level], ps = sizes[level - 1];
+            boxes.emplace_back(static_cast<size_t>(s) * s * 6);
+            for (uint32_t face = 0; face < 6; ++face) {
+                for (uint32_t y = 0; y < s; ++y) {
+                    for (uint32_t x = 0; x < s; ++x) {
+                        const size_t row0 = (static_cast<size_t>(face) * ps + y * 2) * ps + x * 2;
+                        const size_t row1 = row0 + ps;
+                        boxes[level][(static_cast<size_t>(face) * s + y) * s + x] =
+                            (boxes[level - 1][row0] + boxes[level - 1][row0 + 1] + boxes[level - 1][row1] + boxes[level - 1][row1 + 1]) * 0.25f;
+                    }
+                }
+            }
+        }
+        const auto lookup = [&](size_t level, const glm::vec3& dir) {
+            uint32_t face, x, y;
+            DirectionToCubeTexel(dir, sizes[level], face, x, y);
+            return boxes[level][(static_cast<size_t>(face) * sizes[level] + y) * sizes[level] + x];
+        };
+
+        // 3. Diffuse light: project the sky onto nine spherical harmonics (from a small level -
+        //    the result only keeps the broadest features anyway), with the cosine falloff of a
+        //    diffuse surface and the basis constants folded in, so the shader evaluates a plain
+        //    polynomial of the normal (see SkyIrradiance in DefaultShader2.slang).
+        {
+            size_t level = 0;
+            while (level + 1 < sizes.size() && sizes[level] > 32) { ++level; }
+            const uint32_t s = sizes[level];
+            std::array<glm::vec3, 9> sum{};
+            float weightSum = 0.0f;
+            for (uint32_t face = 0; face < 6; ++face) {
+                for (uint32_t y = 0; y < s; ++y) {
+                    for (uint32_t x = 0; x < s; ++x) {
+                        const glm::vec3 d = CubeFaceTexelDirection(face, x, y, s);   // normalized
+                        // A texel near a face's corner covers less of the sphere than one at its centre.
+                        const float u = 2.0f * (static_cast<float>(x) + 0.5f) / static_cast<float>(s) - 1.0f;
+                        const float v = 2.0f * (static_cast<float>(y) + 0.5f) / static_cast<float>(s) - 1.0f;
+                        const float w = 1.0f / std::pow(1.0f + u * u + v * v, 1.5f);
+                        const glm::vec3 c = boxes[level][(static_cast<size_t>(face) * s + y) * s + x] * w;
+                        const float basis[9] = {
+                            0.282095f, 0.488603f * d.y, 0.488603f * d.z, 0.488603f * d.x,
+                            1.092548f * d.x * d.y, 1.092548f * d.y * d.z, 0.315392f * (3.0f * d.z * d.z - 1.0f),
+                            1.092548f * d.x * d.z, 0.546274f * (d.x * d.x - d.y * d.y) };
+                        for (int i = 0; i < 9; ++i) { sum[i] += c * basis[i]; }
+                        weightSum += w;
+                    }
+                }
+            }
+            const float norm = 4.0f * 3.14159265f / std::max(weightSum, 1e-6f);
+            // (cosine-lobe factor / pi) * basis constant, per coefficient.
+            const float scale[9] = {
+                1.0f * 0.282095f,
+                (2.0f / 3.0f) * 0.488603f, (2.0f / 3.0f) * 0.488603f, (2.0f / 3.0f) * 0.488603f,
+                0.25f * 1.092548f, 0.25f * 1.092548f, 0.25f * 0.315392f, 0.25f * 1.092548f, 0.25f * 0.546274f };
+            for (int i = 0; i < 9; ++i) { cube.sh[i] = glm::vec4(sum[i] * norm * scale[i], 0.0f); }
+        }
+
+        // 4. Reflections: level 0 is the shrunk sky as is (a mirror); each further level is what a
+        //    rougher surface would reflect - the average of the sky over the spread of directions
+        //    such a surface scatters into (GGX importance sampling, 32 directions per texel, read
+        //    from the shrunk copy of the same size so bright spots do not turn into speckles).
+        cube.envMipCount = static_cast<uint32_t>(sizes.size());
+        cube.envImage.Create(m_context, baseSize, baseSize, vk::Format::eR16G16B16A16Sfloat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            /*arrayLayers*/ 6, vk::ImageCreateFlagBits::eCubeCompatible, cube.envMipCount);
+
+        constexpr uint32_t kSamples = 32;
+        std::vector<uint64_t> packed;
+        for (size_t level = 0; level < sizes.size(); ++level) {
+            const uint32_t s = sizes[level];
+            packed.resize(static_cast<size_t>(s) * s * 6);
+            const float roughness = sizes.size() > 1 ? static_cast<float>(level) / static_cast<float>(sizes.size() - 1) : 0.0f;
+            const float a         = roughness * roughness;
+            for (uint32_t face = 0; face < 6; ++face) {
+                for (uint32_t y = 0; y < s; ++y) {
+                    for (uint32_t x = 0; x < s; ++x) {
+                        glm::vec3 colour;
+                        if (level == 0) {
+                            colour = boxes[0][(static_cast<size_t>(face) * s + y) * s + x];
+                        } else {
+                            const glm::vec3 n  = CubeFaceTexelDirection(face, x, y, s);
+                            const glm::vec3 up = std::abs(n.z) < 0.999f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
+                            const glm::vec3 tx = glm::normalize(glm::cross(up, n));
+                            const glm::vec3 ty = glm::cross(n, tx);
+                            glm::vec3 sum(0.0f);
+                            float     weight = 0.0f;
+                            for (uint32_t i = 0; i < kSamples; ++i) {
+                                // Hammersley point i: evenly spread pairs (u1, u2) in the unit square.
+                                uint32_t bits = i;
+                                bits = (bits << 16u) | (bits >> 16u);
+                                bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
+                                bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
+                                bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
+                                bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
+                                const float u1 = (static_cast<float>(i) + 0.5f) / static_cast<float>(kSamples);
+                                const float u2 = static_cast<float>(bits) * 2.3283064365386963e-10f;
+
+                                const float phi      = 2.0f * 3.14159265f * u1;
+                                const float cosTheta = std::sqrt((1.0f - u2) / (1.0f + (a * a - 1.0f) * u2));
+                                const float sinTheta = std::sqrt(std::max(1.0f - cosTheta * cosTheta, 0.0f));
+                                const glm::vec3 h = tx * (sinTheta * std::cos(phi)) + ty * (sinTheta * std::sin(phi)) + n * cosTheta;
+                                const glm::vec3 l = 2.0f * glm::dot(n, h) * h - n;
+                                const float nDotL = glm::dot(n, l);
+                                if (nDotL <= 0.0f) { continue; }
+                                sum    += lookup(level, l) * nDotL;
+                                weight += nDotL;
+                            }
+                            colour = weight > 0.0f ? sum / weight : lookup(level, n);
+                        }
+                        // Half floats top out near 65504: keep an HDR sun from becoming infinity.
+                        colour = glm::min(colour, glm::vec3(60000.0f));
+                        packed[(static_cast<size_t>(face) * s + y) * s + x] = PackHalfTexel(glm::vec4(colour, 1.0f));
+                    }
+                }
+            }
+            m_uploads.QueueImage(*cube.envImage.GetImage(), packed.data(), vk::DeviceSize{ packed.size() } * 8, s, s, 6,
+                                 static_cast<uint32_t>(level));
+        }
+
+        vk::ImageViewCreateInfo viewInfo{
+            .image            = cube.envImage.GetImage(),
+            .viewType         = vk::ImageViewType::eCube,
+            .format           = vk::Format::eR16G16B16A16Sfloat,
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = cube.envMipCount, .layerCount = 6 }
+        };
+        cube.envView = vk::raii::ImageView(m_context.GetDevice(), viewInfo);
+
+    }   // Renderer::BuildEnvironmentLighting()
 
     void Renderer::CreateDefaultSkybox() {
 
@@ -1769,6 +2027,7 @@ namespace Crucible {
         ubo.time = glm::vec4(m_time, m_deltaTime, m_shadowSettings.debugCascades ? 1.0f : 0.0f, 0.0f);
         ubo.view        = camera.GetView();
         ubo.proj        = camera.GetProjection();
+        out.projInfo    = glm::vec4(ubo.proj[0][0], ubo.proj[1][1], ubo.proj[2][2], ubo.proj[3][2]);
         ubo.cameraPosWS = glm::vec4(camera.position, 0.0f);
         FillEnvironmentUniforms(ubo);
 
@@ -2148,8 +2407,9 @@ namespace Crucible {
         // Per PostTargets: the HDR image as a bloom source (1 set, 1 image), one set per bloom
         // step, and the tonemap set (2 images). One PostTargets per viewport, plus the window's.
         const uint32_t targets = kMaxViewports + 1;
-        const uint32_t sets    = targets * (kBloomMips + 2);
-        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = targets * (kBloomMips + 3) };
+        // ... plus ambient occlusion: its depth set (1 image) and its blur set (2 images).
+        const uint32_t sets    = targets * (kBloomMips + 4);
+        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = targets * (kBloomMips + 6) };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
             .maxSets = sets,
@@ -2212,6 +2472,32 @@ namespace Crucible {
             t.bloomViews[i] = makeView(t.bloomImages[i]);
         }
 
+        // Ambient occlusion, at half size.
+        t.aoExtent = vk::Extent2D{ std::max(width / 2, 1u), std::max(height / 2, 1u) };
+        t.aoDepthView = nullptr;
+        t.aoRawView   = nullptr;
+        t.aoBlurView  = nullptr;
+        t.aoDepth.Create(m_context, t.aoExtent.width, t.aoExtent.height, VulkanPipeline::kAoDepthFormat, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        {
+            vk::ImageViewCreateInfo info{
+                .image = t.aoDepth.GetImage(), .viewType = vk::ImageViewType::e2D, .format = VulkanPipeline::kAoDepthFormat,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1 } };
+            t.aoDepthView = vk::raii::ImageView(m_context.GetDevice(), info);
+        }
+        const auto makeAoImage = [&](VulkanImage& image) {
+            image.Create(m_context, t.aoExtent.width, t.aoExtent.height, VulkanPipeline::kAoFormat, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+                vk::MemoryPropertyFlagBits::eDeviceLocal);
+            vk::ImageViewCreateInfo info{
+                .image = image.GetImage(), .viewType = vk::ImageViewType::e2D, .format = VulkanPipeline::kAoFormat,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1 } };
+            return vk::raii::ImageView(m_context.GetDevice(), info);
+        };
+        t.aoRawView  = makeAoImage(t.aoRaw);
+        t.aoBlurView = makeAoImage(t.aoBlur);
+
         // The sets are allocated once and re-pointed whenever the images are recreated.
         if (!*t.hdrSet) {
             const auto allocate = [&](const vk::raii::DescriptorSetLayout& layout) {
@@ -2222,6 +2508,8 @@ namespace Crucible {
             t.hdrSet = allocate(m_pipeline.GetSingleTextureSetLayout());
             for (auto& set : t.bloomSets) { set = allocate(m_pipeline.GetSingleTextureSetLayout()); }
             t.tonemapSet = allocate(m_pipeline.GetTonemapDescriptorSetLayout());
+            t.aoDepthSet = allocate(m_pipeline.GetSingleTextureSetLayout());
+            t.aoBlurSet  = allocate(m_pipeline.GetTonemapDescriptorSetLayout());
         }
 
         const auto write = [&](const vk::raii::DescriptorSet& set, uint32_t binding, const vk::raii::ImageView& view) {
@@ -2237,7 +2525,116 @@ namespace Crucible {
         write(t.tonemapSet, 0, t.hdrView);
         write(t.tonemapSet, 1, t.bloomViews[0]);
 
+        // Depth is read unfiltered (m_pointSampler); the raw occlusion with the usual sampler.
+        const auto writeDepth = [&](const vk::raii::DescriptorSet& set, uint32_t binding) {
+            vk::DescriptorImageInfo imageInfo{
+                .sampler = *m_pointSampler, .imageView = *t.aoDepthView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+            vk::WriteDescriptorSet w{
+                .dstSet = *set, .dstBinding = binding, .dstArrayElement = 0, .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo };
+            m_context.GetDevice().updateDescriptorSets(w, {});
+        };
+        writeDepth(t.aoDepthSet, 0);
+        write(t.aoBlurSet, 0, t.aoRawView);
+        writeDepth(t.aoBlurSet, 1);
+
     }   // Renderer::CreatePostTargets()
+
+    void Renderer::DrawAmbientOcclusion(FrameContext& fc, PostTargets& t, vk::DescriptorSet frameSet, const ViewDrawList& draws) {
+
+        if (!*t.aoBlurView) { return; }
+        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
+        const vk::Extent2D extent = t.aoExtent;
+
+        const auto beginColour = [&](VulkanImage& image, const vk::raii::ImageView& view) {
+            TransitionImageLayout(fc, image.GetImage(), vk::ImageAspectFlagBits::eColor,
+                vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+                {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+            vk::RenderingAttachmentInfo color{
+                .imageView   = view,
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp      = vk::AttachmentLoadOp::eClear,
+                .storeOp     = vk::AttachmentStoreOp::eStore,
+                .clearValue  = vk::ClearColorValue(1.0f, 1.0f, 1.0f, 1.0f)   // white = no occlusion
+            };
+            vk::RenderingInfo renderingInfo{
+                .renderArea = { .offset = { 0, 0 }, .extent = extent }, .layerCount = 1,
+                .colorAttachmentCount = 1, .pColorAttachments = &color };
+            cmd.beginRendering(renderingInfo);
+            cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f));
+            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+        };
+        const auto endColour = [&](VulkanImage& image) {
+            cmd.endRendering();
+            TransitionImageLayout(fc, image.GetImage(), vk::ImageAspectFlagBits::eColor,
+                vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+                vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
+        };
+
+        // Off: the scene shader still samples the image, so hand it an all-white one.
+        if (!m_postSettings.ao) {
+            beginColour(t.aoBlur, t.aoBlurView);
+            endColour(t.aoBlur);
+            return;
+        }
+
+        // 1. The scene's depth, at half size: every mesh the main pass will draw, depth only.
+        TransitionImageLayout(fc, t.aoDepth.GetImage(), vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests);
+        {
+            vk::RenderingAttachmentInfo depth{
+                .imageView   = t.aoDepthView,
+                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
+                .loadOp      = vk::AttachmentLoadOp::eClear,
+                .storeOp     = vk::AttachmentStoreOp::eStore,
+                .clearValue  = vk::ClearDepthStencilValue(1.0f, 0)
+            };
+            vk::RenderingInfo renderingInfo{
+                .renderArea = { .offset = { 0, 0 }, .extent = extent }, .layerCount = 1, .pDepthAttachment = &depth };
+            cmd.beginRendering(renderingInfo);
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDepthPrepassPipeline());
+            // Flipped like the main pass, so its pixels line up with the scene's.
+            cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width),
+                                            -static_cast<float>(extent.height), 0.0f, 1.0f));
+            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineMaskLayout(), 0, frameSet, nullptr);
+            DrawMeshBatches(cmd, draws.main);
+            cmd.endRendering();
+        }
+        TransitionImageLayout(fc, t.aoDepth.GetImage(), vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+            vk::PipelineStageFlagBits2::eFragmentShader);
+
+        PostPush push;
+        push.a = glm::vec4(1.0f / static_cast<float>(extent.width), 1.0f / static_cast<float>(extent.height),
+                           std::max(m_postSettings.aoRadius, 0.01f), std::max(m_postSettings.aoIntensity, 0.0f));
+        push.b = draws.projInfo;
+
+        // 2. Occlusion from the depth image.
+        beginColour(t.aoRaw, t.aoRawView);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetAoPipeline());
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomLayout(), 0, *t.aoDepthSet, nullptr);
+        cmd.pushConstants<PostPush>(*m_pipeline.GetBloomLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
+        cmd.draw(3, 1, 0, 0);
+        endColour(t.aoRaw);
+
+        // 3. Smoothed.
+        beginColour(t.aoBlur, t.aoBlurView);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetAoBlurPipeline());
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetTonemapLayout(), 0, *t.aoBlurSet, nullptr);
+        cmd.pushConstants<PostPush>(*m_pipeline.GetTonemapLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
+        cmd.draw(3, 1, 0, 0);
+        endColour(t.aoBlur);
+
+    }   // Renderer::DrawAmbientOcclusion()
 
     uint32_t Renderer::SupportedMsaaSamples(uint32_t wanted) const {
 

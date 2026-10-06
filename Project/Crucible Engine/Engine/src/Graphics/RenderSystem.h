@@ -127,6 +127,13 @@ namespace Crucible {
             vk::raii::DescriptorSet  descriptorSet = nullptr;
             uint32_t                 faceSize = 0;
             std::string              debugName;
+            // The same sky prepared as a light source (BuildEnvironmentLighting): a small cube
+            // map whose every mip level is blurrier than the last, for reflections by roughness,
+            // and nine spherical-harmonic coefficients for diffuse light.
+            VulkanImage              envImage;
+            vk::raii::ImageView      envView = nullptr;
+            uint32_t                 envMipCount = 1;
+            std::array<glm::vec4, 9> sh{};
         };
 
         // An offscreen render target: its own color+depth image, camera, and per-frame-in-flight
@@ -159,6 +166,7 @@ namespace Crucible {
             uint32_t                                              cascadeCount = 0;   // 0 = no shadow pass
             std::vector<DrawBatch>                                outline;            // selected object (mask pass)
             std::vector<ParticleBatch>                            particles;          // far to near
+            glm::vec4                                             projInfo{ 1.0f };   // proj[0][0], [1][1], [2][2], [3][2] (ambient occlusion)
             void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); }
         };
 
@@ -177,6 +185,17 @@ namespace Crucible {
             vk::raii::DescriptorSet                          hdrSet = nullptr;       // the HDR image, as a bloom source
             std::array<vk::raii::DescriptorSet, kBloomMips>  bloomSets{ nullptr, nullptr, nullptr, nullptr, nullptr };
             vk::raii::DescriptorSet                          tonemapSet = nullptr;   // HDR image + finished bloom
+            // Ambient occlusion, all half size: a depth-only image of the scene, the raw (noisy)
+            // occlusion, and the smoothed result the scene shader samples (set 0, binding 9).
+            vk::Extent2D                                     aoExtent{};
+            VulkanImage                                      aoDepth;
+            vk::raii::ImageView                              aoDepthView = nullptr;
+            VulkanImage                                      aoRaw;
+            vk::raii::ImageView                              aoRawView = nullptr;
+            VulkanImage                                      aoBlur;
+            vk::raii::ImageView                              aoBlurView = nullptr;
+            vk::raii::DescriptorSet                          aoDepthSet = nullptr;   // depth, for the occlusion pass
+            vk::raii::DescriptorSet                          aoBlurSet = nullptr;    // raw occlusion + depth, for the blur pass
             // MSAA (samples > 1): the scene is drawn into these multisampled images, which are
             // then resolved (averaged) into hdrImage and the view's ordinary depth image.
             uint32_t                                         samples = 1;
@@ -882,6 +901,7 @@ namespace Crucible {
         static constexpr uint32_t                   kMaxCubemaps = 64;
         vk::raii::DescriptorPool                    m_cubemapDescriptorPool = nullptr;
         vk::raii::Sampler                           m_skyboxSampler = nullptr;
+        vk::raii::Sampler                           m_envSampler = nullptr;     // environment maps: blends between mip levels
         std::vector<GpuCubemap>                     m_cubemaps;
         std::unordered_map<std::string, uint32_t>   m_cubemapCacheByKey;   // joined paths / path+size -> CubemapHandle::id
         CubemapHandle                               m_defaultSkybox;
@@ -1003,6 +1023,7 @@ namespace Crucible {
         std::unordered_map<uint32_t, Viewport>     m_viewports;
         uint32_t                                   m_nextViewportId = 0;
         vk::raii::Sampler                          m_viewportSampler = nullptr;
+        vk::raii::Sampler                          m_pointSampler = nullptr;    // no filtering: for reading depth images
 
         // Pending async mesh uploads (see CreateMeshAsync).
         struct PendingMeshUpload { MeshHandle handle; MeshData data; std::string debugName; };
@@ -1052,6 +1073,15 @@ namespace Crucible {
         void DrawSceneHdr(FrameContext& fc, PostTargets& targets, vk::Image depthImage, vk::ImageView depthView,
                           vk::Extent2D extent, vk::DescriptorSet frameSet, const ViewDrawList& draws);
         void DrawBloom(FrameContext& fc, PostTargets& targets);
+        /// Ambient occlusion for one view: half-size depth pre-pass, occlusion, blur. Leaves
+        /// targets.aoBlur ready to sample (all white when PostSettings::ao is off).
+        void DrawAmbientOcclusion(FrameContext& fc, PostTargets& targets, vk::DescriptorSet frameSet, const ViewDrawList& draws);
+        /// Points a view's set 0 at the current environment map (binding 8) and at that view's
+        /// ambient occlusion image (binding 9). Called every frame for the frame's own set.
+        void WriteViewTextures(vk::DescriptorSet frameSet, const PostTargets& targets);
+        /// Builds a cubemap's envImage and sh from its faces (called by UploadCubemapFaces).
+        void BuildEnvironmentLighting(GpuCubemap& cube, const void* faceData, uint32_t faceSize, vk::Format format);
+        const GpuCubemap& CurrentSkyCubemap() const;
         // Draws the fullscreen tonemap triangle into the currently-open (final, sRGB) pass.
         void DrawTonemap(vk::CommandBuffer cmd, const PostTargets& targets, vk::Extent2D extent);
 

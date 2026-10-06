@@ -161,10 +161,16 @@ namespace Crucible {
         glm::uvec4 clusterDims{ 1u, 1u, 1u, 0u };   // xyz = grid size, w = this view's first cell in the grid buffer
         glm::vec4  clusterZ{ 0.1f, 1.0f, 1.0f, 1.0f };   // x = near, y = depth clusters / log(far/near), zw = target size in pixels
         glm::vec4  time{ 0.0f };                         // x = seconds since the Renderer started, y = length of the last frame (seconds), z = 1: shadow cascade debug tint
+        // Fog (EnvironmentSettings):
+        glm::vec4  fogColour{ 0.0f };                    // rgb = colour, a = density at the base height (0 = off)
+        glm::vec4  fogParams{ 0.0f, 0.0f, 0.0f, 1.0f };  // x = height falloff, y = base height, z = start distance, w = max opacity
+        // Light from the sky (Renderer::BuildEnvironmentLighting):
+        glm::vec4  ambientParams{ 0.0f };                // x = 1: ambient from the sky, y = last mip of the environment map, z = strength
+        glm::vec4  skySH[9]{};                           // the sky's diffuse light (spherical harmonics, ready for the shader's polynomial)
     };
-    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 6,
+    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 6 + 16 * 12,
         "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
-    static_assert(offsetof(FrameUniforms, clusterDims) == 512 && offsetof(FrameUniforms, clusterZ) == 528 && offsetof(FrameUniforms, time) == 544,
+    static_assert(offsetof(FrameUniforms, clusterDims) == 512 && offsetof(FrameUniforms, clusterZ) == 528 && offsetof(FrameUniforms, time) == 544 && offsetof(FrameUniforms, fogColour) == 560 && offsetof(FrameUniforms, skySH) == 608,
         "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
     static_assert(offsetof(FrameUniforms, shadowViewProj) == 208 && offsetof(FrameUniforms, shadowParams) == 496,
         "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
@@ -297,6 +303,12 @@ namespace Crucible {
           - fxaa:           smooths jagged edges in the final image (fast
                             approximate anti-aliasing, part of the tonemap
                             pass).
+          - ao:             ambient occlusion: ambient light is dimmed in
+                            creases, corners and under objects. Costs one
+                            extra half-size depth-only draw of the scene.
+          - aoRadius:       how far (metres) geometry can be and still
+                            shade a point.
+          - aoIntensity:    strength of the darkening.
           - msaaSamples:    1, 2 or 4 samples per pixel for the scene pass
                             (MSAA: smooths the edges of geometry properly,
                             at a memory and fill cost). Clamped to what the
@@ -309,6 +321,9 @@ namespace Crucible {
         float bloomIntensity = 0.35f;
         bool  fxaa = true;
         uint32_t msaaSamples = 4;
+        bool  ao = true;
+        float aoRadius = 0.6f;
+        float aoIntensity = 1.2f;
     };
 
     /// Push constant shared by the three post passes (Post.slang's PostPush).
@@ -494,6 +509,16 @@ namespace Crucible {
                               a stand-in for real image-based lighting.
           - exposure:         multiplier applied to the final HDR colour
                               before tonemapping (meshes and sky alike).
+          - ambientFromSky:   true -> ambient light and reflections come
+                              from the skybox itself (image-based lighting),
+                              scaled by ambientIntensity * skyboxIntensity;
+                              false -> the ambientSky/Ground colours.
+          - fog*:             height fog. fogDensity 0 = off; a typical
+                              value is 0.01-0.05. fogHeightFalloff = how
+                              quickly it thins above fogBaseHeight (0 = same
+                              at every height); fogStart = clear distance in
+                              front of the camera; fogMaxOpacity caps how
+                              much it can hide.
      *************************************************************************/
     struct EnvironmentSettings {
         CubemapHandle skybox{};
@@ -503,6 +528,13 @@ namespace Crucible {
         glm::vec3     ambientGround{ 0.20f, 0.18f, 0.16f };
         float         ambientIntensity = 1.0f;
         float         exposure = 1.0f;
+        bool          ambientFromSky = true;
+        float         fogDensity = 0.0f;
+        glm::vec3     fogColour{ 0.55f, 0.63f, 0.72f };
+        float         fogHeightFalloff = 0.08f;
+        float         fogBaseHeight = 0.0f;
+        float         fogStart = 0.0f;
+        float         fogMaxOpacity = 1.0f;
     };
 
     // ------------------------------------------------------------------------------------------ //

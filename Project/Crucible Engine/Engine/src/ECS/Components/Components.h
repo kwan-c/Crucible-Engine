@@ -187,6 +187,14 @@ namespace Crucible
 		  - ambientSky/ambientGround/ambientIntensity: hemisphere ambient
 		    light (a cheap stand-in for image-based lighting).
 		  - exposure: multiplier before tonemapping, for meshes and sky alike.
+		  - ambientFromSky: true -> objects are lit by the sky image itself
+		    (and shiny ones reflect it), scaled by ambientIntensity * intensity;
+		    false -> the two flat ambient colours above.
+		  - fog: distant things fade into fogColour. fogDensity 0 = off (try
+		    0.01-0.05); fogHeightFalloff = how quickly the fog thins above
+		    fogBaseHeight (0 = equally thick at every height); fogStart =
+		    clear distance in front of the camera; fogMaxOpacity = the most
+		    the fog may hide (1 = everything).
 	 *************************************************************************/
 	struct Skybox
 	{
@@ -197,6 +205,13 @@ namespace Crucible
 		Math::vec3    ambientGround{ 0.20f, 0.18f, 0.16f };
 		float         ambientIntensity = 1.f;
 		float         exposure = 1.f;
+		bool          ambientFromSky = true;
+		float         fogDensity = 0.f;
+		Math::vec3    fogColour{ 0.55f, 0.63f, 0.72f };
+		float         fogHeightFalloff = 0.08f;
+		float         fogBaseHeight = 0.f;
+		float         fogStart = 0.f;
+		float         fogMaxOpacity = 1.f;
 		// Texture asset id of an equirectangular sky (.hdr ideally), resolved through
 		// ResourceManager::GetCubemap. Saved in scenes; when non-zero it wins over `cubemap`.
 		std::uint64_t skyboxAsset = 0;

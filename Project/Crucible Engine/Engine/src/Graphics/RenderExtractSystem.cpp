@@ -156,6 +156,13 @@ namespace Crucible {
             env.ambientGround    = skybox.ambientGround;
             env.ambientIntensity = skybox.ambientIntensity;
             env.exposure         = skybox.exposure;
+            env.ambientFromSky   = skybox.ambientFromSky;
+            env.fogDensity       = skybox.fogDensity;
+            env.fogColour        = skybox.fogColour;
+            env.fogHeightFalloff = skybox.fogHeightFalloff;
+            env.fogBaseHeight    = skybox.fogBaseHeight;
+            env.fogStart         = skybox.fogStart;
+            env.fogMaxOpacity    = skybox.fogMaxOpacity;
             m_renderer.SetEnvironment(env);
 
         });

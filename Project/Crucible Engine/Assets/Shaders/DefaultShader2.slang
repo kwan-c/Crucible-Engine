@@ -14,32 +14,8 @@ struct VSInput {
     float4 inTangent;   // xyz = tangent direction, w = bitangent handedness sign (+-1)
 };
 
-// Per-frame data (descriptor set 0, binding 0). Must match Crucible::FrameUniforms (RenderTypes.h)
-// AND Skybox.slang's copy exactly.
-struct FrameUniforms {
-    float4x4 view;
-    float4x4 proj;
-    float4   cameraPosWS;     // xyz used, w unused (matches the C++ struct's std140 padding)
-    float4   ambientSky;      // rgb = ambient radiance for up-facing surfaces, w unused
-    float4   ambientGround;   // rgb = ambient radiance for down-facing surfaces, w unused
-    float4   renderParams;    // x = exposure, y = skybox intensity
-    uint4    lightParams;     // x = number of valid lights in `lights`,
-                              // w = how many of them are directional (they come first),
-                              // y = index+1 of the shadow-casting light (0 = no shadows),
-                              // z = number of shadow cascades in use (0..kMaxCascades)
-    // ---- Cascaded shadow maps (Renderer::ComputeShadowCascades) ----
-    float4x4 shadowViewProj[4];   // world -> light clip space, one per cascade
-    float4   cascadeSplits;       // view-space far distance of each cascade
-    float4   cascadeTexelSize;    // world-space size of one shadow-map texel, per cascade
-    float4   shadowParams;        // x = 1/shadow-map resolution, y = depth bias (NDC),
-                                  // z = normal-offset bias (in texels), w = fade-out fraction
-    // ---- Clustered lights (Renderer::BuildLightClusters) ----
-    uint4    clusterDims;         // xyz = clusters across / down / in depth, w = this view's first cell
-    float4   clusterZ;            // x = near plane, y = depth clusters / log(far / near),
-                                  // zw = render target size in pixels
-    float4   time;                // x = seconds since the Renderer started, y = length of the last frame,
-                                  // z = 1 to tint surfaces by shadow cascade (debug view)
-};
+// Per-frame data (FrameUniforms, `frame`) and the fog functions, shared with the sky and particles.
+#include "Common.slang"
 
 // One instance (set 0, binding 2). Must match Crucible::InstanceData (RenderTypes.h).
 struct InstanceData {
@@ -76,9 +52,6 @@ struct PushConstants {
     MaterialFactors  factors;
 };
 
-[[vk::binding(0, 0)]]
-ConstantBuffer<FrameUniforms> frame;
-
 // This frame's lights (Renderer::UpdateLightBuffer). Only the first frame.lightParams.x are valid.
 [[vk::binding(1, 0)]]
 StructuredBuffer<GpuLight> lights;
@@ -103,6 +76,15 @@ struct ClusterCell {
 };
 [[vk::binding(6, 0)]] StructuredBuffer<ClusterCell> clusterGrid;
 [[vk::binding(7, 0)]] StructuredBuffer<uint>        clusterLightIndices;
+
+// The sky as a light source: the current skybox, blurred more and more in each smaller mip level
+// (Renderer::BuildEnvironmentLighting). A shiny surface reads a sharp level, a rough one a blurry
+// level, so reflections soften with roughness.
+[[vk::binding(8, 0)]] SamplerCube envMap;
+
+// Ambient occlusion for this view (Post.slang's aoFrag/aoBlurFrag): 1 = open, lower = tucked into
+// a crease or corner. Half resolution; all white when the effect is off.
+[[vk::binding(9, 0)]] Sampler2D aoTex;
 
 [[vk::push_constant]]
 ConstantBuffer<PushConstants> pc;
@@ -335,6 +317,29 @@ float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness) {
     return F0 + (maxRefl - F0) * pow(saturate(1.0 - cosTheta), 5.0);
 }
 
+// Light arriving from the whole sky around direction n, for diffuse surfaces. The sky is stored as
+// nine numbers per colour channel (spherical harmonics, frame.skySH): enough to capture "bluer
+// from above, warmer from the sun's side, darker from below" - all that diffuse light can show.
+float3 SkyIrradiance(float3 n) {
+    float3 e = frame.skySH[0].rgb
+             + frame.skySH[1].rgb * n.y + frame.skySH[2].rgb * n.z + frame.skySH[3].rgb * n.x
+             + frame.skySH[4].rgb * (n.x * n.y) + frame.skySH[5].rgb * (n.y * n.z)
+             + frame.skySH[6].rgb * (3.0 * n.z * n.z - 1.0)
+             + frame.skySH[7].rgb * (n.x * n.z) + frame.skySH[8].rgb * (n.x * n.x - n.y * n.y);
+    return max(e, float3(0.0, 0.0, 0.0));
+}
+
+// How much of the reflected sky a surface shows, by its base reflectivity, roughness and viewing
+// angle (Karis' fitted approximation - stands in for the usual lookup texture).
+float3 EnvBRDFApprox(float3 F0, float roughness, float NdotV) {
+    const float4 c0 = float4(-1.0, -0.0275, -0.572, 0.022);
+    const float4 c1 = float4(1.0, 0.0425, 1.04, -0.04);
+    float4 r = roughness * c0 + c1;
+    float a004 = min(r.x * r.x, exp2(-9.28 * NdotV)) * r.x + r.y;
+    float2 ab = float2(-1.04, 1.04) * a004 + r.zw;
+    return F0 * ab.x + ab.y;
+}
+
 [shader("fragment")]
 float4 fragMain(VSOutput inVert) : SV_Target {
 
@@ -417,11 +422,25 @@ float4 fragMain(VSOutput inVert) : SV_Target {
     float3 Fa     = FresnelSchlickRoughness(NdotV, F0, roughness);
     float3 kdA    = (float3(1.0, 1.0, 1.0) - Fa) * (1.0 - metallic);
     float3 R      = reflect(-V, Nmapped);
-    float3 ambient = (kdA * albedo * HemisphereAmbient(Nmapped) + Fa * HemisphereAmbient(R)) * occlusion;
+    float3 ambient;
+    if (frame.ambientParams.x > 0.5) {
+        // Image-based lighting: diffuse light from the whole sky, plus a reflection of the sky
+        // that is blurrier the rougher the surface is.
+        float3 skyDiffuse  = SkyIrradiance(Nmapped);
+        float3 skySpecular = envMap.SampleLevel(R, roughness * frame.ambientParams.y).rgb;
+        ambient = (kdA * albedo * skyDiffuse + skySpecular * EnvBRDFApprox(F0, roughness, NdotV)) * frame.ambientParams.z;
+    } else {
+        ambient = kdA * albedo * HemisphereAmbient(Nmapped) + Fa * HemisphereAmbient(R);
+    }
+    // Ambient light is blocked in creases: by the material's own occlusion map, and by the
+    // screen-space ambient occlusion computed for this view. Direct light is not affected.
+    float ao = aoTex.SampleLevel(inVert.pos.xy / frame.clusterZ.zw, 0.0).r;
+    ambient *= occlusion * ao;
 
     // Linear HDR radiance. Exposure, bloom and tonemapping happen once for the whole image in
     // Post.slang's tonemap pass, after everything (meshes, sky, particles) has been drawn.
     float3 colour = direct + ambient + emissive;
+    colour = lerp(colour, frame.fogColour.rgb, FogAmount(inVert.worldPos));
     if (frame.time.z > 0.5) { colour *= CascadeDebugTint(inVert.worldPos); }
     return float4(colour, 1.0);
 }

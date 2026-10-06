@@ -5,12 +5,8 @@
 // bloom); the light that sparks or fire cast on the scene comes from ordinary point lights that
 // ParticleSystem submits for the emitter.
 
-// Only the prefix this shader reads; the full struct is in DefaultShader2.slang.
-struct FrameUniforms {
-    float4x4 view;
-    float4x4 proj;
-    float4   cameraPosWS;
-};
+// Per-frame data (FrameUniforms, `frame`) and the fog functions.
+#include "Common.slang"
 
 // One particle. Must match Crucible::GpuParticle (RenderTypes.h), 64 bytes.
 struct GpuParticle {
@@ -25,7 +21,6 @@ struct ParticlePush {
     float4 params;     // x = flipbook columns, y = rows, z = 1 additive / 0 alpha blend, w = 1 textured / 0 soft disc
 };
 
-[[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms>  frame;
 [[vk::binding(5, 0)]] StructuredBuffer<GpuParticle>  particles;
 [[vk::binding(0, 1)]] Sampler2D                      particleTex;
 [[vk::push_constant]] ConstantBuffer<ParticlePush>   pc;
@@ -35,6 +30,7 @@ struct VSOutput {
     float4 color;
     float2 uv;       // into the texture (flipbook cell already applied)
     float2 local;    // -1..1 across the quad, for the procedural soft disc
+    float  fog;      // 0 = clear, 1 = lost in the fog (FogAmount at the particle's centre)
 };
 
 static const float2 kCorners[6] = {
@@ -74,6 +70,7 @@ VSOutput particleVert(uint vertexID : SV_VulkanVertexID) {
 
     output.pos   = mul(frame.proj, mul(frame.view, float4(world, 1.0)));
     output.color = p.color;
+    output.fog   = FogAmount(p.posSize.xyz);
     output.local = c;
 
     // Flipbook: frame f of a cols x rows atlas, read left to right, top to bottom.
@@ -101,6 +98,8 @@ float4 particleFrag(VSOutput input) : SV_Target {
     float4 color = texel * input.color;
     // The pipeline blends (ONE, ONE_MINUS_SRC_ALPHA). Writing alpha 0 makes that purely additive;
     // writing the real alpha makes it ordinary (premultiplied) alpha blending.
-    float outAlpha = pc.params.z > 0.5 ? 0.0 : color.a;
-    return float4(color.rgb * color.a, outAlpha);
+    // Fog: a glowing (additive) particle just dims; an ordinary one takes on the fog's colour.
+    bool   additive = pc.params.z > 0.5;
+    float3 rgb      = additive ? color.rgb * (1.0 - input.fog) : lerp(color.rgb, frame.fogColour.rgb, input.fog);
+    return float4(rgb * color.a, additive ? 0.0 : color.a);
 }

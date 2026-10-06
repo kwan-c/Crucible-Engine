@@ -187,6 +187,9 @@ namespace Crucible {
 
         /// Format of the per-viewport selection mask (an attachment of the mask pipeline).
         static constexpr vk::Format kOutlineMaskFormat = vk::Format::eR8Unorm;
+        /// Ambient occlusion: its half-size depth image and the one-channel result.
+        static constexpr vk::Format kAoDepthFormat = vk::Format::eD32Sfloat;
+        static constexpr vk::Format kAoFormat      = vk::Format::eR8Unorm;
 
         /// Format the scene (meshes, sky, particles) is rendered in: floating point, so brightness
         /// above 1 survives until the tonemap pass. The bloom chain uses it too.
@@ -221,6 +224,15 @@ ote  Requires CreateDescriptorSetLayout() and
 ote  Requires CreateSkyboxDescriptorSetLayout() first.
          *********************************************************************/
         void CreatePostPipelines(VulkanContext& context, VulkanSwapchain& swapchain);
+
+        /*********************************************************************
+         \brief
+            Creates the depth-only pipeline that draws the scene's meshes
+            into the ambient occlusion pass's half-size depth image (vertex
+            shader only: OutlineMask.spv's maskVert). Call after
+            CreateOutlinePipelines(), whose pipeline layout it shares.
+         *********************************************************************/
+        void CreateDepthPrepassPipeline(VulkanContext& context);
 
         /*********************************************************************
          \brief  Creates the graphics pipeline itself: shader stages,
@@ -314,6 +326,9 @@ ote  Requires CreateSkyboxDescriptorSetLayout() first.
 
         const vk::raii::Pipeline&               GetParticlePipeline(uint32_t samples = 1) const;         ///< Billboard particles.
         const vk::raii::PipelineLayout&         GetParticleLayout() const;            ///< Set 0 + texture + ParticlePush.
+        const vk::raii::Pipeline&               GetDepthPrepassPipeline() const;      ///< Depth only, for ambient occlusion (layout: GetOutlineMaskLayout()).
+        const vk::raii::Pipeline&               GetAoPipeline() const;                ///< Depth -> occlusion (layout: GetBloomLayout()).
+        const vk::raii::Pipeline&               GetAoBlurPipeline() const;            ///< Occlusion + depth -> smoothed (layout: GetTonemapLayout()).
         const vk::raii::Pipeline&               GetBloomDownPipeline() const;         ///< Half-size blur step.
         const vk::raii::Pipeline&               GetBloomUpPipeline() const;           ///< Additive upsample step.
         const vk::raii::PipelineLayout&         GetBloomLayout() const;               ///< One texture + PostPush.
@@ -354,6 +369,9 @@ ote  Requires CreateSkyboxDescriptorSetLayout() first.
         std::array<vk::raii::Pipeline, kMsaaLevels> m_particlePipelines{ nullptr, nullptr, nullptr };
         vk::raii::PipelineLayout        m_particleLayout = nullptr;
 
+        vk::raii::Pipeline              m_depthPrepassPipeline = nullptr;
+        vk::raii::Pipeline              m_aoPipeline = nullptr;
+        vk::raii::Pipeline              m_aoBlurPipeline = nullptr;
         vk::raii::Pipeline              m_bloomDownPipeline = nullptr;
         vk::raii::Pipeline              m_bloomUpPipeline = nullptr;
         vk::raii::PipelineLayout        m_bloomLayout = nullptr;
