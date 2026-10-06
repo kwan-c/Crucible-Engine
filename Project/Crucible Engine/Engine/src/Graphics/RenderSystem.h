@@ -190,11 +190,13 @@ namespace Crucible {
             vk::Extent2D                                     aoExtent{};
             VulkanImage                                      aoDepth;
             vk::raii::ImageView                              aoDepthView = nullptr;
+            VulkanImage                                      aoNormal;               // smooth view-space normals, from the same pre-pass
+            vk::raii::ImageView                              aoNormalView = nullptr;
             VulkanImage                                      aoRaw;
             vk::raii::ImageView                              aoRawView = nullptr;
             VulkanImage                                      aoBlur;
             vk::raii::ImageView                              aoBlurView = nullptr;
-            vk::raii::DescriptorSet                          aoDepthSet = nullptr;   // depth, for the occlusion pass
+            vk::raii::DescriptorSet                          aoDepthSet = nullptr;   // depth + normals, for the occlusion pass
             vk::raii::DescriptorSet                          aoBlurSet = nullptr;    // raw occlusion + depth, for the blur pass
             // MSAA (samples > 1): the scene is drawn into these multisampled images, which are
             // then resolved (averaged) into hdrImage and the view's ordinary depth image.

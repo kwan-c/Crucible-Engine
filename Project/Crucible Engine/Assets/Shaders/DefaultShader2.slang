@@ -428,6 +428,10 @@ float4 fragMain(VSOutput inVert) : SV_Target {
         // that is blurrier the rougher the surface is.
         float3 skyDiffuse  = SkyIrradiance(Nmapped);
         float3 skySpecular = envMap.SampleLevel(R, roughness * frame.ambientParams.y).rgb;
+        // A very rough surface reflects such a wide spread of sky that the result is as smooth
+        // as the diffuse light. Past roughness 0.6 the reflection fades over to that smooth
+        // version, so no trace of the environment map's texels can show on rough objects.
+        skySpecular = lerp(skySpecular, SkyIrradiance(R), smoothstep(0.6, 1.0, roughness));
         ambient = (kdA * albedo * skyDiffuse + skySpecular * EnvBRDFApprox(F0, roughness, NdotV)) * frame.ambientParams.z;
     } else {
         ambient = kdA * albedo * HemisphereAmbient(Nmapped) + Fa * HemisphereAmbient(R);

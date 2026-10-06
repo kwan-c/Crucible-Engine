@@ -13,12 +13,14 @@
 
 struct PostPush {
     float4 a;   // down/up: xy = size of one source texel; down: z = threshold (< 0 = none), w = knee
-                // tonemap: x = exposure, y = bloom strength, z = 1 to anti-alias (FXAA)
+                // tonemap: x = exposure, y = bloom strength, z = 1 to anti-alias (FXAA), w = time in seconds
     float4 b;   // down: x = exposure (so the threshold is judged on what will be seen)
-                // tonemap: xy = size of one texel of the target
+                // tonemap: xy = size of one texel of the target, z = vignette strength, w = vignette softness
                 // ao:      a.xy = size of one texel, a.z = radius in metres, a.w = strength;
                 //          b = the projection matrix's [0][0], [1][1], [2][2], [3][2]
                 // ao blur: a.xy = size of one texel; b as for ao
+    float4 c;   // tonemap only: x = contrast, y = saturation, z = film grain strength
+    float4 d;   // tonemap only: rgb = white balance (temperature and tint), w = colour fringing, in uv units at the corners
 };
 
 [[vk::binding(0, 0)]] Sampler2D sourceTex;   // bloom passes: the image to filter; tonemap: the HDR scene
@@ -95,7 +97,17 @@ float3 TonemapACES(float3 x) {
 // is multiplied by exposure. SampleLevel: this is called inside branches, where the automatic
 // mip selection of Sample is not allowed (and the image has a single level anyway).
 float3 Finished(float2 uv, float3 glow) {
-    return TonemapACES(sourceTex.SampleLevel(uv, 0.0).rgb * pc.a.x + glow);
+    float3 hdr = sourceTex.SampleLevel(uv, 0.0).rgb;
+    // Colour fringing (chromatic aberration): a lens bends red and blue by slightly different
+    // amounts, more toward the edge of the picture. Red is read a little further out, blue a
+    // little further in.
+    if (pc.d.w > 0.0) {
+        float2 shift = (uv - 0.5) * (2.0 * pc.d.w);
+        hdr.r = sourceTex.SampleLevel(uv + shift, 0.0).r;
+        hdr.b = sourceTex.SampleLevel(uv - shift, 0.0).b;
+    }
+    // White balance is applied to the light itself, before the curve squeezes it.
+    return TonemapACES((hdr * pc.a.x + glow) * pc.d.rgb);
 }
 
 // Brightness as the eye judges it (the square root approximates the display's gamma curve).
@@ -119,8 +131,7 @@ static const float kFxaaStep[10] = { 1.0, 1.0, 1.0, 1.0, 1.5, 2.0, 2.0, 2.0, 4.0
 // turns the step into a ramp. Flat areas return early and cost five samples.
 // The glow is smooth by nature, so one sample of it serves every tap.
 // The target is *_SRGB, so the hardware does the linear -> sRGB encode after this.
-[shader("fragment")]
-float4 tonemapFrag(PostVSOut input) : SV_Target {
+float4 TonemapAntiAliased(PostVSOut input) {
     float2 uv   = input.uv;
     float3 glow = bloomTex.Sample(uv).rgb * pc.a.y;
     float3 rgbM = Finished(uv, glow);
@@ -225,6 +236,34 @@ float4 tonemapFrag(PostVSOut input) : SV_Target {
     return float4(Finished(finalUv, glow), 1.0);
 }
 
+// The final pass's entry point: the tonemapped, anti-aliased pixel (above), then the "look":
+// contrast and saturation, the vignette and film grain. Every setting has a neutral value at
+// which its step does nothing (Skybox component; EnvironmentSettings in RenderTypes.h).
+[shader("fragment")]
+float4 tonemapFrag(PostVSOut input) : SV_Target {
+    float3 c = TonemapAntiAliased(input).rgb;
+
+    // Contrast: push values away from (or toward) middle grey. 0.18 is middle grey in linear light.
+    c = max((c - 0.18) * pc.c.x + 0.18, float3(0.0, 0.0, 0.0));
+
+    // Saturation: blend between the grey of the same brightness and the colour.
+    float grey = dot(c, float3(0.2126, 0.7152, 0.0722));
+    c = max(lerp(float3(grey, grey, grey), c, pc.c.y), float3(0.0, 0.0, 0.0));
+
+    // Vignette: darken toward the corners. `softness` sets how far in from the corners it starts.
+    float fromCentre = length(input.uv - 0.5) * 1.41421356;   // 0 at the centre, 1 in the corners
+    c *= 1.0 - pc.b.z * smoothstep(1.0 - pc.b.w, 1.0, fromCentre);
+
+    // Film grain: a little random brightness per pixel, different every frame.
+    if (pc.c.z > 0.0) {
+        float2 seed  = input.pos.xy + frac(pc.a.w) * float2(4096.0, 1777.0);
+        float  noise = frac(sin(dot(seed, float2(12.9898, 78.233))) * 43758.5453) - 0.5;
+        c = max(c + noise * pc.c.z * 0.1, float3(0.0, 0.0, 0.0));
+    }
+    return float4(c, 1.0);
+}
+
+// ---- Ambient occlusion ----
 // ---- Ambient occlusion -------------------------------------------------------------------------
 
 // Distance in front of the camera, in metres, from a value of the depth image (0..1, near..far).
@@ -240,7 +279,8 @@ float3 AoViewPos(float2 uv, float linearDepth) {
 
 // For each pixel: take a handful of points in the half-sphere above the surface and count how
 // many are hidden behind other geometry (according to the depth image). Many hidden = a crease,
-// a corner, the gap under an object = little ambient light gets in. sourceTex = the depth image.
+// a corner, the gap under an object = little ambient light gets in.
+// sourceTex = the depth image, bloomTex = the normals.
 [shader("fragment")]
 float4 aoFrag(PostVSOut input) : SV_Target {
     float depth = sourceTex.SampleLevel(input.uv, 0.0).r;
@@ -249,12 +289,29 @@ float4 aoFrag(PostVSOut input) : SV_Target {
     float  centre = AoLinearDepth(depth);
     float3 P      = AoViewPos(input.uv, centre);
 
-    // Surface direction from how the position changes across neighbouring pixels.
-    float3 N = normalize(cross(ddx(P), ddy(P)));
-    // Make it face the camera. "Facing the camera" means pointing back along the line of sight
-    // to this pixel (-P), not along the view axis: towards the edges of the view those differ,
-    // and a visible surface can have a normal that points slightly away from the view axis.
+    // Surface direction: the smooth normal the depth pre-pass stored (DepthNormal.slang), so a
+    // low-polygon sphere is treated as round, not as a set of flat facets.
+    float3 N = normalize(bloomTex.SampleLevel(input.uv, 0.0).xyz * 2.0 - 1.0);
+    // It must face the camera - that is, point back along the line of sight to this pixel (-P),
+    // not along the view axis: towards the edges of the view those differ. (A smooth normal on
+    // the rim of a round object can tip slightly away.)
     if (dot(N, P) > 0.0) { N = -N; }
+
+    // The direction of the flat triangle actually under this pixel, from the depth image: the
+    // slope toward whichever neighbour on each axis is closer in depth (so the slope is never
+    // taken across the edge of an object).
+    float2 texel = pc.a.xy;
+    float  dL = AoLinearDepth(sourceTex.SampleLevel(input.uv - float2(texel.x, 0.0), 0.0).r);
+    float  dR = AoLinearDepth(sourceTex.SampleLevel(input.uv + float2(texel.x, 0.0), 0.0).r);
+    float  dU = AoLinearDepth(sourceTex.SampleLevel(input.uv - float2(0.0, texel.y), 0.0).r);
+    float  dD = AoLinearDepth(sourceTex.SampleLevel(input.uv + float2(0.0, texel.y), 0.0).r);
+    float3 alongX = abs(dL - centre) < abs(dR - centre)
+        ? P - AoViewPos(input.uv - float2(texel.x, 0.0), dL) : AoViewPos(input.uv + float2(texel.x, 0.0), dR) - P;
+    float3 alongY = abs(dU - centre) < abs(dD - centre)
+        ? P - AoViewPos(input.uv - float2(0.0, texel.y), dU) : AoViewPos(input.uv + float2(0.0, texel.y), dD) - P;
+    float3 flatN = normalize(cross(alongX, alongY));
+    if (dot(flatN, P) > 0.0) { flatN = -flatN; }
+
     float3 T = normalize(cross(N, abs(N.x) < 0.9 ? float3(1.0, 0.0, 0.0) : float3(0.0, 1.0, 0.0)));
     float3 B = cross(N, T);
 
@@ -273,6 +330,12 @@ float4 aoFrag(PostVSOut input) : SV_Target {
         float  r     = sqrt(t);
         float3 dir   = T * (r * cos(angle)) + B * (r * sin(angle)) + N * sqrt(1.0 - t);
         float3 S     = P + dir * (radius * lerp(0.15, 1.0, t * t));
+
+        // On a low-polygon round object the smooth direction and the flat triangle disagree, so
+        // some of these points sit at or under the triangle's own plane. Those would be "hidden"
+        // by the very surface being shaded and would paint every facet with its own gradient:
+        // only points clearly above the flat surface are tested.
+        if (dot(S - P, flatN) < 0.05 * radius) { continue; }
 
         float sampleDepth = -S.z;
         if (sampleDepth <= 1e-3) { continue; }

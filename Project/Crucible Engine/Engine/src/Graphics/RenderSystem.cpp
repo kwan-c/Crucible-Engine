@@ -1665,12 +1665,15 @@ namespace Crucible {
             }
         }
 
-        // 2. A chain of plain shrunk copies: base size (power of two, at most 128) down to 4.
+        // 2. A chain of plain shrunk copies: base size (power of two, at most 128) down to 16.
+        //    Not smaller: the GPU stretches the smallest level over a whole hemisphere of
+        //    reflection directions, and a 4x4 image stretched that far shows its texels as flat
+        //    patches on round objects.
         uint32_t baseSize = 4;
         while (baseSize * 2 <= std::min(faceSize, 128u)) { baseSize *= 2; }
         std::vector<uint32_t>               sizes;
         std::vector<std::vector<glm::vec3>> boxes;
-        for (uint32_t s = baseSize; s >= 4 && sizes.size() < 6; s /= 2) { sizes.push_back(s); }
+        for (uint32_t s = baseSize; s >= std::min(baseSize, 16u) && sizes.size() < 6; s /= 2) { sizes.push_back(s); }
 
         boxes.emplace_back(static_cast<size_t>(baseSize) * baseSize * 6);
         for (uint32_t face = 0; face < 6; ++face) {
@@ -1745,7 +1748,7 @@ namespace Crucible {
 
         // 4. Reflections: level 0 is the shrunk sky as is (a mirror); each further level is what a
         //    rougher surface would reflect - the average of the sky over the spread of directions
-        //    such a surface scatters into (GGX importance sampling, 32 directions per texel, read
+        //    such a surface scatters into (GGX importance sampling, 64 directions per texel, read
         //    from the shrunk copy of the same size so bright spots do not turn into speckles).
         cube.envMipCount = static_cast<uint32_t>(sizes.size());
         cube.envImage.Create(m_context, baseSize, baseSize, vk::Format::eR16G16B16A16Sfloat,
@@ -1754,7 +1757,7 @@ namespace Crucible {
             vk::MemoryPropertyFlagBits::eDeviceLocal,
             /*arrayLayers*/ 6, vk::ImageCreateFlagBits::eCubeCompatible, cube.envMipCount);
 
-        constexpr uint32_t kSamples = 32;
+        constexpr uint32_t kSamples = 64;
         std::vector<uint64_t> packed;
         for (size_t level = 0; level < sizes.size(); ++level) {
             const uint32_t s = sizes[level];
@@ -2452,9 +2455,9 @@ namespace Crucible {
         // Per PostTargets: the HDR image as a bloom source (1 set, 1 image), one set per bloom
         // step, and the tonemap set (2 images). One PostTargets per viewport, plus the window's.
         const uint32_t targets = kMaxViewports + 1;
-        // ... plus ambient occlusion: its depth set (1 image) and its blur set (2 images).
+        // ... plus ambient occlusion: its depth + normals set and its blur set (2 images each).
         const uint32_t sets    = targets * (kBloomMips + 4);
-        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = targets * (kBloomMips + 6) };
+        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = targets * (kBloomMips + 7) };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
             .maxSets = sets,
@@ -2521,6 +2524,7 @@ namespace Crucible {
         t.aoExtent = vk::Extent2D{ std::max(width / 2, 1u), std::max(height / 2, 1u) };
         t.aoDepthView = nullptr;
         t.aoRawView   = nullptr;
+        t.aoNormalView = nullptr;
         t.aoBlurView  = nullptr;
         t.aoDepth.Create(m_context, t.aoExtent.width, t.aoExtent.height, VulkanPipeline::kAoDepthFormat, vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
@@ -2541,6 +2545,15 @@ namespace Crucible {
             return vk::raii::ImageView(m_context.GetDevice(), info);
         };
         t.aoRawView  = makeAoImage(t.aoRaw);
+        t.aoNormal.Create(m_context, t.aoExtent.width, t.aoExtent.height, VulkanPipeline::kAoNormalFormat, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        {
+            vk::ImageViewCreateInfo info{
+                .image = t.aoNormal.GetImage(), .viewType = vk::ImageViewType::e2D, .format = VulkanPipeline::kAoNormalFormat,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1 } };
+            t.aoNormalView = vk::raii::ImageView(m_context.GetDevice(), info);
+        }
         t.aoBlurView = makeAoImage(t.aoBlur);
 
         // The sets are allocated once and re-pointed whenever the images are recreated.
@@ -2553,7 +2566,7 @@ namespace Crucible {
             t.hdrSet = allocate(m_pipeline.GetSingleTextureSetLayout());
             for (auto& set : t.bloomSets) { set = allocate(m_pipeline.GetSingleTextureSetLayout()); }
             t.tonemapSet = allocate(m_pipeline.GetTonemapDescriptorSetLayout());
-            t.aoDepthSet = allocate(m_pipeline.GetSingleTextureSetLayout());
+            t.aoDepthSet = allocate(m_pipeline.GetTonemapDescriptorSetLayout());
             t.aoBlurSet  = allocate(m_pipeline.GetTonemapDescriptorSetLayout());
         }
 
@@ -2580,6 +2593,16 @@ namespace Crucible {
             m_context.GetDevice().updateDescriptorSets(w, {});
         };
         writeDepth(t.aoDepthSet, 0);
+        {
+            // Normals are read unfiltered too: blending the directions of two different objects
+            // across an edge would give a direction that belongs to neither.
+            vk::DescriptorImageInfo imageInfo{
+                .sampler = *m_pointSampler, .imageView = *t.aoNormalView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+            vk::WriteDescriptorSet w{
+                .dstSet = *t.aoDepthSet, .dstBinding = 1, .dstArrayElement = 0, .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo };
+            m_context.GetDevice().updateDescriptorSets(w, {});
+        }
         write(t.aoBlurSet, 0, t.aoRawView);
         writeDepth(t.aoBlurSet, 1);
 
@@ -2626,7 +2649,12 @@ namespace Crucible {
             return;
         }
 
-        // 1. The scene's depth, at half size: every mesh the main pass will draw, depth only.
+        // 1. The scene's depth and smooth normals, at half size: every mesh the main pass will draw.
+        TransitionImageLayout(fc, t.aoNormal.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput);
         TransitionImageLayout(fc, t.aoDepth.GetImage(), vk::ImageAspectFlagBits::eDepth,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
             {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -2640,8 +2668,16 @@ namespace Crucible {
                 .storeOp     = vk::AttachmentStoreOp::eStore,
                 .clearValue  = vk::ClearDepthStencilValue(1.0f, 0)
             };
+            vk::RenderingAttachmentInfo normal{
+                .imageView   = t.aoNormalView,
+                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+                .loadOp      = vk::AttachmentLoadOp::eClear,
+                .storeOp     = vk::AttachmentStoreOp::eStore,
+                .clearValue  = vk::ClearColorValue(0.5f, 0.5f, 1.0f, 1.0f)   // "facing the camera"; only sky pixels keep it
+            };
             vk::RenderingInfo renderingInfo{
-                .renderArea = { .offset = { 0, 0 }, .extent = extent }, .layerCount = 1, .pDepthAttachment = &depth };
+                .renderArea = { .offset = { 0, 0 }, .extent = extent }, .layerCount = 1,
+                .colorAttachmentCount = 1, .pColorAttachments = &normal, .pDepthAttachment = &depth };
             cmd.beginRendering(renderingInfo);
             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDepthPrepassPipeline());
             // Flipped like the main pass, so its pixels line up with the scene's.
@@ -2652,6 +2688,10 @@ namespace Crucible {
             DrawMeshBatches(cmd, draws.main);
             cmd.endRendering();
         }
+        TransitionImageLayout(fc, t.aoNormal.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
         TransitionImageLayout(fc, t.aoDepth.GetImage(), vk::ImageAspectFlagBits::eDepth,
             vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
@@ -2666,8 +2706,8 @@ namespace Crucible {
         // 2. Occlusion from the depth image.
         beginColour(t.aoRaw, t.aoRawView);
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetAoPipeline());
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomLayout(), 0, *t.aoDepthSet, nullptr);
-        cmd.pushConstants<PostPush>(*m_pipeline.GetBloomLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
+        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetTonemapLayout(), 0, *t.aoDepthSet, nullptr);
+        cmd.pushConstants<PostPush>(*m_pipeline.GetTonemapLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
         cmd.draw(3, 1, 0, 0);
         endColour(t.aoRaw);
 
@@ -3023,8 +3063,17 @@ namespace Crucible {
         const bool  bloom    = m_postSettings.bloom && t.bloomCount > 0;
         const float strength = bloom ? std::max(m_postSettings.bloomIntensity, 0.0f) / static_cast<float>(t.bloomCount) : 0.0f;
         PostPush push;
-        push.a = glm::vec4(std::max(m_environment.exposure, 0.0f), strength, m_postSettings.fxaa ? 1.0f : 0.0f, 0.0f);
-        push.b = glm::vec4(1.0f / static_cast<float>(std::max(extent.width, 1u)), 1.0f / static_cast<float>(std::max(extent.height, 1u)), 0.0f, 0.0f);
+        const EnvironmentSettings& env = m_environment;
+        push.a = glm::vec4(std::max(env.exposure, 0.0f), strength, m_postSettings.fxaa ? 1.0f : 0.0f, m_time);
+        push.b = glm::vec4(1.0f / static_cast<float>(std::max(extent.width, 1u)), 1.0f / static_cast<float>(std::max(extent.height, 1u)),
+                           glm::clamp(env.vignetteIntensity, 0.0f, 1.0f), glm::clamp(env.vignetteSoftness, 0.01f, 1.0f));
+
+        // The scene's look. Temperature shifts the balance between red and blue (warm = more red,
+        // less blue); the colour filter multiplies on top.
+        const float     warmth = glm::clamp(env.temperature, -1.0f, 1.0f) * 0.25f;
+        const glm::vec3 white  = glm::max(env.colourFilter, glm::vec3(0.0f)) * glm::vec3(1.0f + warmth, 1.0f, 1.0f - warmth);
+        push.c = glm::vec4(glm::clamp(env.contrast, 0.0f, 3.0f), glm::clamp(env.saturation, 0.0f, 3.0f), glm::clamp(env.filmGrain, 0.0f, 1.0f), 0.0f);
+        push.d = glm::vec4(white, glm::clamp(env.chromaticAberration, 0.0f, 1.0f) * 0.01f);
         cmd.pushConstants<PostPush>(*m_pipeline.GetTonemapLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
         cmd.draw(3, 1, 0, 0);
 

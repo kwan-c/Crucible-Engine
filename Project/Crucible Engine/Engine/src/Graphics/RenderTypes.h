@@ -326,12 +326,15 @@ namespace Crucible {
         float aoIntensity = 1.2f;
     };
 
-    /// Push constant shared by the three post passes (Post.slang's PostPush).
+    /// Push constant shared by every post pass (Post.slang's PostPush). c and d are read only by
+    /// the tonemap pass (the scene's look: contrast, saturation, grain, white balance, fringing).
     struct PostPush {
         glm::vec4 a{ 0.0f };
         glm::vec4 b{ 0.0f };
+        glm::vec4 c{ 1.0f, 1.0f, 0.0f, 0.0f };
+        glm::vec4 d{ 1.0f, 1.0f, 1.0f, 0.0f };
     };
-    static_assert(sizeof(PostPush) == 32, "PostPush must match Post.slang.");
+    static_assert(sizeof(PostPush) == 64, "PostPush must match Post.slang.");
 
     // ------------------------------------------------------------------------------------------ //
     //  Render proxies, culling, picking
@@ -581,6 +584,15 @@ namespace Crucible {
                               at every height); fogStart = clear distance in
                               front of the camera; fogMaxOpacity caps how
                               much it can hide.
+          - The look, applied in the tonemap pass. Each has a neutral value
+            at which it does nothing:
+              contrast (1), saturation (1; 0 = black and white),
+              temperature (0; -1 cool/blue .. +1 warm/orange),
+              colourFilter (white; multiplies the picture),
+              vignetteIntensity (0; darkening toward the corners) and
+              vignetteSoftness (how far in from the corners it reaches),
+              filmGrain (0), chromaticAberration (0; colour fringing
+              toward the edges, 1 = strong).
      *************************************************************************/
     struct EnvironmentSettings {
         CubemapHandle skybox{};
@@ -597,6 +609,14 @@ namespace Crucible {
         float         fogBaseHeight = 0.0f;
         float         fogStart = 0.0f;
         float         fogMaxOpacity = 1.0f;
+        float         contrast = 1.0f;
+        float         saturation = 1.0f;
+        float         temperature = 0.0f;
+        glm::vec3     colourFilter{ 1.0f, 1.0f, 1.0f };
+        float         vignetteIntensity = 0.0f;
+        float         vignetteSoftness = 0.5f;
+        float         filmGrain = 0.0f;
+        float         chromaticAberration = 0.0f;
     };
 
     // ------------------------------------------------------------------------------------------ //

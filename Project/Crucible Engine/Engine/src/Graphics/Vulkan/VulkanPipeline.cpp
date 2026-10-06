@@ -731,25 +731,32 @@ namespace Crucible {
             .depthBoundsTestEnable = vk::False,
             .stencilTestEnable     = vk::False
         };
-        vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 0 };
+        // One colour output: the view-space normal.
+        vk::PipelineColorBlendAttachmentState blend{
+            .blendEnable    = vk::False,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
 
-        // Vertex shader only: with no colour attachment there is nothing for a fragment shader to do.
-        vk::raii::ShaderModule module = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/OutlineMask.spv"));
-        vk::PipelineShaderStageCreateInfo stage{ .stage = vk::ShaderStageFlagBits::eVertex, .module = module, .pName = "maskVert" };
+        vk::raii::ShaderModule module = CreateShaderModule(context, ReadFile("../../../Assets/Shaders/DepthNormal.spv"));
+        vk::PipelineShaderStageCreateInfo stages[] = {
+            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "depthNormalVert" },
+            { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "depthNormalFrag" }
+        };
 
         auto binding    = Vertex::GetBindingDescription();
         auto attributes = Vertex::GetAttributeDescriptions();
         vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
             .vertexBindingDescriptionCount   = 1,
             .pVertexBindingDescriptions      = &binding,
-            .vertexAttributeDescriptionCount = 1,
+            .vertexAttributeDescriptionCount = 2,   // position and normal
             .pVertexAttributeDescriptions    = &attributes[0]
         };
 
+        const vk::Format normalFormat = kAoNormalFormat;
         vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
             {
-                .stageCount          = 1,
-                .pStages             = &stage,
+                .stageCount          = 2,
+                .pStages             = stages,
                 .pVertexInputState   = &vertexInputInfo,
                 .pInputAssemblyState = &inputAssembly,
                 .pViewportState      = &viewportState,
@@ -761,7 +768,7 @@ namespace Crucible {
                 .layout              = m_outlineMaskLayout,
                 .renderPass          = nullptr
             },
-            {.colorAttachmentCount = 0, .depthAttachmentFormat = kAoDepthFormat }
+            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &normalFormat, .depthAttachmentFormat = kAoDepthFormat }
         };
         m_depthPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
 
@@ -948,7 +955,7 @@ namespace Crucible {
         };
 
         // Ambient occlusion (run before the scene pass): depth -> occlusion -> smoothed occlusion.
-        m_aoPipeline     = build("aoFrag",     false, m_bloomLayout,   kAoFormat, vk::Format::eUndefined);
+        m_aoPipeline     = build("aoFrag",     false, m_tonemapLayout, kAoFormat, vk::Format::eUndefined);   // depth + normals
         m_aoBlurPipeline = build("aoBlurFrag", false, m_tonemapLayout, kAoFormat, vk::Format::eUndefined);
 
         m_bloomDownPipeline = build("bloomDownFrag", false, m_bloomLayout, kSceneColorFormat, vk::Format::eUndefined);

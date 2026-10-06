@@ -195,6 +195,12 @@ namespace Crucible
 		    fogBaseHeight (0 = equally thick at every height); fogStart =
 		    clear distance in front of the camera; fogMaxOpacity = the most
 		    the fog may hide (1 = everything).
+		  - the look of the final picture, each neutral by default:
+		    contrast (1), saturation (1; 0 = black and white), temperature
+		    (0; negative = cooler/bluer, positive = warmer), colourFilter
+		    (white; a tint over everything), vignetteIntensity (0; dark
+		    corners) with vignetteSoftness (how far in they reach), filmGrain
+		    (0) and chromaticAberration (0; colour fringes toward the edges).
 	 *************************************************************************/
 	struct Skybox
 	{
@@ -212,6 +218,14 @@ namespace Crucible
 		float         fogBaseHeight = 0.f;
 		float         fogStart = 0.f;
 		float         fogMaxOpacity = 1.f;
+		float         contrast = 1.f;
+		float         saturation = 1.f;
+		float         temperature = 0.f;
+		Math::vec3    colourFilter{ 1.f, 1.f, 1.f };
+		float         vignetteIntensity = 0.f;
+		float         vignetteSoftness = 0.5f;
+		float         filmGrain = 0.f;
+		float         chromaticAberration = 0.f;
 		// Texture asset id of an equirectangular sky (.hdr ideally), resolved through
 		// ResourceManager::GetCubemap. Saved in scenes; when non-zero it wins over `cubemap`.
 		std::uint64_t skyboxAsset = 0;
