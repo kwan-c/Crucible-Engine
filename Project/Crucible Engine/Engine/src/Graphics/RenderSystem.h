@@ -657,6 +657,10 @@ namespace Crucible {
          \brief  Bloom settings (see PostSettings). Changes apply next frame.
          *********************************************************************/
         PostSettings&             GetPostSettings() { return m_postSettings; }
+        /// Where the last frames' time went (CPU stages and GPU passes), smoothed.
+        const RenderFrameStats&   GetFrameStats() const { return m_frameStats; }
+        /// The built-in load test: set `count` above 0 to add that many extra objects.
+        StressSettings&           GetStressSettings() { return m_stressSettings; }
 
         /*********************************************************************
          \brief
@@ -1004,6 +1008,23 @@ namespace Crucible {
         // Post-processing (HDR scene image -> bloom -> tonemap). Pool BEFORE m_windowPost and
         // m_viewports, whose PostTargets hold sets allocated from it.
         PostSettings                                m_postSettings;
+        // Timings. One block of timestamp queries per frame in flight; m_gpuMarks remembers which
+        // section each timestamp of that frame started.
+        static constexpr uint32_t                   kMaxGpuMarks = 128;
+        RenderFrameStats                            m_frameStats;
+        vk::raii::QueryPool                         m_timestampPool = nullptr;
+        std::vector<std::vector<GpuSection>>        m_gpuMarks;
+        float                                       m_timestampPeriodNs = 0.0f;
+        uint32_t                                    m_markFrame = 0;        // frame index being recorded
+        double                                      m_lastFrameStart = 0.0;  // seconds, steady clock
+
+        // Load test (see StressSettings).
+        StressSettings                              m_stressSettings;
+        std::vector<RenderProxyHandle>              m_stressProxies;
+        std::vector<MaterialHandle>                 m_stressMaterials;
+        float                                       m_stressBuiltSpacing = 0.0f;
+        bool                                        m_stressWasMoving = false;
+
         uint32_t                                    m_msaaSamples = 1;      // in use now (PostSettings::msaaSamples, clamped to the GPU)
         uint32_t                                    m_drawSamples = 1;      // samples of the target DrawRenderQueue is drawing into
         float                                       m_time = 0.0f;          // seconds since Init (FrameUniforms::time.x)
@@ -1161,6 +1182,13 @@ namespace Crucible {
         // Draws the current environment's sky into the currently-open rendering pass. Must run
         // AFTER the opaque draws (it relies on their depth to skip covered pixels).
         void DrawSkybox(vk::CommandBuffer cmd, vk::DescriptorSet frameSet);
+        void CreateTimestampPool();
+        /// Writes a GPU timestamp: everything recorded from here to the next mark counts as `section`.
+        void MarkGpu(vk::CommandBuffer cmd, GpuSection section);
+        /// Reads back the timestamps of the frame that last used this frame index.
+        void ReadGpuTimings(uint32_t frameIndex);
+        /// Builds, moves or removes the load-test objects to match m_stressSettings.
+        void UpdateStressTest();
         uint32_t SupportedMsaaSamples(uint32_t wanted) const;   ///< Highest of 4 / 2 / 1 that is <= wanted and the GPU can render to.
         void ApplyMsaaSetting();                                ///< Rebuilds every view's targets when PostSettings::msaaSamples changed.
 

@@ -52,6 +52,8 @@ namespace Crucible {
 		void DrawGizmoMenu();
 		// Rendering popup: renderer-wide settings (bloom, anti-aliasing, sun shadows).
 		void DrawRenderingMenu();
+		// Timings in the corner of the view: frame time, CPU stages, GPU passes, draw counts.
+		void DrawStatsOverlay(ImVec2 viewMin);
 		// Screen-space icons for lights, the skybox and mesh-less entities, drawn with ImGui over
 		// the viewport image; fills m_iconHits for click picking.
 		void DrawIcons(ImVec2 viewMin, ImVec2 viewSize);
@@ -70,6 +72,7 @@ namespace Crucible {
 		struct IconHit { Entity entity; ImVec2 pos; float depth; };
 		std::vector<IconHit> m_iconHits;
 		bool                 m_showIcons = true;
+		bool                 m_showStats = false;
 
 		ViewportPanel       m_viewport;
 		FlyCameraController m_flyController;

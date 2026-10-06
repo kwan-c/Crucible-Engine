@@ -72,8 +72,9 @@ namespace Crucible
 		CameraOrbit = 13,        // Physics: mouse -> third-person camera pivot (Physics/PhysicsComponents.h)
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
+		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
 
-		MAXCOMPONENT = 16
+		MAXCOMPONENT = 17
 	};
 
 
@@ -179,5 +180,6 @@ namespace Crucible
  X(CameraOrbit)                                                                \
  X(ParticleEmitter)                                                            \
  X(MaterialParams)                                                             \
+ X(StressMover)                                                                \
 
 }

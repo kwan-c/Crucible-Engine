@@ -263,6 +263,23 @@ namespace Crucible
 		Math::vec3 custom{ 0.f, 0.f, 0.f };
 	};
 
+	/*************************************************************************
+	 \brief
+		TEMPORARY - load testing only. StressMoverSystem walks the entity
+		around a circle: Transform::positions = origin + a point on a circle
+		of `radius`, turning at `speed` radians per second, starting at
+		`phase` radians. Used by the "Stress Moving" scenes to measure what
+		thousands of moving entities cost. Remove it (component, system,
+		reflection file, scenes) once real gameplay movement exists.
+	 *************************************************************************/
+	struct StressMover
+	{
+		Math::vec3 origin{ 0.f, 0.f, 0.f };
+		float      radius = 6.f;
+		float      speed = 0.5f;
+		float      phase = 0.f;
+	};
+
 	/// Where a ParticleEmitter's new particles appear, in the emitter's local space.
 	enum class ParticleShape : std::uint8_t
 	{
@@ -414,6 +431,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(Skybox, Skybox);
 	CRUCIBLE_COMPONENT(ParticleEmitter, ParticleEmitter);
 	CRUCIBLE_COMPONENT(MaterialParams, MaterialParams);
+	CRUCIBLE_COMPONENT(StressMover, StressMover);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
 	template<>

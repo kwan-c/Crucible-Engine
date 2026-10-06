@@ -18,6 +18,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <string>
 
@@ -112,6 +113,7 @@ void Crucible::SceneView::Update(float dt) {
 	SyncSelection();
 	m_iconHits.clear();
 	if (m_showIcons) { DrawIcons(min, avail); }
+	if (m_showStats) { DrawStatsOverlay(min); }
 	DrawGizmo(min, avail);   // before picking, so a click on the gizmo is known to be the gizmo's
 	HandleClickPicking(min, avail);
 	if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_gizmoClaimedClick = false; }
@@ -486,6 +488,56 @@ void Crucible::SceneView::DrawRenderingMenu() {
 	ImGui::SliderFloat("Normal bias", &shadows.normalBias, 0.0f, 4.0f, "%.2f texels");
 	ImGui::Checkbox("Show cascades (debug tint)", &shadows.debugCascades);
 	ImGui::EndDisabled();
+
+	// Measuring: where the frame's time goes, and a built-in crowd to load the renderer with.
+	ImGui::SeparatorText("Performance");
+	ImGui::Checkbox("Show timings in the view", &m_showStats);
+	StressSettings& stress = m_renderer.GetStressSettings();
+	int stressCount = static_cast<int>(stress.count);
+	ImGui::SetNextItemWidth(140.0f);
+	if (ImGui::InputInt("Load test objects", &stressCount, 1000, 5000)) {
+		stress.count = static_cast<uint32_t>(std::clamp(stressCount, 0, 100000));
+	}
+	ImGui::BeginDisabled(stress.count == 0);
+	ImGui::Checkbox("Objects move", &stress.moving);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Spacing", &stress.spacing, 1.0f, 10.0f, "%.1f m");
+	ImGui::EndDisabled();
+}
+
+void Crucible::SceneView::DrawStatsOverlay(ImVec2 viewMin) {
+	const RenderFrameStats& stats = m_renderer.GetFrameStats();
+	const RenderCullStats   cull  = m_viewport.GetCullStats();
+
+	// All values are averages over roughly the last ten frames, in milliseconds.
+	char text[768];
+	int  length = std::snprintf(text, sizeof(text),
+		"Frame  %.2f ms  (%.0f fps)\n"
+		"CPU    wait %.2f   prepare %.2f   upload %.2f   record %.2f   submit %.2f\n",
+		stats.frameMs, stats.frameMs > 0.0f ? 1000.0f / stats.frameMs : 0.0f,
+		stats.cpuWaitMs, stats.cpuPrepareMs, stats.cpuUploadMs, stats.cpuRecordMs, stats.cpuSubmitMs);
+	if (stats.gpuValid && length > 0 && length < static_cast<int>(sizeof(text))) {
+		const auto gpu = [&](GpuSection section) { return stats.gpuMs[static_cast<size_t>(section)]; };
+		length += std::snprintf(text + length, sizeof(text) - length,
+			"GPU    total %.2f\n"
+			"       shadows %.2f   occlusion %.2f   scene %.2f   bloom %.2f\n"
+			"       final %.2f   outline %.2f   uploads %.2f   editor UI %.2f\n",
+			stats.gpuTotalMs,
+			gpu(GpuSection::Shadows), gpu(GpuSection::AmbientOcclusion), gpu(GpuSection::Scene), gpu(GpuSection::Bloom),
+			gpu(GpuSection::Final), gpu(GpuSection::Outline), gpu(GpuSection::Uploads), gpu(GpuSection::Interface));
+	}
+	if (length > 0 && length < static_cast<int>(sizeof(text))) {
+		std::snprintf(text + length, sizeof(text) - length,
+			"View   %u of %u objects (%u travelling)   %u draws   shadows: %u objects in %u draws",
+			cull.proxiesVisible + cull.immediateVisible, cull.proxies + cull.immediate, cull.movingProxies,
+			cull.drawCalls, cull.shadowCasters, cull.shadowDrawCalls);
+	}
+
+	ImDrawList* const drawList = ImGui::GetWindowDrawList();
+	const ImVec2 pos(viewMin.x + 10.0f, viewMin.y + 10.0f);
+	const ImVec2 size = ImGui::CalcTextSize(text);
+	drawList->AddRectFilled(ImVec2(pos.x - 6.0f, pos.y - 4.0f), ImVec2(pos.x + size.x + 6.0f, pos.y + size.y + 4.0f), IM_COL32(0, 0, 0, 170), 4.0f);
+	drawList->AddText(pos, IM_COL32(235, 235, 235, 255), text);
 }
 
 // ------------------------------------------------------------------ gizmo

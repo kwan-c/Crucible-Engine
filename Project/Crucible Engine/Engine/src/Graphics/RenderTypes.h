@@ -373,6 +373,68 @@ namespace Crucible {
         uint32_t clusteredLights = 0;    // point/spot lights that reach this view's frustum
     };
 
+    /// The parts of a frame the GPU's time is split into (RenderFrameStats::gpuMs).
+    enum class GpuSection : uint8_t {
+        Uploads,            ///< Mesh and texture copies queued since the last frame.
+        Shadows,            ///< Sun shadow cascades.
+        Outline,            ///< Selection outline mask (editor).
+        AmbientOcclusion,   ///< Depth pre-pass, occlusion, blur.
+        Scene,              ///< Meshes, sky and particles (including the MSAA resolve).
+        Bloom,
+        Final,              ///< Tonemap + FXAA, debug lines, outline composite.
+        Interface,          ///< The window pass: editor UI (and the tonemap in a standalone build).
+        End,                ///< Marks the end of the frame; never holds time itself.
+        Count
+    };
+
+    /*************************************************************************
+     \brief
+        Where the last frames' time went (Renderer::GetFrameStats()), each
+        value smoothed over roughly ten frames, in milliseconds.
+     \details
+        CPU values are measured around the stages of Renderer::DrawFrame:
+          - cpuWaitMs:    waiting for the GPU to finish an earlier frame and
+                          for the next window image (grows when the GPU, or
+                          vsync, is the limit).
+          - cpuPrepareMs: lights, culling, batching, shadow cascades, light
+                          clusters, particles - for every view.
+          - cpuUploadMs:  copying instances, particles and clusters to the GPU.
+          - cpuRecordMs:  recording the frame's commands (includes the editor
+                          UI's own draw commands).
+          - cpuSubmitMs:  submitting and presenting.
+        GPU values come from timestamps the GPU writes between passes, summed
+        over all views. gpuValid is false when the GPU cannot provide them.
+     *************************************************************************/
+    struct RenderFrameStats {
+        float frameMs = 0.0f;        // start of one DrawFrame to the start of the next
+        float cpuWaitMs = 0.0f;
+        float cpuPrepareMs = 0.0f;
+        float cpuUploadMs = 0.0f;
+        float cpuRecordMs = 0.0f;
+        float cpuSubmitMs = 0.0f;
+        float gpuMs[static_cast<size_t>(GpuSection::Count)]{};
+        float gpuTotalMs = 0.0f;
+        bool  gpuValid = false;
+    };
+
+    /*************************************************************************
+     \brief
+        A built-in load test (Renderer::GetStressSettings()): `count` extra
+        objects in a grid, drawn through the same path as scene entities
+        (render proxies, culling, instancing, shadows) but with no entities
+        behind them, so the renderer can be measured on its own.
+     \details
+        - count:   0 = off. Changing it rebuilds the grid.
+        - moving:  every object bobs and turns each frame, as a horde would;
+                   off = they stand still (the cheap case for culling).
+        - spacing: distance between neighbours, in metres.
+     *************************************************************************/
+    struct StressSettings {
+        uint32_t count = 0;
+        bool     moving = true;
+        float    spacing = 2.5f;
+    };
+
     /*************************************************************************
      \brief
         Cascaded shadow map settings for the sun (Renderer::

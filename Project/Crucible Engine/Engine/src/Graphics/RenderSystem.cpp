@@ -24,6 +24,7 @@
 #include <algorithm>    // clamp, stable_sort
 #include <filesystem>   // path::stem - fallback mesh name when a .glb doesn't set mesh.name
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <memory>       // unique_ptr (stb_image pixel ownership in CreateCubemap)
 
@@ -89,6 +90,7 @@ namespace Crucible {
         m_lightQueue.reserve(kMaxLights);
 
         CreatePrimitiveMeshes();
+        CreateTimestampPool();
 
         m_renderQueue.reserve(1024);
     }
@@ -101,6 +103,8 @@ namespace Crucible {
         // animation for many hours of play; wrap it if sessions ever get longer than that.
         m_deltaTime = std::max(dt, 0.0f);
         m_time     += m_deltaTime;
+
+        UpdateStressTest();
 
         // Finish a few queued async mesh uploads (see CreateMeshAsync) before drawing this frame.
         ProcessPendingMeshUploads();
@@ -147,11 +151,23 @@ namespace Crucible {
 
     void Renderer::DrawFrame() {
 
+        // Timings (RenderFrameStats): each value is blended into a running average.
+        const auto now = [] { return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count(); };
+        const auto smooth = [](float& value, double seconds) { value += (static_cast<float>(seconds * 1000.0) - value) * 0.1f; };
+        const double tStart = now();
+        if (m_lastFrameStart > 0.0) { smooth(m_frameStats.frameMs, tStart - m_lastFrameStart); }
+        m_lastFrameStart = tStart;
+
         bool err = false;
         FrameContext fc = m_frameManager.BeginFrame(m_context, m_swapchain, err);
         if (err) { return; }
 
         const uint32_t frameIndex = m_frameManager.GetFrameIndex();
+
+        // BeginFrame() waited for the frame that last used this index, so its timestamps are in.
+        ReadGpuTimings(frameIndex);
+        const double tPrepare = now();
+        smooth(m_frameStats.cpuWaitMs, tPrepare - tStart);
 
         // BeginFrame() has waited on this frame index's fence, so the GPU is done with the staging
         // buffers of the uploads recorded the last time this index was used: free them.
@@ -194,14 +210,22 @@ namespace Crucible {
                 WriteViewTextures(*vp.descriptorSets[frameIndex], vp.post);
             }
         }
+        const double tUpload = now();
+        smooth(m_frameStats.cpuPrepareMs, tUpload - tPrepare);
+
         UploadInstances(frameIndex);
         UploadParticles(frameIndex);
         UploadClusters(frameIndex);
+        const double tRecord = now();
+        smooth(m_frameStats.cpuUploadMs, tRecord - tUpload);
 
         // Record and submit command buffer.
         RecordCommandBuffer(fc);
+        const double tSubmit = now();
+        smooth(m_frameStats.cpuRecordMs, tSubmit - tRecord);
 
         m_frameManager.EndFrame(m_context, m_swapchain, fc, m_window);
+        smooth(m_frameStats.cpuSubmitMs, now() - tSubmit);
 
     }   // Renderer::DrawFrame()
 
@@ -261,6 +285,14 @@ namespace Crucible {
 
         fc.frame.commandBuffer.begin({});
 
+        // GPU timings: clear this frame's block of timestamps, then mark the start of each pass.
+        m_markFrame = frameIndex;
+        if (*m_timestampPool) {
+            m_gpuMarks[frameIndex].clear();
+            fc.frame.commandBuffer.resetQueryPool(*m_timestampPool, frameIndex * kMaxGpuMarks, kMaxGpuMarks);
+        }
+        MarkGpu(*fc.frame.commandBuffer, GpuSection::Uploads);
+
         // Mesh/texture/cubemap copies queued since the last frame go first, ahead of every pass,
         // so anything created before this point is filled by the time a draw below reads it.
         m_uploads.Record(*fc.frame.commandBuffer, frameIndex);
@@ -276,12 +308,19 @@ namespace Crucible {
 
             // Passes that feed this view's main pass: its shadow cascades into the shared shadow
             // map, and the selected object into its outline mask.
+            MarkGpu(*fc.frame.commandBuffer, GpuSection::Shadows);
             DrawShadowCascades(fc, frameSet, vp.draws);
-            if (vp.outline && !vp.draws.outline.empty()) { DrawOutlineMask(fc, vp, frameSet); }
+            if (vp.outline && !vp.draws.outline.empty()) {
+                MarkGpu(*fc.frame.commandBuffer, GpuSection::Outline);
+                DrawOutlineMask(fc, vp, frameSet);
+            }
 
             // The scene itself: meshes, sky and particles into this view's HDR image, then bloom.
+            MarkGpu(*fc.frame.commandBuffer, GpuSection::AmbientOcclusion);
             DrawAmbientOcclusion(fc, vp.post, frameSet, vp.draws);
-            DrawSceneHdr(fc, vp.post, vp.depthImage.GetImage(), *vp.depthView, vp.extent, frameSet, vp.draws);
+            MarkGpu(*fc.frame.commandBuffer, GpuSection::Scene);
+            DrawSceneHdr(fc, vp.post, vp.depthImage.GetImage(), *vp.depthView, vp.extent, frameSet, vp.draws);   // marks Bloom itself
+            MarkGpu(*fc.frame.commandBuffer, GpuSection::Final);
 
             // The final pass: tonemap the HDR image into the viewport's (sRGB) colour image, then
             // the debug lines on top - still depth-tested against the scene's depth.
@@ -334,11 +373,16 @@ namespace Crucible {
         // viewport, using the swapchain's depth image; the swapchain pass below then tonemaps it.
         const bool windowScene = m_viewports.empty() && m_hasMainCamera && *m_windowPost.hdrView;
         if (windowScene) {
+            MarkGpu(*fc.frame.commandBuffer, GpuSection::Shadows);
             DrawShadowCascades(fc, *m_descriptorSets[frameIndex], m_windowDraws);
+            MarkGpu(*fc.frame.commandBuffer, GpuSection::AmbientOcclusion);
             DrawAmbientOcclusion(fc, m_windowPost, *m_descriptorSets[frameIndex], m_windowDraws);
+            MarkGpu(*fc.frame.commandBuffer, GpuSection::Scene);
             DrawSceneHdr(fc, m_windowPost, m_swapchain.GetDepthImage(), m_swapchain.GetDepthImageView(),
                          m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_windowDraws);
         }
+
+        MarkGpu(*fc.frame.commandBuffer, GpuSection::Interface);
 
         TransitionImageLayout(
             fc,
@@ -419,6 +463,7 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eColorAttachmentOutput,     // srcStage
             vk::PipelineStageFlagBits2::eBottomOfPipe               // dstStage
         );
+        MarkGpu(*fc.frame.commandBuffer, GpuSection::End);
         fc.frame.commandBuffer.end();
 
     }   // Renderer::RecordCommandBuffer()
@@ -2636,6 +2681,132 @@ namespace Crucible {
 
     }   // Renderer::DrawAmbientOcclusion()
 
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  TIMINGS AND THE LOAD TEST
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void Renderer::CreateTimestampPool() {
+
+        // Timestamps are optional: without them the GPU half of RenderFrameStats stays empty.
+        const vk::PhysicalDeviceLimits limits = m_context.GetPhysicalDevice().getProperties().limits;
+        if (!limits.timestampComputeAndGraphics || limits.timestampPeriod <= 0.0f) { return; }
+
+        const uint32_t frames = m_frameManager.MaxFramesInFlight();
+        vk::QueryPoolCreateInfo info{ .queryType = vk::QueryType::eTimestamp, .queryCount = kMaxGpuMarks * frames };
+        m_timestampPool     = vk::raii::QueryPool(m_context.GetDevice(), info);
+        m_timestampPeriodNs = limits.timestampPeriod;
+        m_gpuMarks.resize(frames);
+
+    }   // Renderer::CreateTimestampPool()
+
+    void Renderer::MarkGpu(vk::CommandBuffer cmd, GpuSection section) {
+
+        if (!*m_timestampPool) { return; }
+        std::vector<GpuSection>& marks = m_gpuMarks[m_markFrame];
+        if (marks.size() >= kMaxGpuMarks) { return; }
+
+        // "Bottom of pipe": the time at which everything recorded before this point has finished.
+        cmd.writeTimestamp(vk::PipelineStageFlagBits::eBottomOfPipe, *m_timestampPool,
+                           m_markFrame * kMaxGpuMarks + static_cast<uint32_t>(marks.size()));
+        marks.push_back(section);
+
+    }   // Renderer::MarkGpu()
+
+    void Renderer::ReadGpuTimings(uint32_t frameIndex) {
+
+        if (!*m_timestampPool) { return; }
+        const std::vector<GpuSection>& marks = m_gpuMarks[frameIndex];
+        if (marks.size() < 2) { return; }
+
+        // Two numbers per timestamp: the time, and whether it has been written. A frame that was
+        // recorded but never submitted leaves them unwritten; skip it rather than wait.
+        const uint32_t count = static_cast<uint32_t>(marks.size());
+        std::vector<uint64_t> data(static_cast<size_t>(count) * 2);
+        const vk::Result result = (*m_context.GetDevice()).getQueryPoolResults(
+            *m_timestampPool, frameIndex * kMaxGpuMarks, count,
+            data.size() * sizeof(uint64_t), data.data(), 2 * sizeof(uint64_t),
+            vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWithAvailability);
+        if (result != vk::Result::eSuccess) { return; }
+        for (uint32_t i = 0; i < count; ++i) { if (data[static_cast<size_t>(i) * 2 + 1] == 0) { return; } }
+
+        // The time between two marks belongs to the section the earlier one started.
+        float sections[static_cast<size_t>(GpuSection::Count)]{};
+        float total = 0.0f;
+        for (uint32_t i = 0; i + 1 < count; ++i) {
+            const uint64_t a = data[static_cast<size_t>(i) * 2], b = data[static_cast<size_t>(i + 1) * 2];
+            if (b <= a) { continue; }
+            const float ms = static_cast<float>(static_cast<double>(b - a) * static_cast<double>(m_timestampPeriodNs) * 1e-6);
+            sections[static_cast<size_t>(marks[i])] += ms;
+            total += ms;
+        }
+        for (size_t i = 0; i < static_cast<size_t>(GpuSection::Count); ++i) {
+            m_frameStats.gpuMs[i] += (sections[i] - m_frameStats.gpuMs[i]) * 0.1f;
+        }
+        m_frameStats.gpuTotalMs += (total - m_frameStats.gpuTotalMs) * 0.1f;
+        m_frameStats.gpuValid = true;
+
+    }   // Renderer::ReadGpuTimings()
+
+    void Renderer::UpdateStressTest() {
+
+        const uint32_t count   = std::min(m_stressSettings.count, 100000u);
+        const float    spacing = std::max(m_stressSettings.spacing, 0.5f);
+
+        // (Re)build when the count or spacing changed.
+        bool rebuilt = false;
+        if (count != m_stressProxies.size() || spacing != m_stressBuiltSpacing) {
+            for (RenderProxyHandle handle : m_stressProxies) { DestroyRenderProxy(handle); }
+            m_stressProxies.clear();
+            m_stressBuiltSpacing = spacing;
+            if (count == 0) { return; }
+
+            // A handful of materials, so batches form the way a real scene's would: plain, rough,
+            // metallic and one that glows.
+            if (m_stressMaterials.empty()) {
+                const auto make = [&](glm::vec3 tint, float metallic, float roughness, glm::vec3 emissive) {
+                    MaterialData data;
+                    data.factors.albedoTint      = glm::vec4(tint, 1.0f);
+                    data.factors.metallicFactor  = metallic;
+                    data.factors.roughnessFactor = roughness;
+                    data.factors.emissiveFactor  = emissive;
+                    m_stressMaterials.push_back(CreateMaterial(data));
+                };
+                make({ 0.55f, 0.52f, 0.48f }, 0.0f, 0.85f, glm::vec3(0.0f));
+                make({ 0.35f, 0.38f, 0.42f }, 0.0f, 0.60f, glm::vec3(0.0f));
+                make({ 0.80f, 0.45f, 0.25f }, 0.0f, 0.70f, glm::vec3(0.0f));
+                make({ 0.90f, 0.90f, 0.92f }, 1.0f, 0.25f, glm::vec3(0.0f));
+                make({ 0.95f, 0.75f, 0.35f }, 1.0f, 0.45f, glm::vec3(0.0f));
+                make({ 0.10f, 0.10f, 0.10f }, 0.0f, 0.90f, glm::vec3(3.0f, 0.9f, 0.3f));
+            }
+            m_stressProxies.reserve(count);
+            for (uint32_t i = 0; i < count; ++i) { m_stressProxies.push_back(CreateRenderProxy(0)); }   // 0 = no entity behind it
+            rebuilt = true;
+        }
+        if (count == 0 || m_primitiveMeshes.empty()) { return; }
+
+        // Standing still, the proxies only need placing once (and once more after motion stops).
+        const bool moving = m_stressSettings.moving;
+        if (!rebuilt && !moving && !m_stressWasMoving) { return; }
+        m_stressWasMoving = moving;
+
+        const uint32_t side = static_cast<uint32_t>(std::ceil(std::sqrt(static_cast<float>(count))));
+        const float    half = static_cast<float>(side) * 0.5f;
+        const float    t    = moving ? m_time : 0.0f;
+        for (uint32_t i = 0; i < count; ++i) {
+            const float phase = static_cast<float>(i) * 0.61803f;
+            const glm::vec3 base((static_cast<float>(i % side) - half) * spacing, 1.0f, (static_cast<float>(i / side) - half) * spacing);
+            // Each object walks a 6 m circle at about 3 m/s (a horde's pace), with a small bob. It has
+            // to actually travel: the spatial index only treats an object as moving once it keeps
+            // leaving its padded box, and a wobble on the spot never does.
+            const glm::vec3 offset(std::sin(t * 0.5f + phase) * 6.0f, std::sin(t * 1.7f + phase) * 0.25f, std::cos(t * 0.5f + phase) * 6.0f);
+            glm::mat4 model = glm::translate(glm::mat4(1.0f), base + offset);
+            model = glm::rotate(model, t * 0.5f + phase, glm::vec3(0.0f, 1.0f, 0.0f));
+            SetRenderProxy(m_stressProxies[i], m_primitiveMeshes[i % m_primitiveMeshes.size()],
+                           m_stressMaterials[(i * 7u) % m_stressMaterials.size()], model, true);
+        }
+
+    }   // Renderer::UpdateStressTest()
+
     uint32_t Renderer::SupportedMsaaSamples(uint32_t wanted) const {
 
         const vk::PhysicalDeviceLimits limits = m_context.GetPhysicalDevice().getProperties().limits;
@@ -2739,6 +2910,7 @@ namespace Crucible {
             vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
 
+        MarkGpu(cmd, GpuSection::Bloom);
         DrawBloom(fc, t);
 
         // The final pass reads and keeps testing this depth: make the scene pass's writes visible.
