@@ -50,6 +50,8 @@ namespace Crucible {
 		// ---- Editor-only debug visuals (Scene view only; never in the Game view or Game build) ----
 		// Gizmos popup: DebugDraw category toggles, icon toggle, velocity arrow scale.
 		void DrawGizmoMenu();
+		// Rendering popup: renderer-wide settings (bloom, anti-aliasing, sun shadows).
+		void DrawRenderingMenu();
 		// Screen-space icons for lights, the skybox and mesh-less entities, drawn with ImGui over
 		// the viewport image; fills m_iconHits for click picking.
 		void DrawIcons(ImVec2 viewMin, ImVec2 viewSize);

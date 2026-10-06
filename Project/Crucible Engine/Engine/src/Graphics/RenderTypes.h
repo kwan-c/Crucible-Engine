@@ -98,6 +98,7 @@ namespace Crucible {
         MeshHandle     mesh;
         MaterialHandle material;
         glm::mat4      model{ 1.0f };
+        glm::vec4      params{ 1.0f, 0.0f, 0.0f, 0.0f };   // per-object material parameters, see InstanceData
     };
 
     /*************************************************************************
@@ -159,10 +160,11 @@ namespace Crucible {
         // Clustered lights (Renderer::BuildLightClusters), per view:
         glm::uvec4 clusterDims{ 1u, 1u, 1u, 0u };   // xyz = grid size, w = this view's first cell in the grid buffer
         glm::vec4  clusterZ{ 0.1f, 1.0f, 1.0f, 1.0f };   // x = near, y = depth clusters / log(far/near), zw = target size in pixels
+        glm::vec4  time{ 0.0f };                         // x = seconds since the Renderer started, y = length of the last frame (seconds), z = 1: shadow cascade debug tint
     };
-    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 5,
+    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 6,
         "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
-    static_assert(offsetof(FrameUniforms, clusterDims) == 512 && offsetof(FrameUniforms, clusterZ) == 528,
+    static_assert(offsetof(FrameUniforms, clusterDims) == 512 && offsetof(FrameUniforms, clusterZ) == 528 && offsetof(FrameUniforms, time) == 544,
         "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
     static_assert(offsetof(FrameUniforms, shadowViewProj) == 208 && offsetof(FrameUniforms, shadowParams) == 496,
         "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
@@ -170,7 +172,7 @@ namespace Crucible {
     /*************************************************************************
      \brief
         One drawn object, as the vertex shaders see it (set 0, binding 2:
-        StructuredBuffer<InstanceData>). 64 bytes under std430 and C++.
+        StructuredBuffer<InstanceData>). 80 bytes under std430 and C++.
      \details
         Every pass (main, shadow cascades, selection mask) of every view
         appends its objects to one per-frame array; a draw covers a
@@ -178,8 +180,12 @@ namespace Crucible {
      *************************************************************************/
     struct InstanceData {
         glm::mat4 model{ 1.0f };
+        // Per-object material parameters (the MaterialParams component): x = multiplier on the
+        // material's emissive (glow), yzw = free for effects to come. Objects that share a
+        // material can differ here and still be drawn in one instanced draw.
+        glm::vec4 params{ 1.0f, 0.0f, 0.0f, 0.0f };
     };
-    static_assert(sizeof(InstanceData) == 64, "InstanceData must match the shaders' std430 stride.");
+    static_assert(sizeof(InstanceData) == 80, "InstanceData must match the shaders' std430 stride.");
 
     /*************************************************************************
      \brief  Push constant of the selection outline's composite pass
@@ -288,12 +294,21 @@ namespace Crucible {
                             = only things brighter than "white".
           - bloomKnee:      softness of that cut-off.
           - bloomIntensity: strength of the glow added back.
+          - fxaa:           smooths jagged edges in the final image (fast
+                            approximate anti-aliasing, part of the tonemap
+                            pass).
+          - msaaSamples:    1, 2 or 4 samples per pixel for the scene pass
+                            (MSAA: smooths the edges of geometry properly,
+                            at a memory and fill cost). Clamped to what the
+                            GPU supports; a change takes effect next frame.
      *************************************************************************/
     struct PostSettings {
         bool  bloom = true;
         float bloomThreshold = 1.0f;
         float bloomKnee = 0.5f;
         float bloomIntensity = 0.35f;
+        bool  fxaa = true;
+        uint32_t msaaSamples = 4;
     };
 
     /// Push constant shared by the three post passes (Post.slang's PostPush).
@@ -369,9 +384,10 @@ namespace Crucible {
         float    distance = 80.0f;
         float    splitLambda = 0.75f;
         float    casterExtension = 100.0f;
-        float    depthBias = 0.0002f;
+        float    depthBias = 0.0001f;
         float    normalBias = 1.5f;
         float    fadeFraction = 0.1f;
+        bool     debugCascades = false;   // tint every surface by the cascade it uses (see DefaultShader2.slang)
     };
 
     /*************************************************************************

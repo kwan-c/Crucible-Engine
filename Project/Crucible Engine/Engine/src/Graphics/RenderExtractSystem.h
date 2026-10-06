@@ -117,6 +117,7 @@ namespace Crucible
 		using LightQuery   = Query<const WorldTransform, const Light>;
 		using SkyboxQuery  = Query<const Skybox>;
 		using CameraQuery  = Query<const WorldTransform, const CameraComponent>;
+		using ParamsQuery  = Query<const MeshRenderer, const MaterialParams>;
 
 		Renderer& m_renderer;
 		ResourceManager* m_resources = nullptr;   // resolves asset ids (MeshRenderer/Skybox); may be null
@@ -124,6 +125,7 @@ namespace Crucible
 		std::optional<LightQuery>   m_lightQuery;    // same
 		std::optional<SkyboxQuery>  m_skyboxQuery;   // same
 		std::optional<CameraQuery>  m_cameraQuery;   // same
+		std::optional<ParamsQuery>  m_paramsQuery;   // same
 
 		// One render proxy per MeshRenderer entity, indexed by Entity::index (a flat array, so the
 		// per-frame lookup is O(1) even with tens of thousands of enemies). An entity not seen in
@@ -132,6 +134,8 @@ namespace Crucible
 			RenderProxyHandle proxy;
 			std::uint32_t     generation = 0;
 			std::uint64_t     seenFrame  = 0;
+			glm::vec4         params{ 1.0f, 0.0f, 0.0f, 0.0f };   // from a MaterialParams component, when the entity has one
+			std::uint64_t     paramsFrame = 0;                    // frame `params` was last written
 		};
 		std::vector<ProxyRecord>   m_records;
 		std::vector<std::uint32_t> m_activeRecords;   // entity indices that currently own a proxy

@@ -100,9 +100,12 @@ namespace Crucible {
          \param[in] width       Image width, in texels.
          \param[in] height      Image height, in texels.
          \param[in] layerCount  Array layers to fill (6 for a cubemap).
+         \param[in] mipLevel    Mip level to fill; `width`/`height` are that
+                                level's size. Each level of a mipmapped
+                                image is queued with its own call.
          *********************************************************************/
         void QueueImage(vk::Image destination, const void* data, vk::DeviceSize size,
-                        uint32_t width, uint32_t height, uint32_t layerCount = 1);
+                        uint32_t width, uint32_t height, uint32_t layerCount = 1, uint32_t mipLevel = 0);
 
         /*********************************************************************
          \brief
@@ -172,6 +175,7 @@ namespace Crucible {
             uint32_t     width = 0;
             uint32_t     height = 0;
             uint32_t     layerCount = 1;
+            uint32_t     mipLevel = 0;
         };
 
         // Creates a host-visible staging buffer holding a copy of `data`.

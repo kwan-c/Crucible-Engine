@@ -71,8 +71,9 @@ namespace Crucible
 		PlayerController = 12,   // Physics: keyboard -> CharacterController, local player only (Physics/PhysicsComponents.h)
 		CameraOrbit = 13,        // Physics: mouse -> third-person camera pivot (Physics/PhysicsComponents.h)
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
+		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 
-		MAXCOMPONENT = 15
+		MAXCOMPONENT = 16
 	};
 
 
@@ -177,5 +178,6 @@ namespace Crucible
  X(PlayerController)                                                           \
  X(CameraOrbit)                                                                \
  X(ParticleEmitter)                                                            \
+ X(MaterialParams)                                                             \
 
 }

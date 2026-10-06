@@ -172,9 +172,23 @@ namespace Crucible {
 				const bool isSelected = (entity == selected);
 				switch (light.type) {
 					case LightType::Directional:
-						DebugDraw::Arrow(p, p + dir * (isSelected ? 2.5f : 1.5f), style);
-						if (isSelected) { DebugDraw::Circle(p, dir, 0.4f, style); }
+					{
+						// A disc with a beam of parallel rays leaving it, pointing the way the light
+						// travels (a directional light has no position: only this direction matters).
+						const float     radius = 0.4f;
+						const float     length = isSelected ? 3.0f : 1.5f;
+						const glm::vec3 side   = glm::normalize(glm::cross(dir, std::abs(dir.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f)));
+						const glm::vec3 up     = glm::cross(side, dir);
+						DebugDraw::Circle(p, dir, radius, style);
+						DebugDraw::Arrow(p, p + dir * length, style);
+						const int rays = 8;
+						for (int i = 0; i < rays; ++i) {
+							const float     angle = 6.2831853f * static_cast<float>(i) / static_cast<float>(rays);
+							const glm::vec3 start = p + (side * std::cos(angle) + up * std::sin(angle)) * radius;
+							DebugDraw::Line(start, start + dir * length, style);
+						}
 						break;
+					}
 					case LightType::Point:
 						if (isSelected) { DebugDraw::Sphere(p, light.range, style); }
 						break;

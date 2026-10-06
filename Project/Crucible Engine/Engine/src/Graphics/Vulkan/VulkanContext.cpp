@@ -249,7 +249,9 @@ namespace Crucible {
             vk::PhysicalDeviceVulkan11Features,
             vk::PhysicalDeviceVulkan13Features,
             vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-                {},
+                // Anisotropic texture filtering is optional: switched on whenever the GPU has it
+                // (Renderer::CreateMaterialSampler() checks the same flag before using it).
+                {.features = {.samplerAnisotropy = m_physicalDevice.getFeatures().samplerAnisotropy}},
                 {.shaderDrawParameters = true},
                 {.synchronization2 = true, .dynamicRendering = true},
                 {.extendedDynamicState = true}

@@ -13,6 +13,7 @@ struct FrameUniforms {
 
 struct InstanceData {
     float4x4 model;
+    float4   params;   // unused here; keeps the 80-byte stride of Crucible::InstanceData
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms>  frame;

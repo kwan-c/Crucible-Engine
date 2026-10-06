@@ -244,7 +244,12 @@ ote  Requires CreateSkyboxDescriptorSetLayout() first.
          \brief  Accessor.
          \return Const reference to the owned pipeline.
          *********************************************************************/
-        const vk::raii::Pipeline&               GetPipeline() const;
+        /// The scene pipelines (meshes, sky, particles) exist once per MSAA level: pass the
+        /// number of samples per pixel of the target being drawn into (1, 2 or 4).
+        static constexpr uint32_t kMsaaLevels = 3;
+        static uint32_t MsaaIndex(uint32_t samples) { return samples >= 4 ? 2u : samples >= 2 ? 1u : 0u; }
+
+        const vk::raii::Pipeline&               GetPipeline(uint32_t samples = 1) const;
 
         /*********************************************************************
          \brief  Accessor.
@@ -270,7 +275,7 @@ ote  Requires CreateSkyboxDescriptorSetLayout() first.
          \brief  Accessor.
          \return Const reference to the skybox pipeline.
          *********************************************************************/
-        const vk::raii::Pipeline&               GetSkyboxPipeline() const;
+        const vk::raii::Pipeline&               GetSkyboxPipeline(uint32_t samples = 1) const;
 
         /*********************************************************************
          \brief  Accessor.
@@ -307,7 +312,7 @@ ote  Requires CreateSkyboxDescriptorSetLayout() first.
         const vk::raii::PipelineLayout&         GetOutlineCompositeLayout() const;    ///< Mask set + push constant.
         const vk::raii::DescriptorSetLayout&    GetOutlineDescriptorSetLayout() const;///< Binding 0 = mask image.
 
-        const vk::raii::Pipeline&               GetParticlePipeline() const;          ///< Billboard particles.
+        const vk::raii::Pipeline&               GetParticlePipeline(uint32_t samples = 1) const;         ///< Billboard particles.
         const vk::raii::PipelineLayout&         GetParticleLayout() const;            ///< Set 0 + texture + ParticlePush.
         const vk::raii::Pipeline&               GetBloomDownPipeline() const;         ///< Half-size blur step.
         const vk::raii::Pipeline&               GetBloomUpPipeline() const;           ///< Additive upsample step.
@@ -324,12 +329,12 @@ ote  Requires CreateSkyboxDescriptorSetLayout() first.
         [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(VulkanContext& context, std::vector<char> const& code);
 
     private:
-        vk::raii::Pipeline              m_graphicsPipeline  = nullptr;
+        std::array<vk::raii::Pipeline, kMsaaLevels> m_graphicsPipelines{ nullptr, nullptr, nullptr };   // 1, 2, 4 samples
         vk::raii::PipelineLayout        m_pipelineLayout    = nullptr;
         vk::raii::DescriptorSetLayout   m_descriptorSetLayout = nullptr;
         vk::raii::DescriptorSetLayout   m_materialDescriptorSetLayout = nullptr;
 
-        vk::raii::Pipeline              m_skyboxPipeline = nullptr;
+        std::array<vk::raii::Pipeline, kMsaaLevels> m_skyboxPipelines{ nullptr, nullptr, nullptr };
         vk::raii::PipelineLayout        m_skyboxPipelineLayout = nullptr;
         vk::raii::DescriptorSetLayout   m_skyboxDescriptorSetLayout = nullptr;
 
@@ -346,7 +351,7 @@ ote  Requires CreateSkyboxDescriptorSetLayout() first.
         vk::raii::PipelineLayout        m_outlineCompositeLayout = nullptr;
         vk::raii::DescriptorSetLayout   m_outlineDescriptorSetLayout = nullptr;
 
-        vk::raii::Pipeline              m_particlePipeline = nullptr;
+        std::array<vk::raii::Pipeline, kMsaaLevels> m_particlePipelines{ nullptr, nullptr, nullptr };
         vk::raii::PipelineLayout        m_particleLayout = nullptr;
 
         vk::raii::Pipeline              m_bloomDownPipeline = nullptr;

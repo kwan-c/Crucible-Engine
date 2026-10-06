@@ -177,6 +177,13 @@ namespace Crucible {
             vk::raii::DescriptorSet                          hdrSet = nullptr;       // the HDR image, as a bloom source
             std::array<vk::raii::DescriptorSet, kBloomMips>  bloomSets{ nullptr, nullptr, nullptr, nullptr, nullptr };
             vk::raii::DescriptorSet                          tonemapSet = nullptr;   // HDR image + finished bloom
+            // MSAA (samples > 1): the scene is drawn into these multisampled images, which are
+            // then resolved (averaged) into hdrImage and the view's ordinary depth image.
+            uint32_t                                         samples = 1;
+            VulkanImage                                      msaaColor;
+            vk::raii::ImageView                              msaaColorView = nullptr;
+            VulkanImage                                      msaaDepth;
+            vk::raii::ImageView                              msaaDepthView = nullptr;
         };
 
         struct Viewport {
@@ -698,7 +705,8 @@ namespace Crucible {
             Invalid MaterialHandle; DrawRenderQueue always binds a
             material descriptor set per draw.
          *********************************************************************/
-        ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model);
+        ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model,
+                               const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
 
         // ---- Render proxies (persistent, culled objects) -------------------------------------
 
@@ -732,9 +740,12 @@ namespace Crucible {
          \param[in] material Material (Invalid = the default material).
          \param[in] model    World matrix.
          \param[in] visible  false hides it (removed from culling/picking).
+         \param[in] params   Per-object material parameters (InstanceData::
+                             params): x = emissive multiplier, yzw spare.
          *********************************************************************/
         ENGINE_API void SetRenderProxy(RenderProxyHandle handle, MeshHandle mesh, MaterialHandle material,
-                                       const glm::mat4& model, bool visible);
+                                       const glm::mat4& model, bool visible,
+                                       const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
 
         /*********************************************************************
          \brief  Unregisters a proxy; its handle may be reused.
@@ -818,6 +829,7 @@ namespace Crucible {
             MeshHandle           mesh;
             MaterialHandle       material;
             glm::mat4            model{ 1.0f };
+            glm::vec4            params{ 1.0f, 0.0f, 0.0f, 0.0f };   // InstanceData::params
             std::uint64_t        userData = 0;
             SpatialIndex::Handle spatial = SpatialIndex::kInvalid;   // kInvalid = not in the index (hidden / no bounds yet)
             bool                 visible = false;
@@ -972,6 +984,10 @@ namespace Crucible {
         // Post-processing (HDR scene image -> bloom -> tonemap). Pool BEFORE m_windowPost and
         // m_viewports, whose PostTargets hold sets allocated from it.
         PostSettings                                m_postSettings;
+        uint32_t                                    m_msaaSamples = 1;      // in use now (PostSettings::msaaSamples, clamped to the GPU)
+        uint32_t                                    m_drawSamples = 1;      // samples of the target DrawRenderQueue is drawing into
+        float                                       m_time = 0.0f;          // seconds since Init (FrameUniforms::time.x)
+        float                                       m_deltaTime = 0.0f;     // last Update()'s dt (FrameUniforms::time.y)
         vk::raii::DescriptorPool                    m_postDescriptorPool = nullptr;
         PostTargets                                 m_windowPost;           // the window's own targets (standalone build)
 
@@ -1115,6 +1131,8 @@ namespace Crucible {
         // Draws the current environment's sky into the currently-open rendering pass. Must run
         // AFTER the opaque draws (it relies on their depth to skip covered pixels).
         void DrawSkybox(vk::CommandBuffer cmd, vk::DescriptorSet frameSet);
+        uint32_t SupportedMsaaSamples(uint32_t wanted) const;   ///< Highest of 4 / 2 / 1 that is <= wanted and the GPU can render to.
+        void ApplyMsaaSetting();                                ///< Rebuilds every view's targets when PostSettings::msaaSamples changed.
 
         // ---- Texture/Material helpers ----
         // Shared core of every texture-creation path: creates a new device-local image + view

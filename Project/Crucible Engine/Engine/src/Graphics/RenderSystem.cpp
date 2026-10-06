@@ -94,7 +94,12 @@ namespace Crucible {
 
     void Renderer::ShutDown() { m_context.ShutDown(); }
 
-    void Renderer::Update([[maybe_unused]] float dt) {
+    void Renderer::Update(float dt) {
+
+        // Shader clock (FrameUniforms::time). A float holds seconds accurately enough for
+        // animation for many hours of play; wrap it if sessions ever get longer than that.
+        m_deltaTime = std::max(dt, 0.0f);
+        m_time     += m_deltaTime;
 
         // Finish a few queued async mesh uploads (see CreateMeshAsync) before drawing this frame.
         ProcessPendingMeshUploads();
@@ -151,6 +156,8 @@ namespace Crucible {
         // buffers of the uploads recorded the last time this index was used: free them.
         m_uploads.ReleaseFrame(frameIndex);
 
+        ApplyMsaaSetting();
+
         // Lights first: every view's uniforms read the light count and shadow light this picks.
         UpdateLightBuffer(frameIndex);
         UpdateDebugBuffer(frameIndex);
@@ -195,9 +202,9 @@ namespace Crucible {
 
     }   // Renderer::DrawFrame()
 
-    void Renderer::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model) {
+    void Renderer::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) {
 
-        m_renderQueue.push_back(RenderItem{ mesh, material, model });
+        m_renderQueue.push_back(RenderItem{ mesh, material, model, params });
 
     }   // Renderer::Submit()
 
@@ -415,7 +422,7 @@ namespace Crucible {
 
         const std::vector<DrawBatch>& batches = draws.main;
 
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline());
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetPipeline(m_drawSamples));
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
 
@@ -880,9 +887,67 @@ namespace Crucible {
     //  TEXTURES
     // ------------------------------------------------------------------------------------------------------------- //
 
+    namespace {
+
+        // sRGB <-> linear tables for mipmap generation. Colour textures store sRGB-encoded
+        // values; averaging those directly would make the smaller levels too dark.
+        struct SrgbTables {
+            std::array<float, 256>    toLinear{};
+            std::array<uint8_t, 4096> toSrgb{};
+            SrgbTables() {
+                for (int i = 0; i < 256; ++i) {
+                    const float c = static_cast<float>(i) / 255.0f;
+                    toLinear[i] = c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+                }
+                for (int i = 0; i < 4096; ++i) {
+                    const float l = static_cast<float>(i) / 4095.0f;
+                    const float c = l <= 0.0031308f ? l * 12.92f : 1.055f * std::pow(l, 1.0f / 2.4f) - 0.055f;
+                    toSrgb[i] = static_cast<uint8_t>(std::clamp(c * 255.0f + 0.5f, 0.0f, 255.0f));
+                }
+            }
+        };
+
+        // The next mip level of an RGBA8 image: each texel is the average of the (up to) 2x2
+        // texels it covers. Alpha, and every channel of a non-colour texture, is averaged as is.
+        std::vector<unsigned char> HalveRGBA8(const unsigned char* src, uint32_t w, uint32_t h, uint32_t dw, uint32_t dh, bool isSRGB) {
+
+            static const SrgbTables tables;
+
+            std::vector<unsigned char> dst(static_cast<size_t>(dw) * dh * 4);
+            for (uint32_t y = 0; y < dh; ++y) {
+                const uint32_t y0 = std::min(y * 2, h - 1);
+                const uint32_t y1 = std::min(y * 2 + 1, h - 1);
+                for (uint32_t x = 0; x < dw; ++x) {
+                    const uint32_t x0 = std::min(x * 2, w - 1);
+                    const uint32_t x1 = std::min(x * 2 + 1, w - 1);
+                    const unsigned char* p[4] = {
+                        src + (static_cast<size_t>(y0) * w + x0) * 4, src + (static_cast<size_t>(y0) * w + x1) * 4,
+                        src + (static_cast<size_t>(y1) * w + x0) * 4, src + (static_cast<size_t>(y1) * w + x1) * 4 };
+                    unsigned char* out = dst.data() + (static_cast<size_t>(y) * dw + x) * 4;
+                    for (int c = 0; c < 4; ++c) {
+                        if (isSRGB && c < 3) {
+                            const float sum = tables.toLinear[p[0][c]] + tables.toLinear[p[1][c]] + tables.toLinear[p[2][c]] + tables.toLinear[p[3][c]];
+                            out[c] = tables.toSrgb[static_cast<size_t>(sum * 0.25f * 4095.0f + 0.5f)];
+                        } else {
+                            out[c] = static_cast<unsigned char>((p[0][c] + p[1][c] + p[2][c] + p[3][c] + 2) / 4);
+                        }
+                    }
+                }
+            }
+            return dst;
+        }
+
+    }   // namespace
+
     TextureHandle Renderer::UploadTexturePixels(const unsigned char* pixels, uint32_t width, uint32_t height, bool isSRGB) {
 
         const vk::DeviceSize imageSize = vk::DeviceSize{ width } * height * 4;
+
+        // Mipmaps: a chain of half-size copies down to 1x1. The sampler picks (and blends) the
+        // levels that match how big the texture is on screen, which stops distant surfaces
+        // shimmering and is cheaper to sample.
+        uint32_t mipLevels = 1;
+        for (uint32_t size = std::max(width, height); size > 1; size >>= 1) { ++mipLevels; }
 
         GpuTexture tex;
         tex.width = width;
@@ -891,17 +956,31 @@ namespace Crucible {
         tex.image.Create(m_context, width, height, format,
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-            vk::MemoryPropertyFlagBits::eDeviceLocal);
+            vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, mipLevels);
 
         // Copies `pixels` into a staging buffer now; the GPU-side copy and the transition to
         // eShaderReadOnlyOptimal are recorded at the start of the next frame (m_uploads).
         m_uploads.QueueImage(*tex.image.GetImage(), pixels, imageSize, width, height);
 
+        // The smaller levels are made here on the CPU, each from the one before, and queued the
+        // same way (one upload per level).
+        std::vector<unsigned char> previous;
+        const unsigned char* source = pixels;
+        uint32_t w = width, h = height;
+        for (uint32_t level = 1; level < mipLevels; ++level) {
+            const uint32_t nw = std::max(w / 2, 1u), nh = std::max(h / 2, 1u);
+            std::vector<unsigned char> next = HalveRGBA8(source, w, h, nw, nh, isSRGB);
+            m_uploads.QueueImage(*tex.image.GetImage(), next.data(), vk::DeviceSize{ nw } * nh * 4, nw, nh, 1, level);
+            previous = std::move(next);
+            source   = previous.data();
+            w = nw; h = nh;
+        }
+
         vk::ImageViewCreateInfo viewInfo{
             .image = tex.image.GetImage(),
             .viewType = vk::ImageViewType::e2D,
             .format = format,
-            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1 }
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = mipLevels, .layerCount = 1 }
         };
         tex.view = vk::raii::ImageView(m_context.GetDevice(), viewInfo);
 
@@ -980,7 +1059,11 @@ namespace Crucible {
 
         // One sampler shared by every material texture. Repeat wrap (unlike the viewport
         // sampler's clamp-to-edge - these are tiling surface textures, not a single displayed
-        // framebuffer image).
+        // framebuffer image). Trilinear across the mip levels UploadTexturePixels() builds, plus
+        // anisotropic filtering - which keeps surfaces seen at a shallow angle (floors, long
+        // walls) sharp - when the GPU has it (VulkanContext enables the feature if so).
+        const bool  anisotropy    = m_context.GetPhysicalDevice().getFeatures().samplerAnisotropy == vk::True;
+        const float maxAnisotropy = std::min(8.0f, m_context.GetPhysicalDevice().getProperties().limits.maxSamplerAnisotropy);
         vk::SamplerCreateInfo samplerInfo{
             .magFilter = vk::Filter::eLinear,
             .minFilter = vk::Filter::eLinear,
@@ -988,10 +1071,11 @@ namespace Crucible {
             .addressModeU = vk::SamplerAddressMode::eRepeat,
             .addressModeV = vk::SamplerAddressMode::eRepeat,
             .addressModeW = vk::SamplerAddressMode::eRepeat,
-            .anisotropyEnable = vk::False,
+            .anisotropyEnable = anisotropy ? vk::True : vk::False,
+            .maxAnisotropy = anisotropy ? maxAnisotropy : 1.0f,
             .compareEnable = vk::False,
             .minLod = 0.0f,
-            .maxLod = 0.0f,
+            .maxLod = vk::LodClampNone,
             .borderColor = vk::BorderColor::eIntOpaqueBlack,
             .unnormalizedCoordinates = vk::False
         };
@@ -1576,10 +1660,12 @@ namespace Crucible {
 
     }   // Renderer::CreateRenderProxy()
 
-    void Renderer::SetRenderProxy(RenderProxyHandle handle, MeshHandle mesh, MaterialHandle material, const glm::mat4& model, bool visible) {
+    void Renderer::SetRenderProxy(RenderProxyHandle handle, MeshHandle mesh, MaterialHandle material, const glm::mat4& model, bool visible, const glm::vec4& params) {
 
         if (!handle.IsValid() || handle.id >= m_proxies.size() || !m_proxies[handle.id].alive) { return; }
         RenderProxy& p = m_proxies[handle.id];
+
+        p.params = params;   // read straight from the proxy when the view is built; nothing else depends on it
 
         const bool sameMatrix = memcmp(&p.model, &model, sizeof(glm::mat4)) == 0;
         if (sameMatrix && p.mesh == mesh && p.material == material && p.visible == visible) { return; }   // the common case
@@ -1639,7 +1725,7 @@ namespace Crucible {
         // Proxies: tree branches / the moving-object array, per SpatialIndex.
         m_spatial.QueryFrustum(frustum, [&](SpatialIndex::Handle h) {
             const RenderProxy& p = m_proxies[static_cast<uint32_t>(m_spatial.GetUserData(h))];
-            m_visibleItems.push_back(RenderItem{ p.mesh, p.material, p.model });
+            m_visibleItems.push_back(RenderItem{ p.mesh, p.material, p.model, p.params });
         });
         stats.proxies        = m_spatial.GetCount();
         stats.proxiesVisible = static_cast<uint32_t>(m_visibleItems.size());
@@ -1680,6 +1766,7 @@ namespace Crucible {
         camera.SetAspect(static_cast<float>(extent.width), static_cast<float>(extent.height));   // ignores 0 height
 
         FrameUniforms ubo{};
+        ubo.time = glm::vec4(m_time, m_deltaTime, m_shadowSettings.debugCascades ? 1.0f : 0.0f, 0.0f);
         ubo.view        = camera.GetView();
         ubo.proj        = camera.GetProjection();
         ubo.cameraPosWS = glm::vec4(camera.position, 0.0f);
@@ -2032,7 +2119,7 @@ namespace Crucible {
 
         if (batches.empty()) { return; }
 
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticlePipeline());
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticlePipeline(m_drawSamples));
         // Set 0 again: this layout's push-constant range differs from the previous pipeline's, so
         // the earlier binding doesn't carry over.
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticleLayout(), 0, frameSet, nullptr);
@@ -2090,6 +2177,29 @@ namespace Crucible {
             vk::MemoryPropertyFlagBits::eDeviceLocal);
         t.hdrView = makeView(t.hdrImage);
 
+        // MSAA targets: what the scene is actually drawn into when samples > 1. Never sampled or
+        // kept (they resolve into hdrImage and the view's depth image at the end of the pass).
+        t.samples       = m_msaaSamples;
+        t.msaaColorView = nullptr;
+        t.msaaDepthView = nullptr;
+        t.msaaColor     = VulkanImage{};
+        t.msaaDepth     = VulkanImage{};
+        if (t.samples > 1) {
+            const vk::SampleCountFlagBits samples     = static_cast<vk::SampleCountFlagBits>(t.samples);
+            const vk::Format              depthFormat = m_swapchain.GetDepthFormat();
+            t.msaaColor.Create(m_context, width, height, format, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransientAttachment,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, samples);
+            t.msaaColorView = makeView(t.msaaColor);
+            t.msaaDepth.Create(m_context, width, height, depthFormat, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransientAttachment,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, samples);
+            vk::ImageViewCreateInfo depthViewInfo{
+                .image = t.msaaDepth.GetImage(), .viewType = vk::ImageViewType::e2D, .format = depthFormat,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1 } };
+            t.msaaDepthView = vk::raii::ImageView(m_context.GetDevice(), depthViewInfo);
+        }
+
         // Bloom chain: each step half the size of the one before. Tiny targets get fewer steps.
         uint32_t steps = 1;
         while (steps < kBloomMips && (std::min(width, height) >> (steps + 1)) >= 2) { ++steps; }
@@ -2129,6 +2239,31 @@ namespace Crucible {
 
     }   // Renderer::CreatePostTargets()
 
+    uint32_t Renderer::SupportedMsaaSamples(uint32_t wanted) const {
+
+        const vk::PhysicalDeviceLimits limits = m_context.GetPhysicalDevice().getProperties().limits;
+        const vk::SampleCountFlags     both   = limits.framebufferColorSampleCounts & limits.framebufferDepthSampleCounts;
+        if (wanted >= 4 && (both & vk::SampleCountFlagBits::e4)) { return 4; }
+        if (wanted >= 2 && (both & vk::SampleCountFlagBits::e2)) { return 2; }
+        return 1;
+
+    }   // Renderer::SupportedMsaaSamples()
+
+    void Renderer::ApplyMsaaSetting() {
+
+        const uint32_t wanted = SupportedMsaaSamples(m_postSettings.msaaSamples);
+        if (wanted == m_msaaSamples) { return; }
+
+        // The old targets may still be in use by frames the GPU has not finished.
+        m_context.GetDevice().waitIdle();
+        m_msaaSamples = wanted;
+        for (auto& [id, vp] : m_viewports) {
+            if (*vp.post.hdrView) { CreatePostTargets(vp.post, vp.post.extent.width, vp.post.extent.height); }
+        }
+        if (*m_windowPost.hdrView) { CreatePostTargets(m_windowPost, m_windowPost.extent.width, m_windowPost.extent.height); }
+
+    }   // Renderer::ApplyMsaaSetting()
+
     void Renderer::DrawSceneHdr(FrameContext& fc, PostTargets& t, vk::Image depthImage, vk::ImageView depthView,
                                 vk::Extent2D extent, vk::DescriptorSet frameSet, const ViewDrawList& draws) {
 
@@ -2160,6 +2295,35 @@ namespace Crucible {
             .storeOp     = vk::AttachmentStoreOp::eStore,   // the debug lines of the final pass test against it
             .clearValue  = vk::ClearDepthStencilValue(1.0f, 0)
         };
+        // MSAA: draw into the multisampled pair instead. When the pass ends the GPU resolves them
+        // into the images set up above - colour by averaging the samples of each pixel (that is
+        // the anti-aliasing), depth by taking one sample - so everything after this pass (bloom,
+        // tonemap, debug lines, outline) carries on with ordinary one-sample images.
+        const bool msaa = t.samples > 1 && *t.msaaColorView && *t.msaaDepthView;
+        if (msaa) {
+            TransitionImageLayout(fc, t.msaaColor.GetImage(), vk::ImageAspectFlagBits::eColor,
+                vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+                {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+            TransitionImageLayout(fc, t.msaaDepth.GetImage(), vk::ImageAspectFlagBits::eDepth,
+                vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+                {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests);
+
+            color.imageView          = t.msaaColorView;
+            color.resolveMode        = vk::ResolveModeFlagBits::eAverage;
+            color.resolveImageView   = t.hdrView;
+            color.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            color.storeOp            = vk::AttachmentStoreOp::eDontCare;   // only the resolved image is kept
+
+            depth.imageView          = t.msaaDepthView;
+            depth.resolveMode        = vk::ResolveModeFlagBits::eSampleZero;
+            depth.resolveImageView   = depthView;
+            depth.resolveImageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
+            depth.storeOp            = vk::AttachmentStoreOp::eDontCare;
+        }
+
         vk::RenderingInfo renderingInfo{
             .renderArea           = { .offset = { 0, 0 }, .extent = extent },
             .layerCount           = 1,
@@ -2168,7 +2332,9 @@ namespace Crucible {
             .pDepthAttachment     = &depth
         };
         cmd.beginRendering(renderingInfo);
+        m_drawSamples = msaa ? t.samples : 1;
         DrawRenderQueue(cmd, extent, frameSet, draws);
+        m_drawSamples = 1;
         cmd.endRendering();
 
         TransitionImageLayout(fc, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
@@ -2288,7 +2454,8 @@ namespace Crucible {
         const bool  bloom    = m_postSettings.bloom && t.bloomCount > 0;
         const float strength = bloom ? std::max(m_postSettings.bloomIntensity, 0.0f) / static_cast<float>(t.bloomCount) : 0.0f;
         PostPush push;
-        push.a = glm::vec4(std::max(m_environment.exposure, 0.0f), strength, 0.0f, 0.0f);
+        push.a = glm::vec4(std::max(m_environment.exposure, 0.0f), strength, m_postSettings.fxaa ? 1.0f : 0.0f, 0.0f);
+        push.b = glm::vec4(1.0f / static_cast<float>(std::max(extent.width, 1u)), 1.0f / static_cast<float>(std::max(extent.height, 1u)), 0.0f, 0.0f);
         cmd.pushConstants<PostPush>(*m_pipeline.GetTonemapLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
         cmd.draw(3, 1, 0, 0);
 
@@ -2311,7 +2478,7 @@ namespace Crucible {
             }
 
             const uint32_t index = static_cast<uint32_t>(m_instanceScratch.size());
-            m_instanceScratch.push_back(InstanceData{ item.model });
+            m_instanceScratch.push_back(InstanceData{ item.model, item.params });
             ++added;
 
             if (!batches.empty()) {
@@ -2501,7 +2668,10 @@ namespace Crucible {
             // Ortho box around the sphere, pulled back toward the light by `ext` so casters between
             // the light and the sphere (off-screen towers, cliffs) still land in the map.
             const glm::mat4 lightView = glm::lookAt(centre - L * (radius + ext), centre, up);
-            glm::mat4       lightProj = glm::ortho(-radius, radius, -radius, radius, 0.0f, 2.0f * radius + ext);
+            // orthoRH_ZO, not glm::ortho: the project does not define GLM_FORCE_DEPTH_ZERO_TO_ONE, so
+            // glm::ortho maps depth to -1..1 and Vulkan (which keeps 0..1) would clip away the half
+            // of the box nearest the light - losing the shadows of anything high above its receiver.
+            glm::mat4       lightProj = glm::orthoRH_ZO(-radius, radius, -radius, radius, 0.0f, 2.0f * radius + ext);
 
             // Texel snapping: shift the projection so the world origin lands exactly on a texel. The
             // map then only ever moves in whole texels as the camera moves.
@@ -2834,7 +3004,7 @@ namespace Crucible {
         if (!sky.IsValid() || sky.id >= m_cubemaps.size()) { sky = m_defaultSkybox; }
         if (!sky.IsValid() || sky.id >= m_cubemaps.size()) { return; }
 
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetSkyboxPipeline());
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetSkyboxPipeline(m_drawSamples));
 
         // Set 0 must be rebound even though the mesh pass just bound the same set: the skybox
         // layout has no push-constant range, so it isn't "compatible" with the main layout for

@@ -37,11 +37,14 @@ struct FrameUniforms {
     uint4    clusterDims;         // xyz = clusters across / down / in depth, w = this view's first cell
     float4   clusterZ;            // x = near plane, y = depth clusters / log(far / near),
                                   // zw = render target size in pixels
+    float4   time;                // x = seconds since the Renderer started, y = length of the last frame,
+                                  // z = 1 to tint surfaces by shadow cascade (debug view)
 };
 
 // One instance (set 0, binding 2). Must match Crucible::InstanceData (RenderTypes.h).
 struct InstanceData {
     float4x4 model;
+    float4   params;   // x = multiplier on the material's emissive, yzw = spare (MaterialParams component)
 };
 
 // One light. Must match Crucible::GpuLight (RenderTypes.h) - four float4s, identical under std430.
@@ -120,6 +123,7 @@ struct VSOutput {
     float  tangentSign;
     float2 uv;
     float3 worldPos;
+    nointerpolation float4 instanceParams;   // InstanceData::params, the same for the whole object
 };
 
 [shader("vertex")]
@@ -132,6 +136,7 @@ VSOutput vertMain(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     output.pos = mul(frame.proj, mul(frame.view, worldPos4));
     output.color = input.inColor;
     output.uv = input.inUV;
+    output.instanceParams = instances[instanceID].params;
 
     // NOTE: correct for uniform scale only. Non-uniform scale needs the inverse-transpose of the
     // model's upper-left 3x3 for the normal specifically; the tangent, being a surface direction
@@ -202,9 +207,42 @@ float3 EvaluateBRDF(float3 N, float3 V, float3 L, float3 radiance,
     return (diffuse + specular) * radiance * NdotL;
 }
 
+// One cascade's answer for worldPos: 1 = fully lit, 0 = fully shadowed, -1 = this cascade's map
+// does not cover the point.
+float SampleCascade(float3 worldPos, float3 geomN, float3 L, uint c) {
+    // Move the lookup point off the surface before comparing depths, by an amount measured in
+    // THIS cascade's texels (far cascades have big texels and need a bigger push, or surfaces
+    // shadow themselves in stripes): along the normal - growing as the light gets more grazing,
+    // where a texel covers the most surface depth - and a little toward the light.
+    // The push is kept as small as it can be: a point pushed off a wall picks up the shadow of
+    // anything hovering that close to the wall.
+    float  NdotL     = saturate(dot(geomN, L));
+    float  texelWS   = frame.cascadeTexelSize[c];
+    float  grazing   = sqrt(saturate(1.0 - NdotL * NdotL));
+    float3 lookup    = worldPos + geomN * (texelWS * frame.shadowParams.z * grazing) + L * texelWS;
+    float4 lightClip = mul(frame.shadowViewProj[c], float4(lookup, 1.0));
+    float3 ndc       = lightClip.xyz / lightClip.w;
+
+    // The shadow pass uses the same flipped viewport as every other pass, so +Y NDC is the
+    // top row: v = 0.5 - 0.5 * y.
+    float2 uv    = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
+    float  texel = frame.shadowParams.x;
+    // 1.5 texels in from the edge, so the filter below never reads outside the map.
+    if (any(uv < 1.5 * texel) || any(uv > 1.0 - 1.5 * texel) || ndc.z > 1.0) { return -1.0; }
+
+    float  ref = ndc.z - frame.shadowParams.y;
+    float  lit = 0.0;
+    // 3x3 taps, each a hardware-filtered 2x2 compare: a soft 4x4-texel kernel for 9 fetches.
+    [unroll] for (int y = -1; y <= 1; ++y) {
+        [unroll] for (int x = -1; x <= 1; ++x) {
+            lit += shadowMap.SampleCmpLevelZero(shadowSampler, float3(uv + float2(x, y) * texel, float(c)), ref);
+        }
+    }
+    return lit / 9.0;
+}
+
 // Fraction of the shadow-casting light that reaches worldPos (1 = fully lit). geomN is the
-// interpolated vertex normal (not the normal-mapped one): the normal offset pushes the lookup
-// point off the surface along it, which removes acne without a large depth bias.
+// interpolated vertex normal (not the normal-mapped one).
 float SampleShadow(float3 worldPos, float3 geomN, float3 L) {
     uint cascadeCount = frame.lightParams.z;
     if (cascadeCount == 0) { return 1.0; }
@@ -217,32 +255,45 @@ float SampleShadow(float3 worldPos, float3 geomN, float3 L) {
     uint c = 0;
     while (c + 1 < cascadeCount && viewDepth >= frame.cascadeSplits[c]) { ++c; }
 
-    // Bigger offset at grazing angles, where a texel covers the most surface depth.
-    float  NdotL     = saturate(dot(geomN, L));
-    float  offset    = frame.cascadeTexelSize[c] * frame.shadowParams.z * (2.0 - NdotL);
-    float4 lightClip = mul(frame.shadowViewProj[c], float4(worldPos + geomN * offset, 1.0));
-    float3 ndc       = lightClip.xyz / lightClip.w;
+    float lit = SampleCascade(worldPos, geomN, L, c);
+    if (lit < 0.0) { lit = 1.0; }
 
-    // The shadow pass uses the same flipped viewport as every other pass, so +Y NDC is the
-    // top row: v = 0.5 - 0.5 * y.
-    float2 uv = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-    if (any(uv < 0.0) || any(uv > 1.0) || ndc.z > 1.0) { return 1.0; }
-
-    float  ref   = ndc.z - frame.shadowParams.y;
-    float  texel = frame.shadowParams.x;
-    float  lit   = 0.0;
-    // 3x3 taps, each a hardware-filtered 2x2 compare: a soft 4x4-texel kernel for 9 fetches.
-    [unroll] for (int y = -1; y <= 1; ++y) {
-        [unroll] for (int x = -1; x <= 1; ++x) {
-            lit += shadowMap.SampleCmpLevelZero(shadowSampler, float3(uv + float2(x, y) * texel, float(c)), ref);
+    // Over the last part of a cascade, cross-fade into the next (coarser) one, so the change of
+    // sharpness is a gradual blend instead of a visible line across the ground.
+    if (c + 1 < cascadeCount) {
+        float nearEdge  = c == 0 ? 0.0 : frame.cascadeSplits[c - 1];
+        float farEdge   = frame.cascadeSplits[c];
+        float bandStart = farEdge - (farEdge - nearEdge) * 0.2;
+        if (viewDepth > bandStart) {
+            float next = SampleCascade(worldPos, geomN, L, c + 1);
+            if (next >= 0.0) { lit = lerp(lit, next, (viewDepth - bandStart) / (farEdge - bandStart)); }
         }
     }
-    lit /= 9.0;
 
     // Fade out over the last part of the shadow distance instead of a hard edge.
     float fadeStart = lastSplit * (1.0 - frame.shadowParams.w);
     float fade = saturate((viewDepth - fadeStart) / max(lastSplit - fadeStart, 1e-3));
     return lerp(lit, 1.0, fade);
+}
+
+// Debug view (ShadowSettings::debugCascades): which shadow cascade each pixel uses. Red, green,
+// blue, yellow = cascade 1 to 4; the paler stripe at the far end of each is where it cross-fades
+// into the next; untinted = beyond the shadow distance.
+float3 CascadeDebugTint(float3 worldPos) {
+    uint cascadeCount = frame.lightParams.z;
+    float viewDepth = -mul(frame.view, float4(worldPos, 1.0)).z;
+    if (cascadeCount == 0 || viewDepth >= frame.cascadeSplits[cascadeCount - 1]) { return float3(1.0, 1.0, 1.0); }
+
+    uint c = 0;
+    while (c + 1 < cascadeCount && viewDepth >= frame.cascadeSplits[c]) { ++c; }
+
+    float3 tint = c == 0 ? float3(1.0, 0.35, 0.35) : c == 1 ? float3(0.35, 1.0, 0.35) : c == 2 ? float3(0.35, 0.45, 1.0) : float3(1.0, 1.0, 0.35);
+    if (c + 1 < cascadeCount) {
+        float nearEdge = c == 0 ? 0.0 : frame.cascadeSplits[c - 1];
+        float farEdge  = frame.cascadeSplits[c];
+        if (viewDepth > farEdge - (farEdge - nearEdge) * 0.2) { tint = lerp(tint, float3(1.0, 1.0, 1.0), 0.5); }
+    }
+    return tint;
 }
 
 // Contribution of one GpuLight at this surface point.
@@ -298,7 +349,7 @@ float4 fragMain(VSOutput inVert) : SV_Target {
     roughness = max(roughness, 0.045);
 
     float  occlusion = occlusionTex.Sample(inVert.uv).r;
-    float3 emissive  = emissiveTex.Sample(inVert.uv).rgb * pc.factors.emissiveFactor;
+    float3 emissive  = emissiveTex.Sample(inVert.uv).rgb * pc.factors.emissiveFactor * inVert.instanceParams.x;
 
     float3 N = normalize(inVert.normalWS);
 
@@ -370,5 +421,7 @@ float4 fragMain(VSOutput inVert) : SV_Target {
 
     // Linear HDR radiance. Exposure, bloom and tonemapping happen once for the whole image in
     // Post.slang's tonemap pass, after everything (meshes, sky, particles) has been drawn.
-    return float4(direct + ambient + emissive, 1.0);
+    float3 colour = direct + ambient + emissive;
+    if (frame.time.z > 0.5) { colour *= CascadeDebugTint(inVert.worldPos); }
+    return float4(colour, 1.0);
 }

@@ -227,6 +227,27 @@ namespace Crucible
 		int   priority = 0;        // highest enabled camera wins (ties: the first one found)
 	};
 
+	/*************************************************************************
+	 \brief
+		Per-object adjustments to the material a MeshRenderer on the same
+		entity draws with. The material itself is shared by every object
+		using it; these values belong to this one object, and objects with
+		different values are still drawn together in one instanced draw.
+	 \details
+		- emissiveScale: multiplies the material's emissive (glow). 0 = off,
+		  1 = as authored, above 1 = brighter (and, past the bloom
+		  threshold, glowing). Animate it from gameplay code for "charged /
+		  ready to fire" effects.
+		- custom: three spare numbers passed to the shader untouched
+		  (InstanceData::params.yzw), reserved for effects to come.
+		An entity without this component draws as if it had the defaults.
+	 *************************************************************************/
+	struct MaterialParams
+	{
+		float      emissiveScale = 1.f;
+		Math::vec3 custom{ 0.f, 0.f, 0.f };
+	};
+
 	/// Where a ParticleEmitter's new particles appear, in the emitter's local space.
 	enum class ParticleShape : std::uint8_t
 	{
@@ -377,6 +398,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(Light, Light);
 	CRUCIBLE_COMPONENT(Skybox, Skybox);
 	CRUCIBLE_COMPONENT(ParticleEmitter, ParticleEmitter);
+	CRUCIBLE_COMPONENT(MaterialParams, MaterialParams);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
 	template<>

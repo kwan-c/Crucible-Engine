@@ -194,6 +194,13 @@ void Crucible::SceneView::DrawToolbar() {
 	}
 
 	ImGui::SameLine();
+	if (ToolbarToggle("Rendering", false)) { ImGui::OpenPopup("##SceneRendering"); }
+	if (ImGui::BeginPopup("##SceneRendering")) {
+		DrawRenderingMenu();
+		ImGui::EndPopup();
+	}
+
+	ImGui::SameLine();
 	ImGui::TextDisabled("|  %d x %d", static_cast<int>(m_viewportSize.x), static_cast<int>(m_viewportSize.y));
 	if (m_viewport.IsValid()) {
 		// Last frame's culling for this view: drawn / registered (+ immediate demo items).
@@ -435,16 +442,39 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	ImGui::Checkbox("Icons (lights, cameras, sky, empties)", &m_showIcons);
 	bool outline = m_viewport.GetOutline();
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
+}
 
-	// Renderer-wide (affects the Game view too): the glow around very bright things.
-	ImGui::Separator();
+// Renderer-wide settings: unlike the Gizmos menu these change the picture itself, in the Game
+// view as well as here. They are not saved - each start of the editor begins from the defaults
+// in RenderTypes.h (PostSettings, ShadowSettings).
+void Crucible::SceneView::DrawRenderingMenu() {
+	// The glow around very bright things.
+	ImGui::SeparatorText("Bloom");
 	PostSettings& post = m_renderer.GetPostSettings();
-	ImGui::Checkbox("Bloom", &post.bloom);
+	ImGui::Checkbox("Enabled##bloom", &post.bloom);
 	ImGui::BeginDisabled(!post.bloom);
 	ImGui::SetNextItemWidth(140.0f);
 	ImGui::SliderFloat("Bloom intensity", &post.bloomIntensity, 0.0f, 2.0f, "%.2f");
 	ImGui::SetNextItemWidth(140.0f);
 	ImGui::SliderFloat("Bloom threshold", &post.bloomThreshold, 0.0f, 4.0f, "%.2f");
+	ImGui::EndDisabled();
+
+	ImGui::SeparatorText("Anti-aliasing");
+	ImGui::Checkbox("FXAA", &post.fxaa);
+	// MSAA: the scene is drawn with several samples per pixel (the Renderer falls back to what the GPU supports).
+	int msaaChoice = post.msaaSamples >= 4 ? 2 : post.msaaSamples >= 2 ? 1 : 0;
+	ImGui::SetNextItemWidth(140.0f);
+	if (ImGui::Combo("MSAA", &msaaChoice, "Off\0" "2x\0" "4x\0")) { post.msaaSamples = 1u << msaaChoice; }
+
+	ImGui::SeparatorText("Sun shadows");
+	ShadowSettings& shadows = m_renderer.GetShadowSettings();
+	ImGui::Checkbox("Enabled##shadows", &shadows.enabled);
+	ImGui::BeginDisabled(!shadows.enabled);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Distance", &shadows.distance, 10.0f, 200.0f, "%.0f m");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Normal bias", &shadows.normalBias, 0.0f, 4.0f, "%.2f texels");
+	ImGui::Checkbox("Show cascades (debug tint)", &shadows.debugCascades);
 	ImGui::EndDisabled();
 }
 

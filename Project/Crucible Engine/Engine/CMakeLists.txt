@@ -45,6 +45,7 @@ target_compile_definitions(Engine
     PUBLIC
         VULKAN_HPP_NO_STRUCT_CONSTRUCTORS
         VULKAN_HPP_HANDLE_ERROR_OUT_OF_DATE_AS_SUCCESS   # To handle swap chain recreation.
+        GLM_FORCE_DEPTH_ZERO_TO_ONE                      # GLM projections use Vulkan's 0..1 depth range (default is OpenGL's -1..1).
 )
 
 # Include directories

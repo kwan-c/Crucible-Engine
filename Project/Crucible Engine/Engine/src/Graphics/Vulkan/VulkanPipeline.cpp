@@ -23,11 +23,11 @@ namespace Crucible {
     // ACCESSORS
     // ------------------------------------------------------------------------------------------------------------- //
     
-    const vk::raii::Pipeline&               VulkanPipeline::GetPipeline()               const { return m_graphicsPipeline; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetPipeline(uint32_t samples)         const { return m_graphicsPipelines[MsaaIndex(samples)]; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetLayout()                 const { return m_pipelineLayout; }
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetDescriptorSetLayout()    const { return m_descriptorSetLayout; }
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetMaterialDescriptorSetLayout() const { return m_materialDescriptorSetLayout; }
-    const vk::raii::Pipeline&               VulkanPipeline::GetSkyboxPipeline()         const { return m_skyboxPipeline; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetSkyboxPipeline(uint32_t samples)   const { return m_skyboxPipelines[MsaaIndex(samples)]; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetSkyboxLayout()           const { return m_skyboxPipelineLayout; }
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetSkyboxDescriptorSetLayout() const { return m_skyboxDescriptorSetLayout; }
     const vk::raii::Pipeline&               VulkanPipeline::GetDebugLinePipeline(bool depthTested) const { return depthTested ? m_debugLinePipeline : m_debugLineOnTopPipeline; }
@@ -39,7 +39,7 @@ namespace Crucible {
     const vk::raii::Pipeline&               VulkanPipeline::GetOutlineCompositePipeline() const { return m_outlineCompositePipeline; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetOutlineCompositeLayout() const { return m_outlineCompositeLayout; }
     const vk::raii::DescriptorSetLayout&    VulkanPipeline::GetOutlineDescriptorSetLayout() const { return m_outlineDescriptorSetLayout; }
-    const vk::raii::Pipeline&               VulkanPipeline::GetParticlePipeline()       const { return m_particlePipeline; }
+    const vk::raii::Pipeline&               VulkanPipeline::GetParticlePipeline(uint32_t samples) const { return m_particlePipelines[MsaaIndex(samples)]; }
     const vk::raii::PipelineLayout&         VulkanPipeline::GetParticleLayout()         const { return m_particleLayout; }
     const vk::raii::Pipeline&               VulkanPipeline::GetBloomDownPipeline()      const { return m_bloomDownPipeline; }
     const vk::raii::Pipeline&               VulkanPipeline::GetBloomUpPipeline()        const { return m_bloomUpPipeline; }
@@ -262,7 +262,13 @@ namespace Crucible {
             },
             {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat, .depthAttachmentFormat = depthFormat }
         };
-        m_graphicsPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+        // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
+        // pipeline and must match the target it draws into. `multisampling` is referenced by
+        // pointer above, so changing it here changes what the next pipeline is built with.
+        for (uint32_t i = 0; i < kMsaaLevels; ++i) {
+            multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
+            m_graphicsPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+        }
 
 
     }   // VulkanPipeline::CreatePipeline()
@@ -371,7 +377,13 @@ namespace Crucible {
             },
             {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat, .depthAttachmentFormat = depthFormat }
         };
-        m_skyboxPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+        // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
+        // pipeline and must match the target it draws into. `multisampling` is referenced by
+        // pointer above, so changing it here changes what the next pipeline is built with.
+        for (uint32_t i = 0; i < kMsaaLevels; ++i) {
+            multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
+            m_skyboxPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+        }
 
     }   // VulkanPipeline::CreateSkyboxPipeline()
 
@@ -755,7 +767,13 @@ namespace Crucible {
             },
             {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat, .depthAttachmentFormat = depthFormat }
         };
-        m_particlePipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
+        // pipeline and must match the target it draws into. `multisampling` is referenced by
+        // pointer above, so changing it here changes what the next pipeline is built with.
+        for (uint32_t i = 0; i < kMsaaLevels; ++i) {
+            multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
+            m_particlePipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        }
 
     }   // VulkanPipeline::CreateParticlePipeline()
 
