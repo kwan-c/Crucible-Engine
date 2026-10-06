@@ -1,5 +1,9 @@
 /*************************************************************************
 * \file:         ParticleSystem.cpp
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          05 October 2026
+* \version       1.0
 * \brief
 *                See ParticleSystem.h for what this system does and why
 *                particles are not entities.

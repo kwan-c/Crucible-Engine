@@ -1,6 +1,10 @@
 #pragma once
 /*************************************************************************
 * \file:         ParticleSystem.h
+* \author:       Chewn Thing Kwan
+* \par:          Email: kwan.c@digipen.edu
+* \date          05 October 2026
+* \version       1.0
 * \brief
 *                ECS system that simulates every ParticleEmitter and hands
 *                the live particles (and their light) to the Renderer.
