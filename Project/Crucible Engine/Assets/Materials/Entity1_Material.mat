@@ -2,8 +2,8 @@
   "version": 1,
   "albedoTint": [1.0, 1.0, 1.0, 1.0],
   "emissiveFactor": [0.0, 0.0, 0.0],
-  "metallic": 1.0,
-  "roughness": 0.06700000166893005,
+  "metallic": 0.8399999737739563,
+  "roughness": 0.07100000232458115,
   "textures": {
     "albedo": "",
     "normal": "",

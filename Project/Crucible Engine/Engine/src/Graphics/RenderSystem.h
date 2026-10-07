@@ -52,6 +52,16 @@
 
 #include "Camera.h"
 #include "RenderTypes.h"
+#include "ViewTargets.h"
+#include "Passes/BloomPass.h"
+#include "Passes/TonemapPass.h"
+#include "Passes/AmbientOcclusionPass.h"
+#include "Passes/ShadowPass.h"
+#include "Passes/OutlinePass.h"
+#include "Passes/ParticlePass.h"
+#include "Passes/DebugLinePass.h"
+#include "DrawList.h"
+#include "RenderResources.h"
 #include "DebugDraw.h"
 #include "Spatial/SpatialIndex.h"
 
@@ -74,50 +84,6 @@ namespace Crucible {
      *************************************************************************/
     class Renderer {
 
-        // GPU-side mesh. One vertex + one index buffer per mesh for now (simple; suballocate from
-        // big shared buffers later if mesh counts get large).
-        struct GpuMesh {
-            VulkanBuffer vertexBuffer;
-            VulkanBuffer indexBuffer;
-            uint32_t     indexCount = 0;
-
-            // Human-readable label, purely for tools (Editor UI, RenderDoc/Nsight captures via a
-            // future debug-object-name call, log messages) - never used to look a mesh up, and
-            // never required to be unique. See GetMeshName()'s doc comment for who's meant to
-            // read this and why it lives here rather than in the Editor.
-            std::string  debugName;
-
-            // Object-space bounding box of the vertex positions (computed at upload), for
-            // selection boxes and future culling - see GetMeshBounds().
-            glm::vec3    boundsMin{ 0.0f };
-            glm::vec3    boundsMax{ 0.0f };
-
-            // CPU copy of the geometry, for exact ray picking (Raycast). Positions + indices only:
-            // 12 bytes per vertex + 4 per index, per MESH (instances share it).
-            std::vector<glm::vec3> cpuPositions;
-            std::vector<uint32_t>  cpuIndices;
-        };
-
-        // GPU-side texture: an image + its view, indexed by TextureHandle. No per-texture
-        // sampler - every material texture is sampled through the one shared m_materialSampler
-        // (a repeat-wrap trilinear-ish sampler is fine for every texture kind we load today).
-        struct GpuTexture {
-            VulkanImage         image;
-            vk::raii::ImageView view = nullptr;
-            uint32_t            width = 0;
-            uint32_t            height = 0;
-        };
-
-        // GPU-side material: which texture each of the five PBR slots currently points at (kept
-        // around so UpdateMaterial can tell whether a texture binding actually changed, and so
-        // the Inspector can read back what a material is set to), the scalar factors (pushed per
-        // draw - see PushConstants), and the one descriptor set (layout set = 1) those five
-        // textures are bound into.
-        struct GpuMaterial {
-            MaterialData             data;
-            vk::raii::DescriptorSet   descriptorSet = nullptr;
-        };
-
         // GPU-side cubemap (skybox): a 6-layer cube-compatible image, its cube view, and the one
         // descriptor set (skybox pipeline's set = 1) it's bound into - allocated once at creation,
         // same as a material's, since a cubemap's contents never change after upload.
@@ -139,25 +105,6 @@ namespace Crucible {
         // An offscreen render target: its own color+depth image, camera, and per-frame-in-flight
         // uniform buffer/descriptor set, so several can be drawn per frame with different cameras
         // (Scene view vs. Game view) without stepping on each other's data.
-        // One instanced draw: `instanceCount` objects sharing a mesh (and, for the main pass, a
-        // material), whose matrices sit contiguously in this frame's instance buffer from
-        // `firstInstance` on.
-        // One particle draw: `count` particles from `first` on in this frame's particle buffer,
-        // all with the same texture and blend mode (one emitter).
-        struct ParticleBatch {
-            TextureHandle texture;
-            uint32_t      first = 0;
-            uint32_t      count = 0;
-            ParticlePush  push;
-        };
-
-        struct DrawBatch {
-            MeshHandle     mesh;
-            MaterialHandle material;
-            uint32_t       firstInstance = 0;
-            uint32_t       instanceCount = 0;
-        };
-
         // Everything one view draws this frame, built by PrepareView() before recording starts
         // (so the instance buffer's final size is known before any command references it).
         struct ViewDrawList {
@@ -168,43 +115,6 @@ namespace Crucible {
             std::vector<ParticleBatch>                            particles;          // far to near
             glm::vec4                                             projInfo{ 1.0f };   // proj[0][0], [1][1], [2][2], [3][2] (ambient occlusion)
             void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); }
-        };
-
-        // Where one view's scene is drawn before it reaches the screen: a floating-point (HDR)
-        // colour image, plus the chain of ever smaller images the bloom is built in. One per
-        // viewport, and one for the window in a standalone build. See DrawSceneHdr/DrawBloom/
-        // DrawTonemap.
-        struct PostTargets {
-            vk::Extent2D                                     extent{};
-            VulkanImage                                      hdrImage;
-            vk::raii::ImageView                              hdrView = nullptr;
-            uint32_t                                         bloomCount = 0;   // steps in use (small targets get fewer)
-            std::array<VulkanImage, kBloomMips>              bloomImages;
-            std::array<vk::raii::ImageView, kBloomMips>      bloomViews{ nullptr, nullptr, nullptr, nullptr, nullptr };
-            std::array<vk::Extent2D, kBloomMips>             bloomExtents{};
-            vk::raii::DescriptorSet                          hdrSet = nullptr;       // the HDR image, as a bloom source
-            std::array<vk::raii::DescriptorSet, kBloomMips>  bloomSets{ nullptr, nullptr, nullptr, nullptr, nullptr };
-            vk::raii::DescriptorSet                          tonemapSet = nullptr;   // HDR image + finished bloom
-            // Ambient occlusion, all half size: a depth-only image of the scene, the raw (noisy)
-            // occlusion, and the smoothed result the scene shader samples (set 0, binding 9).
-            vk::Extent2D                                     aoExtent{};
-            VulkanImage                                      aoDepth;
-            vk::raii::ImageView                              aoDepthView = nullptr;
-            VulkanImage                                      aoNormal;               // smooth view-space normals, from the same pre-pass
-            vk::raii::ImageView                              aoNormalView = nullptr;
-            VulkanImage                                      aoRaw;
-            vk::raii::ImageView                              aoRawView = nullptr;
-            VulkanImage                                      aoBlur;
-            vk::raii::ImageView                              aoBlurView = nullptr;
-            vk::raii::DescriptorSet                          aoDepthSet = nullptr;   // depth + normals, for the occlusion pass
-            vk::raii::DescriptorSet                          aoBlurSet = nullptr;    // raw occlusion + depth, for the blur pass
-            // MSAA (samples > 1): the scene is drawn into these multisampled images, which are
-            // then resolved (averaged) into hdrImage and the view's ordinary depth image.
-            uint32_t                                         samples = 1;
-            VulkanImage                                      msaaColor;
-            vk::raii::ImageView                              msaaColorView = nullptr;
-            VulkanImage                                      msaaDepth;
-            vk::raii::ImageView                              msaaDepthView = nullptr;
         };
 
         struct Viewport {
@@ -311,7 +221,7 @@ namespace Crucible {
         /*********************************************************************
          \brief
             Returns a handle immediately; the mesh's buffers are created
-            and filled a few meshes per frame (see kMaxMeshUploadsPerFrame),
+            and filled a few meshes per frame (two, see RenderResources),
             so the CPU-side work of a burst of meshes is spread out.
 
          \param[in] data      The CPU-side mesh to upload.
@@ -353,7 +263,7 @@ namespace Crucible {
             RenderDoc/Nsight captures, and so on.
 
          \note
-            Returns a reference into m_meshes - same lifetime caveat as
+            Returns a reference into the mesh list - same lifetime caveat as
             GetMaterialData(): valid until the next structural change to
             the mesh list, so don't hold it across frames.
          *********************************************************************/
@@ -462,7 +372,7 @@ namespace Crucible {
                 a material descriptor set bound (the shader never has to
                 branch on "no material").
          *********************************************************************/
-        MaterialHandle GetDefaultMaterial() const { return m_defaultMaterial; }
+        MaterialHandle GetDefaultMaterial() const { return m_resources.DefaultMaterial(); }
 
         // ---- Lights & environment ------------------------------------------------------------
 
@@ -835,6 +745,16 @@ namespace Crucible {
         VulkanContext               m_context;
         VulkanSwapchain             m_swapchain;
         VulkanPipeline              m_pipeline;
+        // Render passes (Graphics/Passes/). Declared after m_pipeline, which they hold a reference to.
+        BloomPass                   m_bloomPass;
+        TonemapPass                 m_tonemapPass;
+        // These draw meshes, so they hold a reference to m_resources (declared below; only used once recording starts).
+        AmbientOcclusionPass        m_aoPass{ m_resources };
+        ShadowPass                  m_shadowPass{ m_resources };
+        OutlinePass                 m_outlinePass{ m_resources };
+        // Particle textures get their descriptor sets from the Renderer, which owns them.
+        ParticlePass                m_particlePass{ [this](TextureHandle texture) { return GetParticleTextureSet(texture); } };
+        DebugLinePass               m_debugLinePass;
         VulkanFrameManager          m_frameManager;
 
         // Pending mesh/texture/cubemap copies: recorded into each frame's command buffer ahead of
@@ -846,7 +766,7 @@ namespace Crucible {
         // Scene
         Camera                      m_camera;            // main (game) camera - see SetMainCamera
         bool                        m_hasMainCamera = false;
-        std::vector<GpuMesh>        m_meshes;
+        RenderResources             m_resources{ m_context, m_uploads };   // meshes, textures, materials
         std::vector<RenderItem>     m_renderQueue;      // immediate Submit() items, this frame only
 
         // Persistent render proxies + the spatial index they live in (see CreateRenderProxy).
@@ -872,38 +792,8 @@ namespace Crucible {
         std::vector<MeshHandle>     m_primitiveMeshes;
         void CreatePrimitiveMeshes();
 
-        // Textures + Materials (see the "---- Textures ----"/"---- Materials ----" public API).
-        std::vector<GpuTexture>                     m_textures;
-        std::unordered_map<std::string, uint32_t>   m_textureCacheByKey;   // path or explicit cacheKey -> TextureHandle::id
-        vk::raii::Sampler                           m_materialSampler = nullptr;
-
-        // Pool(s) BEFORE the sets they allocate (matches m_descriptorPool/m_descriptorSets
-        // below): members are destroyed in REVERSE declaration order, so declaring the pools
-        // first means they are destroyed LAST - after every GpuMaterial's vk::raii::DescriptorSet
-        // has already run its own destructor (which frees itself against whichever pool allocated
-        // it). The opposite order compiles fine but destroys a pool while sets allocated from it
-        // still exist, which is exactly the "Couldn't find VkDescriptorPool"/"Invalid
-        // VkDescriptorSet" validation errors this fixed once already - see the fix's own commit
-        // for the exact symptom if this ever regresses.
-        //
-        // A VkDescriptorPool can't be resized once created, so unbounded material counts mean
-        // unbounded POOLS, not one pool sized "big enough": m_materials.size() used to be capped
-        // hard at a single pool's fixed maxSets (kMaterialsPerDescriptorPool), and CreateMaterial
-        // had no check for that at all - the (kMaterialsPerDescriptorPool + 1)-th material would
-        // throw a raw vk::OutOfPoolMemoryError with no indication of what actually went wrong.
-        // CreateMaterial now allocates a fresh pool block on demand instead (see its own comment),
-        // so every pool after the first is a plain vector growth, same as any other resource here.
-        std::vector<vk::raii::DescriptorPool>       m_materialDescriptorPools;
-        uint32_t                                    m_materialsInCurrentPool = 0;   // toward the current (last) pool's cap
-        std::vector<GpuMaterial>                    m_materials;
-        static constexpr uint32_t                   kMaterialsPerDescriptorPool = 256;
-
-        TextureHandle                               m_defaultWhiteTexture;    // (255,255,255,255)
-        TextureHandle                               m_defaultNormalTexture;   // flat tangent-space normal (128,128,255,255)
-        MaterialHandle                              m_defaultMaterial;
-
         // Cubemaps (skyboxes). Pool BEFORE the cubemaps whose descriptor sets it allocates -
-        // same destruction-order rule as m_materialDescriptorPools/m_materials above.
+        // same destruction-order rule as the material pools in RenderResources.
         static constexpr uint32_t                   kMaxCubemaps = 64;
         vk::raii::DescriptorPool                    m_cubemapDescriptorPool = nullptr;
         vk::raii::Sampler                           m_skyboxSampler = nullptr;
@@ -1048,18 +938,12 @@ namespace Crucible {
         vk::raii::Sampler                          m_viewportSampler = nullptr;
         vk::raii::Sampler                          m_pointSampler = nullptr;    // no filtering: for reading depth images
 
-        // Pending async mesh uploads (see CreateMeshAsync).
-        struct PendingMeshUpload { MeshHandle handle; MeshData data; std::string debugName; };
-        std::deque<PendingMeshUpload> m_pendingMeshUploads;
-        static constexpr uint32_t     kMaxMeshUploadsPerFrame = 2;
 
         // Vulkan helpers
         void RecordCommandBuffer(FrameContext& fc);
         void CreateUniformBuffers();
         void CreateDescriptorPool();
         void CreateDescriptorSets();
-        void ProcessPendingMeshUploads();
-        void UploadMesh(MeshHandle handle, const MeshData& data, const std::string& debugName);
 
         // Records the bind-and-draw loop over a view's main batches against whatever color/depth
         // attachments are currently bound (the swapchain, or a Viewport). Shared by the direct-
@@ -1075,7 +959,6 @@ namespace Crucible {
         void UploadParticles(uint32_t frameIndex);
         // The descriptor set binding `texture` for the particle pipeline (created on first use).
         vk::DescriptorSet GetParticleTextureSet(TextureHandle texture);
-        void DrawParticles(vk::CommandBuffer cmd, vk::DescriptorSet frameSet, const std::vector<ParticleBatch>& batches);
 
         // ---- Clustered lights ----
         void CreateClusterBuffers();
@@ -1095,18 +978,12 @@ namespace Crucible {
         // and depth holding the scene's depth for the debug lines that follow.
         void DrawSceneHdr(FrameContext& fc, PostTargets& targets, vk::Image depthImage, vk::ImageView depthView,
                           vk::Extent2D extent, vk::DescriptorSet frameSet, const ViewDrawList& draws);
-        void DrawBloom(FrameContext& fc, PostTargets& targets);
-        /// Ambient occlusion for one view: half-size depth pre-pass, occlusion, blur. Leaves
-        /// targets.aoBlur ready to sample (all white when PostSettings::ao is off).
-        void DrawAmbientOcclusion(FrameContext& fc, PostTargets& targets, vk::DescriptorSet frameSet, const ViewDrawList& draws);
         /// Points a view's set 0 at the current environment map (binding 8) and at that view's
         /// ambient occlusion image (binding 9). Called every frame for the frame's own set.
         void WriteViewTextures(vk::DescriptorSet frameSet, const PostTargets& targets);
         /// Builds a cubemap's envImage and sh from its faces (called by UploadCubemapFaces).
         void BuildEnvironmentLighting(GpuCubemap& cube, const void* faceData, uint32_t faceSize, vk::Format format);
         const GpuCubemap& CurrentSkyCubemap() const;
-        // Draws the fullscreen tonemap triangle into the currently-open (final, sRGB) pass.
-        void DrawTonemap(vk::CommandBuffer cmd, const PostTargets& targets, vk::Extent2D extent);
 
         // ---- Frame preparation (before recording) ----
         // Culls and batches everything one view draws this frame (main pass, shadow cascades,
@@ -1131,16 +1008,11 @@ namespace Crucible {
         // and writes their matrices/splits into `ubo`. Returns each cascade's view-projection.
         void ComputeShadowCascades(const Camera& camera, uint32_t count, FrameUniforms& ubo,
                                    std::array<glm::mat4, kMaxShadowCascades>& outViewProj) const;
-        // Renders a view's cascades into the shared shadow map (barriers included).
-        void DrawShadowCascades(FrameContext& fc, vk::DescriptorSet frameSet, const ViewDrawList& draws);
-        void DrawMeshBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches);
 
         // ---- Selection outline ----
         // The selected proxy's id, or 0xFFFFFFFF (re-finds it if the cached id went stale).
         uint32_t ResolveOutlineProxy();
         void WriteOutlineDescriptor(Viewport& vp);
-        void DrawOutlineMask(FrameContext& fc, Viewport& vp, vk::DescriptorSet frameSet);
-        void DrawOutlineComposite(FrameContext& fc, Viewport& vp);
 
         // ---- Culling / proxies ----
         // Fills m_visibleItems with what `camera` can see (proxies via the spatial index + immediate
@@ -1155,8 +1027,6 @@ namespace Crucible {
         // Copies this frame's DebugDraw lines into m_debugBuffers[frameIndex] (growing it if
         // needed) and records the depth-tested / on-top vertex counts.
         void UpdateDebugBuffer(uint32_t frameIndex);
-        // Draws them into the currently-open rendering pass (after meshes + sky).
-        void DrawDebugLines(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet frameSet);
 
         void CreateViewportSampler();
         void CreateViewportDescriptorPool();
@@ -1193,26 +1063,6 @@ namespace Crucible {
         void UpdateStressTest();
         uint32_t SupportedMsaaSamples(uint32_t wanted) const;   ///< Highest of 4 / 2 / 1 that is <= wanted and the GPU can render to.
         void ApplyMsaaSetting();                                ///< Rebuilds every view's targets when PostSettings::msaaSamples changed.
-
-        // ---- Texture/Material helpers ----
-        // Shared core of every texture-creation path: creates a new device-local image + view
-        // for already-decoded RGBA8 pixels and queues the copy into it (m_uploads). Format is
-        // eR8G8B8A8Srgb or eUnorm depending on isSRGB - see CreateTexture's doc comment on when
-        // each is correct.
-        TextureHandle UploadTexturePixels(const unsigned char* pixels, uint32_t width, uint32_t height, bool isSRGB);
-        // 1x1 solid-color texture, used by CreateDefaultTextures() and directly reusable for any
-        // other flat-color placeholder need.
-        TextureHandle CreateSolidColorTexture(uint8_t r, uint8_t g, uint8_t b, uint8_t a, bool isSRGB);
-        void CreateDefaultTextures();
-        void CreateMaterialSampler();
-        // Allocates ONE new descriptor pool block (kMaterialsPerDescriptorPool materials' worth)
-        // and appends it to m_materialDescriptorPools. Called once up front for the first block,
-        // and again by CreateMaterial() whenever the current block is full - see that function.
-        void CreateMaterialDescriptorPool();
-        // Writes all five combined-image-sampler bindings of `set` from `data`, substituting
-        // m_defaultWhiteTexture/m_defaultNormalTexture for any Invalid handle in `data`.
-        void WriteMaterialDescriptorSet(vk::DescriptorSet set, const MaterialData& data);
-        const GpuTexture& GetTextureOrThrow(TextureHandle handle) const;
 
         vk::raii::CommandBuffer BeginSingleTimeCommand();
         void EndSingleTimeCommand(vk::raii::CommandBuffer&& cmdBuff);

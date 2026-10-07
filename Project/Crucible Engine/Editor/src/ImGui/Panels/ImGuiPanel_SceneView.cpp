@@ -434,6 +434,9 @@ void Crucible::SceneView::DrawGizmoMenu() {
 		bool on = DebugDraw::IsCategoryEnabled(e.category);
 		if (ImGui::Checkbox(e.label, &on)) { DebugDraw::SetCategoryEnabled(e.category, on); }
 	}
+	bool throughWalls = DebugDrawSystem::GetCollidersThroughWalls();
+	if (ImGui::Checkbox("Colliders through walls", &throughWalls)) { DebugDrawSystem::SetCollidersThroughWalls(throughWalls); }
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Draw colliders even when another object is in front of them."); }
 	float scale = DebugDrawSystem::GetVelocityScale();
 	ImGui::SetNextItemWidth(140.0f);
 	if (ImGui::SliderFloat("Velocity scale", &scale, 0.01f, 2.0f, "%.2f m per m/s")) { DebugDrawSystem::SetVelocityScale(scale); }

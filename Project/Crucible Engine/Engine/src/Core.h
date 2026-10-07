@@ -46,6 +46,14 @@ namespace Crucible
         void Run();
 
         Renderer& GetRenderer() const { return *m_renderer; }
+
+        // Fixes the window's shape to `width`:`height` (e.g. 16, 9) so the game is framed the
+        // same on every machine, or frees it again. Meant for the standalone game and its
+        // settings menu; the editor leaves the window free. See WindowManager::LockAspectRatio.
+        void  LockWindowAspectRatio(int width, int height);
+        void  UnlockWindowAspectRatio();
+        // Width / height of the locked shape, or 0 when the window is free.
+        float GetWindowAspectRatioLock() const;
         // Both valid only after Init(). The engine's shared asset index (AssetManager) and the
         // GUID -> Renderer-handle cache built on top of it (ResourceManager).
         AssetManager&    GetAssets() const { return *m_assets; }

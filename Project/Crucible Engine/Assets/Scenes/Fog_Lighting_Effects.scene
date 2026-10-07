@@ -122,7 +122,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 8362592118289502741,
-                    "materialAsset": 0
+                    "materialAsset": 15112841005028671489
                 },
                 "Collider": {
                     "type": "Sphere",
@@ -212,6 +212,43 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "29A5C0D484C60003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 10.97254467010498,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -0.5600321888923645,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.8284708261489868
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 1.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
                 }
             }
         },
@@ -571,6 +608,83 @@
             }
         },
         {
+            "id": "49A5C0D484C60001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -4.020785808563232,
+                        "y": 0.5,
+                        "z": -2.538909435272217
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 1.5,
+                    "rate": 0.0,
+                    "burstCount": 60,
+                    "maxParticles": 200,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 70.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.3499999940395355,
+                    "lifetimeMax": 0.8999999761581421,
+                    "speedMin": 3.0,
+                    "speedMax": 8.0,
+                    "sizeMin": 0.02500000037252903,
+                    "sizeMax": 0.05000000074505806,
+                    "endSizeScale": 0.30000001192092896,
+                    "gravityScale": 1.0,
+                    "drag": 0.800000011920929,
+                    "spinDeg": 0.0,
+                    "stretch": 0.03999999910593033,
+                    "colourStart": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.44999998807907104
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 0.30000001192092896,
+                        "z": 0.05000000074505806
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 12.0,
+                    "blend": "Additive",
+                    "textureAsset": 3715637708821250059,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": true,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 10.0,
+                    "lightRange": 6.0,
+                    "seed": 1
+                }
+            }
+        },
+        {
             "id": "4BBA38D2CE250001",
             "components": {
                 "Transform": {
@@ -600,7 +714,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "materialAsset": 6726452403956826127
                 },
                 "CharacterController": {
                     "height": 2.6500000953674316,
@@ -620,40 +734,40 @@
                     "intensity": 1.0,
                     "ambientSky": {
                         "x": 0.257977694272995,
-                        "y": 0.39400240778923035,
+                        "y": 0.32799032330513,
                         "z": 0.5980392098426819
                     },
                     "ambientGround": {
-                        "x": 0.20000000298023224,
-                        "y": 0.18000000715255737,
-                        "z": 0.1599999964237213
+                        "x": 0.1599999964237213,
+                        "y": 0.16117648780345917,
+                        "z": 0.20000000298023224
                     },
-                    "ambientIntensity": 1.0,
+                    "ambientIntensity": 1.5,
                     "exposure": 1.0,
                     "ambientFromSky": true,
-                    "fogDensity": 0.12399999797344208,
+                    "fogDensity": 0.1080000028014183,
                     "fogColour": {
-                        "x": 0.44607841968536377,
-                        "y": 0.32864198088645935,
-                        "z": 0.2645857334136963
+                        "x": 0.28979238867759705,
+                        "y": 0.8823529481887817,
+                        "z": 0.8126398921012878
                     },
-                    "fogHeightFalloff": 0.03200000151991844,
-                    "fogBaseHeight": -5.099999904632568,
-                    "fogStart": 8.765000343322754,
-                    "fogMaxOpacity": 1.0,
-                    "contrast": 1.0019999742507935,
-                    "saturation": 1.0080000162124634,
-                    "temperature": 0.2150000035762787,
+                    "fogHeightFalloff": 0.8299999833106995,
+                    "fogBaseHeight": -1.25,
+                    "fogStart": 3.24399995803833,
+                    "fogMaxOpacity": 0.8519999980926514,
+                    "contrast": 1.0269999504089355,
+                    "saturation": 1.1430000066757202,
+                    "temperature": -0.5820000171661377,
                     "colourFilter": {
                         "x": 0.6302383542060852,
                         "y": 0.6684279441833496,
                         "z": 0.7745097875595093
                     },
-                    "vignetteIntensity": 0.22699999809265137,
-                    "vignetteSoftness": 0.2540000081062317,
+                    "vignetteIntensity": 0.3569999933242798,
+                    "vignetteSoftness": 0.21299999952316284,
                     "filmGrain": 0.0,
-                    "chromaticAberration": 0.0,
-                    "skyboxAsset": 3715637708821250059
+                    "chromaticAberration": 0.06499999761581421,
+                    "skyboxAsset": 8718582763103813635
                 },
                 "PlayerController": {
                     "moveSpeed": 6.0,
@@ -995,7 +1109,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 8362592118289502741,
-                    "materialAsset": 15112841005028671489
+                    "materialAsset": 0
                 },
                 "Collider": {
                     "type": "Sphere",

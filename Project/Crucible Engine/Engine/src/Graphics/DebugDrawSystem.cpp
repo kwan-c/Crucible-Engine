@@ -31,6 +31,7 @@ namespace Crucible {
 		// future editor sets them from another thread.
 		std::atomic<std::uint64_t> g_selected{ 0 };   // (index << 32) | generation; 0 = kNullEntity
 		std::atomic<float>         g_velocityScale{ 0.25f };
+		std::atomic<bool>          g_collidersThroughWalls{ false };
 
 		const glm::vec4 kStaticCollider  { 0.30f, 0.90f, 0.40f, 1.0f };
 		const glm::vec4 kDynamicCollider { 0.25f, 0.80f, 1.00f, 1.0f };
@@ -90,6 +91,9 @@ namespace Crucible {
 	void  DebugDrawSystem::SetVelocityScale(float scale) { g_velocityScale.store(std::max(scale, 0.0f)); }
 	float DebugDrawSystem::GetVelocityScale() { return g_velocityScale.load(); }
 
+	void DebugDrawSystem::SetCollidersThroughWalls(bool enabled) { g_collidersThroughWalls.store(enabled); }
+	bool DebugDrawSystem::GetCollidersThroughWalls() { return g_collidersThroughWalls.load(); }
+
 	// ------------------------------------------------------------------------------------------------------------- //
 	//  SYSTEM
 	// ------------------------------------------------------------------------------------------------------------- //
@@ -118,7 +122,9 @@ namespace Crucible {
 
 		DebugStyle style;
 		style.category  = DebugCategory::Colliders;
-		style.depthTest = false;   // a collider usually coincides with its mesh surface; show it through
+		// Hidden behind other objects unless asked otherwise. A collider that coincides with its
+		// own mesh still shows: debug lines are drawn a hair nearer the camera (DebugLine.slang).
+		style.depthTest = !g_collidersThroughWalls.load();
 
 		// Static: a Collider with no RigidBody (and not a character - the CharacterController wins).
 		style.color = kStaticCollider;

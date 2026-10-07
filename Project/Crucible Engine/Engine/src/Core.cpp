@@ -54,6 +54,10 @@ namespace Crucible {
         delete m_window;
     }
 
+    void  Core::LockWindowAspectRatio(int width, int height) { m_window->LockAspectRatio(width, height); }
+    void  Core::UnlockWindowAspectRatio()                    { m_window->UnlockAspectRatio(); }
+    float Core::GetWindowAspectRatioLock() const             { return m_window->GetLockedAspectRatio(); }
+
     bool Core::Init()
     {
         std::cout << "The Hearth smoulders...\n";
@@ -84,7 +88,7 @@ namespace Crucible {
         // ===========================================
 
         // ======== startup scene (Removable) ==========
-        m_scenes->RequestLoad(m_assets->Resolve("Scenes/Physics demo scene.scene"));
+        m_scenes->RequestLoad(m_assets->Resolve("Scenes/Fog_Lighting_Effects.scene"));
         // ===========================================
 
 

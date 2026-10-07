@@ -14,6 +14,7 @@
 **************************************************************************/
 
 #include "RenderSystem.h"
+#include "Vulkan/VulkanCommands.h"
 
 // STL
 #include <stdexcept>
@@ -52,12 +53,16 @@ namespace Crucible {
         m_pipeline.CreateSkyboxDescriptorSetLayout(m_context);
         m_pipeline.CreatePipeline(m_context, m_swapchain);
         m_pipeline.CreateSkyboxPipeline(m_context, m_swapchain);
-        m_pipeline.CreateDebugLinePipelines(m_context, m_swapchain);
-        m_pipeline.CreateShadowPipeline(m_context, kShadowFormat);
-        m_pipeline.CreateOutlinePipelines(m_context, m_swapchain);
-        m_pipeline.CreateParticlePipeline(m_context, m_swapchain);
-        m_pipeline.CreateDepthPrepassPipeline(m_context);
-        m_pipeline.CreatePostPipelines(m_context, m_swapchain);
+        m_pipeline.CreateTwoTextureSetLayout(m_context);
+        // Passes that own their pipelines.
+        m_outlinePass.Create(m_context, *m_pipeline.GetDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format);
+        m_aoPass.Create(m_context, *m_pipeline.GetDescriptorSetLayout(), *m_pipeline.GetTonemapDescriptorSetLayout());
+        m_bloomPass.Create(m_context, *m_pipeline.GetSingleTextureSetLayout(), VulkanPipeline::kSceneColorFormat);
+        m_tonemapPass.Create(m_context, *m_pipeline.GetTonemapDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format, m_swapchain.GetDepthFormat());
+        m_shadowPass.Create(m_context, *m_pipeline.GetDescriptorSetLayout(), kShadowFormat);
+        m_particlePass.Create(m_context, *m_pipeline.GetDescriptorSetLayout(), *m_pipeline.GetSingleTextureSetLayout(),
+                              VulkanPipeline::kSceneColorFormat, m_swapchain.GetDepthFormat());
+        m_debugLinePass.Create(m_context, *m_pipeline.GetDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format, m_swapchain.GetDepthFormat());
         m_frameManager.Init(m_context, m_swapchain);
         m_uploads.Init(m_context, m_frameManager.GetCommandPool());
 
@@ -76,11 +81,8 @@ namespace Crucible {
         CreateViewportDescriptorPool();
         CreatePostDescriptorPool();
 
-        CreateMaterialSampler();
-        CreateMaterialDescriptorPool();
-        CreateDefaultTextures();
-        m_defaultMaterial = CreateMaterial(MaterialData{});   // Invalid textures -> both placeholders, neutral factors
-        GetParticleTextureSet(m_defaultWhiteTexture);         // the particle pipeline's fallback texture set
+        m_resources.InitMaterials(*m_pipeline.GetMaterialDescriptorSetLayout());   // sampler, placeholders, default material
+        GetParticleTextureSet(m_resources.DefaultWhiteTexture());         // the particle pipeline's fallback texture set
 
         CreateSkyboxSampler();
         CreateCubemapDescriptorPool();
@@ -107,7 +109,7 @@ namespace Crucible {
         UpdateStressTest();
 
         // Finish a few queued async mesh uploads (see CreateMeshAsync) before drawing this frame.
-        ProcessPendingMeshUploads();
+        m_resources.ProcessPendingMeshUploads();
 
         // POPULATE
         //   Persistent proxies were updated by RenderExtractSystem (SetRenderProxy) during the ECS
@@ -309,15 +311,15 @@ namespace Crucible {
             // Passes that feed this view's main pass: its shadow cascades into the shared shadow
             // map, and the selected object into its outline mask.
             MarkGpu(*fc.frame.commandBuffer, GpuSection::Shadows);
-            DrawShadowCascades(fc, frameSet, vp.draws);
+            m_shadowPass.Record(*fc.frame.commandBuffer, m_shadowImage.GetImage(), m_shadowLayerViews, kShadowMapSize, frameSet, vp.draws.shadow, vp.draws.cascadeCount);
             if (vp.outline && !vp.draws.outline.empty()) {
                 MarkGpu(*fc.frame.commandBuffer, GpuSection::Outline);
-                DrawOutlineMask(fc, vp, frameSet);
+                m_outlinePass.RecordMask(*fc.frame.commandBuffer, vp.maskImage.GetImage(), *vp.maskView, vp.extent, frameSet, vp.draws.outline);
             }
 
             // The scene itself: meshes, sky and particles into this view's HDR image, then bloom.
             MarkGpu(*fc.frame.commandBuffer, GpuSection::AmbientOcclusion);
-            DrawAmbientOcclusion(fc, vp.post, frameSet, vp.draws);
+            m_aoPass.Record(*fc.frame.commandBuffer, vp.post, m_postSettings, frameSet, vp.draws.main, vp.draws.projInfo);
             MarkGpu(*fc.frame.commandBuffer, GpuSection::Scene);
             DrawSceneHdr(fc, vp.post, vp.depthImage.GetImage(), *vp.depthView, vp.extent, frameSet, vp.draws);   // marks Bloom itself
             MarkGpu(*fc.frame.commandBuffer, GpuSection::Final);
@@ -352,11 +354,12 @@ namespace Crucible {
             };
 
             fc.frame.commandBuffer.beginRendering(renderingInfo);
-            DrawTonemap(*fc.frame.commandBuffer, vp.post, vp.extent);
-            if (vp.debugDraw) { DrawDebugLines(*fc.frame.commandBuffer, vp.extent, frameSet); }
+            m_tonemapPass.Record(*fc.frame.commandBuffer, vp.post, vp.extent, m_postSettings, m_environment, m_time);
+            // The line buffer only exists once there has been something to draw.
+            if (vp.debugDraw && m_debugTestedCount + m_debugOnTopCount > 0) { m_debugLinePass.Record(*fc.frame.commandBuffer, vp.extent, frameSet, *m_debugBuffers[m_frameManager.GetFrameIndex()].GetBuffer(), m_debugTestedCount, m_debugOnTopCount); }
             fc.frame.commandBuffer.endRendering();
 
-            if (vp.outline && !vp.draws.outline.empty()) { DrawOutlineComposite(fc, vp); }
+            if (vp.outline && !vp.draws.outline.empty()) { m_outlinePass.RecordComposite(*fc.frame.commandBuffer, vp.colorImage.GetImage(), *vp.colorView, vp.extent, *vp.outlineSet, m_outlineStyle); }
 
             // Hand off to the Editor as a sampled texture (ImGui_ImplVulkan_AddTexture expects this layout).
             TransitionImageLayout(
@@ -374,9 +377,9 @@ namespace Crucible {
         const bool windowScene = m_viewports.empty() && m_hasMainCamera && *m_windowPost.hdrView;
         if (windowScene) {
             MarkGpu(*fc.frame.commandBuffer, GpuSection::Shadows);
-            DrawShadowCascades(fc, *m_descriptorSets[frameIndex], m_windowDraws);
+            m_shadowPass.Record(*fc.frame.commandBuffer, m_shadowImage.GetImage(), m_shadowLayerViews, kShadowMapSize, *m_descriptorSets[frameIndex], m_windowDraws.shadow, m_windowDraws.cascadeCount);
             MarkGpu(*fc.frame.commandBuffer, GpuSection::AmbientOcclusion);
-            DrawAmbientOcclusion(fc, m_windowPost, *m_descriptorSets[frameIndex], m_windowDraws);
+            m_aoPass.Record(*fc.frame.commandBuffer, m_windowPost, m_postSettings, *m_descriptorSets[frameIndex], m_windowDraws.main, m_windowDraws.projInfo);
             MarkGpu(*fc.frame.commandBuffer, GpuSection::Scene);
             DrawSceneHdr(fc, m_windowPost, m_swapchain.GetDepthImage(), m_swapchain.GetDepthImageView(),
                          m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_windowDraws);
@@ -442,8 +445,8 @@ namespace Crucible {
         // viewport for it. In the Editor, the Scene/Game panels already drew the scene above and
         // display it themselves via ImGui::Image(); this pass then holds only the ImGui overlay.
         if (windowScene) {
-            DrawTonemap(*fc.frame.commandBuffer, m_windowPost, m_swapchain.GetExtent());
-            if (m_debugInWindow) { DrawDebugLines(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex]); }
+            m_tonemapPass.Record(*fc.frame.commandBuffer, m_windowPost, m_swapchain.GetExtent(), m_postSettings, m_environment, m_time);
+            if (m_debugInWindow && m_debugTestedCount + m_debugOnTopCount > 0) { m_debugLinePass.Record(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], *m_debugBuffers[m_frameManager.GetFrameIndex()].GetBuffer(), m_debugTestedCount, m_debugOnTopCount); }
         }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
@@ -485,8 +488,8 @@ namespace Crucible {
         MaterialHandle boundMaterial;   // starts Invalid
         for (const DrawBatch& batch : batches) {
 
-            const GpuMesh&     mesh = m_meshes[batch.mesh.id];          // validated in AppendBatches
-            const GpuMaterial& mat  = m_materials[batch.material.id];   // default-substituted there too
+            const GpuMesh&     mesh = m_resources.Meshes()[batch.mesh.id];          // validated in AppendBatches
+            const GpuMaterial& mat  = m_resources.Materials()[batch.material.id];   // default-substituted there too
 
             if (!(batch.material == boundMaterial)) {
                 cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, m_pipeline.GetLayout(), 1, *mat.descriptorSet, nullptr);
@@ -512,90 +515,15 @@ namespace Crucible {
         DrawSkybox(cmd, cameraSet);
 
         // Particles after everything opaque and the sky: they blend over what is behind them.
-        DrawParticles(cmd, cameraSet, draws.particles);
+        m_particlePass.Record(cmd, m_drawSamples, cameraSet, draws.particles);
 
     }   // Renderer::DrawRenderQueue()
 
-    MeshHandle Renderer::CreateMesh(const MeshData& data, const std::string& debugName) {
+    MeshHandle Renderer::CreateMesh(const MeshData& data, const std::string& debugName) { return m_resources.CreateMesh(data, debugName); }
+    MeshHandle Renderer::CreateMeshAsync(MeshData data, const std::string& debugName)   { return m_resources.CreateMeshAsync(std::move(data), debugName); }
+    bool Renderer::GetMeshBounds(MeshHandle handle, glm::vec3& outMin, glm::vec3& outMax) const { return m_resources.GetMeshBounds(handle, outMin, outMax); }
+    const std::string& Renderer::GetMeshName(MeshHandle handle) const { return m_resources.GetMeshName(handle); }
 
-        MeshHandle handle{ static_cast<uint32_t>(m_meshes.size()) };
-        m_meshes.emplace_back();       // reserve slot (indexCount == 0 => not yet renderable)
-        UploadMesh(handle, data, debugName);      // ... buffers created and their copies queued, right here
-        return handle;
-
-    }   // Renderer::CreateMesh()
-
-    MeshHandle Renderer::CreateMeshAsync(MeshData data, const std::string& debugName) {
-
-        MeshHandle handle{ static_cast<uint32_t>(m_meshes.size()) };
-        m_meshes.emplace_back();       // reserve slot; RecordCommandBuffer skips it until uploaded
-        m_pendingMeshUploads.push_back({ handle, std::move(data), debugName });
-        return handle;
-
-    }   // Renderer::CreateMeshAsync()
-
-    void Renderer::ProcessPendingMeshUploads() {
-
-        for (uint32_t n = 0; n < kMaxMeshUploadsPerFrame && !m_pendingMeshUploads.empty(); ++n) {
-            PendingMeshUpload pending = std::move(m_pendingMeshUploads.front());
-            m_pendingMeshUploads.pop_front();
-            UploadMesh(pending.handle, pending.data, pending.debugName);
-        }
-
-    }   // Renderer::ProcessPendingMeshUploads()
-
-    void Renderer::UploadMesh(MeshHandle handle, const MeshData& data, const std::string& debugName) {
-
-        if (data.vertices.empty() || data.indices.empty()) {
-            throw std::runtime_error("[Renderer] UploadMesh: mesh has no vertices or indices");
-        }
-
-        GpuMesh mesh;
-        mesh.debugName = debugName.empty() ? ("Mesh " + std::to_string(handle.id)) : debugName;
-
-        vk::DeviceSize vbSize = sizeof(Vertex) * data.vertices.size();
-        mesh.vertexBuffer.Create(m_context, vbSize,
-            vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-            vk::MemoryPropertyFlagBits::eDeviceLocal);
-        m_uploads.QueueBuffer(*mesh.vertexBuffer.GetBuffer(), data.vertices.data(), vbSize);
-
-        vk::DeviceSize ibSize = sizeof(uint32_t) * data.indices.size();
-        mesh.indexBuffer.Create(m_context, ibSize,
-            vk::BufferUsageFlagBits::eIndexBuffer | vk::BufferUsageFlagBits::eTransferDst,
-            vk::MemoryPropertyFlagBits::eDeviceLocal);
-        m_uploads.QueueBuffer(*mesh.indexBuffer.GetBuffer(), data.indices.data(), ibSize);
-
-        mesh.indexCount = static_cast<uint32_t>(data.indices.size());
-
-        mesh.boundsMin = mesh.boundsMax = data.vertices.front().pos;
-        mesh.cpuPositions.reserve(data.vertices.size());
-        for (const Vertex& v : data.vertices) {
-            mesh.boundsMin = glm::min(mesh.boundsMin, v.pos);
-            mesh.boundsMax = glm::max(mesh.boundsMax, v.pos);
-            mesh.cpuPositions.push_back(v.pos);
-        }
-        mesh.cpuIndices = data.indices;
-
-        m_meshes[handle.id] = std::move(mesh);
-
-    }   // Renderer::UploadMesh()
-
-    bool Renderer::GetMeshBounds(MeshHandle handle, glm::vec3& outMin, glm::vec3& outMax) const {
-
-        if (!handle.IsValid() || handle.id >= m_meshes.size() || m_meshes[handle.id].indexCount == 0) { return false; }
-        outMin = m_meshes[handle.id].boundsMin;
-        outMax = m_meshes[handle.id].boundsMax;
-        return true;
-
-    }   // Renderer::GetMeshBounds()
-
-    const std::string& Renderer::GetMeshName(MeshHandle handle) const {
-
-        static const std::string kUnknown = "(unknown mesh)";
-        if (!handle.IsValid() || handle.id >= m_meshes.size()) { return kUnknown; }
-        return m_meshes[handle.id].debugName;
-
-    }   // Renderer::GetMeshName()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  VIEWPORTS (offscreen render targets for the Editor)
@@ -853,7 +781,7 @@ namespace Crucible {
         WriteSharedFrameDescriptors(vp.descriptorSets);
 
         // The outline composite's set (binding 0 = this viewport's mask).
-        vk::DescriptorSetLayout outlineLayout = *m_pipeline.GetOutlineDescriptorSetLayout();
+        vk::DescriptorSetLayout outlineLayout = *m_outlinePass.GetMaskSetLayout();
         vk::DescriptorSetAllocateInfo outlineAlloc{
             .descriptorPool     = m_outlineDescriptorPool,
             .descriptorSetCount = 1,
@@ -944,323 +872,16 @@ namespace Crucible {
     }   // Renderer::CreateDescriptorSets()
 
     // ------------------------------------------------------------------------------------------------------------- //
-    //  TEXTURES
+    //  TEXTURES & MATERIALS (stored in RenderResources)
     // ------------------------------------------------------------------------------------------------------------- //
 
-    namespace {
-
-        // sRGB <-> linear tables for mipmap generation. Colour textures store sRGB-encoded
-        // values; averaging those directly would make the smaller levels too dark.
-        struct SrgbTables {
-            std::array<float, 256>    toLinear{};
-            std::array<uint8_t, 4096> toSrgb{};
-            SrgbTables() {
-                for (int i = 0; i < 256; ++i) {
-                    const float c = static_cast<float>(i) / 255.0f;
-                    toLinear[i] = c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
-                }
-                for (int i = 0; i < 4096; ++i) {
-                    const float l = static_cast<float>(i) / 4095.0f;
-                    const float c = l <= 0.0031308f ? l * 12.92f : 1.055f * std::pow(l, 1.0f / 2.4f) - 0.055f;
-                    toSrgb[i] = static_cast<uint8_t>(std::clamp(c * 255.0f + 0.5f, 0.0f, 255.0f));
-                }
-            }
-        };
-
-        // The next mip level of an RGBA8 image: each texel is the average of the (up to) 2x2
-        // texels it covers. Alpha, and every channel of a non-colour texture, is averaged as is.
-        std::vector<unsigned char> HalveRGBA8(const unsigned char* src, uint32_t w, uint32_t h, uint32_t dw, uint32_t dh, bool isSRGB) {
-
-            static const SrgbTables tables;
-
-            std::vector<unsigned char> dst(static_cast<size_t>(dw) * dh * 4);
-            for (uint32_t y = 0; y < dh; ++y) {
-                const uint32_t y0 = std::min(y * 2, h - 1);
-                const uint32_t y1 = std::min(y * 2 + 1, h - 1);
-                for (uint32_t x = 0; x < dw; ++x) {
-                    const uint32_t x0 = std::min(x * 2, w - 1);
-                    const uint32_t x1 = std::min(x * 2 + 1, w - 1);
-                    const unsigned char* p[4] = {
-                        src + (static_cast<size_t>(y0) * w + x0) * 4, src + (static_cast<size_t>(y0) * w + x1) * 4,
-                        src + (static_cast<size_t>(y1) * w + x0) * 4, src + (static_cast<size_t>(y1) * w + x1) * 4 };
-                    unsigned char* out = dst.data() + (static_cast<size_t>(y) * dw + x) * 4;
-                    for (int c = 0; c < 4; ++c) {
-                        if (isSRGB && c < 3) {
-                            const float sum = tables.toLinear[p[0][c]] + tables.toLinear[p[1][c]] + tables.toLinear[p[2][c]] + tables.toLinear[p[3][c]];
-                            out[c] = tables.toSrgb[static_cast<size_t>(sum * 0.25f * 4095.0f + 0.5f)];
-                        } else {
-                            out[c] = static_cast<unsigned char>((p[0][c] + p[1][c] + p[2][c] + p[3][c] + 2) / 4);
-                        }
-                    }
-                }
-            }
-            return dst;
-        }
-
-    }   // namespace
-
-    TextureHandle Renderer::UploadTexturePixels(const unsigned char* pixels, uint32_t width, uint32_t height, bool isSRGB) {
-
-        const vk::DeviceSize imageSize = vk::DeviceSize{ width } * height * 4;
-
-        // Mipmaps: a chain of half-size copies down to 1x1. The sampler picks (and blends) the
-        // levels that match how big the texture is on screen, which stops distant surfaces
-        // shimmering and is cheaper to sample.
-        uint32_t mipLevels = 1;
-        for (uint32_t size = std::max(width, height); size > 1; size >>= 1) { ++mipLevels; }
-
-        GpuTexture tex;
-        tex.width = width;
-        tex.height = height;
-        const vk::Format format = isSRGB ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
-        tex.image.Create(m_context, width, height, format,
-            vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
-            vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, mipLevels);
-
-        // Copies `pixels` into a staging buffer now; the GPU-side copy and the transition to
-        // eShaderReadOnlyOptimal are recorded at the start of the next frame (m_uploads).
-        m_uploads.QueueImage(*tex.image.GetImage(), pixels, imageSize, width, height);
-
-        // The smaller levels are made here on the CPU, each from the one before, and queued the
-        // same way (one upload per level).
-        std::vector<unsigned char> previous;
-        const unsigned char* source = pixels;
-        uint32_t w = width, h = height;
-        for (uint32_t level = 1; level < mipLevels; ++level) {
-            const uint32_t nw = std::max(w / 2, 1u), nh = std::max(h / 2, 1u);
-            std::vector<unsigned char> next = HalveRGBA8(source, w, h, nw, nh, isSRGB);
-            m_uploads.QueueImage(*tex.image.GetImage(), next.data(), vk::DeviceSize{ nw } * nh * 4, nw, nh, 1, level);
-            previous = std::move(next);
-            source   = previous.data();
-            w = nw; h = nh;
-        }
-
-        vk::ImageViewCreateInfo viewInfo{
-            .image = tex.image.GetImage(),
-            .viewType = vk::ImageViewType::e2D,
-            .format = format,
-            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = mipLevels, .layerCount = 1 }
-        };
-        tex.view = vk::raii::ImageView(m_context.GetDevice(), viewInfo);
-
-        const TextureHandle handle{ static_cast<uint32_t>(m_textures.size()) };
-        m_textures.push_back(std::move(tex));
-        return handle;
-
-    }   // Renderer::UploadTexturePixels()
-
-    TextureHandle Renderer::CreateSolidColorTexture(uint8_t r, uint8_t g, uint8_t b, uint8_t a, bool isSRGB) {
-
-        const unsigned char pixels[4] = { r, g, b, a };
-        return UploadTexturePixels(pixels, 1, 1, isSRGB);
-
-    }   // Renderer::CreateSolidColorTexture()
-
-    TextureHandle Renderer::CreateTexture(const std::string& path, bool isSRGB) {
-
-        if (auto it = m_textureCacheByKey.find(path); it != m_textureCacheByKey.end()) {
-            return TextureHandle{ it->second };
-        }
-
-        int texWidth{}, texHeight{}, texChannels{};
-        stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-        if (!pixels) {
-            throw std::runtime_error("[Renderer] Failed to load texture image: (" + path + ")");
-        }
-
-        TextureHandle handle = UploadTexturePixels(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), isSRGB);
-        stbi_image_free(pixels);
-
-        m_textureCacheByKey.emplace(path, handle.id);
-        return handle;
-
-    }   // Renderer::CreateTexture()
-
+    TextureHandle Renderer::CreateTexture(const std::string& path, bool isSRGB) { return m_resources.CreateTexture(path, isSRGB); }
     TextureHandle Renderer::CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount, bool isSRGB, const std::string& cacheKey) {
-
-        if (!cacheKey.empty()) {
-            if (auto it = m_textureCacheByKey.find(cacheKey); it != m_textureCacheByKey.end()) {
-                return TextureHandle{ it->second };
-            }
-        }
-
-        int texWidth{}, texHeight{}, texChannels{};
-        stbi_uc* pixels = stbi_load_from_memory(fileBytes, static_cast<int>(byteCount), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-        if (!pixels) {
-            throw std::runtime_error("[Renderer] Failed to decode in-memory texture" + (cacheKey.empty() ? std::string() : " (" + cacheKey + ")"));
-        }
-
-        TextureHandle handle = UploadTexturePixels(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), isSRGB);
-        stbi_image_free(pixels);
-
-        if (!cacheKey.empty()) { m_textureCacheByKey.emplace(cacheKey, handle.id); }
-        return handle;
-
-    }   // Renderer::CreateTextureFromMemory()
-
-    const Renderer::GpuTexture& Renderer::GetTextureOrThrow(TextureHandle handle) const {
-
-        if (!handle.IsValid() || handle.id >= m_textures.size()) {
-            throw std::runtime_error("[Renderer] Unknown or invalid TextureHandle.");
-        }
-        return m_textures[handle.id];
-
-    }   // Renderer::GetTextureOrThrow()
-
-    void Renderer::CreateDefaultTextures() {
-
-        m_defaultWhiteTexture  = CreateSolidColorTexture(255, 255, 255, 255, /*isSRGB*/ true);
-        m_defaultNormalTexture = CreateSolidColorTexture(128, 128, 255, 255, /*isSRGB*/ false);   // flat tangent-space normal (0,0,1)
-
-    }   // Renderer::CreateDefaultTextures()
-
-    void Renderer::CreateMaterialSampler() {
-
-        // One sampler shared by every material texture. Repeat wrap (unlike the viewport
-        // sampler's clamp-to-edge - these are tiling surface textures, not a single displayed
-        // framebuffer image). Trilinear across the mip levels UploadTexturePixels() builds, plus
-        // anisotropic filtering - which keeps surfaces seen at a shallow angle (floors, long
-        // walls) sharp - when the GPU has it (VulkanContext enables the feature if so).
-        const bool  anisotropy    = m_context.GetPhysicalDevice().getFeatures().samplerAnisotropy == vk::True;
-        const float maxAnisotropy = std::min(8.0f, m_context.GetPhysicalDevice().getProperties().limits.maxSamplerAnisotropy);
-        vk::SamplerCreateInfo samplerInfo{
-            .magFilter = vk::Filter::eLinear,
-            .minFilter = vk::Filter::eLinear,
-            .mipmapMode = vk::SamplerMipmapMode::eLinear,
-            .addressModeU = vk::SamplerAddressMode::eRepeat,
-            .addressModeV = vk::SamplerAddressMode::eRepeat,
-            .addressModeW = vk::SamplerAddressMode::eRepeat,
-            .anisotropyEnable = anisotropy ? vk::True : vk::False,
-            .maxAnisotropy = anisotropy ? maxAnisotropy : 1.0f,
-            .compareEnable = vk::False,
-            .minLod = 0.0f,
-            .maxLod = vk::LodClampNone,
-            .borderColor = vk::BorderColor::eIntOpaqueBlack,
-            .unnormalizedCoordinates = vk::False
-        };
-        m_materialSampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
-
-    }   // Renderer::CreateMaterialSampler()
-
-    void Renderer::CreateMaterialDescriptorPool() {
-
-        // One block's worth (kMaterialsPerDescriptorPool materials, each a set of five
-        // combined-image-samplers) - see CreateMaterial() for what happens when it fills up.
-        vk::DescriptorPoolSize poolSize{
-            .type = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = kMaterialsPerDescriptorPool * 5 };
-        vk::DescriptorPoolCreateInfo poolInfo{
-            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
-            .maxSets = kMaterialsPerDescriptorPool, .poolSizeCount = 1, .pPoolSizes = &poolSize };
-        m_materialDescriptorPools.emplace_back(m_context.GetDevice(), poolInfo);
-        m_materialsInCurrentPool = 0;
-
-    }   // Renderer::CreateMaterialDescriptorPool()
-
-    void Renderer::WriteMaterialDescriptorSet(vk::DescriptorSet set, const MaterialData& data) {
-
-        // Binding order must match VulkanPipeline::CreateMaterialDescriptorSetLayout AND the
-        // shader's [[vk::binding(n,1)]] declarations exactly: 0=albedo, 1=normal,
-        // 2=metallicRoughness, 3=emissive, 4=occlusion.
-        auto resolve = [&](TextureHandle h, bool isNormalSlot) -> vk::ImageView {
-            const TextureHandle fallback = isNormalSlot ? m_defaultNormalTexture : m_defaultWhiteTexture;
-            return *GetTextureOrThrow(h.IsValid() ? h : fallback).view;
-        };
-
-        vk::DescriptorImageInfo imageInfos[5] = {
-            { .sampler = *m_materialSampler, .imageView = resolve(data.albedo, false),            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-            { .sampler = *m_materialSampler, .imageView = resolve(data.normal, true),              .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-            { .sampler = *m_materialSampler, .imageView = resolve(data.metallicRoughness, false),  .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-            { .sampler = *m_materialSampler, .imageView = resolve(data.emissive, false),           .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-            { .sampler = *m_materialSampler, .imageView = resolve(data.occlusion, false),          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-        };
-
-        vk::WriteDescriptorSet writes[5];
-        for (uint32_t i = 0; i < 5; ++i) {
-            writes[i] = vk::WriteDescriptorSet{
-                .dstSet = set, .dstBinding = i, .dstArrayElement = 0,
-                .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler,
-                .pImageInfo = &imageInfos[i]
-            };
-        }
-        m_context.GetDevice().updateDescriptorSets(writes, {});
-
-    }   // Renderer::WriteMaterialDescriptorSet()
-
-    // ------------------------------------------------------------------------------------------------------------- //
-    //  MATERIALS
-    // ------------------------------------------------------------------------------------------------------------- //
-
-    MaterialHandle Renderer::CreateMaterial(const MaterialData& data) {
-
-        // A VkDescriptorPool's maxSets is fixed at creation and can't grow, so once the current
-        // block is full (or there isn't one yet, on the very first call) allocate a fresh block
-        // instead of ever trying to over-allocate from a full pool - that would throw a raw
-        // vk::OutOfPoolMemoryError with no indication of what actually went wrong. This makes
-        // material count effectively unbounded (limited only by actual GPU memory/descriptor
-        // budget, same as every other resource here), in blocks of kMaterialsPerDescriptorPool.
-        if (m_materialDescriptorPools.empty() || m_materialsInCurrentPool >= kMaterialsPerDescriptorPool) {
-            CreateMaterialDescriptorPool();
-        }
-
-        vk::DescriptorSetLayout layout = *m_pipeline.GetMaterialDescriptorSetLayout();
-        vk::DescriptorSetAllocateInfo allocInfo{
-            .descriptorPool = m_materialDescriptorPools.back(),
-            .descriptorSetCount = 1,
-            .pSetLayouts = &layout
-        };
-        std::vector<vk::raii::DescriptorSet> sets = m_context.GetDevice().allocateDescriptorSets(allocInfo);
-        ++m_materialsInCurrentPool;
-
-        GpuMaterial mat;
-        mat.data = data;
-        mat.descriptorSet = std::move(sets.front());
-        WriteMaterialDescriptorSet(*mat.descriptorSet, data);
-
-        const MaterialHandle handle{ static_cast<uint32_t>(m_materials.size()) };
-        m_materials.push_back(std::move(mat));
-        return handle;
-
-    }   // Renderer::CreateMaterial()
-
-    void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) {
-
-        if (!handle.IsValid() || handle.id >= m_materials.size()) {
-            throw std::runtime_error("[Renderer] Unknown or invalid MaterialHandle.");
-        }
-        GpuMaterial& mat = m_materials[handle.id];
-
-        const bool texturesChanged =
-            !(mat.data.albedo == data.albedo) || !(mat.data.normal == data.normal) ||
-            !(mat.data.metallicRoughness == data.metallicRoughness) ||
-            !(mat.data.emissive == data.emissive) || !(mat.data.occlusion == data.occlusion);
-
-        mat.data = data;
-
-        if (texturesChanged) {
-            // A command buffer from a still-in-flight frame may currently be executing a draw
-            // that references this exact descriptor set's OLD image bindings; rewriting it while
-            // that's true is undefined behaviour. This wait-idle makes the swap safe at the cost
-            // of a full GPU stall - acceptable for an editor-triggered "designer changed a
-            // texture" edit (rare, human-paced), not something to do from a hot gameplay path.
-            // (Factor-only edits, the common case for a live-tweaked slider, skip this entirely -
-            // see the early-continue-free structure above: texturesChanged is false and we fall
-            // straight through without ever calling WriteMaterialDescriptorSet.)
-            m_context.GetDevice().waitIdle();
-            WriteMaterialDescriptorSet(*mat.descriptorSet, data);
-        }
-
-    }   // Renderer::UpdateMaterial()
-
-    const MaterialData& Renderer::GetMaterialData(MaterialHandle handle) const {
-
-        if (!handle.IsValid() || handle.id >= m_materials.size()) {
-            throw std::runtime_error("[Renderer] Unknown or invalid MaterialHandle.");
-        }
-        return m_materials[handle.id].data;
-
-    }   // Renderer::GetMaterialData()
+        return m_resources.CreateTextureFromMemory(fileBytes, byteCount, isSRGB, cacheKey);
+    }
+    MaterialHandle Renderer::CreateMaterial(const MaterialData& data) { return m_resources.CreateMaterial(data); }
+    void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) { m_resources.UpdateMaterial(handle, data); }
+    const MaterialData& Renderer::GetMaterialData(MaterialHandle handle) const { return m_resources.GetMaterialData(handle); }
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  LIGHTS & ENVIRONMENT
@@ -2347,9 +1968,9 @@ namespace Crucible {
                 });
             }
 
-            const bool textured = submit.desc.texture.IsValid() && submit.desc.texture.id < m_textures.size();
+            const bool textured = submit.desc.texture.IsValid() && submit.desc.texture.id < m_resources.Textures().size();
             ParticleBatch batch;
-            batch.texture = textured ? submit.desc.texture : m_defaultWhiteTexture;
+            batch.texture = textured ? submit.desc.texture : m_resources.DefaultWhiteTexture();
             batch.first   = first;
             batch.count   = submit.count;
             batch.push.params = glm::vec4(
@@ -2394,14 +2015,14 @@ namespace Crucible {
 
     vk::DescriptorSet Renderer::GetParticleTextureSet(TextureHandle texture) {
 
-        if (!texture.IsValid() || texture.id >= m_textures.size()) { texture = m_defaultWhiteTexture; }
+        if (!texture.IsValid() || texture.id >= m_resources.Textures().size()) { texture = m_resources.DefaultWhiteTexture(); }
 
         if (auto it = m_particleTextureSets.find(texture.id); it != m_particleTextureSets.end()) { return *it->second; }
 
         // Pool full (more than kMaxParticleTextures different particle textures): fall back to the
         // white texture's set, which is created first and so always exists.
         if (m_particleTextureSets.size() >= kMaxParticleTextures) {
-            return *m_particleTextureSets.at(m_defaultWhiteTexture.id);
+            return *m_particleTextureSets.at(m_resources.DefaultWhiteTexture().id);
         }
 
         vk::DescriptorSetLayout layout = *m_pipeline.GetSingleTextureSetLayout();
@@ -2411,7 +2032,7 @@ namespace Crucible {
         // Clamped sampling (the viewport sampler), so a flipbook frame never bleeds in from the
         // opposite edge of the atlas.
         vk::DescriptorImageInfo imageInfo{
-            .sampler = *m_viewportSampler, .imageView = *m_textures[texture.id].view,
+            .sampler = *m_viewportSampler, .imageView = *m_resources.Textures()[texture.id].view,
             .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
         vk::WriteDescriptorSet write{
             .dstSet = *set, .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = 1,
@@ -2421,30 +2042,6 @@ namespace Crucible {
         return *m_particleTextureSets.emplace(texture.id, std::move(set)).first->second;
 
     }   // Renderer::GetParticleTextureSet()
-
-    void Renderer::DrawParticles(vk::CommandBuffer cmd, vk::DescriptorSet frameSet, const std::vector<ParticleBatch>& batches) {
-
-        if (batches.empty()) { return; }
-
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticlePipeline(m_drawSamples));
-        // Set 0 again: this layout's push-constant range differs from the previous pipeline's, so
-        // the earlier binding doesn't carry over.
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticleLayout(), 0, frameSet, nullptr);
-
-        TextureHandle bound;
-        for (const ParticleBatch& batch : batches) {
-            if (!(batch.texture == bound)) {
-                cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetParticleLayout(), 1, GetParticleTextureSet(batch.texture), nullptr);
-                bound = batch.texture;
-            }
-            cmd.pushConstants<ParticlePush>(*m_pipeline.GetParticleLayout(),
-                vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, batch.push);
-            // Six vertices per particle, no vertex buffer; the vertex index (which includes
-            // firstVertex) tells the shader which particle and which corner.
-            cmd.draw(batch.count * 6, 1, batch.first * 6, 0);
-        }
-
-    }   // Renderer::DrawParticles()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  POST-PROCESSING: HDR SCENE IMAGE -> BLOOM -> TONEMAP
@@ -2607,119 +2204,6 @@ namespace Crucible {
         writeDepth(t.aoBlurSet, 1);
 
     }   // Renderer::CreatePostTargets()
-
-    void Renderer::DrawAmbientOcclusion(FrameContext& fc, PostTargets& t, vk::DescriptorSet frameSet, const ViewDrawList& draws) {
-
-        if (!*t.aoBlurView) { return; }
-        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
-        const vk::Extent2D extent = t.aoExtent;
-
-        const auto beginColour = [&](VulkanImage& image, const vk::raii::ImageView& view) {
-            TransitionImageLayout(fc, image.GetImage(), vk::ImageAspectFlagBits::eColor,
-                vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-                {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
-                vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-            vk::RenderingAttachmentInfo color{
-                .imageView   = view,
-                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp      = vk::AttachmentLoadOp::eClear,
-                .storeOp     = vk::AttachmentStoreOp::eStore,
-                .clearValue  = vk::ClearColorValue(1.0f, 1.0f, 1.0f, 1.0f)   // white = no occlusion
-            };
-            vk::RenderingInfo renderingInfo{
-                .renderArea = { .offset = { 0, 0 }, .extent = extent }, .layerCount = 1,
-                .colorAttachmentCount = 1, .pColorAttachments = &color };
-            cmd.beginRendering(renderingInfo);
-            cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f));
-            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
-        };
-        const auto endColour = [&](VulkanImage& image) {
-            cmd.endRendering();
-            TransitionImageLayout(fc, image.GetImage(), vk::ImageAspectFlagBits::eColor,
-                vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-                vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
-        };
-
-        // Off: the scene shader still samples the image, so hand it an all-white one.
-        if (!m_postSettings.ao) {
-            beginColour(t.aoBlur, t.aoBlurView);
-            endColour(t.aoBlur);
-            return;
-        }
-
-        // 1. The scene's depth and smooth normals, at half size: every mesh the main pass will draw.
-        TransitionImageLayout(fc, t.aoNormal.GetImage(), vk::ImageAspectFlagBits::eColor,
-            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-            {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
-            vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-        TransitionImageLayout(fc, t.aoDepth.GetImage(), vk::ImageAspectFlagBits::eDepth,
-            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
-            {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests);
-        {
-            vk::RenderingAttachmentInfo depth{
-                .imageView   = t.aoDepthView,
-                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-                .loadOp      = vk::AttachmentLoadOp::eClear,
-                .storeOp     = vk::AttachmentStoreOp::eStore,
-                .clearValue  = vk::ClearDepthStencilValue(1.0f, 0)
-            };
-            vk::RenderingAttachmentInfo normal{
-                .imageView   = t.aoNormalView,
-                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp      = vk::AttachmentLoadOp::eClear,
-                .storeOp     = vk::AttachmentStoreOp::eStore,
-                .clearValue  = vk::ClearColorValue(0.5f, 0.5f, 1.0f, 1.0f)   // "facing the camera"; only sky pixels keep it
-            };
-            vk::RenderingInfo renderingInfo{
-                .renderArea = { .offset = { 0, 0 }, .extent = extent }, .layerCount = 1,
-                .colorAttachmentCount = 1, .pColorAttachments = &normal, .pDepthAttachment = &depth };
-            cmd.beginRendering(renderingInfo);
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDepthPrepassPipeline());
-            // Flipped like the main pass, so its pixels line up with the scene's.
-            cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width),
-                                            -static_cast<float>(extent.height), 0.0f, 1.0f));
-            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineMaskLayout(), 0, frameSet, nullptr);
-            DrawMeshBatches(cmd, draws.main);
-            cmd.endRendering();
-        }
-        TransitionImageLayout(fc, t.aoNormal.GetImage(), vk::ImageAspectFlagBits::eColor,
-            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
-        TransitionImageLayout(fc, t.aoDepth.GetImage(), vk::ImageAspectFlagBits::eDepth,
-            vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-            vk::PipelineStageFlagBits2::eFragmentShader);
-
-        PostPush push;
-        push.a = glm::vec4(1.0f / static_cast<float>(extent.width), 1.0f / static_cast<float>(extent.height),
-                           std::max(m_postSettings.aoRadius, 0.01f), std::max(m_postSettings.aoIntensity, 0.0f));
-        push.b = draws.projInfo;
-
-        // 2. Occlusion from the depth image.
-        beginColour(t.aoRaw, t.aoRawView);
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetAoPipeline());
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetTonemapLayout(), 0, *t.aoDepthSet, nullptr);
-        cmd.pushConstants<PostPush>(*m_pipeline.GetTonemapLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
-        cmd.draw(3, 1, 0, 0);
-        endColour(t.aoRaw);
-
-        // 3. Smoothed.
-        beginColour(t.aoBlur, t.aoBlurView);
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetAoBlurPipeline());
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetTonemapLayout(), 0, *t.aoBlurSet, nullptr);
-        cmd.pushConstants<PostPush>(*m_pipeline.GetTonemapLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
-        cmd.draw(3, 1, 0, 0);
-        endColour(t.aoBlur);
-
-    }   // Renderer::DrawAmbientOcclusion()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  TIMINGS AND THE LOAD TEST
@@ -2951,7 +2435,7 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
 
         MarkGpu(cmd, GpuSection::Bloom);
-        DrawBloom(fc, t);
+        m_bloomPass.Record(cmd, t, m_postSettings, m_environment.exposure);
 
         // The final pass reads and keeps testing this depth: make the scene pass's writes visible.
         TransitionImageLayout(fc, depthImage, vk::ImageAspectFlagBits::eDepth,
@@ -2963,136 +2447,20 @@ namespace Crucible {
 
     }   // Renderer::DrawSceneHdr()
 
-    void Renderer::DrawBloom(FrameContext& fc, PostTargets& t) {
-
-        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
-
-        const auto toAttachment = [&](uint32_t i, bool keepContents) {
-            TransitionImageLayout(fc, t.bloomImages[i].GetImage(), vk::ImageAspectFlagBits::eColor,
-                keepContents ? vk::ImageLayout::eShaderReadOnlyOptimal : vk::ImageLayout::eUndefined,
-                vk::ImageLayout::eColorAttachmentOptimal,
-                keepContents ? vk::AccessFlagBits2::eShaderSampledRead : vk::AccessFlags2{},
-                vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
-                vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-        };
-        const auto toSampled = [&](uint32_t i) {
-            TransitionImageLayout(fc, t.bloomImages[i].GetImage(), vk::ImageAspectFlagBits::eColor,
-                vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-                vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
-                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
-        };
-        const auto begin = [&](uint32_t i, vk::AttachmentLoadOp loadOp) {
-            vk::RenderingAttachmentInfo color{
-                .imageView   = t.bloomViews[i],
-                .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp      = loadOp,
-                .storeOp     = vk::AttachmentStoreOp::eStore,
-                .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f)
-            };
-            vk::RenderingInfo renderingInfo{
-                .renderArea           = { .offset = { 0, 0 }, .extent = t.bloomExtents[i] },
-                .layerCount           = 1,
-                .colorAttachmentCount = 1,
-                .pColorAttachments    = &color
-            };
-            cmd.beginRendering(renderingInfo);
-            // Plain (unflipped) viewport: these passes work in texture space.
-            cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(t.bloomExtents[i].width), static_cast<float>(t.bloomExtents[i].height), 0.0f, 1.0f));
-            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), t.bloomExtents[i]));
-        };
-
-        // Bloom off: the tonemap pass still samples step 0, so give it a defined (black) image.
-        if (!m_postSettings.bloom || t.bloomCount == 0) {
-            toAttachment(0, false);
-            begin(0, vk::AttachmentLoadOp::eClear);
-            cmd.endRendering();
-            toSampled(0);
-            return;
-        }
-
-        const float exposure = std::max(m_environment.exposure, 0.0f);
-
-        // Down the chain: each step filters the previous one into half the size. The first step
-        // reads the scene and keeps only what is brighter than the threshold.
-        vk::DescriptorSet source       = *t.hdrSet;
-        vk::Extent2D      sourceExtent = t.extent;
-        for (uint32_t i = 0; i < t.bloomCount; ++i) {
-            toAttachment(i, false);
-            begin(i, vk::AttachmentLoadOp::eDontCare);
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomDownPipeline());
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomLayout(), 0, source, nullptr);
-            PostPush push;
-            push.a = glm::vec4(1.0f / static_cast<float>(sourceExtent.width), 1.0f / static_cast<float>(sourceExtent.height),
-                               i == 0 ? std::max(m_postSettings.bloomThreshold, 0.0f) : -1.0f, std::max(m_postSettings.bloomKnee, 1e-4f));
-            push.b = glm::vec4(exposure, 0.0f, 0.0f, 0.0f);
-            cmd.pushConstants<PostPush>(*m_pipeline.GetBloomLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
-            cmd.draw(3, 1, 0, 0);
-            cmd.endRendering();
-            toSampled(i);
-            source       = *t.bloomSets[i];
-            sourceExtent = t.bloomExtents[i];
-        }
-
-        // Back up the chain: each step is blurred up and ADDED onto the next larger one, so step 0
-        // ends up holding glow at every scale - tight around small lights, wide around big ones.
-        for (uint32_t i = t.bloomCount - 1; i > 0; --i) {
-            toAttachment(i - 1, true);
-            begin(i - 1, vk::AttachmentLoadOp::eLoad);
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomUpPipeline());
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetBloomLayout(), 0, *t.bloomSets[i], nullptr);
-            PostPush push;
-            push.a = glm::vec4(1.0f / static_cast<float>(t.bloomExtents[i].width), 1.0f / static_cast<float>(t.bloomExtents[i].height), 0.0f, 0.0f);
-            cmd.pushConstants<PostPush>(*m_pipeline.GetBloomLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
-            cmd.draw(3, 1, 0, 0);
-            cmd.endRendering();
-            toSampled(i - 1);
-        }
-
-    }   // Renderer::DrawBloom()
-
-    void Renderer::DrawTonemap(vk::CommandBuffer cmd, const PostTargets& t, vk::Extent2D extent) {
-
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetTonemapPipeline());
-        cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(extent.width), static_cast<float>(extent.height), 0.0f, 1.0f));
-        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetTonemapLayout(), 0, *t.tonemapSet, nullptr);
-
-        // The glow is the sum of bloomCount steps; dividing by that keeps bloomIntensity meaning
-        // roughly the same thing whatever the render target's size.
-        const bool  bloom    = m_postSettings.bloom && t.bloomCount > 0;
-        const float strength = bloom ? std::max(m_postSettings.bloomIntensity, 0.0f) / static_cast<float>(t.bloomCount) : 0.0f;
-        PostPush push;
-        const EnvironmentSettings& env = m_environment;
-        push.a = glm::vec4(std::max(env.exposure, 0.0f), strength, m_postSettings.fxaa ? 1.0f : 0.0f, m_time);
-        push.b = glm::vec4(1.0f / static_cast<float>(std::max(extent.width, 1u)), 1.0f / static_cast<float>(std::max(extent.height, 1u)),
-                           glm::clamp(env.vignetteIntensity, 0.0f, 1.0f), glm::clamp(env.vignetteSoftness, 0.01f, 1.0f));
-
-        // The scene's look. Temperature shifts the balance between red and blue (warm = more red,
-        // less blue); the colour filter multiplies on top.
-        const float     warmth = glm::clamp(env.temperature, -1.0f, 1.0f) * 0.25f;
-        const glm::vec3 white  = glm::max(env.colourFilter, glm::vec3(0.0f)) * glm::vec3(1.0f + warmth, 1.0f, 1.0f - warmth);
-        push.c = glm::vec4(glm::clamp(env.contrast, 0.0f, 3.0f), glm::clamp(env.saturation, 0.0f, 3.0f), glm::clamp(env.filmGrain, 0.0f, 1.0f), 0.0f);
-        push.d = glm::vec4(white, glm::clamp(env.chromaticAberration, 0.0f, 1.0f) * 0.01f);
-        cmd.pushConstants<PostPush>(*m_pipeline.GetTonemapLayout(), vk::ShaderStageFlagBits::eFragment, 0, push);
-        cmd.draw(3, 1, 0, 0);
-
-    }   // Renderer::DrawTonemap()
-
     uint32_t Renderer::AppendBatches(const std::vector<RenderItem>& items, std::vector<DrawBatch>& batches, bool byMaterial) {
 
         uint32_t added = 0;
         for (const RenderItem& item : items) {
 
             // Skip what can't be drawn: no mesh, or one still uploading (CreateMeshAsync).
-            if (!item.mesh.IsValid() || item.mesh.id >= m_meshes.size() || m_meshes[item.mesh.id].indexCount == 0) { continue; }
+            if (!item.mesh.IsValid() || item.mesh.id >= m_resources.Meshes().size() || m_resources.Meshes()[item.mesh.id].indexCount == 0) { continue; }
 
             // The main pass always needs SOME material set bound (the pipeline layout declares set 1
             // unconditionally), so substitute the default rather than skip. Depth-only passes don't
             // care, and leaving it Invalid lets their batches merge across materials.
             MaterialHandle material;
             if (byMaterial) {
-                material = item.material.IsValid() && item.material.id < m_materials.size() ? item.material : m_defaultMaterial;
+                material = item.material.IsValid() && item.material.id < m_resources.Materials().size() ? item.material : m_resources.DefaultMaterial();
             }
 
             const uint32_t index = static_cast<uint32_t>(m_instanceScratch.size());
@@ -3157,21 +2525,6 @@ namespace Crucible {
         if (count > 0) { memcpy(m_instanceBuffersMapped[frameIndex], m_instanceScratch.data(), count * sizeof(InstanceData)); }
 
     }   // Renderer::UploadInstances()
-
-    void Renderer::DrawMeshBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches) {
-
-        MeshHandle bound;
-        for (const DrawBatch& batch : batches) {
-            const GpuMesh& mesh = m_meshes[batch.mesh.id];
-            if (!(batch.mesh == bound)) {
-                cmd.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), { 0 });
-                cmd.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
-                bound = batch.mesh;
-            }
-            cmd.drawIndexed(mesh.indexCount, batch.instanceCount, 0, 0, batch.firstInstance);
-        }
-
-    }   // Renderer::DrawMeshBatches()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  CASCADED SHADOW MAPS
@@ -3311,58 +2664,6 @@ namespace Crucible {
 
     }   // Renderer::ComputeShadowCascades()
 
-    void Renderer::DrawShadowCascades(FrameContext& fc, vk::DescriptorSet frameSet, const ViewDrawList& draws) {
-
-        if (draws.cascadeCount == 0) { return; }
-        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
-
-        // Shared by every view: wait for whatever sampled it last (an earlier view this frame, or a
-        // previous frame - barriers cover all earlier submissions on the queue too). Its old
-        // contents are discarded (UNDEFINED) since every layer is cleared below.
-        TransitionImageLayout(fc, m_shadowImage.GetImage(), vk::ImageAspectFlagBits::eDepth,
-            vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
-            {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            vk::PipelineStageFlagBits2::eFragmentShader,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-            kMaxShadowCascades);
-
-        const vk::Extent2D extent{ kShadowMapSize, kShadowMapSize };
-        for (uint32_t c = 0; c < draws.cascadeCount; ++c) {
-
-            vk::RenderingAttachmentInfo depth{
-                .imageView   = m_shadowLayerViews[c],
-                .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-                .loadOp      = vk::AttachmentLoadOp::eClear,
-                .storeOp     = vk::AttachmentStoreOp::eStore,
-                .clearValue  = vk::ClearDepthStencilValue(1.0f, 0)
-            };
-            vk::RenderingInfo renderingInfo{
-                .renderArea       = { .offset = { 0, 0 }, .extent = extent },
-                .layerCount       = 1,
-                .pDepthAttachment = &depth
-            };
-            cmd.beginRendering(renderingInfo);
-
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetShadowPipeline());
-            // Same flipped viewport as every other pass, so the shader's uv mapping is uniform.
-            cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(kShadowMapSize), static_cast<float>(kShadowMapSize),
-                                            -static_cast<float>(kShadowMapSize), 0.0f, 1.0f));
-            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
-            cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetShadowLayout(), 0, frameSet, nullptr);
-            cmd.pushConstants<uint32_t>(*m_pipeline.GetShadowLayout(), vk::ShaderStageFlagBits::eVertex, 0, c);
-            DrawMeshBatches(cmd, draws.shadow[c]);
-
-            cmd.endRendering();
-        }
-
-        TransitionImageLayout(fc, m_shadowImage.GetImage(), vk::ImageAspectFlagBits::eDepth,
-            vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
-            vk::PipelineStageFlagBits2::eLateFragmentTests, vk::PipelineStageFlagBits2::eFragmentShader,
-            kMaxShadowCascades);
-
-    }   // Renderer::DrawShadowCascades()
-
     // ------------------------------------------------------------------------------------------------------------- //
     //  SELECTION OUTLINE
     // ------------------------------------------------------------------------------------------------------------- //
@@ -3385,80 +2686,6 @@ namespace Crucible {
         return m_outlineProxy;
 
     }   // Renderer::ResolveOutlineProxy()
-
-    void Renderer::DrawOutlineMask(FrameContext& fc, Viewport& vp, vk::DescriptorSet frameSet) {
-
-        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
-
-        // Last frame's composite sampled it; contents are re-cleared, so discard them.
-        TransitionImageLayout(fc, vp.maskImage.GetImage(), vk::ImageAspectFlagBits::eColor,
-            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
-            {}, vk::AccessFlagBits2::eColorAttachmentWrite,
-            vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-
-        vk::RenderingAttachmentInfo color{
-            .imageView   = vp.maskView,
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp      = vk::AttachmentLoadOp::eClear,
-            .storeOp     = vk::AttachmentStoreOp::eStore,
-            .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f)
-        };
-        vk::RenderingInfo renderingInfo{
-            .renderArea           = { .offset = { 0, 0 }, .extent = vp.extent },
-            .layerCount           = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments    = &color
-        };
-        cmd.beginRendering(renderingInfo);
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineMaskPipeline());
-        // Same flipped viewport as the main pass, so mask pixels line up with the scene's.
-        cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(vp.extent.height), static_cast<float>(vp.extent.width),
-                                        -static_cast<float>(vp.extent.height), 0.0f, 1.0f));
-        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), vp.extent));
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineMaskLayout(), 0, frameSet, nullptr);
-        DrawMeshBatches(cmd, vp.draws.outline);
-        cmd.endRendering();
-
-        TransitionImageLayout(fc, vp.maskImage.GetImage(), vk::ImageAspectFlagBits::eColor,
-            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
-            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
-
-    }   // Renderer::DrawOutlineMask()
-
-    void Renderer::DrawOutlineComposite(FrameContext& fc, Viewport& vp) {
-
-        vk::CommandBuffer cmd = *fc.frame.commandBuffer;
-
-        // The main pass's writes must land before blending reads them back.
-        TransitionImageLayout(fc, vp.colorImage.GetImage(), vk::ImageAspectFlagBits::eColor,
-            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eColorAttachmentOptimal,
-            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
-            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
-
-        vk::RenderingAttachmentInfo color{
-            .imageView   = vp.colorView,
-            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-            .loadOp      = vk::AttachmentLoadOp::eLoad,
-            .storeOp     = vk::AttachmentStoreOp::eStore
-        };
-        vk::RenderingInfo renderingInfo{
-            .renderArea           = { .offset = { 0, 0 }, .extent = vp.extent },
-            .layerCount           = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments    = &color
-        };
-        cmd.beginRendering(renderingInfo);
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineCompositePipeline());
-        // Fullscreen triangle: orientation doesn't matter, the shader works in pixel coordinates.
-        cmd.setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(vp.extent.width), static_cast<float>(vp.extent.height), 0.0f, 1.0f));
-        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), vp.extent));
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetOutlineCompositeLayout(), 0, *vp.outlineSet, nullptr);
-        cmd.pushConstants<OutlineCompositePush>(*m_pipeline.GetOutlineCompositeLayout(), vk::ShaderStageFlagBits::eFragment, 0, m_outlineStyle);
-        cmd.draw(3, 1, 0, 0);
-        cmd.endRendering();
-
-    }   // Renderer::DrawOutlineComposite()
 
     namespace {
 
@@ -3494,8 +2721,8 @@ namespace Crucible {
         m_spatial.RayCast(ray, maxDistance, [&](SpatialIndex::Handle h, float tBox) {
             if (tBox >= best) { return best; }
             const RenderProxy& p = m_proxies[static_cast<uint32_t>(m_spatial.GetUserData(h))];
-            if (!p.mesh.IsValid() || p.mesh.id >= m_meshes.size()) { return best; }
-            const GpuMesh& mesh = m_meshes[p.mesh.id];
+            if (!p.mesh.IsValid() || p.mesh.id >= m_resources.Meshes().size()) { return best; }
+            const GpuMesh& mesh = m_resources.Meshes()[p.mesh.id];
 
             float tHit = -1.0f;
             if (mesh.cpuIndices.empty()) {
@@ -3590,30 +2817,6 @@ namespace Crucible {
 
     }   // Renderer::UpdateDebugBuffer()
 
-    void Renderer::DrawDebugLines(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet frameSet) {
-
-        if (m_debugTestedCount + m_debugOnTopCount == 0) { return; }
-
-        // The tonemap triangle drawn just before used a plain viewport; world geometry uses the
-        // flipped one (+Y up), like the scene pass.
-        cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
-        cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
-        const uint32_t frameIndex = m_frameManager.GetFrameIndex();
-
-        cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDebugLineLayout(), 0, frameSet, nullptr);
-        cmd.bindVertexBuffers(0, *m_debugBuffers[frameIndex].GetBuffer(), { 0 });
-
-        if (m_debugTestedCount > 0) {
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDebugLinePipeline(true));
-            cmd.draw(m_debugTestedCount, 1, 0, 0);
-        }
-        if (m_debugOnTopCount > 0) {
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_pipeline.GetDebugLinePipeline(false));
-            cmd.draw(m_debugOnTopCount, 1, m_debugTestedCount, 0);
-        }
-
-    }   // Renderer::DrawDebugLines()
-
     void Renderer::DrawSkybox(vk::CommandBuffer cmd, vk::DescriptorSet frameSet) {
 
         if (!m_environment.drawSkybox) { return; }
@@ -3660,29 +2863,9 @@ namespace Crucible {
         vk::AccessFlags2 src_access_mask, vk::AccessFlags2 dst_access_mask,
         vk::PipelineStageFlags2 src_stage_mask, vk::PipelineStageFlags2 dst_stage_mask, uint32_t layerCount) {
 
-        vk::ImageMemoryBarrier2 barrier = {
-            .srcStageMask = src_stage_mask,
-            .srcAccessMask = src_access_mask,
-            .dstStageMask = dst_stage_mask,
-            .dstAccessMask = dst_access_mask,
-            .oldLayout = old_layout,
-            .newLayout = new_layout,
-            .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
-            .image = image,
-            .subresourceRange = {
-                   .aspectMask = aspectMask,
-                   .baseMipLevel = 0,
-                   .levelCount = 1,
-                   .baseArrayLayer = 0,
-                   .layerCount = layerCount}
-        };
-        vk::DependencyInfo dependency_info = {
-            .dependencyFlags = {},
-            .imageMemoryBarrierCount = 1,
-            .pImageMemoryBarriers = &barrier
-        };
-        fc.frame.commandBuffer.pipelineBarrier2(dependency_info);
+        // The barrier itself lives in Vulkan/VulkanCommands.h, where the render passes share it.
+        Crucible::TransitionImageLayout(*fc.frame.commandBuffer, image, aspectMask, old_layout, new_layout,
+            src_access_mask, dst_access_mask, src_stage_mask, dst_stage_mask, layerCount);
 
     }   // Renderer::TransitionImageLayout()
 
