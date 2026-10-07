@@ -6,7 +6,7 @@
 #include "Graphics/Passes/OutlinePass.h"
 
 #include "Graphics/RenderResources.h"
-#include "Graphics/Vulkan/VulkanPipeline.h"
+#include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanShader.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
 
@@ -56,7 +56,7 @@ namespace Crucible {
             vk::PipelineLayoutCreateInfo layoutInfo{ .setLayoutCount = 1, .pSetLayouts = &setLayout };
             m_outlineMaskLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
 
-            const vk::Format maskFormat = VulkanPipeline::kOutlineMaskFormat;
+            const vk::Format maskFormat = RenderLayouts::kOutlineMaskFormat;
             vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
                 {
                     .stageCount          = 2,

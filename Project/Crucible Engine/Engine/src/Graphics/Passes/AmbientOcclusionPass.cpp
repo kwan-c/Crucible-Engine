@@ -6,7 +6,7 @@
 #include "Graphics/Passes/AmbientOcclusionPass.h"
 
 #include "Graphics/RenderResources.h"
-#include "Graphics/Vulkan/VulkanPipeline.h"
+#include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanShader.h"
 #include "Graphics/Passes/FullscreenPipeline.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
@@ -68,7 +68,7 @@ namespace Crucible {
         vk::PipelineLayoutCreateInfo prepassLayoutInfo{ .setLayoutCount = 1, .pSetLayouts = &prepassSetLayout };
         m_prepassLayout = vk::raii::PipelineLayout(context.GetDevice(), prepassLayoutInfo);
 
-        const vk::Format normalFormat = VulkanPipeline::kAoNormalFormat;
+        const vk::Format normalFormat = RenderLayouts::kAoNormalFormat;
         vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
             {
                 .stageCount          = 2,
@@ -84,7 +84,7 @@ namespace Crucible {
                 .layout              = m_prepassLayout,
                 .renderPass          = nullptr
             },
-            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &normalFormat, .depthAttachmentFormat = VulkanPipeline::kAoDepthFormat }
+            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &normalFormat, .depthAttachmentFormat = RenderLayouts::kAoDepthFormat }
         };
         m_depthPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
 
@@ -99,8 +99,8 @@ namespace Crucible {
                 .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
             m_aoLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
         }
-        m_aoPipeline     = CreateFullscreenPipeline(context, postModule, "aoFrag",     false, *m_aoLayout, VulkanPipeline::kAoFormat, vk::Format::eUndefined);   // depth + normals
-        m_aoBlurPipeline = CreateFullscreenPipeline(context, postModule, "aoBlurFrag", false, *m_aoLayout, VulkanPipeline::kAoFormat, vk::Format::eUndefined);
+        m_aoPipeline     = CreateFullscreenPipeline(context, postModule, "aoFrag",     false, *m_aoLayout, RenderLayouts::kAoFormat, vk::Format::eUndefined);   // depth + normals
+        m_aoBlurPipeline = CreateFullscreenPipeline(context, postModule, "aoBlurFrag", false, *m_aoLayout, RenderLayouts::kAoFormat, vk::Format::eUndefined);
 
     }   // AmbientOcclusionPass::Create()
 

@@ -21,6 +21,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <array>
 #include <vector>
 
 namespace Crucible {
@@ -41,6 +42,18 @@ namespace Crucible {
         uint32_t      first = 0;
         uint32_t      count = 0;
         ParticlePush  push;
+    };
+
+    // Everything one view draws this frame, built by PrepareView() before recording starts
+    // (so the instance buffer's final size is known before any command references it).
+    struct ViewDrawList {
+        std::vector<DrawBatch>                                main;
+        std::array<std::vector<DrawBatch>, kMaxShadowCascades> shadow;
+        uint32_t                                              cascadeCount = 0;   // 0 = no shadow pass
+        std::vector<DrawBatch>                                outline;            // selected object (mask pass)
+        std::vector<ParticleBatch>                            particles;          // far to near
+        glm::vec4                                             projInfo{ 1.0f };   // proj[0][0], [1][1], [2][2], [3][2] (ambient occlusion)
+        void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); }
     };
 
 }   // NAMESPACE CRUCIBLE

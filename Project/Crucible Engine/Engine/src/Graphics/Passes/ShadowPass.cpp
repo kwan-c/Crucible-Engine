@@ -6,9 +6,13 @@
 #include "Graphics/Passes/ShadowPass.h"
 
 #include "Graphics/RenderResources.h"
-#include "Graphics/Vulkan/VulkanPipeline.h"
+#include "Graphics/Camera.h"
+#include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
 #include "Graphics/Vulkan/VulkanShader.h"
+
+#include <algorithm>
+#include <cmath>
 
 namespace Crucible {
 
@@ -91,12 +95,128 @@ namespace Crucible {
 
     }   // ShadowPass::Create()
 
-    void ShadowPass::Record(vk::CommandBuffer cmd, vk::Image shadowImage,
-                            const std::array<vk::raii::ImageView, kMaxShadowCascades>& layerViews, uint32_t mapSize,
-                            vk::DescriptorSet frameSet,
+    void ShadowPass::CreateResources(VulkanContext& context) {
+
+        m_shadowImage.Create(context, kMapSize, kMapSize, kFormat,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal,
+            kMaxShadowCascades);
+
+        // One view of every layer for sampling (Texture2DArray), one per layer to render into.
+        vk::ImageViewCreateInfo arrayViewInfo{
+            .image            = m_shadowImage.GetImage(),
+            .viewType         = vk::ImageViewType::e2DArray,
+            .format           = kFormat,
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .baseArrayLayer = 0, .layerCount = kMaxShadowCascades }
+        };
+        m_shadowArrayView = vk::raii::ImageView(context.GetDevice(), arrayViewInfo);
+        for (uint32_t layer = 0; layer < kMaxShadowCascades; ++layer) {
+            vk::ImageViewCreateInfo layerViewInfo{
+                .image            = m_shadowImage.GetImage(),
+                .viewType         = vk::ImageViewType::e2D,
+                .format           = kFormat,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .baseArrayLayer = layer, .layerCount = 1 }
+            };
+            m_shadowLayerViews[layer] = vk::raii::ImageView(context.GetDevice(), layerViewInfo);
+        }
+
+        // Comparison sampler: returns the fraction of the (bilinear) 2x2 footprint whose stored depth
+        // passes ref <= stored, i.e. is lit. Outside the map = border white = depth 1 = lit.
+        vk::SamplerCreateInfo samplerInfo{
+            .magFilter               = vk::Filter::eLinear,
+            .minFilter               = vk::Filter::eLinear,
+            .mipmapMode              = vk::SamplerMipmapMode::eNearest,
+            .addressModeU            = vk::SamplerAddressMode::eClampToBorder,
+            .addressModeV            = vk::SamplerAddressMode::eClampToBorder,
+            .addressModeW            = vk::SamplerAddressMode::eClampToEdge,
+            .anisotropyEnable        = vk::False,
+            .compareEnable           = vk::True,
+            .compareOp               = vk::CompareOp::eLessOrEqual,
+            .minLod                  = 0.0f,
+            .maxLod                  = 0.0f,
+            .borderColor             = vk::BorderColor::eFloatOpaqueWhite,
+            .unnormalizedCoordinates = vk::False
+        };
+        m_shadowSampler = vk::raii::Sampler(context.GetDevice(), samplerInfo);
+
+    }   // ShadowPass::CreateResources()
+
+    void ShadowPass::ComputeCascades(const Camera& camera, const glm::vec3& lightDir, const ShadowSettings& settings, uint32_t count,
+                                     FrameUniforms& ubo, std::array<glm::mat4, kMaxShadowCascades>& outViewProj) const {
+
+        const float nearZ  = std::max(camera.nearZ, 1e-3f);
+        const float farZ   = glm::clamp(settings.distance, nearZ + 0.1f, camera.farZ);
+        const float lambda = glm::clamp(settings.splitLambda, 0.0f, 1.0f);
+        const float size   = static_cast<float>(kMapSize);
+
+        // Half-diagonal of the view frustum's cross-section per unit of depth.
+        const float tanHalf  = std::tan(glm::radians(camera.fovY) * 0.5f);
+        const float diagRate = tanHalf * std::sqrt(1.0f + camera.aspect * camera.aspect);
+
+        const glm::vec3 forward = camera.Forward();
+        const glm::vec3 L       = glm::normalize(lightDir);   // direction the light travels
+        const glm::vec3 up      = std::abs(L.y) > 0.99f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+        const float     ext     = std::max(settings.casterExtension, 0.0f);
+
+        float sliceNear = nearZ;
+        for (uint32_t c = 0; c < count; ++c) {
+
+            // "Practical" split scheme: blend of logarithmic and uniform splits.
+            const float p         = static_cast<float>(c + 1) / static_cast<float>(count);
+            const float logSplit  = nearZ * std::pow(farZ / nearZ, p);
+            const float uniSplit  = nearZ + (farZ - nearZ) * p;
+            const float sliceFar  = lambda * logSplit + (1.0f - lambda) * uniSplit;
+
+            // Smallest sphere around the slice whose centre is on the view axis: equidistant from the
+            // near and far rings, clamped into the slice. It depends only on the slice, not on where
+            // the camera looks, so its size never changes as the camera turns - with the snapping
+            // below, that is what keeps shadow edges from shimmering.
+            const float a  = sliceNear * diagRate;   // near ring radius
+            const float b  = sliceFar  * diagRate;   // far ring radius
+            float centreZ  = (sliceFar * sliceFar + b * b - sliceNear * sliceNear - a * a) / (2.0f * (sliceFar - sliceNear));
+            centreZ        = glm::clamp(centreZ, sliceNear, sliceFar);
+            float radius   = std::max(std::sqrt((centreZ - sliceNear) * (centreZ - sliceNear) + a * a),
+                                      std::sqrt((sliceFar - centreZ) * (sliceFar - centreZ) + b * b));
+            radius         = std::ceil(radius * 16.0f) / 16.0f;   // quantize against float drift
+
+            const glm::vec3 centre = camera.position + forward * centreZ;
+
+            // Ortho box around the sphere, pulled back toward the light by `ext` so casters between
+            // the light and the sphere (off-screen towers, cliffs) still land in the map.
+            const glm::mat4 lightView = glm::lookAt(centre - L * (radius + ext), centre, up);
+            // orthoRH_ZO, not glm::ortho: the project does not define GLM_FORCE_DEPTH_ZERO_TO_ONE, so
+            // glm::ortho maps depth to -1..1 and Vulkan (which keeps 0..1) would clip away the half
+            // of the box nearest the light - losing the shadows of anything high above its receiver.
+            glm::mat4       lightProj = glm::orthoRH_ZO(-radius, radius, -radius, radius, 0.0f, 2.0f * radius + ext);
+
+            // Texel snapping: shift the projection so the world origin lands exactly on a texel. The
+            // map then only ever moves in whole texels as the camera moves.
+            glm::vec4 origin = lightProj * lightView * glm::vec4(0.0f, 0.0f, 0.0f, 1.0f);
+            origin *= size * 0.5f;
+            const glm::vec2 snapOffset = (glm::round(glm::vec2(origin)) - glm::vec2(origin)) * (2.0f / size);
+            lightProj[3][0] += snapOffset.x;
+            lightProj[3][1] += snapOffset.y;
+
+            outViewProj[c]           = lightProj * lightView;
+            ubo.shadowViewProj[c]    = outViewProj[c];
+            ubo.cascadeSplits[c]     = sliceFar;
+            ubo.cascadeTexelSize[c]  = 2.0f * radius / size;
+
+            sliceNear = sliceFar;
+        }
+
+        ubo.shadowParams = glm::vec4(1.0f / size, settings.depthBias, settings.normalBias, glm::clamp(settings.fadeFraction, 0.0f, 1.0f));
+
+    }   // ShadowPass::ComputeCascades()
+
+    void ShadowPass::Record(vk::CommandBuffer cmd, vk::DescriptorSet frameSet,
                             const std::array<std::vector<DrawBatch>, kMaxShadowCascades>& cascades, uint32_t cascadeCount) const {
 
         if (cascadeCount == 0) { return; }
+        const vk::Image shadowImage = m_shadowImage.GetImage();
+        const auto&     layerViews  = m_shadowLayerViews;
+        const uint32_t  mapSize     = kMapSize;
 
         // Shared by every view: wait for whatever sampled it last (an earlier view this frame, or a
         // previous frame - barriers cover all earlier submissions on the queue too). Its old

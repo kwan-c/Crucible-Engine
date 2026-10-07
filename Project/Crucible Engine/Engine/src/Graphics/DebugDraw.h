@@ -86,7 +86,7 @@ namespace Crucible {
     /*************************************************************************
      \brief  One line-list vertex as the GPU reads it (16 bytes).
      \details position + colour packed RGBA8 (R in the low byte); matches
-              VulkanPipeline::CreateDebugLinePipelines' vertex input and
+              DebugLinePass::Create's vertex input and
               DebugLine.slang.
      *************************************************************************/
     struct DebugVertex {

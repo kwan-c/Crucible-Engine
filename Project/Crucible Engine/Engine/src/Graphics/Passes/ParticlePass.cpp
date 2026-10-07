@@ -5,13 +5,20 @@
 *************************************************************************/
 #include "Graphics/Passes/ParticlePass.h"
 
-#include "Graphics/Vulkan/VulkanPipeline.h"
+#include "Graphics/RenderResources.h"
+#include "Graphics/Camera.h"
+#include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
 #include "Graphics/Vulkan/VulkanShader.h"
+#include "Spatial/Bounds.h"
+#include "Diagnostics/Logger.h"
+
+#include <algorithm>
+#include <cstring>
 
 namespace Crucible {
 
-    static_assert(VulkanPipeline::kMsaaLevels == 3, "ParticlePass keeps one pipeline per MSAA level");
+    static_assert(RenderLayouts::kMsaaLevels == 3, "ParticlePass keeps one pipeline per MSAA level");
 
     void ParticlePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout textureSetLayout,
                               vk::Format colourFormat, vk::Format depthFormat) {
@@ -98,18 +105,171 @@ namespace Crucible {
         // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
         // pipeline and must match the target it draws into. `multisampling` is referenced by
         // pointer above, so changing it here changes what the next pipeline is built with.
-        for (uint32_t i = 0; i < VulkanPipeline::kMsaaLevels; ++i) {
+        for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
             multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
             m_particlePipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
         }
 
     }   // ParticlePass::Create()
 
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  THIS FRAME'S PARTICLES: SUBMIT, SORT PER VIEW, UPLOAD
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void ParticlePass::InitResources(uint32_t framesInFlight, vk::DescriptorSetLayout textureSetLayout, vk::Sampler clampSampler) {
+
+        m_textureSetLayout = textureSetLayout;
+        m_clampSampler     = clampSampler;
+
+        const uint32_t frames = framesInFlight;
+        for (uint32_t i = 0; i < frames; ++i) {
+            m_particleBuffers.emplace_back();
+            m_particleBuffers.back().Create(m_context, vk::DeviceSize{ kInitialParticleCapacity } * sizeof(GpuParticle),
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_particleBuffersMapped.push_back(m_particleBuffers.back().Map());
+            m_particleCapacity.push_back(kInitialParticleCapacity);
+        }
+
+        // One set per texture that particles use (binding 0 = the texture).
+        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = kMaxParticleTextures };
+        vk::DescriptorPoolCreateInfo poolInfo{
+            .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
+            .maxSets = kMaxParticleTextures,
+            .poolSizeCount = 1, .pPoolSizes = &size };
+        m_particleTexturePool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
+
+    }   // ParticlePass::InitResources()
+
+    void ParticlePass::Submit(const ParticleDrawDesc& desc, const GpuParticle* particles, uint32_t count) {
+
+        if (count == 0 || particles == nullptr) { return; }
+        const uint32_t first = static_cast<uint32_t>(m_particleQueue.size());
+        m_particleQueue.insert(m_particleQueue.end(), particles, particles + count);
+        m_particleSubmits.push_back(ParticleSubmit{ desc, first, count });
+
+    }   // ParticlePass::Submit()
+
+    void ParticlePass::Prepare(const Camera& camera, std::vector<ParticleBatch>& out, RenderCullStats& stats) {
+
+        if (m_particleSubmits.empty()) { return; }
+
+        const Frustum   frustum = Frustum::FromViewProjection(camera.GetProjection() * camera.GetView());
+        const glm::vec3 eye     = camera.position;
+
+        // Visible batches, far to near: blending is only right when what is behind is drawn first.
+        m_particleOrder.clear();
+        for (uint32_t i = 0; i < m_particleSubmits.size(); ++i) {
+            const ParticleDrawDesc& desc = m_particleSubmits[i].desc;
+            if (!frustum.Intersects(AABB(desc.boundsMin, desc.boundsMax))) { continue; }
+            const glm::vec3 d = (desc.boundsMin + desc.boundsMax) * 0.5f - eye;
+            m_particleOrder.emplace_back(glm::dot(d, d), i);
+        }
+        std::sort(m_particleOrder.begin(), m_particleOrder.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
+
+        for (const auto& entry : m_particleOrder) {
+
+            const ParticleSubmit& submit = m_particleSubmits[entry.second];
+            if (m_particleScratch.size() + submit.count > kMaxParticlesPerFrame) {
+                if (!m_warnedParticleOverflow) {
+                    CRU_WARN("[Renderer] More than {} particles drawn in one frame; the rest are dropped.", kMaxParticlesPerFrame);
+                    m_warnedParticleOverflow = true;
+                }
+                break;
+            }
+
+            const uint32_t first = static_cast<uint32_t>(m_particleScratch.size());
+            m_particleScratch.insert(m_particleScratch.end(),
+                m_particleQueue.begin() + submit.first, m_particleQueue.begin() + submit.first + submit.count);
+
+            // Additive particles sum to the same result in any order. Alpha-blended ones don't, so
+            // this view gets its own copy sorted back to front.
+            if (!submit.desc.additive && submit.count > 1) {
+                std::sort(m_particleScratch.begin() + first, m_particleScratch.end(), [&](const GpuParticle& a, const GpuParticle& b) {
+                    const glm::vec3 da = glm::vec3(a.posSize) - eye, db = glm::vec3(b.posSize) - eye;
+                    return glm::dot(da, da) > glm::dot(db, db);
+                });
+            }
+
+            const bool textured = submit.desc.texture.IsValid() && submit.desc.texture.id < m_resources.Textures().size();
+            ParticleBatch batch;
+            batch.texture = textured ? submit.desc.texture : m_resources.DefaultWhiteTexture();
+            batch.first   = first;
+            batch.count   = submit.count;
+            batch.push.params = glm::vec4(
+                static_cast<float>(std::max(submit.desc.flipbookCols, 1u)), static_cast<float>(std::max(submit.desc.flipbookRows, 1u)),
+                submit.desc.additive ? 1.0f : 0.0f, textured ? 1.0f : 0.0f);
+            EnsureTextureSet(batch.texture);   // made here, so Record() only has to look it up
+            out.push_back(batch);
+
+            stats.particles += submit.count;
+            ++stats.particleDrawCalls;
+        }
+
+    }   // ParticlePass::Prepare()
+
+    bool ParticlePass::Upload(uint32_t frameIndex) {
+
+        bool grew = false;
+        const size_t count = m_particleScratch.size();
+
+        // Same growth rule and safety argument as UploadInstances().
+        if (count > m_particleCapacity[frameIndex]) {
+            uint32_t capacity = m_particleCapacity[frameIndex];
+            while (capacity < count) { capacity *= 2; }
+            m_particleBuffers[frameIndex].Create(m_context, vk::DeviceSize{ capacity } * sizeof(GpuParticle),
+                vk::BufferUsageFlagBits::eStorageBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_particleBuffersMapped[frameIndex] = m_particleBuffers[frameIndex].Map();
+            m_particleCapacity[frameIndex]      = capacity;
+
+            grew = true;
+        }
+
+        if (count > 0) { memcpy(m_particleBuffersMapped[frameIndex], m_particleScratch.data(), count * sizeof(GpuParticle)); }
+        return grew;
+
+    }   // ParticlePass::Upload()
+
+    vk::DescriptorSet ParticlePass::EnsureTextureSet(TextureHandle texture) {
+
+        if (!texture.IsValid() || texture.id >= m_resources.Textures().size()) { texture = m_resources.DefaultWhiteTexture(); }
+
+        if (auto it = m_particleTextureSets.find(texture.id); it != m_particleTextureSets.end()) { return *it->second; }
+
+        // Pool full (more than kMaxParticleTextures different particle textures): fall back to the
+        // white texture's set, which is created first and so always exists.
+        if (m_particleTextureSets.size() >= kMaxParticleTextures) {
+            return *m_particleTextureSets.at(m_resources.DefaultWhiteTexture().id);
+        }
+
+        vk::DescriptorSetLayout layout = m_textureSetLayout;
+        vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = m_particleTexturePool, .descriptorSetCount = 1, .pSetLayouts = &layout };
+        vk::raii::DescriptorSet set = std::move(m_context.GetDevice().allocateDescriptorSets(allocInfo).front());
+
+        // Clamped sampling (the viewport sampler), so a flipbook frame never bleeds in from the
+        // opposite edge of the atlas.
+        vk::DescriptorImageInfo imageInfo{
+            .sampler = m_clampSampler, .imageView = *m_resources.Textures()[texture.id].view,
+            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+        vk::WriteDescriptorSet write{
+            .dstSet = *set, .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = 1,
+            .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo };
+        m_context.GetDevice().updateDescriptorSets(write, {});
+
+        return *m_particleTextureSets.emplace(texture.id, std::move(set)).first->second;
+
+    }   // ParticlePass::EnsureTextureSet()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  DRAWING
+    // ------------------------------------------------------------------------------------------------------------- //
+
     void ParticlePass::Record(vk::CommandBuffer cmd, uint32_t samples, vk::DescriptorSet frameSet, const std::vector<ParticleBatch>& batches) const {
 
         if (batches.empty()) { return; }
 
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_particlePipelines[VulkanPipeline::MsaaIndex(samples)]);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_particlePipelines[RenderLayouts::MsaaIndex(samples)]);
         // Set 0 again: this layout's push-constant range differs from the previous pipeline's, so
         // the earlier binding doesn't carry over.
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_particleLayout, 0, frameSet, nullptr);
@@ -117,7 +277,11 @@ namespace Crucible {
         TextureHandle bound;
         for (const ParticleBatch& batch : batches) {
             if (!(batch.texture == bound)) {
-                cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_particleLayout, 1, m_textureSet(batch.texture), nullptr);
+                // Prepare() made this texture's set; the white texture's is the fallback when the pool is full.
+                auto it = m_particleTextureSets.find(batch.texture.id);
+                if (it == m_particleTextureSets.end()) { it = m_particleTextureSets.find(m_resources.DefaultWhiteTexture().id); }
+                if (it == m_particleTextureSets.end()) { continue; }
+                cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_particleLayout, 1, *it->second, nullptr);
                 bound = batch.texture;
             }
             cmd.pushConstants<ParticlePush>(*m_particleLayout,

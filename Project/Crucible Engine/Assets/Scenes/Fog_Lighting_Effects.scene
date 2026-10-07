@@ -74,6 +74,83 @@
             }
         },
         {
+            "id": "16ADA8D491B5C001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -4.484161376953125,
+                        "y": 0.5,
+                        "z": -1.6178733110427856
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 5.0,
+                    "rate": 12.0,
+                    "burstCount": 0,
+                    "maxParticles": 200,
+                    "shape": "Sphere",
+                    "shapeRadius": 0.15000000596046448,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 15.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 2.5,
+                    "lifetimeMax": 4.0,
+                    "speedMin": 0.5,
+                    "speedMax": 1.0,
+                    "sizeMin": 0.5,
+                    "sizeMax": 0.800000011920929,
+                    "endSizeScale": 3.0,
+                    "gravityScale": -0.029999999329447746,
+                    "drag": 0.30000001192092896,
+                    "spinDeg": 30.0,
+                    "stretch": 0.0,
+                    "colourStart": {
+                        "x": 0.3499999940395355,
+                        "y": 0.3499999940395355,
+                        "z": 0.36000001430511475
+                    },
+                    "colourEnd": {
+                        "x": 0.6000000238418579,
+                        "y": 0.6000000238418579,
+                        "z": 0.6200000047683716
+                    },
+                    "alphaStart": 0.3499999940395355,
+                    "alphaEnd": 0.0,
+                    "brightness": 1.0,
+                    "blend": "Alpha",
+                    "textureAsset": 3715637708821250059,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": false,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 8.0,
+                    "lightRange": 6.0,
+                    "seed": 1
+                }
+            }
+        },
+        {
             "id": "1E4D08D31F60800B",
             "components": {
                 "Transform": {

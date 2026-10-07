@@ -45,7 +45,7 @@
  
 #include "Vulkan/VulkanContext.h"
 #include "Vulkan/VulkanSwapchain.h"
-#include "Vulkan/VulkanPipeline.h"
+#include "Vulkan/RenderLayouts.h"
 #include "Vulkan/VulkanFrameManager.h"
 #include "Vulkan/VulkanResource.h"
 #include "Vulkan/VulkanUploadQueue.h"
@@ -60,8 +60,14 @@
 #include "Passes/OutlinePass.h"
 #include "Passes/ParticlePass.h"
 #include "Passes/DebugLinePass.h"
+#include "Passes/ScenePass.h"
 #include "DrawList.h"
 #include "RenderResources.h"
+#include "EnvironmentMaps.h"
+#include "GpuProfiler.h"
+#include "SceneLights.h"
+#include "Viewports.h"
+#include "RenderScene.h"
 #include "DebugDraw.h"
 #include "Spatial/SpatialIndex.h"
 
@@ -83,68 +89,6 @@ namespace Crucible {
         submission - see the section banners below and in the .cpp.
      *************************************************************************/
     class Renderer {
-
-        // GPU-side cubemap (skybox): a 6-layer cube-compatible image, its cube view, and the one
-        // descriptor set (skybox pipeline's set = 1) it's bound into - allocated once at creation,
-        // same as a material's, since a cubemap's contents never change after upload.
-        struct GpuCubemap {
-            VulkanImage              image;
-            vk::raii::ImageView      view = nullptr;
-            vk::raii::DescriptorSet  descriptorSet = nullptr;
-            uint32_t                 faceSize = 0;
-            std::string              debugName;
-            // The same sky prepared as a light source (BuildEnvironmentLighting): a small cube
-            // map whose every mip level is blurrier than the last, for reflections by roughness,
-            // and nine spherical-harmonic coefficients for diffuse light.
-            VulkanImage              envImage;
-            vk::raii::ImageView      envView = nullptr;
-            uint32_t                 envMipCount = 1;
-            std::array<glm::vec4, 9> sh{};
-        };
-
-        // An offscreen render target: its own color+depth image, camera, and per-frame-in-flight
-        // uniform buffer/descriptor set, so several can be drawn per frame with different cameras
-        // (Scene view vs. Game view) without stepping on each other's data.
-        // Everything one view draws this frame, built by PrepareView() before recording starts
-        // (so the instance buffer's final size is known before any command references it).
-        struct ViewDrawList {
-            std::vector<DrawBatch>                                main;
-            std::array<std::vector<DrawBatch>, kMaxShadowCascades> shadow;
-            uint32_t                                              cascadeCount = 0;   // 0 = no shadow pass
-            std::vector<DrawBatch>                                outline;            // selected object (mask pass)
-            std::vector<ParticleBatch>                            particles;          // far to near
-            glm::vec4                                             projInfo{ 1.0f };   // proj[0][0], [1][1], [2][2], [3][2] (ambient occlusion)
-            void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); }
-        };
-
-        struct Viewport {
-            vk::Extent2D        extent{};
-
-            VulkanImage         colorImage;
-            vk::raii::ImageView colorView = nullptr;
-            VulkanImage         depthImage;
-            vk::raii::ImageView depthView = nullptr;
-
-            Camera              camera;   // independent from the main m_camera and from other viewports
-
-            std::vector<VulkanBuffer>            uniformBuffers;
-            std::vector<void*>                   uniformBuffersMapped;
-            std::vector<vk::raii::DescriptorSet> descriptorSets;
-
-            bool                debugDraw = false;   // draw DebugDraw lines into this view (SetViewportDebugDraw)
-            bool                outline = false;     // draw the selection outline (SetViewportOutline)
-            bool                active = true;       // false: not culled, not rendered (SetViewportActive)
-            RenderCullStats     cullStats;           // last frame's culling result for this view
-
-            // Selection outline: R8 mask of the selected object (same size as colorImage), and
-            // the composite pass's descriptor set pointing at it.
-            VulkanImage             maskImage;
-            vk::raii::ImageView     maskView = nullptr;
-            vk::raii::DescriptorSet outlineSet = nullptr;
-
-            ViewDrawList        draws;               // this frame's batches (PrepareView)
-            PostTargets         post;                // HDR scene image + bloom chain, same size as colorImage
-        };
 
     public:
         /*********************************************************************
@@ -469,7 +413,7 @@ namespace Crucible {
                  startup. Used whenever no valid skybox is set.
          \return Handle to the built-in sky cubemap.
          *********************************************************************/
-        CubemapHandle GetDefaultSkybox() const { return m_defaultSkybox; }
+        CubemapHandle GetDefaultSkybox() const { return m_environmentMaps.DefaultSkybox(); }
 
         /*********************************************************************
          \brief  The built-in primitive meshes (Cube, Capsule, Cone,
@@ -491,7 +435,7 @@ namespace Crucible {
          \return A handle to the new viewport.
 
          \details
-            The Engine/Game build never calls these, so m_viewports stays
+            The Engine/Game build never calls these, so the viewport list stays
             empty and RecordCommandBuffer takes the direct-to-window path
             with zero extra branching cost beyond a single empty-container
             check.
@@ -615,7 +559,7 @@ namespace Crucible {
                 just being displayed, not filtered differently), so there
                 is exactly one to hand to ImGui_ImplVulkan_AddTexture().
          *********************************************************************/
-        ENGINE_API vk::Sampler    GetViewportSampler() const { return *m_viewportSampler; }
+        ENGINE_API vk::Sampler    GetViewportSampler() const { return *m_viewTargets.LinearSampler(); }
 
         /*********************************************************************
          \brief  Accessor for a viewport's current color image view.
@@ -637,7 +581,7 @@ namespace Crucible {
             step). The queue is consumed and cleared at the end of
             Update(). Pass GetDefaultMaterial() (or let the caller's own
             fallback logic do so - see RenderExtractSystem) rather than an
-            Invalid MaterialHandle; DrawRenderQueue always binds a
+            Invalid MaterialHandle; the scene pass always binds a
             material descriptor set per draw.
          *********************************************************************/
         ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model,
@@ -714,7 +658,7 @@ namespace Crucible {
         /*********************************************************************
          \brief  The spatial index behind culling/picking (read-only).
          *********************************************************************/
-        const SpatialIndex& GetSpatialIndex() const { return m_spatial; }
+        const SpatialIndex& GetSpatialIndex() const { return m_scene.Spatial(); }
 
         /*********************************************************************
          \brief  Registers a callback invoked while the frame's render
@@ -744,16 +688,16 @@ namespace Crucible {
 
         VulkanContext               m_context;
         VulkanSwapchain             m_swapchain;
-        VulkanPipeline              m_pipeline;
-        // Render passes (Graphics/Passes/). Declared after m_pipeline, which they hold a reference to.
+        RenderLayouts              m_layouts;
+        // Render passes (Graphics/Passes/). Declared after m_layouts, which they hold a reference to.
         BloomPass                   m_bloomPass;
         TonemapPass                 m_tonemapPass;
         // These draw meshes, so they hold a reference to m_resources (declared below; only used once recording starts).
         AmbientOcclusionPass        m_aoPass{ m_resources };
         ShadowPass                  m_shadowPass{ m_resources };
         OutlinePass                 m_outlinePass{ m_resources };
-        // Particle textures get their descriptor sets from the Renderer, which owns them.
-        ParticlePass                m_particlePass{ [this](TextureHandle texture) { return GetParticleTextureSet(texture); } };
+        ParticlePass                m_particlePass{ m_context, m_resources };
+        ScenePass                   m_scenePass{ m_resources, m_particlePass };
         DebugLinePass               m_debugLinePass;
         VulkanFrameManager          m_frameManager;
 
@@ -767,147 +711,38 @@ namespace Crucible {
         Camera                      m_camera;            // main (game) camera - see SetMainCamera
         bool                        m_hasMainCamera = false;
         RenderResources             m_resources{ m_context, m_uploads };   // meshes, textures, materials
-        std::vector<RenderItem>     m_renderQueue;      // immediate Submit() items, this frame only
-
-        // Persistent render proxies + the spatial index they live in (see CreateRenderProxy).
-        struct RenderProxy {
-            MeshHandle           mesh;
-            MaterialHandle       material;
-            glm::mat4            model{ 1.0f };
-            glm::vec4            params{ 1.0f, 0.0f, 0.0f, 0.0f };   // InstanceData::params
-            std::uint64_t        userData = 0;
-            SpatialIndex::Handle spatial = SpatialIndex::kInvalid;   // kInvalid = not in the index (hidden / no bounds yet)
-            bool                 visible = false;
-            bool                 alive = false;
-            bool                 awaitingBounds = false;              // mesh still uploading (CreateMeshAsync)
-        };
-        std::vector<RenderProxy>    m_proxies;
-        std::vector<uint32_t>       m_freeProxies;
-        std::vector<uint32_t>       m_proxiesAwaitingBounds;
-        SpatialIndex                m_spatial{ 0.25f };
-        std::vector<RenderItem>     m_visibleItems;     // scratch: one view's culled + sorted draw list
-        std::vector<RenderItem>     m_casterItems;      // scratch: one shadow cascade's casters
+        RenderScene                 m_scene{ m_context, m_resources };     // what there is to draw: proxies, culling, batches, instances
         ViewDrawList                m_windowDraws;      // the window pass's batches (no viewports)
         RenderCullStats             m_windowCullStats;
         std::vector<MeshHandle>     m_primitiveMeshes;
         void CreatePrimitiveMeshes();
 
-        // Cubemaps (skyboxes). Pool BEFORE the cubemaps whose descriptor sets it allocates -
-        // same destruction-order rule as the material pools in RenderResources.
-        static constexpr uint32_t                   kMaxCubemaps = 64;
-        vk::raii::DescriptorPool                    m_cubemapDescriptorPool = nullptr;
-        vk::raii::Sampler                           m_skyboxSampler = nullptr;
-        vk::raii::Sampler                           m_envSampler = nullptr;     // environment maps: blends between mip levels
-        std::vector<GpuCubemap>                     m_cubemaps;
-        std::unordered_map<std::string, uint32_t>   m_cubemapCacheByKey;   // joined paths / path+size -> CubemapHandle::id
-        CubemapHandle                               m_defaultSkybox;
+        EnvironmentMaps                             m_environmentMaps{ m_context, m_uploads };   // skyboxes and their lighting data
 
         // Lights & environment (per frame, like m_renderQueue): filled by SubmitLight()/
         // SetEnvironment(), consumed by DrawFrame(), reset at the end of Update().
-        std::vector<GpuLight>                       m_lightQueue;
-        bool                                        m_warnedTooManyLights = false;
-        uint32_t                                    m_frameLightCount = 0;   // lights actually uploaded this frame (after fallback/clamp)
         EnvironmentSettings                         m_defaultEnvironment;
         EnvironmentSettings                         m_environment;
 
         std::vector<VulkanBuffer>                   m_uniformBuffers;
         std::vector<void*>                          m_uniformBuffersMapped;
 
-        // One light storage buffer per frame in flight (kMaxLights GpuLights each), persistently
-        // mapped like the uniform buffers. Shared by the window's set 0 AND every viewport's set
-        // 0 for that frame index - lights are world state, not per-camera.
-        std::vector<VulkanBuffer>                   m_lightBuffers;
-        std::vector<void*>                          m_lightBuffersMapped;
+        SceneLights                                 m_lights;   // this frame's lights, their buffer, and each view's cluster grid
 
-        // Debug lines: one host-visible vertex buffer per frame in flight, grown on demand (see
-        // UpdateDebugBuffer). Depth-tested vertices first, then the on-top ones.
-        static constexpr uint32_t                   kMaxDebugVertices = 2'000'000;
-        std::vector<VulkanBuffer>                   m_debugBuffers;
-        std::vector<void*>                          m_debugBuffersMapped;
-        std::vector<uint32_t>                       m_debugBufferCapacity;   // in vertices
-        std::vector<DebugVertex>                    m_debugTested;           // scratch, reused every frame
-        std::vector<DebugVertex>                    m_debugOnTop;
-        uint32_t                                    m_debugTestedCount = 0;
-        uint32_t                                    m_debugOnTopCount = 0;
         bool                                        m_debugInWindow = false;
-        bool                                        m_warnedDebugOverflow = false;
 
-        // Instances: every object drawn this frame by every pass of every view, one model matrix
-        // each (set 0, binding 2). Built on the CPU by PrepareView(), copied in one go by
-        // UploadInstances() into this frame's host-visible buffer, which grows (power of two) as
-        // needed. Shared by the window's and every viewport's set 0 for that frame index.
-        std::vector<InstanceData>                   m_instanceScratch;
-        std::vector<VulkanBuffer>                   m_instanceBuffers;
-        std::vector<void*>                          m_instanceBuffersMapped;
-        std::vector<uint32_t>                       m_instanceCapacity;     // in instances
-        static constexpr uint32_t                   kInitialInstanceCapacity = 16384;
-
-        // Cascaded sun shadows: one D32 array image (a layer per cascade) shared by every view -
-        // each view renders its own cascades into it right before its main pass. It rests in
-        // SHADER_READ_ONLY whenever it isn't being rendered, so it is always valid to sample.
-        static constexpr vk::Format                 kShadowFormat = vk::Format::eD32Sfloat;
-        static constexpr uint32_t                   kShadowMapSize = 2048;
+        // Cascaded sun shadows (the map itself is ShadowPass's).
         ShadowSettings                              m_shadowSettings;
-        VulkanImage                                 m_shadowImage;
-        vk::raii::ImageView                         m_shadowArrayView = nullptr;
-        std::array<vk::raii::ImageView, kMaxShadowCascades> m_shadowLayerViews{ nullptr, nullptr, nullptr, nullptr };
-        vk::raii::Sampler                           m_shadowSampler = nullptr;
-        int32_t                                     m_shadowLightIndex = -1;          // into this frame's light buffer
-        glm::vec3                                   m_shadowLightDir{ 0.0f, -1.0f, 0.0f };
 
         // Selection outline (SetOutlinedObject / SetViewportOutline).
-        std::uint64_t                               m_outlineUserData = 0;
-        uint32_t                                    m_outlineProxy = 0xFFFFFFFFu;     // cached lookup of m_outlineUserData
         OutlineCompositePush                        m_outlineStyle;
 
-        // Clustered lights. m_frameLights is this frame's light buffer as uploaded (directional
-        // lights first). Every prepared view appends its kClustersPerView cells and their light
-        // indices to the two scratch arrays, which UploadClusters() copies into this frame's
-        // buffers (set 0, bindings 6 and 7 - shared by every set like the light buffer).
-        std::vector<GpuLight>                       m_frameLights;
-        uint32_t                                    m_frameDirLightCount = 0;
-        uint32_t                                    m_preparedViews = 0;      // views prepared so far this frame
-        std::vector<ClusterCell>                    m_clusterGridScratch;
-        std::vector<uint32_t>                       m_clusterIndexScratch;
-        std::vector<uint32_t>                       m_clusterCounts;          // scratch: per cell, one view
-        std::vector<std::array<uint16_t, 6>>        m_clusterRanges;          // scratch: per light, cell range
-        std::vector<uint32_t>                       m_clusterRangeLights;     // scratch: which light each range is
-        std::vector<VulkanBuffer>                   m_clusterGridBuffers;
-        std::vector<void*>                          m_clusterGridMapped;
-        std::vector<VulkanBuffer>                   m_clusterIndexBuffers;
-        std::vector<void*>                          m_clusterIndexMapped;
-        static constexpr uint32_t                   kMaxClusterViews = 9;          // kMaxViewports + the window
-        static constexpr uint32_t                   kMaxClusterIndices = 1u << 19; // light references per frame, all views
-
-        // Particles (SubmitParticles): this frame's submitted batches, the per-view sorted copy
-        // that is uploaded (set 0, binding 5; grows like the instance buffer), and one small
-        // descriptor set per texture used by particles. Pool BEFORE the sets it allocates.
-        struct ParticleSubmit { ParticleDrawDesc desc; uint32_t first = 0; uint32_t count = 0; };
-        std::vector<GpuParticle>                    m_particleQueue;
-        std::vector<ParticleSubmit>                 m_particleSubmits;
-        std::vector<GpuParticle>                    m_particleScratch;
-        std::vector<std::pair<float, uint32_t>>     m_particleOrder;        // scratch: (distance, submit index)
-        std::vector<VulkanBuffer>                   m_particleBuffers;
-        std::vector<void*>                          m_particleBuffersMapped;
-        std::vector<uint32_t>                       m_particleCapacity;     // in particles
-        static constexpr uint32_t                   kInitialParticleCapacity = 16384;
-        static constexpr uint32_t                   kMaxParticlesPerFrame = 1u << 20;
-        static constexpr uint32_t                   kMaxParticleTextures = 128;
-        bool                                        m_warnedParticleOverflow = false;
-        vk::raii::DescriptorPool                    m_particleTexturePool = nullptr;
-        std::unordered_map<uint32_t, vk::raii::DescriptorSet> m_particleTextureSets;   // TextureHandle::id -> set
-
         // Post-processing (HDR scene image -> bloom -> tonemap). Pool BEFORE m_windowPost and
-        // m_viewports, whose PostTargets hold sets allocated from it.
+        // m_viewportSet, whose PostTargets hold sets allocated from it.
         PostSettings                                m_postSettings;
-        // Timings. One block of timestamp queries per frame in flight; m_gpuMarks remembers which
-        // section each timestamp of that frame started.
-        static constexpr uint32_t                   kMaxGpuMarks = 128;
+        // Timings: what the overlay shows, and the GPU half's measuring.
         RenderFrameStats                            m_frameStats;
-        vk::raii::QueryPool                         m_timestampPool = nullptr;
-        std::vector<std::vector<GpuSection>>        m_gpuMarks;
-        float                                       m_timestampPeriodNs = 0.0f;
-        uint32_t                                    m_markFrame = 0;        // frame index being recorded
+        GpuProfiler                                 m_profiler;
         double                                      m_lastFrameStart = 0.0;  // seconds, steady clock
 
         // Load test (see StressSettings).
@@ -918,25 +753,17 @@ namespace Crucible {
         bool                                        m_stressWasMoving = false;
 
         uint32_t                                    m_msaaSamples = 1;      // in use now (PostSettings::msaaSamples, clamped to the GPU)
-        uint32_t                                    m_drawSamples = 1;      // samples of the target DrawRenderQueue is drawing into
         float                                       m_time = 0.0f;          // seconds since Init (FrameUniforms::time.x)
         float                                       m_deltaTime = 0.0f;     // last Update()'s dt (FrameUniforms::time.y)
-        vk::raii::DescriptorPool                    m_postDescriptorPool = nullptr;
+        ViewTargetAllocator                         m_viewTargets{ m_context };   // samplers + the pool PostTargets sets come from (so: before every PostTargets)
         PostTargets                                 m_windowPost;           // the window's own targets (standalone build)
 
         vk::raii::DescriptorPool                    m_descriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet>        m_descriptorSets;
 
-        // Viewports (see ViewportHandle). Empty in a standalone Engine/Game build. The pools are
-        // declared BEFORE m_viewports so they are destroyed after the viewports' descriptor sets
-        // (same destruction-order rule as the material pools above).
-        static constexpr uint32_t                  kMaxViewports = 8;
-        vk::raii::DescriptorPool                   m_viewportDescriptorPool = nullptr;
-        vk::raii::DescriptorPool                   m_outlineDescriptorPool = nullptr;
-        std::unordered_map<uint32_t, Viewport>     m_viewports;
-        uint32_t                                   m_nextViewportId = 0;
-        vk::raii::Sampler                          m_viewportSampler = nullptr;
-        vk::raii::Sampler                          m_pointSampler = nullptr;    // no filtering: for reading depth images
+        // Viewports (see ViewportHandle). Empty in a standalone Engine/Game build. Declared after
+        // m_viewTargets, whose pool their PostTargets sets come from.
+        ViewportSet                                m_viewportSet{ m_context, m_viewTargets };
 
 
         // Vulkan helpers
@@ -945,45 +772,19 @@ namespace Crucible {
         void CreateDescriptorPool();
         void CreateDescriptorSets();
 
-        // Records the bind-and-draw loop over a view's main batches against whatever color/depth
-        // attachments are currently bound (the swapchain, or a Viewport). Shared by the direct-
-        // to-window path and the offscreen-viewport path so they can never drift apart.
-        void DrawRenderQueue(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet cameraSet, const ViewDrawList& draws);
-
-        // ---- Particles ----
-        void CreateParticleResources();
-        // Culls this frame's submitted batches against one view, orders them far to near (and
-        // sorts alpha-blended particles back to front), and appends them to m_particleScratch.
-        void PrepareParticles(const Camera& camera, ViewDrawList& out, RenderCullStats& stats);
-        // Copies m_particleScratch into this frame's particle buffer (grows it if needed).
+        // ---- Particles (ParticlePass holds and sorts them) ----
+        // Uploads this frame's particles; re-points set 0, binding 5 if the buffer was replaced.
         void UploadParticles(uint32_t frameIndex);
-        // The descriptor set binding `texture` for the particle pipeline (created on first use).
-        vk::DescriptorSet GetParticleTextureSet(TextureHandle texture);
-
-        // ---- Clustered lights ----
-        void CreateClusterBuffers();
-        // Bins this frame's point/spot lights into one view's cluster grid (appended to the
-        // scratch arrays) and writes the grid's parameters into `ubo`. Returns how many lights
-        // reach the view.
-        uint32_t BuildLightClusters(const Camera& camera, vk::Extent2D extent, FrameUniforms& ubo);
-        void UploadClusters(uint32_t frameIndex);
 
         // ---- Post-processing ----
-        void CreatePostDescriptorPool();
-        // (Re)creates a view's HDR image and bloom chain at the given size and points its
-        // descriptor sets at them. The caller makes sure the GPU is idle when replacing.
-        void CreatePostTargets(PostTargets& targets, uint32_t width, uint32_t height);
-        // The scene pass: meshes, sky and particles into the view's HDR image (clearing colour
-        // and depth), then the bloom chain. Leaves the HDR image and bloom ready to be sampled,
+        // The scene pass (ScenePass: meshes, sky and particles into the view's HDR image, clearing
+        // colour and depth), then the bloom chain. Leaves the HDR image and bloom ready to be sampled,
         // and depth holding the scene's depth for the debug lines that follow.
         void DrawSceneHdr(FrameContext& fc, PostTargets& targets, vk::Image depthImage, vk::ImageView depthView,
                           vk::Extent2D extent, vk::DescriptorSet frameSet, const ViewDrawList& draws);
         /// Points a view's set 0 at the current environment map (binding 8) and at that view's
         /// ambient occlusion image (binding 9). Called every frame for the frame's own set.
         void WriteViewTextures(vk::DescriptorSet frameSet, const PostTargets& targets);
-        /// Builds a cubemap's envImage and sh from its faces (called by UploadCubemapFaces).
-        void BuildEnvironmentLighting(GpuCubemap& cube, const void* faceData, uint32_t faceSize, vk::Format format);
-        const GpuCubemap& CurrentSkyCubemap() const;
 
         // ---- Frame preparation (before recording) ----
         // Culls and batches everything one view draws this frame (main pass, shadow cascades,
@@ -991,74 +792,23 @@ namespace Crucible {
         // view's FrameUniforms to `uniformDst`.
         void PrepareView(Camera& camera, vk::Extent2D extent, RenderCullStats& stats, ViewDrawList& out,
                          bool outline, void* uniformDst);
-        // Appends `items` (already sorted) as batches: consecutive items with the same mesh (and
-        // material, if byMaterial) become one instanced draw. Returns the number of instances.
-        uint32_t AppendBatches(const std::vector<RenderItem>& items, std::vector<DrawBatch>& batches, bool byMaterial);
-        // Copies m_instanceScratch into this frame's instance buffer, growing it (and repointing
-        // binding 2 of this frame's sets) if needed.
+        // Uploads this frame's instances; re-points set 0, binding 2 if the buffer was replaced.
         void UploadInstances(uint32_t frameIndex);
-        void CreateInstanceBuffers();
         // Points set 0's shared bindings (1 lights, 2 instances, 3/4 shadow map) of each per-frame
         // set at this frame's resources.
         void WriteSharedFrameDescriptors(std::vector<vk::raii::DescriptorSet>& sets);
 
         // ---- Shadows ----
+        // Has ShadowPass create the shadow map, then moves it to its resting (shader-read) layout.
         void CreateShadowResources();
-        // Fits cascade `count` cascades to `camera` (stable: bounding spheres + texel snapping)
-        // and writes their matrices/splits into `ubo`. Returns each cascade's view-projection.
-        void ComputeShadowCascades(const Camera& camera, uint32_t count, FrameUniforms& ubo,
-                                   std::array<glm::mat4, kMaxShadowCascades>& outViewProj) const;
-
-        // ---- Selection outline ----
-        // The selected proxy's id, or 0xFFFFFFFF (re-finds it if the cached id went stale).
-        uint32_t ResolveOutlineProxy();
-        void WriteOutlineDescriptor(Viewport& vp);
-
-        // ---- Culling / proxies ----
-        // Fills m_visibleItems with what `camera` can see (proxies via the spatial index + immediate
-        // items brute force), sorted by (material, mesh), and records the counts in `stats`.
-        void BuildVisibleItems(const Camera& camera, RenderCullStats& stats);
-        // Re-derives a proxy's world box and (re)inserts/updates/removes it in the spatial index.
-        void RefreshProxyBounds(uint32_t proxyId);
-        // Draws every proxy's box (DebugCategory::Bounds): settled = blue, moving = orange.
-        void DrawProxyBoundsDebug();
 
         // ---- Debug lines (DebugDraw.h) ----
-        // Copies this frame's DebugDraw lines into m_debugBuffers[frameIndex] (growing it if
-        // needed) and records the depth-tested / on-top vertex counts.
-        void UpdateDebugBuffer(uint32_t frameIndex);
 
-        void CreateViewportSampler();
-        void CreateViewportDescriptorPool();
-        void CreateViewportImages(Viewport& vp, uint32_t width, uint32_t height);
-        void CreateViewportUniformsAndDescriptors(Viewport& vp);
-        Viewport& GetViewportOrThrow(ViewportHandle handle);
-        const Viewport& GetViewportOrThrow(ViewportHandle handle) const;
 
         // ---- Lights/environment/skybox helpers ----
-        void CreateLightBuffers();
-        // Copies this frame's m_lightQueue (or the fallback sun, if it's empty) into
-        // m_lightBuffers[frameIndex] and records how many were written in m_frameLightCount.
-        void UpdateLightBuffer(uint32_t frameIndex);
         // Everything FrameUniforms holds besides view/proj/cameraPos: ambient, exposure, skybox
         // intensity, light count. Shared by the window and viewport paths so they can't drift.
         void FillEnvironmentUniforms(FrameUniforms& ubo) const;
-        void CreateSkyboxSampler();
-        void CreateCubemapDescriptorPool();
-        void CreateDefaultSkybox();
-        // Shared core of every cubemap-creation path: uploads six tightly-packed faces (+X, -X,
-        // +Y, -Y, +Z, -Z, each faceSize^2 texels of bytesPerTexel) to a new cube image, creates
-        // its cube view and descriptor set, and returns the new handle.
-        CubemapHandle UploadCubemapFaces(const void* faceData, uint32_t faceSize, vk::Format format,
-                                         uint32_t bytesPerTexel, const std::string& debugName);
-        // Draws the current environment's sky into the currently-open rendering pass. Must run
-        // AFTER the opaque draws (it relies on their depth to skip covered pixels).
-        void DrawSkybox(vk::CommandBuffer cmd, vk::DescriptorSet frameSet);
-        void CreateTimestampPool();
-        /// Writes a GPU timestamp: everything recorded from here to the next mark counts as `section`.
-        void MarkGpu(vk::CommandBuffer cmd, GpuSection section);
-        /// Reads back the timestamps of the frame that last used this frame index.
-        void ReadGpuTimings(uint32_t frameIndex);
         /// Builds, moves or removes the load-test objects to match m_stressSettings.
         void UpdateStressTest();
         uint32_t SupportedMsaaSamples(uint32_t wanted) const;   ///< Highest of 4 / 2 / 1 that is <= wanted and the GPU can render to.

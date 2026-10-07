@@ -5,7 +5,7 @@
 *************************************************************************/
 #include "Graphics/RenderResources.h"
 
-#include "Graphics/Vulkan/VulkanPipeline.h"   // Vertex
+#include "Graphics/Vulkan/RenderLayouts.h"   // Vertex
 
 #include <stb_image.h>   // the implementation is compiled in RenderSystem.cpp
 
@@ -329,7 +329,7 @@ namespace Crucible {
 
     void RenderResources::WriteMaterialDescriptorSet(vk::DescriptorSet set, const MaterialData& data) {
 
-        // Binding order must match VulkanPipeline::CreateMaterialDescriptorSetLayout AND the
+        // Binding order must match RenderLayouts::CreateMaterialDescriptorSetLayout AND the
         // shader's [[vk::binding(n,1)]] declarations exactly: 0=albedo, 1=normal,
         // 2=metallicRoughness, 3=emissive, 4=occlusion.
         auto resolve = [&](TextureHandle h, bool isNormalSlot) -> vk::ImageView {

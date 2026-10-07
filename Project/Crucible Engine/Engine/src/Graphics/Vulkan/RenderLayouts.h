@@ -1,21 +1,20 @@
 #pragma once
 /*************************************************************************
-* \file:         VulkanPipeline.h
+* \file:         RenderLayouts.h
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          30 September 2026
 * \version       1.0
 * \brief
-*                The engine's one graphics pipeline, its descriptor set
-*                layouts, and the shared Vertex layout.
+*                The descriptor set layouts the render passes share, the
+*                Vertex layout, and the image formats the passes agree on.
 *
 * \details
-*                Declares Vertex (the vertex layout shared by every mesh
-*                source - procedural primitives and .glb imports alike)
-*                and VulkanPipeline, which owns the pipeline layout,
-*                descriptor set layouts (camera UBO at set 0, material
-*                textures at set 1), and the single graphics pipeline
-*                itself.
+*                Was VulkanPipeline. Every pipeline has since moved into the
+*                pass that uses it (Graphics/Passes/), so what is left is
+*                what more than one pass needs: set 0 (per-frame data), the
+*                material set, the one-texture and two-texture sets, the
+*                Vertex struct every mesh uses, and the format constants.
 *
 * \history
 *    -v1.0       initial implementation
@@ -88,10 +87,10 @@ namespace Crucible {
 
     /*************************************************************************
      \brief
-        Owns the engine's one graphics pipeline: descriptor set layouts,
-        pipeline layout, and the pipeline object itself.
+        Owns the descriptor set layouts that more than one render pass (or
+        the Renderer itself) builds on. Each pass owns its own pipelines.
      *************************************************************************/
-    class VulkanPipeline {
+    class RenderLayouts {
 
     public:
         /*********************************************************************
@@ -127,24 +126,6 @@ namespace Crucible {
          *********************************************************************/
         void CreateSkyboxDescriptorSetLayout(VulkanContext& context);
 
-        /*********************************************************************
-         \brief
-            Creates the skybox pipeline (Assets/Shaders/Skybox.spv): no
-            vertex input, no culling, depth test LESS_OR_EQUAL with depth
-            writes off, drawn after the opaque meshes.
-
-         \param[in] context   The VulkanContext to create the pipeline
-                               through.
-         \param[in] swapchain Supplies the color/depth attachment formats
-                               the pipeline must match.
-
-         \note
-            Requires CreateDescriptorSetLayout() and
-            CreateSkyboxDescriptorSetLayout() to have run first (its
-            layout is set 0 = the per-frame set, set 1 = the cubemap).
-         *********************************************************************/
-        void CreateSkyboxPipeline(VulkanContext& context, VulkanSwapchain& swapchain);
-
         /// Format of the per-viewport selection mask (an attachment of the mask pipeline).
         static constexpr vk::Format kOutlineMaskFormat = vk::Format::eR8Unorm;
         /// Ambient occlusion: its half-size depth image and the one-channel result.
@@ -166,40 +147,10 @@ namespace Crucible {
          *********************************************************************/
         void CreateTwoTextureSetLayout(VulkanContext& context);
 
-        /*********************************************************************
-         \brief  Creates the graphics pipeline itself: shader stages,
-                 fixed-function state, pipeline layout, and dynamic
-                 rendering attachment formats.
-         \param[in] context   The VulkanContext to create the pipeline
-                               through.
-         \param[in] swapchain Supplies the color/depth attachment formats
-                               the pipeline must match.
-         *********************************************************************/
-        void CreatePipeline(VulkanContext& context, VulkanSwapchain& swapchain);
-
-        /*********************************************************************
-         \brief  Currently a no-op (vk::raii members clean themselves up);
-                 kept as an explicit hook for symmetry with other Vulkan
-                 owner types.
-         *********************************************************************/
-        void CleanUp();
-
-        /*********************************************************************
-         \brief  Accessor.
-         \return Const reference to the owned pipeline.
-         *********************************************************************/
         /// The scene pipelines (meshes, sky, particles) exist once per MSAA level: pass the
         /// number of samples per pixel of the target being drawn into (1, 2 or 4).
         static constexpr uint32_t kMsaaLevels = 3;
         static uint32_t MsaaIndex(uint32_t samples) { return samples >= 4 ? 2u : samples >= 2 ? 1u : 0u; }
-
-        const vk::raii::Pipeline&               GetPipeline(uint32_t samples = 1) const;
-
-        /*********************************************************************
-         \brief  Accessor.
-         \return Const reference to the owned pipeline layout.
-         *********************************************************************/
-        const vk::raii::PipelineLayout&         GetLayout() const;
 
         /*********************************************************************
          \brief  Accessor.
@@ -217,18 +168,6 @@ namespace Crucible {
 
         /*********************************************************************
          \brief  Accessor.
-         \return Const reference to the skybox pipeline.
-         *********************************************************************/
-        const vk::raii::Pipeline&               GetSkyboxPipeline(uint32_t samples = 1) const;
-
-        /*********************************************************************
-         \brief  Accessor.
-         \return Const reference to the skybox pipeline layout.
-         *********************************************************************/
-        const vk::raii::PipelineLayout&         GetSkyboxLayout() const;
-
-        /*********************************************************************
-         \brief  Accessor.
          \return Const reference to the skybox's set-1 (cubemap)
                  descriptor set layout.
          *********************************************************************/
@@ -241,22 +180,14 @@ namespace Crucible {
         const vk::raii::DescriptorSetLayout&    GetSingleTextureSetLayout() const { return m_skyboxDescriptorSetLayout; }
 
     private:
-        std::vector<char> ReadFile(std::string const& filename);
-        [[nodiscard]] vk::raii::ShaderModule CreateShaderModule(VulkanContext& context, std::vector<char> const& code);
-
-    private:
-        std::array<vk::raii::Pipeline, kMsaaLevels> m_graphicsPipelines{ nullptr, nullptr, nullptr };   // 1, 2, 4 samples
-        vk::raii::PipelineLayout        m_pipelineLayout    = nullptr;
         vk::raii::DescriptorSetLayout   m_descriptorSetLayout = nullptr;
         vk::raii::DescriptorSetLayout   m_materialDescriptorSetLayout = nullptr;
 
-        std::array<vk::raii::Pipeline, kMsaaLevels> m_skyboxPipelines{ nullptr, nullptr, nullptr };
-        vk::raii::PipelineLayout        m_skyboxPipelineLayout = nullptr;
         vk::raii::DescriptorSetLayout   m_skyboxDescriptorSetLayout = nullptr;
 
 
         vk::raii::DescriptorSetLayout   m_tonemapDescriptorSetLayout = nullptr;
 
-    };  // VULKAN PIPELINE CLASS
+    };  // RENDER LAYOUTS CLASS
 
 }   // NAMESPACE CRUCIBLE

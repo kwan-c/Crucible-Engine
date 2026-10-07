@@ -37,7 +37,7 @@
 #include "MaterialHandle.h"
 #include "CubemapHandle.h"
 #include "LightTypes.h"
-#include "Vulkan/VulkanPipeline.h"   // for Vertex (adjust if Vertex lives elsewhere)
+#include "Vulkan/RenderLayouts.h"   // for Vertex (adjust if Vertex lives elsewhere)
 
 namespace Crucible {
 

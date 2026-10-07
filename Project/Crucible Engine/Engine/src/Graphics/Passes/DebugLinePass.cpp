@@ -5,9 +5,14 @@
 *************************************************************************/
 #include "Graphics/Passes/DebugLinePass.h"
 
-#include "Graphics/Vulkan/VulkanPipeline.h"
+#include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
 #include "Graphics/Vulkan/VulkanShader.h"
+#include "Graphics/DebugDraw.h"
+#include "Diagnostics/Logger.h"
+
+#include <algorithm>
+#include <cstring>
 
 namespace Crucible {
 
@@ -107,10 +112,58 @@ namespace Crucible {
 
     }   // DebugLinePass::Create()
 
-    void DebugLinePass::Record(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet frameSet, vk::Buffer vertexBuffer,
-                               uint32_t testedCount, uint32_t onTopCount) const {
+    void DebugLinePass::Update(VulkanContext& context, uint32_t frameIndex, uint32_t framesInFlight) {
 
-        if (testedCount + onTopCount == 0) { return; }
+        DebugDraw::Collect(m_debugTested, m_debugOnTop);
+
+        // Clamp (whole segments only) so a runaway debug loop can't allocate unbounded memory.
+        size_t total = m_debugTested.size() + m_debugOnTop.size();
+        if (total > kMaxDebugVertices) {
+            if (!m_warnedDebugOverflow) {
+                CRU_WARN("[Renderer] More than {} debug line vertices in one frame; the rest are dropped.", kMaxDebugVertices);
+                m_warnedDebugOverflow = true;
+            }
+            const size_t keepTested = std::min<size_t>(m_debugTested.size(), kMaxDebugVertices) & ~size_t{ 1 };
+            m_debugTested.resize(keepTested);
+            m_debugOnTop.resize(std::min(m_debugOnTop.size(), (kMaxDebugVertices - keepTested)) & ~size_t{ 1 });
+            total = m_debugTested.size() + m_debugOnTop.size();
+        }
+
+        m_debugTestedCount = static_cast<uint32_t>(m_debugTested.size());
+        m_debugOnTopCount  = static_cast<uint32_t>(m_debugOnTop.size());
+        if (total == 0) { return; }
+
+        if (m_debugBuffers.empty()) {
+            const uint32_t frames = framesInFlight;
+            m_debugBuffers.resize(frames);
+            m_debugBuffersMapped.assign(frames, nullptr);
+            m_debugBufferCapacity.assign(frames, 0);
+        }
+
+        // Grow this frame's buffer (power of two, at least 8K vertices). Safe to recreate here:
+        // BeginFrame() already waited on this frame index's fence, so the GPU is done with it.
+        if (m_debugBufferCapacity[frameIndex] < total) {
+            uint32_t capacity = 8192;
+            while (capacity < total) { capacity *= 2; }
+            m_debugBuffers[frameIndex].Create(context, vk::DeviceSize{ capacity } * sizeof(DebugVertex),
+                vk::BufferUsageFlagBits::eVertexBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            m_debugBuffersMapped[frameIndex]  = m_debugBuffers[frameIndex].Map();
+            m_debugBufferCapacity[frameIndex] = capacity;
+        }
+
+        auto* dst = static_cast<DebugVertex*>(m_debugBuffersMapped[frameIndex]);
+        if (!m_debugTested.empty()) { memcpy(dst, m_debugTested.data(), m_debugTested.size() * sizeof(DebugVertex)); }
+        if (!m_debugOnTop.empty())  { memcpy(dst + m_debugTested.size(), m_debugOnTop.data(), m_debugOnTop.size() * sizeof(DebugVertex)); }
+
+    }   // DebugLinePass::Update()
+
+    void DebugLinePass::Record(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet frameSet, uint32_t frameIndex) const {
+
+        if (!HasLines()) { return; }   // also: the buffers only exist once there has been something to draw
+        const uint32_t   testedCount  = m_debugTestedCount;
+        const uint32_t   onTopCount   = m_debugOnTopCount;
+        const vk::Buffer vertexBuffer = *m_debugBuffers[frameIndex].GetBuffer();
 
         // The tonemap triangle drawn just before used a plain viewport; world geometry uses the
         // flipped one (+Y up), like the scene pass.

@@ -5,7 +5,7 @@
 *************************************************************************/
 #include "Graphics/Passes/TonemapPass.h"
 
-#include "Graphics/Vulkan/VulkanPipeline.h"
+#include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanShader.h"
 #include "Graphics/Passes/FullscreenPipeline.h"
 

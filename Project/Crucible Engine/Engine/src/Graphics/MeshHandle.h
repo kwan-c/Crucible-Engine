@@ -16,7 +16,7 @@
 *
 *                Deliberately split out from RenderTypes.h into its own,
 *                dependency-free header: RenderTypes.h pulls in
-*                Vulkan/VulkanPipeline.h (and, through it, the Vulkan RAII
+*                Vulkan/RenderLayouts.h (and, through it, the Vulkan RAII
 *                headers) for the Vertex/MeshData types, while
 *                ECS/Components/Components.h needs to reference MeshHandle
 *                WITHOUT dragging any of that into every ECS header that
