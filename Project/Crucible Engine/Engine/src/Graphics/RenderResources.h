@@ -113,6 +113,9 @@ namespace Crucible {
 
         TextureHandle CreateTexture(const std::string& path, bool isSRGB);
         TextureHandle CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount, bool isSRGB, const std::string& cacheKey);
+        /// Raw texels (not an image file). Throws std::runtime_error for no pixels, a zero size, or a
+        /// size past the GPU's limit. Not cached: every call makes a new texture.
+        TextureHandle CreateTextureFromPixels(const void* pixels, uint32_t width, uint32_t height, TexturePixelFormat format, bool mipmaps);
 
         MaterialHandle      CreateMaterial(const MaterialData& data);
         void                UpdateMaterial(MaterialHandle handle, const MaterialData& data);
@@ -139,10 +142,12 @@ namespace Crucible {
     private:
         // ---- Texture/Material helpers ----
         // Shared core of every texture-creation path: creates a new device-local image + view
-        // for already-decoded RGBA8 pixels and queues the copy into it (the upload queue). Format is
-        // eR8G8B8A8Srgb or eUnorm depending on isSRGB - see CreateTexture's doc comment on when
-        // each is correct.
-        TextureHandle UploadTexturePixels(const unsigned char* pixels, uint32_t width, uint32_t height, bool isSRGB);
+        // for already-decoded pixels and queues the copy into it (the upload queue). RGBA8_sRGB
+        // and RGBA8 become eR8G8B8A8Srgb / eUnorm (see CreateTexture's doc comment on when each
+        // is correct); Alpha8 becomes eR8Unorm, viewed as (1, 1, 1, R). With `mipmaps`, the
+        // smaller levels are made on the CPU and queued too.
+        TextureHandle UploadTexturePixels(const unsigned char* pixels, uint32_t width, uint32_t height,
+                                          TexturePixelFormat format, bool mipmaps);
         // 1x1 solid-color texture, used by CreateDefaultTextures() and directly reusable for any
         // other flat-color placeholder need.
         TextureHandle CreateSolidColorTexture(uint8_t r, uint8_t g, uint8_t b, uint8_t a, bool isSRGB);

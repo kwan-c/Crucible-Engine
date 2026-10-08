@@ -3,13 +3,14 @@
 * @file			ImGuiPanel_GameView.h
 * @brief		The editor's Game view: what the player sees through the game camera.
 *
-* Owns a ViewportPanel (see Graphics/ViewportPanel.h) like the Scene view does, but does NOT
-* drive its own camera: every frame it mirrors the Renderer's main camera - the scene's active
-* Camera entity (CameraComponent, handed over by RenderExtractSystem) - into the viewport's own
-* camera before drawing. With no camera in the scene it shows "No cameras rendering".
+* Owns a ViewportPanel (see Graphics/ViewportPanel.h) like the Scene view does, but created with
+* ViewportRole::Game, so it does NOT drive its own camera: the Renderer looks through its main
+* camera - the scene's active Camera entity (CameraComponent, handed over by RenderExtractSystem) -
+* and draws the game's UI (Renderer::SubmitUI) on top. With no camera in the scene the image is
+* black plus the UI, and the panel says "No cameras rendering".
 *
 * The aspect-ratio dropdown already letterboxes the image area, so GetViewportSize() is the
-* resolution the game camera renders at.
+* resolution the game camera renders at - and Renderer::GetGameScreenSize(), what UI lays out to.
 */
 
 #include "ImGui/ImGuiManager.h"
@@ -19,7 +20,7 @@ namespace Crucible {
 
 	class GameView : public EditorPanel {
 	public:
-		explicit GameView(Renderer& renderer) : m_renderer(renderer), m_viewport(renderer) {}
+		explicit GameView(Renderer& renderer) : m_renderer(renderer), m_viewport(renderer, ViewportRole::Game) {}
 
 		// REQUIRED Overrides
 		void Init() override;

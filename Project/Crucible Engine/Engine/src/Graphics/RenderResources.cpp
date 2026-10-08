@@ -13,6 +13,7 @@
 #include <array>
 #include <cmath>
 #include <stdexcept>
+#include <string>   // to_string
 
 namespace Crucible {
 
@@ -166,22 +167,47 @@ namespace Crucible {
             return dst;
         }
 
+        // The next mip level of a one-channel image (Alpha8): the plain average of the (up to)
+        // 2x2 texels each texel covers.
+        std::vector<unsigned char> HalveA8(const unsigned char* src, uint32_t w, uint32_t h, uint32_t dw, uint32_t dh) {
+
+            std::vector<unsigned char> dst(static_cast<size_t>(dw) * dh);
+            for (uint32_t y = 0; y < dh; ++y) {
+                const uint32_t y0 = std::min(y * 2, h - 1);
+                const uint32_t y1 = std::min(y * 2 + 1, h - 1);
+                for (uint32_t x = 0; x < dw; ++x) {
+                    const uint32_t x0 = std::min(x * 2, w - 1);
+                    const uint32_t x1 = std::min(x * 2 + 1, w - 1);
+                    const unsigned sum = src[static_cast<size_t>(y0) * w + x0] + src[static_cast<size_t>(y0) * w + x1]
+                                       + src[static_cast<size_t>(y1) * w + x0] + src[static_cast<size_t>(y1) * w + x1];
+                    dst[static_cast<size_t>(y) * dw + x] = static_cast<unsigned char>((sum + 2) / 4);
+                }
+            }
+            return dst;
+        }
+
     }   // namespace
 
-    TextureHandle RenderResources::UploadTexturePixels(const unsigned char* pixels, uint32_t width, uint32_t height, bool isSRGB) {
+    TextureHandle RenderResources::UploadTexturePixels(const unsigned char* pixels, uint32_t width, uint32_t height,
+                                                       TexturePixelFormat pixelFormat, bool mipmaps) {
 
-        const vk::DeviceSize imageSize = vk::DeviceSize{ width } * height * 4;
+        const bool           alpha8        = pixelFormat == TexturePixelFormat::Alpha8;
+        const bool           isSRGB        = pixelFormat == TexturePixelFormat::RGBA8_sRGB;
+        const uint32_t       bytesPerTexel = alpha8 ? 1u : 4u;
+        const vk::DeviceSize imageSize     = vk::DeviceSize{ width } * height * bytesPerTexel;
 
         // Mipmaps: a chain of half-size copies down to 1x1. The sampler picks (and blends) the
         // levels that match how big the texture is on screen, which stops distant surfaces
-        // shimmering and is cheaper to sample.
+        // shimmering and is cheaper to sample. Font atlases skip them (see CreateTextureFromPixels).
         uint32_t mipLevels = 1;
-        for (uint32_t size = std::max(width, height); size > 1; size >>= 1) { ++mipLevels; }
+        if (mipmaps) {
+            for (uint32_t size = std::max(width, height); size > 1; size >>= 1) { ++mipLevels; }
+        }
 
         GpuTexture tex;
         tex.width = width;
         tex.height = height;
-        const vk::Format format = isSRGB ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
+        const vk::Format format = alpha8 ? vk::Format::eR8Unorm : isSRGB ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
         tex.image.Create(m_context, width, height, format,
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
@@ -198,17 +224,23 @@ namespace Crucible {
         uint32_t w = width, h = height;
         for (uint32_t level = 1; level < mipLevels; ++level) {
             const uint32_t nw = std::max(w / 2, 1u), nh = std::max(h / 2, 1u);
-            std::vector<unsigned char> next = HalveRGBA8(source, w, h, nw, nh, isSRGB);
-            m_uploads.QueueImage(*tex.image.GetImage(), next.data(), vk::DeviceSize{ nw } * nh * 4, nw, nh, 1, level);
+            std::vector<unsigned char> next = alpha8 ? HalveA8(source, w, h, nw, nh) : HalveRGBA8(source, w, h, nw, nh, isSRGB);
+            m_uploads.QueueImage(*tex.image.GetImage(), next.data(), vk::DeviceSize{ nw } * nh * bytesPerTexel, nw, nh, 1, level);
             previous = std::move(next);
             source   = previous.data();
             w = nw; h = nh;
         }
 
+        // An Alpha8 texture is read as (1, 1, 1, value), so it works as a tintable coverage mask
+        // (UIDrawMode::Image) and puts SDF distances where UIDrawMode::Sdf looks for them (alpha).
+        const vk::ComponentMapping components = alpha8
+            ? vk::ComponentMapping{ .r = vk::ComponentSwizzle::eOne, .g = vk::ComponentSwizzle::eOne, .b = vk::ComponentSwizzle::eOne, .a = vk::ComponentSwizzle::eR }
+            : vk::ComponentMapping{};
         vk::ImageViewCreateInfo viewInfo{
             .image = tex.image.GetImage(),
             .viewType = vk::ImageViewType::e2D,
             .format = format,
+            .components = components,
             .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = mipLevels, .layerCount = 1 }
         };
         tex.view = vk::raii::ImageView(m_context.GetDevice(), viewInfo);
@@ -222,9 +254,24 @@ namespace Crucible {
     TextureHandle RenderResources::CreateSolidColorTexture(uint8_t r, uint8_t g, uint8_t b, uint8_t a, bool isSRGB) {
 
         const unsigned char pixels[4] = { r, g, b, a };
-        return UploadTexturePixels(pixels, 1, 1, isSRGB);
+        return UploadTexturePixels(pixels, 1, 1, isSRGB ? TexturePixelFormat::RGBA8_sRGB : TexturePixelFormat::RGBA8, false);
 
     }   // RenderResources::CreateSolidColorTexture()
+
+    TextureHandle RenderResources::CreateTextureFromPixels(const void* pixels, uint32_t width, uint32_t height,
+                                                           TexturePixelFormat format, bool mipmaps) {
+
+        if (!pixels || width == 0 || height == 0) {
+            throw std::runtime_error("[Renderer] CreateTextureFromPixels: no pixels, or a width or height of 0.");
+        }
+        const uint32_t maxSize = m_context.GetPhysicalDevice().getProperties().limits.maxImageDimension2D;
+        if (width > maxSize || height > maxSize) {
+            throw std::runtime_error("[Renderer] CreateTextureFromPixels: " + std::to_string(width) + " x " + std::to_string(height)
+                                     + " is larger than this GPU allows (" + std::to_string(maxSize) + " per side).");
+        }
+        return UploadTexturePixels(static_cast<const unsigned char*>(pixels), width, height, format, mipmaps);
+
+    }   // RenderResources::CreateTextureFromPixels()
 
     TextureHandle RenderResources::CreateTexture(const std::string& path, bool isSRGB) {
 
@@ -238,7 +285,8 @@ namespace Crucible {
             throw std::runtime_error("[Renderer] Failed to load texture image: (" + path + ")");
         }
 
-        TextureHandle handle = UploadTexturePixels(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), isSRGB);
+        TextureHandle handle = UploadTexturePixels(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight),
+                                                   isSRGB ? TexturePixelFormat::RGBA8_sRGB : TexturePixelFormat::RGBA8, true);
         stbi_image_free(pixels);
 
         m_textureCacheByKey.emplace(path, handle.id);
@@ -260,7 +308,8 @@ namespace Crucible {
             throw std::runtime_error("[Renderer] Failed to decode in-memory texture" + (cacheKey.empty() ? std::string() : " (" + cacheKey + ")"));
         }
 
-        TextureHandle handle = UploadTexturePixels(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), isSRGB);
+        TextureHandle handle = UploadTexturePixels(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight),
+                                                   isSRGB ? TexturePixelFormat::RGBA8_sRGB : TexturePixelFormat::RGBA8, true);
         stbi_image_free(pixels);
 
         if (!cacheKey.empty()) { m_textureCacheByKey.emplace(cacheKey, handle.id); }

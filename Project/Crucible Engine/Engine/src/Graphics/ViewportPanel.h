@@ -56,8 +56,11 @@ namespace Crucible {
 				 GPU resources yet - see EnsureCreated()/Resize().
 		 \param[in] renderer The Renderer to create/own the offscreen
 					viewport through.
+		 \param[in] role     What the viewport is for (ViewportRole): Scene
+					(own camera, no game UI), Game (main camera + the
+					game's UI) or UI (no scene, only its own UI).
 		 *********************************************************************/
-		explicit ViewportPanel(Renderer& renderer) : m_renderer{ renderer } {}
+		explicit ViewportPanel(Renderer& renderer, ViewportRole role = ViewportRole::Scene) : m_renderer{ renderer }, m_role{ role } {}
 
 		/*********************************************************************
 		 \brief  Tears down the offscreen viewport and its ImGui texture, if
@@ -81,10 +84,12 @@ namespace Crucible {
 		 *********************************************************************/
 		void EnsureCreated(uint32_t width, uint32_t height) {
 			if (!m_handle.IsValid() && width > 0 && height > 0) {
-				m_handle = m_renderer.CreateViewport(width, height);
+				m_handle = m_renderer.CreateViewport(width, height, m_role);
 				m_renderer.SetViewportDebugDraw(m_handle, m_debugDraw);   // apply a SetDebugDraw() made before creation
 				m_renderer.SetViewportOutline(m_handle, m_outline);       // likewise SetOutline()
 				m_renderer.SetViewportActive(m_handle, m_active);         // likewise SetActive()
+				m_renderer.SetViewportClearColour(m_handle, m_clearColour);                      // likewise SetClearColour()
+				m_renderer.SetViewportUITransform(m_handle, m_uiScale, m_uiOffset);              // likewise SetUITransform()
 				RefreshTexture();
 			}
 		}
@@ -173,6 +178,34 @@ namespace Crucible {
 		}
 
 		/*********************************************************************
+		 \brief  The colour shown where no scene is drawn (see
+				 Renderer::SetViewportClearColour). sRGB. Safe to call
+				 before the viewport exists.
+		 *********************************************************************/
+		void SetClearColour(const glm::vec4& srgb) {
+			m_clearColour = srgb;
+			if (m_handle.IsValid()) { m_renderer.SetViewportClearColour(m_handle, srgb); }
+		}
+
+		/*********************************************************************
+		 \brief  How UI canvas pixels map onto this view's image: image =
+				 canvas * scale + offset (see Renderer::SetViewportUITransform).
+				 For a UI editor's pan and zoom. Safe to call before the
+				 viewport exists, and cheap to call every frame.
+		 *********************************************************************/
+		void SetUITransform(const glm::vec2& scale, const glm::vec2& offset) {
+			m_uiScale = scale;
+			m_uiOffset = offset;
+			if (m_handle.IsValid()) { m_renderer.SetViewportUITransform(m_handle, scale, offset); }
+		}
+
+		/*********************************************************************
+		 \brief  The Renderer-side viewport, e.g. for
+				 Renderer::SubmitViewportUI(). Invalid until IsValid().
+		 *********************************************************************/
+		ViewportHandle GetHandle() const { return m_handle; }
+
+		/*********************************************************************
 		 \brief  Last frame's culling numbers for this view (zeros until the
 				 viewport exists).
 		 \return The view's RenderCullStats.
@@ -230,12 +263,16 @@ namespace Crucible {
 		}
 
 		Renderer&       m_renderer;
+		ViewportRole    m_role = ViewportRole::Scene;
 		ViewportHandle  m_handle{};
 		VkDescriptorSet m_textureId = nullptr;   // ImGui_ImplVulkan's ImTextureID is this cast to void*
 		uint32_t        m_lastWidth = 0, m_lastHeight = 0;
 		bool            m_debugDraw = false;
 		bool            m_outline = false;
 		bool            m_active = true;
+		glm::vec4       m_clearColour{ 0.0f, 0.0f, 0.0f, 1.0f };
+		glm::vec2       m_uiScale{ 1.0f };
+		glm::vec2       m_uiOffset{ 0.0f };
 	};
 
 }   // NAMESPACE CRUCIBLE
@@ -255,9 +292,8 @@ namespace Crucible {
         3. Drive the camera:
              - SceneView owns a FlyCameraController and feeds it CameraInput built from raw ImGui
                mouse/key state while RMB is held over the viewport (own, independent camera).
-             - GameView instead copies Renderer::GetCamera() (the main/gameplay camera) into
-               m_viewport.GetCamera() every frame - see the comment above that line in
-               ImGuiPanel_GameView.cpp for why a copy is needed rather than a shared reference.
+             - GameView creates its viewport with ViewportRole::Game, so the Renderer itself points
+               it at the main (gameplay) camera every frame and draws the game's UI over it.
         4. DrawImage() into the window, on top of an EditorWidgets::DrawViewportPlaceholder()
            fallback so there's something sane on screen before the first real frame lands.
 */

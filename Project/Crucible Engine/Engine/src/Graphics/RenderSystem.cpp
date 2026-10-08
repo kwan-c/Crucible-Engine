@@ -45,6 +45,16 @@ constexpr bool enableValidationLayers = true;
 
 namespace Crucible {
 
+    namespace {
+
+        // One sRGB channel (0..1) to linear, the exact curve: viewport clear colours are given in
+        // sRGB like UI colours, but Vulkan clear values for an sRGB image are linear.
+        float SrgbToLinear(float c) {
+            return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+        }
+
+    }   // namespace
+
     Renderer::Renderer(WindowManager& window) 
         : m_window{ window }, m_context{ m_window }, m_swapchain{ m_context, m_window } {
 
@@ -84,6 +94,9 @@ namespace Crucible {
 
         m_resources.InitMaterials(*m_layouts.GetMaterialDescriptorSetLayout());   // sampler, placeholders, default material
         m_particlePass.EnsureTextureSet(m_resources.DefaultWhiteTexture());   // the particle pipeline's fallback texture set
+        // Screen-space UI: drawn into viewport images and the swapchain, which share one format.
+        m_uiPass.Create(*m_layouts.GetSingleTextureSetLayout(), m_swapchain.GetSurfaceFormat().format,
+                        m_swapchain.GetDepthFormat(), m_frameManager.MaxFramesInFlight());
 
         m_environmentMaps.Init(*m_layouts.GetSkyboxDescriptorSetLayout());   // samplers, pool, the built-in sky
         m_defaultEnvironment.skybox = m_environmentMaps.DefaultSkybox();
@@ -116,6 +129,9 @@ namespace Crucible {
 
         if (DebugDraw::ShouldDraw(DebugCategory::Bounds)) { m_scene.DrawBoundsDebug(); }
 
+        // The built-in UI check (SetUITestOverlay) joins whatever UI the game submitted this frame.
+        if (m_uiTestEnabled) { m_uiTestOverlay.Submit(*this, m_time); }
+
         // CULL, SORT & DRAW
         //   Per view, inside RecordCommandBuffer: each camera gets its own visible list
         //   (BuildVisibleItems), so the Scene and Game views never cull with each other's camera.
@@ -126,6 +142,7 @@ namespace Crucible {
         m_scene.ClearSubmitted();
         m_particlePass.ClearSubmitted();
         m_lights.ClearSubmitted();
+        m_uiPass.ClearSubmitted();
         m_environment = m_defaultEnvironment;
 
         // Age/clear debug lines, and tell DebugDraw whether anything will show them next frame -
@@ -168,6 +185,7 @@ namespace Crucible {
         // Lights first: every view's uniforms read the light count and shadow light this picks.
         m_lights.BuildFrameLights(frameIndex);
         m_debugLinePass.Update(m_context, frameIndex, m_frameManager.MaxFramesInFlight());
+        m_uiPass.Upload(frameIndex);
 
         // PREPARE: cull and batch every view (main pass, shadow cascades, selection mask) before
         // recording anything, so the instance buffer's final size is known up front and it never
@@ -194,6 +212,12 @@ namespace Crucible {
         } else {
             for (auto& [id, vp] : m_viewportSet.All()) {
                 if (!vp.active) { vp.draws.Clear(); continue; }
+                // No scene this frame (a UI viewport, or a Game viewport with no camera to look through):
+                // nothing to cull; the view shows its clear colour and UI.
+                if (!ViewportDrawsScene(vp)) { vp.draws.Clear(); vp.cullStats = RenderCullStats{}; continue; }
+                // A Game viewport always looks through the scene's main camera (its aspect is then
+                // set from the viewport's own size, in PrepareView).
+                if (vp.role == ViewportRole::Game) { vp.camera = m_camera; }
                 PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.uniformBuffersMapped[frameIndex]);
                 WriteViewTextures(*vp.descriptorSets[frameIndex], vp.post);
             }
@@ -285,43 +309,61 @@ namespace Crucible {
             if (!vp.active) { continue; }   // paused (SetViewportActive): keeps its last image
 
             const vk::DescriptorSet frameSet = *vp.descriptorSets[frameIndex];
+            const bool drawScene = ViewportDrawsScene(vp);   // false: clear colour + UI only
 
-            // Passes that feed this view's main pass: its shadow cascades into the shared shadow
-            // map, and the selected object into its outline mask.
-            m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Shadows);
-            m_shadowPass.Record(*fc.frame.commandBuffer, frameSet, vp.draws.shadow, vp.draws.cascadeCount);
-            if (vp.outline && !vp.draws.outline.empty()) {
-                m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Outline);
-                m_outlinePass.RecordMask(*fc.frame.commandBuffer, vp.maskImage.GetImage(), *vp.maskView, vp.extent, frameSet, vp.draws.outline);
+            if (drawScene) {
+                // Passes that feed this view's main pass: its shadow cascades into the shared shadow
+                // map, and the selected object into its outline mask.
+                m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Shadows);
+                m_shadowPass.Record(*fc.frame.commandBuffer, frameSet, vp.draws.shadow, vp.draws.cascadeCount);
+                if (vp.outline && !vp.draws.outline.empty()) {
+                    m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Outline);
+                    m_outlinePass.RecordMask(*fc.frame.commandBuffer, vp.maskImage.GetImage(), *vp.maskView, vp.extent, frameSet, vp.draws.outline);
+                }
+
+                // The scene itself: meshes, sky and particles into this view's HDR image, then bloom.
+                m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::AmbientOcclusion);
+                m_aoPass.Record(*fc.frame.commandBuffer, vp.post, m_postSettings, frameSet, vp.draws.main, vp.draws.projInfo);
+                m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Scene);
+                DrawSceneHdr(fc, vp.post, vp.depthImage.GetImage(), *vp.depthView, vp.extent, frameSet, vp.draws);   // marks Bloom itself
             }
-
-            // The scene itself: meshes, sky and particles into this view's HDR image, then bloom.
-            m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::AmbientOcclusion);
-            m_aoPass.Record(*fc.frame.commandBuffer, vp.post, m_postSettings, frameSet, vp.draws.main, vp.draws.projInfo);
-            m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Scene);
-            DrawSceneHdr(fc, vp.post, vp.depthImage.GetImage(), *vp.depthView, vp.extent, frameSet, vp.draws);   // marks Bloom itself
             m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Final);
 
             // The final pass: tonemap the HDR image into the viewport's (sRGB) colour image, then
-            // the debug lines on top - still depth-tested against the scene's depth.
+            // the debug lines on top - still depth-tested against the scene's depth - then UI.
             TransitionImageLayout(
                 fc, vp.colorImage.GetImage(), vk::ImageAspectFlagBits::eColor,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
                 {}, vk::AccessFlagBits2::eColorAttachmentWrite,
                 vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput
             );
+            // With no scene, nothing has touched depth this frame; it is still attached (every
+            // final-pass pipeline names the depth format), so start it fresh and clear it.
+            if (!drawScene) {
+                TransitionImageLayout(
+                    fc, vp.depthImage.GetImage(), vk::ImageAspectFlagBits::eDepth,
+                    vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
+                    vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                    vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                    vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                    vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests
+                );
+            }
 
+            const glm::vec4 clearLinear(SrgbToLinear(vp.clearColour.r), SrgbToLinear(vp.clearColour.g), SrgbToLinear(vp.clearColour.b), vp.clearColour.a);
             vk::RenderingAttachmentInfo color{
                 .imageView = vp.colorView,
                 .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eDontCare,   // the tonemap triangle covers every pixel
-                .storeOp = vk::AttachmentStoreOp::eStore
+                .loadOp = drawScene ? vk::AttachmentLoadOp::eDontCare : vk::AttachmentLoadOp::eClear,   // with a scene, the tonemap triangle covers every pixel
+                .storeOp = vk::AttachmentStoreOp::eStore,
+                .clearValue = vk::ClearColorValue(clearLinear.r, clearLinear.g, clearLinear.b, clearLinear.a)   // the image is sRGB: clear values are linear
             };
             vk::RenderingAttachmentInfo depth{
                 .imageView = vp.depthView,
                 .imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
-                .loadOp = vk::AttachmentLoadOp::eLoad,
-                .storeOp = vk::AttachmentStoreOp::eDontCare
+                .loadOp = drawScene ? vk::AttachmentLoadOp::eLoad : vk::AttachmentLoadOp::eClear,
+                .storeOp = vk::AttachmentStoreOp::eDontCare,
+                .clearValue = vk::ClearDepthStencilValue(1.0f, 0)
             };
             vk::RenderingInfo renderingInfo{
                 .renderArea = {.offset = {0, 0}, .extent = vp.extent},
@@ -332,11 +374,16 @@ namespace Crucible {
             };
 
             fc.frame.commandBuffer.beginRendering(renderingInfo);
-            m_tonemapPass.Record(*fc.frame.commandBuffer, vp.post, vp.extent, m_postSettings, m_environment, m_time);
-            if (vp.debugDraw) { m_debugLinePass.Record(*fc.frame.commandBuffer, vp.extent, frameSet, m_frameManager.GetFrameIndex()); }
+            if (drawScene) {
+                m_tonemapPass.Record(*fc.frame.commandBuffer, vp.post, vp.extent, m_postSettings, m_environment, m_time);
+                if (vp.debugDraw) { m_debugLinePass.Record(*fc.frame.commandBuffer, vp.extent, frameSet, m_frameManager.GetFrameIndex()); }
+            }
+            // UI last, over everything: the game's UI in Game views, then this viewport's own.
+            if (vp.role == ViewportRole::Game) { m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, vp.extent, vp.uiTransform, UIPass::kScreenTarget); }
+            m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, vp.extent, vp.uiTransform, id);
             fc.frame.commandBuffer.endRendering();
 
-            if (vp.outline && !vp.draws.outline.empty()) { m_outlinePass.RecordComposite(*fc.frame.commandBuffer, vp.colorImage.GetImage(), *vp.colorView, vp.extent, *vp.outlineSet, m_outlineStyle); }
+            if (drawScene && vp.outline && !vp.draws.outline.empty()) { m_outlinePass.RecordComposite(*fc.frame.commandBuffer, vp.colorImage.GetImage(), *vp.colorView, vp.extent, *vp.outlineSet, m_outlineStyle); }
 
             // Hand off to the Editor as a sampled texture (ImGui_ImplVulkan_AddTexture expects this layout).
             TransitionImageLayout(
@@ -390,7 +437,8 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests
         );
 
-        vk::ClearValue              clearColor = vk::ClearColorValue(0.5f, 0.0f, 0.1f, 1.0f);
+        // Black where nothing is drawn: a standalone menu scene with no camera shows its UI over this.
+        vk::ClearValue              clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
         vk::RenderingAttachmentInfo colorAttachmentInfo = {
             .imageView = m_swapchain.GetImageViews()[fc.imageIndex],
             .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
@@ -425,6 +473,11 @@ namespace Crucible {
             m_tonemapPass.Record(*fc.frame.commandBuffer, m_windowPost, m_swapchain.GetExtent(), m_postSettings, m_environment, m_time);
             if (m_debugInWindow) { m_debugLinePass.Record(*fc.frame.commandBuffer, m_swapchain.GetExtent(), *m_descriptorSets[frameIndex], m_frameManager.GetFrameIndex()); }
         }
+        // The standalone game's UI, camera or not. (In the editor the window holds only ImGui;
+        // the game's UI is in the Game view.)
+        if (m_viewportSet.All().empty()) {
+            m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, m_swapchain.GetExtent(), glm::vec4(1.0f, 1.0f, 0.0f, 0.0f), UIPass::kScreenTarget);
+        }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
         if (m_overlayCallback) m_overlayCallback();
@@ -458,9 +511,9 @@ namespace Crucible {
     //  VIEWPORTS (offscreen render targets for the Editor)
     // ------------------------------------------------------------------------------------------------------------- //
 
-    ViewportHandle Renderer::CreateViewport(uint32_t width, uint32_t height) {
+    ViewportHandle Renderer::CreateViewport(uint32_t width, uint32_t height, ViewportRole role) {
 
-        const ViewportHandle handle = m_viewportSet.Create(width, height, m_msaaSamples);
+        const ViewportHandle handle = m_viewportSet.Create(width, height, m_msaaSamples, role);
         // Bindings 1-7 of its new sets: the same per-frame buffers and shadow map the window's sets use.
         WriteSharedFrameDescriptors(m_viewportSet.Get(handle).descriptorSets);
         return handle;
@@ -488,6 +541,82 @@ namespace Crucible {
         m_viewportSet.Get(handle).active = active;
 
     }   // Renderer::SetViewportActive()
+
+    ViewportRole Renderer::GetViewportRole(ViewportHandle handle) const {
+
+        return m_viewportSet.Get(handle).role;
+
+    }   // Renderer::GetViewportRole()
+
+    void Renderer::SetViewportClearColour(ViewportHandle handle, const glm::vec4& srgb) {
+
+        m_viewportSet.Get(handle).clearColour = glm::clamp(srgb, 0.0f, 1.0f);
+
+    }   // Renderer::SetViewportClearColour()
+
+    void Renderer::SetViewportUITransform(ViewportHandle handle, const glm::vec2& scale, const glm::vec2& offset) {
+
+        m_viewportSet.Get(handle).uiTransform = glm::vec4(scale, offset);
+
+    }   // Renderer::SetViewportUITransform()
+
+    bool Renderer::ViewportDrawsScene(const Viewport& vp) const {
+
+        switch (vp.role) {
+            case ViewportRole::Scene: return true;
+            case ViewportRole::Game:  return m_hasMainCamera;
+            case ViewportRole::UI:    return false;
+        }
+        return true;
+
+    }   // Renderer::ViewportDrawsScene()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  SCREEN-SPACE UI (UIPass)
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void Renderer::SubmitUI(const UIDrawList& list) { m_uiPass.Submit(UIPass::kScreenTarget, list); }
+
+    void Renderer::SubmitViewportUI(ViewportHandle viewport, const UIDrawList& list) {
+
+        if (!viewport.IsValid() || !m_viewportSet.All().contains(viewport.id)) { return; }
+        m_uiPass.Submit(viewport.id, list);
+
+    }   // Renderer::SubmitViewportUI()
+
+    glm::uvec2 Renderer::GetGameScreenSize() const {
+
+        // Standalone game: the window. Editor: the Game view's image.
+        if (m_viewportSet.All().empty()) {
+            const vk::Extent2D extent = m_swapchain.GetExtent();
+            return { extent.width, extent.height };
+        }
+        for (const auto& [id, vp] : m_viewportSet.All()) {
+            if (vp.role == ViewportRole::Game) { return { vp.extent.width, vp.extent.height }; }
+        }
+        return { 0u, 0u };
+
+    }   // Renderer::GetGameScreenSize()
+
+    bool Renderer::ProjectToGameScreen(const glm::vec3& worldPos, glm::vec2& outPixels) const {
+
+        if (!m_hasMainCamera) { return false; }
+        const glm::uvec2 size = GetGameScreenSize();
+        if (size.x == 0 || size.y == 0) { return false; }
+
+        // The main camera at the game screen's aspect: exactly what the Game view or window draws.
+        Camera camera = m_camera;
+        camera.SetAspect(static_cast<float>(size.x), static_cast<float>(size.y));
+        const glm::vec4 clip = camera.GetViewProjection() * glm::vec4(worldPos, 1.0f);
+        if (clip.w <= 1.0e-6f) { return false; }   // behind the camera (or on its plane)
+
+        // Clip space has +y up (the scene is drawn with a flipped viewport); screen pixels go down.
+        const glm::vec2 ndc = glm::vec2(clip) / clip.w;
+        outPixels = glm::vec2((ndc.x * 0.5f + 0.5f) * static_cast<float>(size.x),
+                              (0.5f - ndc.y * 0.5f) * static_cast<float>(size.y));
+        return true;
+
+    }   // Renderer::ProjectToGameScreen()
 
     void Renderer::SetOutlinedObject(std::uint64_t userData) {
 
@@ -589,6 +718,9 @@ namespace Crucible {
     TextureHandle Renderer::CreateTexture(const std::string& path, bool isSRGB) { return m_resources.CreateTexture(path, isSRGB); }
     TextureHandle Renderer::CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount, bool isSRGB, const std::string& cacheKey) {
         return m_resources.CreateTextureFromMemory(fileBytes, byteCount, isSRGB, cacheKey);
+    }
+    TextureHandle Renderer::CreateTextureFromPixels(const void* pixels, uint32_t width, uint32_t height, TexturePixelFormat format, bool mipmaps) {
+        return m_resources.CreateTextureFromPixels(pixels, width, height, format, mipmaps);
     }
     MaterialHandle Renderer::CreateMaterial(const MaterialData& data) { return m_resources.CreateMaterial(data); }
     void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) { m_resources.UpdateMaterial(handle, data); }

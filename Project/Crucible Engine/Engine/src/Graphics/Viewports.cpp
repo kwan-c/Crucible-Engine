@@ -23,7 +23,7 @@ namespace Crucible {
 
     }   // ViewportSet::Init()
 
-    ViewportHandle ViewportSet::Create(uint32_t width, uint32_t height, uint32_t samples) {
+    ViewportHandle ViewportSet::Create(uint32_t width, uint32_t height, uint32_t samples, ViewportRole role) {
 
         if (m_viewports.size() >= kMaxViewports) {
             throw std::runtime_error("[Renderer] CreateViewport: kMaxViewports exceeded; raise the limit if you genuinely need more.");
@@ -31,6 +31,7 @@ namespace Crucible {
 
         ViewportHandle handle{ m_nextViewportId++ };
         Viewport& vp = m_viewports[handle.id];   // default-constructs in place
+        vp.role = role;
         CreateViewportImages(vp, width, height, samples);
         CreateViewportUniformsAndDescriptors(vp);
         return handle;

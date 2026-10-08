@@ -62,6 +62,20 @@ namespace Crucible {
         friend bool operator==(ViewportHandle a, ViewportHandle b) { return a.id == b.id; }
     };
 
+    /*************************************************************************
+     \brief
+        What a viewport is for (Renderer::CreateViewport). Decides which
+        camera it looks through and whose UI it shows.
+     \details
+        Every role also draws UI submitted for that one viewport
+        (Renderer::SubmitViewportUI).
+     *************************************************************************/
+    enum class ViewportRole : uint8_t {
+        Scene,   ///< The level through the viewport's own camera (the editor's Scene view). Never shows the game's UI.
+        Game,    ///< What the player sees: the scene through the main camera, with the game's UI (Renderer::SubmitUI) on top. With no main camera: the clear colour and the UI.
+        UI,      ///< No scene at all: the clear colour and only this viewport's own UI (the UI editor tab).
+    };
+
     // ------------------------------------------------------------------------------------------ //
     //  Mesh resources
     // ------------------------------------------------------------------------------------------ //
