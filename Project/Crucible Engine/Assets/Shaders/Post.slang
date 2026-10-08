@@ -9,7 +9,7 @@
 // Also here, run BEFORE the scene is drawn: ambient occlusion (aoFrag, aoBlurFrag). A half-size
 // depth-only image of the scene is drawn first; aoFrag works out, per pixel, how much of the
 // space just above the surface is blocked by nearby geometry; aoBlurFrag smooths the result. The
-// scene shader then dims ambient light by it (DefaultShader2.slang's aoTex).
+// scene shader then dims ambient light by it (DefaultShader.slang's aoTex).
 
 struct PostPush {
     float4 a;   // down/up: xy = size of one source texel; down: z = threshold (< 0 = none), w = knee

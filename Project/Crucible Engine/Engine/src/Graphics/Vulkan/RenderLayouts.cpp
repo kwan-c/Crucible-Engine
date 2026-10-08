@@ -41,11 +41,11 @@ namespace Crucible {
                 .descriptorCount    = 1,
                 // Fragment needs this now too: FrameUniforms::cameraPosWS feeds the PBR specular
                 // term's view vector, and the ambient/exposure/light-count members are all
-                // fragment-side (see DefaultShader2.slang's fragMain).
+                // fragment-side (see DefaultShader.slang's fragMain).
                 .stageFlags         = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             },
             {
-                // This frame's lights (StructuredBuffer<GpuLight> in DefaultShader2.slang). One
+                // This frame's lights (StructuredBuffer<GpuLight> in DefaultShader.slang). One
                 // buffer per frame in flight, shared by the window's set AND every editor
                 // viewport's set for that frame - lights are world state, not per-camera.
                 .binding            = 1,

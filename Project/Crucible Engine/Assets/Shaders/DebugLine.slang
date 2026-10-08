@@ -4,7 +4,7 @@
 // should come out exactly as written.
 
 // Per-frame data (descriptor set 0, binding 0). Must match Crucible::FrameUniforms (RenderTypes.h)
-// AND the copies in DefaultShader2.slang / Skybox.slang exactly - all bind the same set 0.
+// AND the copies in DefaultShader.slang / Skybox.slang exactly - all bind the same set 0.
 struct FrameUniforms {
     float4x4 view;
     float4x4 proj;

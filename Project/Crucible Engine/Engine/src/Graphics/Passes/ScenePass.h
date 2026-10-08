@@ -2,7 +2,7 @@
   \file       ScenePass.h
   \brief
     The scene pass: draws a view's meshes with their materials and lighting
-    (DefaultShader2.slang), then the sky (Skybox.slang), then the particles,
+    (DefaultShader.slang), then the sky (Skybox.slang), then the particles,
     into the view's HDR image. With MSAA on it draws into the multisampled
     pair and resolves into the HDR image and depth when the pass ends.
   \details
