@@ -35,8 +35,6 @@ namespace {
     std::vector<const char*> requiredDeviceExtension = { vk::KHRSwapchainExtensionName };
     const std::vector<const char*> validationLayers = { "VK_LAYER_KHRONOS_validation" };
 
-    constexpr int MAX_FRAMES_IN_FLIGHT = 2;
-
 }   // ANONYMOUS NAMESPACE
 
 namespace Crucible {
@@ -95,7 +93,7 @@ namespace Crucible {
             .applicationVersion = VK_MAKE_VERSION(1, 0, 0),
             .pEngineName = "Crucible Engine",
             .engineVersion = VK_MAKE_VERSION(1, 0, 0),
-            .apiVersion = vk::ApiVersion14
+            .apiVersion = vk::ApiVersion13
         };
 
         // REQUIRED LAYERS --------------------------------------------------------------------- //
@@ -183,19 +181,38 @@ namespace Crucible {
 
     /*!
         \brief
-        Selects graphics card device in the system that supports features required,
+        Selects the best graphics card device in the system that supports the features required,
         and assigns it to VulkanContext::m_physicalDevice data member.
+        Every suitable device (see IsDeviceSuitable()) is given a score (see ScoreDevice()) and
+        the highest one wins. On a tie the first one enumerated is kept, which is the order the
+        OS/driver prefers.
     */
     void VulkanContext::PickPhysicalDevice() {
 
         std::vector<vk::raii::PhysicalDevice> devices = m_instance.enumeratePhysicalDevices();
-        const auto deviceIt = std::ranges::find_if(devices, [&](const auto& device) {
-            return IsDeviceSuitable(device); });
 
-        if (deviceIt == devices.end()) {
+        const vk::raii::PhysicalDevice* bestDevice = nullptr;
+        uint64_t bestScore = 0;
+
+        for (const auto& device : devices) {
+
+            if (!IsDeviceSuitable(device)) { continue; }
+
+            const uint64_t score = ScoreDevice(device);
+            if (bestDevice == nullptr || score > bestScore) {
+                bestDevice = &device;
+                bestScore = score;
+            }
+        }
+
+        if (bestDevice == nullptr) {
             throw std::runtime_error("[Renderer] Failed to find suitable GPU for program.");
         }
-        m_physicalDevice = *deviceIt;
+        m_physicalDevice = *bestDevice;
+
+        const vk::PhysicalDeviceProperties properties = m_physicalDevice.getProperties();
+        std::cout << "[Renderer] Using GPU: " << properties.deviceName.data()
+            << " (" << to_string(properties.deviceType) << ")" << std::endl;
 
     }   // VulkanContext::PickPhysicalDevice()
 
@@ -232,7 +249,9 @@ namespace Crucible {
             vk::PhysicalDeviceVulkan11Features,
             vk::PhysicalDeviceVulkan13Features,
             vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-                {},
+                // Anisotropic texture filtering is optional: switched on whenever the GPU has it
+                // (Renderer::CreateMaterialSampler() checks the same flag before using it).
+                {.features = {.samplerAnisotropy = m_physicalDevice.getFeatures().samplerAnisotropy}},
                 {.shaderDrawParameters = true},
                 {.synchronization2 = true, .dynamicRendering = true},
                 {.extendedDynamicState = true}
@@ -273,7 +292,7 @@ namespace Crucible {
             .physicalDevice   = *m_physicalDevice,
             .device           = *m_device,
             .instance         = *m_instance,
-            .vulkanApiVersion = VK_API_VERSION_1_4,   // matches vk::ApiVersion14 in CreateInstance()
+            .vulkanApiVersion = VK_API_VERSION_1_3,   // matches vk::ApiVersion13 in CreateInstance()
         };
 
         if (vmaCreateAllocator(&allocatorInfo, &m_allocator) != VK_SUCCESS) {
@@ -316,10 +335,21 @@ namespace Crucible {
         // Check if device supports Vulkan 1.3 API version.
         bool supportsVulkan1_3 = device.getProperties().apiVersion >= vk::ApiVersion13;
 
-        // Check if any queue families support graphics operations.
+        // Check if any single queue family supports both graphics operations and presenting to
+        // our surface. This is exactly what CreateLogicalDevice() needs: without the present half
+        // of the check, a GPU that cannot show images in this window could be picked here and
+        // then fail there, instead of being skipped in favour of another GPU.
         auto queueFamilies = device.getQueueFamilyProperties();
-        bool supportsGraphics = std::ranges::any_of(queueFamilies, [](const auto& qfp) {
-            return !!(qfp.queueFlags & vk::QueueFlagBits::eGraphics); });
+        bool supportsGraphics = false;
+        for (uint32_t qfpIndex = 0; qfpIndex < queueFamilies.size(); ++qfpIndex) {
+
+            if ((queueFamilies[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics)
+                && device.getSurfaceSupportKHR(qfpIndex, *m_surface)) {
+
+                supportsGraphics = true;
+                break;
+            }
+        }
 
         // Check if all required device extensions are available.
         auto availableDeviceExtensions = device.enumerateDeviceExtensionProperties();
@@ -343,6 +373,42 @@ namespace Crucible {
         return supportsVulkan1_3 && supportsGraphics && supportsAllRequiredExtensions && supportsRequiredFeatures;
 
     }   // VulkanContext::IsDeviceSuitable()
+
+    /*!
+        \brief
+        Rates a device that already passed IsDeviceSuitable(), so PickPhysicalDevice() can choose
+        between several suitable GPUs (e.g. a laptop's integrated and discrete ones).
+        The device type decides first: discrete > integrated > virtual > anything else.
+        Between two devices of the same type, the one with more dedicated memory wins.
+        \return
+        Returns the score; higher is better.
+    */
+    uint64_t VulkanContext::ScoreDevice(const vk::raii::PhysicalDevice& device) {
+
+        uint64_t typeRank = 0;
+        switch (device.getProperties().deviceType) {
+            case vk::PhysicalDeviceType::eDiscreteGpu:   typeRank = 3; break;
+            case vk::PhysicalDeviceType::eIntegratedGpu: typeRank = 2; break;
+            case vk::PhysicalDeviceType::eVirtualGpu:    typeRank = 1; break;
+            default:                                     typeRank = 0; break;   // eCpu (software renderer), eOther
+        }
+
+        // Total size of the device-local heaps, i.e. the GPU's own memory (VRAM). An integrated
+        // GPU reports a share of system RAM here, which is why this is only a tie-break.
+        const vk::PhysicalDeviceMemoryProperties memoryProperties = device.getMemoryProperties();
+        vk::DeviceSize deviceLocalBytes = 0;
+        for (uint32_t heapIndex = 0; heapIndex < memoryProperties.memoryHeapCount; ++heapIndex) {
+
+            if (memoryProperties.memoryHeaps[heapIndex].flags & vk::MemoryHeapFlagBits::eDeviceLocal) {
+                deviceLocalBytes += memoryProperties.memoryHeaps[heapIndex].size;
+            }
+        }
+
+        // Type rank in the upper 32 bits, memory in MiB in the lower 32: any difference in type
+        // always outweighs any difference in memory.
+        return (typeRank << 32) + (deviceLocalBytes >> 20);
+
+    }   // VulkanContext::ScoreDevice()
 
     /*!
         \brief

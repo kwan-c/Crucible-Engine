@@ -4,4 +4,7 @@ C:\VulkanSDK\1.4.357.0\Bin\slangc.exe DebugLine.slang -target spirv -profile spi
 C:\VulkanSDK\1.4.357.0\Bin\slangc.exe Shadow.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry shadowVert -o Shadow.spv
 C:\VulkanSDK\1.4.357.0\Bin\slangc.exe OutlineMask.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry maskVert -entry maskFrag -o OutlineMask.spv
 C:\VulkanSDK\1.4.357.0\Bin\slangc.exe OutlineComposite.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry compositeVert -entry compositeFrag -o OutlineComposite.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe Particle.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry particleVert -entry particleFrag -o Particle.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe Post.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry postVert -entry bloomDownFrag -entry bloomUpFrag -entry tonemapFrag -entry aoFrag -entry aoBlurFrag -o Post.spv
+C:\VulkanSDK\1.4.357.0\Bin\slangc.exe DepthNormal.slang -target spirv -profile spirv_1_4 -emit-spirv-directly -fvk-use-entrypoint-name -matrix-layout-column-major -entry depthNormalVert -entry depthNormalFrag -o DepthNormal.spv
 pause

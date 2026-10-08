@@ -151,21 +151,14 @@ namespace Crucible {
          \param[in] context Unused (kept for interface symmetry).
          \param[in] data    Source bytes to copy in.
          \param[in] size    Number of bytes to copy.
+
+         \details
+            Host-visible buffers only. A device-local buffer can't be
+            mapped; fill it through VulkanUploadQueue::QueueBuffer()
+            instead, which goes through a staging buffer and a GPU-side
+            copy.
          *********************************************************************/
         void Upload(VulkanContext& context, void const* data, vk::DeviceSize size);
-
-        /*********************************************************************
-         \brief  Uploads via a temporary host-visible staging buffer plus a
-                 GPU-side copy, for device-local destination buffers that
-                 can't be mapped directly.
-         \param[in] context     The VulkanContext to allocate the staging
-                                 buffer through.
-         \param[in] data        Source bytes to copy in.
-         \param[in] size        Number of bytes to copy.
-         \param[in] commandPool Command pool to allocate the one-shot copy
-                                 command buffer from.
-         *********************************************************************/
-        void UploadStaging(VulkanContext& context, void const* data, vk::DeviceSize size, vk::raii::CommandPool& commandPool);
 
         /*********************************************************************
          \brief  Accessor.
@@ -200,9 +193,14 @@ namespace Crucible {
          \param[in] flags       Image create flags (vk::ImageCreateFlagBits::
                                 eCubeCompatible for a cubemap). Defaults to
                                 none.
+         \param[in] mipLevels   Number of mip levels (each half the size of
+                                the one before). Defaults to 1 (no mipmaps).
+         \param[in] samples     Samples per pixel (above 1 = a multisampled
+                                render target, for MSAA). Defaults to 1.
          *********************************************************************/
         void Create(VulkanContext& context, uint32_t w, uint32_t h, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,
-                    uint32_t arrayLayers = 1, vk::ImageCreateFlags flags = {});
+                    uint32_t arrayLayers = 1, vk::ImageCreateFlags flags = {}, uint32_t mipLevels = 1,
+                    vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
 
         /*********************************************************************
          \brief  Accessor.

@@ -187,6 +187,20 @@ namespace Crucible
 		  - ambientSky/ambientGround/ambientIntensity: hemisphere ambient
 		    light (a cheap stand-in for image-based lighting).
 		  - exposure: multiplier before tonemapping, for meshes and sky alike.
+		  - ambientFromSky: true -> objects are lit by the sky image itself
+		    (and shiny ones reflect it), scaled by ambientIntensity * intensity;
+		    false -> the two flat ambient colours above.
+		  - fog: distant things fade into fogColour. fogDensity 0 = off (try
+		    0.01-0.05); fogHeightFalloff = how quickly the fog thins above
+		    fogBaseHeight (0 = equally thick at every height); fogStart =
+		    clear distance in front of the camera; fogMaxOpacity = the most
+		    the fog may hide (1 = everything).
+		  - the look of the final picture, each neutral by default:
+		    contrast (1), saturation (1; 0 = black and white), temperature
+		    (0; negative = cooler/bluer, positive = warmer), colourFilter
+		    (white; a tint over everything), vignetteIntensity (0; dark
+		    corners) with vignetteSoftness (how far in they reach), filmGrain
+		    (0) and chromaticAberration (0; colour fringes toward the edges).
 	 *************************************************************************/
 	struct Skybox
 	{
@@ -197,6 +211,21 @@ namespace Crucible
 		Math::vec3    ambientGround{ 0.20f, 0.18f, 0.16f };
 		float         ambientIntensity = 1.f;
 		float         exposure = 1.f;
+		bool          ambientFromSky = true;
+		float         fogDensity = 0.f;
+		Math::vec3    fogColour{ 0.55f, 0.63f, 0.72f };
+		float         fogHeightFalloff = 0.08f;
+		float         fogBaseHeight = 0.f;
+		float         fogStart = 0.f;
+		float         fogMaxOpacity = 1.f;
+		float         contrast = 1.f;
+		float         saturation = 1.f;
+		float         temperature = 0.f;
+		Math::vec3    colourFilter{ 1.f, 1.f, 1.f };
+		float         vignetteIntensity = 0.f;
+		float         vignetteSoftness = 0.5f;
+		float         filmGrain = 0.f;
+		float         chromaticAberration = 0.f;
 		// Texture asset id of an equirectangular sky (.hdr ideally), resolved through
 		// ResourceManager::GetCubemap. Saved in scenes; when non-zero it wins over `cubemap`.
 		std::uint64_t skyboxAsset = 0;
@@ -225,6 +254,153 @@ namespace Crucible
 		float nearZ    = 0.1f;     // near clip plane, metres
 		float farZ     = 1000.f;   // far clip plane, metres
 		int   priority = 0;        // highest enabled camera wins (ties: the first one found)
+	};
+
+	/*************************************************************************
+	 \brief
+		Per-object adjustments to the material a MeshRenderer on the same
+		entity draws with. The material itself is shared by every object
+		using it; these values belong to this one object, and objects with
+		different values are still drawn together in one instanced draw.
+	 \details
+		- emissiveScale: multiplies the material's emissive (glow). 0 = off,
+		  1 = as authored, above 1 = brighter (and, past the bloom
+		  threshold, glowing). Animate it from gameplay code for "charged /
+		  ready to fire" effects.
+		- custom: three spare numbers passed to the shader untouched
+		  (InstanceData::params.yzw), reserved for effects to come.
+		An entity without this component draws as if it had the defaults.
+	 *************************************************************************/
+	struct MaterialParams
+	{
+		float      emissiveScale = 1.f;
+		Math::vec3 custom{ 0.f, 0.f, 0.f };
+	};
+
+	/*************************************************************************
+	 \brief
+		TEMPORARY - load testing only. StressMoverSystem walks the entity
+		around a circle: Transform::positions = origin + a point on a circle
+		of `radius`, turning at `speed` radians per second, starting at
+		`phase` radians. Used by the "Stress Moving" scenes to measure what
+		thousands of moving entities cost. Remove it (component, system,
+		reflection file, scenes) once real gameplay movement exists.
+	 *************************************************************************/
+	struct StressMover
+	{
+		Math::vec3 origin{ 0.f, 0.f, 0.f };
+		float      radius = 6.f;
+		float      speed = 0.5f;
+		float      phase = 0.f;
+	};
+
+	/// Where a ParticleEmitter's new particles appear, in the emitter's local space.
+	enum class ParticleShape : std::uint8_t
+	{
+		Point,    // all at the emitter
+		Sphere,   // anywhere inside a sphere of shapeRadius
+		Box       // anywhere inside a box of boxExtents (half sizes)
+	};
+
+	/// How a ParticleEmitter's particles are mixed with what is behind them.
+	enum class ParticleBlend : std::uint8_t
+	{
+		Additive,   // colours add up: sparks, fire, magic. Order doesn't matter, never darkens.
+		Alpha       // covers what is behind: smoke, dust, splashes. Sorted back to front.
+	};
+
+	/*************************************************************************
+	 \brief
+		A particle effect: sparks, fire, smoke, a splash... One component,
+		many effects - every kind is the same machine (spawn, move, age, draw
+		as a camera-facing quad) with different numbers, so the differences
+		are these fields rather than different code. MakeParticlePreset()
+		(Graphics/ParticlePresets.h) fills them in for the common effects.
+
+	 \details
+		ParticleSystem simulates the particles on the CPU and hands them to
+		the Renderer each frame. The particles are NOT entities; they live
+		in a pool owned by ParticleSystem, keyed by this entity. The emitter
+		sits at the entity's Transform and emits around its local +Y axis.
+
+		Spawning
+		  - playing / loop / duration: an emitter runs for `duration`
+		    seconds, then restarts (loop) or stops spawning. Particles already
+		    alive always finish their lives.
+		  - rate: particles per second, continuously.
+		  - burstCount: particles all at once at the start of each run.
+		  - maxParticles: hard cap on how many are alive at once.
+		  - shape / shapeRadius / boxExtents: where they appear.
+		  - spreadDeg: half-angle of the cone of directions around local +Y
+		    (0 = straight up, 90 = a hemisphere, 180 = every direction).
+		  - worldSpace: true = once spawned, particles ignore the emitter's
+		    movement (a trail); false = they move with it.
+		Each particle
+		  - lifetimeMin/Max (seconds), speedMin/Max (m/s): picked at random.
+		  - sizeMin/Max: starting width in metres; endSizeScale multiplies it
+		    by the end of its life (0.2 = shrinks, 3 = grows).
+		  - gravityScale: 1 = falls like a rock, 0 = floats, negative = rises.
+		  - drag: how fast it loses speed (1/s).
+		  - spinDeg: random spin up to +- this many degrees per second
+		    (also gives each particle a random starting angle).
+		  - stretch: 0 = square; above 0 the quad is stretched along its
+		    motion by this many seconds of travel (sparks, rain).
+		Look
+		  - colourStart/End + alphaStart/End: blended over its life.
+		  - brightness: multiplies the colour. Above 1 it glows (bloom).
+		  - blend: Additive or Alpha (see ParticleBlend).
+		  - textureAsset: a Texture asset; 0 = a soft round dot.
+		  - flipbookCols/Rows: the texture is an atlas of this many frames,
+		    played once over each particle's life.
+		Lighting the scene
+		  - emitLight: the emitter also adds ONE point light at the middle
+		    of its live particles, fading as they die - not a light per
+		    particle. lightColour / lightIntensity (at full strength) /
+		    lightRange as on a Light component.
+	 *************************************************************************/
+	struct ParticleEmitter
+	{
+		bool          playing = true;
+		bool          loop = true;
+		float         duration = 2.f;
+		float         rate = 20.f;
+		int           burstCount = 0;
+		int           maxParticles = 500;
+
+		ParticleShape shape = ParticleShape::Point;
+		float         shapeRadius = 0.25f;
+		Math::vec3    boxExtents{ 0.5f, 0.5f, 0.5f };
+		float         spreadDeg = 25.f;
+		bool          worldSpace = true;
+
+		float         lifetimeMin = 0.8f;
+		float         lifetimeMax = 1.5f;
+		float         speedMin = 1.f;
+		float         speedMax = 2.f;
+		float         sizeMin = 0.1f;
+		float         sizeMax = 0.2f;
+		float         endSizeScale = 1.f;
+		float         gravityScale = 0.f;
+		float         drag = 0.f;
+		float         spinDeg = 0.f;
+		float         stretch = 0.f;
+
+		Math::vec3    colourStart{ 1.f, 1.f, 1.f };
+		Math::vec3    colourEnd{ 1.f, 1.f, 1.f };
+		float         alphaStart = 1.f;
+		float         alphaEnd = 0.f;
+		float         brightness = 1.f;
+		ParticleBlend blend = ParticleBlend::Additive;
+		std::uint64_t textureAsset = 0;
+		int           flipbookCols = 1;
+		int           flipbookRows = 1;
+
+		bool          emitLight = false;
+		Math::vec3    lightColour{ 1.f, 0.6f, 0.25f };
+		float         lightIntensity = 8.f;
+		float         lightRange = 6.f;
+
+		int           seed = 1;   // different seeds give different-looking runs of the same effect
 	};
 
 	/*************************************************************************
@@ -267,6 +443,9 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 	CRUCIBLE_COMPONENT(Light, Light);
 	CRUCIBLE_COMPONENT(Skybox, Skybox);
+	CRUCIBLE_COMPONENT(ParticleEmitter, ParticleEmitter);
+	CRUCIBLE_COMPONENT(MaterialParams, MaterialParams);
+	CRUCIBLE_COMPONENT(StressMover, StressMover);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
 	template<>

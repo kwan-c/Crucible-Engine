@@ -85,6 +85,10 @@ namespace Crucible {
 
 		// Spawns a new entity with a Camera component (the Game view looks through it).
 		void CreateCameraObject();
+
+		// Spawns a new entity with a ParticleEmitter set up as one of the presets in
+		// Graphics/ParticlePresets.h: "Sparks", "Fire", "Smoke" or "Splash".
+		void CreateParticleObject(const std::string& effect);
 	};
 
 }

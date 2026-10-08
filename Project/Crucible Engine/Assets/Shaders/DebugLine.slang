@@ -33,7 +33,12 @@ struct VSOutput {
 [shader("vertex")]
 VSOutput lineVert(VSInput input) {
     VSOutput output;
-    output.pos   = mul(frame.proj, mul(frame.view, float4(input.position, 1.0)));
+    // Pulled a hair towards the camera (0.2% of its distance; its place on screen is unchanged),
+    // so a depth-tested line lying exactly on a surface - a collider on its own mesh - wins the
+    // depth test instead of flickering in and out of it.
+    float4 viewPos = mul(frame.view, float4(input.position, 1.0));
+    viewPos.xyz   *= 0.998;
+    output.pos     = mul(frame.proj, viewPos);
     output.color = input.color;
     return output;
 }

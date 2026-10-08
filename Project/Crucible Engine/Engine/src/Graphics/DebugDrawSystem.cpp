@@ -31,6 +31,7 @@ namespace Crucible {
 		// future editor sets them from another thread.
 		std::atomic<std::uint64_t> g_selected{ 0 };   // (index << 32) | generation; 0 = kNullEntity
 		std::atomic<float>         g_velocityScale{ 0.25f };
+		std::atomic<bool>          g_collidersThroughWalls{ false };
 
 		const glm::vec4 kStaticCollider  { 0.30f, 0.90f, 0.40f, 1.0f };
 		const glm::vec4 kDynamicCollider { 0.25f, 0.80f, 1.00f, 1.0f };
@@ -90,6 +91,9 @@ namespace Crucible {
 	void  DebugDrawSystem::SetVelocityScale(float scale) { g_velocityScale.store(std::max(scale, 0.0f)); }
 	float DebugDrawSystem::GetVelocityScale() { return g_velocityScale.load(); }
 
+	void DebugDrawSystem::SetCollidersThroughWalls(bool enabled) { g_collidersThroughWalls.store(enabled); }
+	bool DebugDrawSystem::GetCollidersThroughWalls() { return g_collidersThroughWalls.load(); }
+
 	// ------------------------------------------------------------------------------------------------------------- //
 	//  SYSTEM
 	// ------------------------------------------------------------------------------------------------------------- //
@@ -118,7 +122,9 @@ namespace Crucible {
 
 		DebugStyle style;
 		style.category  = DebugCategory::Colliders;
-		style.depthTest = false;   // a collider usually coincides with its mesh surface; show it through
+		// Hidden behind other objects unless asked otherwise. A collider that coincides with its
+		// own mesh still shows: debug lines are drawn a hair nearer the camera (DebugLine.slang).
+		style.depthTest = !g_collidersThroughWalls.load();
 
 		// Static: a Collider with no RigidBody (and not a character - the CharacterController wins).
 		style.color = kStaticCollider;
@@ -172,9 +178,23 @@ namespace Crucible {
 				const bool isSelected = (entity == selected);
 				switch (light.type) {
 					case LightType::Directional:
-						DebugDraw::Arrow(p, p + dir * (isSelected ? 2.5f : 1.5f), style);
-						if (isSelected) { DebugDraw::Circle(p, dir, 0.4f, style); }
+					{
+						// A disc with a beam of parallel rays leaving it, pointing the way the light
+						// travels (a directional light has no position: only this direction matters).
+						const float     radius = 0.4f;
+						const float     length = isSelected ? 3.0f : 1.5f;
+						const glm::vec3 side   = glm::normalize(glm::cross(dir, std::abs(dir.y) > 0.99f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f)));
+						const glm::vec3 up     = glm::cross(side, dir);
+						DebugDraw::Circle(p, dir, radius, style);
+						DebugDraw::Arrow(p, p + dir * length, style);
+						const int rays = 8;
+						for (int i = 0; i < rays; ++i) {
+							const float     angle = 6.2831853f * static_cast<float>(i) / static_cast<float>(rays);
+							const glm::vec3 start = p + (side * std::cos(angle) + up * std::sin(angle)) * radius;
+							DebugDraw::Line(start, start + dir * length, style);
+						}
 						break;
+					}
 					case LightType::Point:
 						if (isSelected) { DebugDraw::Sphere(p, light.range, style); }
 						break;

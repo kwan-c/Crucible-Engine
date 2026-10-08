@@ -25,6 +25,7 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <string>
 
@@ -119,6 +120,7 @@ void Crucible::SceneView::Update(float dt) {
 	SyncSelection();
 	m_iconHits.clear();
 	if (m_showIcons) { DrawIcons(min, avail); }
+	if (m_showStats) { DrawStatsOverlay(min); }
 	DrawGizmo(min, avail);   // before picking, so a click on the gizmo is known to be the gizmo's
 	HandleClickPicking(min, avail);
 	if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_gizmoClaimedClick = false; }
@@ -201,6 +203,13 @@ void Crucible::SceneView::DrawToolbar() {
 	}
 
 	ImGui::SameLine();
+	if (ToolbarToggle("Rendering", false)) { ImGui::OpenPopup("##SceneRendering"); }
+	if (ImGui::BeginPopup("##SceneRendering")) {
+		DrawRenderingMenu();
+		ImGui::EndPopup();
+	}
+
+	ImGui::SameLine();
 	ImGui::TextDisabled("|  %d x %d", static_cast<int>(m_viewportSize.x), static_cast<int>(m_viewportSize.y));
 	if (m_viewport.IsValid()) {
 		// Last frame's culling for this view: drawn / registered (+ immediate demo items).
@@ -209,9 +218,11 @@ void Crucible::SceneView::DrawToolbar() {
 		ImGui::TextDisabled("|  Drawn %u / %u", stats.proxiesVisible + stats.immediateVisible, stats.proxies + stats.immediate);
 		if (ImGui::IsItemHovered()) {
 			ImGui::SetTooltip("Entities: %u of %u in view (%u moving)\nImmediate items: %u of %u\n"
-				"Draw calls: %u (instanced)\nShadow casters: %u in %u draws",
+				"Draw calls: %u (instanced)\nShadow casters: %u in %u draws\n"
+				"Particles: %u in %u draws\nPoint/spot lights in view: %u",
 				stats.proxiesVisible, stats.proxies, stats.movingProxies, stats.immediateVisible, stats.immediate,
-				stats.drawCalls, stats.shadowCasters, stats.shadowDrawCalls);
+				stats.drawCalls, stats.shadowCasters, stats.shadowDrawCalls,
+				stats.particles, stats.particleDrawCalls, stats.clusteredLights);
 		}
 	}
 
@@ -430,6 +441,9 @@ void Crucible::SceneView::DrawGizmoMenu() {
 		bool on = DebugDraw::IsCategoryEnabled(e.category);
 		if (ImGui::Checkbox(e.label, &on)) { DebugDraw::SetCategoryEnabled(e.category, on); }
 	}
+	bool throughWalls = DebugDrawSystem::GetCollidersThroughWalls();
+	if (ImGui::Checkbox("Colliders through walls", &throughWalls)) { DebugDrawSystem::SetCollidersThroughWalls(throughWalls); }
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Draw colliders even when another object is in front of them."); }
 	float scale = DebugDrawSystem::GetVelocityScale();
 	ImGui::SetNextItemWidth(140.0f);
 	if (ImGui::SliderFloat("Velocity scale", &scale, 0.01f, 2.0f, "%.2f m per m/s")) { DebugDrawSystem::SetVelocityScale(scale); }
@@ -440,6 +454,100 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	ImGui::Checkbox("Icons (lights, cameras, sky, empties)", &m_showIcons);
 	bool outline = m_viewport.GetOutline();
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
+}
+
+// Renderer-wide settings: unlike the Gizmos menu these change the picture itself, in the Game
+// view as well as here. They are not saved - each start of the editor begins from the defaults
+// in RenderTypes.h (PostSettings, ShadowSettings).
+void Crucible::SceneView::DrawRenderingMenu() {
+	// The glow around very bright things.
+	ImGui::SeparatorText("Bloom");
+	PostSettings& post = m_renderer.GetPostSettings();
+	ImGui::Checkbox("Enabled##bloom", &post.bloom);
+	ImGui::BeginDisabled(!post.bloom);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Bloom intensity", &post.bloomIntensity, 0.0f, 2.0f, "%.2f");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Bloom threshold", &post.bloomThreshold, 0.0f, 4.0f, "%.2f");
+	ImGui::EndDisabled();
+
+	ImGui::SeparatorText("Anti-aliasing");
+	ImGui::Checkbox("FXAA", &post.fxaa);
+	// MSAA: the scene is drawn with several samples per pixel (the Renderer falls back to what the GPU supports).
+	int msaaChoice = post.msaaSamples >= 4 ? 2 : post.msaaSamples >= 2 ? 1 : 0;
+	ImGui::SetNextItemWidth(140.0f);
+	if (ImGui::Combo("MSAA", &msaaChoice, "Off\0" "2x\0" "4x\0")) { post.msaaSamples = 1u << msaaChoice; }
+
+	// Soft darkening of ambient light in creases, corners and under objects.
+	ImGui::SeparatorText("Ambient occlusion");
+	ImGui::Checkbox("Enabled##ao", &post.ao);
+	ImGui::BeginDisabled(!post.ao);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Radius", &post.aoRadius, 0.1f, 2.0f, "%.2f m");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Strength", &post.aoIntensity, 0.0f, 3.0f, "%.2f");
+	ImGui::EndDisabled();
+
+	ImGui::SeparatorText("Sun shadows");
+	ShadowSettings& shadows = m_renderer.GetShadowSettings();
+	ImGui::Checkbox("Enabled##shadows", &shadows.enabled);
+	ImGui::BeginDisabled(!shadows.enabled);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Distance", &shadows.distance, 10.0f, 200.0f, "%.0f m");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Normal bias", &shadows.normalBias, 0.0f, 4.0f, "%.2f texels");
+	ImGui::Checkbox("Show cascades (debug tint)", &shadows.debugCascades);
+	ImGui::EndDisabled();
+
+	// Measuring: where the frame's time goes, and a built-in crowd to load the renderer with.
+	ImGui::SeparatorText("Performance");
+	ImGui::Checkbox("Show timings in the view", &m_showStats);
+	StressSettings& stress = m_renderer.GetStressSettings();
+	int stressCount = static_cast<int>(stress.count);
+	ImGui::SetNextItemWidth(140.0f);
+	if (ImGui::InputInt("Load test objects", &stressCount, 1000, 5000)) {
+		stress.count = static_cast<uint32_t>(std::clamp(stressCount, 0, 100000));
+	}
+	ImGui::BeginDisabled(stress.count == 0);
+	ImGui::Checkbox("Objects move", &stress.moving);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Spacing", &stress.spacing, 1.0f, 10.0f, "%.1f m");
+	ImGui::EndDisabled();
+}
+
+void Crucible::SceneView::DrawStatsOverlay(ImVec2 viewMin) {
+	const RenderFrameStats& stats = m_renderer.GetFrameStats();
+	const RenderCullStats   cull  = m_viewport.GetCullStats();
+
+	// All values are averages over roughly the last ten frames, in milliseconds.
+	char text[768];
+	int  length = std::snprintf(text, sizeof(text),
+		"Frame  %.2f ms  (%.0f fps)\n"
+		"CPU    wait %.2f   prepare %.2f   upload %.2f   record %.2f   submit %.2f\n",
+		stats.frameMs, stats.frameMs > 0.0f ? 1000.0f / stats.frameMs : 0.0f,
+		stats.cpuWaitMs, stats.cpuPrepareMs, stats.cpuUploadMs, stats.cpuRecordMs, stats.cpuSubmitMs);
+	if (stats.gpuValid && length > 0 && length < static_cast<int>(sizeof(text))) {
+		const auto gpu = [&](GpuSection section) { return stats.gpuMs[static_cast<size_t>(section)]; };
+		length += std::snprintf(text + length, sizeof(text) - length,
+			"GPU    total %.2f\n"
+			"       shadows %.2f   occlusion %.2f   scene %.2f   bloom %.2f\n"
+			"       final %.2f   outline %.2f   uploads %.2f   editor UI %.2f\n",
+			stats.gpuTotalMs,
+			gpu(GpuSection::Shadows), gpu(GpuSection::AmbientOcclusion), gpu(GpuSection::Scene), gpu(GpuSection::Bloom),
+			gpu(GpuSection::Final), gpu(GpuSection::Outline), gpu(GpuSection::Uploads), gpu(GpuSection::Interface));
+	}
+	if (length > 0 && length < static_cast<int>(sizeof(text))) {
+		std::snprintf(text + length, sizeof(text) - length,
+			"View   %u of %u objects (%u travelling)   %u draws   shadows: %u objects in %u draws",
+			cull.proxiesVisible + cull.immediateVisible, cull.proxies + cull.immediate, cull.movingProxies,
+			cull.drawCalls, cull.shadowCasters, cull.shadowDrawCalls);
+	}
+
+	ImDrawList* const drawList = ImGui::GetWindowDrawList();
+	const ImVec2 pos(viewMin.x + 10.0f, viewMin.y + 10.0f);
+	const ImVec2 size = ImGui::CalcTextSize(text);
+	drawList->AddRectFilled(ImVec2(pos.x - 6.0f, pos.y - 4.0f), ImVec2(pos.x + size.x + 6.0f, pos.y + size.y + 4.0f), IM_COL32(0, 0, 0, 170), 4.0f);
+	drawList->AddText(pos, IM_COL32(235, 235, 235, 255), text);
 }
 
 // ------------------------------------------------------------------ gizmo

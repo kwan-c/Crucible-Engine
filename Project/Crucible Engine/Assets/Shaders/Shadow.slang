@@ -17,6 +17,7 @@ struct FrameUniforms {
 
 struct InstanceData {
     float4x4 model;
+    float4   params;   // unused here; keeps the 80-byte stride of Crucible::InstanceData
 };
 
 struct ShadowPush {

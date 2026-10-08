@@ -1,6 +1,8 @@
 // Crucible Engine selection outline, pass 2 of 2 (pass 1 is OutlineMask.slang): a fullscreen
 // triangle over the finished viewport image. Pixels outside the mask but within `thickness`
-// pixels of it get the outline colour, alpha-blended over the scene.
+// pixels of it get the outline colour, alpha-blended over the scene. The band also reaches
+// kInnerWidth pixels into the object, so a debug line lying along the object's edge (a collider
+// the same size as its mesh) is covered rather than showing as a second colour beside it.
 
 // Composite pipeline's own set 0, binding 0: this viewport's mask (Renderer::Viewport::outlineSet).
 [[vk::binding(0, 0)]] Texture2D<float> outlineMask;
@@ -24,7 +26,8 @@ FullscreenOut compositeVert(uint vertexID : SV_VulkanVertexID) {
     return o;
 }
 
-static const int kMaxRadius = 3;
+static const int   kMaxRadius  = 3;
+static const float kInnerWidth = 1.5;
 
 [shader("fragment")]
 float4 compositeFrag(FullscreenOut input) : SV_Target {
@@ -33,15 +36,15 @@ float4 compositeFrag(FullscreenOut input) : SV_Target {
     outlineMask.GetDimensions(w, h);
     int2 maxPx = int2(w, h) - 1;
 
-    if (outlineMask.Load(int3(px, 0)) > 0.5) { discard; }   // inside the object: leave it alone
-
-    // Distance (pixels) to the nearest covered pixel within kMaxRadius; anti-aliased edge.
-    float r = clamp(cpc.thickness, 0.0, float(kMaxRadius));
+    // Outside the object the band is `thickness` wide, measured to the nearest covered pixel;
+    // inside it is kInnerWidth wide, measured to the nearest uncovered one. Anti-aliased edge.
+    bool  inside = outlineMask.Load(int3(px, 0)) > 0.5;
+    float r = inside ? kInnerWidth : clamp(cpc.thickness, 0.0, float(kMaxRadius));
     float nearest = 1e9;
     for (int y = -kMaxRadius; y <= kMaxRadius; ++y) {
         for (int x = -kMaxRadius; x <= kMaxRadius; ++x) {
             int2 q = clamp(px + int2(x, y), int2(0, 0), maxPx);
-            if (outlineMask.Load(int3(q, 0)) > 0.5) { nearest = min(nearest, length(float2(x, y))); }
+            if ((outlineMask.Load(int3(q, 0)) > 0.5) != inside) { nearest = min(nearest, length(float2(x, y))); }
         }
     }
     float coverage = saturate(r + 0.5 - nearest);

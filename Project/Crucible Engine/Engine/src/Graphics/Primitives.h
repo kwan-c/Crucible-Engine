@@ -35,7 +35,7 @@
 *                    winding - see the "Lower/Upper ring" pattern below.
 *                  - Tangent (xyz = direction of increasing U, w =
 *                    bitangent handedness sign; see Vertex's own doc
-*                    comment in Vulkan/VulkanPipeline.h) is derived
+*                    comment in Vulkan/RenderLayouts.h) is derived
 *                    analytically per shape from its own UV parametrization,
 *                    the same way normals are. A flat cap's UV is polar (so
 *                    a UV-gradient-matched tangent would be discontinuous

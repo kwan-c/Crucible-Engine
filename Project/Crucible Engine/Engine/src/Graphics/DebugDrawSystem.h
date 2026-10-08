@@ -119,6 +119,21 @@ namespace Crucible
 		 *********************************************************************/
 		static float  GetVelocityScale();
 
+		/*********************************************************************
+		 \brief  Whether colliders are drawn through whatever is in front of
+				 them. Off by default: a collider behind a wall is hidden,
+				 like the object it belongs to.
+		 \param[in] enabled True to see every collider regardless of what
+							covers it (e.g. to find one buried in a mesh).
+		 *********************************************************************/
+		static void   SetCollidersThroughWalls(bool enabled);
+
+		/*********************************************************************
+		 \brief  The current setting of SetCollidersThroughWalls().
+		 \return True when colliders are drawn through other objects.
+		 *********************************************************************/
+		static bool   GetCollidersThroughWalls();
+
 	private:
 		void DrawColliders(World& world);
 		void DrawVelocities(World& world);
