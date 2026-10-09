@@ -16,7 +16,7 @@
 *                PushConstants - the CPU-side shapes that mirror what the
 *                GPU actually consumes (uniform buffer layout, push
 *                constant layout, shader-side MaterialFactors in
-*                DefaultShader2.slang). Built-in procedural primitives
+*                DefaultShader.slang). Built-in procedural primitives
 *                (Cube, Plane, Disc, Cylinder, Cone, Pyramid, Sphere,
 *                Capsule) live in Graphics/Primitives.h to keep this header
 *                lean - include Primitives.h (it includes this header
@@ -60,6 +60,20 @@ namespace Crucible {
         uint32_t id = Invalid;
         bool IsValid() const { return id != Invalid; }
         friend bool operator==(ViewportHandle a, ViewportHandle b) { return a.id == b.id; }
+    };
+
+    /*************************************************************************
+     \brief
+        What a viewport is for (Renderer::CreateViewport). Decides which
+        camera it looks through and whose UI it shows.
+     \details
+        Every role also draws UI submitted for that one viewport
+        (Renderer::SubmitViewportUI).
+     *************************************************************************/
+    enum class ViewportRole : uint8_t {
+        Scene,   ///< The level through the viewport's own camera (the editor's Scene view). Never shows the game's UI.
+        Game,    ///< What the player sees: the scene through the main camera, with the game's UI (Renderer::SubmitUI) on top. With no main camera: the clear colour and the UI.
+        UI,      ///< No scene at all: the clear colour and only this viewport's own UI (the UI editor tab).
     };
 
     // ------------------------------------------------------------------------------------------ //
@@ -139,7 +153,7 @@ namespace Crucible {
                                w = fade-out fraction of the shadow distance
 
      \note
-        DefaultShader2.slang has the full copy. Skybox, DebugLine, Shadow
+        DefaultShader.slang has the full copy. Skybox, DebugLine, Shadow
         and OutlineMask declare only the prefix they read, which is valid
         as long as members are only ever appended, never reordered.
      *************************************************************************/
@@ -171,9 +185,9 @@ namespace Crucible {
     static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 6 + 16 * 12,
         "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
     static_assert(offsetof(FrameUniforms, clusterDims) == 512 && offsetof(FrameUniforms, clusterZ) == 528 && offsetof(FrameUniforms, time) == 544 && offsetof(FrameUniforms, fogColour) == 560 && offsetof(FrameUniforms, skySH) == 608,
-        "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
+        "FrameUniforms offsets must match DefaultShader.slang (checked against the compiled SPIR-V).");
     static_assert(offsetof(FrameUniforms, shadowViewProj) == 208 && offsetof(FrameUniforms, shadowParams) == 496,
-        "FrameUniforms offsets must match DefaultShader2.slang (checked against the compiled SPIR-V).");
+        "FrameUniforms offsets must match DefaultShader.slang (checked against the compiled SPIR-V).");
 
     /*************************************************************************
      \brief
@@ -229,7 +243,7 @@ namespace Crucible {
         uint32_t offset = 0;
         uint32_t count = 0;
     };
-    static_assert(sizeof(ClusterCell) == 8, "ClusterCell must match DefaultShader2.slang.");
+    static_assert(sizeof(ClusterCell) == 8, "ClusterCell must match DefaultShader.slang.");
 
     // ------------------------------------------------------------------------------------------ //
     //  Particles
@@ -467,7 +481,7 @@ namespace Crucible {
         float    depthBias = 0.0001f;
         float    normalBias = 1.5f;
         float    fadeFraction = 0.1f;
-        bool     debugCascades = false;   // tint every surface by the cascade it uses (see DefaultShader2.slang)
+        bool     debugCascades = false;   // tint every surface by the cascade it uses (see DefaultShader.slang)
     };
 
     /*************************************************************************
@@ -533,7 +547,7 @@ namespace Crucible {
      \brief
         GPU layout of one light: one element of the light storage buffer
         (set 0, binding 1, StructuredBuffer<GpuLight> in
-        DefaultShader2.slang).
+        DefaultShader.slang).
 
      \details
         Four vec4s = 64 bytes, which is identical under std430 and plain
@@ -629,7 +643,7 @@ namespace Crucible {
 
      \details
         Shared verbatim between this C++ push-constant struct and the
-        shader's own MaterialFactors (DefaultShader2.slang) - keep both in
+        shader's own MaterialFactors (DefaultShader.slang) - keep both in
         sync by hand, same as the rest of this file's structs (no
         reflection/codegen here). Field order matters: it must pack
         identically under HLSL's cbuffer rules (a float3 followed by a

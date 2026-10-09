@@ -5,7 +5,7 @@
 //   2. compositeVert/compositeFrag: a fullscreen triangle over the finished viewport image. Pixels
 //      outside the mask but within `thickness` pixels of it get the outline colour, alpha-blended.
 
-// Only the prefix the mask pass reads; the full struct is in DefaultShader2.slang.
+// Only the prefix the mask pass reads; the full struct is in DefaultShader.slang.
 struct FrameUniforms {
     float4x4 view;
     float4x4 proj;

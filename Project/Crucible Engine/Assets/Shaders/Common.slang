@@ -1,5 +1,5 @@
-// Shared by the shaders that need the whole per-frame block: DefaultShader2, Skybox, Particle.
-// (#include is resolved by slangc relative to this folder; nothing changes in CompileShaders.bat.)
+// Shared by the shaders that need the whole per-frame block: DefaultShader, Skybox, Particle.
+// (#include is resolved by slangc relative to this folder; Engine/CompileShaders.cmake treats it as a shared include.)
 
 // Per-frame data (descriptor set 0, binding 0). Must match Crucible::FrameUniforms (RenderTypes.h)
 // exactly. Shaders that only need the first few members declare just that prefix themselves.

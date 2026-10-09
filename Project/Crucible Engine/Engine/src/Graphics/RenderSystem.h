@@ -61,6 +61,7 @@
 #include "Passes/ParticlePass.h"
 #include "Passes/DebugLinePass.h"
 #include "Passes/ScenePass.h"
+#include "Passes/UIPass.h"
 #include "DrawList.h"
 #include "RenderResources.h"
 #include "EnvironmentMaps.h"
@@ -69,6 +70,8 @@
 #include "Viewports.h"
 #include "RenderScene.h"
 #include "DebugDraw.h"
+#include "UITypes.h"
+#include "UITestOverlay.h"
 #include "Spatial/SpatialIndex.h"
 
 // Imgui
@@ -126,11 +129,13 @@ namespace Crucible {
          \details
             It belongs to the scene: RenderExtractSystem sets it every frame
             from the active CameraComponent entity (SetMainCamera), or
-            clears it when the scene has none (ClearMainCamera). While
-            HasMainCamera() is false the window pass draws no scene and the
-            Game view shows "No cameras rendering". GetCamera() then returns
-            the last camera that was set. Aspect ratio is overwritten from
-            the render target each frame.
+            clears it when the scene has none (ClearMainCamera). Game-role
+            viewports (ViewportRole::Game) look through it. While
+            HasMainCamera() is false the window pass and Game views draw no
+            scene, only the clear colour and the game's UI (SubmitUI), and
+            the Game view says "No cameras rendering". GetCamera() then
+            returns the last camera that was set. Aspect ratio is
+            overwritten from the render target each frame.
          *********************************************************************/
         void          SetMainCamera(const Camera& camera) { m_camera = camera; m_hasMainCamera = true; }
         void          ClearMainCamera()                   { m_hasMainCamera = false; }
@@ -263,6 +268,31 @@ namespace Crucible {
          *********************************************************************/
         ENGINE_API TextureHandle CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount,
             bool isSRGB = true, const std::string& cacheKey = std::string());
+
+        /*********************************************************************
+         \brief
+            Creates a texture from raw texels (not an image file), e.g. a
+            font atlas the font system has rasterized.
+         \param[in] pixels   Tightly packed rows, top row first; copied
+                              before this returns.
+         \param[in] width    In texels.
+         \param[in] height   In texels.
+         \param[in] format   RGBA8_sRGB (colour images), RGBA8 (data, MSDF
+                              atlases) or Alpha8 (one byte per texel, read
+                              as (1, 1, 1, value): coverage or SDF atlases).
+         \param[in] mipmaps  Also make the smaller levels. Leave off for
+                              font atlases: averaging neighbouring glyphs
+                              makes them bleed into each other.
+         \return A texture handle, usable in a UIDrawCommand (or a material,
+                 for the RGBA formats).
+         \details
+            Not cached: every call makes a new texture. Uploaded at the
+            start of the next frame, like CreateTexture().
+         \throws std::runtime_error for no pixels, a zero size, or a size
+                 past the GPU's limit (usually 16384 per side).
+         *********************************************************************/
+        ENGINE_API TextureHandle CreateTextureFromPixels(const void* pixels, uint32_t width, uint32_t height,
+            TexturePixelFormat format, bool mipmaps = false);
 
         /*********************************************************************
          \brief
@@ -432,6 +462,10 @@ namespace Crucible {
 
          \param[in] width  Viewport width, in pixels.
          \param[in] height Viewport height, in pixels.
+         \param[in] role   What it is for: Scene (own camera, no game UI),
+                            Game (main camera + the game's UI) or UI (no
+                            scene; only UI submitted for it). See
+                            ViewportRole.
          \return A handle to the new viewport.
 
          \details
@@ -447,7 +481,9 @@ namespace Crucible {
                 // on panel close / shutdown:
                 renderer.DestroyViewport(m_viewport);
          *********************************************************************/
-        ENGINE_API ViewportHandle CreateViewport(uint32_t width, uint32_t height);
+        ENGINE_API ViewportHandle CreateViewport(uint32_t width, uint32_t height, ViewportRole role = ViewportRole::Scene);
+        /// The role a viewport was created with. Throws std::runtime_error for an unknown handle.
+        ENGINE_API ViewportRole   GetViewportRole(ViewportHandle handle) const;
 
         /*********************************************************************
          \brief  Resizes an existing viewport's color/depth images.
@@ -484,6 +520,27 @@ namespace Crucible {
                  (the Game view uses this while the scene has no camera).
          *********************************************************************/
         ENGINE_API void           SetViewportActive(ViewportHandle handle, bool active);
+
+        /*********************************************************************
+         \brief  The colour a viewport shows where no scene is drawn: always
+                 for a UI viewport, and for a Game viewport while there is
+                 no main camera. Default opaque black.
+         \param[in] handle  The viewport.
+         \param[in] srgb    sRGB colour, like UI colours. Alpha is kept in
+                             the image, so a UI viewport cleared to alpha 0
+                             can be drawn over a checkerboard by the editor.
+         *********************************************************************/
+        ENGINE_API void           SetViewportClearColour(ViewportHandle handle, const glm::vec4& srgb);
+
+        /*********************************************************************
+         \brief  How a viewport maps UI canvas pixels to its own pixels:
+                 image = canvas * scale + offset (clip rectangles too).
+                 Default scale 1, offset 0. For the UI editor's pan and zoom.
+         \param[in] handle  The viewport.
+         \param[in] scale   Pixels per canvas pixel, per axis (keep it above 0).
+         \param[in] offset  Where canvas (0, 0) lands, in the viewport's pixels.
+         *********************************************************************/
+        ENGINE_API void           SetViewportUITransform(ViewportHandle handle, const glm::vec2& scale, const glm::vec2& offset);
 
         /*********************************************************************
          \brief
@@ -545,10 +602,67 @@ namespace Crucible {
          *********************************************************************/
         void                      SetDebugDrawInWindow(bool enabled) { m_debugInWindow = enabled; }
 
+        // ---- Screen-space UI (UITypes.h has the data and its conventions) ----------------------
+
+        /*********************************************************************
+         \brief
+            Queues the game's UI for this frame: drawn over Game viewports
+            and, in the standalone game, over the window. Never drawn in
+            Scene or UI viewports.
+         \param[in] list  Vertices in canvas pixels (origin top-left; one
+                           canvas pixel = one screen pixel, so lay out
+                           against GetGameScreenSize()), indices and draw
+                           commands. Copied.
+         \details
+            Like Submit(), forgotten after the frame: submit every frame,
+            before the Renderer's Update(). Several calls per frame are
+            fine; each draws over the ones before. Drawn after tonemapping
+            and debug lines, so exposure, bloom, fog and colour grading
+            never affect it.
+         *********************************************************************/
+        ENGINE_API void SubmitUI(const UIDrawList& list);
+
+        /*********************************************************************
+         \brief  Queues UI for one viewport only (any role), mapped by its
+                 SetViewportUITransform. For the UI editor tab, which lays
+                 out at its own preview size. Ignored for an unknown handle.
+         *********************************************************************/
+        ENGINE_API void SubmitViewportUI(ViewportHandle viewport, const UIDrawList& list);
+
+        /*********************************************************************
+         \brief
+            The size, in pixels, of the screen the game's UI is drawn on:
+            the Game view's image in the editor (it changes with the panel
+            and its aspect dropdown), the window in the standalone game.
+         \return {0, 0} in the editor while no Game view exists (closed, or
+                 not laid out yet): skip UI layout then.
+         \note  One Game view is expected; with several, the first found.
+         *********************************************************************/
+        ENGINE_API glm::uvec2 GetGameScreenSize() const;
+
+        /*********************************************************************
+         \brief
+            Where a world position appears on the game screen, through the
+            main camera: for health bars, damage numbers and markers.
+         \param[in]  worldPos   World-space point.
+         \param[out] outPixels  Game-screen pixels (origin top-left, the same
+                                 space as SubmitUI). May lie off-screen.
+         \return false (outPixels untouched) when there is no main camera,
+                 no game screen (GetGameScreenSize() is 0), or the point is
+                 behind the camera.
+         *********************************************************************/
+        ENGINE_API bool ProjectToGameScreen(const glm::vec3& worldPos, glm::vec2& outPixels) const;
+
+        /// Shows or hides the built-in UI test overlay (UITestOverlay.h), submitted as the game's UI.
+        void SetUITestOverlay(bool enabled) { m_uiTestEnabled = enabled; }
+        bool GetUITestOverlay() const       { return m_uiTestEnabled; }
+
         /*********************************************************************
          \brief  Accessor for a viewport's independent camera.
          \param[in] handle The viewport to look up.
          \return Mutable reference to that viewport's Camera.
+         \note  A Game viewport's camera is overwritten with the main
+                 camera every frame, so only Scene viewports keep changes.
          *********************************************************************/
         ENGINE_API Camera&        GetViewportCamera(ViewportHandle handle);
 
@@ -699,6 +813,9 @@ namespace Crucible {
         ParticlePass                m_particlePass{ m_context, m_resources };
         ScenePass                   m_scenePass{ m_resources, m_particlePass };
         DebugLinePass               m_debugLinePass;
+        UIPass                      m_uiPass{ m_context, m_resources };   // also holds m_resources (declared below; used once frames start)
+        UITestOverlay               m_uiTestOverlay;
+        bool                        m_uiTestEnabled = false;
         VulkanFrameManager          m_frameManager;
 
         // Pending mesh/texture/cubemap copies: recorded into each frame's command buffer ahead of
@@ -797,6 +914,11 @@ namespace Crucible {
         // Points set 0's shared bindings (1 lights, 2 instances, 3/4 shadow map) of each per-frame
         // set at this frame's resources.
         void WriteSharedFrameDescriptors(std::vector<vk::raii::DescriptorSet>& sets);
+
+        // ---- Views ----
+        // Whether a viewport draws the scene this frame: Scene always, Game while there is a main
+        // camera, UI never. One that doesn't shows its clear colour (plus UI).
+        bool ViewportDrawsScene(const Viewport& vp) const;
 
         // ---- Shadows ----
         // Has ShadowPass create the shadow map, then moves it to its resting (shader-read) layout.

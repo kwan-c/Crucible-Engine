@@ -61,6 +61,9 @@ target_include_directories(Engine
 # Link against third-party dependencies
 target_link_libraries(Engine PUBLIC EngineThirdParty)
 
+# Compile Assets/Shaders/*.slang to SPIR-V before Engine builds (see CompileShaders.cmake).
+include("${CMAKE_CURRENT_SOURCE_DIR}/CompileShaders.cmake")
+
 # NOTE: Engine.dll is copied next to each executable by that executable's own
 # POST_BUILD step (see Game/CMakeLists.txt and Editor/CMakeLists.txt).
 add_custom_command(TARGET Engine POST_BUILD

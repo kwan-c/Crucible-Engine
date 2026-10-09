@@ -513,6 +513,11 @@ void Crucible::SceneView::DrawRenderingMenu() {
 	ImGui::SetNextItemWidth(140.0f);
 	ImGui::SliderFloat("Spacing", &stress.spacing, 1.0f, 10.0f, "%.1f m");
 	ImGui::EndDisabled();
+
+	// Screen-space UI: a built-in check of the UI pass, drawn as the game's UI (Game view only).
+	ImGui::SeparatorText("Interface");
+	bool uiTest = m_renderer.GetUITestOverlay();
+	if (ImGui::Checkbox("UI test overlay (Game view)", &uiTest)) { m_renderer.SetUITestOverlay(uiTest); }
 }
 
 void Crucible::SceneView::DrawStatsOverlay(ImVec2 viewMin) {

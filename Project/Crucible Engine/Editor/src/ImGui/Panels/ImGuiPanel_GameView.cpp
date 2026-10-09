@@ -77,8 +77,7 @@ void Crucible::GameView::Update(float) {
 	m_viewport.Resize(width, height);
 
 	// Not stood up yet this frame (panel collapsed, or its very first frame before the dock
-	// layout has given it a real size) - GetCamera() would throw on an unset handle, and there's
-	// nothing to draw yet anyway.
+	// layout has given it a real size) - there's nothing to draw yet.
 	if (!m_viewport.IsValid()) {
 		ImGui::GetWindowDrawList()->AddRectFilled(regionMin, regionMax, IM_COL32(0, 0, 0, 255));
 		ImGui::SetCursorScreenPos(regionMin);
@@ -88,29 +87,13 @@ void Crucible::GameView::Update(float) {
 		return;
 	}
 
-	// ---- The scene's camera -------------------------------------------------------------------
-	// The Game view shows what the scene's active Camera entity sees. RenderExtractSystem hands
-	// that camera to the Renderer every frame (Renderer::SetMainCamera); with no enabled Camera
-	// component in the scene there is nothing to look through, so - like Unity - the view says so
-	// instead of showing a stale or made-up picture, and its viewport stops rendering entirely.
+	// ---- The scene's camera ----------------------------------------------------------------
+	// The Game view shows what the scene's active Camera entity sees: its viewport has the Game
+	// role, so the Renderer looks through the main camera (Renderer::SetMainCamera, set every frame
+	// by RenderExtractSystem) and draws the game's UI on top. With no enabled Camera component it
+	// keeps rendering - black plus the UI, so menu scenes without a camera still show their UI -
+	// and, like Unity, says so.
 	bool const hasCamera = m_renderer.HasMainCamera();
-	m_viewport.SetActive(hasCamera);
-
-	if (!hasCamera) {
-		ImGui::GetWindowDrawList()->AddRectFilled(regionMin, regionMax, IM_COL32(0, 0, 0, 255));
-		EditorWidgets::DrawViewportPlaceholder(min, max, "No cameras rendering",
-			"Add an entity with a Camera component (Hierarchy > + > Create Camera).");
-		ImGui::SetCursorScreenPos(regionMin);
-		ImGui::InvisibleButton("##GameViewport", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
-		m_hovered = ImGui::IsItemHovered();
-		ImGui::End();
-		return;
-	}
-
-	// Each offscreen viewport owns its own Camera object, so copy the main camera in every frame
-	// (a plain struct copy). Its aspect is overwritten from this viewport's own extent by the
-	// Renderer, so the letterboxed aspect chosen in the toolbar always wins.
-	m_viewport.GetCamera() = m_renderer.GetCamera();
 
 	// Placeholder first (covers the gap before the offscreen image exists, e.g. the first frame),
 	// then the real image on top of it, inside the fitted/letterboxed rectangle.
@@ -118,6 +101,18 @@ void Crucible::GameView::Update(float) {
 	EditorWidgets::DrawViewportPlaceholder(min, max, "Game View", "Waiting for the renderer...");
 	ImGui::SetCursorScreenPos(min);
 	m_viewport.DrawImage(size);
+
+	if (!hasCamera) {
+		char const* title = "No cameras rendering";
+		char const* hint  = "Add an entity with a Camera component (Hierarchy > + > Create Camera).";
+		ImVec2 const titleSize = ImGui::CalcTextSize(title);
+		ImVec2 const hintSize  = ImGui::CalcTextSize(hint);
+		float const line = ImGui::GetTextLineHeightWithSpacing();
+		ImVec2 const centre((min.x + max.x) * 0.5f, (min.y + max.y) * 0.5f);
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		dl->AddText(ImVec2(centre.x - titleSize.x * 0.5f, centre.y - line), ImGui::GetColorU32(ImGuiCol_Text), title);
+		dl->AddText(ImVec2(centre.x - hintSize.x * 0.5f, centre.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), hint);
+	}
 
 	// Invisible item over the whole panel (not just the letterboxed rect) so hover queries work
 	// the same way the Scene view's do.

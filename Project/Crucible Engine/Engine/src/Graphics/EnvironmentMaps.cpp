@@ -281,7 +281,7 @@ namespace Crucible {
         // 3. Diffuse light: project the sky onto nine spherical harmonics (from a small level -
         //    the result only keeps the broadest features anyway), with the cosine falloff of a
         //    diffuse surface and the basis constants folded in, so the shader evaluates a plain
-        //    polynomial of the normal (see SkyIrradiance in DefaultShader2.slang).
+        //    polynomial of the normal (see SkyIrradiance in DefaultShader.slang).
         {
             size_t level = 0;
             while (level + 1 < sizes.size() && sizes[level] > 32) { ++level; }

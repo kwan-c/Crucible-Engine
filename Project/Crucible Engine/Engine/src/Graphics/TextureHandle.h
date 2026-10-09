@@ -10,8 +10,9 @@
 *
 * \details
 *                Declares TextureHandle, a cheap-to-copy integer handle
-*                returned by Renderer::CreateTexture()/CreateTextureFromMemory()
-*                (see RenderSystem.h). Mirrors MeshHandle.h's pattern
+*                returned by Renderer::CreateTexture()/CreateTextureFromMemory()/
+*                CreateTextureFromPixels() (see RenderSystem.h), and the
+*                TexturePixelFormat the last one takes. Mirrors MeshHandle.h's pattern
 *                exactly, including why it's split into its own zero-
 *                dependency header: MaterialHandle (see MaterialHandle.h)
 *                is referenced from ECS/Components/Components.h, which must
@@ -62,6 +63,20 @@ namespace Crucible {
          \return true if a's id is less than b's id.
          *********************************************************************/
         friend bool operator<(TextureHandle a, TextureHandle b)  { return a.id <  b.id; }
+    };
+
+    /*************************************************************************
+     \brief
+        How the texels given to Renderer::CreateTextureFromPixels() are laid
+        out, and how shaders see them.
+
+     \details
+        Rows are tightly packed, top row first.
+     *************************************************************************/
+    enum class TexturePixelFormat : uint8_t {
+        RGBA8_sRGB,   ///< 4 bytes per texel, colour images (icons, sprites, UI art). Read back as linear colour, like CreateTexture(path, true).
+        RGBA8,        ///< 4 bytes per texel, data stored as is (MSDF font atlases, masks). Like CreateTexture(path, false).
+        Alpha8,       ///< 1 byte per texel, read back as (1, 1, 1, value): font coverage or SDF atlases. Not for material slots.
     };
 
 }   // NAMESPACE CRUCIBLE

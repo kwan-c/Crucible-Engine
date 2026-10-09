@@ -1,9 +1,10 @@
 /*************************************************************************
   \file       Viewports.h
   \brief
-    The offscreen views the editor draws into (its Scene and Game panels):
-    each one's images, camera, per-frame uniform data and settings, and the
-    list of them. Empty in the standalone game, which draws to the window.
+    The offscreen views the editor draws into (its Scene and Game panels,
+    and a UI editor tab): each one's role, images, camera, per-frame uniform
+    data and settings, and the list of them. Empty in the standalone game,
+    which draws to the window.
   \details
     Moved out of the Renderer class. Editor code still uses the Renderer's
     CreateViewport / ResizeViewport / ... functions, which forward here.
@@ -27,13 +28,14 @@ namespace Crucible {
     // (Scene view vs. Game view) without stepping on each other's data.
     struct Viewport {
         vk::Extent2D        extent{};
+        ViewportRole        role = ViewportRole::Scene;   // which camera, whose UI (see ViewportRole)
 
         VulkanImage         colorImage;
         vk::raii::ImageView colorView = nullptr;
         VulkanImage         depthImage;
         vk::raii::ImageView depthView = nullptr;
 
-        Camera              camera;   // independent from the main m_camera and from other viewports
+        Camera              camera;   // independent from the main m_camera and from other viewports (a Game viewport's is overwritten with it every frame)
 
         std::vector<VulkanBuffer>            uniformBuffers;
         std::vector<void*>                   uniformBuffersMapped;
@@ -42,6 +44,8 @@ namespace Crucible {
         bool                debugDraw = false;   // draw DebugDraw lines into this view (SetViewportDebugDraw)
         bool                outline = false;     // draw the selection outline (SetViewportOutline)
         bool                active = true;       // false: not culled, not rendered (SetViewportActive)
+        glm::vec4           clearColour{ 0.0f, 0.0f, 0.0f, 1.0f };   // sRGB; shown where no scene is drawn (SetViewportClearColour)
+        glm::vec4           uiTransform{ 1.0f, 1.0f, 0.0f, 0.0f };   // UI canvas pixels -> image pixels: xy scale, zw offset (SetViewportUITransform)
         RenderCullStats     cullStats;           // last frame's culling result for this view
 
         // Selection outline: R8 mask of the selected object (same size as colorImage), and
@@ -82,13 +86,14 @@ namespace Crucible {
          \brief  Creates a viewport: its images, uniform buffers and sets.
          \param[in] width    Size in pixels, and height.
          \param[in] samples  MSAA samples per pixel: 1, 2 or 4.
+         \param[in] role     What it is for (see ViewportRole).
          \return Its handle.
          \throws std::runtime_error past kMaxViewports.
          \note  Only binding 0 of its set 0 (the view's own uniforms) is
                 written. The caller points the shared bindings at the
                 per-frame buffers.
          *********************************************************************/
-        ViewportHandle Create(uint32_t width, uint32_t height, uint32_t samples);
+        ViewportHandle Create(uint32_t width, uint32_t height, uint32_t samples, ViewportRole role);
         /// Recreates a viewport's images at a new size (waits for the GPU first). No-op if the
         /// size is unchanged or zero.
         void Resize(ViewportHandle handle, uint32_t width, uint32_t height, uint32_t samples);
