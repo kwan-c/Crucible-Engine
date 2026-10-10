@@ -13,6 +13,11 @@
 * needs to own an Inspector& of its own (both panels are built by the same EditorManager::Init(),
 * and neither is guaranteed to exist before the other).
 *
+* Multi-selection: Ctrl+click adds/removes a row, Shift+click selects the range from the last
+* clicked row, Ctrl+A selects everything (Hierarchy focused). Copy, Paste, Duplicate, Delete and
+* drag-to-parent then act on the whole selection as ONE undo step. When both a parent and its
+* child are selected, only the parent is acted on (the child comes along with it).
+*
 * There is no Name/Tag component yet (see ECS/Components/Components.h), so entities are labelled
 * by their raw index for now ("Entity 3") - swap in a real name lookup once one exists.
 *
@@ -25,6 +30,7 @@
 #include "ECS/Components/Components.h"
 #include "ECS/Systems/Query.h"
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
@@ -52,25 +58,44 @@ namespace Crucible {
 		// allowed while m_query is iterating, so they are stored and run after the loop.
 		enum class PendingAction { None, Copy, Paste, Duplicate, Delete, Reparent };
 		PendingAction m_pendingAction = PendingAction::None;
-		Entity        m_pendingTarget = kNullEntity;
+		Entity        m_pendingTarget = kNullEntity;   // the row acted on; if it is selected, the whole selection is
 		Entity        m_pendingParent = kNullEntity;   // Reparent only: the new parent (kNullEntity = root)
 
 		// One copied entity: its component snapshot, and the index of its parent in the same list
 		// (-1 for the top entity). Parents always come before their children.
 		struct ClipNode { int parent; std::string snapshot; };
-		std::vector<ClipNode> m_clipboard;
+		// One subtree per copied entity (several when a multi-selection was copied).
+		std::vector<std::vector<ClipNode>> m_clipboard;
 
 		void RequestAction(PendingAction action, Entity target) { m_pendingAction = action; m_pendingTarget = target; }
 		void RunPendingAction();
+		// What an action on `target` applies to: the whole selection (top-level entities only, in
+		// row order) if `target` is part of a multi-selection, otherwise just `target`.
+		std::vector<Entity> ActionTargets(Entity target) const;
+		// Drops entities whose parent/ancestor is also in the list, and sorts the rest by row order.
+		std::vector<Entity> TopLevel(std::vector<Entity> const& entities) const;
+
 		std::vector<ClipNode> CopySubtree(Entity root) const;
-		// Creates the clipboard's entities under `parent` (kNullEntity = root), records one undo
-		// step, selects the new top entity and returns it.
+		// Creates one copied subtree under `parent` (kNullEntity = root) and returns its top entity.
 		// siblingIndex >= 0 moves the new top entity to that position among its siblings.
-		Entity PasteSubtree(std::vector<ClipNode> const& nodes, Entity parent, std::string const& label, int siblingIndex = -1);
-		void DeleteEntity(Entity entity);
-		// Moves `child` under `parent` (kNullEntity = make it a root), keeping its world position,
-		// and records one undo step. Refused (with a warning) if it would create a cycle.
-		void Reparent(Entity child, Entity parent);
+		// Records nothing - see RecordCreated.
+		Entity PasteSubtree(std::vector<ClipNode> const& nodes, Entity parent, int siblingIndex = -1);
+		// Selects the new top entities and records them as one undo step ("Paste 3 Entities").
+		void RecordCreated(std::vector<Entity> const& roots, std::string const& verb);
+		// Deletes the entities (and their children) as one undo step.
+		void DeleteEntities(std::vector<Entity> const& entities);
+		// Moves each entity under `parent` (kNullEntity = make it a root), keeping its world
+		// position, as one undo step. Entities that would create a cycle are skipped with a warning.
+		void ReparentAll(std::vector<Entity> const& children, Entity parent);
+		// Moves one entity and returns its undo command (nullptr if nothing changed or refused).
+		std::unique_ptr<EditorCommand> Reparent(Entity child, Entity parent, std::string const& label);
+
+		// ---- Click selection ----
+		std::vector<Entity> m_rows;                      // every row drawn this frame, top to bottom
+		Entity m_rangeAnchor    = kNullEntity;           // Shift+click selects from here...
+		Entity m_pendingRangeTo = kNullEntity;           // ...to here (resolved once every row is known)
+		Entity m_selectOnRelease = kNullEntity;          // plain click on a selected row: select only it on release, unless it became a drag
+		void ResolveClicks();
 
 		// Draws one entity's row (and, if expanded, its children) recursively.
 		void DrawEntityNode(Entity entity);

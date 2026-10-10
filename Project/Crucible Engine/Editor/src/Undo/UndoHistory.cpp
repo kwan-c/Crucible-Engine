@@ -73,6 +73,7 @@ namespace Crucible {
         command->Undo(*this);
         CRU_USER_INFO("Undo: {}", command->Label());
 
+        RememberSelection(*command);
         const Entity select = Resolve(command->Target());
         m_redo.push_back(std::move(command));
 
@@ -96,6 +97,7 @@ namespace Crucible {
         command->Redo(*this);
         CRU_USER_INFO("Redo: {}", command->Label());
 
+        RememberSelection(*command);
         const Entity select = Resolve(command->Target());
 
         // Not Push(): that would clear the rest of the redo stack.
@@ -108,8 +110,21 @@ namespace Crucible {
         return select;
     }
 
+    void UndoHistory::RememberSelection(const EditorCommand& command)
+    {
+        std::vector<EntityKey> keys;
+        command.SelectionKeys(keys);
+
+        m_lastSelection.clear();
+        for (const EntityKey key : keys)
+        {
+            if (key.IsValid()) { m_lastSelection.push_back(Resolve(key)); }
+        }
+    }
+
     void UndoHistory::Clear()
     {
+        m_lastSelection.clear();
         m_undo.clear();
         m_redo.clear();
         m_keyToLive.clear();
@@ -133,20 +148,27 @@ namespace Crucible {
         const Scene& scene = m_scenes->Current();
         const auto remember = [&](const std::deque<std::unique_ptr<EditorCommand>>& commands)
         {
+            std::vector<EntityKey> keys;
             for (const auto& command : commands)
             {
-                const EntityKey key = command->Target();
-                if (!key.IsValid())
+                // Every key the step uses (a group's members, a reparent's
+                // parents...), not just its Target().
+                keys.clear();
+                command->CollectKeys(keys);
+                for (const EntityKey key : keys)
                 {
-                    continue;
-                }
+                    if (!key.IsValid())
+                    {
+                        continue;
+                    }
 
-                // An entity that is currently undone (dead) has no guid; its
-                // redo recreates it and rebinds the key anyway.
-                const xresource::instance_guid id = scene.IdOf(Resolve(key));
-                if (id.m_Value != 0)
-                {
-                    m_stash.guidOfKey.emplace(key, id.m_Value);
+                    // An entity that is currently undone (dead) has no guid; its
+                    // redo recreates it and rebinds the key anyway.
+                    const xresource::instance_guid id = scene.IdOf(Resolve(key));
+                    if (id.m_Value != 0)
+                    {
+                        m_stash.guidOfKey.emplace(key, id.m_Value);
+                    }
                 }
             }
         };

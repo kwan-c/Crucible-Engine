@@ -45,6 +45,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "ECS/Core/ECSCore.h"   // Entity, kNullEntity
 
@@ -98,6 +99,75 @@ namespace Crucible {
          \brief  Short description for the Edit menu: "Edit Transform".
          *********************************************************************/
         virtual const std::string& Label() const = 0;
+
+        /*********************************************************************
+         \brief  Every entity key this command refers to: its own, plus any
+                 parents or group members.
+         \details
+            Play mode uses this to point each key at its entity again after
+            Stop rebuilds the world. Default: just Target().
+         *********************************************************************/
+        virtual void CollectKeys(std::vector<EntityKey>& out) const { out.push_back(Target()); }
+
+        /*********************************************************************
+         \brief  The entities to select once this has run (several for a
+                 multi-selection step). Default: just Target().
+         *********************************************************************/
+        virtual void SelectionKeys(std::vector<EntityKey>& out) const { out.push_back(Target()); }
+    };
+
+    /*************************************************************************
+     \brief
+        Several commands recorded as ONE undo step - an action on a
+        multi-selection, e.g. "Delete 3 Entities" or a gizmo drag that moved
+        several objects.
+     \details
+        Undo runs the parts newest-first, Redo oldest-first, so parts that
+        depend on each other (sibling positions) replay in the same order
+        they happened. Use Make() rather than the constructor: it returns
+        nullptr for no parts and the part itself for exactly one.
+     *************************************************************************/
+    class GroupCommand final : public EditorCommand
+    {
+    public:
+        GroupCommand(std::vector<std::unique_ptr<EditorCommand>> parts, std::string label)
+            : m_parts(std::move(parts))
+            , m_label(std::move(label))
+        {
+        }
+
+        static std::unique_ptr<EditorCommand> Make(std::vector<std::unique_ptr<EditorCommand>> parts, std::string label)
+        {
+            if (parts.empty())     { return nullptr; }
+            if (parts.size() == 1) { return std::move(parts.front()); }
+            return std::make_unique<GroupCommand>(std::move(parts), std::move(label));
+        }
+
+        void Undo(UndoHistory& history) override
+        {
+            for (auto it = m_parts.rbegin(); it != m_parts.rend(); ++it) { (*it)->Undo(history); }
+        }
+        void Redo(UndoHistory& history) override
+        {
+            for (auto& part : m_parts) { part->Redo(history); }
+        }
+
+        //! The last part's entity: the "active" one of the selection.
+        EntityKey          Target() const override { return m_parts.empty() ? kNullEntity : m_parts.back()->Target(); }
+        const std::string& Label()  const override { return m_label; }
+
+        void CollectKeys(std::vector<EntityKey>& out) const override
+        {
+            for (const auto& part : m_parts) { part->CollectKeys(out); }
+        }
+        void SelectionKeys(std::vector<EntityKey>& out) const override
+        {
+            for (const auto& part : m_parts) { part->SelectionKeys(out); }
+        }
+
+    private:
+        std::vector<std::unique_ptr<EditorCommand>> m_parts;
+        std::string                                 m_label;
     };
 
     /*************************************************************************
@@ -190,6 +260,14 @@ namespace Crucible {
         //! True between BeginPlaySession and EndPlaySession.
         bool InPlaySession() const { return m_stash.active; }
 
+        /*********************************************************************
+         \brief  Every entity the last Undo()/Redo() touched, resolved to
+                 live handles (the whole group for a multi-selection step).
+                 Undo()'s return value is the last of these. May hold dead
+                 handles (undoing a Create destroys its entity).
+         *********************************************************************/
+        const std::vector<Entity>& LastSelection() const { return m_lastSelection; }
+
         bool CanUndo() const { return !m_undo.empty(); }
         bool CanRedo() const { return !m_redo.empty(); }
 
@@ -246,6 +324,9 @@ namespace Crucible {
 
         World*        m_world  = nullptr;
         SceneManager* m_scenes = nullptr;
+
+        std::vector<Entity> m_lastSelection;   // see LastSelection()
+        void RememberSelection(const EditorCommand& command);
 
         std::deque<std::unique_ptr<EditorCommand>> m_undo;   // back() is newest
         std::deque<std::unique_ptr<EditorCommand>> m_redo;   // back() is next to redo

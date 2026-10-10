@@ -17,6 +17,7 @@
 #include <string>
 #include <map>
 #include <memory>
+#include <vector>
 
 #include "Graphics/Vulkan/ImGuiContext.h"
 #include "Graphics/RenderSystem.h"
@@ -156,7 +157,8 @@ namespace Crucible {
 		ResourceManager* m_resources = nullptr;
 		UndoHistory      m_history;
 
-		void SelectAfterHistoryStep(Entity entity);
+		// Selects what an undo / redo step touched (all of it, for a multi-selection step).
+		void SelectAfterHistoryStep(Entity entity, std::vector<Entity> const& all);
 
 		// ---- Play mode ----
 		// Stop rebuilds the world from the Play snapshot, so every Entity handle changes.
@@ -166,7 +168,7 @@ namespace Crucible {
 
 		Core*         m_core = nullptr;
 		Subscription  m_playStateChanged;            // EngineEvents::PlayStateChanged on the engine bus
-		std::uint64_t m_selectionBeforePlay = 0;     // scene guid of the entity selected at Play; 0 = none
+		std::vector<std::uint64_t> m_selectionBeforePlay;   // scene guids of the entities selected at Play; active one last
 	};
 
 	namespace ImGuiManager {

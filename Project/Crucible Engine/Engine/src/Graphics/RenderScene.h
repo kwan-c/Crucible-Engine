@@ -50,6 +50,8 @@ namespace Crucible {
         void DestroyProxy(RenderProxyHandle handle);
         /// Which object gets the selection outline (0 = none). Matched against proxies' userData.
         void SetOutlinedObject(std::uint64_t userData);
+        /// Several objects outlined at once (multi-selection). Zeros are ignored; empty = none.
+        void SetOutlinedObjects(const std::vector<std::uint64_t>& userData);
 
         // ---- Once a frame ----
         /// Gives proxies whose mesh was still uploading another try at getting their bounds.
@@ -80,7 +82,7 @@ namespace Crucible {
          \param[in,out] stats  shadowCasters and shadowDrawCalls are added to.
          *********************************************************************/
         void BuildShadowBatches(const glm::mat4& viewProj, std::vector<DrawBatch>& out, RenderCullStats& stats);
-        /// Appends the selected object's batch, if there is one and it is visible.
+        /// Appends the selected objects' batches (those that have a proxy and are visible).
         void BuildOutlineBatches(std::vector<DrawBatch>& out);
 
         /*********************************************************************
@@ -106,8 +108,8 @@ namespace Crucible {
         // Appends `items` (already sorted) as batches: consecutive items with the same mesh (and
         // material, if byMaterial) become one instanced draw. Returns the number of instances.
         uint32_t AppendBatches(const std::vector<RenderItem>& items, std::vector<DrawBatch>& batches, bool byMaterial);
-        // The selected proxy's id, or 0xFFFFFFFF (re-finds it if the cached id went stale).
-        uint32_t ResolveOutlineProxy();
+        // Brings m_outlineProxies up to date (re-finds any cached id that went stale).
+        void ResolveOutlineProxies();
 
         VulkanContext&         m_context;
         const RenderResources& m_resources;
@@ -133,9 +135,10 @@ namespace Crucible {
         std::vector<RenderItem>     m_visibleItems;     // scratch: one view's culled + sorted draw list
         std::vector<RenderItem>     m_casterItems;      // scratch: one shadow cascade's casters
 
-        // Selection outline (SetOutlinedObject).
-        std::uint64_t               m_outlineUserData = 0;
-        uint32_t                    m_outlineProxy = 0xFFFFFFFFu;     // cached lookup of m_outlineUserData
+        // Selection outline (SetOutlinedObject / SetOutlinedObjects). One cached proxy id per
+        // outlined object, 0xFFFFFFFF while it has none (e.g. a light, or not uploaded yet).
+        std::vector<std::uint64_t>  m_outlineUserData;
+        std::vector<uint32_t>       m_outlineProxies;
 
         // Instances: every object drawn this frame by every pass of every view, one model matrix
         // each (set 0, binding 2). Built on the CPU as each view is prepared, copied in one go by

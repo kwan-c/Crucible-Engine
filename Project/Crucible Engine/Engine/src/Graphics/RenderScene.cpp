@@ -119,11 +119,24 @@ namespace Crucible {
 
     void RenderScene::SetOutlinedObject(std::uint64_t userData) {
 
-        if (userData == m_outlineUserData) { return; }
-        m_outlineUserData = userData;
-        m_outlineProxy    = 0xFFFFFFFFu;   // re-resolved lazily (ResolveOutlineProxy)
+        if (userData == 0) { SetOutlinedObjects({}); }
+        else               { SetOutlinedObjects({ userData }); }
 
     }   // RenderScene::SetOutlinedObject()
+
+    void RenderScene::SetOutlinedObjects(const std::vector<std::uint64_t>& userData) {
+
+        std::vector<std::uint64_t> wanted;
+        wanted.reserve(userData.size());
+        for (std::uint64_t id : userData) {
+            if (id != 0 && std::find(wanted.begin(), wanted.end(), id) == wanted.end()) { wanted.push_back(id); }
+        }
+        if (wanted == m_outlineUserData) { return; }   // called every frame by the editor: usually unchanged
+
+        m_outlineUserData = std::move(wanted);
+        m_outlineProxies.assign(m_outlineUserData.size(), 0xFFFFFFFFu);   // re-resolved lazily (ResolveOutlineProxies)
+
+    }   // RenderScene::SetOutlinedObjects()
 
     void RenderScene::BuildMainBatches(const Camera& camera, RenderCullStats& stats, std::vector<DrawBatch>& out) {
 
@@ -154,10 +167,16 @@ namespace Crucible {
 
     void RenderScene::BuildOutlineBatches(std::vector<DrawBatch>& out) {
 
-        const uint32_t id = ResolveOutlineProxy();
-        if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid) {
-            m_casterItems.clear();
-            m_casterItems.push_back(RenderItem{ m_proxies[id].mesh, MaterialHandle{}, m_proxies[id].model });
+        ResolveOutlineProxies();
+        m_casterItems.clear();
+        for (uint32_t id : m_outlineProxies) {
+            if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid) {
+                m_casterItems.push_back(RenderItem{ m_proxies[id].mesh, MaterialHandle{}, m_proxies[id].model });
+            }
+        }
+        if (!m_casterItems.empty()) {
+            // AppendBatches merges consecutive items with the same mesh into one instanced draw.
+            std::sort(m_casterItems.begin(), m_casterItems.end(), [](const RenderItem& a, const RenderItem& b) { return a.mesh < b.mesh; });
             AppendBatches(m_casterItems, out, false);
         }
 
@@ -254,24 +273,28 @@ namespace Crucible {
 
     }   // RenderScene::UploadInstances()
 
-    uint32_t RenderScene::ResolveOutlineProxy() {
+    void RenderScene::ResolveOutlineProxies() {
 
         constexpr uint32_t kNone = 0xFFFFFFFFu;
-        if (m_outlineUserData == 0) { return kNone; }
-
-        if (m_outlineProxy < m_proxies.size() && m_proxies[m_outlineProxy].alive
-            && m_proxies[m_outlineProxy].userData == m_outlineUserData) {
-            return m_outlineProxy;
+        bool stale = false;
+        for (std::size_t i = 0; i < m_outlineUserData.size(); ++i) {
+            const uint32_t id = m_outlineProxies[i];
+            if (id < m_proxies.size() && m_proxies[id].alive && m_proxies[id].userData == m_outlineUserData[i]) { continue; }
+            m_outlineProxies[i] = kNone;
+            stale = true;
         }
-        // Stale or never looked up: one linear scan (selection changes are rare; a selected entity
-        // with no proxy, e.g. a light, costs one cheap scan per frame).
-        m_outlineProxy = kNone;
-        for (uint32_t i = 0; i < m_proxies.size(); ++i) {
-            if (m_proxies[i].alive && m_proxies[i].userData == m_outlineUserData) { m_outlineProxy = i; break; }
-        }
-        return m_outlineProxy;
+        if (!stale) { return; }
 
-    }   // RenderScene::ResolveOutlineProxy()
+        // Stale or never looked up: one linear scan for all of them together (selection changes
+        // are rare; a selected entity with no proxy, e.g. a light, costs one cheap scan per frame).
+        for (uint32_t p = 0; p < m_proxies.size(); ++p) {
+            if (!m_proxies[p].alive) { continue; }
+            for (std::size_t i = 0; i < m_outlineUserData.size(); ++i) {
+                if (m_outlineProxies[i] == kNone && m_proxies[p].userData == m_outlineUserData[i]) { m_outlineProxies[i] = p; break; }
+            }
+        }
+
+    }   // RenderScene::ResolveOutlineProxies()
 
     namespace {
 

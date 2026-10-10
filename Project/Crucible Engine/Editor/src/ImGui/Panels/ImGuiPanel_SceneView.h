@@ -23,6 +23,7 @@
 #include <ECS/Core/ECSCore.h>   // Entity
 
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Crucible {
@@ -66,14 +67,18 @@ namespace Crucible {
 		void DrawIcons(ImVec2 viewMin, ImVec2 viewSize);
 		// Left click (not a drag, not flying): an icon under the cursor wins; otherwise a ray from
 		// the cursor picks the nearest mesh (Renderer::Raycast); empty space clears the selection.
+		// Ctrl+click adds/removes the picked entity, Shift+click adds it (multi-selection).
 		void HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize);
 		void Select(Entity entity);
 
 		// ---- Move / Rotate / Scale gizmo (ImGuizmo) ----
-		// Drawn on the selected entity. One whole drag = one undo step (EndGizmoDrag pushes it).
+		// Drawn on the active (last selected) entity. With several selected, the drag moves /
+		// rotates / scales all of them by the same amount. One whole drag = one undo step
+		// (EndGizmoDrag pushes it).
 		void DrawGizmo(ImVec2 viewMin, ImVec2 viewSize);
 		void EndGizmoDrag();
-		// Mirrors the Inspector's selection into DebugDrawSystem (selection box, light gizmos).
+		// Mirrors the Inspector's selection into DebugDrawSystem (the active entity's selection
+		// box and light gizmos) and the renderer's outline (every selected entity).
 		void SyncSelection();
 
 		struct IconHit { Entity entity; ImVec2 pos; float depth; };
@@ -98,8 +103,10 @@ namespace Crucible {
 		bool        m_gizmoDrawn = false;          // DrawGizmo called Manipulate last frame
 		bool        m_gizmoWasUsing = false;
 		bool        m_gizmoClaimedClick = false;   // LMB went down on the gizmo: that click is a drag, not a pick
-		Entity      m_gizmoEntity = kNullEntity;  // the entity being dragged
-		std::string m_gizmoBefore;                // its snapshot when the drag started (for undo)
+		Entity      m_gizmoEntity = kNullEntity;  // the entity the gizmo is on (the active one)
+		// Every entity the drag moves, with its snapshot from when the drag started (for undo).
+		// Only top-level ones: a selected child already moves with its selected parent.
+		std::vector<std::pair<Entity, std::string>> m_gizmoBefore;
 		std::string m_gizmoVerb;                  // "Move" / "Rotate" / "Scale", the Edit menu label
 	};
 

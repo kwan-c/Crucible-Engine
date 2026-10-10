@@ -624,6 +624,12 @@ namespace Crucible {
 
     }   // Renderer::SetOutlinedObject()
 
+    void Renderer::SetOutlinedObjects(const std::vector<std::uint64_t>& userData) {
+
+        m_scene.SetOutlinedObjects(userData);
+
+    }   // Renderer::SetOutlinedObjects()
+
     void Renderer::SetOutlineStyle(const glm::vec4& color, float thicknessPixels) {
 
         m_outlineStyle.color     = color;
@@ -881,7 +887,7 @@ namespace Crucible {
         m_particlePass.Prepare(camera, out.particles, stats);
         m_lights.EndView();
 
-        // ---- Selection outline mask: just the selected object ----
+        // ---- Selection outline mask: just the selected objects ----
         if (outline) { m_scene.BuildOutlineBatches(out.outline); }
 
         memcpy(uniformDst, &ubo, sizeof(ubo));

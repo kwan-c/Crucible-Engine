@@ -309,10 +309,16 @@ namespace {
 
 void Crucible::SceneView::SyncSelection() {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
-	const Entity selected = inspector ? inspector->GetSelectedEntity() : kNullEntity;
-	DebugDrawSystem::SetSelectedEntity(selected);
-	// Picks up selections made elsewhere (Hierarchy, Inspector) too.
-	m_renderer.SetOutlinedObject(selected == kNullEntity ? 0 : EntityToUserData(selected));
+	const Entity active = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+	DebugDrawSystem::SetSelectedEntity(active);
+
+	// Every selected entity gets the outline. Picks up selections made elsewhere (Hierarchy,
+	// Inspector) too; the renderer ignores the call when the list hasn't changed.
+	std::vector<std::uint64_t> outlined;
+	if (inspector) {
+		for (Entity const e : inspector->GetSelection()) { outlined.push_back(EntityToUserData(e)); }
+	}
+	m_renderer.SetOutlinedObjects(outlined);
 }
 
 void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
@@ -322,7 +328,8 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 	Camera& camera = m_viewport.GetCamera();
 	camera.SetAspect(viewSize.x, viewSize.y);   // match the image this frame (the Renderer does the same)
 	const glm::mat4 viewProj = camera.GetProjection() * camera.GetView();
-	const Entity selected = DebugDrawSystem::GetSelectedEntity();
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	const Entity active = DebugDrawSystem::GetSelectedEntity();
 
 	ImDrawList* dl = ImGui::GetWindowDrawList();
 	dl->PushClipRect(viewMin, ImVec2(viewMin.x + viewSize.x, viewMin.y + viewSize.y), true);
@@ -333,7 +340,9 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 		ImVec2 screen; float depth;
 		if (!ProjectToScreen(viewProj, glm::vec3(wt.matrix[3]), viewMin, viewSize, screen, depth)) { return; }
 		dl->AddCircleFilled(screen, kIconRadius, IM_COL32(18, 18, 22, 170));
-		if (entity == selected) { dl->AddCircle(screen, kIconRadius + 1.5f, IM_COL32(255, 140, 26, 255), 0, 2.0f); }
+		// Selection ring: solid on the active entity, fainter on the rest of a multi-selection.
+		if (entity == active) { dl->AddCircle(screen, kIconRadius + 1.5f, IM_COL32(255, 140, 26, 255), 0, 2.0f); }
+		else if (inspector && inspector->IsSelected(entity)) { dl->AddCircle(screen, kIconRadius + 1.5f, IM_COL32(255, 140, 26, 150), 0, 2.0f); }
 		glyph(screen);
 		m_iconHits.push_back({ entity, screen, depth });
 	};
@@ -372,10 +381,14 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 
 void Crucible::SceneView::Select(Entity entity) {
 	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR)) {
-		inspector->SetSelectedEntity(entity);
+		ImGuiIO const& io = ImGui::GetIO();
+		// Ctrl+click toggles, Shift+click adds; with either held, a click on empty space keeps
+		// the selection instead of clearing it. A plain click selects just what was hit.
+		if (io.KeyCtrl)       { if (entity.IsValid()) { inspector->ToggleSelected(entity); } }
+		else if (io.KeyShift) { if (entity.IsValid()) { inspector->AddToSelection(entity); } }
+		else                  { inspector->SetSelectedEntity(entity); }
 	}
-	DebugDrawSystem::SetSelectedEntity(entity);
-	m_renderer.SetOutlinedObject(entity == kNullEntity ? 0 : EntityToUserData(entity));
+	SyncSelection();
 }
 
 void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
@@ -558,6 +571,41 @@ void Crucible::SceneView::DrawStatsOverlay(ImVec2 viewMin) {
 
 // ------------------------------------------------------------------ gizmo
 
+namespace Crucible {
+namespace {
+
+	// World matrix of `entity`'s parent, composed from the Transforms themselves (see DrawGizmo
+	// for why not WorldTransform). Identity for a root.
+	glm::mat4 ParentWorldOf(World& world, Entity entity) {
+		glm::mat4 parentWorld(1.0f);
+		for (Entity p = world.GetParent(entity); p.IsValid(); p = world.GetParent(p)) {
+			if (Transform const* t = world.Read<Transform>(p)) {
+				parentWorld = Detail::ComposeTRS(t->positions, t->rotation, t->scale) * parentWorld;
+			}
+		}
+		return parentWorld;
+	}
+
+	// The selected entities a gizmo drag should move: the ones with a Transform whose parent /
+	// ancestor is NOT also selected (a selected child already moves with its selected parent;
+	// moving it too would move it twice).
+	std::vector<Entity> GizmoMovers(World& world, std::vector<Entity> const& selection) {
+		auto const selected = [&selection](Entity e) { return std::find(selection.begin(), selection.end(), e) != selection.end(); };
+		std::vector<Entity> movers;
+		for (Entity const e : selection) {
+			if (!world.IsAlive(e) || !world.HasComponent<Transform>(e)) { continue; }
+			bool covered = false;
+			for (Entity p = world.GetParent(e); p.IsValid(); p = world.GetParent(p)) {
+				if (selected(p)) { covered = true; break; }
+			}
+			if (!covered) { movers.push_back(e); }
+		}
+		return movers;
+	}
+
+}   // anonymous namespace
+}   // namespace Crucible
+
 void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	Entity const entity = inspector ? inspector->GetSelectedEntity() : kNullEntity;
@@ -579,14 +627,10 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 	// chain is composed from the Transforms themselves, the same way HierarchyTransformSystem
 	// does (Detail::ComposeTRS, parent * local), rather than read from WorldTransform: that is
 	// only refreshed once a frame, so mid-drag it would lag a frame behind the mouse.
-	glm::mat4 parentWorld(1.0f);
-	for (Entity p = m_world.GetParent(entity); p.IsValid(); p = m_world.GetParent(p)) {
-		if (Transform const* t = m_world.Read<Transform>(p)) {
-			parentWorld = Detail::ComposeTRS(t->positions, t->rotation, t->scale) * parentWorld;
-		}
-	}
-	Transform const& local = *m_world.Read<Transform>(entity);
-	glm::mat4 world = parentWorld * Detail::ComposeTRS(local.positions, local.rotation, local.scale);
+	glm::mat4 const parentWorld = ParentWorldOf(m_world, entity);
+	Transform const local = *m_world.Read<Transform>(entity);   // a copy: the "before" of this frame's change
+	glm::mat4 const oldWorld = parentWorld * Detail::ComposeTRS(local.positions, local.rotation, local.scale);
+	glm::mat4 world = oldWorld;
 
 	ImGuizmo::OPERATION operation = ImGuizmo::TRANSLATE;
 	float snapStep = 0.5f;          // Ctrl-snap: half a unit...
@@ -614,22 +658,30 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 
 	if (usingGizmo && !m_gizmoWasUsing) {
 		// The drag starts: close any Inspector edit first so the two stay separate undo steps,
-		// then remember the entity as it is now. The whole drag becomes one step.
+		// then remember every entity it will move as it is now. The whole drag becomes one step.
 		if (inspector) { inspector->CommitPendingEdit(); }
 		m_gizmoEntity = entity;
-		m_gizmoBefore = EntityState::Capture(m_world, entity);
+		m_gizmoBefore.clear();
+		std::vector<Entity> movers = GizmoMovers(m_world, inspector ? inspector->GetSelection() : std::vector<Entity>{});
+		if (movers.empty()) { movers.push_back(entity); }
+		for (Entity const e : movers) { m_gizmoBefore.emplace_back(e, EntityState::Capture(m_world, e)); }
 		m_gizmoVerb = verb;
 	}
 
 	if (changed) {
+		// The active entity's own part, exactly as before multi-selection: only the part being
+		// dragged is written back, so a move never nudges the rotation or scale through float
+		// round-off. Skipped when its parent is also selected - the parent carries it along.
+		bool const activeMoves = m_gizmoBefore.empty() ||
+			std::any_of(m_gizmoBefore.begin(), m_gizmoBefore.end(), [&](auto const& m) { return m.first == entity; });
+
 		Math::vec3 translation, scale;
 		Math::quat rotation;
 		// Back to local space. DecomposeTRS refuses a collapsed or mirrored matrix (scale
 		// dragged through zero), leaving the Transform as it was rather than writing NaNs.
-		if (Detail::DecomposeTRS(glm::inverse(parentWorld) * world, translation, rotation, scale)) {
+		bool const decomposed = Detail::DecomposeTRS(glm::inverse(parentWorld) * world, translation, rotation, scale);
+		if (decomposed && activeMoves) {
 			if (Transform* t = m_world.GetComponent<Transform>(entity)) {
-				// Only the part being dragged is written back, so a move never nudges the
-				// rotation or scale through float round-off.
 				switch (m_gizmoMode) {
 				case GizmoMode::Translate: t->positions = translation; break;
 				case GizmoMode::Rotate:    t->rotation  = rotation;    break;
@@ -638,6 +690,43 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 				m_scenes.MarkDirty();
 			}
 		}
+
+		// The rest of a multi-selection gets the same change. Move and Rotate: this frame's
+		// change in world space (new * old^-1 - a rotation turns them around the gizmo's centre,
+		// like Unity's Pivot mode). Scale: each one's own scale is multiplied by the same factor,
+		// in place, so differently rotated objects never get skewed.
+		glm::mat4 const delta = world * glm::inverse(oldWorld);
+		Math::vec3 scaleFactor(1.0f);
+		if (m_gizmoMode == GizmoMode::Scale && decomposed) {
+			for (int axis = 0; axis < 3; ++axis) {
+				if (std::abs(local.scale[axis]) > 1e-6f) { scaleFactor[axis] = scale[axis] / local.scale[axis]; }
+			}
+		}
+
+		// A zero-scale active entity has no inverse: its change can't be carried to the others.
+		bool const deltaUsable = m_gizmoMode == GizmoMode::Scale || std::abs(glm::determinant(oldWorld)) > 1e-12f;
+
+		for (auto const& [other, before] : m_gizmoBefore) {
+			(void)before;
+			if (!deltaUsable) { break; }
+			if (other == entity || !m_world.IsAlive(other)) { continue; }
+			Transform* t = m_world.GetComponent<Transform>(other);
+			if (!t) { continue; }
+
+			if (m_gizmoMode == GizmoMode::Scale) {
+				if (decomposed) { t->scale *= scaleFactor; m_scenes.MarkDirty(); }
+				continue;
+			}
+
+			glm::mat4 const otherParent = ParentWorldOf(m_world, other);
+			glm::mat4 const otherWorld = otherParent * Detail::ComposeTRS(t->positions, t->rotation, t->scale);
+			Math::vec3 otherT, otherS;
+			Math::quat otherR;
+			if (!Detail::DecomposeTRS(glm::inverse(otherParent) * (delta * otherWorld), otherT, otherR, otherS)) { continue; }
+			t->positions = otherT;                                                   // Move and Rotate both move it
+			if (m_gizmoMode == GizmoMode::Rotate) { t->rotation = otherR; }          // only Rotate turns it
+			m_scenes.MarkDirty();
+		}
 	}
 
 	if (!usingGizmo && m_gizmoWasUsing) { EndGizmoDrag(); }
@@ -645,16 +734,27 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 }
 
 void Crucible::SceneView::EndGizmoDrag() {
-	if (m_gizmoEntity.IsValid() && !m_gizmoBefore.empty() && m_world.IsAlive(m_gizmoEntity)) {
-		std::string after = EntityState::Capture(m_world, m_gizmoEntity);
-		if (after != m_gizmoBefore) {
-			// Pushed in play mode too: the history keeps play-mode steps separately and drops
-			// them on Stop (UndoHistory::BeginPlaySession / EndPlaySession).
-			UndoHistory& history = EditorManager::GetInstance().GetHistory();
-			history.Push(std::make_unique<EntityStateCommand>(
-				history.KeyOf(m_gizmoEntity), std::move(m_gizmoBefore), std::move(after), m_gizmoVerb));
+	// One EntityStateCommand per entity that actually changed, pushed as one undo step.
+	// Pushed in play mode too: the history keeps play-mode steps separately and drops them on
+	// Stop (UndoHistory::BeginPlaySession / EndPlaySession).
+	std::vector<std::unique_ptr<EditorCommand>> parts;
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	for (auto& [moved, before] : m_gizmoBefore) {
+		if (!moved.IsValid() || before.empty() || !m_world.IsAlive(moved)) { continue; }
+		std::string after = EntityState::Capture(m_world, moved);
+		if (after != before) {
+			parts.push_back(std::make_unique<EntityStateCommand>(history.KeyOf(moved), std::move(before), std::move(after), m_gizmoVerb));
 		}
 	}
+
+	// The gizmo's own entity last, so it is the active one again after an undo / redo.
+	std::stable_partition(parts.begin(), parts.end(), [&](auto const& part) { return !(part->Target() == history.KeyOf(m_gizmoEntity)); });
+
+	if (!parts.empty()) {
+		std::string const label = parts.size() == 1 ? m_gizmoVerb : m_gizmoVerb + " " + std::to_string(parts.size()) + " Entities";
+		history.Push(GroupCommand::Make(std::move(parts), label));
+	}
+
 	m_gizmoEntity = kNullEntity;
 	m_gizmoBefore.clear();
 	m_gizmoWasUsing = false;

@@ -555,6 +555,13 @@ namespace Crucible {
         ENGINE_API void           SetOutlinedObject(std::uint64_t userData);
 
         /*********************************************************************
+         \brief  The same for several objects at once (the editor's
+                 multi-selection). Replaces whatever was outlined before;
+                 zeros are ignored, an empty list outlines nothing.
+         *********************************************************************/
+        ENGINE_API void           SetOutlinedObjects(const std::vector<std::uint64_t>& userData);
+
+        /*********************************************************************
          \brief  Outline colour (sRGB, a = opacity) and thickness in pixels
                  (1..3).
          *********************************************************************/

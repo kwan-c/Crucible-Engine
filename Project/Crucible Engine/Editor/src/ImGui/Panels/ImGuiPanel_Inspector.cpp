@@ -319,9 +319,89 @@ void Crucible::Inspector::Init() {
 
 }
 
+// ---- Selection ----
+
+void Crucible::Inspector::SetSelectedEntity(Entity entity) {
+	if (!(entity == m_selected)) { CommitPendingEdit(); }
+	m_selected = entity;
+	m_selection.clear();
+	if (entity.IsValid()) { m_selection.push_back(entity); }
+	m_draw = nullptr;
+}
+
+void Crucible::Inspector::SetSelection(std::vector<Entity> const& entities, Entity active) {
+	std::vector<Entity> unique;
+	unique.reserve(entities.size());
+	for (Entity const e : entities) {
+		if (e.IsValid() && std::find(unique.begin(), unique.end(), e) == unique.end()) { unique.push_back(e); }
+	}
+	if (unique.empty()) { SetSelectedEntity(kNullEntity); return; }
+	if (!active.IsValid() || std::find(unique.begin(), unique.end(), active) == unique.end()) { active = unique.back(); }
+
+	if (!(active == m_selected)) { CommitPendingEdit(); }
+	m_selected = active;
+	m_selection = std::move(unique);
+	m_draw = nullptr;
+}
+
+void Crucible::Inspector::ToggleSelected(Entity entity) {
+	if (!entity.IsValid()) { return; }
+	auto const it = std::find(m_selection.begin(), m_selection.end(), entity);
+	if (it == m_selection.end()) { AddToSelection(entity); return; }
+
+	m_selection.erase(it);
+	if (entity == m_selected) {
+		// Removing the active entity: the most recently selected of the rest takes over.
+		CommitPendingEdit();
+		m_selected = m_selection.empty() ? kNullEntity : m_selection.back();
+	}
+}
+
+void Crucible::Inspector::AddToSelection(Entity entity) {
+	if (!entity.IsValid()) { return; }
+	if (m_draw) { m_draw = nullptr; m_selection.clear(); }   // an asset preview was showing: start fresh
+	if (!(entity == m_selected)) { CommitPendingEdit(); }
+
+	// Moved to the back, so "selection order" stays "the order they were last clicked".
+	auto const it = std::find(m_selection.begin(), m_selection.end(), entity);
+	if (it != m_selection.end()) { m_selection.erase(it); }
+	m_selection.push_back(entity);
+	m_selected = entity;
+}
+
+bool Crucible::Inspector::IsSelected(Entity entity) const {
+	return entity.IsValid() && std::find(m_selection.begin(), m_selection.end(), entity) != m_selection.end();
+}
+
+std::vector<Crucible::Entity> Crucible::Inspector::GetSelection() const {
+	std::vector<Entity> alive;
+	alive.reserve(m_selection.size());
+	for (Entity const e : m_selection) {
+		if (m_world.IsAlive(e)) { alive.push_back(e); }
+	}
+	return alive;
+}
+
+void Crucible::Inspector::PruneSelection() {
+	auto const dead = [this](Entity e) { return !m_world.IsAlive(e); };
+	if (std::none_of(m_selection.begin(), m_selection.end(), dead)) { return; }
+	m_selection.erase(std::remove_if(m_selection.begin(), m_selection.end(), dead), m_selection.end());
+	if (!m_world.IsAlive(m_selected)) { m_selected = m_selection.empty() ? kNullEntity : m_selection.back(); }
+}
+
 void Crucible::Inspector::Update(float) {
+	PruneSelection();   // deleted / undone entities drop out of the selection
+
 	if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		if (m_selected.IsValid() && m_world.IsAlive(m_selected)) {
+			// Several selected: say so. The fields below edit the active entity only.
+			if (m_selection.size() > 1) {
+				ImGui::TextColored(ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled), "%zu entities selected", m_selection.size());
+				ImGui::SetItemTooltip("Showing the active one (last clicked). Delete, Duplicate, Copy and\n"
+				                      "the Scene view gizmo apply to all of them; the fields below edit\n"
+				                      "only this one.");
+			}
+
 			// Undo: while nothing is being edited, keep a fresh "before" snapshot ready.
 			if (!m_editOpen) {
 				m_editBefore = EntityState::Capture(m_world, m_selected);
