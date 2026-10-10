@@ -1,3 +1,22 @@
+/*************************************************************************
+* \file:         PhysicsQueries.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 September 2026
+* \version       1.0
+* \brief
+*                Physics::Raycast, Unity's Physics.Raycast: the closest
+*                body along a ray.
+*
+* \details
+*                The direction is normalised for you. Pass the shooter's
+*                own body as 'ignore', or a ray that starts inside it hits
+*                it at distance zero.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header

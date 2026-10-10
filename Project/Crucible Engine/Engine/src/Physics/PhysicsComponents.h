@@ -1,3 +1,29 @@
+/*************************************************************************
+* \file:         PhysicsComponents.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 September 2026
+* \version       1.4
+* \brief
+*                The physics components the designer and gameplay touch:
+*                Collider, CharacterController, PlayerController,
+*                CameraOrbit and ConstantForce.
+*
+* \details
+*                Sizes are full sizes, the way Unity states them;
+*                ECSPhysicsSystem halves them for Jolt in one place.
+*                ScaledCollider applies the Transform's scale, so what you
+*                see is what you hit. Also holds the Entity to user-data
+*                packing.
+*
+* \history
+*    -v1.0       Collider and CharacterController
+*    -v1.1       maths types moved to glm
+*    -v1.2       PlayerController; Collider scales with the Transform
+*    -v1.3       CameraOrbit and face-the-camera
+*    -v1.4       ConstantForce
+*
+**************************************************************************/
 #pragma once
 
 // STL
@@ -225,6 +251,33 @@ namespace Crucible {
     };  // CAMERAORBIT STRUCT
 
     CRUCIBLE_COMPONENT(CameraOrbit, CameraOrbit)
+
+    /*
+        Unity's ConstantForce: a steady push a designer sets in the Inspector -
+        wind on a crate, a thruster, an updraft - with no script at all.
+
+            world.AddComponent(crate, RigidBody{});
+            world.AddComponent(crate, ConstantForce{ .m_force = { 0, 20, 0 } });   // ...and it drifts upward
+
+        The world-space pair pushes along the world's axes, whichever way the
+        body faces. The relative pair pushes along the body's OWN axes and turns
+        with it, so a rocket with relative force (0, 0, -100) always thrusts
+        out of its own front (-Z is forward in a right-handed, Y-up engine).
+
+        Handed to every physics step, so it pushes the same at any frame rate.
+        Like Unity's, it needs a RigidBody on the same entity (only a dynamic
+        body can be pushed), and it keeps that body awake for as long as it pushes.
+    */
+    struct ConstantForce {
+
+        Math::vec3 m_force          = Math::vec3(0.0f, 0.0f, 0.0f);   // newtons, world axes
+        Math::vec3 m_relativeForce  = Math::vec3(0.0f, 0.0f, 0.0f);   // newtons, the body's own axes
+        Math::vec3 m_torque         = Math::vec3(0.0f, 0.0f, 0.0f);   // newton-metres, world axes
+        Math::vec3 m_relativeTorque = Math::vec3(0.0f, 0.0f, 0.0f);   // newton-metres, the body's own axes
+
+    };  // CONSTANTFORCE STRUCT
+
+    CRUCIBLE_COMPONENT(ConstantForce, ConstantForce)
 
     // ------------------------------------------------------------------- //
     // ENTITY <-> USER DATA

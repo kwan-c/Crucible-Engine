@@ -70,9 +70,10 @@ namespace Crucible
 		Camera = 11,          // Graphics: the game camera (struct CameraComponent)
 		PlayerController = 12,   // Physics: keyboard -> CharacterController, local player only (Physics/PhysicsComponents.h)
 		CameraOrbit = 13,        // Physics: mouse -> third-person camera pivot (Physics/PhysicsComponents.h)
+		ConstantForce = 14,      // Physics: a steady push set in the Inspector (Physics/PhysicsComponents.h)
 
 
-		MAXCOMPONENT = 14
+		MAXCOMPONENT = 15
 	};
 
 
@@ -176,5 +177,6 @@ namespace Crucible
  X(CameraComponent)                                                            \
  X(PlayerController)                                                           \
  X(CameraOrbit)                                                                \
+ X(ConstantForce)                                                              \
 
 }

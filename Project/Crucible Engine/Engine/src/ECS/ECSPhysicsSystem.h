@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         ECSPhysicsSystem.h
 * \author:       Abhishek Akilandeswari Patchamuthu (v1.0 skeleton),
-*                Hugo (v2.0 physics binding)
+*                Hugo Low Ren Hao (v2.0 physics binding)
+* \par:          Email: a.patchamuthu@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          27 September 2026
 * \version       2.1
 * \brief

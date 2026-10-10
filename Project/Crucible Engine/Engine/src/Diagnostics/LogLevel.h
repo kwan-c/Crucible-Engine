@@ -1,3 +1,23 @@
+/*************************************************************************
+* \file:         LogLevel.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.0
+* \brief
+*                The log severity levels, Trace up to Fatal plus Off, and
+*                the name printed for each.
+*
+* \details
+*                The order of the enum is the filter: a message is written
+*                when its level is at or above the logger's minimum.
+*                LevelName pads every name to five characters so the
+*                columns in the log line up.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #pragma once
 
 #include <string_view>

@@ -1,3 +1,26 @@
+/*************************************************************************
+* \file:         AudioVoices.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          1 October 2026
+* \version       1.2
+* \brief
+*                Voices, one playing instance of a clip: play, stop,
+*                pause, volume, pitch and 3D position. Also bus volumes
+*                and the listener.
+*
+* \details
+*                Each voice starts paused, is set up, then unpaused, so it
+*                never makes a sound with the wrong settings. A voice
+*                whose sound has already ended is not an error, so FMOD's
+*                invalid-handle result is not logged.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       SetPaused (Abhishek)
+*    -v1.2       linear rolloff
+*
+**************************************************************************/
 #include "AudioSystem.h"
 
 // STL

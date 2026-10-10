@@ -1,3 +1,27 @@
+/*************************************************************************
+* \file:         Logger.cpp
+* \author:       Hugo Low Ren Hao (main author),
+*                Tan Chun Kwang Xavier (v1.1: listeners, user-facing messages)
+* \par:          Email: low.h@digipen.edu,
+*                Email: chunkwangxavier.tan@digipen.edu
+* \date          12 September 2026
+* \version       1.1
+* \brief
+*                The logger's implementation: shared state behind one
+*                mutex, line formatting, the sinks and the listeners.
+*
+* \details
+*                Logging before Init starts a default session, so early
+*                messages are not lost. The mutex makes it safe to log
+*                from Jolt's worker threads. A listener that logs from
+*                inside its own callback is dropped rather than
+*                deadlocking.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       listeners and the CRU_USER_* messages (Xavier)
+*
+**************************************************************************/
 #include "Logger.h"
 
 #include "LogSink.h"

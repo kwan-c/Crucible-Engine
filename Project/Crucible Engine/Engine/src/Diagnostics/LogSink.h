@@ -1,3 +1,26 @@
+/*************************************************************************
+* \file:         LogSink.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.0
+* \brief
+*                Where log lines go: the ISink interface, plus the
+*                console, Visual Studio Output window and log file sinks.
+*
+* \details
+*                The logger keeps a list of sinks and hands every line to
+*                each one, so a new destination (an editor console, a
+*                profiler) is one new class here and no change to
+*                Logger.cpp.
+*
+*                Engine-internal and not exported from the DLL, which
+*                keeps std::ofstream off the DLL boundary.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #pragma once
 
 #include <filesystem>

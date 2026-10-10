@@ -1,3 +1,25 @@
+/*************************************************************************
+* \file:         AudioComponents.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          2 October 2026
+* \version       1.2
+* \brief
+*                The audio components the designer and gameplay touch:
+*                AudioSource and AudioListener.
+*
+* \details
+*                AudioSource follows Unity's field for field where it
+*                fits. Play, Stop and PlayOneShot only leave a request
+*                that ECSAudioSystem carries out the same frame, so the
+*                component stays plain data.
+*
+* \history
+*    -v1.0       AudioSource
+*    -v1.1       AudioListener
+*    -v1.2       rolloff mode: logarithmic or linear
+*
+**************************************************************************/
 #pragma once
 
 // STL

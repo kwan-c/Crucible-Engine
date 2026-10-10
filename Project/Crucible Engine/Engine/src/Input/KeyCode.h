@@ -1,3 +1,23 @@
+/*************************************************************************
+* \file:         KeyCode.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          13 September 2026
+* \version       1.1
+* \brief
+*                KeyCode and MouseButton: the engine's own key and button
+*                ids, so nothing above the input layer depends on GLFW.
+*
+* \details
+*                Dense and contiguous so they can index a bitset directly.
+*                Add new keys before Count, and never give them explicit
+*                numbers.
+*
+* \history
+*    -v1.0       keyboard keys
+*    -v1.1       mouse buttons
+*
+**************************************************************************/
 #pragma once
 
 // STL

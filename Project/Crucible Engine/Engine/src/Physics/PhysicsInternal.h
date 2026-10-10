@@ -1,3 +1,24 @@
+/*************************************************************************
+* \file:         PhysicsInternal.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 September 2026
+* \version       1.1
+* \brief
+*                Engine-private: struct Physics::Impl, every Jolt object
+*                the physics system owns.
+*
+* \details
+*                Only the .cpp files in Physics/ may include it. The order
+*                of the members matters, because they are destroyed in
+*                reverse order and Jolt's world must go before what it
+*                points at.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       maths types moved to glm
+*
+**************************************************************************/
 #pragma once
 
 // Jolt - Jolt.h always comes before any other Jolt header

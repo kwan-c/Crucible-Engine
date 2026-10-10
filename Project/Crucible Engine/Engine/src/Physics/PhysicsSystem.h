@@ -1,3 +1,32 @@
+/*************************************************************************
+* \file:         PhysicsSystem.h
+* \author:       Hugo Low Ren Hao (main author),
+*                Tan Chun Kwang Xavier (v1.3: gravity, damping, axis locks)
+* \par:          Email: low.h@digipen.edu,
+*                Email: chunkwangxavier.tan@digipen.edu
+* \date          22 September 2026
+* \version       1.4
+* \brief
+*                Crucible::Physics: the public face of the Jolt physics
+*                world. Bodies, characters, raycasts and forces, all
+*                through handles.
+*
+* \details
+*                Knows nothing about the ECS: ECSPhysicsSystem turns
+*                components into calls on this class. No Jolt header is
+*                included, so Game never sees Jolt; everything Jolt lives
+*                behind the Impl pointer (PhysicsInternal.h).
+*
+* \history
+*    -v1.0       Jolt world setup: Init, Shutdown, Step
+*    -v1.1       bodies, characters and raycasts behind handles and a
+*                pimpl; clean at /W4
+*    -v1.2       maths types moved to glm
+*    -v1.3       per-body gravity, damping and axis locks (Xavier)
+*    -v1.4       forces: AddForce, AddForceAtPosition, AddTorque,
+*                ApplyImpulseAtPosition
+*
+**************************************************************************/
 #pragma once
 
 // STL
@@ -269,6 +298,27 @@ namespace Crucible {
         // spread over the step and a one-frame force barely moves anything.
         // This wakes a sleeping body; the equivalent on Jolt's Body does not.
         void ApplyImpulse(const BodyHandle& body, const Math::vec3& impulse);
+
+        // A push that lasts ONE step, in newtons - a thruster, wind, water
+        // lifting a crate. Jolt clears it after every Step, so to keep pushing,
+        // call it again before every Step. Unity's AddForce (ForceMode.Force).
+        // Wakes a sleeping body; ignored on static and kinematic bodies.
+        void AddForce(const BodyHandle& body, const Math::vec3& force);
+
+        // The same push at a world-space point instead of the centre of mass,
+        // so it turns the body as well: push a door near its edge and it swings.
+        // Unity's AddForceAtPosition.
+        void AddForceAtPosition(const BodyHandle& body, const Math::vec3& force, const Math::vec3& worldPoint);
+
+        // A twist that lasts one step, in newton-metres. The vector's direction
+        // is the axis it turns around (right-hand rule), its length is how hard.
+        // Same one-step rule as AddForce. Unity's AddTorque.
+        void AddTorque(const BodyHandle& body, const Math::vec3& torque);
+
+        // ApplyImpulse at a world-space point, so the kick spins as well as
+        // shoves. A shot on a ragdoll's shin should kick the leg, not slide the
+        // whole body. RaycastHit::m_point goes straight in.
+        void ApplyImpulseAtPosition(const BodyHandle& body, const Math::vec3& impulse, const Math::vec3& worldPoint);
 
         // --- characters (Unity's CharacterController) ---
 

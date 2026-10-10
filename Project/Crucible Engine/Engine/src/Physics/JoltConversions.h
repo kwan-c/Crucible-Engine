@@ -1,3 +1,25 @@
+/*************************************************************************
+* \file:         JoltConversions.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 September 2026
+* \version       1.1
+* \brief
+*                Engine-private: converts the engine's glm maths types to
+*                Jolt's and back.
+*
+* \details
+*                Both libraries use metres, Y up and right-handed, so
+*                nothing is flipped. The build fails if glm is set to
+*                store quaternions as (x, y, z, w), because every rotation
+*                would silently be wrong. Never include this from a header
+*                Game can see.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       maths types moved to glm
+*
+**************************************************************************/
 #pragma once
 
 // Jolt - Jolt.h always comes before any other Jolt header

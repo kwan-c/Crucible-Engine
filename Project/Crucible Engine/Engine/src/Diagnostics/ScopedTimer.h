@@ -1,3 +1,24 @@
+/*************************************************************************
+* \file:         ScopedTimer.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.1
+* \brief
+*                CRU_SCOPED_TIMER: times the scope it sits in and logs how
+*                long it took.
+*
+* \details
+*                Logs from its destructor, so it reports even on an early
+*                return or an exception. A stopgap for "how long did that
+*                take", not a profiler: never put one in a per-frame loop.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       start time kept as a tick count, so no std::chrono member
+*                crosses the DLL boundary (C4251)
+*
+**************************************************************************/
 #pragma once
 
 #include <chrono>

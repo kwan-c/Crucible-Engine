@@ -1,6 +1,7 @@
 /*************************************************************************
   \file       CameraOrbitReflection.cpp
-  \author     Hugo
+  \author     Hugo Low Ren Hao
+  \par        Email: low.h@digipen.edu
   \date       2 October 2026
   \version    1.0
   \brief

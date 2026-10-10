@@ -1,3 +1,27 @@
+/*************************************************************************
+* \file:         PhysicsSystem.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          22 September 2026
+* \version       1.1
+* \brief
+*                Physics::Init, Shutdown and Step: starting the Jolt
+*                world, stopping it in reverse order, and running one
+*                tick.
+*
+* \details
+*                Jolt's trace and assert messages are routed into the
+*                engine logger. Running out of bodies, pairs or contacts
+*                is logged from Step, because Jolt drops contacts instead
+*                of growing and the symptom is things sinking through the
+*                floor.
+*
+* \history
+*    -v1.0       Jolt world setup
+*    -v1.1       layer tables, job system, Jolt messages in the log; clean
+*                at /W4
+*
+**************************************************************************/
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header

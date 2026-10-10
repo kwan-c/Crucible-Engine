@@ -1,6 +1,7 @@
 /*************************************************************************
 * \file:         ECSAudioSystem.h
-* \author:       Hugo
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
 * \date          1 October 2026
 * \version       1.3
 * \brief

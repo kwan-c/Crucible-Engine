@@ -1,3 +1,23 @@
+/*************************************************************************
+* \file:         KeyCode.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          13 September 2026
+* \version       1.1
+* \brief
+*                Translates GLFW key and mouse button codes into KeyCode
+*                and MouseButton.
+*
+* \details
+*                The only file in the engine allowed to mention
+*                GLFW_KEY_*. Written as a switch on GLFW's own macros, so
+*                there are no magic numbers to get wrong.
+*
+* \history
+*    -v1.0       keyboard keys
+*    -v1.1       mouse buttons
+*
+**************************************************************************/
 #include "Input/KeyCode.h"
 
 // Third-party

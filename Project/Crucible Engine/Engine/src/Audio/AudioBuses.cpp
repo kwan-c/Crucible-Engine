@@ -1,3 +1,20 @@
+/*************************************************************************
+* \file:         AudioBuses.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          29 September 2026
+* \version       1.0
+* \brief
+*                ToString for AudioBus, for log messages.
+*
+* \details
+*                A value outside the enum returns "unknown" rather than
+*                crashing.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #include "AudioBuses.h"
 
 namespace Crucible {

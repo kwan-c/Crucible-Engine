@@ -1,3 +1,29 @@
+/*************************************************************************
+* \file:         InputSystem.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          14 September 2026
+* \version       1.1
+* \brief
+*                Crucible::Input: turns GLFW events into one snapshot of
+*                the keyboard and mouse per frame.
+*
+* \details
+*                Layers 1 and 2 of the input design: GLFW events become
+*                KeyCodes, then are frozen once per frame, so every system
+*                sees the same input and "pressed this frame" can be
+*                worked out. Queried statically: Input::IsDown, IsPressed,
+*                IsReleased, GetMouseDelta and so on.
+*
+*                Single instance by design: the static queries go through
+*                one pointer that AttachWindow sets.
+*
+* \history
+*    -v1.0       keyboard: down, pressed and released this frame
+*    -v1.1       mouse: buttons, position, movement, scroll and cursor
+*                lock; clean at /W4
+*
+**************************************************************************/
 #pragma once
 
 // ------------------------------------------------------------------------------------------- //

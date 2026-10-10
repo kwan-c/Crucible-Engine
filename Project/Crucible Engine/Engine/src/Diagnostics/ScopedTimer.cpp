@@ -1,3 +1,22 @@
+/*************************************************************************
+* \file:         ScopedTimer.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.1
+* \brief
+*                ScopedTimer's constructor and destructor.
+*
+* \details
+*                The destructor measures the time since construction and
+*                logs it at the timer's level.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       start time kept as a tick count, so no std::chrono member
+*                crosses the DLL boundary (C4251)
+*
+**************************************************************************/
 #include "ScopedTimer.h"
 
 #include "Logger.h"

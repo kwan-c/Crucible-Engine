@@ -1,9 +1,11 @@
 /*************************************************************************
 * \file:         ECSPhysicsSystem.cpp
 * \author:       Abhishek Akilandeswari Patchamuthu (v1.0 skeleton),
-*                Hugo (v2.0 physics binding)
+*                Hugo Low Ren Hao (v2.0 physics binding)
+* \par:          Email: a.patchamuthu@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.1
+* \version       2.2
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -25,6 +27,8 @@
 *    -v2.0       the real binding
 *    -v2.1       BeginSession/EndSession: Jolt and every per-session field
 *                start fresh each Play; the object and its queries stay
+*    -v2.2       forces: RigidBody's AddForce/AddTorque/ApplyImpulse and
+*                the ConstantForce component, handed to every fixed step
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -113,6 +117,7 @@ namespace {
         kWarnNaN          = 1u << 0,
         kWarnLayer        = 1u << 1,
         kWarnTwoColliders = 1u << 2,
+        kWarnLoneForce    = 1u << 3,
     };
 
     // Once per entity per message, ever. A warning that repeats every frame
@@ -135,6 +140,15 @@ namespace {
         Math::vec3    position  = Math::vec3(0.0f, 0.0f, 0.0f);   // the Transform as physics last left it
         Math::quat    rotation  = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);
         Math::vec3    velocity  = Math::vec3(0.0f, 0.0f, 0.0f);
+
+        // This frame's pushes, collected once in Sync and handed to Jolt before
+        // EVERY step this frame, because Jolt forgets a force after each step.
+        // force/torque are world axes; the relative pair is the body's own axes.
+        Math::vec3    force          = Math::vec3(0.0f, 0.0f, 0.0f);
+        Math::vec3    torque         = Math::vec3(0.0f, 0.0f, 0.0f);
+        Math::vec3    relativeForce  = Math::vec3(0.0f, 0.0f, 0.0f);
+        Math::vec3    relativeTorque = Math::vec3(0.0f, 0.0f, 0.0f);
+        Math::vec3    impulse        = Math::vec3(0.0f, 0.0f, 0.0f);   // instant: the first step only, then spent
 
         std::uint64_t seenFrame  = 0;    // the last frame the query found this entity
         std::uint64_t pulledStep = 0;    // the last step this body turned up in the moved list
@@ -190,6 +204,7 @@ namespace Crucible {
         std::uint64_t frame          = 0;
         std::uint64_t step           = 0;
         std::uint32_t stepsLastFrame = 0;
+        std::uint32_t stepsThisFrame = 0;                       // set before Sync, so Sync knows whether a kick can land now
         bool          inSession      = false;                   // between BeginSession and EndSession
 
         void BindWorld(World& ecs);
@@ -197,6 +212,8 @@ namespace Crucible {
         void Sync(World& ecs);
         void SyncBody(Record& record, const Transform& transform, const Collider& collider, const RigidBody* rigidbody);
         void SyncCharacter(CharacterRecord& record, const Transform& transform, CharacterController& controller);
+        void TakeForces(World& ecs, Record& record, const RigidBody* rigidbody);
+        void PushForces(Record& record);
         void Step(World& ecs);
         void StepCharacter(World& ecs, CharacterRecord& record);
         void PullBodies(World& ecs);
@@ -320,6 +337,7 @@ namespace Crucible {
 
         // SYNC ONCE, THEN STEP -------------------------------------------------- //
         // Gameplay ran once this frame, so its intentions only need carrying over once.
+        s.stepsThisFrame = steps;
         s.Sync(world);
 
         // Only on frames where the level actually grew. Jolt's static tree is
@@ -371,7 +389,9 @@ namespace Crucible {
 
         colliders->ForEach([&](Entity entity, const Transform& transform, const Collider& collider) {
             Record& record = Touch(entity);
-            SyncBody(record, transform, collider, ecs.Read<RigidBody>(entity));
+            const RigidBody* rigidbody = ecs.Read<RigidBody>(entity);
+            SyncBody(record, transform, collider, rigidbody);
+            TakeForces(ecs, record, rigidbody);     // after SyncBody, which may have just (re)built the body
         });
 
         characters->ForEach([&](Entity entity, const Transform& transform, CharacterController& controller) {
@@ -550,10 +570,106 @@ namespace Crucible {
         for (auto& [key, record] : characterRecords)
             if (record.seenFrame == frame) StepCharacter(ecs, record);
 
+        // Forces go in last, right before the step that uses them. Jolt zeroes
+        // every force when the step ends, so this runs again for the next one.
+        for (auto& [key, record] : records)
+            if (record.seenFrame == frame && record.body.IsValid()) PushForces(record);
+
         physics.Step(kFixedDeltaTime);
         PullBodies(ecs);
 
     }   // ECSPhysicsSystem::State::Step()
+
+    /*!
+        \brief
+        Collects this frame's pushes for one body into its record: the
+        designer's ConstantForce, plus whatever gameplay added to the RigidBody
+        since last frame. The RigidBody totals are then zeroed, so each
+        AddForce call pushes for one frame and no longer, as in Unity.
+    */
+    void ECSPhysicsSystem::State::TakeForces(World& ecs, Record& record, const RigidBody* rigidbody) {
+
+        const Math::vec3 zero(0.0f, 0.0f, 0.0f);
+
+        // CONSTANTFORCE: re-read every frame, never written -------------------- //
+        // Overwriting (not adding to) the record is what clears last frame's push.
+        const ConstantForce* constant = ecs.Read<ConstantForce>(record.entity);
+        record.force          = constant != nullptr ? constant->m_force          : zero;
+        record.torque         = constant != nullptr ? constant->m_torque         : zero;
+        record.relativeForce  = constant != nullptr ? constant->m_relativeForce  : zero;
+        record.relativeTorque = constant != nullptr ? constant->m_relativeTorque : zero;
+        record.impulse        = zero;
+
+        if (rigidbody == nullptr) {
+            // A static body ignores forces, so without this the designer just sees nothing happen.
+            if (constant != nullptr)
+                WarnOnce(record.warned, kWarnLoneForce, record.entity, "has a ConstantForce but no RigidBody - only a RigidBody can be pushed, so it does nothing");
+            return;
+        }
+
+        // RIGIDBODY: gameplay's AddForce / AddTorque / ApplyImpulse ------------- //
+        // Checked through the read-only pointer first. A mutable GetComponent
+        // stamps the component as changed, and every resting crate would be
+        // marked changed every frame for nothing.
+        const bool pushed = !Same(rigidbody->force, zero) || !Same(rigidbody->torque, zero);
+
+        // A force is a push FOR THIS FRAME: on a frame with no step it is simply
+        // dropped, which is what keeps it frame-rate independent (carrying it over
+        // would double the push on the next frame). A kick is one event, not a
+        // rate, so it stays on the component until a frame that steps.
+        const bool kicked = !Same(rigidbody->impulse, zero) && stepsThisFrame > 0;
+
+        if (!pushed && !kicked) return;
+
+        RigidBody* writable = ecs.GetComponent<RigidBody>(record.entity);
+        if (writable == nullptr) return;
+
+        record.force  += writable->force;
+        record.torque += writable->torque;
+        writable->force  = zero;
+        writable->torque = zero;
+
+        if (kicked) {
+            record.impulse    = writable->impulse;
+            writable->impulse = zero;
+        }
+
+    }   // ECSPhysicsSystem::State::TakeForces()
+
+    /*!
+        \brief
+        Hands one body's pushes for this frame to Jolt, ahead of one step.
+        Called before every step of the frame; the impulse only lands on the first.
+    */
+    void ECSPhysicsSystem::State::PushForces(Record& record) {
+
+        const Math::vec3 zero(0.0f, 0.0f, 0.0f);
+
+        // Every call is guarded, not just tidied: AddForce WAKES the body even
+        // when the force is zero, so passing zeros along would keep every
+        // sleeping crate in the level awake and simulated forever.
+        if (!Same(record.force,  zero)) physics.AddForce (record.body, record.force);
+        if (!Same(record.torque, zero)) physics.AddTorque(record.body, record.torque);
+
+        // Relative pushes follow the body as it is NOW, read from Jolt each step.
+        // By the second step of a frame the Transform is out of date, and a
+        // spinning rocket would thrust where it pointed, not where it points.
+        if (!Same(record.relativeForce, zero) || !Same(record.relativeTorque, zero)) {
+            Math::vec3 position;
+            Math::quat rotation;
+            physics.GetTransform(record.body, position, rotation);
+
+            if (!Same(record.relativeForce,  zero)) physics.AddForce (record.body, rotation * record.relativeForce);
+            if (!Same(record.relativeTorque, zero)) physics.AddTorque(record.body, rotation * record.relativeTorque);
+        }
+
+        // Instant, so once: spent after the first step, or a 2-step frame would kick twice.
+        if (!Same(record.impulse, zero)) {
+            physics.ApplyImpulse(record.body, record.impulse);
+            record.impulse = zero;
+        }
+
+    }   // ECSPhysicsSystem::State::PushForces()
 
     /*!
         \brief

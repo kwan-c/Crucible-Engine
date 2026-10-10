@@ -1,3 +1,23 @@
+/*************************************************************************
+* \file:         AudioClips.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          1 October 2026
+* \version       1.1
+* \brief
+*                Clips, Unity's AudioClip: loading and unloading sound
+*                files.
+*
+* \details
+*                Short effects are decompressed into memory when loaded;
+*                music is streamed from disk, and a stream can only play
+*                once at a time.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       clip length, for the editor preview
+*
+**************************************************************************/
 #include "AudioSystem.h"
 
 // STL

@@ -1,3 +1,26 @@
+/*************************************************************************
+* \file:         InputSystem.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          14 September 2026
+* \version       1.1
+* \brief
+*                Crucible::Input's implementation: the GLFW callbacks and
+*                the per-frame snapshot.
+*
+* \details
+*                The callbacks write this frame's state; BeginFrame first
+*                copies it to last frame's and clears the mouse movement
+*                and scroll. Shutdown removes every callback it installed,
+*                so a window that outlives Input never calls into freed
+*                memory.
+*
+* \history
+*    -v1.0       keyboard: down, pressed and released this frame
+*    -v1.1       mouse: buttons, position, movement, scroll and cursor
+*                lock; maths moved to glm
+*
+**************************************************************************/
 #include "InputSystem.h"
 #include "Diagnostics/Logger.h"
 #include "GLFW/glfw3.h"
