@@ -17,6 +17,7 @@
 #include <functional>
 
 #include "Core.h"
+#include "ImGui/EditorTheme.h"
 
 namespace Crucible {
 
@@ -25,9 +26,10 @@ namespace {
 
     // One colour per state, used everywhere the state shows: the button, the status label
     // and the toolbar's tint/underline. Green = playing, amber = paused, red = stop.
-    ImVec4 const kPlayColor  (0.30f, 0.78f, 0.42f, 1.0f);
-    ImVec4 const kPauseColor (0.96f, 0.72f, 0.22f, 1.0f);
-    ImVec4 const kStopColor  (0.92f, 0.36f, 0.32f, 1.0f);
+    // Taken from the editor theme (darker shades on light themes).
+    ImVec4 PlayColor()  { return EditorTheme::GetPalette().success; }
+    ImVec4 PauseColor() { return EditorTheme::GetPalette().warning; }
+    ImVec4 StopColor()  { return EditorTheme::GetPalette().error; }
 
     ImVec4 Scale(ImVec4 c, float k) { return ImVec4(c.x * k, c.y * k, c.z * k, c.w); }
     ImVec4 Mix(ImVec4 a, ImVec4 b, float t) {
@@ -147,7 +149,7 @@ void PlayPause::Update(float)
     bool const paused = state == PlayState::Paused;
 
     // The state's colour: none in Edit, green while playing, amber while paused.
-    ImVec4 const stateColor = paused ? kPauseColor : running ? kPlayColor : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+    ImVec4 const stateColor = paused ? PauseColor() : running ? PlayColor() : ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
 
     // Tint the whole toolbar strip while in play mode, so the state reads from across the
     // screen (Unity tints its editor for the same reason) - easy to forget you're still playing.
@@ -169,7 +171,7 @@ void PlayPause::Update(float)
         bool const pauseKey = ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P, ImGuiInputFlags_RouteGlobal);
 
         if (TransportButton("##Play", running ? "Exit Play Mode (Ctrl+P)" : "Play (Ctrl+P)",
-                            TransportIcon::Play, kPlayColor, running && !paused, !waiting, buttonSize)
+                            TransportIcon::Play, PlayColor(), running && !paused, !waiting, buttonSize)
             || (playKey && !waiting)) {
             if (running) m_core.RequestStop();
             else         m_core.RequestPlay();
@@ -177,14 +179,14 @@ void PlayPause::Update(float)
 
         ImGui::SameLine();
         if (TransportButton("##Pause", paused ? "Resume (Ctrl+Shift+P)" : "Pause (Ctrl+Shift+P)",
-                            TransportIcon::Pause, kPauseColor, paused, running && !waiting, buttonSize)
+                            TransportIcon::Pause, PauseColor(), paused, running && !waiting, buttonSize)
             || (pauseKey && running && !waiting)) {
             if (paused) m_core.RequestResume();
             else        m_core.RequestPause();
         }
 
         ImGui::SameLine();
-        if (TransportButton("##Stop", "Stop", TransportIcon::Stop, kStopColor, false,
+        if (TransportButton("##Stop", "Stop", TransportIcon::Stop, StopColor(), false,
                             running && !waiting, buttonSize))
             m_core.RequestStop();
 

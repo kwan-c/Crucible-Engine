@@ -73,6 +73,7 @@ namespace Crucible {
 		bool m_showDemoWindow = false;	// View > ImGui Demo Window
 		bool m_showFps = true;			// View > FPS Counter
 		bool m_showAbout = false;		// Help > About (opened as a popup)
+		bool m_showThemeEditor = false;	// View > Theme > Theme Editor...
 	};
 
 }

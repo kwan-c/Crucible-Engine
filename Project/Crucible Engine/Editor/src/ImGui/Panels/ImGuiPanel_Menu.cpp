@@ -14,6 +14,7 @@
 #include "Scene/SceneManager.h"
 #include "Diagnostics/Logger.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "ImGui/EditorTheme.h"
 
 #include <GLFW/glfw3.h>
 #include <cstdio>
@@ -136,6 +137,11 @@ void Crucible::Menu::Update(float) {
 			ImGui::MenuItem("ImGui Demo Window", nullptr, &m_showDemoWindow);
 			ImGui::MenuItem("FPS Counter", nullptr, &m_showFps);
 			ImGui::Separator();
+			if (ImGui::BeginMenu("Theme"))
+			{
+				EditorTheme::DrawMenu(&m_showThemeEditor);
+				ImGui::EndMenu();
+			}
 			if (ImGui::MenuItem("Reset Layout"))
 				ImGuiManager::ResetLayout();
 			ImGui::EndMenu();
@@ -204,6 +210,9 @@ void Crucible::Menu::Update(float) {
 	// Handy reference window for every ImGui widget; toggled from View.
 	if (m_showDemoWindow)
 		ImGui::ShowDemoWindow(&m_showDemoWindow);
+
+	// Colour / size editor with Save as Custom Theme; opened from View > Theme.
+	EditorTheme::DrawEditorWindow(&m_showThemeEditor);
 }
 
 bool Crucible::Menu::BlockedByPlayMode(const char* what) const

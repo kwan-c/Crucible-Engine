@@ -12,6 +12,7 @@
 
 #include "ImGuiPanel_Inspector.h"
 #include "ImGui/EditorWidgets.h"
+#include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
 #include "Scene/SceneManager.h"
 #include <ECS/World.h>
@@ -507,7 +508,7 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 
 	if (!renderer.material.IsValid()) {
 		if (renderer.materialAsset != 0) {
-			ImGui::TextColored(ImVec4(1.f, .6f, .3f, 1.f), "Material %s failed to load", rm->GetName(renderer.materialAsset).c_str());
+			ImGui::TextColored(Crucible::EditorTheme::GetPalette().error, "Material %s failed to load", rm->GetName(renderer.materialAsset).c_str());
 		} else {
 			ImGui::TextDisabled("Pick a material above (or drag a .mat onto it), or create a new one.");
 		}
@@ -518,7 +519,7 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 	if (!editable) {
 		if (renderer.materialAsset == 0) {
 			// Created by older code (or at runtime) with no asset behind it.
-			ImGui::TextColored(ImVec4(1.f, .6f, .3f, 1.f), "Unsaved material (no asset) - lost on reload");
+			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "Unsaved material (no asset) - lost on reload");
 		} else {
 			ImGui::TextDisabled("%s is shared and has no file of its own (read-only).", rm->GetName(renderer.materialAsset).c_str());
 		}
@@ -537,7 +538,7 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 			[&](Entity, MeshRenderer const& other) { if (other.materialAsset == renderer.materialAsset) { ++users; } });
 
 		if (users > 1) {
-			ImGui::TextColored(ImVec4(1.f, .8f, .3f, 1.f), "Shared by %d objects - edits change all of them", users);
+			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "Shared by %d objects - edits change all of them", users);
 			ImGui::SameLine();
 			if (ImGui::SmallButton("Make Unique")) {
 				return createAsset(m_renderer.GetMaterialData(renderer.material),
@@ -631,7 +632,7 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 		}
 		ImGui::SameLine();
 		if (unsaved) {
-			ImGui::TextColored(ImVec4(1.f, .8f, .3f, 1.f), "%s *", rm->GetName(id).c_str());
+			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "%s *", rm->GetName(id).c_str());
 			ImGui::SetItemTooltip("Unsaved changes - lost on restart unless saved");
 		} else {
 			ImGui::TextDisabled("%s", rm->GetName(id).c_str());

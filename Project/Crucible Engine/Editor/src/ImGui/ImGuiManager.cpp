@@ -12,6 +12,7 @@
 
 #include "ImGui/ImGuiManager.h"
 #include "ImGui/EditorWidgets.h"
+#include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_glfw.h>
@@ -129,6 +130,9 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Core& core)
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+	// Colours and font size (View > Theme). The saved choice is restored from imgui.ini on the first frame.
+	EditorTheme::Init();
 
 	//io.Fonts->Clear(); // clear all fonts, including defaults
 

@@ -13,6 +13,7 @@
 #include "ImGui/Panels/ImGuiPanel_SceneView.h"
 #include "Scene/SceneManager.h"
 #include "ImGui/EditorWidgets.h"
+#include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/World.h"
 #include "ECS/Components/Components.h"
@@ -233,7 +234,7 @@ void Crucible::SceneView::DrawToolbar() {
 	ImGui::SameLine();
 
 	if (isChanged) {
-		ImGui::TextColored(ImVec4(1.f, .6f, .3f, 1.f), "Current Scene: %s *", m_scenes.CurrentName().c_str());
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Current Scene: %s *", m_scenes.CurrentName().c_str());
 	}
 	else {
 		ImGui::TextDisabled("Current Scene: %s", m_scenes.CurrentName().c_str());
