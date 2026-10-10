@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          14 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Crucible::Input's implementation: the GLFW callbacks and
 *                the per-frame snapshot.
@@ -19,6 +19,8 @@
 *    -v1.0       keyboard: down, pressed and released this frame
 *    -v1.1       mouse: buttons, position, movement, scroll and cursor
 *                lock; maths moved to glm
+*    -v1.2       fix: a KeyCode past Count returns false instead of
+*                throwing out of the key queries
 *
 **************************************************************************/
 #include "InputSystem.h"
@@ -28,6 +30,17 @@
 namespace {
 
 	Crucible::Input* g_instance = nullptr;  // set by AttachWindow, read by the static queries
+
+    // A KeyCode made from a number - a saved key binding, a loop that runs up to
+    // Count - can point past the end of the bitsets, and bitset::test THROWS
+    // std::out_of_range on that: nothing catches it, so the game just closes.
+    // The key queries refuse it here instead, and say why.
+    bool IsValidKey(const Crucible::KeyCode& key) {
+        if (static_cast<std::size_t>(key) < static_cast<std::size_t>(Crucible::KeyCode::Count)) return true;
+
+        CRU_ERROR("Input queried with KeyCode {}, which is past KeyCode::Count - treated as not pressed", static_cast<int>(key));
+        return false;
+    }
 
 }// Anonymous namespace
 
@@ -110,6 +123,7 @@ namespace Crucible{
 			CRU_ERROR("Input queried before AttachWindow was called.");
             return false;
         }
+        if (!IsValidKey(key)) return false;
 
 		const std::size_t index = static_cast<std::size_t>(key);
 
@@ -121,6 +135,7 @@ namespace Crucible{
             CRU_ERROR("Input queried before AttachWindow was called.");
             return false;
         }
+        if (!IsValidKey(key)) return false;
 
         const std::size_t index = static_cast<std::size_t>(key);
 
@@ -132,6 +147,7 @@ namespace Crucible{
             CRU_ERROR("Input queried before AttachWindow was called.");
             return false;
         }
+        if (!IsValidKey(key)) return false;
 
         const std::size_t index = static_cast<std::size_t>(key);
 

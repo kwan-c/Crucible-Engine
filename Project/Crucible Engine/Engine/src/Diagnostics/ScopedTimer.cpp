@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          12 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                ScopedTimer's constructor and destructor.
 *
@@ -15,6 +15,8 @@
 *    -v1.0       first version
 *    -v1.1       start time kept as a tick count, so no std::chrono member
 *                crosses the DLL boundary (C4251)
+*    -v1.2       fix: the tick count was read as milliseconds, so every time
+*                printed a million times too big
 *
 **************************************************************************/
 #include "ScopedTimer.h"
@@ -34,7 +36,13 @@ namespace Crucible::Debug
 
     ScopedTimer::~ScopedTimer()
     {
-        const auto elapsed = std::chrono::steady_clock::now().time_since_epoch().count() - m_startTicks;
+        using Clock = std::chrono::steady_clock;
+
+        // m_startTicks is a bare count in the clock's own unit (nanoseconds on
+        // MSVC). Wrapping it back in Clock::duration restores that unit, so the
+        // conversion below knows what one tick is. Read as milliseconds
+        // directly, 84 ms would print as 84000000 ms.
+        const Clock::duration elapsed{ Clock::now().time_since_epoch().count() - m_startTicks };
         const double ms = std::chrono::duration<double, std::milli>(elapsed).count();
 
         LogMessage(m_level, nullptr, 0,
