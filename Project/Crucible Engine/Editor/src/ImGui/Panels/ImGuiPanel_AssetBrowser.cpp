@@ -759,12 +759,16 @@ void Crucible::AssetBrowser::ShowInInspector(Item const& item) {
 	if (!inspector) return;
 
 	if (!item.isFolder && item.type == AssetType::Audio && m_audio != nullptr) {
-		if (!m_audio->LoadPreview(item.virtualPath)) return;   // the log already says why
-		if (m_autoPlay) m_audio->PlayPreview();
+		// A clip that will not load still takes over the Inspector, and says so. Returning
+		// early instead left the PREVIOUS clip's preview up - its name, "0.00 s" and a dead
+		// Play button, because LoadPreview had already unloaded it - so the wrong file
+		// looked broken.
+		const bool loaded = m_audio->LoadPreview(item.virtualPath);   // on failure the log says why
+		if (loaded && m_autoPlay) m_audio->PlayPreview();
 
 		// Captures `this`: the Inspector only calls it while drawing, and every panel is
 		// destroyed together in EditorManager::Shutdown, so it never outlives the browser.
-		inspector->SetCustomTarget([this, name = item.name] { DrawAudioPreview(name); });
+		inspector->SetCustomTarget([this, name = item.name, loaded] { DrawAudioPreview(name, loaded); });
 		m_audioInInspector = true;
 	}
 	else if (m_audioInInspector) {
@@ -776,8 +780,14 @@ void Crucible::AssetBrowser::ShowInInspector(Item const& item) {
 }
 
 // Unity's AudioClip preview: what it is, how long, and a Play/Stop button.
-void Crucible::AssetBrowser::DrawAudioPreview(std::string const& name) {
+void Crucible::AssetBrowser::DrawAudioPreview(std::string const& name, bool loaded) {
 	ImGui::TextUnformatted(name.c_str());
+
+	if (!loaded) {
+		ImGui::TextDisabled("Could not load this clip - the log says why.");
+		return;
+	}
+
 	ImGui::TextDisabled("Audio clip, %.2f s", m_audio ? m_audio->GetPreviewLength() : 0.0f);
 	ImGui::Separator();
 

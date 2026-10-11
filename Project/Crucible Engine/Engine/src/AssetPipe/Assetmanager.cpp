@@ -170,8 +170,11 @@ namespace Crucible {
             e == ".glsl" || e == ".spv")
             return AssetType::Shader;
  
+        // No ".bank": that is an FMOD Studio bank, and the engine uses FMOD Core, which
+        // cannot play one - listed here it only showed up in the clip picker and failed.
+        // ".fsb" stays: Core opens those directly.
         if (e == ".wav" || e == ".mp3" || e == ".ogg" || e == ".flac" ||
-            e == ".bank" || e == ".fsb")
+            e == ".fsb")
             return AssetType::Audio;
  
         if (e == ".scene")  

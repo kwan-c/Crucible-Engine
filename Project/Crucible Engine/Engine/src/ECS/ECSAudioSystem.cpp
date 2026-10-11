@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          1 October 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Implementation of ECSAudioSystem. See the header for
 *                what happens each frame.
@@ -26,11 +26,14 @@
 *    -v1.1       AudioSource and AudioListener components; edit mode
 *    -v1.2       with no AudioListener entity, the ears follow the camera
 *    -v1.3       SetPaused: voices freeze, requests wait for Resume
+*    -v1.4       fix: file paths reach FMOD as UTF-8, so an accented
+*                folder name no longer hides every sound under it
 *
 **************************************************************************/
 #include "ECSAudioSystem.h"
 
 // STL
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <unordered_map>
@@ -55,6 +58,16 @@ namespace {
     // and only when a value actually changed.
     using SourceQuery   = Query<const AudioSource, const WorldTransform>;
     using ListenerQuery = Query<const AudioListener, const WorldTransform>;
+
+    // FMOD reads file names as UTF-8. path::string() hands back the old Windows
+    // code page instead, so one accented letter anywhere in the path - a user
+    // folder named after its owner, say - reaches FMOD as different bytes and
+    // the file "does not exist". u8string() is UTF-8; its char8_t bytes are
+    // copied into the plain std::string that Audio::LoadClip takes.
+    std::string ToUtf8(const std::filesystem::path& path) {
+        const std::u8string utf8 = path.u8string();
+        return std::string(utf8.begin(), utf8.end());
+    }
 
     // The engine's convention, the same one lights use: position is the
     // world matrix's translation, forward its local -Z axis, up its local +Y.
@@ -473,7 +486,7 @@ namespace Crucible {
         else if (entry->type != AssetType::Audio)
             CRU_WARN("ECSAudioSystem: {} is not an audio file", entry->virtualPath);
         else
-            clip = audio.LoadClip(entry->absolutePath, source.m_loadType);
+            clip = audio.LoadClip(ToUtf8(assets.Resolve(entry->virtualPath)), source.m_loadType);   // not absolutePath: that is code-page text
 
         clips.emplace(key, clip);
         return clip;
@@ -515,7 +528,7 @@ namespace Crucible {
         // Streamed: opening it only reads the header, so selecting a long
         // track is instant, and a preview is only ever one voice - the one
         // thing a stream cannot do is overlap.
-        s.previewClip = s.audio.LoadClip(s.assets.Resolve(virtualPath).string(), AudioClipLoadType::Streaming);
+        s.previewClip = s.audio.LoadClip(ToUtf8(s.assets.Resolve(virtualPath)), AudioClipLoadType::Streaming);
         if (!s.previewClip.IsValid()) return false;     // LoadClip has already said why
 
         s.previewPath = virtualPath;

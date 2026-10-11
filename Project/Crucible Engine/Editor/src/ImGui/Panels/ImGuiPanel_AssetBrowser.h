@@ -90,7 +90,7 @@ namespace Crucible {
 		// Selection -> Inspector. An audio file shows the clip preview there; anything else
 		// takes the preview back out, the way Unity's Inspector follows the selection.
 		void ShowInInspector(Item const& item);
-		void DrawAudioPreview(std::string const& name);
+		void DrawAudioPreview(std::string const& name, bool loaded);   // loaded = false: the name and "could not load"
 
 		void NavigateTo(std::string const& folder);   // deferred until the end of the frame
 		void CreateFolder();
