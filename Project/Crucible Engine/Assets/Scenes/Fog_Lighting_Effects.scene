@@ -858,6 +858,20 @@
                     "pushStrength": 100.0,
                     "layer": "Player"
                 },
+                "Light": {
+                    "type": "Point",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.7416378259658813,
+                        "z": 0.37254899740219116
+                    },
+                    "intensity": 5.0,
+                    "range": 5.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
                 "Skybox": {
                     "visible": true,
                     "intensity": 1.0,
@@ -1925,6 +1939,43 @@
             }
         },
         {
+            "id": "BE87F0D5C9518001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -6.085996150970459,
+                        "y": -4.1479012224954204e-7,
+                        "z": 13.793636322021484
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Point",
+                    "colour": {
+                        "x": 0.09803920984268188,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 10.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                }
+            }
+        },
+        {
             "id": "C64D08D31F2F8007",
             "components": {
                 "Transform": {
@@ -2238,6 +2289,43 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                }
+            }
+        },
+        {
+            "id": "E48568D5C92CC001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -10.963933944702148,
+                        "y": 7.194725036621094,
+                        "z": 5.116082191467285
+                    },
+                    "rotation": {
+                        "x": -0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Spot",
+                    "colour": {
+                        "x": 0.9465109705924988,
+                        "y": 1.0,
+                        "z": 0.7401961088180542
+                    },
+                    "intensity": 100.0,
+                    "range": 10.0,
+                    "innerConeDeg": 13.550000190734863,
+                    "outerConeDeg": 19.049999237060547,
+                    "enabled": true,
+                    "castShadows": true
                 }
             }
         },
