@@ -221,6 +221,30 @@ namespace Crucible {
             .usage       = usage,
             .sharingMode = vk::SharingMode::eExclusive
         };
+        CreateFromInfo(context, imageInfo, properties);
+
+    }   // VulkanImage::Create()
+
+    void VulkanImage::Create3D(VulkanContext& context, uint32_t w, uint32_t h, uint32_t d, vk::Format format,
+                               vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties) {
+
+        vk::ImageCreateInfo imageInfo{
+            .imageType   = vk::ImageType::e3D,
+            .format      = format,
+            .extent      = {w, h, d},
+            .mipLevels   = 1,
+            .arrayLayers = 1,
+            .samples     = vk::SampleCountFlagBits::e1,
+            .tiling      = vk::ImageTiling::eOptimal,
+            .usage       = usage,
+            .sharingMode = vk::SharingMode::eExclusive
+        };
+        CreateFromInfo(context, imageInfo, properties);
+
+    }   // VulkanImage::Create3D()
+
+    void VulkanImage::CreateFromInfo(VulkanContext& context, const vk::ImageCreateInfo& imageInfo, vk::MemoryPropertyFlags properties) {
+
         m_image = vk::raii::Image(context.GetDevice(), imageInfo);
 
         m_allocator = context.GetAllocator();
@@ -248,7 +272,7 @@ namespace Crucible {
         }
         m_mappedData = allocInfo.pMappedData;
 
-    }   // VulkanImage::Create()
+    }   // VulkanImage::CreateFromInfo()
 
     const vk::raii::Image&  VulkanImage::GetImage() const { return m_image; }
     vk::raii::Image&  VulkanImage::GetImage() { return m_image; }

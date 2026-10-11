@@ -63,7 +63,9 @@ float4 skyFrag(VSOutput input) : SV_Target {
     // Linear HDR; exposure and tonemapping are applied to the whole image in Post.slang.
     float3 dir = normalize(input.dir);
     float3 sky = skyTex.Sample(dir).rgb * frame.renderParams.y;   // skybox intensity
-    // Fog hides the horizon and thins toward the zenith, so the sky meets the fogged ground.
-    sky = lerp(sky, frame.fogColour.rgb, FogAmountSky(dir));
+    // Fog hides the horizon and thins toward the zenith, so the sky meets the fogged ground. With a
+    // fog volume, the sun's glow in the fog and its shafts show against the sky too.
+    float4 fog = FogForSky(dir, input.pos.xy / frame.clusterZ.zw);
+    sky = sky * fog.a + fog.rgb;
     return float4(sky, 1.0);
 }

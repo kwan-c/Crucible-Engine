@@ -14,6 +14,7 @@
 #include "Vulkan/VulkanContext.h"
 #include "Vulkan/VulkanResource.h"
 #include "ViewTargets.h"
+#include "Passes/VolumetricFogPass.h"   // FogVolumeTargets
 #include "DrawList.h"
 #include "RenderTypes.h"
 #include "Camera.h"
@@ -56,6 +57,7 @@ namespace Crucible {
 
         ViewDrawList        draws;               // this frame's batches (PrepareView)
         PostTargets         post;                // HDR scene image + bloom chain, same size as colorImage
+        FogVolumeTargets    fog;                 // volumetric fog volumes (made on first use; VolumetricFogPass)
     };
 
     class ViewportSet {

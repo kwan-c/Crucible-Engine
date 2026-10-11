@@ -75,6 +75,9 @@ namespace Crucible {
         m_debugLinePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format, m_swapchain.GetDepthFormat());
         m_frameManager.Init(m_context, m_swapchain);
         m_uploads.Init(m_context, m_frameManager.GetCommandPool());
+        // Volumetric fog (compute): before any set 0 is written, since binding 10 starts out pointing
+        // at its "no fog" volume.
+        m_fogPass.Create(*m_layouts.GetDescriptorSetLayout(), m_uploads, ViewportSet::kMaxViewports + 1);
 
         CreateUniformBuffers();
         // Before CreateDescriptorSets(): set 0's shared bindings point at these.
@@ -194,6 +197,7 @@ namespace Crucible {
         m_particlePass.ClearPrepared();
         m_lights.BeginViews();
         m_windowDraws.Clear();
+        const bool fogVolume = VolumetricFogActive();   // every view that draws the scene gets its fog volume this frame
         if (m_viewportSet.All().empty()) {
             // No camera entity in the scene: nothing to look through, so the window shows only
             // its clear colour (plus any overlay).
@@ -204,8 +208,9 @@ namespace Crucible {
                     m_context.GetDevice().waitIdle();
                     m_viewTargets.Create(m_windowPost, extent.width, extent.height, m_msaaSamples);
                 }
+                if (fogVolume) { m_fogPass.EnsureTargets(m_windowFog); }
                 PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, m_uniformBuffersMapped[frameIndex]);
-                WriteViewTextures(*m_descriptorSets[frameIndex], m_windowPost);
+                WriteViewTextures(*m_descriptorSets[frameIndex], m_windowPost, fogVolume ? &m_windowFog : nullptr);
             } else {
                 m_windowCullStats = RenderCullStats{};
             }
@@ -218,8 +223,9 @@ namespace Crucible {
                 // A Game viewport always looks through the scene's main camera (its aspect is then
                 // set from the viewport's own size, in PrepareView).
                 if (vp.role == ViewportRole::Game) { vp.camera = m_camera; }
+                if (fogVolume) { m_fogPass.EnsureTargets(vp.fog); }
                 PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.uniformBuffersMapped[frameIndex]);
-                WriteViewTextures(*vp.descriptorSets[frameIndex], vp.post);
+                WriteViewTextures(*vp.descriptorSets[frameIndex], vp.post, fogVolume ? &vp.fog : nullptr);
             }
         }
         const double tUpload = now();
@@ -301,6 +307,9 @@ namespace Crucible {
         // so anything created before this point is filled by the time a draw below reads it.
         m_uploads.Record(*fc.frame.commandBuffer, frameIndex);
 
+        // Same answer as when the views were prepared this frame (DrawFrame).
+        const bool fogVolume = VolumetricFogActive();
+
         // ---- Offscreen editor viewports -------------------------------------------------------
         // Empty in a standalone Engine/Game build: this loop simply doesn't run, so the cost of
         // supporting viewports at all is the one `m_viewportSet.All().empty()` check further down.
@@ -316,6 +325,11 @@ namespace Crucible {
                 // map, and the selected object into its outline mask.
                 m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Shadows);
                 m_shadowPass.Record(*fc.frame.commandBuffer, frameSet, vp.draws.shadow, vp.draws.cascadeCount);
+                // The fog volume, lit through the shadow map just drawn (compute, outside any rendering pass).
+                if (fogVolume) {
+                    m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Volumetrics);
+                    m_fogPass.Record(*fc.frame.commandBuffer, vp.fog, frameSet);
+                }
                 if (vp.outline && !vp.draws.outline.empty()) {
                     m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Outline);
                     m_outlinePass.RecordMask(*fc.frame.commandBuffer, vp.maskImage.GetImage(), *vp.maskView, vp.extent, frameSet, vp.draws.outline);
@@ -402,6 +416,10 @@ namespace Crucible {
         if (windowScene) {
             m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Shadows);
             m_shadowPass.Record(*fc.frame.commandBuffer, *m_descriptorSets[frameIndex], m_windowDraws.shadow, m_windowDraws.cascadeCount);
+            if (fogVolume) {
+                m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Volumetrics);
+                m_fogPass.Record(*fc.frame.commandBuffer, m_windowFog, *m_descriptorSets[frameIndex]);
+            }
             m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::AmbientOcclusion);
             m_aoPass.Record(*fc.frame.commandBuffer, m_windowPost, m_postSettings, *m_descriptorSets[frameIndex], m_windowDraws.main, m_windowDraws.projInfo);
             m_profiler.Mark(*fc.frame.commandBuffer, GpuSection::Scene);
@@ -661,9 +679,10 @@ namespace Crucible {
         uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
         // Each set 0 = FrameUniforms UBO (binding 0), five storage buffers (lights 1, instances 2,
         // particles 5, light-cluster grid 6 and indices 7), shadow map image + comparison sampler (3, 4).
-        // ... plus two textures: the environment map (8) and the view's ambient occlusion (9).
+        // ... plus three textures: the environment map (8), the view's ambient occlusion (9) and
+        // its fog volume (10).
         std::array<vk::DescriptorPoolSize, 5> poolSizes{ {
-            { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxFrames * 2 },
+            { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxFrames * 3 },
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFrames },
             { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 5 },
             { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxFrames },
@@ -757,8 +776,10 @@ namespace Crucible {
                 .imageView   = m_shadowPass.ArrayView(),
                 .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
             vk::DescriptorImageInfo shadowSamplerInfo{ .sampler = m_shadowPass.Sampler() };
+            // Binding 10 starts at the "no fog" volume; WriteViewTextures points it at the view's own.
+            vk::DescriptorImageInfo fogInfo = m_fogPass.SampledVolume(nullptr);
 
-            const std::array<vk::WriteDescriptorSet, 7> writes{ {
+            const std::array<vk::WriteDescriptorSet, 8> writes{ {
                 { .dstSet = *sets[i], .dstBinding = 5, .descriptorCount = 1,
                   .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &particleInfo },
                 { .dstSet = *sets[i], .dstBinding = 6, .descriptorCount = 1,
@@ -772,7 +793,9 @@ namespace Crucible {
                 { .dstSet = *sets[i], .dstBinding = 3, .descriptorCount = 1,
                   .descriptorType = vk::DescriptorType::eSampledImage, .pImageInfo = &shadowImageInfo },
                 { .dstSet = *sets[i], .dstBinding = 4, .descriptorCount = 1,
-                  .descriptorType = vk::DescriptorType::eSampler, .pImageInfo = &shadowSamplerInfo }
+                  .descriptorType = vk::DescriptorType::eSampler, .pImageInfo = &shadowSamplerInfo },
+                { .dstSet = *sets[i], .dstBinding = 10, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &fogInfo }
             } };
             m_context.GetDevice().updateDescriptorSets(writes, {});
         }
@@ -797,9 +820,29 @@ namespace Crucible {
                                       std::max(env.ambientIntensity, 0.0f) * std::max(env.skyboxIntensity, 0.0f), 0.0f);
         for (size_t i = 0; i < sky.sh.size(); ++i) { ubo.skySH[i] = sky.sh[i]; }
 
+        // Volumetric fog: every view that draws the scene has a fog volume while this is on.
+        if (VolumetricFogActive()) {
+            const float nearDepth = VolumetricFogPass::kNearDepth;
+            const float farDepth  = glm::clamp(env.volumetricDistance, nearDepth * 4.0f, 1000.0f);
+            ubo.volumetricParams  = glm::vec4(1.0f, nearDepth, farDepth, std::log(farDepth / nearDepth));
+            ubo.volumetricLight   = glm::vec4(std::max(env.volumetricIntensity, 0.0f), glm::clamp(env.volumetricAnisotropy, -0.95f, 0.95f),
+                                              static_cast<float>(VolumetricFogPass::kSlices), 0.0f);
+            ubo.volumetricAmbient = glm::vec4(std::max(env.volumetricAmbient, 0.0f), env.volumetricSkyAmbient ? 1.0f : 0.0f, 0.0f, 0.0f);
+        } else {
+            ubo.volumetricParams  = glm::vec4(0.0f);
+            ubo.volumetricLight   = glm::vec4(0.0f);
+            ubo.volumetricAmbient = glm::vec4(0.0f);
+        }
+
     }   // Renderer::FillEnvironmentUniforms()
 
-    void Renderer::WriteViewTextures(vk::DescriptorSet frameSet, const PostTargets& targets) {
+    bool Renderer::VolumetricFogActive() const {
+
+        return m_postSettings.volumetricFog && m_environment.volumetricFog && m_environment.fogDensity > 0.0f;
+
+    }   // Renderer::VolumetricFogActive()
+
+    void Renderer::WriteViewTextures(vk::DescriptorSet frameSet, const PostTargets& targets, const FogVolumeTargets* fog) {
 
         if (m_environmentMaps.Cubemaps().empty() || !*targets.aoBlurView) { return; }
 
@@ -807,11 +850,14 @@ namespace Crucible {
             .sampler = *m_environmentMaps.EnvSampler(), .imageView = *m_environmentMaps.Resolve(m_environment.skybox).envView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
         vk::DescriptorImageInfo aoInfo{
             .sampler = *m_viewTargets.LinearSampler(), .imageView = *targets.aoBlurView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
-        const std::array<vk::WriteDescriptorSet, 2> writes{ {
+        vk::DescriptorImageInfo fogInfo = m_fogPass.SampledVolume(fog);
+        const std::array<vk::WriteDescriptorSet, 3> writes{ {
             { .dstSet = frameSet, .dstBinding = 8, .descriptorCount = 1,
               .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &envInfo },
             { .dstSet = frameSet, .dstBinding = 9, .descriptorCount = 1,
-              .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &aoInfo }
+              .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &aoInfo },
+            { .dstSet = frameSet, .dstBinding = 10, .descriptorCount = 1,
+              .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &fogInfo }
         } };
         m_context.GetDevice().updateDescriptorSets(writes, {});
 

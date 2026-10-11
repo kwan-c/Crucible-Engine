@@ -481,6 +481,12 @@ void Crucible::SceneView::DrawRenderingMenu() {
 	ImGui::SliderFloat("Strength", &post.aoIntensity, 0.0f, 3.0f, "%.2f");
 	ImGui::EndDisabled();
 
+	// Lit froxel fog (light shafts, glow around lights). Its look is on the scene's Skybox
+	// component; this switches it off everywhere, e.g. to compare or to save GPU time.
+	ImGui::SeparatorText("Volumetric fog");
+	ImGui::Checkbox("Enabled##volfog", &post.volumetricFog);
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Where the scene's Skybox has fog and Volumetric Fog ticked.\nOff: always the plain (unlit) fog."); }
+
 	ImGui::SeparatorText("Sun shadows");
 	ShadowSettings& shadows = m_renderer.GetShadowSettings();
 	ImGui::Checkbox("Enabled##shadows", &shadows.enabled);
@@ -528,10 +534,10 @@ void Crucible::SceneView::DrawStatsOverlay(ImVec2 viewMin) {
 		const auto gpu = [&](GpuSection section) { return stats.gpuMs[static_cast<size_t>(section)]; };
 		length += std::snprintf(text + length, sizeof(text) - length,
 			"GPU    total %.2f\n"
-			"       shadows %.2f   occlusion %.2f   scene %.2f   bloom %.2f\n"
+			"       shadows %.2f   fog volume %.2f   occlusion %.2f   scene %.2f   bloom %.2f\n"
 			"       final %.2f   outline %.2f   uploads %.2f   editor UI %.2f\n",
 			stats.gpuTotalMs,
-			gpu(GpuSection::Shadows), gpu(GpuSection::AmbientOcclusion), gpu(GpuSection::Scene), gpu(GpuSection::Bloom),
+			gpu(GpuSection::Shadows), gpu(GpuSection::Volumetrics), gpu(GpuSection::AmbientOcclusion), gpu(GpuSection::Scene), gpu(GpuSection::Bloom),
 			gpu(GpuSection::Final), gpu(GpuSection::Outline), gpu(GpuSection::Uploads), gpu(GpuSection::Interface));
 	}
 	if (length > 0 && length < static_cast<int>(sizeof(text))) {

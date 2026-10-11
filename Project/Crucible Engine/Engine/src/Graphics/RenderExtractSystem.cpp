@@ -163,6 +163,12 @@ namespace Crucible {
             env.fogBaseHeight    = skybox.fogBaseHeight;
             env.fogStart         = skybox.fogStart;
             env.fogMaxOpacity    = skybox.fogMaxOpacity;
+            env.volumetricFog        = skybox.volumetricFog;
+            env.volumetricIntensity  = skybox.volumetricIntensity;
+            env.volumetricAnisotropy = skybox.volumetricAnisotropy;
+            env.volumetricDistance   = skybox.volumetricDistance;
+            env.volumetricAmbient    = skybox.volumetricAmbient;
+            env.volumetricSkyAmbient = skybox.volumetricSkyAmbient;
             env.contrast            = skybox.contrast;
             env.saturation          = skybox.saturation;
             env.temperature         = skybox.temperature;

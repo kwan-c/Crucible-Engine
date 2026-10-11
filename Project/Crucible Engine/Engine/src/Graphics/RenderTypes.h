@@ -181,9 +181,15 @@ namespace Crucible {
         // Light from the sky (Renderer::BuildEnvironmentLighting):
         glm::vec4  ambientParams{ 0.0f };                // x = 1: ambient from the sky, y = last mip of the environment map, z = strength
         glm::vec4  skySH[9]{};                           // the sky's diffuse light (spherical harmonics, ready for the shader's polynomial)
+        // Volumetric fog (VolumetricFogPass), set for views that have a fog volume this frame:
+        glm::vec4  volumetricParams{ 0.0f };             // x = 1: read the fog volume (0 = analytic fog), y = near depth (m), z = far depth (m), w = log(far / near)
+        glm::vec4  volumetricLight{ 0.0f };              // x = light scattering strength, y = anisotropy g, z = depth slices, w unused
+        glm::vec4  volumetricAmbient{ 0.0f };            // x = strength of the fog's light in shade, y = 1: that light is the sky's (0 = fog colour)
     };
-    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 6 + 16 * 12,
+    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 6 + 16 * 15,
         "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
+    static_assert(offsetof(FrameUniforms, volumetricParams) == 752 && offsetof(FrameUniforms, volumetricLight) == 768 && offsetof(FrameUniforms, volumetricAmbient) == 784,
+        "FrameUniforms offsets must match Common.slang (checked against the compiled SPIR-V).");
     static_assert(offsetof(FrameUniforms, clusterDims) == 512 && offsetof(FrameUniforms, clusterZ) == 528 && offsetof(FrameUniforms, time) == 544 && offsetof(FrameUniforms, fogColour) == 560 && offsetof(FrameUniforms, skySH) == 608,
         "FrameUniforms offsets must match DefaultShader.slang (checked against the compiled SPIR-V).");
     static_assert(offsetof(FrameUniforms, shadowViewProj) == 208 && offsetof(FrameUniforms, shadowParams) == 496,
@@ -327,6 +333,10 @@ namespace Crucible {
                             (MSAA: smooths the edges of geometry properly,
                             at a memory and fill cost). Clamped to what the
                             GPU supports; a change takes effect next frame.
+          - volumetricFog:  allows the lit froxel fog (light shafts, glow
+                            around lights) wherever the scene's Skybox
+                            turns it on. Off: always the cheaper analytic
+                            fog. Costs two compute passes per view.
      *************************************************************************/
     struct PostSettings {
         bool  bloom = true;
@@ -338,6 +348,7 @@ namespace Crucible {
         bool  ao = true;
         float aoRadius = 0.6f;
         float aoIntensity = 1.2f;
+        bool  volumetricFog = true;   // lit froxel fog where the scene's Skybox asks for it (off = always the analytic fog)
     };
 
     /// Push constant shared by every post pass (Post.slang's PostPush). c and d are read only by
@@ -396,6 +407,7 @@ namespace Crucible {
         Shadows,            ///< Sun shadow cascades.
         Outline,            ///< Selection outline mask (editor).
         AmbientOcclusion,   ///< Depth pre-pass, occlusion, blur.
+        Volumetrics,        ///< Froxel fog: light the volume, then integrate it (compute).
         Scene,              ///< Meshes, sky and particles (including the MSAA resolve).
         Bloom,
         Final,              ///< Tonemap + FXAA, debug lines, outline composite.
@@ -598,6 +610,21 @@ namespace Crucible {
                               at every height); fogStart = clear distance in
                               front of the camera; fogMaxOpacity caps how
                               much it can hide.
+          - volumetric*:      the same fog lit by the lights (froxel volume,
+                              VolumetricFogPass), when PostSettings::
+                              volumetricFog also allows it. volumetricIntensity
+                              adds the sun (with its shadows: light shafts)
+                              and point/spot lights; volumetricAnisotropy (0 =
+                              even, toward 1 = glow gathers around lights seen
+                              ahead); volumetricDistance = how far the volume
+                              and its shadows reach (beyond, the fog is lit
+                              but unshadowed). volumetricAmbient = how bright
+                              the fog is in shade (1 = fogColour, the analytic
+                              fog's look; lower = darker shade, so shafts stand
+                              out). volumetricSkyAmbient: the fog's light in
+                              shade is instead the sky's average light (the
+                              same ambient as surfaces) tinted by fogColour -
+                              follows the sky, but a dark sky gives dark fog.
           - The look, applied in the tonemap pass. Each has a neutral value
             at which it does nothing:
               contrast (1), saturation (1; 0 = black and white),
@@ -623,6 +650,12 @@ namespace Crucible {
         float         fogBaseHeight = 0.0f;
         float         fogStart = 0.0f;
         float         fogMaxOpacity = 1.0f;
+        bool          volumetricFog = true;          // light the fog (sun shafts, glow around lights) with a froxel volume
+        float         volumetricIntensity = 1.0f;    // how strongly lights scatter in the fog (0 = the fog's light in shade only)
+        float         volumetricAnisotropy = 0.5f;   // -1..1: 0 scatters evenly, toward 1 the glow gathers around lights you look toward
+        float         volumetricDistance = 100.0f;   // metres the volume (and its shadows) reaches; beyond it the fog is lit but unshadowed
+        float         volumetricAmbient = 1.0f;      // brightness of the fog in shade (1 = fogColour; lower = stronger shafts)
+        bool          volumetricSkyAmbient = false;  // fog in shade lit by the sky's average light, tinted by fogColour (false = fogColour)
         float         contrast = 1.0f;
         float         saturation = 1.0f;
         float         temperature = 0.0f;

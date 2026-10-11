@@ -30,7 +30,7 @@ struct VSOutput {
     float4 color;
     float2 uv;       // into the texture (flipbook cell already applied)
     float2 local;    // -1..1 across the quad, for the procedural soft disc
-    float  fog;      // 0 = clear, 1 = lost in the fog (FogAmount at the particle's centre)
+    float4 fog;      // fog in front of the particle's centre: rgb = light it adds, a = how much of the particle shows (FogForPoint)
 };
 
 static const float2 kCorners[6] = {
@@ -70,7 +70,11 @@ VSOutput particleVert(uint vertexID : SV_VulkanVertexID) {
 
     output.pos   = mul(frame.proj, mul(frame.view, float4(world, 1.0)));
     output.color = p.color;
-    output.fog   = FogAmount(p.posSize.xyz);
+    // Fog is looked up once, at the particle's centre (its screen position comes from the centre's
+    // own projection, not this corner's).
+    float4 centreClip = mul(frame.proj, mul(frame.view, float4(p.posSize.xyz, 1.0)));
+    float2 centreNdc  = centreClip.xy / max(centreClip.w, 1e-4);
+    output.fog   = FogForPoint(p.posSize.xyz, float2(centreNdc.x * 0.5 + 0.5, 0.5 - centreNdc.y * 0.5));
     output.local = c;
 
     // Flipbook: frame f of a cols x rows atlas, read left to right, top to bottom.
@@ -98,8 +102,8 @@ float4 particleFrag(VSOutput input) : SV_Target {
     float4 color = texel * input.color;
     // The pipeline blends (ONE, ONE_MINUS_SRC_ALPHA). Writing alpha 0 makes that purely additive;
     // writing the real alpha makes it ordinary (premultiplied) alpha blending.
-    // Fog: a glowing (additive) particle just dims; an ordinary one takes on the fog's colour.
+    // Fog: a glowing (additive) particle just dims; an ordinary one is covered like a surface.
     bool   additive = pc.params.z > 0.5;
-    float3 rgb      = additive ? color.rgb * (1.0 - input.fog) : lerp(color.rgb, frame.fogColour.rgb, input.fog);
+    float3 rgb      = additive ? color.rgb * input.fog.a : color.rgb * input.fog.a + input.fog.rgb;
     return float4(rgb * color.a, additive ? 0.0 : color.a);
 }

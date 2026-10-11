@@ -203,6 +203,21 @@ namespace Crucible {
                     vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
 
         /*********************************************************************
+         \brief  Creates a 3D image (a volume: w x h x d texels, one mip, one
+                 layer, optimal tiling) and suballocates its memory, like
+                 Create(). For compute-written volumes such as the froxel fog.
+         \param[in] context    The VulkanContext to create/allocate through.
+         \param[in] w          Width, in texels.
+         \param[in] h          Height, in texels.
+         \param[in] d          Depth, in texels (1 is allowed: still a 3D image).
+         \param[in] format     Image format.
+         \param[in] usage      Vulkan image usage flags (e.g. eStorage | eSampled).
+         \param[in] properties Desired memory properties (device-local).
+         *********************************************************************/
+        void Create3D(VulkanContext& context, uint32_t w, uint32_t h, uint32_t d, vk::Format format,
+                      vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
+
+        /*********************************************************************
          \brief  Accessor.
          \return Const reference to the owned vk::raii::Image.
          *********************************************************************/
@@ -215,6 +230,9 @@ namespace Crucible {
         vk::raii::Image&        GetImage();
 
     private:
+        // Shared by Create() and Create3D(): makes the image from `imageInfo` and allocates and binds its memory.
+        void CreateFromInfo(VulkanContext& context, const vk::ImageCreateInfo& imageInfo, vk::MemoryPropertyFlags properties);
+
         vk::raii::Image         m_image = nullptr;
 
     };  // VULKAN IMAGE CLASS

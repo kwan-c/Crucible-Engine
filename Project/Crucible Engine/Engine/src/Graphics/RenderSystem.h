@@ -62,6 +62,7 @@
 #include "Passes/DebugLinePass.h"
 #include "Passes/ScenePass.h"
 #include "Passes/UIPass.h"
+#include "Passes/VolumetricFogPass.h"
 #include "DrawList.h"
 #include "RenderResources.h"
 #include "EnvironmentMaps.h"
@@ -814,6 +815,7 @@ namespace Crucible {
         ScenePass                   m_scenePass{ m_resources, m_particlePass };
         DebugLinePass               m_debugLinePass;
         UIPass                      m_uiPass{ m_context, m_resources };   // also holds m_resources (declared below; used once frames start)
+        VolumetricFogPass           m_fogPass{ m_context };   // froxel fog (compute); its pool is BEFORE every view's FogVolumeTargets
         UITestOverlay               m_uiTestOverlay;
         bool                        m_uiTestEnabled = false;
         VulkanFrameManager          m_frameManager;
@@ -874,6 +876,7 @@ namespace Crucible {
         float                                       m_deltaTime = 0.0f;     // last Update()'s dt (FrameUniforms::time.y)
         ViewTargetAllocator                         m_viewTargets{ m_context };   // samplers + the pool PostTargets sets come from (so: before every PostTargets)
         PostTargets                                 m_windowPost;           // the window's own targets (standalone build)
+        FogVolumeTargets                            m_windowFog;            // the window's fog volumes (standalone build)
 
         vk::raii::DescriptorPool                    m_descriptorPool = nullptr;
         std::vector<vk::raii::DescriptorSet>        m_descriptorSets;
@@ -899,9 +902,13 @@ namespace Crucible {
         // and depth holding the scene's depth for the debug lines that follow.
         void DrawSceneHdr(FrameContext& fc, PostTargets& targets, vk::Image depthImage, vk::ImageView depthView,
                           vk::Extent2D extent, vk::DescriptorSet frameSet, const ViewDrawList& draws);
-        /// Points a view's set 0 at the current environment map (binding 8) and at that view's
-        /// ambient occlusion image (binding 9). Called every frame for the frame's own set.
-        void WriteViewTextures(vk::DescriptorSet frameSet, const PostTargets& targets);
+        /// Points a view's set 0 at the current environment map (binding 8), at that view's
+        /// ambient occlusion image (binding 9) and at its fog volume (binding 10; nullptr = the
+        /// "no fog" volume). Called every frame for the frame's own set.
+        void WriteViewTextures(vk::DescriptorSet frameSet, const PostTargets& targets, const FogVolumeTargets* fog);
+        /// Whether views draw lit (froxel) fog this frame: the scene has fog, its Skybox asks for
+        /// the volumetric kind, and PostSettings::volumetricFog allows it.
+        bool VolumetricFogActive() const;
 
         // ---- Frame preparation (before recording) ----
         // Culls and batches everything one view draws this frame (main pass, shadow cascades,

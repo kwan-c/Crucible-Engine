@@ -96,9 +96,10 @@ namespace Crucible {
         uint32_t maxSets = kMaxViewports * m_framesInFlight;
         // Each set 0 = FrameUniforms UBO (binding 0), five storage buffers (lights 1, instances 2,
         // particles 5, light-cluster grid 6 and indices 7), shadow map image + comparison sampler (3, 4).
-        // ... plus two textures: the environment map (8) and the view's ambient occlusion (9).
+        // ... plus three textures: the environment map (8), the view's ambient occlusion (9) and
+        // its fog volume (10).
         std::array<vk::DescriptorPoolSize, 5> poolSizes{ {
-            { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxSets * 2 },
+            { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxSets * 3 },
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxSets },
             { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxSets * 5 },
             { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxSets },

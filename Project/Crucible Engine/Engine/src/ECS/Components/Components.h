@@ -218,6 +218,21 @@ namespace Crucible
 		float         fogBaseHeight = 0.f;
 		float         fogStart = 0.f;
 		float         fogMaxOpacity = 1.f;
+		// Volumetric fog: the fog lit by the sun (light shafts through its shadows) and by point and
+		// spot lights. intensity = how strongly the lights scatter in it; anisotropy 0 = scatters
+		// evenly, toward 1 = the glow gathers around lights you look toward; distance = metres the
+		// volume (and so the shafts) reaches - beyond it the fog stays lit, unshadowed.
+		// ambient: how bright the fog is in shade - 1 = fogColour (the plain fog's look), lower =
+		// darker shade, so light shafts stand out more (the fog keeps its colour).
+		// skyAmbient: the fog in shade is lit by the sky's average light instead, like surfaces in
+		// shade (ambientFromSky / ambientIntensity), tinted by fogColour; follows the sky (a dark
+		// night sky gives dark fog). Off = fogColour.
+		bool          volumetricFog = true;
+		float         volumetricIntensity = 1.f;
+		float         volumetricAnisotropy = 0.5f;
+		float         volumetricDistance = 100.f;
+		float         volumetricAmbient = 1.f;
+		bool          volumetricSkyAmbient = false;
 		float         contrast = 1.f;
 		float         saturation = 1.f;
 		float         temperature = 0.f;
