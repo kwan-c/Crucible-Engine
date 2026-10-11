@@ -4,7 +4,7 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          1 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                A dynamic bounding volume hierarchy (BVH) of axis-aligned
 *                boxes: insert, move and remove objects in O(log n), and ask
@@ -35,10 +35,17 @@
 *                Callbacks see FAT boxes - re-test the object's tight box if
 *                exactness matters (the Renderer does).
 *
-*                Not thread-safe; one tree per owner.
+*                Changing the tree (create / move / destroy) is not
+*                thread-safe. The const queries keep their traversal stack
+*                on the calling thread, so several threads may query at once
+*                while nothing changes the tree (the Renderer culls its views
+*                on worker threads this way).
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       queries use their own stack (no shared mutable state), so
+*                they can run on several threads at once; Partition() and
+*                QueryFrustumFrom() split one query across threads
 *
 **************************************************************************/
 
@@ -112,8 +119,8 @@ namespace Crucible {
         template <typename Visit>
         void QueryAABB(const AABB& box, Visit&& visit) const {
             if (m_root == kNull) { return; }
-            std::vector<int32_t>& stack = Stack();
-            stack.clear();
+            std::vector<int32_t> stack;
+            stack.reserve(kStackReserve);
             stack.push_back(m_root);
             while (!stack.empty()) {
                 const int32_t id = stack.back(); stack.pop_back();
@@ -132,9 +139,28 @@ namespace Crucible {
         template <typename Visit>
         void QueryFrustum(const Frustum& frustum, Visit&& visit) const {
             if (m_root == kNull) { return; }
-            std::vector<int32_t>& stack = Stack();
-            stack.clear();
-            stack.push_back(m_root);
+            QueryFrustumFrom(m_root, frustum, visit);
+        }
+
+        /*********************************************************************
+         \brief  Up to `maxParts` nodes that between them hold every leaf
+                 exactly once (the tallest branch is split first, so the
+                 parts come out about equal) - for spreading one query over
+                 several threads, one QueryFrustumFrom() per part.
+         \param[in] maxParts   Most nodes to return.
+         \param[out] outNodes  The parts (empty for an empty tree).
+         *********************************************************************/
+        void     Partition(uint32_t maxParts, std::vector<int32_t>& outNodes) const;
+
+        /*********************************************************************
+         \brief  QueryFrustum restricted to the subtree under `start` (a node
+                 from Partition()).
+         *********************************************************************/
+        template <typename Visit>
+        void QueryFrustumFrom(int32_t start, const Frustum& frustum, Visit&& visit) const {
+            std::vector<int32_t> stack;
+            stack.reserve(kStackReserve);
+            stack.push_back(start);
             while (!stack.empty()) {
                 const int32_t id = stack.back(); stack.pop_back();
                 const Node& n = m_nodes[id];
@@ -158,8 +184,8 @@ namespace Crucible {
         template <typename Hit>
         void RayCast(const Ray& ray, float tMax, Hit&& hit) const {
             if (m_root == kNull) { return; }
-            std::vector<int32_t>& stack = Stack();
-            stack.clear();
+            std::vector<int32_t> stack;
+            stack.reserve(kStackReserve);
             stack.push_back(m_root);
             while (!stack.empty()) {
                 const int32_t id = stack.back(); stack.pop_back();
@@ -213,7 +239,7 @@ namespace Crucible {
 
         template <typename Visit>
         void VisitLeaves(int32_t start, Visit& visit) const {
-            // Separate small stack: called from inside QueryFrustum, which is using Stack().
+            // Its own small stack: called from inside QueryFrustum, which is using its own.
             std::vector<int32_t> stack{ start };
             while (!stack.empty()) {
                 const int32_t id = stack.back(); stack.pop_back();
@@ -223,15 +249,16 @@ namespace Crucible {
             }
         }
 
-        // Reused traversal stack (avoids an allocation per query). Mutable: queries are const.
-        std::vector<int32_t>& Stack() const { return m_stack; }
+        // Traversal stacks live on the querying thread (one small allocation per query), so
+        // queries share no state. A depth-first walk holds about one entry per level, and the
+        // balanced tree is shallow (tens of levels for tens of thousands of leaves).
+        static constexpr size_t kStackReserve = 64;
 
         std::vector<Node>            m_nodes;
         int32_t                      m_root = kNull;
         int32_t                      m_freeList = kNull;
         int32_t                      m_proxyCount = 0;
         float                        m_margin = 0.25f;
-        mutable std::vector<int32_t> m_stack;
     };
 
 #ifdef _MSC_VER

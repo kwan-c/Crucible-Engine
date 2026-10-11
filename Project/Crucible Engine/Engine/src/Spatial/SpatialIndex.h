@@ -4,7 +4,7 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          1 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                The engine's spatial index: "which objects are in this
 *                frustum / hit by this ray / inside this box?", built to stay
@@ -35,14 +35,23 @@
 *
 *                Handles are stable for an object's lifetime; queries report
 *                handles, GetUserData() maps them back to the caller's ids.
-*                Not thread-safe.
+*                Changes (Insert / Update / Remove / EndFrame) are not
+*                thread-safe. The const queries may run on several threads at
+*                once while nothing changes the index; a caller can also split
+*                the work itself, with QueryFrustumSettled() for the tree and
+*                ActiveBoxes() / ActiveUserData() for the flat array.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       concurrent const queries; QueryFrustumSettled (whole tree or
+*                one part of PartitionSettled), ActiveHandles, ActiveBoxes,
+*                ActiveUserData (for culling across threads without a lookup
+*                per object)
 *
 **************************************************************************/
 
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "EngineExport.h"
@@ -106,19 +115,52 @@ namespace Crucible {
         std::uint32_t GetSettledCount() const { return m_count - GetActiveCount(); }                  //!< in the tree
         const DynamicAABBTree& GetTree() const { return m_tree; }                                     //!< for debug drawing
 
+        //! The active (flat-array) objects' handles, tight boxes and user data: parallel arrays, for
+        //! callers that test them themselves (e.g. split across threads). Valid until the index next
+        //! changes.
+        std::span<const Handle>        ActiveHandles()  const { return m_active; }
+        std::span<const AABB>          ActiveBoxes()    const { return m_activeBoxes; }
+        std::span<const std::uint64_t> ActiveUserData() const { return m_activeUserData; }
+
         /*********************************************************************
          \brief  visit(handle) for every object whose TIGHT box is (or may be)
                  inside the frustum.
          *********************************************************************/
         template <typename Visit>
         void QueryFrustum(const Frustum& frustum, Visit&& visit) const {
+            QueryFrustumSettled(frustum, visit);
+            for (size_t i = 0; i < m_active.size(); ++i) {
+                if (frustum.Intersects(m_activeBoxes[i])) { visit(m_active[i]); }
+            }
+        }
+
+        /*********************************************************************
+         \brief  The tree half of QueryFrustum: settled objects only (pair it
+                 with ActiveHandles() / ActiveBoxes() for the rest).
+         *********************************************************************/
+        template <typename Visit>
+        void QueryFrustumSettled(const Frustum& frustum, Visit&& visit) const {
             m_tree.QueryFrustum(frustum, [&](int32_t leaf) {
                 const Handle h = static_cast<Handle>(m_tree.GetUserData(leaf));
                 if (frustum.Intersects(m_entries[h].box)) { visit(h); }   // leaf boxes are fat: recheck tight
             });
-            for (size_t i = 0; i < m_active.size(); ++i) {
-                if (frustum.Intersects(m_activeBoxes[i])) { visit(m_active[i]); }
-            }
+        }
+
+        /*********************************************************************
+         \brief  Splits the tree into up to `maxParts` parts for
+                 QueryFrustumSettledPart (see DynamicAABBTree::Partition).
+         *********************************************************************/
+        void PartitionSettled(std::uint32_t maxParts, std::vector<int32_t>& outParts) const { m_tree.Partition(maxParts, outParts); }
+
+        /*********************************************************************
+         \brief  QueryFrustumSettled for one part from PartitionSettled.
+         *********************************************************************/
+        template <typename Visit>
+        void QueryFrustumSettledPart(int32_t part, const Frustum& frustum, Visit&& visit) const {
+            m_tree.QueryFrustumFrom(part, frustum, [&](int32_t leaf) {
+                const Handle h = static_cast<Handle>(m_tree.GetUserData(leaf));
+                if (frustum.Intersects(m_entries[h].box)) { visit(h); }
+            });
         }
 
         /*********************************************************************
@@ -181,6 +223,7 @@ namespace Crucible {
         std::vector<Handle> m_free;
         std::vector<Handle> m_active;        // dense: handles of active objects
         std::vector<AABB>   m_activeBoxes;   // dense, parallel to m_active (contiguous for the brute-force loop)
+        std::vector<std::uint64_t> m_activeUserData;   // dense, parallel to m_active (no entry lookup per hit)
         std::uint32_t       m_count = 0;
         std::uint32_t       m_frame = 1;
     };

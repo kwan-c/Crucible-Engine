@@ -74,6 +74,7 @@
 #include "UITypes.h"
 #include "UITestOverlay.h"
 #include "Spatial/SpatialIndex.h"
+#include "Threading/WorkerPool.h"
 
 // Imgui
 #include "Vulkan/ImGuiContext.h"
@@ -829,8 +830,9 @@ namespace Crucible {
         // Scene
         Camera                      m_camera;            // main (game) camera - see SetMainCamera
         bool                        m_hasMainCamera = false;
+        WorkerPool                  m_workers;           // threads for the per-view culling and batching (BEFORE m_scene, which uses them)
         RenderResources             m_resources{ m_context, m_uploads };   // meshes, textures, materials
-        RenderScene                 m_scene{ m_context, m_resources };     // what there is to draw: proxies, culling, batches, instances
+        RenderScene                 m_scene{ m_context, m_resources, m_workers };   // what there is to draw: proxies, culling, batches, instances
         ViewDrawList                m_windowDraws;      // the window pass's batches (no viewports)
         RenderCullStats             m_windowCullStats;
         std::vector<MeshHandle>     m_primitiveMeshes;

@@ -136,8 +136,8 @@ namespace Crucible {
         if (m_uiTestEnabled) { m_uiTestOverlay.Submit(*this, m_time); }
 
         // CULL, SORT & DRAW
-        //   Per view, inside RecordCommandBuffer: each camera gets its own visible list
-        //   (BuildVisibleItems), so the Scene and Game views never cull with each other's camera.
+        //   Per view (PrepareView -> RenderScene::BuildViewBatches, on the worker threads): each camera
+        //   gets its own visible list, so the Scene and Game views never cull with each other's camera.
         DrawFrame();
 
         // Everything submitted for this frame is consumed; lights and environment are per-frame
@@ -905,22 +905,23 @@ namespace Crucible {
         ubo.cameraPosWS = glm::vec4(camera.position, 0.0f);
         FillEnvironmentUniforms(ubo);
 
-        // ---- Main pass: what the camera sees, one instanced draw per (material, mesh) run ----
-        m_scene.BuildMainBatches(camera, stats, out.main);
-        stats.drawCalls = static_cast<uint32_t>(out.main.size());
-
-        // ---- Shadow cascades: what each cascade's light-space box contains ----
+        // ---- Shadow cascades: where each cascade's light-space box is (culled below, with the view) ----
         const ShadowSettings& settings = m_shadowSettings;
+        uint32_t cascadeCount = 0;
+        std::array<glm::mat4, kMaxShadowCascades> cascadeViewProj{};
         if (settings.enabled && m_lights.ShadowLightIndex() >= 0 && static_cast<uint32_t>(m_lights.ShadowLightIndex()) < m_lights.LightCount()) {
-            const uint32_t count = glm::clamp(settings.cascadeCount, 1u, kMaxShadowCascades);
-            std::array<glm::mat4, kMaxShadowCascades> cascadeViewProj{};
-            m_shadowPass.ComputeCascades(camera, m_lights.ShadowLightDir(), m_shadowSettings, count, ubo, cascadeViewProj);
-
-            for (uint32_t c = 0; c < count; ++c) { m_scene.BuildShadowBatches(cascadeViewProj[c], out.shadow[c], stats); }
-            out.cascadeCount   = count;
+            cascadeCount = glm::clamp(settings.cascadeCount, 1u, kMaxShadowCascades);
+            m_shadowPass.ComputeCascades(camera, m_lights.ShadowLightDir(), m_shadowSettings, cascadeCount, ubo, cascadeViewProj);
             ubo.lightParams.y  = static_cast<uint32_t>(m_lights.ShadowLightIndex()) + 1u;
-            ubo.lightParams.z  = count;
+            ubo.lightParams.z  = cascadeCount;
         }
+
+        // ---- What the camera and each cascade see: one instanced draw per (material, mesh) run in
+        //      the main pass, per mesh run in each cascade. Culled and batched on the worker threads. ----
+        m_scene.BuildViewBatches(camera, std::span<const glm::mat4>(cascadeViewProj.data(), cascadeCount), stats,
+                                 out.main, std::span<std::vector<DrawBatch>>(out.shadow.data(), cascadeCount));
+        stats.drawCalls  = static_cast<uint32_t>(out.main.size());
+        out.cascadeCount = cascadeCount;
 
         // ---- Point/spot lights binned into this view's cluster grid; particles ----
         stats.clusteredLights = m_lights.BuildClusters(camera, extent, ubo);
