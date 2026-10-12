@@ -46,7 +46,8 @@ namespace Crucible {
 
 
 		/*********************************************************************
-		 \brief  Ask for an empty, untitled scene at the next safe point.
+		 \brief  Ask for a new, untitled scene (holding the default objects
+				 - see PopulateDefaultScene) at the next safe point.
 		 \note   During a play session this is a runtime scene change (a
 				 level switch): it is applied, and Stop still restores the
 				 scene that was open at Play.
@@ -63,6 +64,20 @@ namespace Crucible {
 				 for RequestNew.
 		 *********************************************************************/
 		bool RequestLoad(const std::filesystem::path& file);
+
+		/*********************************************************************
+		 \brief  Write a new .scene file holding the default objects, without
+				 opening it.
+		 \details
+			Builds the defaults (see PopulateDefaultScene) in a throwaway
+			World and saves that, so the open scene, its dirty flag and the
+			undo history are untouched. The scene name is the file's stem,
+			as for SaveAs. Used by the Asset Browser's Create Scene, so a
+			scene made there starts out the same as File > New Scene.
+		 \return false if the file already exists (nothing is overwritten)
+				 or the write failed.
+		 *********************************************************************/
+		bool CreateSceneFile(const std::filesystem::path& file);
 
 		/*********************************************************************
 		 \brief  Apply a pending New or Load, if there is one.
@@ -142,6 +157,22 @@ namespace Crucible {
 		}
 
 		/*********************************************************************
+		 \brief  The open scene's file was deleted on disk (the Asset Browser's
+				 Delete): keep the scene open, but with no file behind it.
+		 \details The entities stay as they are, so nothing is lost. With no
+				  path, the next Save asks for a name (SaveAs) instead of quietly
+				  recreating the deleted file, and the scene is marked dirty
+				  because it now exists only in memory. Like RelocateCurrentFile,
+				  listeners are not notified: the world did not change, so the
+				  undo history stays.
+		 *********************************************************************/
+		void DetachCurrentFile()
+		{
+			m_path.clear();
+			m_dirty = true;
+		}
+
+		/*********************************************************************
 		  \brief  Whether the scene has changed since it was last saved/loaded.
 		  \details
 			 Set by hand through MarkDirty from editor actions. Not derived
@@ -172,8 +203,12 @@ namespace Crucible {
 	private:
 		enum class Pending { None, New, Load };
 
-		// Creates a new empty scene, replacing the current one.
+		// Creates a new scene holding the default objects, replacing the current one.
 		void ApplyNew();
+		// Adds the objects every new scene starts with (a camera and a
+		// directional light). The single place to change those defaults:
+		// both ApplyNew and CreateSceneFile go through it.
+		static void PopulateDefaultScene(World& world);
 		// Loads a scene file, replacing the current one.
 		void ApplyLoad(const std::filesystem::path& file);
 		// Notifies every listener that the scene has changed. Called after ApplyNew or ApplyLoad.

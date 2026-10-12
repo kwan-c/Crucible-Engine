@@ -123,6 +123,14 @@ namespace Crucible {
 		void ApplyPendingRename();
 		bool RenameOnDisk(std::string const& from, std::string const& newName, std::string& outVirtualPath);
 
+		// ---- Delete (Del / right-click; scene files only) ----
+		// Asks first in a modal. The delete itself happens after the frame's drawing
+		// (ApplyPendingDelete), like rename, so the item list never changes mid-loop.
+		void BeginDelete(std::string const& virtualPath);
+		void DrawDeleteConfirm();
+		void ApplyPendingDelete();
+		bool DeleteOnDisk(std::string const& virtualPath);
+
 		AssetManager&   m_assets;               // Core's shared index (core.GetAssets())
 		SceneManager&   m_scenes;               // to open scenes, and to follow a rename of the open one
 		bool            m_ready = false;
@@ -144,6 +152,10 @@ namespace Crucible {
 		bool        m_renameFocus = false;      // give the field keyboard focus on its first frame
 		int         m_renameIdleFrames = 0;     // frames the field has existed without focus
 		std::optional<std::pair<std::string, std::string>> m_pendingRename;   // { from, typed name }
+
+		std::string                m_deleteTarget;              // virtual path the confirm modal asks about ("" = none)
+		bool                       m_openDeleteConfirm = false; // open the modal next time it is drawn
+		std::optional<std::string> m_pendingDelete;             // confirmed; applied after drawing
 
 		char  m_search[128] = {};
 		float m_tileSize = 72.0f;
