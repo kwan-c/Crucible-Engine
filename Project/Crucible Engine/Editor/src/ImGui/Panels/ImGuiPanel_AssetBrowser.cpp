@@ -392,7 +392,10 @@ void Crucible::AssetBrowser::Update(float) {
 			NavigateTo(ParentOf(m_currentFolder));
 		if (ImGui::IsKeyPressed(ImGuiKey_F2, false) && !m_selected.empty() && m_renaming.empty())
 			BeginRename(m_selected);
-		if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) && IsSceneFile(m_selected) && m_renaming.empty())
+		// Shortcut, not IsKeyPressed: the Hierarchy registers Delete with RouteGlobal (delete the
+		// selected entities), and only a focus-route Shortcut claims the key ahead of it -
+		// otherwise one press would delete the scene file AND the selected entities.
+		if (IsSceneFile(m_selected) && m_renaming.empty() && ImGui::Shortcut(ImGuiKey_Delete))
 			BeginDelete(m_selected);
 	}
 

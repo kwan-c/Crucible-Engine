@@ -21,6 +21,8 @@
 #include "Graphics/DebugDrawSystem.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Undo/EntityCommands.h"
+#include "Resources/ResourceManager.h"
+#include "Spatial/Bounds.h"
 
 #include <ImGuizmo.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -142,6 +144,19 @@ void Crucible::SceneView::Update(float dt) {
 void Crucible::SceneView::UpdateEditorCamera(float dt) {
 	if (!m_viewport.IsValid()) { return; }   // not stood up yet (panel was 0-sized this frame)
 
+	// Frame Selected glide. Grabbing the camera (RMB) cancels it, so the two never fight.
+	if (m_focusT >= 0.0f) {
+		if (m_flying) {
+			m_focusT = -1.0f;
+		} else {
+			constexpr float kFocusDuration = 0.25f;   // seconds
+			m_focusT = std::min(m_focusT + dt / kFocusDuration, 1.0f);
+			float const s = m_focusT * m_focusT * (3.0f - 2.0f * m_focusT);   // smoothstep: ease in and out
+			m_viewport.GetCamera().position = glm::mix(m_focusFrom, m_focusTo, s);
+			if (m_focusT >= 1.0f) { m_focusT = -1.0f; }
+		}
+	}
+
 	CameraInput input{};
 	input.active = m_flying;
 
@@ -172,6 +187,56 @@ void Crucible::SceneView::UpdateEditorCamera(float dt) {
 	m_flyController.Update(m_viewport.GetCamera(), input, dt);
 }
 
+void Crucible::SceneView::FrameSelected() {
+	if (!m_viewport.IsValid()) { return; }   // GetCamera() is not safe before this
+
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (!inspector) { return; }
+
+	// World-space box around everything selected. A mesh contributes its real bounds; anything
+	// without one (lights, cameras, empties) a small box around its position.
+	constexpr float kPointHalfSize = 0.5f;
+	AABB box;
+	bool any = false;
+	auto add = [&](AABB const& b) { box = any ? AABB::Union(box, b) : b; any = true; };
+
+	for (Entity const entity : inspector->GetSelection()) {
+		if (!m_world.IsAlive(entity)) { continue; }
+		WorldTransform const* wt = m_world.Read<WorldTransform>(entity);
+		if (!wt || !wt->valid) { continue; }   // created this frame: not placed yet
+
+		bool usedMesh = false;
+		if (MeshRenderer const* mr = m_world.Read<MeshRenderer>(entity)) {
+			// Entities loaded from a scene carry only meshAsset (the handle is resolved per frame
+			// by RenderExtractSystem), so resolve it the same way here.
+			MeshHandle const mesh = (mr->meshAsset != 0) ? m_resources.GetMesh(mr->meshAsset) : mr->mesh;
+			glm::vec3 mn, mx;
+			if (mesh.IsValid() && m_renderer.GetMeshBounds(mesh, mn, mx)) {
+				add(AABB::Transform(AABB(mn, mx), wt->matrix));
+				usedMesh = true;
+			}
+		}
+		if (!usedMesh) {
+			glm::vec3 const p(wt->matrix[3]);
+			add(AABB(p - glm::vec3(kPointHalfSize), p + glm::vec3(kPointHalfSize)));
+		}
+	}
+	if (!any) { return; }
+
+	// Back off along the current view direction until a sphere around the box fits both the
+	// vertical and the horizontal field of view, plus a little margin.
+	Camera& camera = m_viewport.GetCamera();
+	float const radius = std::max(glm::length(box.Extents()), 0.25f);
+	float const halfV = glm::radians(camera.fovY) * 0.5f;
+	float const halfH = std::atan(std::tan(halfV) * camera.aspect);
+	float const half = std::min(halfV, halfH);
+	float const distance = std::max(radius / std::sin(half) * 1.1f, camera.nearZ + radius);
+
+	m_focusFrom = camera.position;
+	m_focusTo = box.Center() - camera.Forward() * distance;
+	m_focusT = 0.0f;
+}
+
 void Crucible::SceneView::DrawToolbar() {
 	EditorWidgets::BeginToolbarRow();
 
@@ -194,6 +259,7 @@ void Crucible::SceneView::DrawToolbar() {
 		if (ImGui::IsKeyPressed(ImGuiKey_W, false)) m_gizmoMode = GizmoMode::Translate;
 		if (ImGui::IsKeyPressed(ImGuiKey_E, false)) m_gizmoMode = GizmoMode::Rotate;
 		if (ImGui::IsKeyPressed(ImGuiKey_R, false)) m_gizmoMode = GizmoMode::Scale;
+		if (ImGui::IsKeyPressed(ImGuiKey_F, false)) FrameSelected();
 	}
 
 	ImGui::SameLine();

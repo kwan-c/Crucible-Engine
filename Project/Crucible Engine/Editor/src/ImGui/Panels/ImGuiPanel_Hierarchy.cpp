@@ -17,6 +17,7 @@
 
 #include "ImGui/Panels/ImGuiPanel_Hierarchy.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_SceneView.h"
 #include "Undo/EntityCommands.h"
 #include "Diagnostics/Logger.h"
 #include <Graphics/ParticlePresets.h>
@@ -165,6 +166,12 @@ void Crucible::Hierarchy::Update(float dt) {
 			if (hasSelection && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal)) { RequestAction(PendingAction::Duplicate, selected); }
 			if (hasSelection && ImGui::Shortcut(ImGuiKey_Delete, ImGuiInputFlags_RouteGlobal))            { RequestAction(PendingAction::Delete, selected); }
 
+			// F: frame the selection in the Scene view. Default (focus) route, so only while the
+			// Hierarchy is focused - the Scene view handles F itself when it is focused.
+			if (hasSelection && ImGui::Shortcut(ImGuiKey_F)) {
+				if (auto sceneView = EditorManager::GetInstance().GetPanel<SceneView>(ImguiPanels::EDITORSCENE)) { sceneView->FrameSelected(); }
+			}
+
 			// Ctrl+A: select every entity. Only while the Hierarchy is focused (default route), so
 			// it never steals Ctrl+A from a text field elsewhere.
 			if (inspector && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_A)) {
@@ -222,6 +229,12 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 			inspector->SetSelectedEntity(entity);
 			m_rangeAnchor = entity;
 		}
+	}
+
+	// Double-click a row: frame it in the Scene view (Unity). The first click already selected
+	// it, so this frames the selection. Only reads the World, so it is safe mid-query.
+	if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
+		if (auto sceneView = EditorManager::GetInstance().GetPanel<SceneView>(ImguiPanels::EDITORSCENE)) { sceneView->FrameSelected(); }
 	}
 
 	// Drag this row onto another row to make it that entity's child. Dragging a selected row

@@ -29,13 +29,15 @@
 namespace Crucible {
 	class SceneManager;
 	class World;
+	class ResourceManager;
 
 	class SceneView : public EditorPanel {
 	public:
 		enum class GizmoMode { Translate, Rotate, Scale };
 		enum class GizmoSpace { World, Local };   // axes for Move / Rotate (Scale is always Local)
 
-		SceneView(Renderer& renderer, SceneManager& scene, World& world) : m_viewport(renderer), m_scenes(scene), m_world(world), m_renderer(renderer) {}
+		SceneView(Renderer& renderer, ResourceManager& resources, SceneManager& scene, World& world)
+			: m_viewport(renderer), m_scenes(scene), m_world(world), m_renderer(renderer), m_resources(resources) {}
 
 		// REQUIRED Overrides
 		void Init() override;
@@ -50,6 +52,11 @@ namespace Crucible {
 		GizmoSpace GetGizmoSpace() const { return m_gizmoSpace; }
 		// True while RMB-drag flying is active (WASD/QE move, mouse look, tool hotkeys suppressed).
 		bool      IsFlying() const { return m_flying; }
+
+		// Unity's "Frame Selected" (F): glide the camera so the whole selection fills the view,
+		// keeping the direction it is looking in. Bound to F here and in the Hierarchy, and to
+		// double-clicking a Hierarchy row. Does nothing with no selection.
+		void      FrameSelected();
 
 	private:
 		void DrawToolbar();
@@ -92,6 +99,12 @@ namespace Crucible {
 		SceneManager& m_scenes;
 		World&        m_world;
 		Renderer&     m_renderer;
+		ResourceManager& m_resources;   // meshAsset -> mesh handle, for FrameSelected's bounds
+
+		// FrameSelected's glide (eased over kFocusDuration). m_focusT < 0 = not gliding.
+		glm::vec3 m_focusFrom{ 0.0f };
+		glm::vec3 m_focusTo{ 0.0f };
+		float     m_focusT = -1.0f;
 
 		ImVec2    m_viewportSize{ 0.0f, 0.0f };
 		bool      m_hovered = false;
