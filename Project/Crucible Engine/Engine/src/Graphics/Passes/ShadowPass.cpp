@@ -219,12 +219,13 @@ namespace Crucible {
         const uint32_t  mapSize     = kMapSize;
 
         // Shared by every view: wait for whatever sampled it last (an earlier view this frame, or a
-        // previous frame - barriers cover all earlier submissions on the queue too). Its old
-        // contents are discarded (UNDEFINED) since every layer is cleared below.
+        // previous frame - barriers cover all earlier submissions on the queue too): the scene's
+        // fragment shaders, and the volumetric fog's compute pass. Its old contents are discarded
+        // (UNDEFINED) since every layer is cleared below.
         TransitionImageLayout(cmd, shadowImage, vk::ImageAspectFlagBits::eDepth,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
             {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            vk::PipelineStageFlagBits2::eFragmentShader,
+            vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader,
             vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
             kMaxShadowCascades);
 
@@ -260,7 +261,7 @@ namespace Crucible {
         TransitionImageLayout(cmd, shadowImage, vk::ImageAspectFlagBits::eDepth,
             vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::AccessFlagBits2::eDepthStencilAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
-            vk::PipelineStageFlagBits2::eLateFragmentTests, vk::PipelineStageFlagBits2::eFragmentShader,
+            vk::PipelineStageFlagBits2::eLateFragmentTests, vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eComputeShader,
             kMaxShadowCascades);
 
     }   // ShadowPass::Record()

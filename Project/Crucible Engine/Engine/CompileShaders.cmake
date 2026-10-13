@@ -30,6 +30,7 @@ crucible_shader(Particle         particleVert particleFrag)
 crucible_shader(Post             postVert bloomDownFrag bloomUpFrag tonemapFrag aoFrag aoBlurFrag)
 crucible_shader(DepthNormal      depthNormalVert depthNormalFrag)
 crucible_shader(UI               uiVert uiFrag)
+crucible_shader(VolumetricFog    fogInject fogIntegrate)
 
 # Flags shared by every shader.
 set(CRUCIBLE_SLANGC_FLAGS

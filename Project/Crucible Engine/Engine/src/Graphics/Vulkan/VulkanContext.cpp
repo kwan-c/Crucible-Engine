@@ -227,10 +227,12 @@ namespace Crucible {
         // Specify queue to be created.
         std::vector<vk::QueueFamilyProperties> qFamilyProps = m_physicalDevice.getQueueFamilyProperties();
 
-        // Get the first index in qFamilyProps that supports both graphics and surface presentation.
+        // Get the first index in qFamilyProps that supports graphics, compute (the volumetric fog
+        // runs compute passes on the same queue, between draws) and surface presentation.
         for (uint32_t qfpIndex = 0; qfpIndex < qFamilyProps.size(); ++qfpIndex) {
 
             if ((qFamilyProps[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics)
+                && (qFamilyProps[qfpIndex].queueFlags & vk::QueueFlagBits::eCompute)
                 && m_physicalDevice.getSurfaceSupportKHR(qfpIndex, *m_surface)) {
 
                 m_queueIndex = qfpIndex;
@@ -238,7 +240,7 @@ namespace Crucible {
             }
         }
         if (m_queueIndex == ~0) {
-            throw std::runtime_error("[Renderer] Failed to find queue for graphics and surface presentation.\n");
+            throw std::runtime_error("[Renderer] Failed to find queue for graphics, compute and surface presentation.\n");
         }
 
         // Specify device features (Currently leaving everything to vk::False).
@@ -335,15 +337,17 @@ namespace Crucible {
         // Check if device supports Vulkan 1.3 API version.
         bool supportsVulkan1_3 = device.getProperties().apiVersion >= vk::ApiVersion13;
 
-        // Check if any single queue family supports both graphics operations and presenting to
-        // our surface. This is exactly what CreateLogicalDevice() needs: without the present half
+        // Check if any single queue family supports graphics and compute operations and presenting
+        // to our surface. This is exactly what CreateLogicalDevice() needs: without the present half
         // of the check, a GPU that cannot show images in this window could be picked here and
-        // then fail there, instead of being skipped in favour of another GPU.
+        // then fail there, instead of being skipped in favour of another GPU. (Every desktop GPU's
+        // graphics family also does compute; the check just makes the requirement explicit.)
         auto queueFamilies = device.getQueueFamilyProperties();
         bool supportsGraphics = false;
         for (uint32_t qfpIndex = 0; qfpIndex < queueFamilies.size(); ++qfpIndex) {
 
             if ((queueFamilies[qfpIndex].queueFlags & vk::QueueFlagBits::eGraphics)
+                && (queueFamilies[qfpIndex].queueFlags & vk::QueueFlagBits::eCompute)
                 && device.getSurfaceSupportKHR(qfpIndex, *m_surface)) {
 
                 supportsGraphics = true;

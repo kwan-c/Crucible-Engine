@@ -444,7 +444,10 @@ float4 fragMain(VSOutput inVert) : SV_Target {
     // Linear HDR radiance. Exposure, bloom and tonemapping happen once for the whole image in
     // Post.slang's tonemap pass, after everything (meshes, sky, particles) has been drawn.
     float3 colour = direct + ambient + emissive;
-    colour = lerp(colour, frame.fogColour.rgb, FogAmount(inVert.worldPos));
+    // Fog between the camera and this point: what it hides, and the light it adds (lit by the sun
+    // and nearby lights when the view has a fog volume - see Common.slang).
+    float4 fog = FogForPoint(inVert.worldPos, inVert.pos.xy / frame.clusterZ.zw);
+    colour = colour * fog.a + fog.rgb;
     if (frame.time.z > 0.5) { colour *= CascadeDebugTint(inVert.worldPos); }
     return float4(colour, 1.0);
 }

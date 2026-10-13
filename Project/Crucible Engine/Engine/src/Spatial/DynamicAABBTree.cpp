@@ -23,7 +23,27 @@ namespace Crucible {
 
     DynamicAABBTree::DynamicAABBTree(float margin) : m_margin{ margin > 0.0f ? margin : 0.0f } {
         m_nodes.reserve(256);
-        m_stack.reserve(64);
+    }
+
+    void DynamicAABBTree::Partition(uint32_t maxParts, std::vector<int32_t>& outNodes) const {
+
+        outNodes.clear();
+        if (m_root == kNull || maxParts == 0) { return; }
+        outNodes.push_back(m_root);
+        while (outNodes.size() < maxParts) {
+            // Split the tallest inner node (the first of equals, so the result is always the same).
+            size_t  best = outNodes.size();
+            int32_t bestHeight = 0;
+            for (size_t i = 0; i < outNodes.size(); ++i) {
+                const Node& n = m_nodes[outNodes[i]];
+                if (!n.IsLeaf() && n.height > bestHeight) { bestHeight = n.height; best = i; }
+            }
+            if (best == outNodes.size()) { break; }   // only leaves left
+            const Node& n = m_nodes[outNodes[best]];
+            outNodes[best] = n.child1;
+            outNodes.push_back(n.child2);
+        }
+
     }
 
     // ------------------------------------------------------------------------------------------------------------- //

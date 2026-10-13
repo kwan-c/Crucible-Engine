@@ -34,15 +34,19 @@ namespace Crucible {
 
     void RenderLayouts::CreateDescriptorSetLayout(VulkanContext& context) {
 
-        std::array<vk::DescriptorSetLayoutBinding, 10> bindings{ {
+        // Bindings the volumetric fog's compute pass reads (camera and fog settings, lights, the
+        // shadow map, the light clusters) are visible to compute as well.
+        const vk::ShaderStageFlags fragCompute = vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eCompute;
+
+        std::array<vk::DescriptorSetLayoutBinding, 11> bindings{ {
             {
                 .binding            = 0,
                 .descriptorType     = vk::DescriptorType::eUniformBuffer,
                 .descriptorCount    = 1,
                 // Fragment needs this now too: FrameUniforms::cameraPosWS feeds the PBR specular
                 // term's view vector, and the ambient/exposure/light-count members are all
-                // fragment-side (see DefaultShader.slang's fragMain).
-                .stageFlags         = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+                // fragment-side (see DefaultShader.slang's fragMain). Compute: the fog volume.
+                .stageFlags         = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eCompute
             },
             {
                 // This frame's lights (StructuredBuffer<GpuLight> in DefaultShader.slang). One
@@ -51,7 +55,7 @@ namespace Crucible {
                 .binding            = 1,
                 .descriptorType     = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount    = 1,
-                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+                .stageFlags         = fragCompute
             },
             {
                 // This frame's instances (StructuredBuffer<InstanceData>): every object drawn by
@@ -67,14 +71,14 @@ namespace Crucible {
                 .binding            = 3,
                 .descriptorType     = vk::DescriptorType::eSampledImage,
                 .descriptorCount    = 1,
-                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+                .stageFlags         = fragCompute
             },
             {
                 // Its comparison sampler (SamplerComparisonState).
                 .binding            = 4,
                 .descriptorType     = vk::DescriptorType::eSampler,
                 .descriptorCount    = 1,
-                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+                .stageFlags         = fragCompute
             },
             {
                 // This frame's particles (StructuredBuffer<GpuParticle> in Particle.slang): every
@@ -89,14 +93,14 @@ namespace Crucible {
                 .binding            = 6,
                 .descriptorType     = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount    = 1,
-                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+                .stageFlags         = fragCompute
             },
             {
                 // Light clusters: the light indices the cells point into.
                 .binding            = 7,
                 .descriptorType     = vk::DescriptorType::eStorageBuffer,
                 .descriptorCount    = 1,
-                .stageFlags         = vk::ShaderStageFlagBits::eFragment
+                .stageFlags         = fragCompute
             },
             {
                 // The sky as a light source: the current skybox's pre-blurred environment map
@@ -112,6 +116,16 @@ namespace Crucible {
                 .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
                 .descriptorCount    = 1,
                 .stageFlags         = vk::ShaderStageFlagBits::eFragment
+            },
+            {
+                // This view's integrated fog volume (Sampler3D fogVolume in Common.slang):
+                // in-scattered light and transmittance from the camera to each froxel. Per view,
+                // re-pointed each frame (Renderer::WriteViewTextures). Vertex: particles look up
+                // their fog once, at their centre.
+                .binding            = 10,
+                .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             }
         } };
         vk::DescriptorSetLayoutCreateInfo layoutInfo{
