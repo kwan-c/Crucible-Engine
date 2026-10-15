@@ -32,7 +32,7 @@ namespace Crucible {
      \details
         The numeric values are also what the shader sees (GpuLight::
         directionType.w in RenderTypes.h, compared against the matching
-        constants in DefaultShader2.slang) - do not reorder.
+        constants in DefaultShader.slang) - do not reorder.
           - Directional: infinitely far away (the sun). Only direction
                          matters; position and range are ignored.
           - Point:       emits equally in every direction from a position,

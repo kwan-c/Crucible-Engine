@@ -1,6 +1,13 @@
 /*!
 * @file			ImGuiPanel_AssetBrowser.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Asset Browser (Unity's "Project" window).
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
@@ -12,7 +19,6 @@
 #include "Core.h"
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
 #include "Json/JsonWrapper.h"
-#include "Scene/Scene.h"          // kSceneVersion
 #include "Scene/SceneManager.h"
 
 #include <algorithm>
@@ -172,6 +178,45 @@ namespace {
 	}
 
 	bool SamePath(fs::path const& a, fs::path const& b) { return PathKey(a) == PathKey(b); }
+
+	// ------------------------------------------------------------------ delete helpers
+
+	bool IsSceneFile(std::string const& virtualPath)
+	{
+		return ToLowerCopy(fs::path(virtualPath).extension().string()) == ".scene";
+	}
+
+	// Removes one file. On Windows it goes to the Recycle Bin, so a mistaken delete can be
+	// restored from there (Unity does the same); elsewhere it is deleted outright.
+	bool RemoveFile(fs::path const& path, std::string& error)
+	{
+#ifdef _WIN32
+		std::error_code ec;
+		fs::path const full = fs::absolute(path, ec);   // SHFileOperation needs a full path
+		// pFrom is a list of paths, each null-terminated, ending in an extra null: the one
+		// pushed here, plus the one c_str() adds.
+		std::wstring from = (ec ? path : full).wstring();
+		from.push_back(L'\0');
+
+		SHFILEOPSTRUCTW op{};
+		op.wFunc  = FO_DELETE;
+		op.pFrom  = from.c_str();
+		op.fFlags = FOF_ALLOWUNDO | FOF_NOCONFIRMATION | FOF_SILENT | FOF_NOERRORUI;
+		int const result = SHFileOperationW(&op);
+		if (result != 0 || op.fAnyOperationsAborted) {
+			error = "it could not be moved to the Recycle Bin (error " + std::to_string(result) + ")";
+			return false;
+		}
+		return true;
+#else
+		std::error_code ec;
+		if (!fs::remove(path, ec)) {
+			error = ec ? ec.message() : "the file does not exist";
+			return false;
+		}
+		return true;
+#endif
+	}
 
 	// True if 'inner' is 'folder' itself or anything below it.
 	bool IsInside(fs::path const& inner, fs::path const& folder)
@@ -347,12 +392,20 @@ void Crucible::AssetBrowser::Update(float) {
 			NavigateTo(ParentOf(m_currentFolder));
 		if (ImGui::IsKeyPressed(ImGuiKey_F2, false) && !m_selected.empty() && m_renaming.empty())
 			BeginRename(m_selected);
+		// Shortcut, not IsKeyPressed: the Hierarchy registers Delete with RouteGlobal (delete the
+		// selected entities), and only a focus-route Shortcut claims the key ahead of it -
+		// otherwise one press would delete the scene file AND the selected entities.
+		if (IsSceneFile(m_selected) && m_renaming.empty() && ImGui::Shortcut(ImGuiKey_Delete))
+			BeginDelete(m_selected);
 	}
+
+	DrawDeleteConfirm();
 
 	ImGui::End();
 
 	// After drawing, like navigation below: renaming refreshes the index and the item list.
 	ApplyPendingRename();
+	ApplyPendingDelete();
 
 	// Apply navigation after drawing, so the item list never changes mid-loop.
 	if (m_navigateTo) {
@@ -737,6 +790,9 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	if (ImGui::MenuItem("Rename", "F2", false, IsRefreshAllowed()))
 		BeginRename(item.virtualPath);
 
+	if (!item.isFolder && item.type == AssetType::Scene && ImGui::MenuItem("Delete", "Del", false, IsRefreshAllowed()))
+		BeginDelete(item.virtualPath);
+
 	if (ImGui::MenuItem("Show in Explorer"))
 		ShowInExplorer(AbsolutePathOf(item.virtualPath), true);
 
@@ -872,12 +928,9 @@ void Crucible::AssetBrowser::CreateScene() {
 		stem = base + " " + std::to_string(i);
 	std::string const virtualPath = stem + ".scene";
 
-	// An empty scene in exactly the shape Scene::Save writes, so it opens like any other.
-	JsonWrapper doc;
-	doc.Set("version", kSceneVersion);
-	doc.Set("name", fs::path(virtualPath).stem().string());
-	doc.EnsureArray("entities");
-	if (!doc.SaveToFile(AbsolutePathOf(virtualPath))) {
+	// Through the SceneManager, so a scene made here starts with the same default objects
+	// as File > New Scene. It only writes the file; the open scene is left alone.
+	if (!m_scenes.CreateSceneFile(fs::path(AbsolutePathOf(virtualPath)))) {
 		CRU_USER_WARN("Could not create scene '{}'", virtualPath);
 		return;
 	}
@@ -917,6 +970,111 @@ void Crucible::AssetBrowser::CreateScript() {
 	Refresh();   // indexes it and writes its .meta
 	CRU_USER_INFO("Created script {}", virtualPath);
 	BeginRename(virtualPath);
+}
+
+// ------------------------------------------------------------------ delete
+
+void Crucible::AssetBrowser::BeginDelete(std::string const& virtualPath) {
+	if (!IsRefreshAllowed()) {
+		CRU_USER_WARN("Cannot delete while in play mode - press Stop first");
+		return;
+	}
+	if (!IsSceneFile(virtualPath)) return;   // only scene files can be deleted from here for now
+
+	m_deleteTarget = virtualPath;
+	m_selected = virtualPath;
+	m_openDeleteConfirm = true;
+}
+
+void Crucible::AssetBrowser::DrawDeleteConfirm() {
+	// Opened here, at the panel's ID level, rather than from the tile's context menu, so
+	// OpenPopup and BeginPopupModal see the same ID.
+	char const* const kTitle = "Delete Scene?";
+	if (m_openDeleteConfirm) {
+		ImGui::OpenPopup(kTitle);
+		m_openDeleteConfirm = false;
+	}
+
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (!ImGui::BeginPopupModal(kTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		return;
+
+	ImGui::Text("Delete '%s'?", m_deleteTarget.c_str());
+
+	bool const isOpenScene = m_scenes.HasPath() && SamePath(m_scenes.CurrentPath(), AbsolutePathOf(m_deleteTarget));
+	if (isOpenScene) {
+		ImGui::Spacing();
+		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "This scene is open in the editor.");
+		ImGui::TextDisabled("It stays open, but unsaved: saving will ask for a new name.");
+	}
+#ifdef _WIN32
+	ImGui::TextDisabled("The file and its .meta go to the Recycle Bin.");
+#else
+	ImGui::TextDisabled("This cannot be undone.");
+#endif
+
+	ImGui::Spacing();
+	bool close = false;
+	if (ImGui::Button("Delete", ImVec2(120.0f, 0.0f))) {
+		m_pendingDelete = m_deleteTarget;
+		close = true;
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+		close = true;
+
+	if (close) {
+		m_deleteTarget.clear();
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::EndPopup();
+}
+
+void Crucible::AssetBrowser::ApplyPendingDelete() {
+	if (!m_pendingDelete) return;
+	std::string const target = std::move(*m_pendingDelete);
+	m_pendingDelete.reset();
+
+	// Play may have started while the modal was up.
+	if (!IsRefreshAllowed()) {
+		CRU_USER_WARN("Cannot delete while in play mode - press Stop first");
+		return;
+	}
+
+	// Checked before deleting: afterwards the file is gone and the paths cannot be compared
+	// by what is on disk.
+	bool const wasOpen = m_scenes.HasPath() && SamePath(m_scenes.CurrentPath(), AbsolutePathOf(target));
+
+	if (!DeleteOnDisk(target)) return;
+
+	// The open scene lost its file: keep it open, but make the next save ask for a name.
+	if (wasOpen) m_scenes.DetachCurrentFile();
+
+	if (m_selected == target) m_selected.clear();
+	Refresh();   // drops it from the index and the grid
+	CRU_USER_INFO("Deleted scene {}", target);
+}
+
+bool Crucible::AssetBrowser::DeleteOnDisk(std::string const& virtualPath) {
+	std::error_code ec;
+	fs::path const file = AbsolutePathOf(virtualPath);
+	if (!fs::is_regular_file(file, ec)) {
+		CRU_USER_WARN("Cannot delete '{}': the file no longer exists", virtualPath);
+		return false;
+	}
+
+	std::string why;
+	if (!RemoveFile(file, why)) {
+		CRU_USER_WARN("Cannot delete '{}': {}", virtualPath, why);
+		return false;
+	}
+
+	// The .meta goes too, or the asset's guid would be left behind with nothing to point at.
+	fs::path const meta = AssetRegistry::MetaPathFor(file);
+	if (fs::exists(meta, ec) && !RemoveFile(meta, why))
+		CRU_USER_WARN("Deleted '{}', but its .meta could not be removed: {}", virtualPath, why);
+
+	return true;
 }
 
 // ------------------------------------------------------------------ rename

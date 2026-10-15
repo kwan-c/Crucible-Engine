@@ -3,7 +3,7 @@
 // The pipeline (VulkanPipeline::CreateShadowPipeline) adds slope-scaled depth bias and doesn't cull,
 // so open meshes (planes, single-sided cards) still cast.
 
-// Only the prefix this shader reads; the full struct is in DefaultShader2.slang.
+// Only the prefix this shader reads; the full struct is in DefaultShader.slang.
 struct FrameUniforms {
     float4x4 view;
     float4x4 proj;
@@ -17,6 +17,7 @@ struct FrameUniforms {
 
 struct InstanceData {
     float4x4 model;
+    float4   params;   // unused here; keeps the 80-byte stride of Crucible::InstanceData
 };
 
 struct ShadowPush {

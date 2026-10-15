@@ -1,10 +1,17 @@
 #pragma once
 /*!
 * @file			ImGuiPanel_Menu.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's main menu bar (File / Edit / View / Help).
 *
 * Sample panel: shows how an EditorPanel plugs into EditorManager. Most items are
 * placeholders that just log a message until the real features exist.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include <string>
@@ -66,6 +73,7 @@ namespace Crucible {
 		bool m_showDemoWindow = false;	// View > ImGui Demo Window
 		bool m_showFps = true;			// View > FPS Counter
 		bool m_showAbout = false;		// Help > About (opened as a popup)
+		bool m_showThemeEditor = false;	// View > Theme > Theme Editor...
 	};
 
 }

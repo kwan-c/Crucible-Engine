@@ -1,11 +1,14 @@
 
 
+#include <memory>
 #include <utility>
 #include <system_error>
 
 #include "Scene/SceneManager.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/World.h"
+#include "ECS/Components/Components.h"   // Transform, CameraComponent, Light
+#include "Resources/ResourceManager.h"
 
 namespace Crucible {
 	SceneManager::SceneManager(World& world) : m_world(world) {}
@@ -55,6 +58,31 @@ namespace Crucible {
 		m_pendingPath.clear();
 	}
 
+	bool SceneManager::CreateSceneFile(const std::filesystem::path& file) {
+		std::error_code ec;
+		if (std::filesystem::exists(file, ec))
+		{
+			CRU_USER_WARN("SceneManager: cannot create '{}' - a file with that name already exists", file.string());
+			return false;
+		}
+
+		// A throwaway world, so the open scene is never touched. World's
+		// constructor registers every component, so Scene::Save writes exactly
+		// what it would for the editor's world.
+		auto world = std::make_unique<World>();
+		PopulateDefaultScene(*world);
+
+		// A fresh Scene: every entity gets a new guid, unique to this file.
+		Scene scene;
+		scene.SetName(file.stem().string());
+		if (!scene.Save(*world, file))
+		{
+			CRU_USER_ERROR("SceneManager: failed to create scene file {}", file.string());
+			return false;
+		}
+		return true;
+	}
+
 	bool SceneManager::RequestLoad(const std::filesystem::path& file) {
 		std::error_code ec;
 		if (!std::filesystem::is_regular_file(file, ec))
@@ -89,11 +117,45 @@ namespace Crucible {
 		m_scene.Forget();
 		m_scene.SetName("Untitled");
 
+		PopulateDefaultScene(m_world);
+
 		m_path.clear();
-		m_dirty = false;
+		m_dirty = false;   // the defaults are not an unsaved edit
 
 		CRU_INFO("SceneManager: new scene");
 		NotifyChanged();
+	}
+
+	void SceneManager::PopulateDefaultScene(World& world) {
+		// Ground - a flattened built-in cube centred at the origin.
+		//
+		// Only the asset id is set, not the runtime handle: when meshAsset is non-zero,
+		// RenderExtractSystem resolves it through Core's ResourceManager every frame (the
+		// same way an entity loaded from a scene file draws). BuiltinId is static and the
+		// id is stable across runs
+		const Entity ground = world.CreateEntity();
+		MeshRenderer mr{};
+		mr.meshAsset = ResourceManager::BuiltinId("Cube");
+		mr.colour    = { .5f, .5f, .5f, .5f };   // default colour is (0,0,0,0)
+		world.AddComponent<MeshRenderer>(ground, mr);
+
+		if (Transform* t = world.Write<Transform>(ground)) { t->scale = Math::vec3{ 30.f, .5f, 30.f }; }
+
+		// Directional light - same values as the Hierarchy's Create > Light >
+		// Directional. Adding it takes over from the Renderer's built-in sun.
+		const Entity sun = world.CreateEntity();
+		Light light{};
+		light.type      = LightType::Directional;
+		light.intensity = 1.f;
+		world.AddComponent<Light>(sun, light);
+
+		// A directional light's position is ignored; it shines along its local -Z. Pitch it
+		// down 50 degrees so it lights the ground instead of skimming along it.
+		if (Transform* t = world.Write<Transform>(sun))
+		{
+			t->positions = Math::vec3{ 100.f, 100.f, 100.f };   // only where the gizmo sits
+			t->rotation  = glm::angleAxis(glm::radians(-50.f), Math::vec3{ 1.f, 0.f, 0.f });
+		}
 	}
 
 	void SceneManager::ApplyLoad(const std::filesystem::path& file) {

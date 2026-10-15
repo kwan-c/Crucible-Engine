@@ -193,9 +193,29 @@ namespace Crucible {
          \param[in] flags       Image create flags (vk::ImageCreateFlagBits::
                                 eCubeCompatible for a cubemap). Defaults to
                                 none.
+         \param[in] mipLevels   Number of mip levels (each half the size of
+                                the one before). Defaults to 1 (no mipmaps).
+         \param[in] samples     Samples per pixel (above 1 = a multisampled
+                                render target, for MSAA). Defaults to 1.
          *********************************************************************/
         void Create(VulkanContext& context, uint32_t w, uint32_t h, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,
-                    uint32_t arrayLayers = 1, vk::ImageCreateFlags flags = {});
+                    uint32_t arrayLayers = 1, vk::ImageCreateFlags flags = {}, uint32_t mipLevels = 1,
+                    vk::SampleCountFlagBits samples = vk::SampleCountFlagBits::e1);
+
+        /*********************************************************************
+         \brief  Creates a 3D image (a volume: w x h x d texels, one mip, one
+                 layer, optimal tiling) and suballocates its memory, like
+                 Create(). For compute-written volumes such as the froxel fog.
+         \param[in] context    The VulkanContext to create/allocate through.
+         \param[in] w          Width, in texels.
+         \param[in] h          Height, in texels.
+         \param[in] d          Depth, in texels (1 is allowed: still a 3D image).
+         \param[in] format     Image format.
+         \param[in] usage      Vulkan image usage flags (e.g. eStorage | eSampled).
+         \param[in] properties Desired memory properties (device-local).
+         *********************************************************************/
+        void Create3D(VulkanContext& context, uint32_t w, uint32_t h, uint32_t d, vk::Format format,
+                      vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties);
 
         /*********************************************************************
          \brief  Accessor.
@@ -210,6 +230,9 @@ namespace Crucible {
         vk::raii::Image&        GetImage();
 
     private:
+        // Shared by Create() and Create3D(): makes the image from `imageInfo` and allocates and binds its memory.
+        void CreateFromInfo(VulkanContext& context, const vk::ImageCreateInfo& imageInfo, vk::MemoryPropertyFlags properties);
+
         vk::raii::Image         m_image = nullptr;
 
     };  // VULKAN IMAGE CLASS

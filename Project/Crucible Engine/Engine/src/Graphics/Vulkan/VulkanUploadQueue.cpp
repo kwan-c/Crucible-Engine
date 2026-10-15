@@ -49,11 +49,11 @@ namespace Crucible {
     }   // VulkanUploadQueue::QueueBuffer()
 
     void VulkanUploadQueue::QueueImage(vk::Image destination, const void* data, vk::DeviceSize size,
-                                       uint32_t width, uint32_t height, uint32_t layerCount) {
+                                       uint32_t width, uint32_t height, uint32_t layerCount, uint32_t mipLevel) {
 
         if (size == 0) { return; }
 
-        m_imageUploads.push_back(ImageUpload{ MakeStagingBuffer(data, size), destination, width, height, layerCount });
+        m_imageUploads.push_back(ImageUpload{ MakeStagingBuffer(data, size), destination, width, height, layerCount, mipLevel });
         m_pendingBytes += size;
         FlushIfOverBudget();
 
@@ -174,7 +174,7 @@ namespace Crucible {
                     .image               = upload.destination,
                     .subresourceRange    = {
                         .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                        .baseMipLevel   = 0,
+                        .baseMipLevel   = upload.mipLevel,
                         .levelCount     = 1,
                         .baseArrayLayer = 0,
                         .layerCount     = upload.layerCount }
@@ -194,7 +194,7 @@ namespace Crucible {
                     .bufferImageHeight = 0,
                     .imageSubresource  = {
                         .aspectMask     = vk::ImageAspectFlagBits::eColor,
-                        .mipLevel       = 0,
+                        .mipLevel       = upload.mipLevel,
                         .baseArrayLayer = 0,
                         .layerCount     = upload.layerCount },
                     .imageOffset       = { 0, 0, 0 },

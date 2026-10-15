@@ -1,4 +1,15 @@
 #pragma once
+/*!
+* @file			ImGuiPanel_PlayPause.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
+* @brief		The editor's Play / Pause / Stop toolbar.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
+*/
 
 #include <string>
 

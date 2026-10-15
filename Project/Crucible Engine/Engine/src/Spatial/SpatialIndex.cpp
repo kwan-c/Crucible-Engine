@@ -3,12 +3,13 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          1 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                See SpatialIndex.h for the settled/active policy and why.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       m_activeUserData, kept parallel to m_active
 *
 **************************************************************************/
 
@@ -69,9 +70,11 @@ namespace Crucible {
             const Handle last = m_active.back();
             m_active[i] = last;
             m_activeBoxes[i] = m_activeBoxes.back();
+            m_activeUserData[i] = m_activeUserData.back();
             m_entries[last].activeIndex = i;
             m_active.pop_back();
             m_activeBoxes.pop_back();
+            m_activeUserData.pop_back();
         }
         e = Entry{};
         m_free.push_back(h);
@@ -86,6 +89,7 @@ namespace Crucible {
         e.activeIndex = static_cast<std::uint32_t>(m_active.size());
         m_active.push_back(h);
         m_activeBoxes.push_back(e.box);
+        m_activeUserData.push_back(e.userData);
     }
 
     void SpatialIndex::MakeSettled(Handle h) {
@@ -95,9 +99,11 @@ namespace Crucible {
         const Handle last = m_active.back();
         m_active[i] = last;
         m_activeBoxes[i] = m_activeBoxes.back();
+        m_activeUserData[i] = m_activeUserData.back();
         m_entries[last].activeIndex = i;
         m_active.pop_back();
         m_activeBoxes.pop_back();
+        m_activeUserData.pop_back();
 
         e.activeIndex = 0xFFFFFFFFu;
         e.lastReinsertFrame = 0;

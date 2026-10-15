@@ -1,11 +1,19 @@
 /*!
 * @file			ImGuiPanel_SceneView.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Scene view: the free-camera view of the level you are editing.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/Panels/ImGuiPanel_SceneView.h"
 #include "Scene/SceneManager.h"
 #include "ImGui/EditorWidgets.h"
+#include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/World.h"
 #include "ECS/Components/Components.h"
@@ -13,11 +21,14 @@
 #include "Graphics/DebugDrawSystem.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Undo/EntityCommands.h"
+#include "Resources/ResourceManager.h"
+#include "Spatial/Bounds.h"
 
 #include <ImGuizmo.h>
 #include <glm/gtc/type_ptr.hpp>
 
 #include <cmath>
+#include <cstdio>
 #include <memory>
 #include <string>
 
@@ -112,6 +123,7 @@ void Crucible::SceneView::Update(float dt) {
 	SyncSelection();
 	m_iconHits.clear();
 	if (m_showIcons) { DrawIcons(min, avail); }
+	if (m_showStats) { DrawStatsOverlay(min); }
 	DrawGizmo(min, avail);   // before picking, so a click on the gizmo is known to be the gizmo's
 	HandleClickPicking(min, avail);
 	if (!ImGui::IsMouseDown(ImGuiMouseButton_Left)) { m_gizmoClaimedClick = false; }
@@ -131,6 +143,19 @@ void Crucible::SceneView::Update(float dt) {
 
 void Crucible::SceneView::UpdateEditorCamera(float dt) {
 	if (!m_viewport.IsValid()) { return; }   // not stood up yet (panel was 0-sized this frame)
+
+	// Frame Selected glide. Grabbing the camera (RMB) cancels it, so the two never fight.
+	if (m_focusT >= 0.0f) {
+		if (m_flying) {
+			m_focusT = -1.0f;
+		} else {
+			constexpr float kFocusDuration = 0.25f;   // seconds
+			m_focusT = std::min(m_focusT + dt / kFocusDuration, 1.0f);
+			float const s = m_focusT * m_focusT * (3.0f - 2.0f * m_focusT);   // smoothstep: ease in and out
+			m_viewport.GetCamera().position = glm::mix(m_focusFrom, m_focusTo, s);
+			if (m_focusT >= 1.0f) { m_focusT = -1.0f; }
+		}
+	}
 
 	CameraInput input{};
 	input.active = m_flying;
@@ -162,6 +187,56 @@ void Crucible::SceneView::UpdateEditorCamera(float dt) {
 	m_flyController.Update(m_viewport.GetCamera(), input, dt);
 }
 
+void Crucible::SceneView::FrameSelected() {
+	if (!m_viewport.IsValid()) { return; }   // GetCamera() is not safe before this
+
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (!inspector) { return; }
+
+	// World-space box around everything selected. A mesh contributes its real bounds; anything
+	// without one (lights, cameras, empties) a small box around its position.
+	constexpr float kPointHalfSize = 0.5f;
+	AABB box;
+	bool any = false;
+	auto add = [&](AABB const& b) { box = any ? AABB::Union(box, b) : b; any = true; };
+
+	for (Entity const entity : inspector->GetSelection()) {
+		if (!m_world.IsAlive(entity)) { continue; }
+		WorldTransform const* wt = m_world.Read<WorldTransform>(entity);
+		if (!wt || !wt->valid) { continue; }   // created this frame: not placed yet
+
+		bool usedMesh = false;
+		if (MeshRenderer const* mr = m_world.Read<MeshRenderer>(entity)) {
+			// Entities loaded from a scene carry only meshAsset (the handle is resolved per frame
+			// by RenderExtractSystem), so resolve it the same way here.
+			MeshHandle const mesh = (mr->meshAsset != 0) ? m_resources.GetMesh(mr->meshAsset) : mr->mesh;
+			glm::vec3 mn, mx;
+			if (mesh.IsValid() && m_renderer.GetMeshBounds(mesh, mn, mx)) {
+				add(AABB::Transform(AABB(mn, mx), wt->matrix));
+				usedMesh = true;
+			}
+		}
+		if (!usedMesh) {
+			glm::vec3 const p(wt->matrix[3]);
+			add(AABB(p - glm::vec3(kPointHalfSize), p + glm::vec3(kPointHalfSize)));
+		}
+	}
+	if (!any) { return; }
+
+	// Back off along the current view direction until a sphere around the box fits both the
+	// vertical and the horizontal field of view, plus a little margin.
+	Camera& camera = m_viewport.GetCamera();
+	float const radius = std::max(glm::length(box.Extents()), 0.25f);
+	float const halfV = glm::radians(camera.fovY) * 0.5f;
+	float const halfH = std::atan(std::tan(halfV) * camera.aspect);
+	float const half = std::min(halfV, halfH);
+	float const distance = std::max(radius / std::sin(half) * 1.1f, camera.nearZ + radius);
+
+	m_focusFrom = camera.position;
+	m_focusTo = box.Center() - camera.Forward() * distance;
+	m_focusT = 0.0f;
+}
+
 void Crucible::SceneView::DrawToolbar() {
 	EditorWidgets::BeginToolbarRow();
 
@@ -184,12 +259,20 @@ void Crucible::SceneView::DrawToolbar() {
 		if (ImGui::IsKeyPressed(ImGuiKey_W, false)) m_gizmoMode = GizmoMode::Translate;
 		if (ImGui::IsKeyPressed(ImGuiKey_E, false)) m_gizmoMode = GizmoMode::Rotate;
 		if (ImGui::IsKeyPressed(ImGuiKey_R, false)) m_gizmoMode = GizmoMode::Scale;
+		if (ImGui::IsKeyPressed(ImGuiKey_F, false)) FrameSelected();
 	}
 
 	ImGui::SameLine();
 	if (ToolbarToggle("Gizmos", m_viewport.GetDebugDraw() || m_showIcons)) { ImGui::OpenPopup("##SceneGizmos"); }
 	if (ImGui::BeginPopup("##SceneGizmos")) {
 		DrawGizmoMenu();
+		ImGui::EndPopup();
+	}
+
+	ImGui::SameLine();
+	if (ToolbarToggle("Rendering", false)) { ImGui::OpenPopup("##SceneRendering"); }
+	if (ImGui::BeginPopup("##SceneRendering")) {
+		DrawRenderingMenu();
 		ImGui::EndPopup();
 	}
 
@@ -202,9 +285,11 @@ void Crucible::SceneView::DrawToolbar() {
 		ImGui::TextDisabled("|  Drawn %u / %u", stats.proxiesVisible + stats.immediateVisible, stats.proxies + stats.immediate);
 		if (ImGui::IsItemHovered()) {
 			ImGui::SetTooltip("Entities: %u of %u in view (%u moving)\nImmediate items: %u of %u\n"
-				"Draw calls: %u (instanced)\nShadow casters: %u in %u draws",
+				"Draw calls: %u (instanced)\nShadow casters: %u in %u draws\n"
+				"Particles: %u in %u draws\nPoint/spot lights in view: %u",
 				stats.proxiesVisible, stats.proxies, stats.movingProxies, stats.immediateVisible, stats.immediate,
-				stats.drawCalls, stats.shadowCasters, stats.shadowDrawCalls);
+				stats.drawCalls, stats.shadowCasters, stats.shadowDrawCalls,
+				stats.particles, stats.particleDrawCalls, stats.clusteredLights);
 		}
 	}
 
@@ -215,7 +300,7 @@ void Crucible::SceneView::DrawToolbar() {
 	ImGui::SameLine();
 
 	if (isChanged) {
-		ImGui::TextColored(ImVec4(1.f, .6f, .3f, 1.f), "Current Scene: %s *", m_scenes.CurrentName().c_str());
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Current Scene: %s *", m_scenes.CurrentName().c_str());
 	}
 	else {
 		ImGui::TextDisabled("Current Scene: %s", m_scenes.CurrentName().c_str());
@@ -290,10 +375,16 @@ namespace {
 
 void Crucible::SceneView::SyncSelection() {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
-	const Entity selected = inspector ? inspector->GetSelectedEntity() : kNullEntity;
-	DebugDrawSystem::SetSelectedEntity(selected);
-	// Picks up selections made elsewhere (Hierarchy, Inspector) too.
-	m_renderer.SetOutlinedObject(selected == kNullEntity ? 0 : EntityToUserData(selected));
+	const Entity active = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+	DebugDrawSystem::SetSelectedEntity(active);
+
+	// Every selected entity gets the outline. Picks up selections made elsewhere (Hierarchy,
+	// Inspector) too; the renderer ignores the call when the list hasn't changed.
+	std::vector<std::uint64_t> outlined;
+	if (inspector) {
+		for (Entity const e : inspector->GetSelection()) { outlined.push_back(EntityToUserData(e)); }
+	}
+	m_renderer.SetOutlinedObjects(outlined);
 }
 
 void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
@@ -303,7 +394,8 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 	Camera& camera = m_viewport.GetCamera();
 	camera.SetAspect(viewSize.x, viewSize.y);   // match the image this frame (the Renderer does the same)
 	const glm::mat4 viewProj = camera.GetProjection() * camera.GetView();
-	const Entity selected = DebugDrawSystem::GetSelectedEntity();
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	const Entity active = DebugDrawSystem::GetSelectedEntity();
 
 	ImDrawList* dl = ImGui::GetWindowDrawList();
 	dl->PushClipRect(viewMin, ImVec2(viewMin.x + viewSize.x, viewMin.y + viewSize.y), true);
@@ -314,7 +406,9 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 		ImVec2 screen; float depth;
 		if (!ProjectToScreen(viewProj, glm::vec3(wt.matrix[3]), viewMin, viewSize, screen, depth)) { return; }
 		dl->AddCircleFilled(screen, kIconRadius, IM_COL32(18, 18, 22, 170));
-		if (entity == selected) { dl->AddCircle(screen, kIconRadius + 1.5f, IM_COL32(255, 140, 26, 255), 0, 2.0f); }
+		// Selection ring: solid on the active entity, fainter on the rest of a multi-selection.
+		if (entity == active) { dl->AddCircle(screen, kIconRadius + 1.5f, IM_COL32(255, 140, 26, 255), 0, 2.0f); }
+		else if (inspector && inspector->IsSelected(entity)) { dl->AddCircle(screen, kIconRadius + 1.5f, IM_COL32(255, 140, 26, 150), 0, 2.0f); }
 		glyph(screen);
 		m_iconHits.push_back({ entity, screen, depth });
 	};
@@ -353,10 +447,14 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 
 void Crucible::SceneView::Select(Entity entity) {
 	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR)) {
-		inspector->SetSelectedEntity(entity);
+		ImGuiIO const& io = ImGui::GetIO();
+		// Ctrl+click toggles, Shift+click adds; with either held, a click on empty space keeps
+		// the selection instead of clearing it. A plain click selects just what was hit.
+		if (io.KeyCtrl)       { if (entity.IsValid()) { inspector->ToggleSelected(entity); } }
+		else if (io.KeyShift) { if (entity.IsValid()) { inspector->AddToSelection(entity); } }
+		else                  { inspector->SetSelectedEntity(entity); }
 	}
-	DebugDrawSystem::SetSelectedEntity(entity);
-	m_renderer.SetOutlinedObject(entity == kNullEntity ? 0 : EntityToUserData(entity));
+	SyncSelection();
 }
 
 void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
@@ -423,6 +521,9 @@ void Crucible::SceneView::DrawGizmoMenu() {
 		bool on = DebugDraw::IsCategoryEnabled(e.category);
 		if (ImGui::Checkbox(e.label, &on)) { DebugDraw::SetCategoryEnabled(e.category, on); }
 	}
+	bool throughWalls = DebugDrawSystem::GetCollidersThroughWalls();
+	if (ImGui::Checkbox("Colliders through walls", &throughWalls)) { DebugDrawSystem::SetCollidersThroughWalls(throughWalls); }
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Draw colliders even when another object is in front of them."); }
 	float scale = DebugDrawSystem::GetVelocityScale();
 	ImGui::SetNextItemWidth(140.0f);
 	if (ImGui::SliderFloat("Velocity scale", &scale, 0.01f, 2.0f, "%.2f m per m/s")) { DebugDrawSystem::SetVelocityScale(scale); }
@@ -435,7 +536,147 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
 }
 
+// Renderer-wide settings: unlike the Gizmos menu these change the picture itself, in the Game
+// view as well as here. They are not saved - each start of the editor begins from the defaults
+// in RenderTypes.h (PostSettings, ShadowSettings).
+void Crucible::SceneView::DrawRenderingMenu() {
+	// The glow around very bright things.
+	ImGui::SeparatorText("Bloom");
+	PostSettings& post = m_renderer.GetPostSettings();
+	ImGui::Checkbox("Enabled##bloom", &post.bloom);
+	ImGui::BeginDisabled(!post.bloom);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Bloom intensity", &post.bloomIntensity, 0.0f, 2.0f, "%.2f");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Bloom threshold", &post.bloomThreshold, 0.0f, 4.0f, "%.2f");
+	ImGui::EndDisabled();
+
+	ImGui::SeparatorText("Anti-aliasing");
+	ImGui::Checkbox("FXAA", &post.fxaa);
+	// MSAA: the scene is drawn with several samples per pixel (the Renderer falls back to what the GPU supports).
+	int msaaChoice = post.msaaSamples >= 4 ? 2 : post.msaaSamples >= 2 ? 1 : 0;
+	ImGui::SetNextItemWidth(140.0f);
+	if (ImGui::Combo("MSAA", &msaaChoice, "Off\0" "2x\0" "4x\0")) { post.msaaSamples = 1u << msaaChoice; }
+
+	// Soft darkening of ambient light in creases, corners and under objects.
+	ImGui::SeparatorText("Ambient occlusion");
+	ImGui::Checkbox("Enabled##ao", &post.ao);
+	ImGui::BeginDisabled(!post.ao);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Radius", &post.aoRadius, 0.1f, 2.0f, "%.2f m");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Strength", &post.aoIntensity, 0.0f, 3.0f, "%.2f");
+	ImGui::EndDisabled();
+
+	// Lit froxel fog (light shafts, glow around lights). Its look is on the scene's Skybox
+	// component; this switches it off everywhere, e.g. to compare or to save GPU time.
+	ImGui::SeparatorText("Volumetric fog");
+	ImGui::Checkbox("Enabled##volfog", &post.volumetricFog);
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Where the scene's Skybox has fog and Volumetric Fog ticked.\nOff: always the plain (unlit) fog."); }
+
+	ImGui::SeparatorText("Sun shadows");
+	ShadowSettings& shadows = m_renderer.GetShadowSettings();
+	ImGui::Checkbox("Enabled##shadows", &shadows.enabled);
+	ImGui::BeginDisabled(!shadows.enabled);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Distance", &shadows.distance, 10.0f, 200.0f, "%.0f m");
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Normal bias", &shadows.normalBias, 0.0f, 4.0f, "%.2f texels");
+	ImGui::Checkbox("Show cascades (debug tint)", &shadows.debugCascades);
+	ImGui::EndDisabled();
+
+	// Measuring: where the frame's time goes, and a built-in crowd to load the renderer with.
+	ImGui::SeparatorText("Performance");
+	ImGui::Checkbox("Show timings in the view", &m_showStats);
+	StressSettings& stress = m_renderer.GetStressSettings();
+	int stressCount = static_cast<int>(stress.count);
+	ImGui::SetNextItemWidth(140.0f);
+	if (ImGui::InputInt("Load test objects", &stressCount, 1000, 5000)) {
+		stress.count = static_cast<uint32_t>(std::clamp(stressCount, 0, 100000));
+	}
+	ImGui::BeginDisabled(stress.count == 0);
+	ImGui::Checkbox("Objects move", &stress.moving);
+	ImGui::SetNextItemWidth(140.0f);
+	ImGui::SliderFloat("Spacing", &stress.spacing, 1.0f, 10.0f, "%.1f m");
+	ImGui::EndDisabled();
+
+	// Screen-space UI: a built-in check of the UI pass, drawn as the game's UI (Game view only).
+	ImGui::SeparatorText("Interface");
+	bool uiTest = m_renderer.GetUITestOverlay();
+	if (ImGui::Checkbox("UI test overlay (Game view)", &uiTest)) { m_renderer.SetUITestOverlay(uiTest); }
+}
+
+void Crucible::SceneView::DrawStatsOverlay(ImVec2 viewMin) {
+	const RenderFrameStats& stats = m_renderer.GetFrameStats();
+	const RenderCullStats   cull  = m_viewport.GetCullStats();
+
+	// All values are averages over roughly the last ten frames, in milliseconds.
+	char text[768];
+	int  length = std::snprintf(text, sizeof(text),
+		"Frame  %.2f ms  (%.0f fps)\n"
+		"CPU    wait %.2f   prepare %.2f   upload %.2f   record %.2f   submit %.2f\n",
+		stats.frameMs, stats.frameMs > 0.0f ? 1000.0f / stats.frameMs : 0.0f,
+		stats.cpuWaitMs, stats.cpuPrepareMs, stats.cpuUploadMs, stats.cpuRecordMs, stats.cpuSubmitMs);
+	if (stats.gpuValid && length > 0 && length < static_cast<int>(sizeof(text))) {
+		const auto gpu = [&](GpuSection section) { return stats.gpuMs[static_cast<size_t>(section)]; };
+		length += std::snprintf(text + length, sizeof(text) - length,
+			"GPU    total %.2f\n"
+			"       shadows %.2f   fog volume %.2f   occlusion %.2f   scene %.2f   bloom %.2f\n"
+			"       final %.2f   outline %.2f   uploads %.2f   editor UI %.2f\n",
+			stats.gpuTotalMs,
+			gpu(GpuSection::Shadows), gpu(GpuSection::Volumetrics), gpu(GpuSection::AmbientOcclusion), gpu(GpuSection::Scene), gpu(GpuSection::Bloom),
+			gpu(GpuSection::Final), gpu(GpuSection::Outline), gpu(GpuSection::Uploads), gpu(GpuSection::Interface));
+	}
+	if (length > 0 && length < static_cast<int>(sizeof(text))) {
+		std::snprintf(text + length, sizeof(text) - length,
+			"View   %u of %u objects (%u travelling)   %u draws   shadows: %u objects in %u draws",
+			cull.proxiesVisible + cull.immediateVisible, cull.proxies + cull.immediate, cull.movingProxies,
+			cull.drawCalls, cull.shadowCasters, cull.shadowDrawCalls);
+	}
+
+	ImDrawList* const drawList = ImGui::GetWindowDrawList();
+	const ImVec2 pos(viewMin.x + 10.0f, viewMin.y + 10.0f);
+	const ImVec2 size = ImGui::CalcTextSize(text);
+	drawList->AddRectFilled(ImVec2(pos.x - 6.0f, pos.y - 4.0f), ImVec2(pos.x + size.x + 6.0f, pos.y + size.y + 4.0f), IM_COL32(0, 0, 0, 170), 4.0f);
+	drawList->AddText(pos, IM_COL32(235, 235, 235, 255), text);
+}
+
 // ------------------------------------------------------------------ gizmo
+
+namespace Crucible {
+namespace {
+
+	// World matrix of `entity`'s parent, composed from the Transforms themselves (see DrawGizmo
+	// for why not WorldTransform). Identity for a root.
+	glm::mat4 ParentWorldOf(World& world, Entity entity) {
+		glm::mat4 parentWorld(1.0f);
+		for (Entity p = world.GetParent(entity); p.IsValid(); p = world.GetParent(p)) {
+			if (Transform const* t = world.Read<Transform>(p)) {
+				parentWorld = Detail::ComposeTRS(t->positions, t->rotation, t->scale) * parentWorld;
+			}
+		}
+		return parentWorld;
+	}
+
+	// The selected entities a gizmo drag should move: the ones with a Transform whose parent /
+	// ancestor is NOT also selected (a selected child already moves with its selected parent;
+	// moving it too would move it twice).
+	std::vector<Entity> GizmoMovers(World& world, std::vector<Entity> const& selection) {
+		auto const selected = [&selection](Entity e) { return std::find(selection.begin(), selection.end(), e) != selection.end(); };
+		std::vector<Entity> movers;
+		for (Entity const e : selection) {
+			if (!world.IsAlive(e) || !world.HasComponent<Transform>(e)) { continue; }
+			bool covered = false;
+			for (Entity p = world.GetParent(e); p.IsValid(); p = world.GetParent(p)) {
+				if (selected(p)) { covered = true; break; }
+			}
+			if (!covered) { movers.push_back(e); }
+		}
+		return movers;
+	}
+
+}   // anonymous namespace
+}   // namespace Crucible
 
 void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
@@ -458,14 +699,10 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 	// chain is composed from the Transforms themselves, the same way HierarchyTransformSystem
 	// does (Detail::ComposeTRS, parent * local), rather than read from WorldTransform: that is
 	// only refreshed once a frame, so mid-drag it would lag a frame behind the mouse.
-	glm::mat4 parentWorld(1.0f);
-	for (Entity p = m_world.GetParent(entity); p.IsValid(); p = m_world.GetParent(p)) {
-		if (Transform const* t = m_world.Read<Transform>(p)) {
-			parentWorld = Detail::ComposeTRS(t->positions, t->rotation, t->scale) * parentWorld;
-		}
-	}
-	Transform const& local = *m_world.Read<Transform>(entity);
-	glm::mat4 world = parentWorld * Detail::ComposeTRS(local.positions, local.rotation, local.scale);
+	glm::mat4 const parentWorld = ParentWorldOf(m_world, entity);
+	Transform const local = *m_world.Read<Transform>(entity);   // a copy: the "before" of this frame's change
+	glm::mat4 const oldWorld = parentWorld * Detail::ComposeTRS(local.positions, local.rotation, local.scale);
+	glm::mat4 world = oldWorld;
 
 	ImGuizmo::OPERATION operation = ImGuizmo::TRANSLATE;
 	float snapStep = 0.5f;          // Ctrl-snap: half a unit...
@@ -493,22 +730,30 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 
 	if (usingGizmo && !m_gizmoWasUsing) {
 		// The drag starts: close any Inspector edit first so the two stay separate undo steps,
-		// then remember the entity as it is now. The whole drag becomes one step.
+		// then remember every entity it will move as it is now. The whole drag becomes one step.
 		if (inspector) { inspector->CommitPendingEdit(); }
 		m_gizmoEntity = entity;
-		m_gizmoBefore = EntityState::Capture(m_world, entity);
+		m_gizmoBefore.clear();
+		std::vector<Entity> movers = GizmoMovers(m_world, inspector ? inspector->GetSelection() : std::vector<Entity>{});
+		if (movers.empty()) { movers.push_back(entity); }
+		for (Entity const e : movers) { m_gizmoBefore.emplace_back(e, EntityState::Capture(m_world, e)); }
 		m_gizmoVerb = verb;
 	}
 
 	if (changed) {
+		// The active entity's own part, exactly as before multi-selection: only the part being
+		// dragged is written back, so a move never nudges the rotation or scale through float
+		// round-off. Skipped when its parent is also selected - the parent carries it along.
+		bool const activeMoves = m_gizmoBefore.empty() ||
+			std::any_of(m_gizmoBefore.begin(), m_gizmoBefore.end(), [&](auto const& m) { return m.first == entity; });
+
 		Math::vec3 translation, scale;
 		Math::quat rotation;
 		// Back to local space. DecomposeTRS refuses a collapsed or mirrored matrix (scale
 		// dragged through zero), leaving the Transform as it was rather than writing NaNs.
-		if (Detail::DecomposeTRS(glm::inverse(parentWorld) * world, translation, rotation, scale)) {
+		bool const decomposed = Detail::DecomposeTRS(glm::inverse(parentWorld) * world, translation, rotation, scale);
+		if (decomposed && activeMoves) {
 			if (Transform* t = m_world.GetComponent<Transform>(entity)) {
-				// Only the part being dragged is written back, so a move never nudges the
-				// rotation or scale through float round-off.
 				switch (m_gizmoMode) {
 				case GizmoMode::Translate: t->positions = translation; break;
 				case GizmoMode::Rotate:    t->rotation  = rotation;    break;
@@ -517,6 +762,43 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 				m_scenes.MarkDirty();
 			}
 		}
+
+		// The rest of a multi-selection gets the same change. Move and Rotate: this frame's
+		// change in world space (new * old^-1 - a rotation turns them around the gizmo's centre,
+		// like Unity's Pivot mode). Scale: each one's own scale is multiplied by the same factor,
+		// in place, so differently rotated objects never get skewed.
+		glm::mat4 const delta = world * glm::inverse(oldWorld);
+		Math::vec3 scaleFactor(1.0f);
+		if (m_gizmoMode == GizmoMode::Scale && decomposed) {
+			for (int axis = 0; axis < 3; ++axis) {
+				if (std::abs(local.scale[axis]) > 1e-6f) { scaleFactor[axis] = scale[axis] / local.scale[axis]; }
+			}
+		}
+
+		// A zero-scale active entity has no inverse: its change can't be carried to the others.
+		bool const deltaUsable = m_gizmoMode == GizmoMode::Scale || std::abs(glm::determinant(oldWorld)) > 1e-12f;
+
+		for (auto const& [other, before] : m_gizmoBefore) {
+			(void)before;
+			if (!deltaUsable) { break; }
+			if (other == entity || !m_world.IsAlive(other)) { continue; }
+			Transform* t = m_world.GetComponent<Transform>(other);
+			if (!t) { continue; }
+
+			if (m_gizmoMode == GizmoMode::Scale) {
+				if (decomposed) { t->scale *= scaleFactor; m_scenes.MarkDirty(); }
+				continue;
+			}
+
+			glm::mat4 const otherParent = ParentWorldOf(m_world, other);
+			glm::mat4 const otherWorld = otherParent * Detail::ComposeTRS(t->positions, t->rotation, t->scale);
+			Math::vec3 otherT, otherS;
+			Math::quat otherR;
+			if (!Detail::DecomposeTRS(glm::inverse(otherParent) * (delta * otherWorld), otherT, otherR, otherS)) { continue; }
+			t->positions = otherT;                                                   // Move and Rotate both move it
+			if (m_gizmoMode == GizmoMode::Rotate) { t->rotation = otherR; }          // only Rotate turns it
+			m_scenes.MarkDirty();
+		}
 	}
 
 	if (!usingGizmo && m_gizmoWasUsing) { EndGizmoDrag(); }
@@ -524,16 +806,27 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 }
 
 void Crucible::SceneView::EndGizmoDrag() {
-	if (m_gizmoEntity.IsValid() && !m_gizmoBefore.empty() && m_world.IsAlive(m_gizmoEntity)) {
-		std::string after = EntityState::Capture(m_world, m_gizmoEntity);
-		if (after != m_gizmoBefore) {
-			// Pushed in play mode too: the history keeps play-mode steps separately and drops
-			// them on Stop (UndoHistory::BeginPlaySession / EndPlaySession).
-			UndoHistory& history = EditorManager::GetInstance().GetHistory();
-			history.Push(std::make_unique<EntityStateCommand>(
-				history.KeyOf(m_gizmoEntity), std::move(m_gizmoBefore), std::move(after), m_gizmoVerb));
+	// One EntityStateCommand per entity that actually changed, pushed as one undo step.
+	// Pushed in play mode too: the history keeps play-mode steps separately and drops them on
+	// Stop (UndoHistory::BeginPlaySession / EndPlaySession).
+	std::vector<std::unique_ptr<EditorCommand>> parts;
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	for (auto& [moved, before] : m_gizmoBefore) {
+		if (!moved.IsValid() || before.empty() || !m_world.IsAlive(moved)) { continue; }
+		std::string after = EntityState::Capture(m_world, moved);
+		if (after != before) {
+			parts.push_back(std::make_unique<EntityStateCommand>(history.KeyOf(moved), std::move(before), std::move(after), m_gizmoVerb));
 		}
 	}
+
+	// The gizmo's own entity last, so it is the active one again after an undo / redo.
+	std::stable_partition(parts.begin(), parts.end(), [&](auto const& part) { return !(part->Target() == history.KeyOf(m_gizmoEntity)); });
+
+	if (!parts.empty()) {
+		std::string const label = parts.size() == 1 ? m_gizmoVerb : m_gizmoVerb + " " + std::to_string(parts.size()) + " Entities";
+		history.Push(GroupCommand::Make(std::move(parts), label));
+	}
+
 	m_gizmoEntity = kNullEntity;
 	m_gizmoBefore.clear();
 	m_gizmoWasUsing = false;

@@ -160,6 +160,13 @@ namespace Crucible {
         EntityKey          Target() const override { return m_nodes.empty() ? kNullEntity : m_nodes.front().key; }
         const std::string& Label()  const override { return m_label; }
 
+        //! Every entity in the subtree, and the subtree's parent.
+        void CollectKeys(std::vector<EntityKey>& out) const override
+        {
+            for (const Node& node : m_nodes) { out.push_back(node.key); }
+            if (!m_nodes.empty()) { out.push_back(m_nodes.front().parent); }
+        }
+
     private:
         struct Node {
             EntityKey     key;
@@ -194,6 +201,9 @@ namespace Crucible {
 
         EntityKey          Target() const override { return m_inner->Target(); }
         const std::string& Label()  const override { return m_label; }
+
+        void CollectKeys(std::vector<EntityKey>& out) const override   { m_inner->CollectKeys(out); }
+        void SelectionKeys(std::vector<EntityKey>& out) const override { m_inner->SelectionKeys(out); }
 
     private:
         std::unique_ptr<EditorCommand> m_inner;
@@ -233,6 +243,14 @@ namespace Crucible {
 
         EntityKey          Target() const override { return m_entity; }
         const std::string& Label()  const override { return m_label; }
+
+        //! The entity and both of its parents.
+        void CollectKeys(std::vector<EntityKey>& out) const override
+        {
+            out.push_back(m_entity);
+            out.push_back(m_before.parent);
+            out.push_back(m_after.parent);
+        }
 
     private:
         void Apply(UndoHistory& history, const Placement& placement) const;

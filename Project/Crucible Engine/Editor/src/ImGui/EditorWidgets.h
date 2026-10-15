@@ -1,10 +1,17 @@
 #pragma once
 /*!
 * @file			EditorWidgets.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		Small drawing helpers shared by several editor panels.
 *
 * Header-only on purpose: these are a few lines each and are used by the
 * Scene / Game views and the Asset Browser.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include <imgui.h>

@@ -15,6 +15,8 @@
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/RenderExtractSystem.h"
 #include "Graphics/DebugDrawSystem.h"
+#include "Graphics/ParticleSystem.h"
+#include "Graphics/StressMoverSystem.h"   // TEMPORARY: load testing
 #include "Resources/ResourceManager.h"
 
 // STL
@@ -52,6 +54,10 @@ namespace Crucible {
         delete m_window;
     }
 
+    void  Core::LockWindowAspectRatio(int width, int height) { m_window->LockAspectRatio(width, height); }
+    void  Core::UnlockWindowAspectRatio()                    { m_window->UnlockAspectRatio(); }
+    float Core::GetWindowAspectRatioLock() const             { return m_window->GetLockedAspectRatio(); }
+
     bool Core::Init()
     {
         std::cout << "The Hearth smoulders...\n";
@@ -82,7 +88,7 @@ namespace Crucible {
         // ===========================================
 
         // ======== startup scene (Removable) ==========
-        m_scenes->RequestLoad(m_assets->Resolve("Scenes/Physics demo scene.scene"));
+        m_scenes->RequestLoad(m_assets->Resolve("Scenes/Fog_Lighting_Effects.scene"));
         // ===========================================
 
 
@@ -155,8 +161,10 @@ namespace Crucible {
         //sample system registeration
         m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
         m_systems.RegisterSystem<ECSPhysicsSystem>();
+        m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
+        m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
         m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_renderer);                 // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
     }

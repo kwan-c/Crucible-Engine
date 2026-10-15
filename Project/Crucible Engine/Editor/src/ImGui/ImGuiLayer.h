@@ -1,9 +1,16 @@
 #pragma once
 /*!
 * @file			ImGuiLayer.h
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		Adapts the ImGuiManager functions to Crucible::Layer so Core can drive them.
 *
 * Lives in the Editor project only: Engine and Game never see ImGui.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "Systems/Layer.h"

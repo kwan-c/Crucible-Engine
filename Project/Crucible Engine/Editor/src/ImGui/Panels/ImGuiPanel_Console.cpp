@@ -1,9 +1,17 @@
 /*!
 * @file			ImGuiPanel_Console.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		The editor's Console: log output from the engine and editor.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/Panels/ImGuiPanel_Console.h"
+#include "ImGui/EditorTheme.h"
 
 #include <cstdio>
 #include <format>
@@ -13,13 +21,14 @@ namespace {
 
 	using Crucible::Debug::Level;
 
+	// Follows the editor theme, so every level stays readable on light themes too.
 	ImVec4 LevelColour(Level level) {
 		switch (level) {
 			case Level::Trace:
-			case Level::Debug:   return ImVec4(0.55f, 0.55f, 0.55f, 1.0f);
-			case Level::Info:    return ImVec4(0.85f, 0.85f, 0.85f, 1.0f);
-			case Level::Warning: return ImVec4(1.00f, 0.80f, 0.30f, 1.0f);
-			default:             return ImVec4(1.00f, 0.42f, 0.42f, 1.0f);   // Error, Fatal
+			case Level::Debug:   return ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled);
+			case Level::Info:    return ImGui::GetStyleColorVec4(ImGuiCol_Text);
+			case Level::Warning: return Crucible::EditorTheme::GetPalette().warning;
+			default:             return Crucible::EditorTheme::GetPalette().error;   // Error, Fatal
 		}
 	}
 

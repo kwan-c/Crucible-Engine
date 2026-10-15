@@ -12,11 +12,13 @@
 
 #include "ImGui/ImGuiManager.h"
 #include "ImGui/EditorWidgets.h"
+#include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
 #include <imgui_impl_vulkan.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_internal.h>   // DockBuilder* API
 #include <ImGuizmo.h>         // the Scene view's move/rotate/scale gizmo
+#include <algorithm>
 #include <iostream>
 #include <Core.h>
 #include "ECS/ECSAudioSystem.h"
@@ -129,6 +131,9 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Core& core)
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+	// Colours and font size (View > Theme). The saved choice is restored from imgui.ini on the first frame.
+	EditorTheme::Init();
 
 	//io.Fonts->Clear(); // clear all fonts, including defaults
 
@@ -330,7 +335,7 @@ void Crucible::EditorManager::Init(Core& core)
 	// Add in Editor Panels here...
 	//
 	// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
-	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(core.GetRenderer(), core.GetScenes(), core.GetWorld());
+	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(core.GetRenderer(), core.GetResources(), core.GetScenes(), core.GetWorld());
 	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(core.GetRenderer());
 	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(core.GetScenes(), core.GetAssets());
 	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(core.GetWorld(), core.GetResources(), core.GetScenes());
@@ -374,8 +379,17 @@ void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateCh
 		// Finish an edit in progress while it still belongs to edit mode, then remember the
 		// selection by guid - the Play snapshot has just given every live entity one.
 		if (inspector) { inspector->CommitPendingEdit(); }
-		Entity const selected = inspector ? inspector->GetSelectedEntity() : kNullEntity;
-		m_selectionBeforePlay = (selected.IsValid() && world.IsAlive(selected)) ? scenes.Current().IdOf(selected).m_Value : 0;
+		m_selectionBeforePlay.clear();
+		if (inspector) {
+			// Active entity last, so it is active again after Stop (SetSelection's default).
+			std::vector<Entity> selection = inspector->GetSelection();
+			Entity const active = inspector->GetSelectedEntity();
+			std::stable_partition(selection.begin(), selection.end(), [&](Entity e) { return !(e == active); });
+			for (Entity const e : selection) {
+				std::uint64_t const guid = scenes.Current().IdOf(e).m_Value;
+				if (guid != 0) { m_selectionBeforePlay.push_back(guid); }
+			}
+		}
 		m_history.BeginPlaySession();
 		return;
 	}
@@ -390,16 +404,21 @@ void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateCh
 		// Every handle from before is stale after a restore: find the pre-Play selection
 		// again by guid. Without a restore the world was kept, so keep a selection that
 		// is still alive.
-		Entity restored = kNullEntity;
-		if (change.sceneRestored && m_selectionBeforePlay != 0) {
-			restored = scenes.Current().EntityOf(xresource::instance_guid{ m_selectionBeforePlay });
+		std::vector<Entity> restored;
+		if (change.sceneRestored) {
+			for (std::uint64_t const guid : m_selectionBeforePlay) {
+				Entity const e = scenes.Current().EntityOf(xresource::instance_guid{ guid });
+				if (e.IsValid() && world.IsAlive(e)) { restored.push_back(e); }
+			}
 		}
-		else if (!change.sceneRestored && world.IsAlive(inspector->GetSelectedEntity())) {
-			restored = inspector->GetSelectedEntity();
+		else {
+			restored = inspector->GetSelection();   // GetSelection only returns live entities
+			Entity const active = inspector->GetSelectedEntity();
+			std::stable_partition(restored.begin(), restored.end(), [&](Entity e) { return !(e == active); });
 		}
 
-		if (restored.IsValid() && world.IsAlive(restored)) {
-			inspector->SetSelectedEntity(restored);
+		if (!restored.empty()) {
+			inspector->SetSelection(restored);   // the last one (the pre-Play active entity) is active
 		}
 		else if (inspector->GetSelectedEntity().IsValid()) {
 			inspector->ClearTarget();   // a stale or play-mode-only selection; an asset preview is left alone
@@ -408,30 +427,40 @@ void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateCh
 
 	// The Scene view's outline reads this every frame; don't let it hold a stale handle meanwhile.
 	DebugDrawSystem::SetSelectedEntity(inspector ? inspector->GetSelectedEntity() : kNullEntity);
-	m_selectionBeforePlay = 0;
+	m_selectionBeforePlay.clear();
 }
 
 void Crucible::EditorManager::Undo()
 {
 	if (auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR)) { inspector->CommitPendingEdit(); }
 	if (!m_history.CanUndo()) { return; }
-	SelectAfterHistoryStep(m_history.Undo());
+	Entity const active = m_history.Undo();
+	SelectAfterHistoryStep(active, m_history.LastSelection());
 }
 
 void Crucible::EditorManager::Redo()
 {
 	if (auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR)) { inspector->CommitPendingEdit(); }
 	if (!m_history.CanRedo()) { return; }
-	SelectAfterHistoryStep(m_history.Redo());
+	Entity const active = m_history.Redo();
+	SelectAfterHistoryStep(active, m_history.LastSelection());
 }
 
-void Crucible::EditorManager::SelectAfterHistoryStep(Entity entity)
+void Crucible::EditorManager::SelectAfterHistoryStep(Entity entity, std::vector<Entity> const& all)
 {
 	auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	if (!inspector) { return; }
 
 	World& world = m_history.GetWorld();
-	if (entity.IsValid() && world.IsAlive(entity)) {
+	std::vector<Entity> alive;
+	for (Entity const e : all) {
+		if (e.IsValid() && world.IsAlive(e)) { alive.push_back(e); }
+	}
+
+	if (alive.size() > 1 || (alive.size() == 1 && !world.IsAlive(entity))) {
+		inspector->SetSelection(alive, entity);   // a multi-selection step: select all of it again
+	}
+	else if (entity.IsValid() && world.IsAlive(entity)) {
 		inspector->SetSelectedEntity(entity);
 	}
 	else if (inspector->GetSelectedEntity().IsValid() && !world.IsAlive(inspector->GetSelectedEntity())) {

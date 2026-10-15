@@ -207,20 +207,44 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------------------------- //
 
     void VulkanImage::Create(VulkanContext& context, uint32_t w, uint32_t h, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties,
-        uint32_t arrayLayers, vk::ImageCreateFlags flags) {
+        uint32_t arrayLayers, vk::ImageCreateFlags flags, uint32_t mipLevels, vk::SampleCountFlagBits samples) {
 
         vk::ImageCreateInfo imageInfo{
             .flags       = flags,
             .imageType   = vk::ImageType::e2D,
             .format      = format,
             .extent      = {w, h, 1},
-            .mipLevels   = 1,
+            .mipLevels   = mipLevels,
             .arrayLayers = arrayLayers,
-            .samples     = vk::SampleCountFlagBits::e1,
+            .samples     = samples,
             .tiling      = tiling,
             .usage       = usage,
             .sharingMode = vk::SharingMode::eExclusive
         };
+        CreateFromInfo(context, imageInfo, properties);
+
+    }   // VulkanImage::Create()
+
+    void VulkanImage::Create3D(VulkanContext& context, uint32_t w, uint32_t h, uint32_t d, vk::Format format,
+                               vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties) {
+
+        vk::ImageCreateInfo imageInfo{
+            .imageType   = vk::ImageType::e3D,
+            .format      = format,
+            .extent      = {w, h, d},
+            .mipLevels   = 1,
+            .arrayLayers = 1,
+            .samples     = vk::SampleCountFlagBits::e1,
+            .tiling      = vk::ImageTiling::eOptimal,
+            .usage       = usage,
+            .sharingMode = vk::SharingMode::eExclusive
+        };
+        CreateFromInfo(context, imageInfo, properties);
+
+    }   // VulkanImage::Create3D()
+
+    void VulkanImage::CreateFromInfo(VulkanContext& context, const vk::ImageCreateInfo& imageInfo, vk::MemoryPropertyFlags properties) {
+
         m_image = vk::raii::Image(context.GetDevice(), imageInfo);
 
         m_allocator = context.GetAllocator();
@@ -248,7 +272,7 @@ namespace Crucible {
         }
         m_mappedData = allocInfo.pMappedData;
 
-    }   // VulkanImage::Create()
+    }   // VulkanImage::CreateFromInfo()
 
     const vk::raii::Image&  VulkanImage::GetImage() const { return m_image; }
     vk::raii::Image&  VulkanImage::GetImage() { return m_image; }

@@ -1,6 +1,13 @@
 /*!
 * @file			EditorWidgets.cpp
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			17 September 2026
+*
 * @brief		Infinite mouse-drag helpers declared in EditorWidgets.h.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
 */
 
 #include "ImGui/EditorWidgets.h"

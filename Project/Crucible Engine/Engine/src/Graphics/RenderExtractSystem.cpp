@@ -34,6 +34,7 @@ namespace Crucible {
             .Uses<LightQuery>()                      // reads WorldTransform + Light
             .Uses<SkyboxQuery>()                     // reads Skybox
             .Uses<CameraQuery>()                     // reads WorldTransform + CameraComponent
+            .Uses<ParamsQuery>()                     // reads MeshRenderer + MaterialParams
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer; not thread-safe today
 
@@ -50,6 +51,17 @@ namespace Crucible {
         // is refreshed (SetRenderProxy is a no-op when nothing changed), and proxies whose entity
         // wasn't seen this frame are destroyed.
         ++m_frame;
+
+        // Optional per-object material parameters: noted first, per entity slot, so the main loop
+        // below stays one query over every MeshRenderer whether or not it has a MaterialParams.
+        if (!m_paramsQuery) { m_paramsQuery.emplace(world.CreateQuery<const MeshRenderer, const MaterialParams>()); }
+        m_paramsQuery->ForEach([this](Entity entity, const MeshRenderer&, const MaterialParams& materialParams) {
+            if (entity.index >= m_records.size()) { m_records.resize(static_cast<size_t>(entity.index) + 1); }
+            ProxyRecord& record = m_records[entity.index];
+            record.params      = glm::vec4(materialParams.emissiveScale, materialParams.custom.x, materialParams.custom.y, materialParams.custom.z);
+            record.paramsFrame = m_frame;
+        });
+
         m_query->ForEach([this](Entity entity, const WorldTransform& worldTransform, const MeshRenderer& meshRenderer) {
 
             if (entity.index >= m_records.size()) { m_records.resize(static_cast<size_t>(entity.index) + 1); }
@@ -89,7 +101,8 @@ namespace Crucible {
             // grey cube beats an invisible one.
             if (!material.IsValid()) { material = m_renderer.GetDefaultMaterial(); }
 
-            m_renderer.SetRenderProxy(record.proxy, mesh, material, worldTransform.matrix, mesh.IsValid());
+            const glm::vec4 params = record.paramsFrame == m_frame ? record.params : glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+            m_renderer.SetRenderProxy(record.proxy, mesh, material, worldTransform.matrix, mesh.IsValid(), params);
 
         });
 
@@ -143,6 +156,27 @@ namespace Crucible {
             env.ambientGround    = skybox.ambientGround;
             env.ambientIntensity = skybox.ambientIntensity;
             env.exposure         = skybox.exposure;
+            env.ambientFromSky   = skybox.ambientFromSky;
+            env.fogDensity       = skybox.fogDensity;
+            env.fogColour        = skybox.fogColour;
+            env.fogHeightFalloff = skybox.fogHeightFalloff;
+            env.fogBaseHeight    = skybox.fogBaseHeight;
+            env.fogStart         = skybox.fogStart;
+            env.fogMaxOpacity    = skybox.fogMaxOpacity;
+            env.volumetricFog        = skybox.volumetricFog;
+            env.volumetricIntensity  = skybox.volumetricIntensity;
+            env.volumetricAnisotropy = skybox.volumetricAnisotropy;
+            env.volumetricDistance   = skybox.volumetricDistance;
+            env.volumetricAmbient    = skybox.volumetricAmbient;
+            env.volumetricSkyAmbient = skybox.volumetricSkyAmbient;
+            env.contrast            = skybox.contrast;
+            env.saturation          = skybox.saturation;
+            env.temperature         = skybox.temperature;
+            env.colourFilter        = skybox.colourFilter;
+            env.vignetteIntensity   = skybox.vignetteIntensity;
+            env.vignetteSoftness    = skybox.vignetteSoftness;
+            env.filmGrain           = skybox.filmGrain;
+            env.chromaticAberration = skybox.chromaticAberration;
             m_renderer.SetEnvironment(env);
 
         });
