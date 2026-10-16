@@ -20,6 +20,7 @@
 #include "ImGui/Panels/ImGuiPanel_SceneView.h"
 #include "Undo/EntityCommands.h"
 #include "Diagnostics/Logger.h"
+#include "ImGui/EditorWidgets.h"
 #include <Graphics/ParticlePresets.h>
 #include <imgui_internal.h>   // BeginDragDropTargetCustom (drop on empty space)
 #include <cstring>
@@ -28,8 +29,9 @@
 #include <algorithm>
 
 namespace {
-	// Drag-and-drop payload for a Hierarchy row (the dragged Entity, by value).
-	constexpr char const* kEntityPayload = "CRUCIBLE_ENTITY";
+	// Drag-and-drop payload for a Hierarchy row (the dragged Entity, by value). Shared
+	// through EditorWidgets.h so the Inspector's entity fields accept the same drag.
+	constexpr char const* kEntityPayload = Crucible::EditorWidgets::kEntityPayload;
 }
 
 void Crucible::Hierarchy::Init() {
@@ -220,14 +222,13 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 		else if (io.KeyShift) {
 			m_pendingRangeTo = entity;           // Shift+click: range, settled in ResolveClicks
 		}
-		else if (selected && inspector->SelectionCount() > 1) {
-			// Could be the start of dragging the whole selection: only narrow it to this row
-			// if the button comes back up without a drag (ResolveClicks).
-			m_selectOnRelease = entity;
-		}
 		else {
-			inspector->SetSelectedEntity(entity);
-			m_rangeAnchor = entity;
+			// Every plain click selects on RELEASE, and only if the press did not become a drag
+			// (ResolveClicks). Two drags need that: dragging a multi-selection onto a new parent,
+			// and dragging an entity onto an Inspector field (a PhysicsJoint's connected body) -
+			// selecting on press would swap the Inspector to the dragged entity, and the field
+			// you were dropping onto would be gone before the drop.
+			m_selectOnRelease = entity;
 		}
 	}
 
@@ -314,8 +315,8 @@ void Crucible::Hierarchy::ResolveClicks() {
 		}
 	}
 
-	// Plain click on a row that was part of a multi-selection: on release, select only that row -
-	// unless the press turned into a drag (dragging the whole selection onto a new parent).
+	// Plain click: on release, select only that row - unless the press turned into a drag
+	// (onto a new parent, or onto an Inspector entity field).
 	if (m_selectOnRelease.IsValid()) {
 		if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
 			ImGuiIO const& io = ImGui::GetIO();

@@ -74,8 +74,9 @@ namespace Crucible
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
 		ConstantForce = 17,      // Physics: a steady push set in the Inspector (Physics/PhysicsComponents.h)
+		PhysicsJoint = 18,       // Physics: hinge, fixed, ball, character or spring joint between two bodies (Physics/PhysicsComponents.h)
 
-		MAXCOMPONENT = 18
+		MAXCOMPONENT = 19
 	};
 
 
@@ -183,5 +184,6 @@ namespace Crucible
  X(MaterialParams)                                                             \
  X(StressMover)                                                                \
  X(ConstantForce)                                                              \
+ X(PhysicsJoint)                                                               \
 
 }

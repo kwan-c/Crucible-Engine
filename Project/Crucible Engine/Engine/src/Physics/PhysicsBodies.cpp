@@ -5,7 +5,7 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          27 September 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Bodies: create, destroy, teleport, move, set velocity,
 *                and push with impulses and forces.
@@ -21,6 +21,7 @@
 *    -v1.2       per-body gravity, damping, axis locks and mass (Xavier)
 *    -v1.3       forces: AddForce, AddForceAtPosition, AddTorque,
 *                ApplyImpulseAtPosition
+*    -v1.4       DestroyBody removes the body's joints first
 *
 **************************************************************************/
 #include "PhysicsSystem.h"
@@ -160,6 +161,10 @@ namespace Crucible {
 
         Impl& impl = *m_impl;
         if (!impl.Has(body)) return;
+
+        // Its joints first: each holds a raw pointer to this body, and would be
+        // pointing at freed memory the moment the body is destroyed.
+        impl.RemoveJointsOn(body.m_id);
 
         impl.Bodies().RemoveBody(Impl::ToId(body));     // out of the simulation...
         impl.Bodies().DestroyBody(Impl::ToId(body));    // ...then gone

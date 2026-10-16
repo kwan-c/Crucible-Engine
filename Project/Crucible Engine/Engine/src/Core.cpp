@@ -160,7 +160,7 @@ namespace Crucible {
     {
         //sample system registeration
         m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
-        m_systems.RegisterSystem<ECSPhysicsSystem>();
+        m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get());   // the scene turns a PhysicsJoint's saved connected body back into an entity
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes

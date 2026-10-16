@@ -11,6 +11,7 @@
 */
 
 #include "ImGuiPanel_Inspector.h"
+#include "Core.h"                       // EntityRefField reaches the scene and world through EditorManager's Core
 #include "ImGui/EditorWidgets.h"
 #include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
@@ -25,6 +26,7 @@
 #include <utility>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>      // std::memcpy, EntityRefField
 #include <string>
 #include <vector>
 
@@ -282,6 +284,62 @@ namespace {
 		if (changed) {
 			CRU_INFO("[Inspector] {}: {} -> {} ({:016X})", label, rm->GetName(before), rm->GetName(id), id);
 		}
+		return changed;
+	}
+
+	// Picker for a uint64 property tagged MetaDataTypes::ENTITY_REF: another entity's scene id
+	// (Scene::IdOf), e.g. a PhysicsJoint's connected body. Drawn as "Entity N" - drop an entity
+	// from the Hierarchy onto it to set it, X clears it. Only the scene id is stored, never the
+	// Entity handle, so the link survives saving, reloading and play-mode Stop (all of which
+	// hand out new handles but keep scene ids).
+	bool EntityRefField(char const* label, std::uint64_t& id) {
+		Crucible::Core* core = Crucible::EditorManager::GetInstance().GetCore();
+		if (!core) {
+			ImGui::TextDisabled("%s: (no Core)", label);
+			return false;
+		}
+		Crucible::SceneManager& scenes = core->GetScenes();
+		Crucible::World&        world  = core->GetWorld();
+
+		// What the id names right now. EntityOf searches the open scene's guid map; fine here,
+		// since it only runs while this entity is selected in the Inspector.
+		Crucible::Entity const target = (id == 0) ? Crucible::kNullEntity
+		                                          : scenes.Current().EntityOf(xresource::instance_guid{ id });
+		std::string text;
+		if (id == 0)                                          text = "None";
+		else if (!target.IsValid() || !world.IsAlive(target)) text = "Missing entity";   // deleted, or from another scene
+		else                                                  text = "Entity " + std::to_string(target.index);
+
+		bool changed = false;
+		ImGui::PushID(label);
+
+		float const spacing    = ImGui::GetStyle().ItemInnerSpacing.x;
+		float const clearWidth = ImGui::GetFrameHeight();
+		ImGui::Button(text.c_str(), ImVec2(ImGui::CalcItemWidth() - clearWidth - spacing, 0.0f));
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("Drag an entity here from the Hierarchy");
+
+		if (ImGui::BeginDragDropTarget()) {
+			if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(Crucible::EditorWidgets::kEntityPayload)) {
+				Crucible::Entity dropped{};
+				std::memcpy(&dropped, payload->Data, sizeof(Crucible::Entity));   // the Hierarchy sends the Entity by value
+				if (world.IsAlive(dropped)) {
+					// EnsureId, not IdOf: an entity created since the last save has no id yet.
+					std::uint64_t const droppedId = scenes.EnsureId(dropped).m_Value;
+					if (droppedId != id) { id = droppedId; changed = true; }
+				}
+			}
+			ImGui::EndDragDropTarget();
+		}
+
+		ImGui::SameLine(0.0f, spacing);
+		if (ImGui::Button("X", ImVec2(clearWidth, 0.0f)) && id != 0) { id = 0; changed = true; }
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear");
+
+		ImGui::SameLine(0.0f, spacing);
+		ImGui::TextUnformatted(label);
+		ImGui::PopID();
+
+		if (changed) CRU_INFO("[Inspector] {}: now {:016X}", label, id);
 		return changed;
 	}
 
@@ -752,6 +810,11 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			// Asset id: picker instead of the raw hex field below.
 			std::uint64_t v = value.get_value<std::uint64_t>();
 			if (AssetRefField(name, assetKind.get_value<ResourceKind>(), v)) { newValue = v; edited = true; }
+		}
+		else if (prop.get_metadata(MetaDataTypes::ENTITY_REF).to_bool() && type == rttr::type::get<std::uint64_t>()) {
+			// Another entity's scene id: picker instead of the raw hex field below.
+			std::uint64_t v = value.get_value<std::uint64_t>();
+			if (EntityRefField(name, v)) { newValue = v; edited = true; }
 		}
 		else if (type == rttr::type::get<bool>()) {
 			bool v = value.get_value<bool>();

@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.2
+* \version       2.3
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -22,6 +22,10 @@
 *                longer exists, is not found by the query, so its record
 *                and its body are removed.
 *
+*                Joints get the same treatment in a JointRecord, synced
+*                AFTER the bodies so both ends exist: a changed setting,
+*                or either body rebuilt, rebuilds the joint.
+*
 * \history
 *    -v1.0       stub implementation, no physics logic yet
 *    -v2.0       the real binding
@@ -29,6 +33,8 @@
 *                start fresh each Play; the object and its queries stay
 *    -v2.2       forces: RigidBody's AddForce/AddTorque/ApplyImpulse and
 *                the ConstantForce component, handed to every fixed step
+*    -v2.3       PhysicsJoint: joints built, rebuilt and removed with the
+*                component; broken joints flagged in m_isBroken
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -43,6 +49,7 @@
 #include "Components/Components.h"
 #include "Diagnostics/Logger.h"
 #include "Physics/PhysicsComponents.h"
+#include "Scene/SceneManager.h"
 #include "Systems/Query.h"
 #include "World.h"
 
@@ -110,6 +117,30 @@ namespace {
             && a.m_pushStrength == b.m_pushStrength && a.m_layer == b.m_layer;
     }   // SameRecipe()
 
+    // Would these two components build the same joint? Every setting, and both
+    // ways of naming the other entity. m_isBroken is left out: it is a result,
+    // not a setting, and is handled before this is ever asked.
+    bool SameRecipe(const PhysicsJoint& a, const PhysicsJoint& b) {
+        return a.m_type == b.m_type && a.m_connectedBody == b.m_connectedBody && a.m_connectedEntity == b.m_connectedEntity
+            && Same(a.m_anchor, b.m_anchor) && Same(a.m_axis, b.m_axis) && Same(a.m_swingAxis, b.m_swingAxis)
+            && a.m_enableCollision == b.m_enableCollision
+            && a.m_useLimits == b.m_useLimits && a.m_minAngle == b.m_minAngle && a.m_maxAngle == b.m_maxAngle
+            && a.m_lowTwistLimit == b.m_lowTwistLimit && a.m_highTwistLimit == b.m_highTwistLimit
+            && a.m_swing1Limit == b.m_swing1Limit && a.m_swing2Limit == b.m_swing2Limit
+            && Same(a.m_connectedAnchor, b.m_connectedAnchor) && a.m_spring == b.m_spring && a.m_damper == b.m_damper
+            && a.m_minDistance == b.m_minDistance && a.m_maxDistance == b.m_maxDistance
+            && a.m_breakForce == b.m_breakForce && a.m_breakTorque == b.m_breakTorque
+            && a.m_solverIterations == b.m_solverIterations;
+    }   // SameRecipe()
+
+    // A point given in an entity's local space - Unity's joint anchors are -
+    // turned into world space from where physics has the body right now.
+    // Scale counts, as it does for the collider: an anchor at the tip of a
+    // capsule stays at the tip when the capsule is scaled up.
+    Math::vec3 LocalToWorld(const Math::vec3& point, const Math::vec3& position, const Math::quat& rotation, const Math::vec3& scale) {
+        return position + rotation * (point * scale);
+    }
+
     // One bit per message. An entity can have both a Collider and a
     // CharacterController AND sit on the wrong layer, and hearing about only
     // the first one is how the second gets missed.
@@ -118,6 +149,11 @@ namespace {
         kWarnLayer        = 1u << 1,
         kWarnTwoColliders = 1u << 2,
         kWarnLoneForce    = 1u << 3,
+        kWarnJointNoBody  = 1u << 4,
+        kWarnJointMissing = 1u << 5,
+        kWarnJointSelf    = 1u << 6,
+        kWarnJointNoOther = 1u << 7,
+        kWarnJointStatic  = 1u << 8,
     };
 
     // Once per entity per message, ever. A warning that repeats every frame
@@ -172,6 +208,31 @@ namespace {
 
     };  // CHARACTERRECORD STRUCT
 
+    // The notebook for one PhysicsJoint. A joint is rebuilt when its settings
+    // change OR when either body is rebuilt (a body edited mid-Play gets a new
+    // handle, and Physics already removed the joints that were on the old one).
+    struct JointRecord {
+
+        Entity        entity     {};
+        JointHandle   joint      {};
+        BodyHandle    bodyA      {};    // the bodies it was built between
+        BodyHandle    bodyB      {};    // invalid = the world
+        PhysicsJoint  recipe     {};    // the component it was built from
+        bool          failed     = false;
+
+        // What recipe.m_connectedBody (a scene id) resolved to. Looking a scene
+        // id up searches the whole scene, so it is done once and remembered,
+        // and redone only when the id changes or that entity dies.
+        std::uint64_t resolvedId = 0;
+        Entity        resolved   {};
+
+        std::uint64_t seenFrame  = 0;
+        std::uint32_t warned     = 0;
+
+    };  // JOINTRECORD STRUCT
+
+    bool SameBody(const BodyHandle& a, const BodyHandle& b) { return a.m_id == b.m_id; }
+
 }   // ANONYMOUS NAMESPACE
 
 namespace Crucible {
@@ -182,11 +243,12 @@ namespace Crucible {
 
     struct ECSPhysicsSystem::State {
 
-        explicit State(const PhysicsSettings& physicsSettings) : settings(physicsSettings) {}
+        State(SceneManager* sceneManager, const PhysicsSettings& physicsSettings) : settings(physicsSettings), scenes(sceneManager) {}
 
         PhysicsSettings settings;
         Physics         physics;
-        World*          world = nullptr;
+        World*          world  = nullptr;
+        SceneManager*   scenes = nullptr;   // turns a joint's saved connected body (a scene id) into an entity
 
         // Read-only on purpose: taking them non-const would mark every Transform
         // as changed every frame, and other systems use that flag to decide what
@@ -196,8 +258,11 @@ namespace Crucible {
 
         std::optional<Query<const Transform, CharacterController>> characters;
 
+        std::optional<Query<const PhysicsJoint>> joints;    // read-only: only a joint that breaks is written, through GetComponent
+
         std::unordered_map<std::uint64_t, Record>          records;           // keyed by EntityToUserData(entity)
         std::unordered_map<std::uint64_t, CharacterRecord> characterRecords;  // same key, the mechs
+        std::unordered_map<std::uint64_t, JointRecord>     jointRecords;      // same key, the joints
 
         bool          staticBodyMade = false;                   // a new arena piece appeared: the static tree wants rebuilding
         float         accumulator    = 0.0f;                    // time owed to the simulation, under one step
@@ -214,6 +279,10 @@ namespace Crucible {
         void SyncCharacter(CharacterRecord& record, const Transform& transform, CharacterController& controller);
         void TakeForces(World& ecs, Record& record, const RigidBody* rigidbody);
         void PushForces(Record& record);
+        void SyncJoints(World& ecs);
+        void SyncJoint(World& ecs, JointRecord& record, const PhysicsJoint& joint);
+        void DropJoint(JointRecord& record);
+        void PullBrokenJoints(World& ecs);
         void Step(World& ecs);
         void StepCharacter(World& ecs, CharacterRecord& record);
         void PullBodies(World& ecs);
@@ -229,7 +298,8 @@ namespace Crucible {
     // LIFECYCLE
     // ------------------------------------------------------------------- //
 
-    ECSPhysicsSystem::ECSPhysicsSystem(const PhysicsSettings& settings) : m_state{ std::make_unique<State>(settings) } {}
+    ECSPhysicsSystem::ECSPhysicsSystem(SceneManager* scenes, const PhysicsSettings& settings)
+        : m_state{ std::make_unique<State>(scenes, settings) } {}
 
     ECSPhysicsSystem::~ECSPhysicsSystem() { Shutdown(); }
 
@@ -248,6 +318,7 @@ namespace Crucible {
         // than reusing ones that point at a world that is gone.
         m_state->colliders.reset();
         m_state->characters.reset();
+        m_state->joints.reset();
         m_state->world = nullptr;
 
     }   // ECSPhysicsSystem::Shutdown()
@@ -366,6 +437,7 @@ namespace Crucible {
         // around by teleport, and the mech would fight its own collider.
         colliders.emplace(ecs.BuildQuery<const Transform, const Collider>().Exclude<CharacterController>().Build());
         characters.emplace(ecs.CreateQuery<const Transform, CharacterController>());
+        joints.emplace(ecs.CreateQuery<const PhysicsJoint>());
 
     }   // ECSPhysicsSystem::State::BindWorld()
 
@@ -423,7 +495,210 @@ namespace Crucible {
             }
         }
 
+        // Joints last: a joint needs both of its bodies, so every body this
+        // frame creates, rebuilds or removes has to be settled first.
+        SyncJoints(ecs);
+
     }   // ECSPhysicsSystem::State::Sync()
+
+    // ------------------------------------------------------------------- //
+    // JOINTS
+    // ------------------------------------------------------------------- //
+
+    /*!
+        \brief
+        Every PhysicsJoint into Jolt: build the new ones, rebuild the changed
+        ones, and remove the ones whose component (or entity) is gone.
+    */
+    void ECSPhysicsSystem::State::SyncJoints(World& ecs) {
+
+        joints->ForEach([&](Entity entity, const PhysicsJoint& joint) {
+            auto [it, inserted] = jointRecords.try_emplace(EntityToUserData(entity));
+            JointRecord& record = it->second;
+            if (inserted) record.entity = entity;
+            record.seenFrame = frame;
+            SyncJoint(ecs, record, joint);
+        });
+
+        // Same rule as bodies: not found by the query this frame means gone.
+        for (auto it = jointRecords.begin(); it != jointRecords.end();) {
+            if (it->second.seenFrame != frame) {
+                physics.DestroyJoint(it->second.joint);     // a no-op if it went with one of its bodies
+                it = jointRecords.erase(it);
+            }
+            else {
+                ++it;
+            }
+        }
+
+    }   // ECSPhysicsSystem::State::SyncJoints()
+
+    /*!
+        \brief
+        Makes one entity's joint match its PhysicsJoint: finds both bodies,
+        and (re)builds the joint if anything it was built from has changed.
+    */
+    void ECSPhysicsSystem::State::SyncJoint(World& ecs, JointRecord& record, const PhysicsJoint& joint) {
+
+        // Broke earlier in this Play. It stays broken until Stop restores the
+        // scene, which resets m_isBroken - Unity's broken joints are gone too.
+        if (joint.m_isBroken) {
+            DropJoint(record);
+            return;
+        }
+
+        // THIS ENTITY'S BODY --------------------------------------------------- //
+        const auto own = records.find(EntityToUserData(record.entity));
+        if (own == records.end() || !own->second.body.IsValid()) {
+            WarnOnce(record.warned, kWarnJointNoBody, record.entity, "has a PhysicsJoint but no body - add a Collider (and a RigidBody to let it move)");
+            DropJoint(record);
+            return;
+        }
+        const BodyHandle bodyA = own->second.body;
+        bool anyDynamic = own->second.recipe.m_motion == BodyMotion::Dynamic;
+
+        // THE OTHER ENTITY ----------------------------------------------------- //
+        // Code's direct link wins; otherwise the saved scene id, looked up once
+        // and remembered (a lookup searches the whole scene).
+        Entity other = kNullEntity;
+        if (joint.m_connectedEntity.IsValid()) {
+            other = joint.m_connectedEntity;
+        }
+        else if (joint.m_connectedBody != 0) {
+            const bool stale = record.resolvedId != joint.m_connectedBody
+                            || (record.resolved.IsValid() && !ecs.IsAlive(record.resolved));
+            if (stale) {
+                record.resolvedId = joint.m_connectedBody;
+                record.resolved   = scenes != nullptr ? scenes->Current().EntityOf(xresource::instance_guid{ joint.m_connectedBody })
+                                                      : kNullEntity;
+            }
+            other = record.resolved;
+
+            // Never quietly fall back to the world: a ragdoll limb pinned in
+            // mid-air is far more confusing than a missing joint and a warning.
+            if (!other.IsValid()) {
+                WarnOnce(record.warned, kWarnJointMissing, record.entity, "has a PhysicsJoint whose connected body is not in this scene - the joint is left out");
+                DropJoint(record);
+                return;
+            }
+        }
+
+        BodyHandle bodyB {};    // invalid = the world
+        if (other.IsValid()) {
+            if (other == record.entity) {
+                WarnOnce(record.warned, kWarnJointSelf, record.entity, "has a PhysicsJoint connected to itself - leave the connected body empty to join it to the world");
+                DropJoint(record);
+                return;
+            }
+            const auto found = records.find(EntityToUserData(other));
+            if (found == records.end() || !found->second.body.IsValid()) {
+                WarnOnce(record.warned, kWarnJointNoOther, record.entity, "has a PhysicsJoint whose connected entity has no body - it needs a Collider");
+                DropJoint(record);
+                return;
+            }
+            bodyB = found->second.body;
+            anyDynamic = anyDynamic || found->second.recipe.m_motion == BodyMotion::Dynamic;
+        }
+
+        // Legal, but holds nothing that moves - a joint between two pieces of arena.
+        if (!anyDynamic)
+            WarnOnce(record.warned, kWarnJointStatic, record.entity, "has a PhysicsJoint but neither end has a RigidBody - nothing can move, so it does nothing");
+
+        // UP TO DATE? ------------------------------------------------------------ //
+        const bool sameInputs = SameBody(record.bodyA, bodyA) && SameBody(record.bodyB, bodyB) && SameRecipe(joint, record.recipe);
+        if (sameInputs && (record.joint.IsValid() || record.failed)) return;     // built, or failed and nothing has changed
+
+        // (RE)BUILD ---------------------------------------------------------------- //
+        // From the pose physics has the bodies in NOW: anchors and axes are
+        // local to each entity, and Jolt wants world space.
+        physics.DestroyJoint(record.joint);
+
+        Math::vec3 positionA;
+        Math::quat rotationA;
+        physics.GetTransform(bodyA, positionA, rotationA);
+        const Transform* transformA = ecs.Read<Transform>(record.entity);
+        const Math::vec3 scaleA     = transformA != nullptr ? transformA->scale : Math::vec3(1.0f, 1.0f, 1.0f);
+
+        JointDesc desc;
+        desc.m_type             = joint.m_type;
+        desc.m_bodyA            = bodyA;
+        desc.m_bodyB            = bodyB;
+        desc.m_anchor           = LocalToWorld(joint.m_anchor, positionA, rotationA, scaleA);
+        desc.m_axis             = rotationA * joint.m_axis;          // a direction: turned, never scaled or moved
+        desc.m_swingAxis        = rotationA * joint.m_swingAxis;
+        desc.m_collideConnected = joint.m_enableCollision;
+        desc.m_useLimits        = joint.m_useLimits;
+        desc.m_minAngle         = joint.m_minAngle;
+        desc.m_maxAngle         = joint.m_maxAngle;
+        desc.m_twistMin         = joint.m_lowTwistLimit;
+        desc.m_twistMax         = joint.m_highTwistLimit;
+        desc.m_swing1           = joint.m_swing1Limit;
+        desc.m_swing2           = joint.m_swing2Limit;
+        desc.m_minDistance      = joint.m_minDistance;
+        desc.m_maxDistance      = joint.m_maxDistance;
+        desc.m_spring           = joint.m_spring;
+        desc.m_damper           = joint.m_damper;
+        desc.m_breakForce       = joint.m_breakForce;
+        desc.m_breakTorque      = joint.m_breakTorque;
+        desc.m_solverIterations = joint.m_solverIterations;
+        desc.m_userData         = EntityToUserData(record.entity);   // how a broken joint finds its way back here
+
+        // The spring's far end: on the other entity, in its local space - or a
+        // world point when the spring hangs from the world, as in Unity.
+        if (bodyB.IsValid()) {
+            Math::vec3 positionB;
+            Math::quat rotationB;
+            physics.GetTransform(bodyB, positionB, rotationB);
+            const Transform* transformB = ecs.Read<Transform>(other);
+            const Math::vec3 scaleB     = transformB != nullptr ? transformB->scale : Math::vec3(1.0f, 1.0f, 1.0f);
+            desc.m_anchorB = LocalToWorld(joint.m_connectedAnchor, positionB, rotationB, scaleB);
+        }
+        else {
+            desc.m_anchorB = joint.m_connectedAnchor;
+        }
+
+        record.joint  = physics.CreateJoint(desc);   // logs its own reason when it fails
+        record.bodyA  = bodyA;
+        record.bodyB  = bodyB;
+        record.recipe = joint;
+        record.failed = !record.joint.IsValid();
+
+    }   // ECSPhysicsSystem::State::SyncJoint()
+
+    // Out of Jolt, and forgotten, so the next build starts fresh. The warning
+    // flags stay: a joint that keeps failing for the same reason says so once.
+    void ECSPhysicsSystem::State::DropJoint(JointRecord& record) {
+        physics.DestroyJoint(record.joint);
+        record.joint  = JointHandle{};
+        record.bodyA  = BodyHandle{};
+        record.bodyB  = BodyHandle{};
+        record.failed = false;
+    }
+
+    /*!
+        \brief
+        After each step: every joint Physics broke is marked on its component,
+        so it is not rebuilt and gameplay can see it happened - Unity's
+        OnJointBreak, as a flag to read.
+    */
+    void ECSPhysicsSystem::State::PullBrokenJoints(World& ecs) {
+
+        const std::uint32_t broken = physics.GetBrokenJointCount();
+
+        for (std::uint32_t i = 0; i < broken; ++i) {
+
+            JointHandle   handle;
+            std::uint64_t userData = 0;
+            if (!physics.GetBrokenJoint(i, handle, userData)) continue;
+
+            const auto found = jointRecords.find(userData);
+            if (found == jointRecords.end()) continue;
+
+            found->second.joint = JointHandle{};     // already destroyed by Physics
+            if (PhysicsJoint* joint = ecs.GetComponent<PhysicsJoint>(found->second.entity)) joint->m_isBroken = true;
+        }
+
+    }   // ECSPhysicsSystem::State::PullBrokenJoints()
 
     /*!
         \brief
@@ -577,6 +852,7 @@ namespace Crucible {
 
         physics.Step(kFixedDeltaTime);
         PullBodies(ecs);
+        PullBrokenJoints(ecs);      // every step: Physics refills its broken list each Step
 
     }   // ECSPhysicsSystem::State::Step()
 
@@ -805,6 +1081,11 @@ namespace Crucible {
     }   // ECSPhysicsSystem::State::TouchCharacter()
 
     void ECSPhysicsSystem::State::RemoveAll() {
+
+        // Joints first: each one points at its bodies. (Removing a body would
+        // take its joints with it anyway; this just says so out loud.)
+        for (auto& [key, record] : jointRecords) physics.DestroyJoint(record.joint);
+        jointRecords.clear();
 
         for (auto& [key, record] : records) Remove(record);
         records.clear();

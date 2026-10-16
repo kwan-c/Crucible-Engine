@@ -3,11 +3,11 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                The physics components the designer and gameplay touch:
 *                Collider, CharacterController, PlayerController,
-*                CameraOrbit and ConstantForce.
+*                CameraOrbit, ConstantForce and PhysicsJoint.
 *
 * \details
 *                Sizes are full sizes, the way Unity states them;
@@ -22,6 +22,7 @@
 *    -v1.2       PlayerController; Collider scales with the Transform
 *    -v1.3       CameraOrbit and face-the-camera
 *    -v1.4       ConstantForce
+*    -v1.5       PhysicsJoint
 *
 **************************************************************************/
 #pragma once
@@ -278,6 +279,79 @@ namespace Crucible {
     };  // CONSTANTFORCE STRUCT
 
     CRUCIBLE_COMPONENT(ConstantForce, ConstantForce)
+
+    /*
+        Unity's joints - FixedJoint, HingeJoint, CharacterJoint, SpringJoint -
+        folded into one component with a type field, the way Collider folds
+        the three collider shapes. It goes on one of the two entities and names
+        the other; both need a Collider, and at least one a RigidBody.
+
+            Forearm   Collider, RigidBody, PhysicsJoint{ Hinge, connected = UpperArm }
+            Door      Collider, RigidBody, PhysicsJoint{ Hinge, connected = none }   // hinged to the world
+
+        CONNECTED BODY. Two ways to name it, because two kinds of code make joints:
+          - m_connectedBody: the other entity's scene id. What the Inspector's
+            picker writes and the scene file saves. 0 = the world.
+          - m_connectedEntity: the other entity itself, for code. An entity
+            spawned during Play has no scene id, so a ragdoll built in code sets
+            this instead. Not saved. Wins when both are set.
+
+        Anchor and axes are in THIS entity's local space, like Unity's, and
+        follow its Transform. The joint is built from the pose both entities
+        are in when Play starts (or when it is added), and every limit is
+        measured from that pose.
+
+        Changing a setting during Play rebuilds the joint from the pose things
+        are in at that moment, the same as Collider rebuilding its body.
+    */
+    struct PhysicsJoint {
+
+        JointType     m_type            = JointType::Hinge;
+        std::uint64_t m_connectedBody   = 0;        // scene id of the other entity (Scene::IdOf). 0 = the world
+        Entity        m_connectedEntity {};         // runtime: set from code. Not saved, not in the Inspector
+
+        Math::vec3    m_anchor          = Math::vec3(0.0f, 0.0f, 0.0f);   // the joint point, this entity's local space
+        Math::vec3    m_axis            = Math::vec3(1.0f, 0.0f, 0.0f);   // Hinge: turns around it. Character: the twist axis, along the limb
+        Math::vec3    m_swingAxis       = Math::vec3(0.0f, 1.0f, 0.0f);   // Character: swing1 turns around it
+        bool          m_enableCollision = false;    // Unity's enableCollision: let the two bodies collide with each other
+
+        // Hinge, in degrees. Min 0 or below, max 0 or above (the starting pose must be allowed).
+        bool          m_useLimits       = false;
+        float         m_minAngle        = -90.0f;
+        float         m_maxAngle        =  90.0f;
+
+        // Character, in degrees: twist around m_axis, swing1 around m_swingAxis,
+        // swing2 around the axis at right angles to both.
+        float         m_lowTwistLimit   = -20.0f;
+        float         m_highTwistLimit  =  20.0f;
+        float         m_swing1Limit     =  40.0f;
+        float         m_swing2Limit     =  40.0f;
+
+        // Spring. m_connectedAnchor is the far end of the spring, in the OTHER
+        // entity's local space (world space when connected to the world).
+        // Distances 0 = as far apart as they start.
+        Math::vec3    m_connectedAnchor = Math::vec3(0.0f, 0.0f, 0.0f);
+        float         m_spring          = 10.0f;    // stiffness, N/m. 0 = a rigid rod
+        float         m_damper          = 0.2f;     // N*s/m
+        float         m_minDistance     = 0.0f;
+        float         m_maxDistance     = 0.0f;
+
+        // Breaking. 0 = never (Unity uses Infinity, which a JSON scene file cannot store).
+        float         m_breakForce      = 0.0f;     // newtons
+        float         m_breakTorque     = 0.0f;     // newton-metres
+
+        // Unity's solverIterations: raise it when a limit visibly gives under a
+        // hard hit (a knee bending backwards for a moment). 0 = engine default (10).
+        std::uint32_t m_solverIterations = 0;
+
+        // Runtime: set when the joint broke during Play, so it is not rebuilt.
+        // Read it the way Unity code waits for OnJointBreak. Not saved, so Stop
+        // brings every joint back.
+        bool          m_isBroken        = false;
+
+    };  // PHYSICSJOINT STRUCT
+
+    CRUCIBLE_COMPONENT(PhysicsJoint, PhysicsJoint)
 
     // ------------------------------------------------------------------- //
     // ENTITY <-> USER DATA

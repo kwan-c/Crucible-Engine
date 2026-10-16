@@ -20,6 +20,7 @@ bool GameApp::Init()
     // startup scene loads). No snapshot - there is no editor to go back to.
     m_engine->RequestPlay(/*restoreOnStop*/ false);
 
+
     return true;
 }
 

@@ -5,11 +5,11 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          22 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Crucible::Physics: the public face of the Jolt physics
-*                world. Bodies, characters, raycasts and forces, all
-*                through handles.
+*                world. Bodies, characters, joints, raycasts and forces,
+*                all through handles.
 *
 * \details
 *                Knows nothing about the ECS: ECSPhysicsSystem turns
@@ -25,6 +25,8 @@
 *    -v1.3       per-body gravity, damping and axis locks (Xavier)
 *    -v1.4       forces: AddForce, AddForceAtPosition, AddTorque,
 *                ApplyImpulseAtPosition
+*    -v1.5       joints: Fixed, Hinge, Ball, Character and Spring, with
+*                limits and breaking
 *
 **************************************************************************/
 #pragma once
@@ -202,6 +204,89 @@ namespace Crucible {
 
     };  // CHARACTERDESC STRUCT
 
+    /*
+        The same idea as CharacterHandle, for joints. Index 0 is never handed
+        out, so a default-constructed handle means "no joint", and the
+        generation rises when a slot is reused.
+    */
+    struct JointHandle {
+
+        std::uint32_t m_index      = 0;
+        std::uint32_t m_generation = 0;
+
+        bool IsValid() const { return m_index != 0; }
+
+    };  // JOINTHANDLE STRUCT
+
+    /*
+        The kinds of joint, named after Unity's where Unity has one. Jolt's
+        name for each is in brackets - that is what PhysicsJoints.cpp builds.
+    */
+    enum class JointType : std::uint8_t {
+
+        Fixed,      // glued: neither moves nor turns relative to the other (Jolt: Fixed)
+        Hinge,      // turns around one axis only, like a door or a knee (Jolt: Hinge)
+        Ball,       // turns any way around one point, no limits: ball and socket (Jolt: Point)
+        Character,  // Unity's CharacterJoint: twist plus a limited swing cone - shoulders, hips (Jolt: SwingTwist)
+        Spring      // Unity's SpringJoint: keeps a distance, springily (Jolt: Distance)
+
+    };  // JOINTTYPE ENUM
+
+    /*
+        Everything CreateJoint needs, in WORLD space and as things are right
+        now: the joint's rest pose is the pose of the two bodies at the moment
+        it is created, and every angle limit is measured from there.
+
+        Which fields matter depends on m_type, the same as ShapeDesc.
+    */
+    struct JointDesc {
+
+        JointType     m_type      = JointType::Hinge;
+        BodyHandle    m_bodyA     {};       // must be a body. The one the joint "belongs" to
+        BodyHandle    m_bodyB     {};       // the other body. Invalid = joined to the world, a fixed point in space
+
+        Math::vec3    m_anchor    = Math::vec3(0.0f, 0.0f, 0.0f);   // where the two are joined
+        Math::vec3    m_anchorB   = Math::vec3(0.0f, 0.0f, 0.0f);   // Spring only: the other end of the spring
+        Math::vec3    m_axis      = Math::vec3(1.0f, 0.0f, 0.0f);   // Hinge: what it turns around. Character: the twist axis, along the limb
+        Math::vec3    m_swingAxis = Math::vec3(0.0f, 1.0f, 0.0f);   // Character: swing1 turns around this. Made perpendicular to m_axis for you
+
+        bool          m_collideConnected = false;   // Unity's enableCollision. Off: the two bodies pass through each other
+
+        // Hinge, in degrees. Min must be 0 or less and max 0 or more: the rest pose is always allowed.
+        bool          m_useLimits = false;
+        float         m_minAngle  = -90.0f;
+        float         m_maxAngle  =  90.0f;
+
+        // Character, in degrees. Twist turns around m_axis; swing1 around
+        // m_swingAxis; swing2 around the axis at right angles to both.
+        float         m_twistMin  = -20.0f;
+        float         m_twistMax  =  20.0f;
+        float         m_swing1    =  40.0f;
+        float         m_swing2    =  40.0f;
+
+        // Spring. Distances in metres between the two ends; 0 or less means
+        // "as far apart as they are now". Stiffness 0 makes a rigid rod.
+        float         m_minDistance = 0.0f;
+        float         m_maxDistance = 0.0f;
+        float         m_spring      = 10.0f;   // stiffness, N/m (Unity's spring)
+        float         m_damper      = 0.2f;    // N*s/m (Unity's damper)
+
+        // Breaking: the joint is destroyed in the step where it has to hold
+        // more than this. 0 = never breaks (Unity's Infinity).
+        float         m_breakForce  = 0.0f;    // newtons
+        float         m_breakTorque = 0.0f;    // newton-metres
+
+        // Unity's solverIterations, per joint. Jolt solves joints by repeating
+        // a small fix-up this many times per step; too few and a limit gives
+        // a little when something slams into it (a knee bending a few degrees
+        // backwards for a moment). 0 = Jolt's default, 10. More is stiffer and
+        // slower; every joint touching the same bodies pays for the highest.
+        std::uint32_t m_solverIterations = 0;
+
+        std::uint64_t m_userData = 0;          // yours, handed back when it breaks. The ECS puts the Entity in here
+
+    };  // JOINTDESC STRUCT
+
     struct PhysicsSettings {
 
         // Fixed at Init and never grown. When one is exceeded Jolt drops contacts
@@ -348,6 +433,28 @@ namespace Crucible {
 
         Math::vec3 GetCharacterPosition(const CharacterHandle& character) const;
         void       SetCharacterPosition(const CharacterHandle& character, const Math::vec3& position);   // a respawn
+
+        // --- joints (Unity's HingeJoint, FixedJoint, CharacterJoint, SpringJoint) --- //
+
+        // Joins two bodies - or one body to the world - as they are posed right
+        // now. Invalid handle, with the reason logged, if the description makes
+        // no sense: a missing body, a body joined to itself, a zero axis.
+        JointHandle CreateJoint(const JointDesc& desc);
+
+        // Takes the joint out of the world and wakes both bodies, so a crate
+        // hanging from it falls straight away instead of when something nudges it.
+        // Destroying a body destroys every joint on it, so handles to those go stale.
+        void DestroyJoint(const JointHandle& joint);
+
+        // Unity's HingeJoint.angle: degrees turned from the rest pose, around the
+        // axis. 0 for anything that is not a live hinge.
+        float GetHingeAngle(const JointHandle& joint) const;
+
+        // After Step: the joints that broke in it (m_breakForce / m_breakTorque),
+        // already destroyed. Unity's OnJointBreak, as a list - the same pattern as
+        // GetMovedBody. The user value is the one the JointDesc carried.
+        std::uint32_t GetBrokenJointCount() const;
+        bool          GetBrokenJoint(std::uint32_t index, JointHandle& outJoint, std::uint64_t& outUserData) const;
 
         // --- queries ---
 

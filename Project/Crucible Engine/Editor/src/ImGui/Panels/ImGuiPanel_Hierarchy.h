@@ -94,7 +94,7 @@ namespace Crucible {
 		std::vector<Entity> m_rows;                      // every row drawn this frame, top to bottom
 		Entity m_rangeAnchor    = kNullEntity;           // Shift+click selects from here...
 		Entity m_pendingRangeTo = kNullEntity;           // ...to here (resolved once every row is known)
-		Entity m_selectOnRelease = kNullEntity;          // plain click on a selected row: select only it on release, unless it became a drag
+		Entity m_selectOnRelease = kNullEntity;          // plain click on a row: select only it on release, unless it became a drag
 		void ResolveClicks();
 
 		// Draws one entity's row (and, if expanded, its children) recursively.

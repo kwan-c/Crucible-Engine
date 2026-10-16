@@ -2082,6 +2082,45 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "PhysicsJoint": {
+                    "type": "Hinge",
+                    "connectedBody": 7948018620246622251,
+                    "anchor": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "axis": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "swingAxis": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.0
+                    },
+                    "enableCollision": false,
+                    "useLimits": false,
+                    "minAngle": -90.0,
+                    "maxAngle": 90.0,
+                    "lowTwistLimit": -20.0,
+                    "highTwistLimit": 20.0,
+                    "swing1Limit": 40.0,
+                    "swing2Limit": 40.0,
+                    "connectedAnchor": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "spring": 10.0,
+                    "damper": 0.20000000298023224,
+                    "minDistance": 0.0,
+                    "maxDistance": 0.0,
+                    "breakForce": 0.0,
+                    "breakTorque": 0.0,
+                    "solverIterations": 0
                 }
             }
         }

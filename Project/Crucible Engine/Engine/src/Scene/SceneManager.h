@@ -187,6 +187,14 @@ namespace Crucible {
 		 *********************************************************************/
 		const Scene& Current() const { return m_scene; }
 
+		/*********************************************************************
+		 \brief  The open scene's guid for an entity, issued now if it has
+		         none (Scene::EnsureId). The one write to the guid map that
+		         editor tools need - the Inspector's entity picker - without
+		         handing out the whole Scene as mutable.
+		 *********************************************************************/
+		xresource::instance_guid EnsureId(Entity entity) { return m_scene.EnsureId(entity); }
+
 		// ===================================================================
 		//  Listeners
 		// ===================================================================
