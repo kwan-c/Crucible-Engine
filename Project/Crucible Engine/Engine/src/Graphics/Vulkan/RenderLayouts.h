@@ -136,6 +136,10 @@ namespace Crucible {
         /// Format the scene (meshes, sky, particles) is rendered in: floating point, so brightness
         /// above 1 survives until the tonemap pass. The bloom chain uses it too.
         static constexpr vk::Format kSceneColorFormat = vk::Format::eR16G16B16A16Sfloat;
+        /// The scene pass's second output, for the toon outline pass (ToonOutlinePass): per
+        /// pixel 1 / view depth, the surface's direction (octahedral, 2 channels) and how
+        /// strong a line may be there. Floating point so 1/depth keeps its precision.
+        static constexpr vk::Format kLineDataFormat = vk::Format::eR16G16B16A16Sfloat;
 
         /*********************************************************************
          \brief

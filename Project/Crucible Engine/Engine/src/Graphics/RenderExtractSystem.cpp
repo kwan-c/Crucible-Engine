@@ -177,6 +177,27 @@ namespace Crucible {
             env.vignetteSoftness    = skybox.vignetteSoftness;
             env.filmGrain           = skybox.filmGrain;
             env.chromaticAberration = skybox.chromaticAberration;
+            env.toonShading        = skybox.toonShading;
+            env.toonThreshold      = skybox.toonThreshold;
+            env.toonSoftness       = skybox.toonSoftness;
+            env.toonShadeColour    = skybox.toonShadeColour;
+            env.toonShadeBrightness = skybox.toonShadeBrightness;
+            env.toonLitShading     = skybox.toonLitShading;
+            env.toonEdgeColour     = skybox.toonEdgeColour;
+            env.toonEdgeWidth      = skybox.toonEdgeWidth;
+            env.toonEdgeStrength   = skybox.toonEdgeStrength;
+            env.toonAmbientFlatten = skybox.toonAmbientFlatten;
+            env.toonHighlight      = skybox.toonHighlight;
+            env.toonReflections    = skybox.toonReflections;
+            env.toonLines            = skybox.toonLines;
+            env.toonLineDarkness     = skybox.toonLineDarkness;
+            env.toonLineWidth        = skybox.toonLineWidth;
+            env.toonLineCreaseAngle  = skybox.toonLineCreaseAngle;
+            env.toonLineCreaseStrength = skybox.toonLineCreaseStrength;
+            env.toonLineDepthGap     = skybox.toonLineDepthGap;
+            env.toonLineBreakup      = skybox.toonLineBreakup;
+            env.toonLineBreakupSize  = skybox.toonLineBreakupSize;
+            env.toonLineFadeDistance = skybox.toonLineFadeDistance;
             m_renderer.SetEnvironment(env);
 
         });

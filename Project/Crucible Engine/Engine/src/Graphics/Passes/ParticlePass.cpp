@@ -63,7 +63,11 @@ namespace Crucible {
             .alphaBlendOp        = vk::BlendOp::eAdd,
             .colorWriteMask      = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
         };
-        vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
+        // Drawn inside the scene pass, which has a second output (the toon outline pass's line
+        // data). Same blend state there (independentBlend is not enabled); Particle.slang writes
+        // zero with zero alpha to it, which this blend keeps unchanged.
+        const vk::PipelineColorBlendAttachmentState blends[2] = { blend, blend };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 2, .pAttachments = blends };
 
         // Hidden behind meshes, but never hiding anything themselves (no depth write) - otherwise
         // a transparent quad would cut holes in the particles behind it.
@@ -84,7 +88,7 @@ namespace Crucible {
             .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
         m_particleLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
 
-        const vk::Format colorFormat = colourFormat;
+        const vk::Format colourFormats[2] = { colourFormat, RenderLayouts::kLineDataFormat };
         vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
             {
                 .stageCount          = 2,
@@ -100,7 +104,7 @@ namespace Crucible {
                 .layout              = m_particleLayout,
                 .renderPass          = nullptr
             },
-            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat, .depthAttachmentFormat = depthFormat }
+            {.colorAttachmentCount = 2, .pColorAttachmentFormats = colourFormats, .depthAttachmentFormat = depthFormat }
         };
         // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
         // pipeline and must match the target it draws into. `multisampling` is referenced by

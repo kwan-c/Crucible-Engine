@@ -47,7 +47,8 @@ namespace Crucible {
             vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
 
             // Set viewport to entire swapchain extent, make them dynamic for more flexibility in future.
-            std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+            // Cull mode too (core in Vulkan 1.3): double-sided materials switch it off per draw.
+            std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor, vk::DynamicState::eCullMode };
             vk::PipelineDynamicStateCreateInfo dynamicState = {
                 .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
                 .pDynamicStates = dynamicStates.data()
@@ -66,15 +67,17 @@ namespace Crucible {
 
             // Disable multisampling and color blending for now...
             vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
-            vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+            // Two outputs: the lit colour, and the line data the toon outline pass reads (both
+            // written as they are; identical states, as independentBlend is not enabled).
+            const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
                 .blendEnable = vk::False,
-                .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-            };
+                .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
+            const vk::PipelineColorBlendAttachmentState colorBlendAttachments[2] = { colorBlendAttachment, colorBlendAttachment };
             vk::PipelineColorBlendStateCreateInfo colorBlending{
                 .logicOpEnable = vk::False,
                 .logicOp = vk::LogicOp::eCopy,
-                .attachmentCount = 1,
-                .pAttachments = &colorBlendAttachment
+                .attachmentCount = 2,
+                .pAttachments = colorBlendAttachments
             };
 
             // Depth testing so overlapping meshes sort correctly (a single hard-coded cube never
@@ -107,7 +110,7 @@ namespace Crucible {
             m_meshLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
 
             // The scene is drawn into the HDR image, not the swapchain (see kSceneColorFormat).
-            vk::Format swapchainFormat = colourFormat;
+            const vk::Format colourFormats[2] = { colourFormat, RenderLayouts::kLineDataFormat };
 
             // Consolidate all information to create Graphics Pipeline.
             vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
@@ -126,15 +129,24 @@ namespace Crucible {
                     .layout = m_meshLayout,
                     .renderPass = nullptr
                 },
-                {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat, .depthAttachmentFormat = depthFormat }
+                {.colorAttachmentCount = 2, .pColorAttachmentFormats = colourFormats, .depthAttachmentFormat = depthFormat }
             };
             // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
             // pipeline and must match the target it draws into. `multisampling` is referenced by
             // pointer above, so changing it here changes what the next pipeline is built with.
+            // Each level twice: solid, and cut-out (DefaultShader's kCutout specialization constant
+            // on, so only cut-out materials pay for a shader that can discard).
+            const vk::Bool32               cutoutOn = vk::True;
+            const vk::SpecializationMapEntry cutoutEntry{ .constantID = 0, .offset = 0, .size = sizeof(vk::Bool32) };
+            const vk::SpecializationInfo   cutoutInfo{ .mapEntryCount = 1, .pMapEntries = &cutoutEntry, .dataSize = sizeof(vk::Bool32), .pData = &cutoutOn };
             for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
                 multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
+                shaderStages[1].pSpecializationInfo = nullptr;
                 m_meshPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+                shaderStages[1].pSpecializationInfo = &cutoutInfo;
+                m_cutoutPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
             }
+            shaderStages[1].pSpecializationInfo = nullptr;
         }
 
         // ---- Sky ----
@@ -170,15 +182,18 @@ namespace Crucible {
                 .lineWidth               = 1.0f
             };
             vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
-            vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+            // Both outputs written as they are; the sky writes the line data's clear value
+            // ("nothing here"). The two states must be identical: the independentBlend device
+            // feature (different states per attachment) is not enabled.
+            const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
                 .blendEnable    = vk::False,
-                .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA
-            };
+                .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
+            const vk::PipelineColorBlendAttachmentState colorBlendAttachments[2] = { colorBlendAttachment, colorBlendAttachment };
             vk::PipelineColorBlendStateCreateInfo colorBlending{
                 .logicOpEnable   = vk::False,
                 .logicOp         = vk::LogicOp::eCopy,
-                .attachmentCount = 1,
-                .pAttachments    = &colorBlendAttachment
+                .attachmentCount = 2,
+                .pAttachments    = colorBlendAttachments
             };
 
             // Drawn AFTER the opaque meshes: the vertex shader pins every sky fragment to the far
@@ -205,7 +220,7 @@ namespace Crucible {
             m_skyLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
 
             // The scene is drawn into the HDR image, not the swapchain (see kSceneColorFormat).
-            vk::Format swapchainFormat = colourFormat;
+            const vk::Format colourFormats[2] = { colourFormat, RenderLayouts::kLineDataFormat };
 
             vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
             {
@@ -223,7 +238,7 @@ namespace Crucible {
                     .layout              = m_skyLayout,
                     .renderPass          = nullptr
                 },
-                {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat, .depthAttachmentFormat = depthFormat }
+                {.colorAttachmentCount = 2, .pColorAttachmentFormats = colourFormats, .depthAttachmentFormat = depthFormat }
             };
             // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
             // pipeline and must match the target it draws into. `multisampling` is referenced by
@@ -251,6 +266,12 @@ namespace Crucible {
             {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
             vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
             vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests);
+        // Last read by the previous frame's toon outline pass; re-cleared.
+        TransitionImageLayout(cmd, t.lineData.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput);
 
         vk::RenderingAttachmentInfo color{
             .imageView   = t.hdrView,
@@ -258,6 +279,14 @@ namespace Crucible {
             .loadOp      = vk::AttachmentLoadOp::eClear,
             .storeOp     = vk::AttachmentStoreOp::eStore,
             .clearValue  = vk::ClearColorValue(0.05f, 0.05f, 0.06f, 1.0f)
+        };
+        // Cleared to all zeros: 1/depth 0 (infinitely far), no line - what the sky leaves.
+        vk::RenderingAttachmentInfo lines{
+            .imageView   = t.lineDataView,
+            .imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+            .loadOp      = vk::AttachmentLoadOp::eClear,
+            .storeOp     = vk::AttachmentStoreOp::eStore,
+            .clearValue  = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 0.0f)
         };
         vk::RenderingAttachmentInfo depth{
             .imageView   = depthView,
@@ -270,7 +299,7 @@ namespace Crucible {
         // into the images set up above - colour by averaging the samples of each pixel (that is
         // the anti-aliasing), depth by taking one sample - so everything after this pass (bloom,
         // tonemap, debug lines, outline) carries on with ordinary one-sample images.
-        const bool msaa = t.samples > 1 && *t.msaaColorView && *t.msaaDepthView;
+        const bool msaa = t.samples > 1 && *t.msaaColorView && *t.msaaDepthView && *t.msaaLineDataView;
         if (msaa) {
             TransitionImageLayout(cmd, t.msaaColor.GetImage(), vk::ImageAspectFlagBits::eColor,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
@@ -288,6 +317,18 @@ namespace Crucible {
             color.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
             color.storeOp            = vk::AttachmentStoreOp::eDontCare;   // only the resolved image is kept
 
+            // Line data averages too: at an object's edge the pixel gets a mix of the two
+            // surfaces, which the outline pass's tests treat as a soft step.
+            TransitionImageLayout(cmd, t.msaaLineData.GetImage(), vk::ImageAspectFlagBits::eColor,
+                vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
+                {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+            lines.imageView          = t.msaaLineDataView;
+            lines.resolveMode        = vk::ResolveModeFlagBits::eAverage;
+            lines.resolveImageView   = t.lineDataView;
+            lines.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
+            lines.storeOp            = vk::AttachmentStoreOp::eDontCare;
+
             depth.imageView          = t.msaaDepthView;
             depth.resolveMode        = vk::ResolveModeFlagBits::eSampleZero;
             depth.resolveImageView   = depthView;
@@ -295,11 +336,12 @@ namespace Crucible {
             depth.storeOp            = vk::AttachmentStoreOp::eDontCare;
         }
 
+        const vk::RenderingAttachmentInfo colourAttachments[2] = { color, lines };
         vk::RenderingInfo renderingInfo{
             .renderArea           = { .offset = { 0, 0 }, .extent = extent },
             .layerCount           = 1,
-            .colorAttachmentCount = 1,
-            .pColorAttachments    = &color,
+            .colorAttachmentCount = 2,
+            .pColorAttachments    = colourAttachments,
             .pDepthAttachment     = &depth
         };
         cmd.beginRendering(renderingInfo);
@@ -307,6 +349,10 @@ namespace Crucible {
         cmd.endRendering();
 
         TransitionImageLayout(cmd, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
+        TransitionImageLayout(cmd, t.lineData.GetImage(), vk::ImageAspectFlagBits::eColor,
             vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
             vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eShaderSampledRead,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
@@ -318,9 +364,13 @@ namespace Crucible {
 
         const std::vector<DrawBatch>& batches = meshes;
 
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_meshPipelines[RenderLayouts::MsaaIndex(samples)]);
+        const uint32_t msaa = RenderLayouts::MsaaIndex(samples);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_meshPipelines[msaa]);
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+        cmd.setCullMode(vk::CullModeFlagBits::eBack);
+        bool cutoutBound = false;
+        bool cullBack    = true;
 
         // Per-view data (camera, lights, instances, shadow map) is bound once for the whole pass.
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_meshLayout, 0, cameraSet, nullptr);
@@ -329,28 +379,38 @@ namespace Crucible {
         // order, so the material set (set 1) and the mesh's buffers rebind only on change.
         MeshHandle     boundMesh;       // starts Invalid
         MaterialHandle boundMaterial;   // starts Invalid
+        uint32_t       indexCount = 0;  // of boundMesh
         for (const DrawBatch& batch : batches) {
 
-            const GpuMesh&     mesh = m_resources.Meshes()[batch.mesh.id];          // validated in AppendBatches
-            const GpuMaterial& mat  = m_resources.Materials()[batch.material.id];   // default-substituted there too
+            const GpuMaterial& mat  = m_resources.Materials()[batch.material.id];   // default-substituted when batched
 
             if (!(batch.material == boundMaterial)) {
+                // Cut-out materials use the pipelines that can discard; double-sided ones draw
+                // without culling. Both pipelines share the layout, so the sets stay bound.
+                const bool cutout = mat.data.alphaCutoff > 0.0f;
+                if (cutout != cutoutBound) {
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, cutout ? *m_cutoutPipelines[msaa] : *m_meshPipelines[msaa]);
+                    cutoutBound = cutout;
+                }
+                if (mat.data.doubleSided == cullBack) {
+                    cullBack = !mat.data.doubleSided;
+                    cmd.setCullMode(cullBack ? vk::CullModeFlagBits::eBack : vk::CullModeFlagBits::eNone);
+                }
                 cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_meshLayout, 1, *mat.descriptorSet, nullptr);
-                // The material's scalar factors, recorded into the command buffer (so an Inspector
-                // slider change needs no GPU synchronization). Constant across the batch.
-                const PushConstants pc{ mat.data.factors };
-                cmd.pushConstants<PushConstants>(*m_meshLayout, vk::ShaderStageFlagBits::eFragment, 0, pc);
+                // The material's settings (MakeMaterialPush), recorded into the command buffer (so
+                // an Inspector slider change needs no GPU synchronization). Constant across the batch.
+                cmd.pushConstants<PushConstants>(*m_meshLayout, vk::ShaderStageFlagBits::eFragment, 0, mat.push);
                 boundMaterial = batch.material;
             }
 
             if (!(batch.mesh == boundMesh)) {
-                cmd.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), {0});
-                cmd.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
-                boundMesh = batch.mesh;
+                // Mesh validated when batched; a dynamic mesh binds this frame's buffers.
+                indexCount = m_resources.BindMesh(cmd, batch.mesh);
+                boundMesh  = batch.mesh;
             }
 
             // SV_VulkanInstanceID = firstInstance + i, which indexes the instance buffer directly.
-            cmd.drawIndexed(mesh.indexCount, batch.instanceCount, 0, 0, batch.firstInstance);
+            if (indexCount != 0) { cmd.drawIndexed(indexCount, batch.instanceCount, 0, 0, batch.firstInstance); }
         }
 
         // Sky last: it's depth-tested against everything drawn above, so only uncovered pixels

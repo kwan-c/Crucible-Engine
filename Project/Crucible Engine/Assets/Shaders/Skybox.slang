@@ -58,8 +58,16 @@ VSOutput skyVert(uint vertexID : SV_VulkanVertexID) {
     return output;
 }
 
+// The scene pass has a second output, the toon outline pass's line data. The sky writes what
+// that output is cleared to (all zeros: nothing here, no line) - written rather than masked off,
+// so both outputs share one blend state (no independentBlend device feature needed).
+struct SkyOutput {
+    float4 colour : SV_Target0;
+    float4 lines  : SV_Target1;
+};
+
 [shader("fragment")]
-float4 skyFrag(VSOutput input) : SV_Target {
+SkyOutput skyFrag(VSOutput input) {
     // Linear HDR; exposure and tonemapping are applied to the whole image in Post.slang.
     float3 dir = normalize(input.dir);
     float3 sky = skyTex.Sample(dir).rgb * frame.renderParams.y;   // skybox intensity
@@ -67,5 +75,8 @@ float4 skyFrag(VSOutput input) : SV_Target {
     // fog volume, the sun's glow in the fog and its shafts show against the sky too.
     float4 fog = FogForSky(dir, input.pos.xy / frame.clusterZ.zw);
     sky = sky * fog.a + fog.rgb;
-    return float4(sky, 1.0);
+    SkyOutput output;
+    output.colour = float4(sky, 1.0);
+    output.lines  = float4(0.0, 0.0, 0.0, 0.0);
+    return output;
 }

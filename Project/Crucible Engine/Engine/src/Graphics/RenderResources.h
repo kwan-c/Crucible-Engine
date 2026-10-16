@@ -4,6 +4,8 @@
     The GPU resources the renderer draws with, and the handles that name
     them: meshes (vertex and index buffers, names, bounds, the CPU copy used
     for picking), textures, and materials (five textures plus their factors).
+    Most meshes are uploaded once; dynamic meshes (CreateDynamicMesh) are
+    rewritten by the CPU as often as every frame.
   \details
     Moved out of the Renderer class so render passes (Graphics/Passes/) can
     draw meshes without going through the Renderer. Game and editor code
@@ -22,11 +24,35 @@
 #include "TextureHandle.h"
 
 #include <deque>
+#include <memory>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace Crucible {
+
+    // The CPU-written side of a dynamic mesh (RenderResources::CreateDynamicMesh): the latest
+    // geometry, plus one host-visible vertex/index buffer pair per frame in flight. A frame's
+    // pair is refilled at the start of that frame (UploadDynamicMeshes), once its fence has
+    // signalled, so the GPU never reads a buffer the CPU is writing.
+    struct DynamicMeshFrame {
+        VulkanBuffer vertexBuffer;
+        VulkanBuffer indexBuffer;
+        void*        vertexMapped = nullptr;
+        void*        indexMapped = nullptr;
+        size_t       vertexCapacity = 0;   // in vertices
+        size_t       indexCapacity = 0;    // in indices
+        uint32_t     indexCount = 0;       // of the copy in these buffers
+        uint64_t     version = 0;          // DynamicMesh::version of that copy (0 = never filled)
+    };
+
+    struct DynamicMesh {
+        std::vector<Vertex>           vertices;   // latest geometry (UpdateDynamicMesh)
+        std::vector<uint32_t>         indices;
+        uint64_t                      version = 0;
+        std::vector<DynamicMeshFrame> frames;     // indexed by frame-in-flight index, grown on use
+    };
 
     // GPU-side mesh. One vertex + one index buffer per mesh for now (simple; suballocate from
     // big shared buffers later if mesh counts get large).
@@ -50,6 +76,11 @@ namespace Crucible {
         // 12 bytes per vertex + 4 per index, per MESH (instances share it).
         std::vector<glm::vec3> cpuPositions;
         std::vector<uint32_t>  cpuIndices;
+
+        // Non-null for a dynamic mesh: then vertexBuffer/indexBuffer and the CPU copy above stay
+        // empty, the buffers drawn are this frame's pair in `dynamic`, and indexCount/bounds
+        // describe the latest UpdateDynamicMesh() data.
+        std::unique_ptr<DynamicMesh> dynamic;
     };
 
     // GPU-side texture: an image + its view, indexed by TextureHandle. No per-texture
@@ -69,7 +100,26 @@ namespace Crucible {
     // textures are bound into.
     struct GpuMaterial {
         MaterialData             data;
+        PushConstants            push;            // what the scene pass pushes for it (MakeMaterialPush)
         vk::raii::DescriptorSet   descriptorSet = nullptr;
+    };
+
+    /// The scene pass's push constant for a material: its factors plus its cut-out, shading and
+    /// toon settings, colours converted to linear.
+    PushConstants MakeMaterialPush(const MaterialData& data);
+
+    /*************************************************************************
+     \brief  What one depth-only pass (shadow, ambient-occlusion pre-pass,
+             selection mask) draws with - see RenderResources::DrawDepthBatches.
+     *************************************************************************/
+    struct DepthPassPipelines {
+        vk::Pipeline         solid;                 ///< no fragment work beyond the pass's own
+        vk::Pipeline         cutout;                ///< samples the material's albedo alpha; set 1 = the material
+        vk::PipelineLayout   layout;                ///< shared by both (set 0, set 1, push constant)
+        vk::ShaderStageFlags cutoutPushStages;      ///< the stage flags of the push range CutoutPush lives in
+        uint32_t             cutoutPushOffset = 0;  ///< where CutoutPush sits in it
+        bool                 dynamicCull = false;   ///< both pipelines take the cull mode as dynamic state
+        vk::CullModeFlags    cull = vk::CullModeFlagBits::eBack;   ///< for single-sided materials (when dynamicCull)
     };
 
     class RenderResources {
@@ -92,6 +142,40 @@ namespace Crucible {
         MeshHandle CreateMeshAsync(MeshData data, const std::string& debugName = {});
         /// Creates the buffers of up to kMaxMeshUploadsPerFrame waiting meshes. Call once a frame.
         void ProcessPendingMeshUploads();
+
+        /*********************************************************************
+         \brief  Creates an empty mesh whose geometry the CPU replaces as often
+                 as every frame (UpdateDynamicMesh) - procedural, animated
+                 geometry such as vines. Not drawn until it has some.
+         \details
+            Draw it with Submit() (it is culled with the bounds of its latest
+            geometry). A render proxy would keep the bounds it had when
+            SetRenderProxy() was called, and editor picking does not see it.
+         *********************************************************************/
+        MeshHandle CreateDynamicMesh(const std::string& debugName = {});
+
+        /*********************************************************************
+         \brief  Replaces a dynamic mesh's geometry from the next frame drawn
+                 on. Copies the data; empty = draw nothing.
+         \throws std::invalid_argument if the handle is not a dynamic mesh or
+                 an index is out of range.
+         *********************************************************************/
+        void UpdateDynamicMesh(MeshHandle handle, std::span<const Vertex> vertices, std::span<const uint32_t> indices);
+
+        /*********************************************************************
+         \brief  Copies every dynamic mesh that changed into this frame's
+                 buffers, and makes them the ones BindMesh() binds. Call once
+                 a frame, after BeginFrame() has waited on this frame index's
+                 fence and before any pass records.
+         *********************************************************************/
+        void UploadDynamicMeshes(uint32_t frameIndex);
+
+        /*********************************************************************
+         \brief  Binds a mesh's vertex and index buffers (this frame's pair,
+                 for a dynamic mesh).
+         \return Its index count; 0 = nothing to draw (nothing was bound).
+         *********************************************************************/
+        uint32_t BindMesh(vk::CommandBuffer cmd, MeshHandle handle) const;
 
         bool GetMeshBounds(MeshHandle handle, glm::vec3& outMin, glm::vec3& outMax) const;
         const std::string& GetMeshName(MeshHandle handle) const;
@@ -139,6 +223,26 @@ namespace Crucible {
          *********************************************************************/
         void DrawBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches) const;
 
+        /*********************************************************************
+         \brief  Draws a depth-only pass's batches: solid ones with
+                 pipelines.solid; ones whose material is cut-out with
+                 pipelines.cutout, binding that material at set 1 and its
+                 CutoutPush; with dynamicCull, double-sided materials
+                 without culling. The caller has begun rendering, set the
+                 viewport and bound set 0 (and its own push constants).
+         \details A batch with an Invalid material is solid and single-
+                  sided (RenderScene only keeps the material in depth
+                  batches when it is cut-out or double-sided).
+         *********************************************************************/
+        void DrawDepthBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches, const DepthPassPipelines& pipelines) const;
+
+        /// Whether the depth-only passes need to know this material (cut-out or double-sided).
+        bool NeedsMaterialInDepthPasses(MaterialHandle handle) const {
+            if (!handle.IsValid() || handle.id >= m_materials.size()) { return false; }
+            const MaterialData& d = m_materials[handle.id].data;
+            return d.alphaCutoff > 0.0f || d.doubleSided;
+        }
+
     private:
         // ---- Texture/Material helpers ----
         // Shared core of every texture-creation path: creates a new device-local image + view
@@ -167,6 +271,8 @@ namespace Crucible {
         VulkanUploadQueue& m_uploads;
 
         std::vector<GpuMesh> m_meshes;
+        std::vector<uint32_t> m_dynamicMeshes;     // ids of the dynamic ones
+        uint32_t              m_dynamicFrame = 0;   // frame-in-flight index BindMesh() binds (UploadDynamicMeshes)
 
         // Textures + Materials (see the Renderer's "---- Textures ----"/"---- Materials ----" public API).
         std::vector<GpuTexture>                     m_textures;

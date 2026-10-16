@@ -643,6 +643,46 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 	changed |= ImGui::ColorEdit3("Emissive Factor", &data.factors.emissiveFactor.x);
 
 	ImGui::Separator();
+	// ---- How it is lit, and its shape ----
+	// Shading: Scene follows the Skybox's Toon Shading switch; Toon/Realistic ignore it, so one scene
+	// can mix styles (a realistic prop in a toon world, or the reverse).
+	{
+		constexpr char const* kShadingNames[] = { "Scene", "Toon", "Realistic" };
+		int shading = std::clamp(static_cast<int>(data.shading), 0, 2);
+		if (ImGui::Combo("Shading", &shading, kShadingNames, IM_ARRAYSIZE(kShadingNames))) {
+			data.shading = static_cast<MaterialShading>(shading);
+			changed = true;
+		}
+		ImGui::SetItemTooltip("Scene: toon or realistic, as the Skybox's Toon Shading says.\nToon / Realistic: always that, whatever the scene uses.");
+	}
+	changed |= ImGui::SliderFloat("Alpha Cutoff", &data.alphaCutoff, 0.0f, 1.0f, data.alphaCutoff > 0.0f ? "%.2f" : "%.2f (off)");
+	ImGui::SetItemTooltip("Cut-out (leaves, fences): pixels whose alpha (albedo texture x tint alpha) is below\nthis are not drawn - in shadows and ambient occlusion too. 0 = off (solid).");
+	changed |= ImGui::Checkbox("Double-Sided", &data.doubleSided);
+	ImGui::SetItemTooltip("Draw both sides (leaf cards, thin sheets). The back is lit as its own front.");
+
+	// ---- Toon overrides: only used when this material is toon-shaded ----
+	if (ImGui::TreeNode("Toon Overrides")) {
+		ImGui::BeginDisabled(data.shading == MaterialShading::Realistic);
+		changed |= ImGui::Checkbox("Own Edge", &data.toon.ownEdge);
+		ImGui::SetItemTooltip("Use this edge instead of the Skybox's (e.g. a wide soft one for foliage)");
+		ImGui::BeginDisabled(!data.toon.ownEdge);
+		changed |= ImGui::SliderFloat("Edge Threshold", &data.toon.threshold, 0.0f, 0.9f);
+		changed |= ImGui::SliderFloat("Edge Softness", &data.toon.softness, 0.0f, 1.0f);
+		ImGui::EndDisabled();
+		changed |= ImGui::Checkbox("Own Shade Colour", &data.toon.ownShadeColour);
+		ImGui::SetItemTooltip("Tint the shaded side with this colour instead of the Skybox's");
+		ImGui::BeginDisabled(!data.toon.ownShadeColour);
+		changed |= ImGui::ColorEdit3("Shade Colour", &data.toon.shadeColour.x);
+		ImGui::EndDisabled();
+		changed |= ImGui::ColorEdit3("Lit Colour", &data.toon.litColour.x);
+		ImGui::SetItemTooltip("Multiplies the light on the lit side (white = no change).\nWarm lit + cool shade gives a yellow-to-teal gradient across a canopy.");
+		changed |= ImGui::SliderFloat("Outline", &data.toon.outline, 0.0f, 1.0f);
+		ImGui::SetItemTooltip("Strength of the toon outlines on this material (the Skybox's Toon Line settings);\n0 = none, e.g. for foliage or terrain.");
+		ImGui::EndDisabled();
+		ImGui::TreePop();
+	}
+
+	ImGui::Separator();
 	ImGui::TextDisabled("Drag a texture asset from the Asset Browser onto a slot:");
 
 	struct Slot { char const* label; TextureHandle MaterialData::* member; bool isSRGB; };
@@ -864,8 +904,101 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			}
 		}
 		ImGui::EndDisabled();
+
+		changed |= DrawPropertyExtras(obj, label);
 	}
 	return changed;
+}
+
+bool Crucible::Inspector::DrawPropertyExtras(rttr::instance& obj, std::string const& name) {
+	if (name == "ambientFromSky") {
+		if (Skybox* skybox = obj.try_convert<Skybox>()) { return DrawPickFromSky(*skybox); }
+	}
+	return false;
+}
+
+bool Crucible::Inspector::DrawPickFromSky(Skybox& skybox) {
+	// With Ambient From Sky off, the two hand-picked colours light the scene (the toon scenes'
+	// choice). This fills them from the sky image's own light, as a starting point: what a surface
+	// facing straight up / straight down gets from it - exactly what Ambient From Sky gives those
+	// two directions - or the same colours scaled to a chosen brightness (a night sky's own light
+	// is usually far too dark to use as it is).
+	ImGui::Indent();
+	if (ImGui::SmallButton("Pick from Sky...")) { ImGui::OpenPopup("Pick Ambient from Sky"); }
+	ImGui::SetItemTooltip("Fill Ambient Sky and Ambient Ground from the sky image's light,\n"
+	                      "as a starting point for hand-picked ambient colours.");
+	ImGui::Unindent();
+
+	if (!ImGui::BeginPopup("Pick Ambient from Sky")) { return false; }
+
+	// The sky this Skybox shows (same rule as RenderExtractSystem): its asset, else its runtime
+	// cubemap, else the built-in sky. Read every frame the popup is open - a few multiplies.
+	CubemapHandle sky = skybox.cubemap;
+	if (ResourceManager* rm = EditorManager::GetInstance().GetResources(); rm && skybox.skyboxAsset != 0) {
+		sky = rm->GetCubemap(skybox.skyboxAsset);
+	}
+	// Ambient From Sky scales the sky's light by Intensity (and both modes by Ambient Intensity),
+	// so the colours include Intensity to come out the same.
+	float const     intensity = std::max(skybox.intensity, 0.0f);
+	glm::vec3 const up   = m_renderer.GetSkyIrradiance(sky, glm::vec3(0.0f,  1.0f, 0.0f)) * intensity;
+	glm::vec3 const down = m_renderer.GetSkyIrradiance(sky, glm::vec3(0.0f, -1.0f, 0.0f)) * intensity;
+	auto const luminance = [](glm::vec3 const& c) { return glm::dot(c, glm::vec3(0.2126f, 0.7152f, 0.0722f)); };
+	float const skyBrightness = luminance(0.5f * (up + down));
+
+	static int   s_mode       = 0;       // 0 = as the sky is, 1 = scaled to s_brightness
+	static float s_brightness = 0.5f;    // average brightness of the two colours (mode 1)
+	static bool  s_switchOff  = true;    // also turn Ambient From Sky off
+
+	// Swatches show the values as stored (linear), like the colour fields themselves.
+	auto const swatchRow = [](char const* id, char const* label, glm::vec3 const& c) {
+		ImGui::ColorButton(id, ImVec4(c.x, c.y, c.z, 1.0f), ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_Float);
+		ImGui::SameLine();
+		ImGui::Text("%-7s %.3f, %.3f, %.3f", label, c.x, c.y, c.z);
+	};
+
+	ImGui::TextUnformatted("The sky image's light (what Ambient From Sky gives):");
+	swatchRow("##skyUp",   "Up",   up);
+	swatchRow("##skyDown", "Down", down);
+	ImGui::TextDisabled("Average brightness %.3f", skyBrightness);
+
+	ImGui::SeparatorText("Pick");
+	bool const canScale = skyBrightness > 1e-5f;
+	if (!canScale) { s_mode = 0; }
+	ImGui::RadioButton("As the sky is", &s_mode, 0);
+	ImGui::SetItemTooltip("Exactly the sky's light: switching Ambient From Sky off then looks almost\n"
+	                      "the same (only the sky's side-to-side differences are lost).");
+	ImGui::BeginDisabled(!canScale);
+	ImGui::RadioButton("At brightness", &s_mode, 1);
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(120.0f);
+	if (ImGui::SliderFloat("##brightness", &s_brightness, 0.01f, 2.0f, "%.3f", ImGuiSliderFlags_Logarithmic)) { s_mode = 1; }
+	ImGui::SetItemTooltip("The sky's colours, scaled so their average brightness is this.\n"
+	                      "About 0.5 for a bright day, 0.03-0.08 for a night scene.");
+	ImGui::EndDisabled();
+	if (!canScale) { ImGui::TextDisabled("This sky gives no light to scale."); }
+
+	float const     scale     = (s_mode == 1 && canScale) ? s_brightness / skyBrightness : 1.0f;
+	glm::vec3 const newSky    = up * scale;
+	glm::vec3 const newGround = down * scale;
+	swatchRow("##newSky",    "Sky",    newSky);
+	swatchRow("##newGround", "Ground", newGround);
+
+	ImGui::Checkbox("Switch Ambient From Sky off", &s_switchOff);
+	ImGui::SetItemTooltip("The two colours only light the scene while Ambient From Sky is off.");
+
+	bool applied = false;
+	if (ImGui::Button("Apply")) {
+		skybox.ambientSky    = newSky;
+		skybox.ambientGround = newGround;
+		if (s_switchOff) { skybox.ambientFromSky = false; }
+		applied = true;
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::SetItemTooltip("Sets Ambient Sky and Ambient Ground (Ctrl+Z undoes it).");
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
+	ImGui::EndPopup();
+	return applied;
 }
 
 bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {

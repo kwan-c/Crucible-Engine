@@ -185,10 +185,20 @@ namespace Crucible {
         glm::vec4  volumetricParams{ 0.0f };             // x = 1: read the fog volume (0 = analytic fog), y = near depth (m), z = far depth (m), w = log(far / near)
         glm::vec4  volumetricLight{ 0.0f };              // x = light scattering strength, y = anisotropy g, z = depth slices, w unused
         glm::vec4  volumetricAmbient{ 0.0f };            // x = strength of the fog's light in shade, y = 1: that light is the sky's (0 = fog colour)
+        // Toon shading (EnvironmentSettings::toonShading), see DefaultShader.slang's ToonLight:
+        glm::vec4  toonParams{ 0.0f };                   // x = 0: materials set to "Scene" are lit realistically, 1: toon, 2: toon switched off everywhere (Rendering menu); y = where the light/shade edge is (0..1 of the light), z = its softness, w = brightness of the sky's light on the shaded side
+        glm::vec4  toonShade{ 1.0f };                    // rgb = tint of the shaded side (linear), w = how flat the sky's ambient light is (0..1)
+        glm::vec4  toonEdge{ 1.0f, 1.0f, 1.0f, 0.1f };   // rgb = tint of the band at the edge (linear, luminance 1), w = the band's width
+        glm::vec4  toonExtra{ 0.0f };                    // x = the band's strength, y = hard highlight strength, z = share of the sky reflection kept, w = shading by angle kept on the lit side
+        // Toon outlines: what the scene shader writes for ToonOutlinePass (EnvironmentSettings::toonLine*):
+        glm::vec4  toonLines{ 0.0f };                    // x = 1: write line strengths (0 = no lines anywhere), y = breakup amount (0..1), z = 1 / breakup size (per metre), w unused
     };
-    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 6 + 16 * 15,
+    static_assert(sizeof(FrameUniforms) == 64 + 64 + 16 * 5 + 64 * kMaxShadowCascades + 16 * 6 + 16 * 20,
         "FrameUniforms must stay tightly packed in 16-byte slots to match the shaders' std140 layout.");
     static_assert(offsetof(FrameUniforms, volumetricParams) == 752 && offsetof(FrameUniforms, volumetricLight) == 768 && offsetof(FrameUniforms, volumetricAmbient) == 784,
+        "FrameUniforms offsets must match Common.slang (checked against the compiled SPIR-V).");
+    static_assert(offsetof(FrameUniforms, toonParams) == 800 && offsetof(FrameUniforms, toonShade) == 816 && offsetof(FrameUniforms, toonEdge) == 832 && offsetof(FrameUniforms, toonExtra) == 848
+                  && offsetof(FrameUniforms, toonLines) == 864,
         "FrameUniforms offsets must match Common.slang (checked against the compiled SPIR-V).");
     static_assert(offsetof(FrameUniforms, clusterDims) == 512 && offsetof(FrameUniforms, clusterZ) == 528 && offsetof(FrameUniforms, time) == 544 && offsetof(FrameUniforms, fogColour) == 560 && offsetof(FrameUniforms, skySH) == 608,
         "FrameUniforms offsets must match DefaultShader.slang (checked against the compiled SPIR-V).");
@@ -229,7 +239,7 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------ //
 
     /*************************************************************************
-     rief
+     \brief
         Size of the light-cluster grid every view is cut into: across, down
         and in depth (depth slices are spaced logarithmically).
      \details
@@ -256,7 +266,7 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------ //
 
     /*************************************************************************
-     rief
+     \brief
         One particle as the particle shader reads it (set 0, binding 5:
         StructuredBuffer<GpuParticle> in Particle.slang). 64 bytes.
      \details
@@ -277,7 +287,7 @@ namespace Crucible {
     static_assert(sizeof(GpuParticle) == 64, "GpuParticle must match Particle.slang's 64-byte std430 GpuParticle.");
 
     /*************************************************************************
-     rief
+     \brief
         How one batch of particles (normally: one emitter) is drawn - see
         Renderer::SubmitParticles().
      \details
@@ -311,7 +321,7 @@ namespace Crucible {
     inline constexpr uint32_t kBloomMips = 5;
 
     /*************************************************************************
-     rief
+     \brief
         Bloom and tonemap settings (Renderer::GetPostSettings()). Exposure
         itself comes from the scene's Skybox component / EnvironmentSettings.
      \details
@@ -349,6 +359,7 @@ namespace Crucible {
         float aoRadius = 0.6f;
         float aoIntensity = 1.2f;
         bool  volumetricFog = true;   // lit froxel fog where the scene's Skybox asks for it (off = always the analytic fog)
+        bool  toonShading = true;     // toon shading where the scene's Skybox asks for it (off = always the PBR lighting, to compare)
     };
 
     /// Push constant shared by every post pass (Post.slang's PostPush). c and d are read only by
@@ -664,6 +675,29 @@ namespace Crucible {
         float         vignetteSoftness = 0.5f;
         float         filmGrain = 0.0f;
         float         chromaticAberration = 0.0f;
+        // Toon shading (see the Skybox component for what each one does). Colours are sRGB, as picked.
+        bool          toonShading = false;
+        float         toonThreshold = 0.1f;
+        float         toonSoftness = 0.03f;
+        glm::vec3     toonShadeColour{ 0.85f, 0.87f, 0.95f };
+        float         toonShadeBrightness = 1.5f;
+        float         toonLitShading = 0.4f;
+        glm::vec3     toonEdgeColour{ 1.0f, 0.62f, 0.42f };
+        float         toonEdgeWidth = 0.15f;
+        float         toonEdgeStrength = 0.6f;
+        float         toonAmbientFlatten = 0.7f;
+        float         toonHighlight = 1.0f;
+        float         toonReflections = 0.0f;
+        // Toon outlines (ToonOutlinePass; see the Skybox component).
+        bool          toonLines = true;
+        float         toonLineDarkness = 0.6f;
+        float         toonLineWidth = 1.0f;
+        float         toonLineCreaseAngle = 75.0f;
+        float         toonLineCreaseStrength = 0.5f;
+        float         toonLineDepthGap = 0.03f;
+        float         toonLineBreakup = 0.35f;
+        float         toonLineBreakupSize = 0.25f;
+        float         toonLineFadeDistance = 60.0f;
     };
 
     // ------------------------------------------------------------------------------------------ //
@@ -703,6 +737,34 @@ namespace Crucible {
         match the spec directly (metallicRoughness packs roughness in G,
         metalness in B; ambient occlusion reads R of `occlusion`).
      *************************************************************************/
+    /// How a material is lit (MaterialData::shading).
+    enum class MaterialShading : uint8_t {
+        Scene = 0,       ///< whatever the scene's Skybox says (toonShading on: toon, off: realistic)
+        Toon = 1,        ///< always toon
+        Realistic = 2    ///< always the physically based lighting
+    };
+
+    /*************************************************************************
+     \brief  Per-material changes to the scene's toon look (MaterialData::toon).
+     \details
+        For things that should not share the scene's hard edge - foliage
+        that shades as one soft gradient, say. Colours are sRGB, as picked.
+          - ownEdge: use threshold/softness here instead of the scene's.
+          - ownShadeColour: use shadeColour here instead of the scene's.
+          - litColour: multiplies the light on the lit side (white = none);
+            a warm colour with a cool shadeColour gives a yellow-to-teal
+            gradient across a canopy.
+     *************************************************************************/
+    struct MaterialToon {
+        bool      ownEdge = false;
+        float     threshold = 0.1f;
+        float     softness = 0.03f;
+        bool      ownShadeColour = false;
+        glm::vec3 shadeColour{ 0.85f, 0.87f, 0.95f };
+        glm::vec3 litColour{ 1.0f, 1.0f, 1.0f };
+        float     outline = 1.0f;   ///< toon outlines on this material: 0 = none, 1 = the scene's full strength
+    };
+
     struct MaterialData {
         TextureHandle    albedo{};
         TextureHandle    normal{};
@@ -710,6 +772,14 @@ namespace Crucible {
         TextureHandle    emissive{};
         TextureHandle    occlusion{};
         MaterialFactors  factors{};
+        MaterialShading  shading = MaterialShading::Scene;
+        // Cut-out: pixels whose alpha (albedo texture alpha x albedoTint alpha) is below this are
+        // not drawn - in the shadows and ambient occlusion too, so leaves cast leafy shadows.
+        // 0 = off (solid). glTF "MASK" materials import with their alphaCutoff.
+        float            alphaCutoff = 0.0f;
+        // Both sides drawn (leaf cards, thin sheets); the back side is lit as its own front.
+        bool             doubleSided = false;
+        MaterialToon     toon{};
     };
 
     /*************************************************************************
@@ -736,7 +806,27 @@ namespace Crucible {
      *************************************************************************/
     struct PushConstants {
         MaterialFactors  factors{};
+        float            alphaCutoff = 0.0f;   // 0 = solid
+        uint32_t         flags = 0;            // bits 0-1: MaterialShading, bit 2: toonEdge applies, bit 3: toonShade applies
+        float            outline = 1.0f;       // strength of toon outlines on this material (0..1), MaterialToon::outline
+        glm::vec4        toonEdge{ 0.1f, 0.03f, 0.0f, 0.0f };   // x = edge position, y = softness (flag bit 2)
+        glm::vec4        toonShade{ 1.0f };                     // rgb = shade tint, linear (flag bit 3)
+        glm::vec4        toonLit{ 1.0f };                       // rgb = lit tint, linear
     };
+    inline constexpr uint32_t kMaterialFlagOwnEdge  = 1u << 2;
+    inline constexpr uint32_t kMaterialFlagOwnShade = 1u << 3;
+    static_assert(sizeof(MaterialFactors) == 36 && offsetof(PushConstants, alphaCutoff) == 36 && offsetof(PushConstants, flags) == 40
+                  && offsetof(PushConstants, outline) == 44 && offsetof(PushConstants, toonEdge) == 48 && offsetof(PushConstants, toonShade) == 64 && offsetof(PushConstants, toonLit) == 80
+                  && sizeof(PushConstants) == 96,
+        "PushConstants must match DefaultShader.slang's (checked against the compiled SPIR-V).");
+
+    /// Push constant of the depth-only passes' cut-out pipelines (shadow, ambient occlusion,
+    /// selection mask): what decides which pixels of a cut-out material are drawn.
+    struct CutoutPush {
+        float alphaCutoff = 0.0f;
+        float alphaTint = 1.0f;   // MaterialFactors::albedoTint.a
+    };
+    static_assert(sizeof(CutoutPush) == 8, "CutoutPush must match the depth shaders' cutout fields.");
     static_assert(sizeof(PushConstants) <= 128,
         "PushConstants must fit in the 128-byte push-constant range every Vulkan implementation "
         "is required to support (VkPhysicalDeviceLimits::maxPushConstantsSize's guaranteed floor).");

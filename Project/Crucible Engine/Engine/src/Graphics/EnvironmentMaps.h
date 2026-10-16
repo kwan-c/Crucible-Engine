@@ -47,6 +47,12 @@ namespace Crucible {
         std::array<glm::vec4, 9> sh{};
     };
 
+    /// The diffuse light a surface facing `normal` (unit length) gets from a sky, from its nine
+    /// spherical-harmonic numbers (GpuCubemap::sh): the same polynomial as SkyIrradiance in
+    /// DefaultShader.slang, so values read on the CPU match what the shader lights with.
+    /// Linear RGB, never negative.
+    glm::vec3 EvaluateSkyIrradiance(const std::array<glm::vec4, 9>& sh, const glm::vec3& normal);
+
     class EnvironmentMaps {
     public:
         /*********************************************************************

@@ -54,6 +54,13 @@ namespace Crucible {
         vk::raii::ImageView                              msaaColorView = nullptr;
         VulkanImage                                      msaaDepth;
         vk::raii::ImageView                              msaaDepthView = nullptr;
+        // Toon outlines: the scene pass's second output (RenderLayouts::kLineDataFormat), which
+        // the outline pass reads, and its multisampled twin when samples > 1.
+        VulkanImage                                      lineData;
+        vk::raii::ImageView                              lineDataView = nullptr;
+        vk::raii::DescriptorSet                          lineDataSet = nullptr;  // lineData, for the outline pass
+        VulkanImage                                      msaaLineData;
+        vk::raii::ImageView                              msaaLineDataView = nullptr;
     };
 
     // Creates and resizes PostTargets, and owns what they are built from: the descriptor pool

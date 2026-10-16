@@ -377,3 +377,121 @@ float4 aoBlurFrag(PostVSOut input) : SV_Target {
     float ao = weight > 0.0 ? sum / weight : sourceTex.SampleLevel(input.uv, 0.0).r;
     return float4(ao, ao, ao, 1.0);
 }
+
+// ---- Toon outlines (ToonOutlinePass) -------------------------------------------------------------
+// Reads the scene pass's line data (sourceTex - see DefaultShader's LineData: x = 1 / view depth,
+// 0 = nothing there; yz = the surface's direction, octahedral; w = how strong a line may be) and
+// returns a factor the pipeline multiplies into the HDR image: 1 = untouched, less = a line, which
+// is so the colour under it, darker.
+//   - Silhouettes: where one surface ends in front of another. 1/depth changes linearly across the
+//     screen on any flat surface, so each side's surface can be carried across the edge and
+//     compared with the other: a silhouette needs the near side's surface, carried on, to pass well
+//     in front of the far side, AND the far side's, carried back, to pass well behind the near side.
+//     A fold (two faces of one object meeting at an angle) fails the second test, so folds - the
+//     edges inside an object's outline - get no silhouette line. The jump is judged over two pixels,
+//     because with MSAA the pixel on the edge is a blend of both surfaces; that half-covered pixel is
+//     darkened too (by how much of it is the near surface), so none of the object's own colour is
+//     left showing outside the line. The line grows inward from the edge with the width, the last
+//     pixel partly (so the width changes smoothly).
+//   - Creases: the surface's direction turns by more than the crease angle between neighbouring
+//     pixels of one surface. Scaled by the crease strength: lighter than silhouettes by default.
+// pc.a: x = darkness (0..1), y = width (pixels, 0.5..3), z = cos(crease angle), w = depth gap (fraction)
+// pc.b: x = distance where lines start to fade (m), y = where they are gone, zw = target size (pixels)
+// pc.c: x = crease strength (0..1)
+
+float3 OctDecode(float2 e) {
+    float3 n = float3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
+    float  t = saturate(-n.z);
+    n.x += n.x >= 0.0 ? -t : t;
+    n.y += n.y >= 0.0 ? -t : t;
+    return normalize(n);
+}
+
+float4 LineTexel(int2 p) {
+    int2 size = int2(pc.b.zw);
+    return sourceTex.Load(int3(clamp(p, int2(0, 0), size - 1), 0));
+}
+
+// How clearly a silhouette lies between pixel a and the pixel two steps beyond it (relative to a's
+// 1/depth; <= 0 = none), from the 1/depths of: i (one step inside a), a, b (between), c, o (one
+// step beyond c). t: how much of b is a's surface (1 = all of it, 0 = none - b is the far side).
+float SilhouetteBeyond(float wi, float wa, float wb, float wc, float wo, out float t) {
+    t = 0.0;
+    if (wa <= 0.0) { return 0.0; }
+    float drop = (wa + 2.0 * (wa - wi) - wc) / wa;     // a's surface carried on, against c
+    float rise = (wa - (wc + 2.0 * (wc - wo))) / wa;   // c's surface carried back, against a
+    float jump = wa - wc;
+    t = jump > 1e-6 ? saturate((wb - wc) / jump) : 1.0;
+    return min(drop, rise);
+}
+
+// The silhouette line at pixel p from edges in one direction (the far side towards `dir`).
+float SilhouetteAlong(int2 p, int2 dir, float4 c, float width, float gap) {
+    float4 m1 = LineTexel(p - dir);
+    float4 p1 = LineTexel(p + dir);
+    float4 p3 = LineTexel(p + 3 * dir);
+    // Nothing changes nearby in this direction: no edge to find.
+    float quiet = 0.5 * gap * c.x;
+    if (abs(p1.x - c.x) < quiet && abs(m1.x - c.x) < quiet && abs(p3.x - c.x) < 3.0 * quiet) { return 0.0; }
+
+    float m2 = LineTexel(p - 2 * dir).x;
+    float p2 = LineTexel(p + 2 * dir).x;
+    float p4 = LineTexel(p + 4 * dir).x;
+    float p5 = LineTexel(p + 5 * dir).x;
+    float t;
+    float line = 0.0;
+
+    // This pixel as the half-covered one on an edge after m1: darkened by how much of it is m1's
+    // surface, with that surface's line strength.
+    float e = SilhouetteBeyond(m2, m1.x, c.x, p1.x, p2, t);
+    line = max(line, smoothstep(gap, 2.0 * gap, e) * saturate(2.0 * t) * m1.w * saturate(width));
+    // The edge right after this pixel (the next pixel far, or half-covered).
+    e = SilhouetteBeyond(m1.x, c.x, p1.x, p2, p3.x, t);
+    line = max(line, smoothstep(gap, 2.0 * gap, e) * saturate(2.0 * (1.0 - t)) * c.w * saturate(width));
+    // Wider lines: the edge one or two pixels further out, along this pixel's own surface.
+    if (width > 1.0 && abs(p1.x - (2.0 * c.x - m1.x)) < gap * c.x) {
+        e = SilhouetteBeyond(c.x, p1.x, p2, p3.x, p4, t);
+        line = max(line, smoothstep(gap, 2.0 * gap, e) * saturate(2.0 * (1.0 - t)) * c.w * saturate(width - 1.0));
+        if (width > 2.0 && abs(p2 - (3.0 * c.x - 2.0 * m1.x)) < 2.0 * gap * c.x) {
+            e = SilhouetteBeyond(p1.x, p2, p3.x, p4, p5, t);
+            line = max(line, smoothstep(gap, 2.0 * gap, e) * saturate(2.0 * (1.0 - t)) * c.w * saturate(width - 2.0));
+        }
+    }
+    return line;
+}
+
+// A crease line between this pixel and q (one surface, turned by more than the crease angle).
+float CreaseTo(float4 c, float3 n, float4 q, float cosMax, float gap) {
+    if (q.x <= 0.0 || abs(q.x - c.x) > gap * c.x) { return 0.0; }
+    return smoothstep(cosMax + 0.05, cosMax - 0.05, dot(n, OctDecode(q.yz)));
+}
+
+[shader("fragment")]
+float4 toonOutlineFrag(PostVSOut input) : SV_Target {
+    int2   p = int2(input.pos.xy);
+    float4 c = LineTexel(p);
+    if (c.x <= 0.0) { return float4(1.0, 1.0, 1.0, 1.0); }   // nothing drawn here (the sky)
+
+    float width = clamp(pc.a.y, 0.5, 3.0);
+    float gap   = max(pc.a.w, 1e-4);
+
+    float silhouette = max(max(SilhouetteAlong(p, int2(1, 0), c, width, gap), SilhouetteAlong(p, int2(-1, 0), c, width, gap)),
+                           max(SilhouetteAlong(p, int2(0, 1), c, width, gap), SilhouetteAlong(p, int2(0, -1), c, width, gap)));
+
+    // Creases: against the next pixel right and down (one pixel wide), and left and up for the
+    // second pixel of a wider line.
+    float crease = 0.0;
+    if (c.w > 0.0 && pc.c.x > 0.0) {
+        float3 n = OctDecode(c.yz);
+        float  cosMax = pc.a.z;
+        crease = max(CreaseTo(c, n, LineTexel(p + int2(1, 0)), cosMax, gap), CreaseTo(c, n, LineTexel(p + int2(0, 1)), cosMax, gap)) * saturate(width);
+        crease = max(crease, max(CreaseTo(c, n, LineTexel(p - int2(1, 0)), cosMax, gap), CreaseTo(c, n, LineTexel(p - int2(0, 1)), cosMax, gap)) * saturate(width - 1.0));
+        crease *= pc.c.x * c.w;
+    }
+
+    float distance = 1.0 / c.x;
+    float fade     = 1.0 - smoothstep(pc.b.x, pc.b.y, distance);
+    float line     = saturate(max(silhouette, crease) * fade);
+    float keep     = 1.0 - saturate(pc.a.x) * line;
+    return float4(keep, keep, keep, 1.0);
+}

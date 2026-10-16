@@ -858,20 +858,6 @@
                     "pushStrength": 100.0,
                     "layer": "Player"
                 },
-                "Light": {
-                    "type": "Point",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 0.7416378259658813,
-                        "z": 0.37254899740219116
-                    },
-                    "intensity": 5.0,
-                    "range": 5.0,
-                    "innerConeDeg": 20.0,
-                    "outerConeDeg": 30.0,
-                    "enabled": true,
-                    "castShadows": true
-                },
                 "Skybox": {
                     "visible": true,
                     "intensity": 1.0,
@@ -916,6 +902,35 @@
                     "vignetteSoftness": 0.21299999952316284,
                     "filmGrain": 0.0,
                     "chromaticAberration": 0.06499999761581421,
+                    "toonShading": false,
+                    "toonThreshold": 0.10000000149011612,
+                    "toonSoftness": 0.029999999329447746,
+                    "toonShadeColour": {
+                        "x": 0.8500000238418579,
+                        "y": 0.8700000047683716,
+                        "z": 0.949999988079071
+                    },
+                    "toonShadeBrightness": 1.5,
+                    "toonLitShading": 0.4000000059604645,
+                    "toonEdgeColour": {
+                        "x": 1.0,
+                        "y": 0.6200000047683716,
+                        "z": 0.41999998688697815
+                    },
+                    "toonEdgeWidth": 0.15000000596046448,
+                    "toonEdgeStrength": 0.6000000238418579,
+                    "toonAmbientFlatten": 0.699999988079071,
+                    "toonHighlight": 1.0,
+                    "toonReflections": 0.0,
+                    "toonLines": true,
+                    "toonLineDarkness": 0.6000000238418579,
+                    "toonLineWidth": 1.0,
+                    "toonLineCreaseAngle": 75.0,
+                    "toonLineCreaseStrength": 0.5,
+                    "toonLineDepthGap": 0.029999999329447746,
+                    "toonLineBreakup": 0.3499999940395355,
+                    "toonLineBreakupSize": 0.25,
+                    "toonLineFadeDistance": 60.0,
                     "skyboxAsset": 8718582763103813635
                 },
                 "PlayerController": {

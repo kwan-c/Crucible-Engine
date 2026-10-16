@@ -41,6 +41,18 @@ struct FrameUniforms {
                                   // z = depth slices in the volume, w unused
     float4   volumetricAmbient;   // x = strength of the fog's light in shade (1 = the fog colour's look),
                                   // y = 1: that light is the sky's average, tinted by the fog colour
+    // ---- Toon shading (Skybox component; DefaultShader's ToonLight) ----
+    float4   toonParams;          // x = what materials set to "Scene" do: 0 = realistic, 1 = toon,
+                                  //     2 = toon switched off everywhere (Rendering menu);
+                                  // y = where the light/shade edge is (0..1 of the light), z = its softness,
+                                  // w = brightness of the sky's light on the shaded side
+    float4   toonShade;           // rgb = tint of the shaded side (linear), w = how flat the sky's light is (0..1)
+    float4   toonEdge;            // rgb = tint of the band at the edge (linear, luminance 1), w = the band's width
+    float4   toonExtra;           // x = the band's strength, y = hard highlight strength,
+                                  // z = share of the sky reflection kept, w = shading by angle kept on the lit side
+    // ---- Toon outlines (ToonOutlinePass; DefaultShader's LineData) ----
+    float4   toonLines;           // x = 1: write line strengths (0 = no lines anywhere), y = breakup amount (0..1),
+                                  // z = 1 / breakup size (per metre), w unused
 };
 
 [[vk::binding(0, 0)]]

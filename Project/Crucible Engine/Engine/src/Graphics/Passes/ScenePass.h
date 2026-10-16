@@ -73,6 +73,7 @@ namespace Crucible {
         const ParticlePass&    m_particles;   // drawn last, inside this pass
 
         std::array<vk::raii::Pipeline, 3> m_meshPipelines{ nullptr, nullptr, nullptr };   // 1, 2, 4 samples
+        std::array<vk::raii::Pipeline, 3> m_cutoutPipelines{ nullptr, nullptr, nullptr }; // the same with kCutout on (cut-out materials)
         vk::raii::PipelineLayout          m_meshLayout = nullptr;                         // set 0 + material set + PushConstants
         std::array<vk::raii::Pipeline, 3> m_skyPipelines{ nullptr, nullptr, nullptr };
         vk::raii::PipelineLayout          m_skyLayout = nullptr;                          // set 0 + cubemap set

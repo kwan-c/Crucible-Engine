@@ -69,6 +69,38 @@ namespace Crucible {
             { "occlusion",         &MaterialData::occlusion,         false },
         };
 
+        // .mat "shading" values.
+        const char* ShadingName(MaterialShading shading) {
+            switch (shading) {
+                case MaterialShading::Toon:      return "Toon";
+                case MaterialShading::Realistic: return "Realistic";
+                default:                         return "Scene";
+            }
+        }
+        MaterialShading ShadingFromName(const char* name) {
+            const std::string text = name ? name : "";
+            if (text == "Toon")      { return MaterialShading::Toon; }
+            if (text == "Realistic") { return MaterialShading::Realistic; }
+            return MaterialShading::Scene;
+        }
+
+        // .mat readers: a missing or wrongly typed key leaves the value as it was (its default).
+        void ReadFloats(const rapidjson::Value& object, const char* key, float* out, rapidjson::SizeType count) {
+            auto it = object.FindMember(key);
+            if (it == object.MemberEnd() || !it->value.IsArray() || it->value.Size() != count) { return; }
+            for (rapidjson::SizeType i = 0; i < count; ++i) {
+                if (it->value[i].IsNumber()) { out[i] = it->value[i].GetFloat(); }
+            }
+        }
+        void ReadFloat(const rapidjson::Value& object, const char* key, float& out) {
+            auto it = object.FindMember(key);
+            if (it != object.MemberEnd() && it->value.IsNumber()) { out = it->value.GetFloat(); }
+        }
+        void ReadBool(const rapidjson::Value& object, const char* key, bool& out) {
+            auto it = object.FindMember(key);
+            if (it != object.MemberEnd() && it->value.IsBool()) { out = it->value.GetBool(); }
+        }
+
     }   // anonymous namespace
 
     // ------------------------------------------------------------------------------------------------------------- //
@@ -445,6 +477,16 @@ namespace Crucible {
                 data.factors.emissiveFactor  = gm.emissiveFactor;
                 data.factors.metallicFactor  = gm.metallicFactor;
                 data.factors.roughnessFactor = gm.roughnessFactor;
+                // Cut-out: MASK keeps its cutoff. BLEND (see-through) has no engine equivalent yet,
+                // so it is cut out at 0.5 too - right for foliage, which is what Blender exports as
+                // BLEND unless the alpha goes through a clip. An alphaCutoff of 0 cuts nothing.
+                if (gm.alphaMode == GLTFAlphaMode::Mask) {
+                    data.alphaCutoff = std::clamp(gm.alphaCutoff, 0.0f, 1.0f);
+                } else if (gm.alphaMode == GLTFAlphaMode::Blend) {
+                    data.alphaCutoff = 0.5f;
+                    CRU_INFO("[Resources] {}: alphaMode BLEND imported as cut-out at 0.5 (no blended materials yet)", entry->virtualPath);
+                }
+                data.doubleSided = gm.doubleSided;
 
                 auto embedded = [&](bool has, std::size_t image, bool isSRGB, const char* slot) -> TextureHandle {
                     if (!has || image >= glb.images.size()) { return {}; }
@@ -485,29 +527,34 @@ namespace Crucible {
 
         // .mat format (JSON, version 1) - see SerializeMaterial() for the writer. An empty or
         // unparsable file loads as a default-valued material (with a warning) rather than failing,
-        // so a freshly created blank .mat is still usable and can be saved over.
+        // so a freshly created blank .mat is still usable and can be saved over. Every key is
+        // optional (missing = default), so files from before shading/cut-out/toon still load.
         MaterialData data;
         rapidjson::Document doc;
         doc.Parse(text.c_str(), text.size());
         if (text.empty() || doc.HasParseError() || !doc.IsObject()) {
             WarnOnce(id, "Material file empty or not valid JSON; using default values");
         } else {
-            auto readFloats = [&](const char* key, float* out, rapidjson::SizeType count) {
-                auto it = doc.FindMember(key);
-                if (it == doc.MemberEnd() || !it->value.IsArray() || it->value.Size() != count) { return; }
-                for (rapidjson::SizeType i = 0; i < count; ++i) {
-                    if (it->value[i].IsNumber()) { out[i] = it->value[i].GetFloat(); }
-                }
-            };
-            auto readFloat = [&](const char* key, float& out) {
-                auto it = doc.FindMember(key);
-                if (it != doc.MemberEnd() && it->value.IsNumber()) { out = it->value.GetFloat(); }
-            };
+            ReadFloats(doc, "albedoTint",     &data.factors.albedoTint.x,     4);
+            ReadFloats(doc, "emissiveFactor", &data.factors.emissiveFactor.x, 3);
+            ReadFloat(doc, "metallic",  data.factors.metallicFactor);
+            ReadFloat(doc, "roughness", data.factors.roughnessFactor);
 
-            readFloats("albedoTint",     &data.factors.albedoTint.x,     4);
-            readFloats("emissiveFactor", &data.factors.emissiveFactor.x, 3);
-            readFloat("metallic",  data.factors.metallicFactor);
-            readFloat("roughness", data.factors.roughnessFactor);
+            if (auto it = doc.FindMember("shading"); it != doc.MemberEnd() && it->value.IsString()) {
+                data.shading = ShadingFromName(it->value.GetString());
+            }
+            ReadFloat(doc, "alphaCutoff", data.alphaCutoff);
+            ReadBool(doc,  "doubleSided", data.doubleSided);
+            if (auto toon = doc.FindMember("toon"); toon != doc.MemberEnd() && toon->value.IsObject()) {
+                const rapidjson::Value& t = toon->value;
+                ReadBool(t,   "ownEdge",        data.toon.ownEdge);
+                ReadFloat(t,  "threshold",      data.toon.threshold);
+                ReadFloat(t,  "softness",       data.toon.softness);
+                ReadBool(t,   "ownShadeColour", data.toon.ownShadeColour);
+                ReadFloats(t, "shadeColour",    &data.toon.shadeColour.x, 3);
+                ReadFloats(t, "litColour",      &data.toon.litColour.x,   3);
+                ReadFloat(t,  "outline",        data.toon.outline);
+            }
 
             if (auto textures = doc.FindMember("textures"); textures != doc.MemberEnd() && textures->value.IsObject()) {
                 for (const SlotDesc& slot : kSlots) {
@@ -548,6 +595,20 @@ namespace Crucible {
         floats("emissiveFactor", &data.factors.emissiveFactor.x, 3);
         writer.Key("metallic");  writer.Double(data.factors.metallicFactor);
         writer.Key("roughness"); writer.Double(data.factors.roughnessFactor);
+
+        writer.Key("shading");     writer.String(ShadingName(data.shading));
+        writer.Key("alphaCutoff"); writer.Double(data.alphaCutoff);
+        writer.Key("doubleSided"); writer.Bool(data.doubleSided);
+        writer.Key("toon");        // sRGB colours, as picked in the Inspector
+        writer.StartObject();
+        writer.Key("ownEdge");        writer.Bool(data.toon.ownEdge);
+        writer.Key("threshold");      writer.Double(data.toon.threshold);
+        writer.Key("softness");       writer.Double(data.toon.softness);
+        writer.Key("ownShadeColour"); writer.Bool(data.toon.ownShadeColour);
+        floats("shadeColour", &data.toon.shadeColour.x, 3);
+        floats("litColour",   &data.toon.litColour.x,   3);
+        writer.Key("outline");        writer.Double(data.toon.outline);
+        writer.EndObject();
 
         // Textures by asset GUID (hex, same format as .meta files). A slot whose texture didn't
         // come from this ResourceManager (e.g. embedded in a .glb) has no GUID and is saved empty.

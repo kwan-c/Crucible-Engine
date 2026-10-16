@@ -10,9 +10,11 @@
 #include "Graphics/Vulkan/VulkanShader.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
 
+#include <array>
+
 namespace Crucible {
 
-    void OutlinePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::Format colourFormat) {
+    void OutlinePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout, vk::Format colourFormat) {
 
 
         std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
@@ -52,8 +54,13 @@ namespace Crucible {
             vk::PipelineColorBlendAttachmentState blend{ .blendEnable = vk::False, .colorWriteMask = vk::ColorComponentFlagBits::eR };
             vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
 
-            vk::DescriptorSetLayout setLayout = frameSetLayout;
-            vk::PipelineLayoutCreateInfo layoutInfo{ .setLayoutCount = 1, .pSetLayouts = &setLayout };
+            // Set 1 and CutoutPush are only read by the cut-out pipeline; one layout for both, so
+            // switching pipelines keeps the sets bound.
+            const std::array<vk::DescriptorSetLayout, 2> setLayouts{ frameSetLayout, materialSetLayout };
+            vk::PushConstantRange cutoutPush{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(CutoutPush) };
+            vk::PipelineLayoutCreateInfo layoutInfo{
+                .setLayoutCount = static_cast<uint32_t>(setLayouts.size()), .pSetLayouts = setLayouts.data(),
+                .pushConstantRangeCount = 1, .pPushConstantRanges = &cutoutPush };
             m_outlineMaskLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
 
             const vk::Format maskFormat = RenderLayouts::kOutlineMaskFormat;
@@ -75,6 +82,17 @@ namespace Crucible {
                 {.colorAttachmentCount = 1, .pColorAttachmentFormats = &maskFormat }
             };
             m_outlineMaskPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+
+            // Cut-out materials: also the uv (location 2), so the mask follows the leaf, not its card.
+            const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
+                { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "maskCutoutVert" },
+                { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "maskCutoutFrag" }
+            };
+            const std::array<vk::VertexInputAttributeDescription, 2> cutoutAttributes{ attributes[0], attributes[2] };
+            vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
+            vertexInputInfo.pVertexAttributeDescriptions    = cutoutAttributes.data();
+            chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;
+            m_outlineMaskCutoutPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
         }
 
         // ---- Composite: fullscreen triangle, edge of the mask -> outline colour, blended ----
@@ -161,13 +179,15 @@ namespace Crucible {
             .pColorAttachments    = &color
         };
         cmd.beginRendering(renderingInfo);
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_outlineMaskPipeline);
         // Same flipped viewport as the main pass, so mask pixels line up with the scene's.
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width),
                                         -static_cast<float>(extent.height), 0.0f, 1.0f));
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_outlineMaskLayout, 0, frameSet, nullptr);
-        m_resources.DrawBatches(cmd, meshes);
+        const DepthPassPipelines pipelines{ .solid = *m_outlineMaskPipeline, .cutout = *m_outlineMaskCutoutPipeline, .layout = *m_outlineMaskLayout,
+                                            .cutoutPushStages = vk::ShaderStageFlagBits::eFragment, .cutoutPushOffset = 0,
+                                            .dynamicCull = false };   // no culling at all: the mask covers both sides
+        m_resources.DrawDepthBatches(cmd, meshes, pipelines);   // binds the pipelines itself
         cmd.endRendering();
 
         TransitionImageLayout(cmd, maskImage, vk::ImageAspectFlagBits::eColor,

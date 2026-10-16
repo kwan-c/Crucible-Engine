@@ -38,6 +38,7 @@
 #include <deque>
 #include <unordered_map>
 #include <functional>
+#include <span>
 
 // Crucible Engine
 #include "Systems/WindowManager.h"
@@ -58,6 +59,7 @@
 #include "Passes/AmbientOcclusionPass.h"
 #include "Passes/ShadowPass.h"
 #include "Passes/OutlinePass.h"
+#include "Passes/ToonOutlinePass.h"
 #include "Passes/ParticlePass.h"
 #include "Passes/DebugLinePass.h"
 #include "Passes/ScenePass.h"
@@ -187,6 +189,36 @@ namespace Crucible {
             upload completes.
          *********************************************************************/
         ENGINE_API MeshHandle CreateMeshAsync(MeshData data, const std::string& debugName = {});
+
+        /*********************************************************************
+         \brief
+            Creates an empty mesh whose geometry the CPU rewrites as often as
+            every frame (UpdateDynamicMesh) - for procedural, animated
+            geometry such as vines.
+
+         \param[in] debugName Optional name (see CreateMesh()).
+         \return A handle; nothing is drawn until UpdateDynamicMesh() gives
+                 it geometry.
+
+         \details
+            Draw it with Submit(), with world-space vertices and an identity
+            model matrix if the geometry is built in world space; it is
+            culled (main view and shadow cascades) with the bounds of its
+            latest geometry. Each frame in flight has its own host-visible
+            copy, refilled at the start of that frame only when the
+            geometry changed. Not meant for render proxies (they keep the
+            bounds from their last SetRenderProxy() call), and editor
+            picking does not see it. There is no destroy: reuse handles.
+         *********************************************************************/
+        ENGINE_API MeshHandle CreateDynamicMesh(const std::string& debugName = {});
+
+        /*********************************************************************
+         \brief  Replaces a dynamic mesh's geometry, from the next frame drawn
+                 on. The data is copied; empty spans = draw nothing.
+         \throws std::invalid_argument if the handle is not a dynamic mesh,
+                 or an index is out of range.
+         *********************************************************************/
+        ENGINE_API void UpdateDynamicMesh(MeshHandle handle, std::span<const Vertex> vertices, std::span<const uint32_t> indices);
 
         /*********************************************************************
          \brief
@@ -446,6 +478,17 @@ namespace Crucible {
          \return Handle to the built-in sky cubemap.
          *********************************************************************/
         CubemapHandle GetDefaultSkybox() const { return m_environmentMaps.DefaultSkybox(); }
+
+        /*********************************************************************
+         \brief  The diffuse light a surface facing `normal` gets from a sky:
+                 what "Ambient From Sky" lights it with, before the Skybox's
+                 Intensity and Ambient Intensity. The editor's "Pick from
+                 Sky" turns a sky into two ambient colours with it.
+         \param[in] sky     The sky; Invalid (or unknown) = the built-in sky.
+         \param[in] normal  The surface's direction (normalized here).
+         \return Linear RGB, never negative.
+         *********************************************************************/
+        ENGINE_API glm::vec3 GetSkyIrradiance(CubemapHandle sky, const glm::vec3& normal) const;
 
         /*********************************************************************
          \brief  The built-in primitive meshes (Cube, Capsule, Cone,
@@ -815,6 +858,7 @@ namespace Crucible {
         // Render passes (Graphics/Passes/). Declared after m_layouts, which they hold a reference to.
         BloomPass                   m_bloomPass;
         TonemapPass                 m_tonemapPass;
+        ToonOutlinePass             m_toonOutlinePass;   // toon outlines (not the selection outline)
         // These draw meshes, so they hold a reference to m_resources (declared below; only used once recording starts).
         AmbientOcclusionPass        m_aoPass{ m_resources };
         ShadowPass                  m_shadowPass{ m_resources };
@@ -918,6 +962,9 @@ namespace Crucible {
         /// Whether views draw lit (froxel) fog this frame: the scene has fog, its Skybox asks for
         /// the volumetric kind, and PostSettings::volumetricFog allows it.
         bool VolumetricFogActive() const;
+        /// Whether views get toon outlines this frame: the Skybox asks for them and the Rendering
+        /// menu has toon shading on.
+        bool ToonLinesActive() const;
 
         // ---- Frame preparation (before recording) ----
         // Culls and batches everything one view draws this frame (main pass, shadow cascades,

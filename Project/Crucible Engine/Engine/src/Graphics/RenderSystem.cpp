@@ -65,11 +65,12 @@ namespace Crucible {
         // Passes that own their pipelines.
         m_scenePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(),
                            *m_layouts.GetSkyboxDescriptorSetLayout(), RenderLayouts::kSceneColorFormat, m_swapchain.GetDepthFormat());
-        m_outlinePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format);
-        m_aoPass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetTonemapDescriptorSetLayout());
+        m_outlinePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format);
+        m_aoPass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), *m_layouts.GetTonemapDescriptorSetLayout());
         m_bloomPass.Create(m_context, *m_layouts.GetSingleTextureSetLayout(), RenderLayouts::kSceneColorFormat);
+        m_toonOutlinePass.Create(m_context, *m_layouts.GetSingleTextureSetLayout(), RenderLayouts::kSceneColorFormat);
         m_tonemapPass.Create(m_context, *m_layouts.GetTonemapDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format, m_swapchain.GetDepthFormat());
-        m_shadowPass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), ShadowPass::kFormat);
+        m_shadowPass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), ShadowPass::kFormat);
         m_particlePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetSingleTextureSetLayout(),
                               RenderLayouts::kSceneColorFormat, m_swapchain.GetDepthFormat());
         m_debugLinePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format, m_swapchain.GetDepthFormat());
@@ -182,6 +183,9 @@ namespace Crucible {
         // BeginFrame() has waited on this frame index's fence, so the GPU is done with the staging
         // buffers of the uploads recorded the last time this index was used: free them.
         m_uploads.ReleaseFrame(frameIndex);
+
+        // ...and with this index's dynamic-mesh buffers: refill the ones whose geometry changed.
+        m_resources.UploadDynamicMeshes(frameIndex);
 
         ApplyMsaaSetting();
 
@@ -521,6 +525,10 @@ namespace Crucible {
 
     MeshHandle Renderer::CreateMesh(const MeshData& data, const std::string& debugName) { return m_resources.CreateMesh(data, debugName); }
     MeshHandle Renderer::CreateMeshAsync(MeshData data, const std::string& debugName)   { return m_resources.CreateMeshAsync(std::move(data), debugName); }
+    MeshHandle Renderer::CreateDynamicMesh(const std::string& debugName)                 { return m_resources.CreateDynamicMesh(debugName); }
+    void Renderer::UpdateDynamicMesh(MeshHandle handle, std::span<const Vertex> vertices, std::span<const uint32_t> indices) {
+        m_resources.UpdateDynamicMesh(handle, vertices, indices);
+    }
     bool Renderer::GetMeshBounds(MeshHandle handle, glm::vec3& outMin, glm::vec3& outMax) const { return m_resources.GetMeshBounds(handle, outMin, outMax); }
     const std::string& Renderer::GetMeshName(MeshHandle handle) const { return m_resources.GetMeshName(handle); }
 
@@ -840,7 +848,38 @@ namespace Crucible {
             ubo.volumetricAmbient = glm::vec4(0.0f);
         }
 
+        // Toon shading. Always filled: materials set to "Toon" use these settings even when the
+        // scene itself is lit realistically. x says what "Scene" materials do, or that the
+        // Rendering menu has toon switched off everywhere. The tints are picked in sRGB; the
+        // shader works in linear light. The edge tint is scaled to luminance 1 so the band
+        // changes hue, not brightness.
+        {
+            const auto toLinear = [](const glm::vec3& srgb) { return glm::pow(glm::clamp(srgb, glm::vec3(0.0f), glm::vec3(1.0f)), glm::vec3(2.2f)); };
+            glm::vec3 edge = toLinear(env.toonEdgeColour);
+            const float edgeLuminance = glm::dot(edge, glm::vec3(0.2126f, 0.7152f, 0.0722f));
+            edge = edgeLuminance > 1e-4f ? edge / edgeLuminance : glm::vec3(1.0f);
+            const float mode = !m_postSettings.toonShading ? 2.0f : env.toonShading ? 1.0f : 0.0f;
+            ubo.toonParams = glm::vec4(mode, glm::clamp(env.toonThreshold, 0.0f, 0.95f), glm::clamp(env.toonSoftness, 0.0f, 0.5f),
+                                       std::max(env.toonShadeBrightness, 0.0f));
+            ubo.toonShade  = glm::vec4(toLinear(env.toonShadeColour), glm::clamp(env.toonAmbientFlatten, 0.0f, 1.0f));
+            ubo.toonEdge   = glm::vec4(edge, glm::clamp(env.toonEdgeWidth, 0.0f, 1.0f));
+            ubo.toonExtra  = glm::vec4(glm::clamp(env.toonEdgeStrength, 0.0f, 1.0f), std::max(env.toonHighlight, 0.0f),
+                                       glm::clamp(env.toonReflections, 0.0f, 1.0f), glm::clamp(env.toonLitShading, 0.0f, 1.0f));
+            // Toon outlines: the scene shader writes line strengths only when the outline pass
+            // will run (ToonLinesActive), so with lines off nothing downstream changes.
+            ubo.toonLines  = glm::vec4(ToonLinesActive() ? 1.0f : 0.0f, glm::clamp(env.toonLineBreakup, 0.0f, 1.0f),
+                                       1.0f / std::max(env.toonLineBreakupSize, 0.01f), 0.0f);
+        }
+
     }   // Renderer::FillEnvironmentUniforms()
+
+    bool Renderer::ToonLinesActive() const {
+
+        // Lines belong to toon-shaded materials, so the Rendering menu's "toon off" turns them
+        // off too.
+        return m_environment.toonLines && m_postSettings.toonShading;
+
+    }   // Renderer::ToonLinesActive()
 
     bool Renderer::VolumetricFogActive() const {
 
@@ -875,6 +914,14 @@ namespace Crucible {
 
     CubemapHandle Renderer::CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB) { return m_environmentMaps.CreateCubemap(facePaths, isSRGB); }
     CubemapHandle Renderer::CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize)    { return m_environmentMaps.CreateCubemapFromEquirect(path, faceSize); }
+
+    glm::vec3 Renderer::GetSkyIrradiance(CubemapHandle sky, const glm::vec3& normal) const {
+
+        const float length = glm::length(normal);
+        const glm::vec3 n = length > 1e-6f ? normal / length : glm::vec3(0.0f, 1.0f, 0.0f);
+        return EvaluateSkyIrradiance(m_environmentMaps.Resolve(sky).sh, n);
+
+    }   // Renderer::GetSkyIrradiance()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  RENDER PROXIES, CULLING, PICKING
@@ -1075,6 +1122,10 @@ namespace Crucible {
             if (sky.IsValid() && sky.id < m_environmentMaps.Cubemaps().size()) { skySet = *m_environmentMaps.Cubemaps()[sky.id].descriptorSet; }
         }
         m_scenePass.Record(cmd, t, depthImage, depthView, extent, frameSet, draws.main, skySet, draws.particles);
+
+        // Toon outlines go into the scene's image before bloom and tonemapping, so the tonemap
+        // pass's anti-aliasing smooths them like any other edge.
+        if (ToonLinesActive()) { m_toonOutlinePass.Record(cmd, t, m_environment); }
 
         m_profiler.Mark(cmd, GpuSection::Bloom);
         m_bloomPass.Record(cmd, t, m_postSettings, m_environment.exposure);
