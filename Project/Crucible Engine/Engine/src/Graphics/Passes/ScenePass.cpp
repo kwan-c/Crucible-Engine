@@ -6,6 +6,7 @@
 #include "Graphics/Passes/ScenePass.h"
 
 #include "Graphics/Passes/ParticlePass.h"
+#include "Graphics/Passes/WaterPass.h"
 #include "Graphics/RenderResources.h"
 #include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
@@ -253,7 +254,7 @@ namespace Crucible {
 
     void ScenePass::Record(vk::CommandBuffer cmd, PostTargets& t, vk::Image depthImage, vk::ImageView depthView, vk::Extent2D extent,
                            vk::DescriptorSet frameSet, const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet,
-                           const std::vector<ParticleBatch>& particles) const {
+                           const std::vector<ParticleBatch>& particles, const std::vector<WaterDraw>& water) const {
 
         // Last sampled by the previous frame's bloom/tonemap; its contents are re-cleared.
         TransitionImageLayout(cmd, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
@@ -261,11 +262,13 @@ namespace Crucible {
             {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
             vk::PipelineStageFlagBits2::eFragmentShader | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
             vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+        // With MSAA this is the depth resolve's target, and resolves write at the colour-attachment
+        // stage (as colour-attachment writes), so that stage waits for the layout change too.
         TransitionImageLayout(cmd, depthImage, vk::ImageAspectFlagBits::eDepth,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eDepthAttachmentOptimal,
-            {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
-            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests);
+            {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests | vk::PipelineStageFlagBits2::eColorAttachmentOutput,
+            vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests | vk::PipelineStageFlagBits2::eColorAttachmentOutput);
         // Last read by the previous frame's toon outline pass; re-cleared.
         TransitionImageLayout(cmd, t.lineData.GetImage(), vk::ImageAspectFlagBits::eColor,
             vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
@@ -300,6 +303,10 @@ namespace Crucible {
         // the anti-aliasing), depth by taking one sample - so everything after this pass (bloom,
         // tonemap, debug lines, outline) carries on with ordinary one-sample images.
         const bool msaa = t.samples > 1 && *t.msaaColorView && *t.msaaDepthView && *t.msaaLineDataView;
+        // Water in sight: two halves (see ScenePass.h). The first half then keeps what it drew
+        // (the multisampled images too), so the second can carry on drawing into it.
+        const bool withWater = !water.empty() && *t.waterSet && *t.sceneCopyView && *t.depthCopyView;
+        const vk::AttachmentStoreOp msaaStore = withWater ? vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eDontCare;
         if (msaa) {
             TransitionImageLayout(cmd, t.msaaColor.GetImage(), vk::ImageAspectFlagBits::eColor,
                 vk::ImageLayout::eUndefined, vk::ImageLayout::eColorAttachmentOptimal,
@@ -315,7 +322,7 @@ namespace Crucible {
             color.resolveMode        = vk::ResolveModeFlagBits::eAverage;
             color.resolveImageView   = t.hdrView;
             color.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-            color.storeOp            = vk::AttachmentStoreOp::eDontCare;   // only the resolved image is kept
+            color.storeOp            = msaaStore;   // otherwise only the resolved image is kept
 
             // Line data averages too: at an object's edge the pixel gets a mix of the two
             // surfaces, which the outline pass's tests treat as a soft step.
@@ -327,26 +334,58 @@ namespace Crucible {
             lines.resolveMode        = vk::ResolveModeFlagBits::eAverage;
             lines.resolveImageView   = t.lineDataView;
             lines.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal;
-            lines.storeOp            = vk::AttachmentStoreOp::eDontCare;
+            lines.storeOp            = msaaStore;
 
             depth.imageView          = t.msaaDepthView;
             depth.resolveMode        = vk::ResolveModeFlagBits::eSampleZero;
             depth.resolveImageView   = depthView;
             depth.resolveImageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
-            depth.storeOp            = vk::AttachmentStoreOp::eDontCare;
+            depth.storeOp            = msaaStore;
         }
 
-        const vk::RenderingAttachmentInfo colourAttachments[2] = { color, lines };
-        vk::RenderingInfo renderingInfo{
-            .renderArea           = { .offset = { 0, 0 }, .extent = extent },
-            .layerCount           = 1,
-            .colorAttachmentCount = 2,
-            .pColorAttachments    = colourAttachments,
-            .pDepthAttachment     = &depth
-        };
-        cmd.beginRendering(renderingInfo);
-        DrawQueue(cmd, msaa ? t.samples : 1, extent, frameSet, meshes, skySet, particles);
-        cmd.endRendering();
+        const uint32_t samples = msaa ? t.samples : 1;
+        {
+            const vk::RenderingAttachmentInfo colourAttachments[2] = { color, lines };
+            vk::RenderingInfo renderingInfo{
+                .renderArea           = { .offset = { 0, 0 }, .extent = extent },
+                .layerCount           = 1,
+                .colorAttachmentCount = 2,
+                .pColorAttachments    = colourAttachments,
+                .pDepthAttachment     = &depth
+            };
+            static const std::vector<ParticleBatch> kNoParticles;
+            cmd.beginRendering(renderingInfo);
+            DrawQueue(cmd, samples, extent, frameSet, meshes, skySet, withWater ? kNoParticles : particles);
+            cmd.endRendering();
+        }
+
+        if (withWater) {
+            // Copies of the scene so far for the water to read, then the second half: the same
+            // attachments, loaded instead of cleared (and resolved again at its end).
+            CopyForWater(cmd, t, depthImage, extent, msaa);
+            color.loadOp = vk::AttachmentLoadOp::eLoad;
+            lines.loadOp = vk::AttachmentLoadOp::eLoad;
+            depth.loadOp = vk::AttachmentLoadOp::eLoad;
+            if (msaa) {
+                color.storeOp = vk::AttachmentStoreOp::eDontCare;
+                lines.storeOp = vk::AttachmentStoreOp::eDontCare;
+                depth.storeOp = vk::AttachmentStoreOp::eDontCare;
+            }
+            const vk::RenderingAttachmentInfo colourAttachments[2] = { color, lines };
+            vk::RenderingInfo renderingInfo{
+                .renderArea           = { .offset = { 0, 0 }, .extent = extent },
+                .layerCount           = 1,
+                .colorAttachmentCount = 2,
+                .pColorAttachments    = colourAttachments,
+                .pDepthAttachment     = &depth
+            };
+            cmd.beginRendering(renderingInfo);
+            cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
+            cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
+            m_water.Record(cmd, samples, frameSet, *t.waterSet, water);
+            m_particles.Record(cmd, samples, frameSet, particles);   // over the water: splashes, smoke
+            cmd.endRendering();
+        }
 
         TransitionImageLayout(cmd, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
             vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
@@ -358,6 +397,86 @@ namespace Crucible {
             vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eFragmentShader);
 
     }   // ScenePass::Record()
+
+    void ScenePass::CopyForWater(vk::CommandBuffer cmd, PostTargets& t, vk::Image depthImage, vk::Extent2D extent, bool msaa) const {
+
+        // What the first half wrote: colour (and, with MSAA, the resolves into the one-sample
+        // images) at the colour-attachment stage; depth at the depth-test stages. Resolve writes
+        // count as colour-attachment writes, depth resolves included.
+        const vk::PipelineStageFlags2 depthStages = vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests
+                                                  | vk::PipelineStageFlagBits2::eColorAttachmentOutput;
+        const vk::AccessFlags2        depthWrites = vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentWrite;
+
+        // Sources and destinations into copy layouts. The copies were last read by the previous
+        // frame's water (fragment shader); their old contents don't matter.
+        TransitionImageLayout(cmd, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eTransferSrcOptimal,
+            vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eTransferRead,
+            vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eCopy);
+        TransitionImageLayout(cmd, depthImage, vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eTransferSrcOptimal,
+            depthWrites, vk::AccessFlagBits2::eTransferRead,
+            depthStages, vk::PipelineStageFlagBits2::eCopy);
+        TransitionImageLayout(cmd, t.sceneCopy.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            {}, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eCopy);
+        TransitionImageLayout(cmd, t.depthCopy.GetImage(), vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal,
+            {}, vk::AccessFlagBits2::eTransferWrite,
+            vk::PipelineStageFlagBits2::eFragmentShader, vk::PipelineStageFlagBits2::eCopy);
+
+        const auto copy = [&](vk::Image from, vk::Image to, vk::ImageAspectFlags aspect) {
+            const vk::ImageSubresourceLayers layers{ .aspectMask = aspect, .mipLevel = 0, .baseArrayLayer = 0, .layerCount = 1 };
+            const vk::ImageCopy region{ .srcSubresource = layers, .srcOffset = { 0, 0, 0 }, .dstSubresource = layers, .dstOffset = { 0, 0, 0 },
+                                        .extent = { extent.width, extent.height, 1 } };
+            cmd.copyImage(from, vk::ImageLayout::eTransferSrcOptimal, to, vk::ImageLayout::eTransferDstOptimal, region);
+        };
+        copy(t.hdrImage.GetImage(), t.sceneCopy.GetImage(), vk::ImageAspectFlagBits::eColor);
+        copy(depthImage, t.depthCopy.GetImage(), vk::ImageAspectFlagBits::eDepth);
+
+        // The copies, ready to be sampled by the water.
+        TransitionImageLayout(cmd, t.sceneCopy.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eTransferWrite, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eCopy, vk::PipelineStageFlagBits2::eFragmentShader);
+        TransitionImageLayout(cmd, t.depthCopy.GetImage(), vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal,
+            vk::AccessFlagBits2::eTransferWrite, vk::AccessFlagBits2::eShaderSampledRead,
+            vk::PipelineStageFlagBits2::eCopy, vk::PipelineStageFlagBits2::eFragmentShader);
+
+        // The originals back to attachments for the second half (loaded, or with MSAA written
+        // again by its resolve).
+        TransitionImageLayout(cmd, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
+            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eColorAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eCopy, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+        TransitionImageLayout(cmd, depthImage, vk::ImageAspectFlagBits::eDepth,
+            vk::ImageLayout::eTransferSrcOptimal, vk::ImageLayout::eDepthAttachmentOptimal,
+            {}, vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite | vk::AccessFlagBits2::eColorAttachmentWrite,
+            vk::PipelineStageFlagBits2::eCopy, depthStages);
+
+        // The attachments not copied are carried straight over from one half to the other: what
+        // the first half wrote must be visible to the second half's loads (and resolves).
+        const auto carryColour = [&](vk::Image image) {
+            TransitionImageLayout(cmd, image, vk::ImageAspectFlagBits::eColor,
+                vk::ImageLayout::eColorAttachmentOptimal, vk::ImageLayout::eColorAttachmentOptimal,
+                vk::AccessFlagBits2::eColorAttachmentWrite, vk::AccessFlagBits2::eColorAttachmentRead | vk::AccessFlagBits2::eColorAttachmentWrite,
+                vk::PipelineStageFlagBits2::eColorAttachmentOutput, vk::PipelineStageFlagBits2::eColorAttachmentOutput);
+        };
+        carryColour(t.lineData.GetImage());
+        if (msaa) {
+            carryColour(t.msaaColor.GetImage());
+            carryColour(t.msaaLineData.GetImage());
+            TransitionImageLayout(cmd, t.msaaDepth.GetImage(), vk::ImageAspectFlagBits::eDepth,
+                vk::ImageLayout::eDepthAttachmentOptimal, vk::ImageLayout::eDepthAttachmentOptimal,
+                vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                vk::AccessFlagBits2::eDepthStencilAttachmentRead | vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests,
+                vk::PipelineStageFlagBits2::eEarlyFragmentTests | vk::PipelineStageFlagBits2::eLateFragmentTests);
+        }
+
+    }   // ScenePass::CopyForWater()
 
     void ScenePass::DrawQueue(vk::CommandBuffer cmd, uint32_t samples, vk::Extent2D extent, vk::DescriptorSet cameraSet,
                               const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet, const std::vector<ParticleBatch>& particles) const {

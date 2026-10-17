@@ -35,6 +35,7 @@ namespace Crucible {
             .Uses<SkyboxQuery>()                     // reads Skybox
             .Uses<CameraQuery>()                     // reads WorldTransform + CameraComponent
             .Uses<ParamsQuery>()                     // reads MeshRenderer + MaterialParams
+            .Uses<WaterQuery>()                      // reads WorldTransform + Water
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer; not thread-safe today
 
@@ -62,6 +63,40 @@ namespace Crucible {
             record.paramsFrame = m_frame;
         });
 
+        // Water surfaces: gathered first, so the MeshRenderer loop below knows which entities'
+        // meshes are water rather than ordinary objects.
+        if (!m_waterQuery) { m_waterQuery.emplace(world.CreateQuery<const WorldTransform, const Water>()); }
+        m_waterItems.clear();
+        m_waterQuery->ForEach([this](Entity entity, const WorldTransform& worldTransform, const Water& water) {
+            if (!worldTransform.valid) { return; }
+            if (entity.index >= m_records.size()) { m_records.resize(static_cast<size_t>(entity.index) + 1); }
+            ProxyRecord& record = m_records[entity.index];
+            record.waterFrame = m_frame;
+            record.waterMesh  = MeshHandle{};
+
+            WaterItem item;
+            item.entityIndex             = entity.index;
+            item.model                   = worldTransform.matrix;
+            item.settings.shallowColour  = water.shallowColour;
+            item.settings.deepColour     = water.deepColour;
+            item.settings.deepDepth      = water.deepDepth;
+            item.settings.clarity        = water.clarity;
+            item.settings.refraction     = water.refraction;
+            item.settings.foamColour     = water.foamColour;
+            item.settings.foamWidth      = water.foamWidth;
+            item.settings.foamBreakup    = water.foamBreakup;
+            item.settings.rippleSize     = water.rippleSize;
+            item.settings.rippleSpeed    = water.rippleSpeed;
+            item.settings.rippleStrength = water.rippleStrength;
+            item.settings.rippleLines    = water.rippleFoam ? water.rippleLines : 0.0f;   // 0: the shader skips the strokes
+            item.settings.rippleLineColour = water.rippleLineColour;
+            item.settings.glints           = water.glints;
+            item.settings.glintColour      = water.glintColour;
+            item.settings.reflection       = water.reflection;
+            item.settings.reflectionColour = water.reflectionColour;
+            m_waterItems.push_back(item);
+        });
+
         m_query->ForEach([this](Entity entity, const WorldTransform& worldTransform, const MeshRenderer& meshRenderer) {
 
             if (entity.index >= m_records.size()) { m_records.resize(static_cast<size_t>(entity.index) + 1); }
@@ -78,6 +113,15 @@ namespace Crucible {
                 record.generation = entity.generation;
             }
             record.seenFrame = m_frame;
+
+            // A Water on the same entity: this mesh is the water's surface, not an ordinary object
+            // (whether or not the MeshRenderer is set visible). The proxy stays, hidden, so it is
+            // not pickable in the Scene view either.
+            if (record.waterFrame == m_frame) {
+                record.waterMesh = (m_resources && meshRenderer.meshAsset != 0) ? m_resources->GetMesh(meshRenderer.meshAsset) : meshRenderer.mesh;
+                m_renderer.SetRenderProxy(record.proxy, {}, {}, worldTransform.matrix, false);
+                return;
+            }
 
             // Hidden, or not yet computed this frame (e.g. spawned during PreRender - see
             // WorldTransform's own doc comment): keep the proxy, but out of culling and picking.
@@ -114,6 +158,18 @@ namespace Crucible {
             record = ProxyRecord{};
             m_activeRecords[i] = m_activeRecords.back();
             m_activeRecords.pop_back();
+        }
+
+        // Water: the entity's own mesh (a MeshRenderer on it, seen above), else the built-in Plane.
+        if (!m_waterItems.empty() && !m_planeMesh.IsValid()) {
+            for (MeshHandle primitive : m_renderer.GetPrimitiveMeshes()) {
+                if (m_renderer.GetMeshName(primitive) == "Plane") { m_planeMesh = primitive; break; }
+            }
+        }
+        for (const WaterItem& item : m_waterItems) {
+            const ProxyRecord& record = m_records[item.entityIndex];
+            const MeshHandle   mesh   = record.waterMesh.IsValid() ? record.waterMesh : m_planeMesh;
+            if (mesh.IsValid()) { m_renderer.SubmitWater(mesh, item.model, item.settings); }
         }
 
         // Lights: position = the world matrix's translation, direction = its local -Z axis (see

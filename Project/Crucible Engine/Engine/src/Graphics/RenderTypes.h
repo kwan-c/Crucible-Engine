@@ -314,6 +314,72 @@ namespace Crucible {
     };
 
     // ------------------------------------------------------------------------------------------ //
+    //  Water (WaterPass, Water.slang)
+    // ------------------------------------------------------------------------------------------ //
+
+    /*************************************************************************
+     \brief
+        How one water surface looks - see Renderer::SubmitWater() and the
+        Water component, whose fields these are.
+     \details
+          - shallowColour / deepColour: the water's colour where it is
+            shallow and where it is deep (sRGB, as picked). deepDepth: water
+            depth (m) at which it is fully the deep colour.
+          - clarity: how far (m) through the water the bottom still shows.
+          - refraction: how much the ripples bend the view of the bottom (0..1).
+          - foamColour (sRGB); foamWidth: the shore foam band, in metres of
+            water depth (0 = no foam); foamBreakup: 0 = an even band,
+            1 = ragged and broken.
+          - rippleSize (m), rippleSpeed (m/s), rippleStrength (how far they
+            tilt the surface); rippleLines: thin drawn strokes on open water;
+            rippleLineColour: their colour (sRGB).
+          - glints: strength of the hard sparkles of the sun and lamps;
+            glintColour tints them (sRGB, white = the light's own colour).
+          - reflection: how much sky the surface reflects at grazing angles;
+            reflectionColour tints the reflected sky (sRGB, white = as it is).
+     *************************************************************************/
+    struct WaterSettings {
+        glm::vec3 shallowColour{ 0.45f, 0.85f, 0.72f };
+        glm::vec3 deepColour{ 0.05f, 0.35f, 0.55f };
+        float     deepDepth = 2.5f;
+        float     clarity = 3.0f;
+        float     refraction = 0.4f;
+        glm::vec3 foamColour{ 1.0f, 1.0f, 1.0f };
+        float     foamWidth = 0.2f;
+        float     foamBreakup = 0.5f;
+        float     rippleSize = 2.0f;
+        float     rippleSpeed = 0.25f;
+        float     rippleStrength = 0.25f;
+        float     rippleLines = 0.3f;
+        glm::vec3 rippleLineColour{ 1.0f, 1.0f, 1.0f };
+        float     glints = 1.0f;
+        glm::vec3 glintColour{ 1.0f, 1.0f, 1.0f };
+        float     reflection = 0.5f;
+        glm::vec3 reflectionColour{ 1.0f, 1.0f, 1.0f };
+    };
+
+    /// Push constant of the water pipeline (Water.slang's WaterPush): one water surface. 128
+    /// bytes, the most every GPU guarantees, so the six colours travel as half floats, two to a
+    /// uint (glm::packHalf2x16: low half first), linear RGB, in this order: shallow, deep, foam,
+    /// reflection tint, ripple line, glint (already multiplied by the glint strength).
+    struct WaterPush {
+        glm::vec4  model0{ 1.0f, 0.0f, 0.0f, 0.0f };   // the surface's object -> world transform, as three rows
+        glm::vec4  model1{ 0.0f, 1.0f, 0.0f, 0.0f };
+        glm::vec4  model2{ 0.0f, 0.0f, 1.0f, 0.0f };
+        glm::uvec4 coloursA{ 0u };   // shallow r g | shallow b, deep r | deep g b | foam r g
+        glm::uvec4 coloursB{ 0u };   // foam b, reflection r | reflection g b | line r g | line b, glint r
+        glm::vec4  water{ 0.0f };    // x = deepDepth (m), y = clarity (m), z = refraction (0..1), w = foamWidth (m)
+        glm::vec4  ripple{ 0.0f };   // x = rippleSize (m), y = rippleSpeed (m/s), z = rippleStrength, w = foamBreakup (0..1)
+        uint32_t   glintGB = 0;      // glint g | glint b
+        float      reflection = 0.0f;
+        float      rippleLines = 0.0f;
+        float      unused = 0.0f;
+    };
+    static_assert(sizeof(WaterPush) == 128 && offsetof(WaterPush, coloursA) == 48 && offsetof(WaterPush, water) == 80
+                  && offsetof(WaterPush, glintGB) == 112 && offsetof(WaterPush, rippleLines) == 120,
+        "WaterPush must match Water.slang's WaterPush (checked against the compiled SPIR-V).");
+
+    // ------------------------------------------------------------------------------------------ //
     //  Post-processing (HDR -> bloom -> tonemap)
     // ------------------------------------------------------------------------------------------ //
 

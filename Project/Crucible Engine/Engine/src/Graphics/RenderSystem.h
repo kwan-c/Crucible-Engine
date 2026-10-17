@@ -65,6 +65,7 @@
 #include "Passes/ScenePass.h"
 #include "Passes/UIPass.h"
 #include "Passes/VolumetricFogPass.h"
+#include "Passes/WaterPass.h"
 #include "DrawList.h"
 #include "RenderResources.h"
 #include "EnvironmentMaps.h"
@@ -194,7 +195,7 @@ namespace Crucible {
          \brief
             Creates an empty mesh whose geometry the CPU rewrites as often as
             every frame (UpdateDynamicMesh) - for procedural, animated
-            geometry such as vines.
+            geometry such as trails or ribbons.
 
          \param[in] debugName Optional name (see CreateMesh()).
          \return A handle; nothing is drawn until UpdateDynamicMesh() gives
@@ -647,6 +648,29 @@ namespace Crucible {
         ENGINE_API void SubmitParticles(const ParticleDrawDesc& desc, const GpuParticle* particles, uint32_t count);
 
         /*********************************************************************
+         \brief
+            Queues one water surface for this frame (normally one Water
+            component - RenderExtractSystem does this). Like Submit(),
+            forgotten after the frame.
+
+         \param[in] mesh     The surface's shape. The built-in Plane (1 x 1 m,
+                             facing +Y) scaled by `model` makes a flat pond or
+                             lake; any mesh works (its top side is drawn).
+         \param[in] model    Object -> world transform.
+         \param[in] settings How the water looks (WaterSettings; colours in
+                             sRGB).
+
+         \details
+            Drawn after the opaque meshes and the sky and before particles,
+            seen from above only (back faces are culled). The water shows
+            what is under it by reading a copy of the scene drawn so far, so
+            a view with water in sight pays for two image copies and a scene
+            pass in two halves. Not pickable in the editor, casts no shadow,
+            and is not in the ambient occlusion pre-pass.
+         *********************************************************************/
+        ENGINE_API void SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings);
+
+        /*********************************************************************
          \brief  Shows or hides DebugDraw lines when the scene is drawn
                  straight to the window (the Game build, where there are no
                  viewports). Off by default; turn on for gameplay debugging.
@@ -864,7 +888,8 @@ namespace Crucible {
         ShadowPass                  m_shadowPass{ m_resources };
         OutlinePass                 m_outlinePass{ m_resources };
         ParticlePass                m_particlePass{ m_context, m_resources };
-        ScenePass                   m_scenePass{ m_resources, m_particlePass };
+        WaterPass                   m_waterPass{ m_resources };   // water surfaces, drawn inside the scene pass
+        ScenePass                   m_scenePass{ m_resources, m_particlePass, m_waterPass };
         DebugLinePass               m_debugLinePass;
         UIPass                      m_uiPass{ m_context, m_resources };   // also holds m_resources (declared below; used once frames start)
         VolumetricFogPass           m_fogPass{ m_context };   // froxel fog (compute); its pool is BEFORE every view's FogVolumeTargets

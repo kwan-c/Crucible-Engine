@@ -2,15 +2,21 @@
   \file       ScenePass.h
   \brief
     The scene pass: draws a view's meshes with their materials and lighting
-    (DefaultShader.slang), then the sky (Skybox.slang), then the particles,
-    into the view's HDR image. With MSAA on it draws into the multisampled
-    pair and resolves into the HDR image and depth when the pass ends.
+    (DefaultShader.slang), then the sky (Skybox.slang), then any water,
+    then the particles, into the view's HDR image. With MSAA on it draws
+    into the multisampled images and resolves into the HDR image and depth
+    when the pass ends.
   \details
     Owns the mesh and sky pipelines. Which meshes to draw, the per-frame
-    data and the choice of sky are the Renderer's; the particles are drawn
-    by ParticlePass inside this pass. Moved out of Renderer::DrawSceneHdr,
-    DrawRenderQueue and DrawSkybox, and RenderLayouts::CreatePipeline and
-    CreateSkyboxPipeline.
+    data and the choice of sky are the Renderer's; the water is drawn by
+    WaterPass and the particles by ParticlePass inside this pass. Moved out
+    of Renderer::DrawSceneHdr, DrawRenderQueue and DrawSkybox, and
+    RenderLayouts::CreatePipeline and CreateSkyboxPipeline.
+
+    With water in sight the pass is drawn in two halves: meshes and sky;
+    then copies of the colour and depth so far (PostTargets::sceneCopy,
+    depthCopy), which the water reads to show the bottom through itself;
+    then the water and the particles, on top of what the first half left.
 *************************************************************************/
 #pragma once
 
@@ -25,10 +31,12 @@ namespace Crucible {
     class VulkanContext;
     class RenderResources;
     class ParticlePass;
+    class WaterPass;
 
     class ScenePass {
     public:
-        ScenePass(const RenderResources& resources, const ParticlePass& particles) : m_resources(resources), m_particles(particles) {}
+        ScenePass(const RenderResources& resources, const ParticlePass& particles, const WaterPass& water)
+            : m_resources(resources), m_particles(particles), m_water(water) {}
 
         /*********************************************************************
          \brief  Creates the mesh and sky pipelines (one of each per MSAA
@@ -59,18 +67,25 @@ namespace Crucible {
          \param[in] skySet       The sky cubemap's descriptor set, or a null
                                 handle to draw no sky.
          \param[in] particles    Far to near.
+         \param[in] water        Water surfaces in view (WaterPass::Prepare).
+                                Empty = one half only, no copies.
          *********************************************************************/
         void Record(vk::CommandBuffer cmd, PostTargets& targets, vk::Image depthImage, vk::ImageView depthView, vk::Extent2D extent,
                     vk::DescriptorSet frameSet, const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet,
-                    const std::vector<ParticleBatch>& particles) const;
+                    const std::vector<ParticleBatch>& particles, const std::vector<WaterDraw>& water) const;
 
     private:
         // Meshes, then the sky, then particles, into the rendering pass Record() has open.
         void DrawQueue(vk::CommandBuffer cmd, uint32_t samples, vk::Extent2D extent, vk::DescriptorSet cameraSet,
                        const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet, const std::vector<ParticleBatch>& particles) const;
+        // Between the two halves (water in sight): copies the HDR image and depth as the first
+        // half left them into targets.sceneCopy / depthCopy, and readies every attachment for the
+        // second half to carry on drawing into.
+        void CopyForWater(vk::CommandBuffer cmd, PostTargets& targets, vk::Image depthImage, vk::Extent2D extent, bool msaa) const;
 
         const RenderResources& m_resources;   // the meshes and materials it draws
         const ParticlePass&    m_particles;   // drawn last, inside this pass
+        const WaterPass&       m_water;       // drawn after the sky, before the particles
 
         std::array<vk::raii::Pipeline, 3> m_meshPipelines{ nullptr, nullptr, nullptr };   // 1, 2, 4 samples
         std::array<vk::raii::Pipeline, 3> m_cutoutPipelines{ nullptr, nullptr, nullptr }; // the same with kCutout on (cut-out materials)

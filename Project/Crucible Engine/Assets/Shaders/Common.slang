@@ -227,3 +227,12 @@ float4 FogForSky(float3 dir, float2 uv) {
                   : vol.rgb * (a / max(inVol, 1e-5));             // the sky's fog is thinner (capped): scale down
     return float4(max(light, float3(0.0, 0.0, 0.0)), 1.0 - a);
 }
+
+// ---- Line data (toon outlines) ------------------------------------------------------------------
+// Shared by DefaultShader's LineData and Water: a direction packed into two numbers.
+float2 OctEncode(float3 n) {   // unit vector -> two numbers in -1..1 (see OctDecode in Post.slang)
+    n /= abs(n.x) + abs(n.y) + abs(n.z);
+    float2 e = n.xy;
+    if (n.z < 0.0) { e = (1.0 - abs(n.yx)) * float2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0); }
+    return e;
+}

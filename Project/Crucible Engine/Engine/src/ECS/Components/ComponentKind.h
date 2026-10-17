@@ -73,7 +73,7 @@ namespace Crucible
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
-		Vine = 17,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
+		Water = 17,              // Graphics: a water surface (pond, lake, river) - Components.h
 
 		MAXCOMPONENT = 18
 	};
@@ -182,6 +182,6 @@ namespace Crucible
  X(ParticleEmitter)                                                            \
  X(MaterialParams)                                                             \
  X(StressMover)                                                                \
- X(Vine)                                                                       \
+ X(Water)                                                                      \
 
 }

@@ -31,6 +31,7 @@ crucible_shader(Post             postVert bloomDownFrag bloomUpFrag tonemapFrag 
 crucible_shader(DepthNormal      depthNormalVert depthNormalFrag depthNormalCutoutVert depthNormalCutoutFrag)
 crucible_shader(UI               uiVert uiFrag)
 crucible_shader(VolumetricFog    fogInject fogIntegrate)
+crucible_shader(Water            waterVert waterFrag)
 
 # Flags shared by every shader.
 set(CRUCIBLE_SLANGC_FLAGS
