@@ -154,6 +154,43 @@ namespace Crucible {
 	};
 	CRUCIBLE_COMPONENT(UIText, UIText)
 
+	/*************************************************************************
+	 \brief  A draggable value (volume, sensitivity, brightness...). Draws
+			 itself inside its UIRect: a track, the filled part up to the
+			 value, and a handle - no child entities needed.
+	 \details
+		Press anywhere on it to jump there, drag to change it (the drag keeps
+		going outside the slider until release). Each change during a drag
+		sends UIEvents::SliderChanged. Code can set value directly; it is
+		clamped (and rounded with wholeNumbers) when drawn and dragged.
+	 *************************************************************************/
+	struct UISlider {
+		enum class Direction : std::uint8_t {
+			LeftToRight,   // min at the left
+			RightToLeft,
+			BottomToTop,   // min at the bottom: a vertical slider
+			TopToBottom,
+		};
+
+		float      minValue     = 0.0f;
+		float      maxValue     = 1.0f;
+		float      value        = 0.5f;
+		bool       wholeNumbers = false;           // value snaps to integers (a 0-10 setting)
+		bool       interactable = true;
+		Direction  direction    = Direction::LeftToRight;
+
+		Math::vec4 trackColour  { 0.25f, 0.25f, 0.28f, 1.0f };   // sRGB, 0-1
+		Math::vec4 fillColour   { 0.30f, 0.60f, 1.00f, 1.0f };
+		Math::vec4 handleColour { 1.0f };
+		float      handleSize     = 20.0f;         // the handle's length along the slider, reference pixels
+		float      trackThickness = 0.4f;          // the track's share of the slider's height (width, if vertical): 0-1
+
+		// Runtime only (DO_NOT_SERIALIZE, read-only in the Inspector): set by the UI input system.
+		// Hovered / Pressed (dragging) tint the handle a little darker, like a button.
+		UIButton::State state = UIButton::State::Normal;
+	};
+	CRUCIBLE_COMPONENT(UISlider, UISlider)
+
 }   // NAMESPACE CRUCIBLE
 
 #endif // CRUCIBLE_UI_COMPONENTS_H
@@ -246,6 +283,38 @@ RTTR_REGISTRATION
 			(rttr::metadata(MetaDataTypes::COLOUR, true))
 		.property("interactable", &UIButton::interactable)
 		.property("state",        &UIButton::state)
+			(rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
+			 rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
+	;
+
+	rttr::registration::enumeration<UISlider::Direction>("UISliderDirection")
+	(
+		rttr::value("LeftToRight", UISlider::Direction::LeftToRight),
+		rttr::value("RightToLeft", UISlider::Direction::RightToLeft),
+		rttr::value("BottomToTop", UISlider::Direction::BottomToTop),
+		rttr::value("TopToBottom", UISlider::Direction::TopToBottom)
+	);
+
+	rttr::registration::class_<UISlider>("UISlider")
+		.constructor<>()
+		.property("minValue",       &UISlider::minValue)
+		.property("maxValue",       &UISlider::maxValue)
+		.property("value",          &UISlider::value)
+		.property("wholeNumbers",   &UISlider::wholeNumbers)
+		.property("interactable",   &UISlider::interactable)
+		.property("direction",      &UISlider::direction)
+			// Drawn by the Inspector (DrawComponentExtras(UISlider&)): switching between horizontal
+			// and vertical there also swaps the UIRect's width and height, like Unity's Slider.
+			(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("trackColour",    &UISlider::trackColour)
+			(rttr::metadata(MetaDataTypes::COLOUR, true))
+		.property("fillColour",     &UISlider::fillColour)
+			(rttr::metadata(MetaDataTypes::COLOUR, true))
+		.property("handleColour",   &UISlider::handleColour)
+			(rttr::metadata(MetaDataTypes::COLOUR, true))
+		.property("handleSize",     &UISlider::handleSize)
+		.property("trackThickness", &UISlider::trackThickness)
+		.property("state",          &UISlider::state)
 			(rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
 			 rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
 	;

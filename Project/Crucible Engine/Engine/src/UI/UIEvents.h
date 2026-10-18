@@ -29,4 +29,11 @@ namespace Crucible::UIEvents {
 		Entity button{};
 	};
 
+	/// A UISlider's value changed because the player pressed or dragged it (not when code sets
+	/// it). Sent once per frame of change while dragging; value is already clamped / rounded.
+	struct SliderChanged {
+		Entity slider{};
+		float  value = 0.0f;
+	};
+
 }   // NAMESPACE CRUCIBLE::UIEVENTS

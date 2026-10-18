@@ -213,6 +213,9 @@ namespace Crucible {
 		  - Hovered: the mouse is over this button (and not pressing it).
 		  - Click: released over the same button it went down on.
 		  - Disabled: interactable is off. Never hovered, pressed or clicked.
+		Sliders: pressing one jumps its value to the mouse, dragging follows
+		it until release (even outside), each change sends
+		UIEvents::SliderChanged; Pressed while dragged, Hovered under the mouse.
 		A click sends UIEvents::ButtonClicked, then runs the button's own
 		onClick action (load a scene, close the menu).
 		While the cursor is locked (mouse-look) the UI ignores the mouse and
@@ -239,6 +242,7 @@ namespace Crucible {
 		AssetManager*               m_assets = nullptr;
 		std::vector<UI::LayoutItem> m_layout;     // this frame's layout at the game screen's size (reused)
 		Entity                      m_pressed{};  // the button the current press started on (none: kNullEntity)
+		Entity                      m_dragSlider{};  // the slider being dragged (none: kNullEntity)
 		std::vector<std::pair<Entity, UIButton::State>> m_stateChanges;   // collected, then written
 	};
 

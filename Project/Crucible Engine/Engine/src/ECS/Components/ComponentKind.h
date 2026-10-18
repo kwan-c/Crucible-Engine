@@ -78,8 +78,9 @@ namespace Crucible
 		UIImage = 19, 
 		UIButton = 20, 
 		UIText = 21,
+		UISlider = 22,           // UI: a draggable value (UI/UIComponents.h)
 
-		MAXCOMPONENT = 22
+		MAXCOMPONENT = 23
 	};
 
 
@@ -191,5 +192,6 @@ namespace Crucible
  X(UIImage)																	   \
  X(UIButton)																   \
  X(UIText)																	   \
+ X(UISlider)														   \
 
 }

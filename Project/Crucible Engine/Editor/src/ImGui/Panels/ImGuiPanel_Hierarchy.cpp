@@ -815,12 +815,15 @@ void Crucible::Hierarchy::CreateUIElement(const std::string& kind) {
 	}
 
 	// The element itself. Centred on its parent (UIRect's default anchors and pivot).
+	// A slider draws its own track / fill / handle, so it has no UIImage.
 	Entity const element = m_world.CreateEntity();
 	UIRect rect{};
 	if (kind == "Button") { rect.size = { 160.0f, 40.0f }; }
+	if (kind == "Slider") { rect.size = { 240.0f, 24.0f }; }
 	m_world.AddComponent<UIRect>(element, rect);
-	m_world.AddComponent<UIImage>(element, UIImage{});
+	if (kind != "Slider") { m_world.AddComponent<UIImage>(element, UIImage{}); }
 	if (kind == "Button") { m_world.AddComponent<UIButton>(element, UIButton{}); }
+	if (kind == "Slider") { m_world.AddComponent<UISlider>(element, UISlider{}); }
 
 	// Last child = drawn on top of its siblings. worldPositionStays = false keeps the identity local
 	// Transform (screen-space UI ignores it anyway), so a parent's scale can never refuse the move.

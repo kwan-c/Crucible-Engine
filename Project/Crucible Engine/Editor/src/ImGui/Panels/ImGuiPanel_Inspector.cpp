@@ -138,7 +138,7 @@ namespace {
 	}
 
 	// ---- UI rules (UI/UIComponents.h): Unity's [RequireComponent] for the UI types ----
-	//   - UIImage, UIText   -> need a UIRect: it is where they sit and how big they are.
+	//   - UIImage, UIText, UISlider -> need a UIRect: it is where they sit and how big they are.
 	//   - UIButton          -> needs a UIRect, and a UIImage: the button's picture, which its
 	//                          state colours tint.
 	//   - All of them (UIRect too) are only drawn under an entity with a UICanvas. That is a
@@ -182,6 +182,11 @@ namespace {
 	}
 
 	template <>
+	void AddRequiredComponents<Crucible::UISlider>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UISlider");
+	}
+
+	template <>
 	void AddRequiredComponents<Crucible::UIButton>(Crucible::World& world, Crucible::Entity entity) {
 		EnsureUIRect(world, entity, "UIButton");
 		if (!world.HasComponent<Crucible::UIImage>(entity)) {
@@ -202,6 +207,7 @@ namespace {
 		if (world.HasComponent<Crucible::UIButton>(entity)) return "The UIButton on this entity needs it.\nRemove the UIButton (and UIImage) first.";
 		if (world.HasComponent<Crucible::UIImage>(entity))  return "The UIImage on this entity needs it for its position and size.\nRemove the UIImage first.";
 		if (world.HasComponent<Crucible::UIText>(entity))   return "The UIText on this entity needs it for its position and size.\nRemove the UIText first.";
+		if (world.HasComponent<Crucible::UISlider>(entity)) return "The UISlider on this entity needs it for its position and size.\nRemove the UISlider first.";
 		return nullptr;
 	}
 
@@ -988,6 +994,47 @@ bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {
 		ImGui::EndCombo();
 	}
 	if (button.sceneAsset == 0) { ImGui::TextDisabled("Pick the scene this button loads."); }
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UISlider& slider) {
+	// The direction, drawn here instead of with the generic fields because a change between
+	// horizontal and vertical must also turn the slider's rect: a 240 x 24 slider switched to
+	// Bottom-to-Top would otherwise run along its 24 px height, with almost no room to drag.
+	// Unity's Slider does the same. Both changes land in the same edit, so one undo reverts both.
+	struct Option { char const* name; UISlider::Direction value; };
+	static constexpr Option kOptions[] = {
+		{ "LeftToRight", UISlider::Direction::LeftToRight },
+		{ "RightToLeft", UISlider::Direction::RightToLeft },
+		{ "BottomToTop", UISlider::Direction::BottomToTop },
+		{ "TopToBottom", UISlider::Direction::TopToBottom },
+	};
+	auto isVertical = [](UISlider::Direction d) { return d == UISlider::Direction::BottomToTop || d == UISlider::Direction::TopToBottom; };
+
+	char const* current = kOptions[0].name;
+	for (Option const& option : kOptions) { if (option.value == slider.direction) { current = option.name; } }
+
+	bool changed = false;
+	if (ImGui::BeginCombo("direction", current)) {
+		for (Option const& option : kOptions) {
+			bool const selected = option.value == slider.direction;
+			if (ImGui::Selectable(option.name, selected) && !selected) {
+				if (isVertical(option.value) != isVertical(slider.direction)) {
+					// Turn the rect: width <-> height, and the pivot with it, so it keeps its shape
+					// around the same point. Only touches UIRect's fields - no structural change, so
+					// `slider` stays valid.
+					if (UIRect* rect = m_world.GetComponent<UIRect>(m_selected)) {
+						std::swap(rect->size.x, rect->size.y);
+						std::swap(rect->pivot.x, rect->pivot.y);
+					}
+				}
+				slider.direction = option.value;
+				changed = true;
+			}
+			if (selected) { ImGui::SetItemDefaultFocus(); }
+		}
+		ImGui::EndCombo();
+	}
 	return changed;
 }
 

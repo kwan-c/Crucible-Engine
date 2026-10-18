@@ -117,7 +117,7 @@ namespace Crucible {
 		// A root entity with a UICanvas: where screen-space UI elements go (as its children).
 		void CreateCanvasObject();
 
-		// "Image" or "Button": a UI element (UIRect + UIImage, + UIButton) placed under the selected
+		// "Image", "Button" or "Slider": a UI element (UIRect + UIImage / UIButton / UISlider) placed under the selected
 		// entity if it is part of a UI tree, else under the first screen-space canvas, else under a
 		// new canvas made with it. One undo step either way.
 		void CreateUIElement(const std::string& kind);
