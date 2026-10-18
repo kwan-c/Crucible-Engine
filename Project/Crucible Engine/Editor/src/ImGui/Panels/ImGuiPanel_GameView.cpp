@@ -14,16 +14,27 @@
 #include "ImGui/EditorWidgets.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
 
 namespace {
-	struct AspectOption { char const* name; float ratio; };   // ratio 0 = use the whole window
+	// Either a shape (ratio > 0: the largest image of that shape that fits the panel, rendered at
+	// that on-screen size), a fixed resolution (width > 0: rendered at exactly width x height, then
+	// shown scaled down to fit - like Unity's fixed-resolution entries), or neither (Free Aspect:
+	// the whole panel).
+	struct AspectOption { char const* name; float ratio; uint32_t width; uint32_t height; };
 
 	constexpr AspectOption kAspects[] = {
-		{ "Free Aspect", 0.0f },
-		{ "16:9",        16.0f / 9.0f },
-		{ "16:10",       16.0f / 10.0f },
-		{ "4:3",         4.0f / 3.0f },
-		{ "1:1",         1.0f },
+		{ "Free Aspect",            0.0f,          0,    0 },
+		{ "16:9",                   16.0f / 9.0f,  0,    0 },
+		{ "16:10",                  16.0f / 10.0f, 0,    0 },
+		{ "4:3",                    4.0f / 3.0f,   0,    0 },
+		{ "1:1",                    1.0f,          0,    0 },
+		{ "1920 x 1080 (Full HD)",  0.0f,          1920, 1080 },
+		{ "1280 x 720 (HD)",        0.0f,          1280, 720 },
+		{ "2560 x 1440 (QHD)",      0.0f,          2560, 1440 },
+		{ "3840 x 2160 (4K)",       0.0f,          3840, 2160 },
+		{ "1080 x 1920 (Portrait)", 0.0f,          1080, 1920 },
 	};
 	constexpr int kAspectCount = static_cast<int>(sizeof(kAspects) / sizeof(kAspects[0]));
 }
@@ -45,6 +56,7 @@ void Crucible::GameView::Update(float) {
 
 	if (!visible) {
 		m_hovered = false;
+		m_renderer.SetGameScreenPlacement(glm::vec2(0.0f), 1.0f, false);   // hidden: the mouse is never on the game screen
 		ImGui::End();
 		return;
 	}
@@ -56,24 +68,38 @@ void Crucible::GameView::Update(float) {
 	ImVec2 const regionMax(regionMin.x + avail.x, regionMin.y + avail.y);
 
 	// Fit the selected aspect ratio inside the available area (letterbox / pillarbox).
+	// renderSize: what the camera renders at (and what the game's UI lays out against).
+	// size: how big that image is drawn in the panel. They differ only for fixed resolutions.
+	AspectOption const& option = kAspects[m_aspectIndex];
+	ImVec2 renderSize = avail;
 	ImVec2 size = avail;
-	float const ratio = kAspects[m_aspectIndex].ratio;
-	if (ratio > 0.0f && avail.x > 0.0f && avail.y > 0.0f) {
+	m_displayScale = 1.0f;
+	if (option.width > 0 && option.height > 0) {
+		// Fixed resolution: exactly width x height, shown shrunk to fit the panel - never enlarged,
+		// so when the panel is big enough it shows 1:1 with bars around it.
+		renderSize = ImVec2(static_cast<float>(option.width), static_cast<float>(option.height));
+		m_displayScale = std::min({ avail.x / renderSize.x, avail.y / renderSize.y, 1.0f });
+		m_displayScale = std::max(m_displayScale, 0.0f);
+		size = ImVec2(renderSize.x * m_displayScale, renderSize.y * m_displayScale);
+	}
+	else if (option.ratio > 0.0f && avail.x > 0.0f && avail.y > 0.0f) {
+		// A shape: the largest image of that shape that fits (letterbox / pillarbox).
 		size.x = avail.x;
-		size.y = avail.x / ratio;
+		size.y = avail.x / option.ratio;
 		if (size.y > avail.y) {
 			size.y = avail.y;
-			size.x = avail.y * ratio;
+			size.x = avail.y * option.ratio;
 		}
+		renderSize = size;
 	}
-	ImVec2 const min(regionMin.x + (avail.x - size.x) * 0.5f, regionMin.y + (avail.y - size.y) * 0.5f);
+	ImVec2 const min(std::floor(regionMin.x + (avail.x - size.x) * 0.5f), std::floor(regionMin.y + (avail.y - size.y) * 0.5f));
 	ImVec2 const max(min.x + size.x, min.y + size.y);
-	m_viewportSize = size;
+	m_viewportSize = renderSize;
+	m_imageMin = min;
 
-	// The render target is sized to the letterboxed image, not the full panel: that's the exact
-	// resolution the game camera renders at (matches the doc comment on GetViewportSize()).
-	uint32_t const width = static_cast<uint32_t>(std::max(size.x, 0.0f));
-	uint32_t const height = static_cast<uint32_t>(std::max(size.y, 0.0f));
+	// The render target is the resolution the game camera renders at (see GetViewportSize()).
+	uint32_t const width = static_cast<uint32_t>(std::max(renderSize.x, 0.0f));
+	uint32_t const height = static_cast<uint32_t>(std::max(renderSize.y, 0.0f));
 	m_viewport.Resize(width, height);
 
 	// Not stood up yet this frame (panel collapsed, or its very first frame before the dock
@@ -83,6 +109,7 @@ void Crucible::GameView::Update(float) {
 		ImGui::SetCursorScreenPos(regionMin);
 		ImGui::InvisibleButton("##GameViewport", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
 		m_hovered = ImGui::IsItemHovered();
+		PublishPlacement();
 		ImGui::End();
 		return;
 	}
@@ -119,8 +146,16 @@ void Crucible::GameView::Update(float) {
 	ImGui::SetCursorScreenPos(regionMin);
 	ImGui::InvisibleButton("##GameViewport", ImVec2(std::max(avail.x, 1.0f), std::max(avail.y, 1.0f)));
 	m_hovered = ImGui::IsItemHovered();
+	PublishPlacement();
 
 	ImGui::End();
+}
+
+void Crucible::GameView::PublishPlacement() {
+	// Tells the renderer where the game screen is in the window, so the game's UI can turn the
+	// mouse into game-screen pixels (Renderer::WindowToGameScreen). m_hovered comes from the
+	// invisible button over the panel, so a window in front of the Game view correctly hides it.
+	m_renderer.SetGameScreenPlacement(glm::vec2(m_imageMin.x, m_imageMin.y), m_displayScale, m_hovered);
 }
 
 void Crucible::GameView::DrawToolbar() {
@@ -129,6 +164,8 @@ void Crucible::GameView::DrawToolbar() {
 	ImGui::SetNextItemWidth(110.0f);
 	if (ImGui::BeginCombo("##Aspect", kAspects[m_aspectIndex].name)) {
 		for (int i = 0; i < kAspectCount; ++i) {
+			// A line between the shapes and the fixed resolutions.
+			if (i > 0 && kAspects[i].width > 0 && kAspects[i - 1].width == 0) ImGui::Separator();
 			bool const selected = (i == m_aspectIndex);
 			if (ImGui::Selectable(kAspects[i].name, selected)) m_aspectIndex = i;
 			if (selected) ImGui::SetItemDefaultFocus();
@@ -138,6 +175,11 @@ void Crucible::GameView::DrawToolbar() {
 
 	ImGui::SameLine();
 	ImGui::TextDisabled("|  %d x %d", static_cast<int>(m_viewportSize.x), static_cast<int>(m_viewportSize.y));
+	if (kAspects[m_aspectIndex].width > 0) {
+		// Fixed resolution shown smaller than it renders: say so, like Unity's Scale readout.
+		ImGui::SameLine();
+		ImGui::TextDisabled("|  Scale %.2fx", m_displayScale);
+	}
 
 	EditorWidgets::EndToolbarRow();
 }

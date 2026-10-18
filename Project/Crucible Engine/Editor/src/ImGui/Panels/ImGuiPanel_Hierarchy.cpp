@@ -18,6 +18,7 @@
 #include "ImGui/Panels/ImGuiPanel_Hierarchy.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "ImGui/Panels/ImGuiPanel_SceneView.h"
+#include "ImGui/Panels/ImGuiPanel_UIView.h"
 #include "Undo/EntityCommands.h"
 #include "Diagnostics/Logger.h"
 #include <Graphics/ParticlePresets.h>
@@ -48,6 +49,9 @@ void Crucible::Hierarchy::Update(float dt) {
 	if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		if (ImGui::BeginMenuBar()) {
 			if (ImGui::BeginMenu("+")) {
+				if (ImGui::MenuItem("Create Empty")) {
+					CreateEmptyObject();
+				}
 				if (ImGui::BeginMenu("3D Objects")) {
 					if (ImGui::MenuItem("Create Cube")) {
 						CreatePrimitive("Cube");
@@ -90,14 +94,30 @@ void Crucible::Hierarchy::Update(float dt) {
 					}
 					ImGui::EndMenu();
 				}
-				if (ImGui::MenuItem("Create Camera")) {
-					CreateCameraObject();
-				}
 				if (ImGui::BeginMenu("Particle Effects")) {
 					for (char const* effect : { "Sparks", "Fire", "Smoke", "Splash" }) {
 						if (ImGui::MenuItem(effect)) { CreateParticleObject(effect); }
 					}
 					ImGui::EndMenu();
+				}
+				if (ImGui::BeginMenu("UI")) {
+					if (ImGui::MenuItem("Create Canvas")) {
+						CreateCanvasObject();
+					}
+					ImGui::Separator();
+					if (ImGui::MenuItem("Create Image")) {
+						CreateUIElement("Image");
+					}
+					if (ImGui::MenuItem("Create Button")) {
+						CreateUIElement("Button");
+					}
+					if (ImGui::MenuItem("Create Slider")) {
+						CreateUIElement("Slider");
+					}
+					ImGui::EndMenu();
+				}
+				if (ImGui::MenuItem("Create Camera")) {
+					CreateCameraObject();
 				}
 				ImGui::EndMenu();
 			}
@@ -120,6 +140,7 @@ void Crucible::Hierarchy::Update(float dt) {
 
 		// Shift+click ranges and click-on-release need every row, so they are settled here.
 		ResolveClicks();
+		m_revealEntity = kNullEntity;   // its rows were opened this frame (see DrawEntityNode)
 
 		// Drop on the empty space below the tree: make the dragged entity a root again. A custom
 		// target over a plain rectangle (not an item), so right-clicking that space still opens the
@@ -166,11 +187,9 @@ void Crucible::Hierarchy::Update(float dt) {
 			if (hasSelection && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal)) { RequestAction(PendingAction::Duplicate, selected); }
 			if (hasSelection && ImGui::Shortcut(ImGuiKey_Delete, ImGuiInputFlags_RouteGlobal))            { RequestAction(PendingAction::Delete, selected); }
 
-			// F: frame the selection in the Scene view. Default (focus) route, so only while the
-			// Hierarchy is focused - the Scene view handles F itself when it is focused.
-			if (hasSelection && ImGui::Shortcut(ImGuiKey_F)) {
-				if (auto sceneView = EditorManager::GetInstance().GetPanel<SceneView>(ImguiPanels::EDITORSCENE)) { sceneView->FrameSelected(); }
-			}
+			// F: frame the selection where it is edited (see FocusSelection). Default (focus) route,
+			// so only while the Hierarchy is focused - the Scene / UI views handle F themselves.
+			if (hasSelection && ImGui::Shortcut(ImGuiKey_F)) { FocusSelection(); }
 
 			// Ctrl+A: select every entity. Only while the Hierarchy is focused (default route), so
 			// it never steals Ctrl+A from a text field elsewhere.
@@ -199,6 +218,13 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 	m_rows.push_back(entity);
 
 	ImGui::PushID(static_cast<int>(entity.index));
+
+	// A UI element was just created somewhere under this row: open it once, so the new entity shows.
+	if (childCount > 0 && m_revealEntity.IsValid()) {
+		for (Entity p = m_world.GetParent(m_revealEntity); p.IsValid(); p = m_world.GetParent(p)) {
+			if (p == entity) { ImGui::SetNextItemOpen(true); break; }
+		}
+	}
 
 	// No Name/Tag component exists yet - label by raw index until one does.
 	bool const open = ImGui::TreeNodeEx("##node", flags, "Entity %u", entity.index);
@@ -231,10 +257,11 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 		}
 	}
 
-	// Double-click a row: frame it in the Scene view (Unity). The first click already selected
-	// it, so this frames the selection. Only reads the World, so it is safe mid-query.
+	// Double-click a row: frame it where it is edited - the UI Editor tab for screen-space UI, the
+	// Scene tab for everything else (see FocusSelection). The first click already selected it.
+	// Only reads the World, so it is safe mid-query.
 	if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen()) {
-		if (auto sceneView = EditorManager::GetInstance().GetPanel<SceneView>(ImguiPanels::EDITORSCENE)) { sceneView->FrameSelected(); }
+		FocusSelection();
 	}
 
 	// Drag this row onto another row to make it that entity's child. Dragging a selected row
@@ -367,6 +394,31 @@ namespace {
 	// "Delete Entity" / "Delete 3 Entities", for the Edit menu.
 	std::string CountLabel(std::string const& verb, std::size_t count) {
 		return count == 1 ? verb + " Entity" : verb + " " + std::to_string(count) + " Entities";
+	}
+
+	// A screen-space canvas, or an entity with a UIRect whose nearest canvas above it is a screen-space
+	// one: what the UI Editor tab shows (World Space canvases are not drawn there).
+	bool IsScreenSpaceUI(Crucible::World const& world, Crucible::Entity entity) {
+		if (Crucible::UICanvas const* canvas = world.Read<Crucible::UICanvas>(entity)) {
+			return canvas->renderMode == Crucible::UICanvas::RenderMode::ScreenSpace;
+		}
+		if (!world.HasComponent<Crucible::UIRect>(entity)) { return false; }
+		for (Crucible::Entity p = world.GetParent(entity); p.IsValid(); p = world.GetParent(p)) {
+			if (Crucible::UICanvas const* canvas = world.Read<Crucible::UICanvas>(p)) {
+				return canvas->renderMode == Crucible::UICanvas::RenderMode::ScreenSpace;
+			}
+		}
+		return false;
+	}
+
+	// A canvas, or an entity with a UIRect somewhere under a canvas: a place a new UI element can go.
+	bool IsInUITree(Crucible::World const& world, Crucible::Entity entity) {
+		if (world.HasComponent<Crucible::UICanvas>(entity)) { return true; }
+		if (!world.HasComponent<Crucible::UIRect>(entity))  { return false; }
+		for (Crucible::Entity p = world.GetParent(entity); p.IsValid(); p = world.GetParent(p)) {
+			if (world.HasComponent<Crucible::UICanvas>(p)) { return true; }
+		}
+		return false;
 	}
 }
 
@@ -599,6 +651,21 @@ std::unique_ptr<Crucible::EditorCommand> Crucible::Hierarchy::Reparent(Entity ch
 	return std::make_unique<ReparentCommand>(history.KeyOf(child), before, after, label);
 }
 
+void Crucible::Hierarchy::CreateEmptyObject() {
+	auto e = m_world.CreateEntity();
+
+	// Select first: that commits any Inspector edit still open on the previous entity, so it
+	// lands in the history BEFORE this create - the order they actually happened in.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(e);
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create Empty Object"));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+}
+
 void Crucible::Hierarchy::CreatePrimitive(const std::string& meshName) {
 
 	auto e = m_world.CreateEntity();
@@ -677,6 +744,105 @@ void Crucible::Hierarchy::CreateCameraObject() {
 		history.KeyOf(e), EntityState::Capture(m_world, e), "Create Camera"));
 
 	m_scenes.MarkDirty();   // records that there are unsaved changes
+
+}
+
+void Crucible::Hierarchy::CreateCanvasObject() {
+
+	// Screen space, 1920 x 1080 reference (UICanvas's defaults): what the UI Editor tab edits.
+	// Its Transform is ignored for screen-space UI, so it stays at the origin.
+	auto e = m_world.CreateEntity();
+	m_world.AddComponent<UICanvas>(e, UICanvas{});
+
+	// Select first, for the same history-ordering reason as CreateLightObject.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(e);
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create Canvas"));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+
+}
+
+void Crucible::Hierarchy::FocusSelection() {
+	EditorManager& editor = EditorManager::GetInstance();
+	auto inspector = editor.GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	Entity const active = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+
+	// m_makeFocus brings that tab to the front on the next frame (as Play / Stop do).
+	if (active.IsValid() && m_world.IsAlive(active) && IsScreenSpaceUI(m_world, active)) {
+		if (auto uiView = editor.GetPanel<UIView>(ImguiPanels::UISCENE)) {
+			uiView->m_makeFocus = true;
+			uiView->FrameEntity(active);
+			return;
+		}
+	}
+	if (auto sceneView = editor.GetPanel<SceneView>(ImguiPanels::EDITORSCENE)) {
+		sceneView->m_makeFocus = true;
+		sceneView->FrameSelected();
+	}
+}
+
+void Crucible::Hierarchy::CreateUIElement(const std::string& kind) {
+
+	if (kind != "Image" && kind != "Button" && kind != "Slider") {
+		CRU_USER_WARN("Unknown UI element: {}", kind);
+		return;
+	}
+
+	// Where it goes, decided before the selection changes. Like Unity: under the selected entity
+	// when that is part of a UI tree, otherwise under the first screen-space canvas, otherwise
+	// under a canvas made here.
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	Entity const selected = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+	Entity parent = kNullEntity;
+	if (selected.IsValid() && m_world.IsAlive(selected) && IsInUITree(m_world, selected)) {
+		parent = selected;
+	}
+	if (parent == kNullEntity) {
+		m_world.CreateQuery<const UICanvas>().ForEach([&](Entity e, const UICanvas& canvas) {
+			if (parent == kNullEntity && canvas.renderMode == UICanvas::RenderMode::ScreenSpace) { parent = e; }
+		});
+	}
+
+	Entity createdRoot = kNullEntity;   // the top of what this step creates: a new canvas, or the element
+	if (parent == kNullEntity) {
+		parent = m_world.CreateEntity();
+		m_world.AddComponent<UICanvas>(parent, UICanvas{});
+		createdRoot = parent;
+	}
+
+	// The element itself. Centred on its parent (UIRect's default anchors and pivot).
+	Entity const element = m_world.CreateEntity();
+	UIRect rect{};
+	if (kind == "Button") { rect.size = { 160.0f, 40.0f }; }
+	m_world.AddComponent<UIRect>(element, rect);
+	m_world.AddComponent<UIImage>(element, UIImage{});
+	if (kind == "Button") { m_world.AddComponent<UIButton>(element, UIButton{}); }
+
+	// Last child = drawn on top of its siblings. worldPositionStays = false keeps the identity local
+	// Transform (screen-space UI ignores it anyway), so a parent's scale can never refuse the move.
+	if (m_world.TrySetParent(element, parent, false) != ParentResult::Ok) {
+		CRU_USER_WARN("Could not put the new {} under entity {}; it was created at the top level", kind, parent.index);
+	}
+	if (createdRoot == kNullEntity) { createdRoot = element; }
+
+	// Select first, for the same history-ordering reason as CreateLightObject.
+	if (inspector) { inspector->SetSelectedEntity(element); }
+	m_rangeAnchor = element;
+	m_revealEntity = element;
+
+	// Recorded the way RecordCreated records a paste: a delete of the new subtree, run backwards.
+	// The delete remembers each entity's parent and sibling position, so a redo puts the element
+	// back under its canvas - and a canvas made here comes back with it, in the same single step.
+	std::string const label = "Create " + kind;
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<InvertedCommand>(DeleteEntityCommand::Capture(history, createdRoot, label), label));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+	CRU_USER_INFO("{}: entity {} under entity {}", label, element.index, parent.index);
 
 }
 

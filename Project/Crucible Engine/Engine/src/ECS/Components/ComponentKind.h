@@ -73,8 +73,13 @@ namespace Crucible
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
+		UICanvas = 17, 
+		UIRect = 18, 
+		UIImage = 19, 
+		UIButton = 20, 
+		UIText = 21,
 
-		MAXCOMPONENT = 17
+		MAXCOMPONENT = 22
 	};
 
 
@@ -181,5 +186,10 @@ namespace Crucible
  X(ParticleEmitter)                                                            \
  X(MaterialParams)                                                             \
  X(StressMover)                                                                \
+ X(UICanvas)																   \
+ X(UIRect)																	   \
+ X(UIImage)																	   \
+ X(UIButton)																   \
+ X(UIText)																	   \
 
 }

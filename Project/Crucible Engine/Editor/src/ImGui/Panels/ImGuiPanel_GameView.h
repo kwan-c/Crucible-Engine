@@ -33,18 +33,28 @@ namespace Crucible {
 		void Init() override;
 		void Update(float dt) override;
 
-		// Letterboxed size in pixels of the game image (respects the selected aspect ratio).
+		// The resolution the game camera renders at: the letterboxed image size for Free Aspect and
+		// the ratios, exactly width x height for a fixed resolution.
 		ImVec2 GetViewportSize() const { return m_viewportSize; }
 		bool   IsViewportHovered() const { return m_hovered; }
 
+		// Where the game image is drawn (ImGui screen pixels) and how much it is shrunk to fit
+		// (1 unless a fixed resolution is bigger than the panel). Together they turn a mouse
+		// position into game-screen pixels: (mouse - GetImageMin()) / GetDisplayScale().
+		ImVec2 GetImageMin() const     { return m_imageMin; }
+		float  GetDisplayScale() const { return m_displayScale; }
+
 	private:
 		void DrawToolbar();
+		void PublishPlacement();   // Renderer::SetGameScreenPlacement with this frame's image rect, scale and hover
 
 		Renderer&     m_renderer;
 		ViewportPanel m_viewport;
 
 		int    m_aspectIndex = 0;   // index into the aspect table in the .cpp (0 = free aspect)
 		ImVec2 m_viewportSize{ 0.0f, 0.0f };
+		ImVec2 m_imageMin{ 0.0f, 0.0f };   // top-left of the drawn image, ImGui screen pixels
+		float  m_displayScale = 1.0f;      // drawn size / rendered size
 		bool   m_hovered = false;
 	};
 

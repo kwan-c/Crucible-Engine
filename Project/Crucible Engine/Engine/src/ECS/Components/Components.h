@@ -46,6 +46,7 @@
 #include"Graphics/MaterialHandle.h"   // MaterialHandle - same reasoning: header-only, no Vulkan
 #include"Graphics/CubemapHandle.h"    // CubemapHandle (Skybox) - same reasoning
 #include"Graphics/LightTypes.h"       // LightType (Light) - same reasoning
+#include"../../UI/UIComponents.h"
 
 namespace Crucible
 {

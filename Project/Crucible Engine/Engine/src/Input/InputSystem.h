@@ -152,6 +152,20 @@ namespace Crucible {
         /*!  \brief Is the cursor captured right now? */
         static bool IsMouseLocked();
 
+        /*!
+            \brief
+            Is the mouse on the game's UI right now - over an element that blocks clicks
+            (UIRect::raycastTarget), or holding a press that started on a button? Check it
+            before acting on a click in gameplay, so pressing "Resume" doesn't also fire a
+            weapon. Unity: EventSystem.current.IsPointerOverGameObject().
+            \note
+            Set by UIInputSystem, which runs early in the frame (PreUpdate) and only while
+            Playing; false whenever the cursor is locked.
+        */
+        static bool IsPointerOverUI();
+        /*!  \brief For UIInputSystem: what IsPointerOverUI() reports for the rest of this frame. */
+        static void SetPointerOverUI(bool over);
+
     private:
 
         // --- GLFW plumbing --------------------------------------------------------------- //
@@ -214,6 +228,7 @@ namespace Crucible {
         Math::vec2 m_mouseScroll{ 0.f, 0.f };     // wheel notches this frame
 
         bool m_mouseLocked = false;     // cursor captured for mouse-look
+        bool m_pointerOverUI = false;   // IsPointerOverUI(), written by UIInputSystem
         bool m_skipNextDelta = true;    // the next cursor event is a teleport, not a movement
 
         GLFWwindow* m_window = nullptr;

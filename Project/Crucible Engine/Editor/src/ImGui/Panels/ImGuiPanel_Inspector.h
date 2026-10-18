@@ -98,6 +98,7 @@ namespace Crucible {
 
 		template <typename T> bool DrawComponentExtras(T&) { return false; }
 		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
+		bool DrawComponentExtras(UIButton& button);         // scene dropdown for onClick = LoadScene
 		bool DrawMaterialSection(MeshRenderer& renderer);
 
 		std::function<void()> m_draw;

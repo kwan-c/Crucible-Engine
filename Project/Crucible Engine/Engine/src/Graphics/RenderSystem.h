@@ -662,6 +662,35 @@ namespace Crucible {
          *********************************************************************/
         ENGINE_API bool ProjectToGameScreen(const glm::vec3& worldPos, glm::vec2& outPixels) const;
 
+        /*********************************************************************
+         \brief
+            Editor only: where the Game view draws the game screen inside the
+            window, so a mouse position can be turned into game-screen pixels
+            (WindowToGameScreen). The Game view calls it every frame.
+         \param[in] windowOrigin  Top-left of the drawn image, in window pixels
+                                   (ImGui screen coordinates, the same space as
+                                   Input::GetMousePosition()).
+         \param[in] scale         Drawn size / rendered size (below 1 when a
+                                   fixed resolution is shrunk to fit the panel).
+         \param[in] pointerOver   The mouse is over the Game view (and not over
+                                   another window in front of it).
+         *********************************************************************/
+        ENGINE_API void SetGameScreenPlacement(const glm::vec2& windowOrigin, float scale, bool pointerOver);
+
+        /*********************************************************************
+         \brief
+            A window position (Input::GetMousePosition()) -> game-screen pixels
+            (origin top-left, the space SubmitUI and the UI layout use).
+         \return false (outPixels untouched) when the point is not on the game
+                 screen: outside it, the mouse is not over the Game view (editor),
+                 or there is no game screen.
+         \note   Standalone game: window pixels are scaled to the swapchain's
+                 pixels, which differ on high-DPI displays. Editor: uses the last
+                 SetGameScreenPlacement(), so it is one frame behind - the Game
+                 view reports after the systems have run.
+         *********************************************************************/
+        ENGINE_API bool WindowToGameScreen(const glm::vec2& windowPos, glm::vec2& outPixels) const;
+
         /// Shows or hides the built-in UI test overlay (UITestOverlay.h), submitted as the game's UI.
         void SetUITestOverlay(bool enabled) { m_uiTestEnabled = enabled; }
         bool GetUITestOverlay() const       { return m_uiTestEnabled; }
@@ -808,6 +837,11 @@ namespace Crucible {
     private:
         WindowManager&              m_window;
         std::function<void()>       m_overlayCallback;
+
+        // Where the Game view draws the game screen (SetGameScreenPlacement). Editor only.
+        glm::vec2                   m_gameScreenOrigin{ 0.0f };
+        float                       m_gameScreenScale = 1.0f;
+        bool                        m_gameScreenPointerOver = false;
 
         VulkanContext               m_context;
         VulkanSwapchain             m_swapchain;
