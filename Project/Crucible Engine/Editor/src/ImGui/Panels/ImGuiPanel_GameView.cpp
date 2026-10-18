@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <string>
 
 namespace {
 	// Either a shape (ratio > 0: the largest image of that shape that fits the panel, rendered at
@@ -37,6 +38,35 @@ namespace {
 		{ "1080 x 1920 (Portrait)", 0.0f,          1080, 1920 },
 	};
 	constexpr int kAspectCount = static_cast<int>(sizeof(kAspects) / sizeof(kAspects[0]));
+
+	// m_aspectIndex value for the "Game (W:H)" entry built from the project config.
+	constexpr int kProjectAspect = -1;
+
+	AspectOption ResolveAspect(int index, float projectRatio, std::string const& projectLabel) {
+		if (index == kProjectAspect) return { projectLabel.c_str(), projectRatio, 0, 0 };
+		return kAspects[index];
+	}
+}
+
+Crucible::GameView::GameView(Renderer& renderer, ProjectConfig const& project)
+	: m_renderer(renderer), m_viewport(renderer, ViewportRole::Game) {
+	SetProjectAspect(project.aspectWidth, project.aspectHeight);
+}
+
+void Crucible::GameView::SetProjectAspect(uint32_t width, uint32_t height) {
+	ProjectConfig project;
+	project.aspectWidth = width;
+	project.aspectHeight = height;
+	m_projectRatio = project.AspectRatio();
+
+	if (m_projectRatio > 0.0f) {
+		m_projectLabel = "Game (" + std::to_string(width) + ":" + std::to_string(height) + ")";
+		m_aspectIndex = kProjectAspect;
+	}
+	else {
+		m_projectLabel.clear();
+		if (m_aspectIndex == kProjectAspect) m_aspectIndex = 0;   // the entry is gone: Free Aspect
+	}
 }
 
 void Crucible::GameView::Init() {
@@ -70,7 +100,7 @@ void Crucible::GameView::Update(float) {
 	// Fit the selected aspect ratio inside the available area (letterbox / pillarbox).
 	// renderSize: what the camera renders at (and what the game's UI lays out against).
 	// size: how big that image is drawn in the panel. They differ only for fixed resolutions.
-	AspectOption const& option = kAspects[m_aspectIndex];
+	AspectOption const option = ResolveAspect(m_aspectIndex, m_projectRatio, m_projectLabel);
 	ImVec2 renderSize = avail;
 	ImVec2 size = avail;
 	m_displayScale = 1.0f;
@@ -162,7 +192,15 @@ void Crucible::GameView::DrawToolbar() {
 	EditorWidgets::BeginToolbarRow();
 
 	ImGui::SetNextItemWidth(110.0f);
-	if (ImGui::BeginCombo("##Aspect", kAspects[m_aspectIndex].name)) {
+	AspectOption const current = ResolveAspect(m_aspectIndex, m_projectRatio, m_projectLabel);
+	if (ImGui::BeginCombo("##Aspect", current.name)) {
+		// The game's own shape first, when the config gives one.
+		if (m_projectRatio > 0.0f) {
+			bool const selected = (m_aspectIndex == kProjectAspect);
+			if (ImGui::Selectable(m_projectLabel.c_str(), selected)) m_aspectIndex = kProjectAspect;
+			if (selected) ImGui::SetItemDefaultFocus();
+			ImGui::Separator();
+		}
 		for (int i = 0; i < kAspectCount; ++i) {
 			// A line between the shapes and the fixed resolutions.
 			if (i > 0 && kAspects[i].width > 0 && kAspects[i - 1].width == 0) ImGui::Separator();
@@ -175,7 +213,7 @@ void Crucible::GameView::DrawToolbar() {
 
 	ImGui::SameLine();
 	ImGui::TextDisabled("|  %d x %d", static_cast<int>(m_viewportSize.x), static_cast<int>(m_viewportSize.y));
-	if (kAspects[m_aspectIndex].width > 0) {
+	if (current.width > 0) {
 		// Fixed resolution shown smaller than it renders: say so, like Unity's Scale readout.
 		ImGui::SameLine();
 		ImGui::TextDisabled("|  Scale %.2fx", m_displayScale);

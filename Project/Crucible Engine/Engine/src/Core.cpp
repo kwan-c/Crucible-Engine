@@ -88,9 +88,10 @@ namespace Crucible {
         }
         // ===========================================
 
-        // ======== startup scene (Removable) ==========
-        m_scenes->RequestLoad(m_assets->Resolve("Scenes/Fog_Lighting_Effects.scene"));
-        // ===========================================
+        // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
+        // and the Game open the same one. Empty = start with no scene.
+        if (!m_config.project.startupScene.empty())
+            m_scenes->RequestLoad(m_assets->Resolve(m_config.project.startupScene));
 
 
         // Event buses: report listener failures through the engine log, and let the

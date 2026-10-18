@@ -20,6 +20,7 @@
 
 #include "ImGui/ImGuiManager.h"
 #include "AssetPipe/Assetmanager.h"
+#include "Configuration/EngineConfig.h"
 
 namespace Crucible {
 	class SceneManager;
@@ -74,6 +75,19 @@ namespace Crucible {
 		bool m_showFps = true;			// View > FPS Counter
 		bool m_showAbout = false;		// Help > About (opened as a popup)
 		bool m_showThemeEditor = false;	// View > Theme > Theme Editor...
+
+		// ---- File > Project Settings (Assets/Config/EngineConfig.json) ----
+		void EditConfigSettings();          // loads the shared settings and opens the popup
+		void DrawProjectSettingsPopup();
+		std::vector<std::string> ScanSceneFiles() const;   // file names of the .scene files in Assets/Scenes
+
+		bool                     m_openProjectSettingsPopup = false;
+		EngineConfig             m_projectSettings;           // SHARED values being edited - never core.GetConfig() (that has the editor's overrides merged in)
+		AppOverrides             m_gameOverrides;             // the file's "game" section: what only the Game app changes
+		std::filesystem::path    m_projectSettingsPath;
+		std::vector<std::string> m_projectSceneFiles;
+		char                     m_projectWindowTitle[128] = "";
+		char                     m_gameWindowTitle[128] = "";
 	};
 
 }
