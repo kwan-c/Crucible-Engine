@@ -26,6 +26,7 @@ add_library(imgui STATIC
     imgui/imgui_tables.cpp
     imgui/imgui_widgets.cpp
     imgui/imgui_demo.cpp
+    imgui/misc/cpp/imgui_stdlib.cpp   # ImGui::InputText(std::string*): resizable text fields
 )
 
 target_include_directories(imgui PUBLIC imgui)

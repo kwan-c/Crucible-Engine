@@ -18,8 +18,8 @@
 * drag-to-parent then act on the whole selection as ONE undo step. When both a parent and its
 * child are selected, only the parent is acted on (the child comes along with it).
 *
-* There is no Name/Tag component yet (see ECS/Components/Components.h), so entities are labelled
-* by their raw index for now ("Entity 3") - swap in a real name lookup once one exists.
+* Rows are labelled with the entity's EntityName (see ECS/Components/Components.h), falling back
+* to its raw index ("Entity 3") if the name is empty.
 *
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
 * All Rights Reserved

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.8
+* \version       1.10
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -65,6 +65,17 @@
 *                mat4_cast + glm::scale; DecomposeTRS wraps
 *                glm::decompose; no negative scales (mirrored keep-world
 *                reparents are refused); shared unlink/placement helpers
+*    -v1.9       EntityName joins the mandatory base; numbered default
+*                names, CreateNamedEntity, SetEntityName,
+*                RecalculateEntityNameCounter
+*    -v1.10      one set of naming rules on every path (AddComponent /
+*                EmplaceComponent<EntityName> included): blank names get a
+*                default, default-shaped names reserve their number, a
+*                default never repeats an existing name; ReissueDefaultName
+*                (prefab/paste), DeferredNaming (loaders); EntityName is
+*                WorldValidated: no mutable access outside World (const
+*                AddComponent/EmplaceComponent/hook references);
+*                SetEntityName refused inside declared systems
 *
 **************************************************************************/
 #pragma once
@@ -78,6 +89,7 @@
 #include <cstdint>
 #include <functional>
 #include <stdexcept>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -119,15 +131,22 @@ namespace Crucible
 	 \brief  Crucible's mandatory base scene components. World ORs this into
 			 every creation signature (CreateEntity, CreateEntities,
 			 CommandBuffer spawns), so each entity is born in its final
-			 archetype with all three, default-valued:
+			 archetype with all four, default-valued:
 			   Transform      position 0, identity rotation, scale 1
 			   WorldTransform identity matrix, valid = false
 			   HierarchyNode  all links null, childCount 0 (a root)
+			   EntityName     "Entity N", the next numbered default, unless
+							  a name was given (see CreateNamedEntity)
 	 \note   Must agree with the Mandatory<T> specialisations in
 			 Components.h - checked for every registered component below.
 	 *************************************************************************/
 	inline constexpr ComponentSignature kMandatoryComponents =
-		MakeSignature<Transform, WorldTransform, HierarchyNode>();
+		MakeSignature<Transform, WorldTransform, HierarchyNode, EntityName>();
+
+	/// What AddComponent/EmplaceComponent return and typed hooks receive: T&, or
+	/// const T& for a WorldValidated component (EntityName), which only World may write.
+	template <typename T>
+	using ComponentRef = std::conditional_t<WorldValidated<T>::value, const T&, T&>;
 
 	namespace Detail
 	{
@@ -353,6 +372,103 @@ namespace Crucible
 		 *********************************************************************/
 		std::vector<Entity> CreateEntities(uint32_t count, const ComponentSignature& signature = ComponentSignature{});
 
+		// ---------------------------------------------------------------------
+		// Entity names (the mandatory EntityName component)
+		//
+		// Names are labels, not identifiers: custom names may repeat. Two
+		// rules hold for every entity:
+		//   - it has a name: an empty or whitespace-only one becomes the next
+		//     numbered default, "Entity 1", "Entity 2"...;
+		//   - a generated default never repeats a name in the world: a name
+		//     shaped like a default ("Entity 7", however it arrived) moves
+		//     the counter past its number.
+		// Explicitly given names are kept as they are, defaults included.
+		// The counter only moves forward; deleting an entity renames or
+		// renumbers nothing. DestroyAllEntities restarts it at 1, and a
+		// whole-world rescan (RecalculateEntityNameCounter, the end of a
+		// DeferredNaming) sets it just past the highest "Entity N" left.
+		//
+		// A name can only be written through World, which applies both rules
+		// as it stores it: CreateEntity / CreateEntities / CreateNamedEntity,
+		// CommandBuffer spawns (once their With<T>() values are in),
+		// SetEntityName, ReissueDefaultName, and AddComponent /
+		// EmplaceComponent<EntityName> - and so CommandBuffer adds, scene and
+		// snapshot loading, prefabs and undo/redo too.
+		//
+		// EntityName is WorldValidated (ComponentKind.h), so nothing outside
+		// World gets a mutable EntityName: GetComponent / Write and a query
+		// with a non-const EntityName do not compile, and AddComponent,
+		// EmplaceComponent and the OnComponentAdded / OnComponentRemoved
+		// hooks give a const reference. Read it with Read<EntityName>() or a
+		// const query; rename with SetEntityName.
+		//
+		// Threading: the counter is main-thread state. Declared systems (which
+		// the scheduler may run alongside others) never move it directly:
+		// SetEntityName / ReissueDefaultName and AddComponent<EntityName>
+		// throw inside them, so a system renames through its CommandBuffer
+		// (AddComponent<EntityName>, replayed on the main thread). Renaming
+		// changes no archetype, so SetEntityName / ReissueDefaultName are
+		// allowed while a Query iterates (AddComponent is not).
+		// ---------------------------------------------------------------------
+
+		/*********************************************************************
+		 \brief  Loading scope: while one is alive, a blank name stays blank
+				 instead of taking a default. When the outermost one ends,
+				 the whole world is rescanned (RecalculateEntityNameCounter).
+		 \details A loader that creates entities first and reads their names
+				 afterwards (Scene::Load, snapshot restore) would otherwise
+				 hand out defaults that a name later in the same file
+				 repeats. Hooks fired inside the scope may see blank names.
+		 *********************************************************************/
+		class DeferredNaming
+		{
+		public:
+			explicit DeferredNaming(World& world) noexcept : m_world(world) { ++m_world.m_deferNamingDepth; }
+			~DeferredNaming() { m_world.EndDeferredNaming(); }
+			DeferredNaming(const DeferredNaming&) = delete;
+			DeferredNaming& operator=(const DeferredNaming&) = delete;
+		private:
+			World& m_world;
+		};
+
+		/*********************************************************************
+		 \brief  CreateEntity with a name, without using up a default number.
+		 \param[in] name      Kept as given; empty or whitespace-only gets
+							  the next numbered default instead.
+		 \param[in] signature Extra components, as for CreateEntity.
+		 \return The new entity.
+		 \note   Add hooks fire once the name is in place.
+		 *********************************************************************/
+		Entity CreateNamedEntity(std::string name, const ComponentSignature& signature = ComponentSignature{});
+
+		/*********************************************************************
+		 \brief  Renames an entity, applying both naming rules.
+		 \note   Throws std::invalid_argument if entity is dead or stale, and
+				 std::logic_error inside a declared system (it can move the
+				 shared counter) - use CommandBuffer::AddComponent<EntityName>
+				 there. Allowed while a Query iterates. Marks EntityName
+				 changed.
+		 *********************************************************************/
+		void SetEntityName(Entity entity, std::string name);
+
+		/*********************************************************************
+		 \brief  For an entity copied from elsewhere (prefab instance, paste):
+				 a name shaped like a default ("Entity 3") is a placeholder,
+				 so it is replaced with a fresh default; a blank one gets one
+				 too. A custom name is kept, even if another entity has it.
+		 \note   Same rules as SetEntityName.
+		 *********************************************************************/
+		void ReissueDefaultName(Entity entity);
+
+		/*********************************************************************
+		 \brief  Sets the default-name counter just past the highest
+				 "Entity N" in the world (1 if there is none), and gives any
+				 blank name a default. One scan of every entity: call it after
+				 the whole scene was replaced (New, Load, a play-mode
+				 restore), not per entity.
+		 *********************************************************************/
+		void RecalculateEntityNameCounter();
+
 		/*********************************************************************
 		 \brief  Destroys an entity AND all its descendants (Unity's
 				 Object.Destroy semantics), freeing their slots for reuse.
@@ -372,7 +488,8 @@ namespace Crucible
 		/*********************************************************************
 		 \brief
 			Destroys every live entity through DestroyEntity(), so every
-			removal hook fires.
+			removal hook fires. The world is then empty, so default names
+			number from "Entity 1" again.
 
 		 \note
 			Call before tearing down anything those hooks release resources
@@ -452,7 +569,8 @@ namespace Crucible
 		 \param[in]
 			value The value to give the component; defaults to T{}.
 		 \return
-			Reference to the entity's (new or existing) T instance.
+			Reference to the entity's (new or existing) T instance - const
+			for EntityName (WorldValidated).
 
 		 \details
 			If entity already has a T, overwrites it in place with no
@@ -469,7 +587,7 @@ namespace Crucible
 			move fails, the entity is left unchanged. HierarchyNode is
 			refused at compile time - use SetParent.
 		 *********************************************************************/
-		template <typename T> T& AddComponent(Entity entity, T value = T{});
+		template <typename T> ComponentRef<T> AddComponent(Entity entity, T value = T{});
 
 		/*********************************************************************
 		 \brief
@@ -478,9 +596,9 @@ namespace Crucible
 
 		 \tparam T    The component type to add.
 		 \tparam Args Constructor argument types for T.
-		 \return Reference to the entity's T instance.
+		 \return Reference to the entity's T instance (const for EntityName).
 		 *********************************************************************/
-		template <typename T, typename... Args> T& EmplaceComponent(Entity entity, Args&&... args);
+		template <typename T, typename... Args> ComponentRef<T> EmplaceComponent(Entity entity, Args&&... args);
 
 		/*********************************************************************
 		 \brief
@@ -536,7 +654,7 @@ namespace Crucible
 			hook failed - hooks must tolerate that.
 		 *********************************************************************/
 		template <typename T>
-		void OnComponentAdded(std::function<void(World&, Entity, T&)> callback);
+		void OnComponentAdded(std::function<void(World&, Entity, ComponentRef<T>)> callback);
 
 		/*********************************************************************
 		 \brief
@@ -551,7 +669,7 @@ namespace Crucible
 			Same failure policy as OnComponentAdded().
 		 *********************************************************************/
 		template <typename T>
-		void OnComponentRemoved(std::function<void(World&, Entity, T&)> callback);
+		void OnComponentRemoved(std::function<void(World&, Entity, ComponentRef<T>)> callback);
 
 		/*********************************************************************
 		 \brief
@@ -768,7 +886,15 @@ namespace Crucible
 		// Takes an entity slot and adds its default row to archetype, stamped now, no hooks.
 		// Strong guarantee: on a throw the slot is given back and archetype is unchanged.
 		Entity PlaceNewEntity(Archetype& archetype);
-		void NotifyComponentsAdded(Entity entity);
+		void NotifyComponentsAdded(Entity entity);   // also names a still-unnamed spawn
+
+		// Naming internals (World.cpp): the entity must be alive. No access check, no stamp.
+		std::string& NameOf(Entity entity);
+		void NormalizeName(Entity entity);           // the two naming rules, on the name it has now
+		void ApplyName(Entity entity, std::string name);
+		void EndDeferredNaming() noexcept;            // ~DeferredNaming
+		// SetEntityName / ReissueDefaultName: alive, and not inside a declared system.
+		const EntityRecord& RequireRenamableEntity(Entity entity, const char* operation) const;
 
 		// fireHooks == false removes an entity whose add hooks never ran (a
 		// rolled-back spawn or bulk create), so no remove/destroy hook may run.
@@ -848,6 +974,8 @@ namespace Crucible
 		std::uint64_t     m_currentTick = 1;
 		float             m_deltaTime = 0.f;
 		std::uint64_t     m_hookFailures = 0;
+		std::uint32_t     m_nextEntityNumber = 1;   // the N of the next default "Entity N"
+		std::uint32_t     m_deferNamingDepth = 0;     // > 0: blanks wait for the outermost DeferredNaming to end
 
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onAddHooks;
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onRemoveHooks;
@@ -858,7 +986,7 @@ namespace Crucible
 #endif
 
 	template <typename T>
-	void World::OnComponentAdded(std::function<void(World&, Entity, T&)> callback)
+	void World::OnComponentAdded(std::function<void(World&, Entity, ComponentRef<T>)> callback)
 	{
 		if (m_archetypes.IsIterating())
 			throw std::logic_error("World::OnComponentAdded: register hooks outside queries and hook dispatch");
@@ -871,7 +999,7 @@ namespace Crucible
 	}
 
 	template <typename T>
-	void World::OnComponentRemoved(std::function<void(World&, Entity, T&)> callback)
+	void World::OnComponentRemoved(std::function<void(World&, Entity, ComponentRef<T>)> callback)
 	{
 		if (m_archetypes.IsIterating())
 			throw std::logic_error("World::OnComponentRemoved: register hooks outside queries and hook dispatch");
@@ -912,6 +1040,7 @@ namespace Crucible
 	T* World::GetComponent(Entity e)
 	{
 		static_assert(!WorldManaged<T>::value, "This component is managed by World (e.g. HierarchyNode): use Read<T>() and World's API to change it");
+		static_assert(!WorldValidated<T>::value, "World checks every write to this component (e.g. EntityName): read it with Read<T>() and rename with World::SetEntityName");
 		constexpr ComponentId id = ComponentTypeId<T>();
 		CheckDeclaredAccess(ComponentSignature{}, MakeSignature<T>(), "writes through World::GetComponent/Write and");
 
@@ -977,18 +1106,28 @@ namespace Crucible
 	}
 
 	template<typename T>
-	inline T& World::AddComponent(Entity entity, T value)
+	inline ComponentRef<T> World::AddComponent(Entity entity, T value)
 	{
 		static_assert(!WorldManaged<T>::value, "This component is managed by World (e.g. HierarchyNode): use SetParent (kNullEntity to detach)");
 		EntityRecord& record = RequireMutableEntity(entity, "AddComponent");
 		constexpr ComponentId id = ComponentTypeId<T>();
 
-		if (record.archetype->Contains(id)) return OverwriteComponent<T>(record, id, std::move(value));
-		return InsertComponent<T>(record, entity, id, std::move(value));
+		if constexpr (std::is_same_v<T, EntityName>)
+		{
+			// Mandatory, so always an overwrite; then the naming rules (see "Entity names").
+			const T& name = OverwriteComponent<T>(record, id, std::move(value));
+			NormalizeName(entity);
+			return name;
+		}
+		else
+		{
+			if (record.archetype->Contains(id)) return OverwriteComponent<T>(record, id, std::move(value));
+			return InsertComponent<T>(record, entity, id, std::move(value));
+		}
 	}
 
 	template <typename T, typename... Args>
-	inline T& World::EmplaceComponent(Entity entity, Args&&... args)
+	inline ComponentRef<T> World::EmplaceComponent(Entity entity, Args&&... args)
 	{
 		return AddComponent<T>(entity, T(std::forward<Args>(args)...));
 	}
