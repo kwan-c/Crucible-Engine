@@ -377,3 +377,163 @@ float4 aoBlurFrag(PostVSOut input) : SV_Target {
     float ao = weight > 0.0 ? sum / weight : sourceTex.SampleLevel(input.uv, 0.0).r;
     return float4(ao, ao, ao, 1.0);
 }
+
+// ---- Toon outlines (ToonOutlinePass) -------------------------------------------------------------
+// Reads the scene pass's line data (sourceTex - see DefaultShader's LineData: x = 1 / view depth,
+// 0 = nothing there; yz = the surface's direction, octahedral; w = how strong a line may be) and
+// returns a factor the pipeline multiplies into the HDR image: 1 = untouched, less = a line, which
+// is so the colour under it, darker.
+//   - Silhouettes: where one surface ends in front of another. 1/depth changes linearly across the
+//     screen on any flat surface, so each side's surface can be carried across the edge and
+//     compared with the other: a silhouette needs the near side's surface, carried on, to pass well
+//     in front of the far side, AND the far side's, carried back, to pass well behind the near side.
+//     A fold (two faces of one object meeting at an angle) fails the second test, so folds - the
+//     edges inside an object's outline - get no silhouette line.
+//   - Creases: the surface's direction turns by more than the crease angle across a few pixels of
+//     one surface. Scaled by the crease strength: lighter than silhouettes by default.
+//   - Every line is a band `width` pixels wide laid over the pixel grid at the edge's own position,
+//     found to a fraction of a pixel: with MSAA the pixel an edge crosses is a blend of both sides,
+//     and how far its value lies between them says where in it the edge runs. Each pixel is darkened
+//     by how much of it the band covers, so a line keeps the same total darkness and slides smoothly
+//     as the edge moves across the screen (lines pulsed between one and two pixels' darkness, and
+//     jumped a pixel at a time, when they were drawn whole pixels at a time). A silhouette line
+//     reaches at most half a pixel past the edge onto what is behind (so none of the object's own
+//     colour is left showing outside the line) and grows inward with the width; a crease line is
+//     centred on the crease.
+// Each direction is read as one row and one column of line data through the pixel, five pixels each
+// way (the outer two only near an edge).
+// pc.a: x = darkness (0..1), y = width (pixels, 0.5..3), z = cos(crease angle), w = depth gap (fraction)
+// pc.b: x = distance where lines start to fade (m), y = where they are gone, zw = target size (pixels)
+// pc.c: x = crease strength (0..1)
+
+float3 OctDecode(float2 e) {
+    float3 n = float3(e.x, e.y, 1.0 - abs(e.x) - abs(e.y));
+    float  t = saturate(-n.z);
+    n.x += n.x >= 0.0 ? -t : t;
+    n.y += n.y >= 0.0 ? -t : t;
+    return normalize(n);
+}
+
+float4 LineTexel(int2 p) {
+    int2 size = int2(pc.b.zw);
+    return sourceTex.Load(int3(clamp(p, int2(0, 0), size - 1), 0));
+}
+
+// How much of the pixel [lo, lo + 1] the band from x0 to x1 covers (0..1).
+float Cover(float x0, float x1, float lo) { return saturate(min(x1, lo + 1.0) - max(x0, lo)); }
+
+// How far lines have faded with the distance of the surface they belong to (1/depth w).
+float LineFade(float w) { return w > 0.0 ? 1.0 - smoothstep(pc.b.x, pc.b.y, 1.0 / w) : 0.0; }
+
+// A silhouette between pixel a (near) and pixel c (far, two steps further), with b between them,
+// from the 1/depths of i (one step before a), a, b, c and o (one step beyond c). Returns how
+// clearly it is one (0..1) and t, where in b the edge runs: how much of b is a's surface (0 = the
+// edge is at b's border with a, 1 = at its border with c).
+float EdgeBetween(float wi, float wa, float wb, float wc, float wo, float gap, out float t) {
+    t = 0.0;
+    if (wa <= 0.0) { return 0.0; }
+    float nearAtB = 2.0 * wa - wi;                     // a's surface carried on to b
+    float farAtB  = 2.0 * wc - wo;                     // c's surface carried back to b
+    float drop    = (nearAtB + (wa - wi) - wc) / wa;   // a's surface carried on to c, against c
+    float rise    = (wa - (farAtB + (wc - wo))) / wa;  // c's surface carried back to a, against a
+    float jump    = nearAtB - farAtB;
+    t = jump > 1e-6 ? saturate((wb - farAtB) / jump) : 1.0;
+    return smoothstep(gap, 2.0 * gap, min(drop, rise));
+}
+
+// The silhouette ink at the middle pixel of a line of data, s[k] = the pixel k steps along it
+// (k = -5..5 at index k + 5), from edges whose far side is towards +k (dir = 1) or -k (dir = -1).
+// The pixel can be the one the edge crosses (b), the far one just after it, or one of the near ones
+// before it.
+float SilhouetteInk(float4 s[11], int dir, float wIn, float wOut, float gap) {
+    float ink = 0.0;
+    float slope = s[5].x - s[5 - dir].x;   // this pixel's surface, one step on
+    [unroll] for (int kb = -1; kb <= 3; ++kb) {   // where b lies, steps from this pixel
+        int   ka = kb - 1;
+        float wa = s[5 + dir * ka].x;
+        if (wa <= 0.0 || (kb >= 2 && wIn <= float(kb - 1))) { continue; }   // nothing here, or too far in for this width
+        // Further in than the pixel next to the edge: only along this pixel's own surface.
+        if (ka >= 1 && abs(wa - (s[5].x + float(ka) * slope)) > float(ka) * gap * s[5].x) { continue; }
+        float wi = s[5 + dir * (kb - 2)].x, wb = s[5 + dir * kb].x, wc = s[5 + dir * (kb + 1)].x, wo = s[5 + dir * (kb + 2)].x;
+        // a must be a whole pixel of the near side and c of the far side. If one is itself a blend
+        // of both (the edge runs through it), this reading puts the edge in the wrong pixel and
+        // another reading places it: skip. A thin side (one or two pixels, so the pixel beyond is
+        // already partly the other surface) stays, taken as flat.
+        float jump = abs(wa - wc);
+        if (abs(wa - wi) > 0.25 * jump) {
+            if (wa >= wi && wa >= wb) { wi = wa; } else { continue; }
+        }
+        if (abs(wc - wo) > 0.25 * jump) {
+            if (wc <= wo && wc <= wb) { wo = wc; } else { continue; }
+        }
+        float t;
+        float clear = EdgeBetween(wi, wa, wb, wc, wo, gap, t);
+        float owner = s[5 + dir * ka].w * LineFade(wa);   // the near surface's line strength
+        ink = max(ink, clear * owner * Cover(t - wIn, t + wOut, float(-kb)));
+    }
+    return ink;
+}
+
+// The crease ink at the middle pixel, from creases between neighbouring pixels k and k + 1 of one
+// surface (k = -2..1). The faces on either side are read one pixel further out; how much of k and
+// of k + 1 is the first face places the crease (in pixels from k's border with k - 1).
+float CreaseInk(float4 s[11], float3 n[7], float cosMax, float width, float gap) {
+    float ink = 0.0;
+    [unroll] for (int k = -2; k <= 1; ++k) {
+        float w0 = s[5 + k - 1].x, w1 = s[5 + k].x, w2 = s[5 + k + 1].x, w3 = s[5 + k + 2].x;
+        if (w0 <= 0.0 || w1 <= 0.0 || w2 <= 0.0 || w3 <= 0.0) { continue; }
+        if (abs(w1 - w0) > gap * w0 || abs(w2 - w1) > gap * w1 || abs(w3 - w2) > gap * w2) { continue; }   // not one surface
+        float3 n1 = n[3 + k - 1], n2 = n[3 + k + 2];
+        float  amount = smoothstep(cosMax + 0.05, cosMax - 0.05, dot(n1, n2));
+        if (amount <= 0.0) { continue; }
+        float3 d  = n1 - n2;
+        float  dd = max(dot(d, d), 1e-6);
+        float  x  = saturate(dot(n[3 + k] - n2, d) / dd) + saturate(dot(n[3 + k + 1] - n2, d) / dd);
+        if (x < 0.5 || x >= 1.5) { continue; }   // between the next pair's centres: that pair draws it
+        float owner = s[5 + k].w * LineFade(w1);
+        ink = max(ink, amount * owner * Cover(x - 0.5 * width, x + 0.5 * width, float(-k)));
+    }
+    return ink;
+}
+
+[shader("fragment")]
+float4 toonOutlineFrag(PostVSOut input) : SV_Target {
+    int2   p = int2(input.pos.xy);
+    float4 c = LineTexel(p);
+
+    float width = clamp(pc.a.y, 0.5, 3.0);
+    float gap   = max(pc.a.w, 1e-4);
+    float wOut  = 0.5 * min(width, 1.0);   // past the edge, onto what is behind
+    float wIn   = width - wOut;             // into the near surface
+    bool  creases = pc.c.x > 0.0;
+
+    float line = 0.0;
+    [unroll] for (int axis = 0; axis < 2; ++axis) {
+        int2 step = axis == 0 ? int2(1, 0) : int2(0, 1);
+        float4 s[11];
+        [unroll] for (int k = -3; k <= 3; ++k) { s[5 + k] = k == 0 ? c : LineTexel(p + k * step); }
+        s[0] = s[2]; s[1] = s[2]; s[9] = s[8]; s[10] = s[8];   // placeholders until read below
+
+        // Nothing drawn anywhere near (the sky): no line along this axis.
+        if (c.x <= 0.0 && s[4].x <= 0.0 && s[6].x <= 0.0) { continue; }
+
+        // An edge nearby: read the outer pixels too and look for silhouettes both ways.
+        float quiet = 0.5 * gap * max(c.x, max(s[4].x, s[6].x));
+        bool  edge  = c.x <= 0.0 || abs(s[4].x - c.x) > quiet || abs(s[6].x - c.x) > quiet
+                   || abs(s[2].x - c.x) > 3.0 * quiet || abs(s[8].x - c.x) > 3.0 * quiet;
+        if (edge) {
+            s[0] = LineTexel(p - 5 * step); s[1] = LineTexel(p - 4 * step);
+            s[9] = LineTexel(p + 4 * step); s[10] = LineTexel(p + 5 * step);
+            line = max(line, max(SilhouetteInk(s, 1, wIn, wOut, gap), SilhouetteInk(s, -1, wIn, wOut, gap)));
+        }
+
+        if (creases) {
+            float3 n[7];
+            [unroll] for (int k = -3; k <= 3; ++k) { n[3 + k] = OctDecode(s[5 + k].yz); }
+            line = max(line, CreaseInk(s, n, pc.a.z, width, gap) * pc.c.x);
+        }
+    }
+
+    float keep = 1.0 - saturate(pc.a.x) * saturate(line);
+    return float4(keep, keep, keep, 1.0);
+}

@@ -54,9 +54,11 @@ namespace Crucible {
         // Per PostTargets: the HDR image as a bloom source (1 set, 1 image), one set per bloom
         // step, and the tonemap set (2 images). One PostTargets per viewport, plus the window's.
         const uint32_t targets = m_maxViews;
-        // ... plus ambient occlusion: its depth + normals set and its blur set (2 images each).
-        const uint32_t sets    = targets * (kBloomMips + 4);
-        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = targets * (kBloomMips + 7) };
+        // ... plus ambient occlusion: its depth + normals set and its blur set (2 images each),
+        // the toon outline pass's line data (1 set, 1 image), and the water's scene copies (1 set,
+        // 2 images).
+        const uint32_t sets    = targets * (kBloomMips + 6);
+        vk::DescriptorPoolSize size{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = targets * (kBloomMips + 10) };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
             .maxSets = sets,
@@ -79,27 +81,64 @@ namespace Crucible {
             return vk::raii::ImageView(m_context.GetDevice(), info);
         };
 
+        // Transfer source: copied for the water (sceneCopy, below) when the view has water in sight.
         t.hdrImage.Create(m_context, width, height, format, vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled | vk::ImageUsageFlagBits::eTransferSrc,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
         t.hdrView = makeView(t.hdrImage);
 
-        // MSAA targets: what the scene is actually drawn into when samples > 1. Never sampled or
-        // kept (they resolve into hdrImage and the view's depth image at the end of the pass).
+        // The water's copies of the scene drawn before it: colour (read smoothly, for the bent
+        // view of the bottom) and depth (read texel by texel). Copied into, then sampled.
+        t.sceneCopy.Create(m_context, width, height, format, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        t.sceneCopyView = makeView(t.sceneCopy);
+        t.depthCopy.Create(m_context, width, height, m_depthFormat, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        {
+            vk::ImageViewCreateInfo info{
+                .image = t.depthCopy.GetImage(), .viewType = vk::ImageViewType::e2D, .format = m_depthFormat,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1 } };
+            t.depthCopyView = vk::raii::ImageView(m_context.GetDevice(), info);
+        }
+
+        // The scene pass's line data for the toon outline pass (same size, its own format).
+        const vk::Format lineFormat = RenderLayouts::kLineDataFormat;
+        const auto makeLineView = [&](VulkanImage& image) {
+            vk::ImageViewCreateInfo info{
+                .image = image.GetImage(), .viewType = vk::ImageViewType::e2D, .format = lineFormat,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = 1, .layerCount = 1 } };
+            return vk::raii::ImageView(m_context.GetDevice(), info);
+        };
+        t.lineData.Create(m_context, width, height, lineFormat, vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal);
+        t.lineDataView = makeLineView(t.lineData);
+
+        // MSAA targets: what the scene is actually drawn into when samples > 1. Never sampled
+        // (they resolve into hdrImage and the view's depth image at the end of the pass). Not
+        // transient: with water in sight they are kept between the scene pass's two halves.
         t.samples       = samples;
-        t.msaaColorView = nullptr;
-        t.msaaDepthView = nullptr;
-        t.msaaColor     = VulkanImage{};
-        t.msaaDepth     = VulkanImage{};
+        t.msaaColorView    = nullptr;
+        t.msaaDepthView    = nullptr;
+        t.msaaLineDataView = nullptr;
+        t.msaaColor        = VulkanImage{};
+        t.msaaDepth        = VulkanImage{};
+        t.msaaLineData     = VulkanImage{};
         if (t.samples > 1) {
             const vk::SampleCountFlagBits samples     = static_cast<vk::SampleCountFlagBits>(t.samples);
             const vk::Format              depthFormat = m_depthFormat;
             t.msaaColor.Create(m_context, width, height, format, vk::ImageTiling::eOptimal,
-                vk::ImageUsageFlagBits::eColorAttachment | vk::ImageUsageFlagBits::eTransientAttachment,
+                vk::ImageUsageFlagBits::eColorAttachment,
                 vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, samples);
             t.msaaColorView = makeView(t.msaaColor);
+            t.msaaLineData.Create(m_context, width, height, lineFormat, vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eColorAttachment,
+                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, samples);
+            t.msaaLineDataView = makeLineView(t.msaaLineData);
             t.msaaDepth.Create(m_context, width, height, depthFormat, vk::ImageTiling::eOptimal,
-                vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransientAttachment,
+                vk::ImageUsageFlagBits::eDepthStencilAttachment,
                 vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, samples);
             vk::ImageViewCreateInfo depthViewInfo{
                 .image = t.msaaDepth.GetImage(), .viewType = vk::ImageViewType::e2D, .format = depthFormat,
@@ -168,6 +207,16 @@ namespace Crucible {
             t.aoDepthSet = allocate(m_twoTextureSetLayout);
             t.aoBlurSet  = allocate(m_twoTextureSetLayout);
         }
+        if (!*t.lineDataSet) {
+            vk::DescriptorSetLayout raw = m_oneTextureSetLayout;
+            vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = m_postDescriptorPool, .descriptorSetCount = 1, .pSetLayouts = &raw };
+            t.lineDataSet = std::move(m_context.GetDevice().allocateDescriptorSets(allocInfo).front());
+        }
+        if (!*t.waterSet) {
+            vk::DescriptorSetLayout raw = m_twoTextureSetLayout;
+            vk::DescriptorSetAllocateInfo allocInfo{ .descriptorPool = m_postDescriptorPool, .descriptorSetCount = 1, .pSetLayouts = &raw };
+            t.waterSet = std::move(m_context.GetDevice().allocateDescriptorSets(allocInfo).front());
+        }
 
         const auto write = [&](const vk::raii::DescriptorSet& set, uint32_t binding, const vk::raii::ImageView& view) {
             vk::DescriptorImageInfo imageInfo{
@@ -204,6 +253,28 @@ namespace Crucible {
         }
         write(t.aoBlurSet, 0, t.aoRawView);
         writeDepth(t.aoBlurSet, 1);
+
+        // Line data is read texel by texel (Load), never filtered.
+        {
+            vk::DescriptorImageInfo imageInfo{
+                .sampler = *m_pointSampler, .imageView = *t.lineDataView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+            vk::WriteDescriptorSet w{
+                .dstSet = *t.lineDataSet, .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo };
+            m_context.GetDevice().updateDescriptorSets(w, {});
+        }
+
+        // The water's scene copies: colour filtered (the bent view of the bottom moves smoothly),
+        // depth not.
+        write(t.waterSet, 0, t.sceneCopyView);
+        {
+            vk::DescriptorImageInfo imageInfo{
+                .sampler = *m_pointSampler, .imageView = *t.depthCopyView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
+            vk::WriteDescriptorSet w{
+                .dstSet = *t.waterSet, .dstBinding = 1, .dstArrayElement = 0, .descriptorCount = 1,
+                .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo };
+            m_context.GetDevice().updateDescriptorSets(w, {});
+        }
 
     }   // ViewTargetAllocator::Create()
 

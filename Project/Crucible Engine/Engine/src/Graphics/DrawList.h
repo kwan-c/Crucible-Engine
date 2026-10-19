@@ -44,6 +44,12 @@ namespace Crucible {
         ParticlePush  push;
     };
 
+    // One water surface (WaterPass): its mesh, drawn with its own settings and transform.
+    struct WaterDraw {
+        MeshHandle mesh;
+        WaterPush  push;
+    };
+
     // Everything one view draws this frame, built by PrepareView() before recording starts
     // (so the instance buffer's final size is known before any command references it).
     struct ViewDrawList {
@@ -52,8 +58,9 @@ namespace Crucible {
         uint32_t                                              cascadeCount = 0;   // 0 = no shadow pass
         std::vector<DrawBatch>                                outline;            // selected object (mask pass)
         std::vector<ParticleBatch>                            particles;          // far to near
+        std::vector<WaterDraw>                                water;              // water surfaces in view (drawn after the opaque scene)
         glm::vec4                                             projInfo{ 1.0f };   // proj[0][0], [1][1], [2][2], [3][2] (ambient occlusion)
-        void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); }
+        void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); water.clear(); }
     };
 
 }   // NAMESPACE CRUCIBLE

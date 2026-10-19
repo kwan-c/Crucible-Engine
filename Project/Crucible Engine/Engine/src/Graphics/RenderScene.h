@@ -101,12 +101,9 @@ namespace Crucible {
          \param[out] mainOut         Receives the main pass's batches.
          \param[out] shadowOut       One batch list per cascade, as many as cascadeViewProj.
          *********************************************************************/
-        void BuildMainBatches(const Camera& camera, RenderCullStats& stats, std::vector<DrawBatch>& out);
-
-        /// Appends the selected objects' batches (those that have a proxy and are visible).
         void BuildViewBatches(const Camera& camera, std::span<const glm::mat4> cascadeViewProj, RenderCullStats& stats,
                               std::vector<DrawBatch>& mainOut, std::span<std::vector<DrawBatch>> shadowOut);
-        /// Appends the selected object's batch, if there is one and it is visible.
+        /// Appends the selected objects' batches (those that have a proxy and are visible).
         void BuildOutlineBatches(std::vector<DrawBatch>& out);
 
         /*********************************************************************
@@ -135,6 +132,9 @@ namespace Crucible {
         bool IsDrawable(MeshHandle mesh) const;
         // The material a main-pass draw binds: the item's own, or the default one if it has none.
         MaterialHandle ResolveMaterial(MaterialHandle material) const;
+        // Sort key in the depth-only passes: the mesh, plus the material when it is cut-out or
+        // double-sided (as id + 1 in the high half; 0 = merge with every other material).
+        uint64_t DepthKey(MeshHandle mesh, MaterialHandle material) const;
         // Makes room for `count` more instances this frame and returns the index of the first. The
         // list keeps its size between frames, so it only fills new entries when it has to grow.
         uint32_t AllocateInstances(uint32_t count);

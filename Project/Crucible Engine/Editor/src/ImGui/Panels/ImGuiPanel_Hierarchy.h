@@ -134,6 +134,10 @@ namespace Crucible {
 		// Spawns a new entity with a ParticleEmitter set up as one of the presets in
 		// Graphics/ParticlePresets.h: "Sparks", "Fire", "Smoke" or "Splash".
 		void CreateParticleObject(const std::string& effect);
+
+		// Spawns a new entity with a Water component: a 10 x 10 m surface (the built-in plane,
+		// scaled) at the origin. It needs ground under it to show depth, shores and foam.
+		void CreateWaterObject();
 	};
 
 }

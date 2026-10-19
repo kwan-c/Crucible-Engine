@@ -2,6 +2,8 @@
 // list (Renderer::DrawShadowCascades). No fragment shader - the rasterizer writes depth alone.
 // The pipeline (VulkanPipeline::CreateShadowPipeline) adds slope-scaled depth bias and doesn't cull,
 // so open meshes (planes, single-sided cards) still cast.
+// Cut-out materials (leaves) use the second pair of entry points: the albedo texture's alpha
+// decides which pixels cast, so the shadow has the leaves' shape.
 
 // Only the prefix this shader reads; the full struct is in DefaultShader.slang.
 struct FrameUniforms {
@@ -20,16 +22,40 @@ struct InstanceData {
     float4   params;   // unused here; keeps the 80-byte stride of Crucible::InstanceData
 };
 
+// Must match ShadowPass's push constant: the cascade, then Crucible::CutoutPush.
 struct ShadowPush {
-    uint cascade;   // which shadowViewProj to use (also the array layer being rendered)
+    uint  cascade;       // which shadowViewProj to use (also the array layer being rendered)
+    float alphaCutoff;   // cut-out pipeline only
+    float alphaTint;     // the material's albedoTint.a
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms>  frame;
 [[vk::binding(2, 0)]] StructuredBuffer<InstanceData> instances;
+[[vk::binding(0, 1)]] Sampler2D                      albedoTex;   // the material's (set 1), cut-out only
 [[vk::push_constant]] ConstantBuffer<ShadowPush>     pc;
 
 [shader("vertex")]
 float4 shadowVert(float3 position : POSITION, uint instanceID : SV_VulkanInstanceID) : SV_Position {
     float4 world = mul(instances[instanceID].model, float4(position, 1.0));
     return mul(frame.shadowViewProj[pc.cascade], world);
+}
+
+struct CutoutVSOutput {
+    float4 pos : SV_Position;
+    float2 uv;
+};
+
+[shader("vertex")]
+// uv is Vertex::uv, vertex input location 2 (ShadowPass binds locations 0 and 2 only).
+CutoutVSOutput shadowCutoutVert([[vk::location(0)]] float3 position : POSITION, [[vk::location(2)]] float2 uv : TEXCOORD0, uint instanceID : SV_VulkanInstanceID) {
+    CutoutVSOutput output;
+    float4 world = mul(instances[instanceID].model, float4(position, 1.0));
+    output.pos = mul(frame.shadowViewProj[pc.cascade], world);
+    output.uv  = uv;
+    return output;
+}
+
+[shader("fragment")]
+void shadowCutoutFrag(CutoutVSOutput input) {
+    if (albedoTex.Sample(input.uv).a * pc.alphaTint < pc.alphaCutoff) { discard; }
 }

@@ -1,6 +1,8 @@
 // Crucible Engine's default (and only) material shader: full metallic-roughness PBR, lit by every
 // light the Renderer was given this frame (set 0, binding 1 - see Renderer::SubmitLight and the ECS
-// Light component) plus a hemisphere ambient term, then exposure + ACES tonemapping. Every material
+// Light component) plus a hemisphere ambient term, then exposure + ACES tonemapping. With the
+// scene's Skybox set to toon shading (frame.toonParams.x = 1), the same inputs are lit the toon way
+// instead (ShadeToon below). Every material
 // (Renderer::CreateMaterial) binds set 1's five texture slots below; any slot the caller left
 // Invalid was already substituted with a neutral placeholder texture on the C++ side
 // (Renderer::WriteMaterialDescriptorSet), so this shader never has to branch on "is this map
@@ -16,6 +18,8 @@ struct VSInput {
 
 // Per-frame data (FrameUniforms, `frame`) and the fog functions, shared with the sky and particles.
 #include "Common.slang"
+// Lights, shadow map, light clusters and the sky as a light source (shared with Water.slang).
+#include "Lighting.slang"
 
 // One instance (set 0, binding 2). Must match Crucible::InstanceData (RenderTypes.h).
 struct InstanceData {
@@ -23,64 +27,39 @@ struct InstanceData {
     float4   params;   // x = multiplier on the material's emissive, yzw = spare (MaterialParams component)
 };
 
-// One light. Must match Crucible::GpuLight (RenderTypes.h) - four float4s, identical under std430.
-struct GpuLight {
-    float4 positionRange;     // xyz = world position, w = range
-    float4 directionType;     // xyz = normalized travel direction, w = LightType as float
-    float4 colourIntensity;   // rgb = linear colour, w = intensity
-    float4 spotParams;        // x = cos(inner half-angle), y = cos(outer half-angle)
-};
-
-// Matches Crucible::LightType (LightTypes.h).
-static const uint kLightDirectional = 0;
-static const uint kLightPoint       = 1;
-static const uint kLightSpot        = 2;
-
-// A material's scalar knobs - must match Crucible::MaterialFactors field-for-field (same packing
-// rules apply on both sides; see RenderTypes.h's comment on why this exact field order matters).
-struct MaterialFactors {
+// Per-draw data: the current material's scalar settings (constant across a batch, since batches
+// never cross materials). Must match Crucible::PushConstants (RenderTypes.h) byte for byte - the
+// first five fields are Crucible::MaterialFactors. Written out flat (not as a nested struct) so
+// the offsets are the C++ ones under every packing rule.
+struct PushConstants {
     float4 albedoTint;
     float3 emissiveFactor;
     float  metallicFactor;
     float  roughnessFactor;
+    float  alphaCutoff;   // 0 = solid
+    uint   flags;         // bits 0-1: shading (0 = the scene's, 1 = toon, 2 = realistic),
+                          // bit 2: toonEdge applies, bit 3: toonShade applies
+    float  outline;       // toon outlines on this material (0..1)
+    float4 toonEdge;      // x = edge position, y = softness (the material's own, flag bit 2)
+    float4 toonShade;     // rgb = shade tint, linear (the material's own, flag bit 3)
+    float4 toonLit;       // rgb = tint of the lit side, linear (white = none)
 };
+static const uint kShadingScene     = 0;
+static const uint kShadingToon      = 1;
+static const uint kShadingRealistic = 2;
+static const uint kFlagOwnEdge      = 4;
+static const uint kFlagOwnShade     = 8;
 
-// Per-draw data. Must match Crucible::PushConstants exactly (RenderSystem.cpp's DrawRenderQueue).
-// The model matrix moved out to the instance buffer (one draw now covers many objects); only the
-// material's factors - constant across a batch, since batches never cross materials - remain.
-struct PushConstants {
-    MaterialFactors  factors;
-};
-
-// This frame's lights (Renderer::UpdateLightBuffer). Only the first frame.lightParams.x are valid.
-[[vk::binding(1, 0)]]
-StructuredBuffer<GpuLight> lights;
+// Cut-out pipelines (ScenePass's second set) are built with this on: pixels whose alpha is below
+// pc.alphaCutoff are discarded. Solid materials use pipelines with it off, where the discard is
+// compiled out entirely (a shader that can discard loses early depth testing).
+[[vk::constant_id(0)]] const bool kCutout = false;
 
 // Every object drawn this frame, by every view and pass (Renderer::UploadInstances). A draw's
 // instances are contiguous; drawIndexed's firstInstance points at the first one, and
 // SV_VulkanInstanceID (gl_InstanceIndex) already includes that offset.
 [[vk::binding(2, 0)]]
 StructuredBuffer<InstanceData> instances;
-
-// The sun's cascaded shadow map (one layer per cascade) and a comparison sampler
-// (LESS_OR_EQUAL, linear filtering = hardware 2x2 PCF per tap).
-[[vk::binding(3, 0)]] Texture2DArray<float>  shadowMap;
-[[vk::binding(4, 0)]] SamplerComparisonState shadowSampler;
-
-// Clustered lighting. The view volume is cut into clusterDims.x * y * z cells; each cell lists
-// the point/spot lights that can reach it, so a pixel only loops over the lights near it instead
-// of over every light in the scene. Built on the CPU per view (Renderer::BuildLightClusters).
-struct ClusterCell {
-    uint offset;   // first entry in clusterLightIndices
-    uint count;    // how many entries
-};
-[[vk::binding(6, 0)]] StructuredBuffer<ClusterCell> clusterGrid;
-[[vk::binding(7, 0)]] StructuredBuffer<uint>        clusterLightIndices;
-
-// The sky as a light source: the current skybox, blurred more and more in each smaller mip level
-// (Renderer::BuildEnvironmentLighting). A shiny surface reads a sharp level, a rough one a blurry
-// level, so reflections soften with roughness.
-[[vk::binding(8, 0)]] SamplerCube envMap;
 
 // Ambient occlusion for this view (Post.slang's aoFrag/aoBlurFrag): 1 = open, lower = tucked into
 // a crease or corner. Half resolution; all white when the effect is off.
@@ -106,6 +85,7 @@ struct VSOutput {
     float2 uv;
     float3 worldPos;
     nointerpolation float4 instanceParams;   // InstanceData::params, the same for the whole object
+    float3 linePos;                          // where the outline breakup pattern is read (see vertMain)
 };
 
 [shader("vertex")]
@@ -131,10 +111,16 @@ VSOutput vertMain(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     output.tangentWS   = normalize(mul(modelUpper, input.inTangent.xyz));
     output.tangentSign = input.inTangent.w;
 
+    // Toon outlines: the breakup pattern is read at the mesh's own position, in metres (scaled
+    // like the object, but not turned or moved with it), so the gaps stay put on the surface of
+    // a moving, turning object. model[r][c]: column c is where the object's axis c points.
+    float3 scale = float3(length(float3(model[0][0], model[1][0], model[2][0])),
+                          length(float3(model[0][1], model[1][1], model[2][1])),
+                          length(float3(model[0][2], model[1][2], model[2][2])));
+    output.linePos = input.inPosition * scale;
+
     return output;
 }
-
-static const float kPi = 3.14159265358979323846;
 
 float3 FresnelSchlick(float cosTheta, float3 F0) {
     return F0 + (float3(1.0, 1.0, 1.0) - F0) * pow(saturate(1.0 - cosTheta), 5.0);
@@ -159,14 +145,6 @@ float GeometrySmith(float NdotV, float NdotL, float roughness) {
     return GeometrySchlickGGX(NdotV, roughness) * GeometrySchlickGGX(NdotL, roughness);
 }
 
-// Smoothly windowed inverse-square falloff (the UE4/Frostbite form): physically-based 1/d^2 near
-// the light, forced to exactly zero at `range` so a light's influence has a hard bound.
-float DistanceAttenuation(float distSq, float range) {
-    float ratio  = distSq / max(range * range, 1e-4);           // (d/r)^2
-    float window = saturate(1.0 - ratio * ratio);                // 1 - (d/r)^4
-    return (window * window) / max(distSq, 1e-4);
-}
-
 // Cook-Torrance GGX specular + Lambert diffuse for one light direction L carrying `radiance`.
 float3 EvaluateBRDF(float3 N, float3 V, float3 L, float3 radiance,
                     float3 albedo, float metallic, float roughness, float3 F0) {
@@ -189,125 +167,12 @@ float3 EvaluateBRDF(float3 N, float3 V, float3 L, float3 radiance,
     return (diffuse + specular) * radiance * NdotL;
 }
 
-// One cascade's answer for worldPos: 1 = fully lit, 0 = fully shadowed, -1 = this cascade's map
-// does not cover the point.
-float SampleCascade(float3 worldPos, float3 geomN, float3 L, uint c) {
-    // Move the lookup point off the surface before comparing depths, by an amount measured in
-    // THIS cascade's texels (far cascades have big texels and need a bigger push, or surfaces
-    // shadow themselves in stripes): along the normal - growing as the light gets more grazing,
-    // where a texel covers the most surface depth - and a little toward the light.
-    // The push is kept as small as it can be: a point pushed off a wall picks up the shadow of
-    // anything hovering that close to the wall.
-    float  NdotL     = saturate(dot(geomN, L));
-    float  texelWS   = frame.cascadeTexelSize[c];
-    float  grazing   = sqrt(saturate(1.0 - NdotL * NdotL));
-    float3 lookup    = worldPos + geomN * (texelWS * frame.shadowParams.z * grazing) + L * texelWS;
-    float4 lightClip = mul(frame.shadowViewProj[c], float4(lookup, 1.0));
-    float3 ndc       = lightClip.xyz / lightClip.w;
-
-    // The shadow pass uses the same flipped viewport as every other pass, so +Y NDC is the
-    // top row: v = 0.5 - 0.5 * y.
-    float2 uv    = float2(ndc.x * 0.5 + 0.5, 0.5 - ndc.y * 0.5);
-    float  texel = frame.shadowParams.x;
-    // 1.5 texels in from the edge, so the filter below never reads outside the map.
-    if (any(uv < 1.5 * texel) || any(uv > 1.0 - 1.5 * texel) || ndc.z > 1.0) { return -1.0; }
-
-    float  ref = ndc.z - frame.shadowParams.y;
-    float  lit = 0.0;
-    // 3x3 taps, each a hardware-filtered 2x2 compare: a soft 4x4-texel kernel for 9 fetches.
-    [unroll] for (int y = -1; y <= 1; ++y) {
-        [unroll] for (int x = -1; x <= 1; ++x) {
-            lit += shadowMap.SampleCmpLevelZero(shadowSampler, float3(uv + float2(x, y) * texel, float(c)), ref);
-        }
-    }
-    return lit / 9.0;
-}
-
-// Fraction of the shadow-casting light that reaches worldPos (1 = fully lit). geomN is the
-// interpolated vertex normal (not the normal-mapped one).
-float SampleShadow(float3 worldPos, float3 geomN, float3 L) {
-    uint cascadeCount = frame.lightParams.z;
-    if (cascadeCount == 0) { return 1.0; }
-
-    // glm::lookAt is right-handed: the camera looks down -Z, so view depth is -z.
-    float viewDepth = -mul(frame.view, float4(worldPos, 1.0)).z;
-    float lastSplit = frame.cascadeSplits[cascadeCount - 1];
-    if (viewDepth >= lastSplit) { return 1.0; }
-
-    uint c = 0;
-    while (c + 1 < cascadeCount && viewDepth >= frame.cascadeSplits[c]) { ++c; }
-
-    float lit = SampleCascade(worldPos, geomN, L, c);
-    if (lit < 0.0) { lit = 1.0; }
-
-    // Over the last part of a cascade, cross-fade into the next (coarser) one, so the change of
-    // sharpness is a gradual blend instead of a visible line across the ground.
-    if (c + 1 < cascadeCount) {
-        float nearEdge  = c == 0 ? 0.0 : frame.cascadeSplits[c - 1];
-        float farEdge   = frame.cascadeSplits[c];
-        float bandStart = farEdge - (farEdge - nearEdge) * 0.2;
-        if (viewDepth > bandStart) {
-            float next = SampleCascade(worldPos, geomN, L, c + 1);
-            if (next >= 0.0) { lit = lerp(lit, next, (viewDepth - bandStart) / (farEdge - bandStart)); }
-        }
-    }
-
-    // Fade out over the last part of the shadow distance instead of a hard edge.
-    float fadeStart = lastSplit * (1.0 - frame.shadowParams.w);
-    float fade = saturate((viewDepth - fadeStart) / max(lastSplit - fadeStart, 1e-3));
-    return lerp(lit, 1.0, fade);
-}
-
-// Debug view (ShadowSettings::debugCascades): which shadow cascade each pixel uses. Red, green,
-// blue, yellow = cascade 1 to 4; the paler stripe at the far end of each is where it cross-fades
-// into the next; untinted = beyond the shadow distance.
-float3 CascadeDebugTint(float3 worldPos) {
-    uint cascadeCount = frame.lightParams.z;
-    float viewDepth = -mul(frame.view, float4(worldPos, 1.0)).z;
-    if (cascadeCount == 0 || viewDepth >= frame.cascadeSplits[cascadeCount - 1]) { return float3(1.0, 1.0, 1.0); }
-
-    uint c = 0;
-    while (c + 1 < cascadeCount && viewDepth >= frame.cascadeSplits[c]) { ++c; }
-
-    float3 tint = c == 0 ? float3(1.0, 0.35, 0.35) : c == 1 ? float3(0.35, 1.0, 0.35) : c == 2 ? float3(0.35, 0.45, 1.0) : float3(1.0, 1.0, 0.35);
-    if (c + 1 < cascadeCount) {
-        float nearEdge = c == 0 ? 0.0 : frame.cascadeSplits[c - 1];
-        float farEdge  = frame.cascadeSplits[c];
-        if (viewDepth > farEdge - (farEdge - nearEdge) * 0.2) { tint = lerp(tint, float3(1.0, 1.0, 1.0), 0.5); }
-    }
-    return tint;
-}
-
 // Contribution of one GpuLight at this surface point.
 float3 EvaluateLight(GpuLight light, float3 worldPos, float3 N, float3 V,
                      float3 albedo, float metallic, float roughness, float3 F0) {
-    uint   type     = (uint)(light.directionType.w + 0.5);
-    float3 radiance = light.colourIntensity.rgb * light.colourIntensity.w;
-    float3 L;
-
-    if (type == kLightDirectional) {
-        L = -light.directionType.xyz;
-    } else {
-        float3 toLight = light.positionRange.xyz - worldPos;
-        float  distSq  = dot(toLight, toLight);
-        if (distSq >= light.positionRange.w * light.positionRange.w) { return float3(0.0, 0.0, 0.0); }
-        L = toLight * rsqrt(max(distSq, 1e-8));
-        radiance *= DistanceAttenuation(distSq, light.positionRange.w);
-
-        if (type == kLightSpot) {
-            // Angle between the light's axis and the direction from the light to this point.
-            float cosAngle = dot(-L, light.directionType.xyz);
-            radiance *= smoothstep(light.spotParams.y, light.spotParams.x, cosAngle);
-        }
-    }
-
+    float3 L, radiance;
+    if (!LightIncoming(light, worldPos, L, radiance)) { return float3(0.0, 0.0, 0.0); }
     return EvaluateBRDF(N, V, L, radiance, albedo, metallic, roughness, F0);
-}
-
-// Hemisphere ambient: blend ground -> sky by how much `dir` points up.
-float3 HemisphereAmbient(float3 dir) {
-    float t = saturate(dir.y * 0.5 + 0.5);
-    return lerp(frame.ambientGround.rgb, frame.ambientSky.rgb, t);
 }
 
 // Roughness-aware Fresnel for the ambient specular term (Lagarde's approximation): rough surfaces
@@ -315,18 +180,6 @@ float3 HemisphereAmbient(float3 dir) {
 float3 FresnelSchlickRoughness(float cosTheta, float3 F0, float roughness) {
     float3 maxRefl = max(float3(1.0 - roughness, 1.0 - roughness, 1.0 - roughness), F0);
     return F0 + (maxRefl - F0) * pow(saturate(1.0 - cosTheta), 5.0);
-}
-
-// Light arriving from the whole sky around direction n, for diffuse surfaces. The sky is stored as
-// nine numbers per colour channel (spherical harmonics, frame.skySH): enough to capture "bluer
-// from above, warmer from the sun's side, darker from below" - all that diffuse light can show.
-float3 SkyIrradiance(float3 n) {
-    float3 e = frame.skySH[0].rgb
-             + frame.skySH[1].rgb * n.y + frame.skySH[2].rgb * n.z + frame.skySH[3].rgb * n.x
-             + frame.skySH[4].rgb * (n.x * n.y) + frame.skySH[5].rgb * (n.y * n.z)
-             + frame.skySH[6].rgb * (3.0 * n.z * n.z - 1.0)
-             + frame.skySH[7].rgb * (n.x * n.z) + frame.skySH[8].rgb * (n.x * n.x - n.y * n.y);
-    return max(e, float3(0.0, 0.0, 0.0));
 }
 
 // How much of the reflected sky a surface shows, by its base reflectivity, roughness and viewing
@@ -340,23 +193,178 @@ float3 EnvBRDFApprox(float3 F0, float roughness, float NdotV) {
     return F0 * ab.x + ab.y;
 }
 
+// ---- Toon shading (the material's shading is Toon, or Scene with the Skybox's toonShading on) --
+// Light turns into two flat tones, lit and shaded, split by a hard (slightly soft) edge, with a
+// coloured band just inside the lit side as in paintings. Cast shadows go through the same edge, so
+// they get the same crisp line and band. The shaded side is lit by the sky's light (flattened by
+// toonShade.w) times toonParams.w, tinted (toonShade.rgb), so shade follows the sky without the
+// lit side brightening. Sky reflections are off unless toonExtra.z asks for some; smooth and metal
+// surfaces can get a hard-edged highlight (toonExtra.y). The lit side keeps toonExtra.w of the
+// usual shading by angle, so differently turned faces of one object still read apart.
+// A material can bring its own edge (position, softness), shade tint and lit tint - foliage that
+// shades as one soft warm-to-cool gradient, for instance (ToonSurface's fields).
+
+struct ToonSurface {
+    float3 diffuseAlbedo;   // albedo for the two tones (a little darker on metal)
+    float3 albedo;
+    float  metallic;
+    float  roughness;
+    float3 N;               // normal-mapped
+    float3 V;
+    float  threshold;       // where the light/shade edge is (scene's, or the material's own)
+    float  softness;        // how soft it is
+    float3 shadeTint;       // tint of the shaded side
+    float3 litTint;         // tint of the lit side (the material's; white = none)
+};
+
+// 0 = shade, 1 = lit: a smooth step at the edge position, `softness` wide on each side.
+float ToonStep(ToonSurface s, float light) {
+    float soft = max(s.softness, 1e-4);
+    return smoothstep(s.threshold - soft, s.threshold + soft, light);
+}
+
+// One light's toon contribution. `shadow` = how much of it reaches the point (1 = all). `lit`
+// returns the point's lit (1) / shade (0) split for this light.
+float3 ToonLight(ToonSurface s, float3 L, float3 radiance, float shadow, out float lit) {
+    float light = saturate(dot(s.N, L)) * shadow;   // 0..1: how much of the light the surface gets
+    lit = ToonStep(s, light);
+
+    // The band: strongest at the edge, gone toonEdge.w further into the light. The lit side keeps
+    // a little of the shading by angle (toonExtra.w), so faces turned differently still differ.
+    float  band    = lit * (1.0 - smoothstep(s.threshold, s.threshold + max(frame.toonEdge.w, 1e-4), light));
+    float3 litTone = lerp(float3(1.0, 1.0, 1.0), frame.toonEdge.rgb, band * frame.toonExtra.x)
+                   * lerp(1.0, saturate(dot(s.N, L)), frame.toonExtra.w) * s.litTint;
+    float3 colour  = s.diffuseAlbedo / kPi * radiance * lit * litTone;
+
+    // Hard-edged highlight, on smooth surfaces only (gone by roughness 0.85).
+    float smoothness = 1.0 - smoothstep(0.5, 0.85, s.roughness);
+    if (smoothness > 0.0 && frame.toonExtra.y > 0.0 && lit > 0.0) {
+        float3 H         = normalize(s.V + L);
+        float  r2        = s.roughness * s.roughness;
+        float  shininess = min(2.0 / max(r2 * r2, 1e-4) - 2.0, 2048.0);   // Blinn-Phong exponent for this roughness
+        float  spec      = pow(saturate(dot(s.N, H)), shininess);
+        float  soft      = max(s.softness, 0.02);
+        float  shine     = smoothstep(0.5 - soft, 0.5 + soft, spec) * lit * smoothness;
+        float3 tint      = lerp(float3(0.5, 0.5, 0.5), s.albedo * 1.5, s.metallic);   // whitish on plain surfaces, coloured on metal
+        colour += tint * radiance / kPi * shine * frame.toonExtra.y;
+    }
+    return colour;
+}
+
+// Direct and sky light the toon way (everything but emissive and fog). geomN = the interpolated
+// vertex normal (for the shadow lookup), occlusion = the material's own occlusion map.
+float3 ShadeToon(VSOutput inVert, ToonSurface s, float3 geomN, float3 F0, float occlusion) {
+    float3 direct = float3(0.0, 0.0, 0.0);
+
+    // Directional lights. The shadow-casting one (else the first) is the key light: where it
+    // doesn't reach, the sky's light counts as shade too and takes the shade tint.
+    uint  dirCount = frame.lightParams.w;
+    uint  shadowed = frame.lightParams.y;   // index + 1, 0 = none
+    uint  keyLight = shadowed > 0 ? shadowed - 1 : 0;
+    float keyLit   = 0.0;
+    for (uint i = 0; i < dirCount; ++i) {
+        float3 L, radiance;
+        LightIncoming(lights[i], inVert.worldPos, L, radiance);
+        float shadow = 1.0;
+        if (i + 1 == shadowed && dot(s.N, L) > 0.0) { shadow = SampleShadow(inVert.worldPos, geomN, L); }
+        float lit;
+        direct += ToonLight(s, L, radiance, shadow, lit);
+        if (i == keyLight) { keyLit = lit; }
+    }
+
+    // Point and spot lights near this pixel: the same edge (their distance falloff stays soft).
+    ClusterCell cell = ClusterFor(inVert.pos, inVert.worldPos);
+    for (uint k = 0; k < cell.count; ++k) {
+        float3 L, radiance;
+        if (!LightIncoming(lights[clusterLightIndices[cell.offset + k]], inVert.worldPos, L, radiance)) { continue; }
+        float lit;
+        direct += ToonLight(s, L, radiance, 1.0, lit);
+    }
+
+    // The sky's light, flattened towards its average. The shaded side gets toonParams.w of it,
+    // tinted; the lit side gets it as it is, on top of the sun.
+    bool   fromSky = frame.ambientParams.x > 0.5;
+    float3 sky     = fromSky ? SkyIrradiance(s.N) * frame.ambientParams.z : HemisphereAmbient(s.N);
+    float3 flat    = fromSky ? max(frame.skySH[0].rgb, float3(0.0, 0.0, 0.0)) * frame.ambientParams.z
+                             : 0.5 * (frame.ambientSky.rgb + frame.ambientGround.rgb);
+    sky = lerp(sky, flat, frame.toonShade.w);
+    float3 ambient = s.diffuseAlbedo * sky * lerp(s.shadeTint * frame.toonParams.w, float3(1.0, 1.0, 1.0), keyLit);
+
+    // Sky reflections, only if asked for (off is the toon look).
+    if (frame.toonExtra.z > 0.0) {
+        float  NdotV = max(dot(s.N, s.V), 1e-4);
+        float3 R     = reflect(-s.V, s.N);
+        float3 refl  = fromSky ? envMap.SampleLevel(R, s.roughness * frame.ambientParams.y).rgb * frame.ambientParams.z
+                               : HemisphereAmbient(R);
+        ambient += refl * EnvBRDFApprox(F0, s.roughness, NdotV) * frame.toonExtra.z;
+    }
+
+    float ao = aoTex.SampleLevel(inVert.pos.xy / frame.clusterZ.zw, 0.0).r;
+    return direct + ambient * occlusion * ao;
+}
+
+// ---- Toon outlines: what the scene writes for ToonOutlinePass (Post.slang's toonOutlineFrag) ----
+// Per pixel: x = 1 / view depth (which changes linearly across the screen on any flat surface,
+// so the outline pass can tell shapes apart from steep ground), yz = the surface's direction
+// (octahedral), w = how strong a line may be here - the material's Outline (toon materials
+// only), times how much of the surface shows through the fog, times the breakup pattern.
+
+float LineHash(float3 p) {   // 0..1, from a lattice point
+    p = frac(p * float3(0.1031, 0.1030, 0.0973));
+    p += dot(p, p.yxz + 33.33);
+    return frac((p.x + p.y) * p.z);
+}
+
+float LineNoise(float3 p) {   // smooth value noise, 0..1 (mostly 0.2..0.8)
+    float3 i = floor(p);
+    float3 f = p - i;
+    float3 u = f * f * (3.0 - 2.0 * f);
+    float x00 = lerp(LineHash(i),                         LineHash(i + float3(1.0, 0.0, 0.0)), u.x);
+    float x10 = lerp(LineHash(i + float3(0.0, 1.0, 0.0)), LineHash(i + float3(1.0, 1.0, 0.0)), u.x);
+    float x01 = lerp(LineHash(i + float3(0.0, 0.0, 1.0)), LineHash(i + float3(1.0, 0.0, 1.0)), u.x);
+    float x11 = lerp(LineHash(i + float3(0.0, 1.0, 1.0)), LineHash(i + float3(1.0, 1.0, 1.0)), u.x);
+    return lerp(lerp(x00, x10, u.y), lerp(x01, x11, u.y), u.z);
+}
+
+float4 LineData(VSOutput inVert, float3 N, bool toon, float fogVisibility) {
+    float viewDepth = max(-mul(frame.view, float4(inVert.worldPos, 1.0)).z, 1e-4);
+    float strength  = 0.0;
+    if (toon && frame.toonLines.x > 0.5) {
+        strength = saturate(pc.outline) * fogVisibility;
+        float breakup = frame.toonLines.y;
+        if (breakup > 0.0 && strength > 0.0) {
+            float n = smoothstep(0.2, 0.8, LineNoise(inVert.linePos * frame.toonLines.z));   // spread out to about 0..1
+            strength *= smoothstep(breakup - 0.08, breakup + 0.08, n);
+        }
+    }
+    return float4(1.0 / viewDepth, OctEncode(N), strength);
+}
+
+struct SceneOutput {
+    float4 colour : SV_Target0;   // linear HDR radiance
+    float4 lines  : SV_Target1;   // line data (above)
+};
+
 [shader("fragment")]
-float4 fragMain(VSOutput inVert) : SV_Target {
+SceneOutput fragMain(VSOutput inVert, bool frontFacing : SV_IsFrontFace) {
 
     float4 albedoSample = albedoTex.Sample(inVert.uv);
-    float3 albedo = albedoSample.rgb * pc.factors.albedoTint.rgb * inVert.color;
+    if (kCutout && albedoSample.a * pc.albedoTint.a < pc.alphaCutoff) { discard; }
+    float3 albedo = albedoSample.rgb * pc.albedoTint.rgb * inVert.color;
 
     float3 mrSample  = metallicRoughnessTex.Sample(inVert.uv).rgb;
-    float  roughness = saturate(mrSample.g * pc.factors.roughnessFactor);
-    float  metallic  = saturate(mrSample.b * pc.factors.metallicFactor);
+    float  roughness = saturate(mrSample.g * pc.roughnessFactor);
+    float  metallic  = saturate(mrSample.b * pc.metallicFactor);
     // A perfectly-zero roughness makes D()'s denominator degenerate (a true mirror needs a
     // different specular path entirely); clamp to a small floor instead of special-casing it.
     roughness = max(roughness, 0.045);
 
     float  occlusion = occlusionTex.Sample(inVert.uv).r;
-    float3 emissive  = emissiveTex.Sample(inVert.uv).rgb * pc.factors.emissiveFactor * inVert.instanceParams.x;
+    float3 emissive  = emissiveTex.Sample(inVert.uv).rgb * pc.emissiveFactor * inVert.instanceParams.x;
 
-    float3 N = normalize(inVert.normalWS);
+    // A double-sided material's back side is lit as a front of its own. (Single-sided materials
+    // never get here with a back face: they are culled.)
+    float3 N = normalize(inVert.normalWS) * (frontFacing ? 1.0 : -1.0);
 
     // Re-orthogonalize against N (interpolation across a triangle can drift the incoming tangent
     // slightly off perpendicular to the also-interpolated N) - but guard the result's length
@@ -383,6 +391,29 @@ float4 fragMain(VSOutput inVert) : SV_Target {
     float3 V  = normalize(frame.cameraPosWS.xyz - inVert.worldPos);
     float3 F0 = lerp(float3(0.04, 0.04, 0.04), albedo, metallic);
 
+    // Toon or realistic: the material's choice, or the scene's (toonParams.x: 0 = realistic,
+    // 1 = toon, 2 = toon switched off everywhere in the Rendering menu).
+    uint shading = pc.flags & 3u;
+    bool toon = frame.toonParams.x < 1.5
+             && (shading == kShadingToon || (shading == kShadingScene && frame.toonParams.x > 0.5));
+
+    float3 colour;
+    if (toon) {
+        ToonSurface s;
+        s.diffuseAlbedo = albedo * lerp(1.0, 0.75, metallic);
+        s.albedo        = albedo;
+        s.metallic      = metallic;
+        s.roughness     = roughness;
+        s.N             = Nmapped;
+        s.V             = V;
+        bool ownEdge    = (pc.flags & kFlagOwnEdge) != 0;
+        s.threshold     = ownEdge ? pc.toonEdge.x : frame.toonParams.y;
+        s.softness      = ownEdge ? pc.toonEdge.y : frame.toonParams.z;
+        s.shadeTint     = (pc.flags & kFlagOwnShade) != 0 ? pc.toonShade.rgb : frame.toonShade.rgb;
+        s.litTint       = pc.toonLit.rgb;
+        colour = ShadeToon(inVert, s, N, F0, occlusion) + emissive;
+    } else {
+
     // Direct lighting: every light submitted this frame. (The Renderer always supplies at least
     // one - a fallback directional "sun" - when the scene has no Light entities.)
     float3 direct = float3(0.0, 0.0, 0.0);
@@ -400,15 +431,7 @@ float4 fragMain(VSOutput inVert) : SV_Target {
 
     // Point and spot lights: only the ones listed for this pixel's cluster.
     {
-        uint3 dims      = frame.clusterDims.xyz;
-        float viewDepth = -mul(frame.view, float4(inVert.worldPos, 1.0)).z;
-        // SV_Position.xy is the pixel position, y down; the cluster grid's y runs up.
-        uint cx = min(uint(inVert.pos.x / frame.clusterZ.z * float(dims.x)), dims.x - 1);
-        uint cy = min(uint((1.0 - inVert.pos.y / frame.clusterZ.w) * float(dims.y)), dims.y - 1);
-        float slice = log(max(viewDepth, frame.clusterZ.x) / frame.clusterZ.x) * frame.clusterZ.y;
-        uint cz = min(uint(max(slice, 0.0)), dims.z - 1);
-
-        ClusterCell cell = clusterGrid[frame.clusterDims.w + cx + cy * dims.x + cz * dims.x * dims.y];
+        ClusterCell cell = ClusterFor(inVert.pos, inVert.worldPos);
         for (uint k = 0; k < cell.count; ++k) {
             uint li = clusterLightIndices[cell.offset + k];
             direct += EvaluateLight(lights[li], inVert.worldPos, Nmapped, V, albedo, metallic, roughness, F0);
@@ -443,11 +466,17 @@ float4 fragMain(VSOutput inVert) : SV_Target {
 
     // Linear HDR radiance. Exposure, bloom and tonemapping happen once for the whole image in
     // Post.slang's tonemap pass, after everything (meshes, sky, particles) has been drawn.
-    float3 colour = direct + ambient + emissive;
+    colour = direct + ambient + emissive;
+    }   // PBR
+
     // Fog between the camera and this point: what it hides, and the light it adds (lit by the sun
     // and nearby lights when the view has a fog volume - see Common.slang).
     float4 fog = FogForPoint(inVert.worldPos, inVert.pos.xy / frame.clusterZ.zw);
     colour = colour * fog.a + fog.rgb;
     if (frame.time.z > 0.5) { colour *= CascadeDebugTint(inVert.worldPos); }
-    return float4(colour, 1.0);
+
+    SceneOutput output;
+    output.colour = float4(colour, 1.0);
+    output.lines  = LineData(inVert, N, toon, fog.a);   // the geometric direction: normal maps add no lines
+    return output;
 }

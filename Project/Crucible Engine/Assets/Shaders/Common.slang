@@ -41,6 +41,18 @@ struct FrameUniforms {
                                   // z = depth slices in the volume, w unused
     float4   volumetricAmbient;   // x = strength of the fog's light in shade (1 = the fog colour's look),
                                   // y = 1: that light is the sky's average, tinted by the fog colour
+    // ---- Toon shading (Skybox component; DefaultShader's ToonLight) ----
+    float4   toonParams;          // x = what materials set to "Scene" do: 0 = realistic, 1 = toon,
+                                  //     2 = toon switched off everywhere (Rendering menu);
+                                  // y = where the light/shade edge is (0..1 of the light), z = its softness,
+                                  // w = brightness of the sky's light on the shaded side
+    float4   toonShade;           // rgb = tint of the shaded side (linear), w = how flat the sky's light is (0..1)
+    float4   toonEdge;            // rgb = tint of the band at the edge (linear, luminance 1), w = the band's width
+    float4   toonExtra;           // x = the band's strength, y = hard highlight strength,
+                                  // z = share of the sky reflection kept, w = shading by angle kept on the lit side
+    // ---- Toon outlines (ToonOutlinePass; DefaultShader's LineData) ----
+    float4   toonLines;           // x = 1: write line strengths (0 = no lines anywhere), y = breakup amount (0..1),
+                                  // z = 1 / breakup size (per metre), w unused
 };
 
 [[vk::binding(0, 0)]]
@@ -214,4 +226,13 @@ float4 FogForSky(float3 dir, float2 uv) {
                   ? vol.rgb + FogColumnSource(uv) * (a - inVol)   // the volume, then lit fog for the rest
                   : vol.rgb * (a / max(inVol, 1e-5));             // the sky's fog is thinner (capped): scale down
     return float4(max(light, float3(0.0, 0.0, 0.0)), 1.0 - a);
+}
+
+// ---- Line data (toon outlines) ------------------------------------------------------------------
+// Shared by DefaultShader's LineData and Water: a direction packed into two numbers.
+float2 OctEncode(float3 n) {   // unit vector -> two numbers in -1..1 (see OctDecode in Post.slang)
+    n /= abs(n.x) + abs(n.y) + abs(n.z);
+    float2 e = n.xy;
+    if (n.z < 0.0) { e = (1.0 - abs(n.yx)) * float2(n.x >= 0.0 ? 1.0 : -1.0, n.y >= 0.0 ? 1.0 : -1.0); }
+    return e;
 }

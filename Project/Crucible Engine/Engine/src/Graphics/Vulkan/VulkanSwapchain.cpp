@@ -136,10 +136,11 @@ namespace Crucible {
         m_depthFormat = ChooseDepthFormat(context);
 
         // One depth image sized to the current extent; recreated alongside the swapchain on resize.
+        // Transfer source: the scene pass copies it for the water (PostTargets::depthCopy).
         m_depthImage.Create(context, m_extent.width, m_extent.height,
             m_depthFormat,
             vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransferSrc,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
 
         vk::ImageViewCreateInfo viewInfo{

@@ -79,8 +79,10 @@ namespace Crucible
 		UIButton = 20, 
 		UIText = 21,
 		UISlider = 22,           // UI: a draggable value (UI/UIComponents.h)
+		Water = 23,
 
-		MAXCOMPONENT = 23
+
+		MAXCOMPONENT = 24
 	};
 
 
@@ -169,9 +171,9 @@ namespace Crucible
 	 component here (matching its ComponentKind entry above) and
 	 RegisterAll() picks it up automatically.
 *************************************************************************/
-#define CRUCIBLE_COMPONENT_LIST(X)                                         \
- X(Transform)                                                                \
- X(RigidBody)                                                                \
+#define CRUCIBLE_COMPONENT_LIST(X)                                             \
+ X(Transform)                                                                  \
+ X(RigidBody)                                                                  \
  X(MeshRenderer)                                                               \
  X(AudioSource)                                                                \
  X(Collider)                                                                   \
@@ -192,6 +194,7 @@ namespace Crucible
  X(UIImage)																	   \
  X(UIButton)																   \
  X(UIText)																	   \
- X(UISlider)														   \
+ X(UISlider)														           \
+ X(Water)                                                                      \
 
 }

@@ -119,6 +119,9 @@ void Crucible::Hierarchy::Update(float dt) {
 				if (ImGui::MenuItem("Create Camera")) {
 					CreateCameraObject();
 				}
+				if (ImGui::MenuItem("Create Water")) {
+					CreateWaterObject();
+				}
 				ImGui::EndMenu();
 			}
 
@@ -874,6 +877,26 @@ void Crucible::Hierarchy::CreateParticleObject(const std::string& effect) {
 	UndoHistory& history = EditorManager::GetInstance().GetHistory();
 	history.Push(std::make_unique<CreateEntityCommand>(
 		history.KeyOf(e), EntityState::Capture(m_world, e), "Create " + effect));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+
+}
+
+void Crucible::Hierarchy::CreateWaterObject() {
+
+	auto e = m_world.CreateEntity();
+	m_world.AddComponent<Water>(e, Water{});
+
+	// A 10 x 10 m pond at the origin: the surface is the built-in 1 x 1 m plane, scaled.
+	if (Transform* t = m_world.Write<Transform>(e)) { t->scale = { 10.f, 1.f, 10.f }; }
+
+	// Select first, for the same history-ordering reason as CreateLightObject.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(e);
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create Water"));
 
 	m_scenes.MarkDirty();   // records that there are unsaved changes
 

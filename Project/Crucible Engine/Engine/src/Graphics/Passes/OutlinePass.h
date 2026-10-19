@@ -29,10 +29,12 @@ namespace Crucible {
          \brief  Creates the pass's pipelines and their layouts. Call once,
                  before recording.
          \param[in] context         The VulkanContext to create them through.
-         \param[in] frameSetLayout  Layout of set 0 (the per-frame data).
-         \param[in] colourFormat    Format of the view's final colour image.
+         \param[in] frameSetLayout     Layout of set 0 (the per-frame data).
+         \param[in] materialSetLayout  Layout of a material's set (set 1 of the
+                                       mask, for cut-out materials).
+         \param[in] colourFormat       Format of the view's final colour image.
          *********************************************************************/
-        void Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::Format colourFormat);
+        void Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout, vk::Format colourFormat);
 
         /*********************************************************************
          \brief  Draws the selected object into the mask image, barriers
@@ -60,7 +62,8 @@ namespace Crucible {
 
     private:
         vk::raii::Pipeline            m_outlineMaskPipeline = nullptr;        // selection -> R8 mask
-        vk::raii::PipelineLayout      m_outlineMaskLayout = nullptr;          // set 0 only
+        vk::raii::Pipeline            m_outlineMaskCutoutPipeline = nullptr;  // the same for cut-out materials
+        vk::raii::PipelineLayout      m_outlineMaskLayout = nullptr;          // set 0, set 1 (material), CutoutPush
         vk::raii::Pipeline            m_outlineCompositePipeline = nullptr;   // mask -> coloured edge
         vk::raii::PipelineLayout      m_outlineCompositeLayout = nullptr;     // mask set + push constant
         vk::raii::DescriptorSetLayout m_outlineDescriptorSetLayout = nullptr; // binding 0 = mask image
