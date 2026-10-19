@@ -1429,6 +1429,83 @@
             }
         },
         {
+            "id": "847F78D81911C001",
+            "parent": "2CF768D80E590001",
+            "siblingIndex": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -0.7539510130882263,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 24.0,
+                        "y": 240.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UISlider": {
+                    "minValue": 0.0,
+                    "maxValue": 1.0,
+                    "value": 0.5,
+                    "wholeNumbers": false,
+                    "interactable": true,
+                    "direction": "TopToBottom",
+                    "trackColour": {
+                        "x": 0.25,
+                        "y": 0.25,
+                        "z": 0.2800000011920929,
+                        "w": 1.0
+                    },
+                    "fillColour": {
+                        "x": 0.30000001192092896,
+                        "y": 0.6000000238418579,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "handleColour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "handleSize": 0.0,
+                    "trackThickness": 0.4000000059604645
+                }
+            }
+        },
+        {
             "id": "8E4D08D31F92C023",
             "components": {
                 "Transform": {
