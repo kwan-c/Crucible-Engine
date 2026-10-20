@@ -574,6 +574,12 @@ void Crucible::SceneView::DrawRenderingMenu() {
 	ImGui::Checkbox("Enabled##volfog", &post.volumetricFog);
 	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Where the scene's Skybox has fog and Volumetric Fog ticked.\nOff: always the plain (unlit) fog."); }
 
+	// Toon shading. Its look is on the scene's Skybox component (toonShading and the toon*
+	// settings); this switches it off everywhere, to compare with the realistic lighting.
+	ImGui::SeparatorText("Toon shading");
+	ImGui::Checkbox("Enabled##toon", &post.toonShading);
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Where the scene's Skybox has Toon Shading ticked.\nOff: always the realistic (PBR) lighting."); }
+
 	ImGui::SeparatorText("Sun shadows");
 	ShadowSettings& shadows = m_renderer.GetShadowSettings();
 	ImGui::Checkbox("Enabled##shadows", &shadows.enabled);

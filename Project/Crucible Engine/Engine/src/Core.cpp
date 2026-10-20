@@ -18,6 +18,7 @@
 #include "Graphics/ParticleSystem.h"
 #include "Graphics/StressMoverSystem.h"   // TEMPORARY: load testing
 #include "Resources/ResourceManager.h"
+#include "UI/UISystem.h"
 
 // STL
 #include <algorithm>
@@ -87,9 +88,10 @@ namespace Crucible {
         }
         // ===========================================
 
-        // ======== startup scene (Removable) ==========
-        m_scenes->RequestLoad(m_assets->Resolve("Scenes/Fog_Lighting_Effects.scene"));
-        // ===========================================
+        // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
+        // and the Game open the same one. Empty = start with no scene.
+        if (!m_config.project.startupScene.empty())
+            m_scenes->RequestLoad(m_assets->Resolve(m_config.project.startupScene));
 
 
         // Event buses: report listener failures through the engine log, and let the
@@ -159,6 +161,8 @@ namespace Crucible {
     void Core::RegisterEngineSystems()
     {
         //sample system registeration
+        m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
+        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get());                            // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
         m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
         m_systems.RegisterSystem<ECSPhysicsSystem>();
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
@@ -166,6 +170,7 @@ namespace Crucible {
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
+        m_systems.RegisterSystem<UIRenderSystem>(*m_renderer, m_resources.get());        // PreRender, Edit mode too: lays out screen-space UICanvases against the game screen and SubmitUI()s them
         m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_renderer);                 // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
     }
 

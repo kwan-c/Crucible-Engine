@@ -12,12 +12,15 @@
 #include "Graphics/Vulkan/VulkanCommands.h"
 
 #include <algorithm>
+#include <array>
 
 namespace Crucible {
 
-    void AmbientOcclusionPass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout twoTextureSetLayout) {
+    void AmbientOcclusionPass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout,
+                                      vk::DescriptorSetLayout twoTextureSetLayout) {
 
-        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        // Cull mode is dynamic so double-sided materials can turn it off (as in the scene pass).
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor, vk::DynamicState::eCullMode };
         vk::PipelineDynamicStateCreateInfo dynamicState{
             .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
             .pDynamicStates    = dynamicStates.data()
@@ -63,9 +66,13 @@ namespace Crucible {
             .pVertexAttributeDescriptions    = &attributes[0]
         };
 
-        // Set 0 only (camera and instance data), no push constants.
-        vk::DescriptorSetLayout prepassSetLayout = frameSetLayout;
-        vk::PipelineLayoutCreateInfo prepassLayoutInfo{ .setLayoutCount = 1, .pSetLayouts = &prepassSetLayout };
+        // Set 0 (camera and instance data); set 1 and CutoutPush only for the cut-out pipeline.
+        // One layout for both, so switching pipelines keeps the sets bound.
+        const std::array<vk::DescriptorSetLayout, 2> prepassSetLayouts{ frameSetLayout, materialSetLayout };
+        vk::PushConstantRange cutoutPush{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(CutoutPush) };
+        vk::PipelineLayoutCreateInfo prepassLayoutInfo{
+            .setLayoutCount = static_cast<uint32_t>(prepassSetLayouts.size()), .pSetLayouts = prepassSetLayouts.data(),
+            .pushConstantRangeCount = 1, .pPushConstantRanges = &cutoutPush };
         m_prepassLayout = vk::raii::PipelineLayout(context.GetDevice(), prepassLayoutInfo);
 
         const vk::Format normalFormat = RenderLayouts::kAoNormalFormat;
@@ -87,6 +94,15 @@ namespace Crucible {
             {.colorAttachmentCount = 1, .pColorAttachmentFormats = &normalFormat, .depthAttachmentFormat = RenderLayouts::kAoDepthFormat }
         };
         m_depthPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+
+        // Cut-out materials: also the uv (location 2), and pixels the material cuts out are dropped.
+        const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
+            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "depthNormalCutoutVert" },
+            { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "depthNormalCutoutFrag" }
+        };
+        vertexInputInfo.vertexAttributeDescriptionCount = 3;   // position, normal, uv
+        chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;
+        m_cutoutPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
 
 
         // Occlusion and its blur: fullscreen steps reading two textures each (Post.spv).
@@ -175,13 +191,15 @@ namespace Crucible {
                 .renderArea = { .offset = { 0, 0 }, .extent = extent }, .layerCount = 1,
                 .colorAttachmentCount = 1, .pColorAttachments = &normal, .pDepthAttachment = &depth };
             cmd.beginRendering(renderingInfo);
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_depthPrepassPipeline);
             // Flipped like the main pass, so its pixels line up with the scene's.
             cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width),
                                             -static_cast<float>(extent.height), 0.0f, 1.0f));
             cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_prepassLayout, 0, frameSet, nullptr);
-            m_resources.DrawBatches(cmd, meshes);
+            const DepthPassPipelines pipelines{ .solid = *m_depthPrepassPipeline, .cutout = *m_cutoutPrepassPipeline, .layout = *m_prepassLayout,
+                                                .cutoutPushStages = vk::ShaderStageFlagBits::eFragment, .cutoutPushOffset = 0,
+                                                .dynamicCull = true, .cull = vk::CullModeFlagBits::eBack };
+            m_resources.DrawDepthBatches(cmd, meshes, pipelines);   // binds the pipelines itself
             cmd.endRendering();
         }
         TransitionImageLayout(cmd, t.aoNormal.GetImage(), vk::ImageAspectFlagBits::eColor,

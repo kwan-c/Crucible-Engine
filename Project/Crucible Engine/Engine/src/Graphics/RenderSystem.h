@@ -38,6 +38,7 @@
 #include <deque>
 #include <unordered_map>
 #include <functional>
+#include <span>
 
 // Crucible Engine
 #include "Systems/WindowManager.h"
@@ -58,11 +59,13 @@
 #include "Passes/AmbientOcclusionPass.h"
 #include "Passes/ShadowPass.h"
 #include "Passes/OutlinePass.h"
+#include "Passes/ToonOutlinePass.h"
 #include "Passes/ParticlePass.h"
 #include "Passes/DebugLinePass.h"
 #include "Passes/ScenePass.h"
 #include "Passes/UIPass.h"
 #include "Passes/VolumetricFogPass.h"
+#include "Passes/WaterPass.h"
 #include "DrawList.h"
 #include "RenderResources.h"
 #include "EnvironmentMaps.h"
@@ -187,6 +190,36 @@ namespace Crucible {
             upload completes.
          *********************************************************************/
         ENGINE_API MeshHandle CreateMeshAsync(MeshData data, const std::string& debugName = {});
+
+        /*********************************************************************
+         \brief
+            Creates an empty mesh whose geometry the CPU rewrites as often as
+            every frame (UpdateDynamicMesh) - for procedural, animated
+            geometry such as trails or ribbons.
+
+         \param[in] debugName Optional name (see CreateMesh()).
+         \return A handle; nothing is drawn until UpdateDynamicMesh() gives
+                 it geometry.
+
+         \details
+            Draw it with Submit(), with world-space vertices and an identity
+            model matrix if the geometry is built in world space; it is
+            culled (main view and shadow cascades) with the bounds of its
+            latest geometry. Each frame in flight has its own host-visible
+            copy, refilled at the start of that frame only when the
+            geometry changed. Not meant for render proxies (they keep the
+            bounds from their last SetRenderProxy() call), and editor
+            picking does not see it. There is no destroy: reuse handles.
+         *********************************************************************/
+        ENGINE_API MeshHandle CreateDynamicMesh(const std::string& debugName = {});
+
+        /*********************************************************************
+         \brief  Replaces a dynamic mesh's geometry, from the next frame drawn
+                 on. The data is copied; empty spans = draw nothing.
+         \throws std::invalid_argument if the handle is not a dynamic mesh,
+                 or an index is out of range.
+         *********************************************************************/
+        ENGINE_API void UpdateDynamicMesh(MeshHandle handle, std::span<const Vertex> vertices, std::span<const uint32_t> indices);
 
         /*********************************************************************
          \brief
@@ -448,6 +481,17 @@ namespace Crucible {
         CubemapHandle GetDefaultSkybox() const { return m_environmentMaps.DefaultSkybox(); }
 
         /*********************************************************************
+         \brief  The diffuse light a surface facing `normal` gets from a sky:
+                 what "Ambient From Sky" lights it with, before the Skybox's
+                 Intensity and Ambient Intensity. The editor's "Pick from
+                 Sky" turns a sky into two ambient colours with it.
+         \param[in] sky     The sky; Invalid (or unknown) = the built-in sky.
+         \param[in] normal  The surface's direction (normalized here).
+         \return Linear RGB, never negative.
+         *********************************************************************/
+        ENGINE_API glm::vec3 GetSkyIrradiance(CubemapHandle sky, const glm::vec3& normal) const;
+
+        /*********************************************************************
          \brief  The built-in primitive meshes (Cube, Capsule, Cone,
                  Cylinder, Disc, Plane, Pyramid, Sphere), created at
                  startup. Names via GetMeshName(). ResourceManager
@@ -604,6 +648,29 @@ namespace Crucible {
         ENGINE_API void SubmitParticles(const ParticleDrawDesc& desc, const GpuParticle* particles, uint32_t count);
 
         /*********************************************************************
+         \brief
+            Queues one water surface for this frame (normally one Water
+            component - RenderExtractSystem does this). Like Submit(),
+            forgotten after the frame.
+
+         \param[in] mesh     The surface's shape. The built-in Plane (1 x 1 m,
+                             facing +Y) scaled by `model` makes a flat pond or
+                             lake; any mesh works (its top side is drawn).
+         \param[in] model    Object -> world transform.
+         \param[in] settings How the water looks (WaterSettings; colours in
+                             sRGB).
+
+         \details
+            Drawn after the opaque meshes and the sky and before particles,
+            seen from above only (back faces are culled). The water shows
+            what is under it by reading a copy of the scene drawn so far, so
+            a view with water in sight pays for two image copies and a scene
+            pass in two halves. Not pickable in the editor, casts no shadow,
+            and is not in the ambient occlusion pre-pass.
+         *********************************************************************/
+        ENGINE_API void SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings);
+
+        /*********************************************************************
          \brief  Shows or hides DebugDraw lines when the scene is drawn
                  straight to the window (the Game build, where there are no
                  viewports). Off by default; turn on for gameplay debugging.
@@ -661,6 +728,35 @@ namespace Crucible {
                  behind the camera.
          *********************************************************************/
         ENGINE_API bool ProjectToGameScreen(const glm::vec3& worldPos, glm::vec2& outPixels) const;
+
+        /*********************************************************************
+         \brief
+            Editor only: where the Game view draws the game screen inside the
+            window, so a mouse position can be turned into game-screen pixels
+            (WindowToGameScreen). The Game view calls it every frame.
+         \param[in] windowOrigin  Top-left of the drawn image, in window pixels
+                                   (ImGui screen coordinates, the same space as
+                                   Input::GetMousePosition()).
+         \param[in] scale         Drawn size / rendered size (below 1 when a
+                                   fixed resolution is shrunk to fit the panel).
+         \param[in] pointerOver   The mouse is over the Game view (and not over
+                                   another window in front of it).
+         *********************************************************************/
+        ENGINE_API void SetGameScreenPlacement(const glm::vec2& windowOrigin, float scale, bool pointerOver);
+
+        /*********************************************************************
+         \brief
+            A window position (Input::GetMousePosition()) -> game-screen pixels
+            (origin top-left, the space SubmitUI and the UI layout use).
+         \return false (outPixels untouched) when the point is not on the game
+                 screen: outside it, the mouse is not over the Game view (editor),
+                 or there is no game screen.
+         \note   Standalone game: window pixels are scaled to the swapchain's
+                 pixels, which differ on high-DPI displays. Editor: uses the last
+                 SetGameScreenPlacement(), so it is one frame behind - the Game
+                 view reports after the systems have run.
+         *********************************************************************/
+        ENGINE_API bool WindowToGameScreen(const glm::vec2& windowPos, glm::vec2& outPixels) const;
 
         /// Shows or hides the built-in UI test overlay (UITestOverlay.h), submitted as the game's UI.
         void SetUITestOverlay(bool enabled) { m_uiTestEnabled = enabled; }
@@ -809,18 +905,25 @@ namespace Crucible {
         WindowManager&              m_window;
         std::function<void()>       m_overlayCallback;
 
+        // Where the Game view draws the game screen (SetGameScreenPlacement). Editor only.
+        glm::vec2                   m_gameScreenOrigin{ 0.0f };
+        float                       m_gameScreenScale = 1.0f;
+        bool                        m_gameScreenPointerOver = false;
+
         VulkanContext               m_context;
         VulkanSwapchain             m_swapchain;
         RenderLayouts              m_layouts;
         // Render passes (Graphics/Passes/). Declared after m_layouts, which they hold a reference to.
         BloomPass                   m_bloomPass;
         TonemapPass                 m_tonemapPass;
+        ToonOutlinePass             m_toonOutlinePass;   // toon outlines (not the selection outline)
         // These draw meshes, so they hold a reference to m_resources (declared below; only used once recording starts).
         AmbientOcclusionPass        m_aoPass{ m_resources };
         ShadowPass                  m_shadowPass{ m_resources };
         OutlinePass                 m_outlinePass{ m_resources };
         ParticlePass                m_particlePass{ m_context, m_resources };
-        ScenePass                   m_scenePass{ m_resources, m_particlePass };
+        WaterPass                   m_waterPass{ m_resources };   // water surfaces, drawn inside the scene pass
+        ScenePass                   m_scenePass{ m_resources, m_particlePass, m_waterPass };
         DebugLinePass               m_debugLinePass;
         UIPass                      m_uiPass{ m_context, m_resources };   // also holds m_resources (declared below; used once frames start)
         VolumetricFogPass           m_fogPass{ m_context };   // froxel fog (compute); its pool is BEFORE every view's FogVolumeTargets
@@ -918,6 +1021,9 @@ namespace Crucible {
         /// Whether views draw lit (froxel) fog this frame: the scene has fog, its Skybox asks for
         /// the volumetric kind, and PostSettings::volumetricFog allows it.
         bool VolumetricFogActive() const;
+        /// Whether views get toon outlines this frame: the Skybox asks for them and the Rendering
+        /// menu has toon shading on.
+        bool ToonLinesActive() const;
 
         // ---- Frame preparation (before recording) ----
         // Culls and batches everything one view draws this frame (main pass, shadow cascades,

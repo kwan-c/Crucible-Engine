@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstring>   // memcpy
 #include <stdexcept>
 #include <string>   // to_string
 
@@ -44,6 +45,102 @@ namespace Crucible {
         }
 
     }   // RenderResources::ProcessPendingMeshUploads()
+
+    MeshHandle RenderResources::CreateDynamicMesh(const std::string& debugName) {
+
+        MeshHandle handle{ static_cast<uint32_t>(m_meshes.size()) };
+        GpuMesh& mesh = m_meshes.emplace_back();   // indexCount 0: not drawn until it has geometry
+        mesh.debugName = debugName.empty() ? ("Dynamic mesh " + std::to_string(handle.id)) : debugName;
+        mesh.dynamic   = std::make_unique<DynamicMesh>();
+        m_dynamicMeshes.push_back(handle.id);
+        return handle;
+
+    }   // RenderResources::CreateDynamicMesh()
+
+    void RenderResources::UpdateDynamicMesh(MeshHandle handle, std::span<const Vertex> vertices, std::span<const uint32_t> indices) {
+
+        if (!handle.IsValid() || handle.id >= m_meshes.size() || !m_meshes[handle.id].dynamic) {
+            throw std::invalid_argument("[RenderResources] UpdateDynamicMesh: not a dynamic mesh");
+        }
+        // An index past the end would make the GPU read outside the vertex buffer.
+        for (uint32_t index : indices) {
+            if (index >= vertices.size()) { throw std::invalid_argument("[RenderResources] UpdateDynamicMesh: index out of range"); }
+        }
+
+        GpuMesh& mesh = m_meshes[handle.id];
+        DynamicMesh& dynamic = *mesh.dynamic;
+        dynamic.vertices.assign(vertices.begin(), vertices.end());
+        dynamic.indices.assign(indices.begin(), indices.end());
+        ++dynamic.version;
+
+        // What culling sees (GetMeshBounds / indexCount) is the newest geometry: it is what the
+        // frame about to be prepared will upload and draw.
+        mesh.indexCount = vertices.empty() ? 0u : static_cast<uint32_t>(indices.size());
+        mesh.boundsMin = mesh.boundsMax = vertices.empty() ? glm::vec3(0.0f) : vertices.front().pos;
+        for (const Vertex& v : vertices) {
+            mesh.boundsMin = glm::min(mesh.boundsMin, v.pos);
+            mesh.boundsMax = glm::max(mesh.boundsMax, v.pos);
+        }
+
+    }   // RenderResources::UpdateDynamicMesh()
+
+    void RenderResources::UploadDynamicMeshes(uint32_t frameIndex) {
+
+        m_dynamicFrame = frameIndex;
+
+        // Grows a buffer to the next power of two that fits. Safe to replace here: this frame
+        // index's fence has signalled, so the GPU is done with the old one.
+        const auto grow = [this](VulkanBuffer& buffer, void*& mapped, size_t& capacity, size_t needed, size_t minimum,
+                                 vk::DeviceSize elementSize, vk::BufferUsageFlags usage) {
+            if (capacity >= needed) { return; }
+            size_t newCapacity = minimum;
+            while (newCapacity < needed) { newCapacity *= 2; }
+            buffer.Create(m_context, vk::DeviceSize{ newCapacity } * elementSize, usage,
+                          vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            mapped   = buffer.Map();
+            capacity = newCapacity;
+        };
+
+        for (uint32_t id : m_dynamicMeshes) {
+            DynamicMesh& dynamic = *m_meshes[id].dynamic;
+            if (frameIndex >= dynamic.frames.size()) { dynamic.frames.resize(static_cast<size_t>(frameIndex) + 1); }
+            DynamicMeshFrame& frame = dynamic.frames[frameIndex];
+            if (frame.version == dynamic.version) { continue; }   // already holds the latest
+            frame.version = dynamic.version;
+
+            frame.indexCount = 0;
+            if (dynamic.vertices.empty() || dynamic.indices.empty()) { continue; }
+
+            grow(frame.vertexBuffer, frame.vertexMapped, frame.vertexCapacity, dynamic.vertices.size(), 1024,
+                 sizeof(Vertex), vk::BufferUsageFlagBits::eVertexBuffer);
+            grow(frame.indexBuffer, frame.indexMapped, frame.indexCapacity, dynamic.indices.size(), 2048,
+                 sizeof(uint32_t), vk::BufferUsageFlagBits::eIndexBuffer);
+            std::memcpy(frame.vertexMapped, dynamic.vertices.data(), dynamic.vertices.size() * sizeof(Vertex));
+            std::memcpy(frame.indexMapped, dynamic.indices.data(), dynamic.indices.size() * sizeof(uint32_t));
+            frame.indexCount = static_cast<uint32_t>(dynamic.indices.size());
+        }
+
+    }   // RenderResources::UploadDynamicMeshes()
+
+    uint32_t RenderResources::BindMesh(vk::CommandBuffer cmd, MeshHandle handle) const {
+
+        const GpuMesh& mesh = m_meshes[handle.id];
+        if (!mesh.dynamic) {
+            if (mesh.indexCount == 0) { return 0; }
+            cmd.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), { 0 });
+            cmd.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+            return mesh.indexCount;
+        }
+
+        const DynamicMesh& dynamic = *mesh.dynamic;
+        if (m_dynamicFrame >= dynamic.frames.size()) { return 0; }
+        const DynamicMeshFrame& frame = dynamic.frames[m_dynamicFrame];
+        if (frame.indexCount == 0) { return 0; }
+        cmd.bindVertexBuffers(0, *frame.vertexBuffer.GetBuffer(), { 0 });
+        cmd.bindIndexBuffer(*frame.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+        return frame.indexCount;
+
+    }   // RenderResources::BindMesh()
 
     void RenderResources::UploadMesh(MeshHandle handle, const MeshData& data, const std::string& debugName) {
 
@@ -101,14 +198,13 @@ namespace Crucible {
     void RenderResources::DrawBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches) const {
 
         MeshHandle bound;
+        uint32_t   indexCount = 0;
         for (const DrawBatch& batch : batches) {
-            const GpuMesh& mesh = m_meshes[batch.mesh.id];
             if (!(batch.mesh == bound)) {
-                cmd.bindVertexBuffers(0, *mesh.vertexBuffer.GetBuffer(), { 0 });
-                cmd.bindIndexBuffer(*mesh.indexBuffer.GetBuffer(), 0, vk::IndexType::eUint32);
+                indexCount = BindMesh(cmd, batch.mesh);
                 bound = batch.mesh;
             }
-            cmd.drawIndexed(mesh.indexCount, batch.instanceCount, 0, 0, batch.firstInstance);
+            if (indexCount != 0) { cmd.drawIndexed(indexCount, batch.instanceCount, 0, 0, batch.firstInstance); }
         }
 
     }   // RenderResources::DrawBatches()
@@ -410,6 +506,62 @@ namespace Crucible {
     //  MATERIALS
     // ------------------------------------------------------------------------------------------------------------- //
 
+    PushConstants MakeMaterialPush(const MaterialData& data) {
+
+        const auto toLinear = [](const glm::vec3& srgb) { return glm::pow(glm::clamp(srgb, glm::vec3(0.0f), glm::vec3(1.0f)), glm::vec3(2.2f)); };
+        PushConstants push;
+        push.factors     = data.factors;
+        push.alphaCutoff = std::clamp(data.alphaCutoff, 0.0f, 1.0f);
+        push.flags       = static_cast<uint32_t>(data.shading) & 3u;
+        if (data.toon.ownEdge)        { push.flags |= kMaterialFlagOwnEdge; }
+        if (data.toon.ownShadeColour) { push.flags |= kMaterialFlagOwnShade; }
+        push.toonEdge  = glm::vec4(std::clamp(data.toon.threshold, 0.0f, 0.95f), std::clamp(data.toon.softness, 0.0f, 1.0f), 0.0f, 0.0f);
+        push.toonShade = glm::vec4(toLinear(data.toon.shadeColour), 1.0f);
+        push.toonLit   = glm::vec4(toLinear(data.toon.litColour), 1.0f);
+        push.outline   = std::clamp(data.toon.outline, 0.0f, 1.0f);
+        return push;
+
+    }   // MakeMaterialPush()
+
+    void RenderResources::DrawDepthBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches, const DepthPassPipelines& p) const {
+
+        bool              cutoutBound = false;
+        vk::CullModeFlags cullBound   = p.cull;
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, p.solid);
+        if (p.dynamicCull) { cmd.setCullMode(cullBound); }
+
+        MeshHandle     boundMesh;
+        MaterialHandle boundMaterial;
+        uint32_t       indexCount = 0;
+        for (const DrawBatch& batch : batches) {
+
+            if (!(batch.material == boundMaterial)) {
+                const MaterialData* data = batch.material.IsValid() && batch.material.id < m_materials.size()
+                                         ? &m_materials[batch.material.id].data : nullptr;
+                const bool cutout = data && data->alphaCutoff > 0.0f;
+                if (cutout != cutoutBound) {
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, cutout ? p.cutout : p.solid);   // same layout: sets stay bound
+                    cutoutBound = cutout;
+                }
+                if (cutout) {
+                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, p.layout, 1, *m_materials[batch.material.id].descriptorSet, nullptr);
+                    const CutoutPush push{ std::clamp(data->alphaCutoff, 0.0f, 1.0f), data->factors.albedoTint.a };
+                    cmd.pushConstants(p.layout, p.cutoutPushStages, p.cutoutPushOffset, sizeof(CutoutPush), &push);
+                }
+                const vk::CullModeFlags cull = data && data->doubleSided ? vk::CullModeFlags(vk::CullModeFlagBits::eNone) : p.cull;
+                if (p.dynamicCull && cull != cullBound) { cmd.setCullMode(cull); cullBound = cull; }
+                boundMaterial = batch.material;
+            }
+
+            if (!(batch.mesh == boundMesh)) {
+                indexCount = BindMesh(cmd, batch.mesh);
+                boundMesh  = batch.mesh;
+            }
+            if (indexCount != 0) { cmd.drawIndexed(indexCount, batch.instanceCount, 0, 0, batch.firstInstance); }
+        }
+
+    }   // RenderResources::DrawDepthBatches()
+
     MaterialHandle RenderResources::CreateMaterial(const MaterialData& data) {
 
         // A VkDescriptorPool's maxSets is fixed at creation and can't grow, so once the current
@@ -433,6 +585,7 @@ namespace Crucible {
 
         GpuMaterial mat;
         mat.data = data;
+        mat.push = MakeMaterialPush(data);
         mat.descriptorSet = std::move(sets.front());
         WriteMaterialDescriptorSet(*mat.descriptorSet, data);
 
@@ -455,6 +608,7 @@ namespace Crucible {
             !(mat.data.emissive == data.emissive) || !(mat.data.occlusion == data.occlusion);
 
         mat.data = data;
+        mat.push = MakeMaterialPush(data);
 
         if (texturesChanged) {
             // A command buffer from a still-in-flight frame may currently be executing a draw

@@ -15,9 +15,13 @@
 #include "Diagnostics/Logger.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "ImGui/EditorTheme.h"
+#include "ImGui/Panels/ImGuiPanel_GameView.h"
+#include "Configuration/EngineConfigLoader.h"
 
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cstdio>
+#include <exception>
 #include <filesystem>
 
 #include "Core.h"
@@ -86,6 +90,22 @@ void Crucible::Menu::Update(float) {
 		// ---------------- File ----------------
 		if (ImGui::BeginMenu("File"))
 		{
+			if (ImGui::MenuItem("Project Settings...", nullptr, false, !playing)) {
+				EditConfigSettings();
+			}
+
+			if (ImGui::MenuItem("Exit", "Alt+F4"))
+			{
+				// The ImGui GLFW backend stores the GLFWwindow* in the main viewport,
+				// so the Editor can close the window without any Engine-side hook.
+				RequestGuarded(GuardedAction::Exit);
+			}
+			ImGui::EndMenu();
+		}
+
+		// ---------------- Scene ----------------
+		if (ImGui::BeginMenu("Scene"))
+		{
 			if (ImGui::MenuItem("New Scene", "Ctrl+N", false, !playing)) {
 				RequestGuarded(GuardedAction::New);
 			}
@@ -106,14 +126,6 @@ void Crucible::Menu::Update(float) {
 			if (playing)
 				ImGui::TextDisabled("Stop play mode to open or save scenes");
 
-			ImGui::Separator();
-
-			if (ImGui::MenuItem("Exit", "Alt+F4"))
-			{
-				// The ImGui GLFW backend stores the GLFWwindow* in the main viewport,
-				// so the Editor can close the window without any Engine-side hook.
-				RequestGuarded(GuardedAction::Exit);
-			}
 			ImGui::EndMenu();
 		}
 
@@ -190,9 +202,15 @@ void Crucible::Menu::Update(float) {
 		m_openUnsavedPopup = false;
 	}
 
+	if (m_openProjectSettingsPopup) {
+		ImGui::OpenPopup("Project Settings");
+		m_openProjectSettingsPopup = false;
+	}
+
 	DrawOpenScenePopup();
 	DrawSaveAsPopup();
 	DrawUnsavedChangesPopup();
+	DrawProjectSettingsPopup();
 
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
 	if (ImGui::BeginPopupModal("About Crucible Editor", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
@@ -383,10 +401,252 @@ void Crucible::Menu::SaveScene()
 
 void Crucible::Menu::OpenSceneFunc() {
 	if (BlockedByPlayMode("open a scene")) { return; }
-	m_sceneFiles.clear();
+	m_sceneFiles = ScanSceneFiles();
+	m_openScenePopup = true;
+}
+
+std::vector<std::string> Crucible::Menu::ScanSceneFiles() const {
+	std::vector<std::string> files;
 	std::error_code ec;
 	for (const auto& e : std::filesystem::directory_iterator(m_assets.Resolve("Scenes"), ec))
 		if (e.is_regular_file() && e.path().extension() == ".scene")
-			m_sceneFiles.push_back(e.path().filename().string());
-	m_openScenePopup = true;
+			files.push_back(e.path().filename().string());
+	std::sort(files.begin(), files.end());
+	return files;
+}
+
+// ---------------------------------------------------------------------------------------------
+//  File > Project Settings
+// ---------------------------------------------------------------------------------------------
+
+void Crucible::Menu::EditConfigSettings()
+{
+	if (BlockedByPlayMode("change project settings")) { return; }
+
+	m_projectSettingsPath = EngineConfigLoader::FindConfigFile();
+	if (m_projectSettingsPath.empty()) {
+		CRU_USER_WARN("[Menu] No Assets folder found - cannot open the project settings");
+		return;
+	}
+
+	// Load() reads the shared values only - no "editor" overrides - so saving can't bake the
+	// editor's overrides into what the Game reads. A missing file just means defaults (Save
+	// creates it); a broken one is left for a human to fix rather than overwritten.
+	m_projectSettings = EngineConfig{};
+	m_gameOverrides   = AppOverrides{};
+	std::error_code ec;
+	if (std::filesystem::exists(m_projectSettingsPath, ec)) {
+		try {
+			m_projectSettings = EngineConfigLoader::Load(m_projectSettingsPath);
+			m_gameOverrides   = EngineConfigLoader::LoadOverrides(AppKind::Game, m_projectSettingsPath);
+		}
+		catch (const std::exception& e) {
+			CRU_USER_ERROR("[Menu] Could not read '{}': {} - fix the file by hand first", m_projectSettingsPath.string(), e.what());
+			return;
+		}
+	}
+
+	std::snprintf(m_projectWindowTitle, sizeof(m_projectWindowTitle), "%s", m_projectSettings.graphics.windowTitle.c_str());
+	std::snprintf(m_gameWindowTitle, sizeof(m_gameWindowTitle), "%s", m_gameOverrides.windowTitle.value_or(m_projectSettings.graphics.windowTitle).c_str());
+	m_projectSceneFiles = ScanSceneFiles();
+	m_openProjectSettingsPopup = true;
+}
+
+namespace {
+	// Startup-scene picker shared by the Shared and Game tabs: "(none)" plus every scene in
+	// Assets/Scenes, and a warning when the chosen file no longer exists.
+	void StartupSceneCombo(char const* label, std::string& scene, std::vector<std::string> const& files, Crucible::AssetManager& assets)
+	{
+		ImGui::SetNextItemWidth(260.0f);
+		if (ImGui::BeginCombo(label, scene.empty() ? "(none)" : scene.c_str())) {
+			if (ImGui::Selectable("(none)", scene.empty()))
+				scene.clear();
+			for (std::string const& name : files) {
+				std::string const relative = "Scenes/" + name;
+				bool const selected = (relative == scene);
+				if (ImGui::Selectable(relative.c_str(), selected))
+					scene = relative;
+				if (selected) ImGui::SetItemDefaultFocus();
+			}
+			ImGui::EndCombo();
+		}
+		if (!scene.empty()) {
+			std::error_code ec;
+			if (!std::filesystem::exists(assets.Resolve(scene), ec))
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "'%s' does not exist - the engine will start with no scene", scene.c_str());
+		}
+	}
+
+	// Width x height boxes, each side kept >= 1.
+	bool WindowSizeInput(char const* label, uint32_t& width, uint32_t& height)
+	{
+		int size[2] = { static_cast<int>(width), static_cast<int>(height) };
+		ImGui::SetNextItemWidth(260.0f);
+		if (!ImGui::InputInt2(label, size)) return false;
+		width  = static_cast<uint32_t>(std::max(size[0], 1));
+		height = static_cast<uint32_t>(std::max(size[1], 1));
+		return true;
+	}
+
+	// The tick box in front of a Game-tab field. Ticking it starts the override from the shared
+	// value; the field after it is greyed out (showing the shared value) while it is unticked.
+	bool OverrideToggle(char const* id, bool overridden)
+	{
+		ImGui::Checkbox(id, &overridden);
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(overridden ? "Overridden for the Game - untick to use the shared value" : "Tick to override this for the Game");
+		ImGui::SameLine();
+		return overridden;
+	}
+}
+
+void Crucible::Menu::DrawProjectSettingsPopup()
+{
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (!ImGui::BeginPopupModal("Project Settings", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		return;
+
+	ProjectConfig&  project  = m_projectSettings.project;
+	GrahpicsConfig& graphics = m_projectSettings.graphics;
+
+	ImGui::TextDisabled("%s", m_projectSettingsPath.string().c_str());
+
+	if (ImGui::BeginTabBar("##ProjectSettingsTabs"))
+	{
+		// ================= Shared: what both the Editor and the Game start from =================
+		if (ImGui::BeginTabItem("Shared"))
+		{
+			ImGui::TextDisabled("Used by both the Editor and the Game, unless the Game tab overrides it.");
+
+			ImGui::SeparatorText("Project");
+			StartupSceneCombo("Startup Scene", project.startupScene, m_projectSceneFiles, m_assets);
+
+			int aspect[2] = { static_cast<int>(project.aspectWidth), static_cast<int>(project.aspectHeight) };
+			ImGui::SetNextItemWidth(120.0f);
+			if (ImGui::InputInt2("##AspectRatio", aspect)) {
+				project.aspectWidth  = static_cast<uint32_t>(std::max(aspect[0], 0));
+				project.aspectHeight = static_cast<uint32_t>(std::max(aspect[1], 0));
+			}
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(130.0f);
+			if (ImGui::BeginCombo("Aspect Ratio", "Presets")) {
+				struct Preset { char const* name; uint32_t w; uint32_t h; };
+				constexpr Preset kPresets[] = { { "Free", 0, 0 }, { "16:9", 16, 9 }, { "16:10", 16, 10 }, { "4:3", 4, 3 }, { "1:1", 1, 1 } };
+				for (Preset const& p : kPresets) {
+					if (ImGui::Selectable(p.name, project.aspectWidth == p.w && project.aspectHeight == p.h)) {
+						project.aspectWidth  = p.w;
+						project.aspectHeight = p.h;
+					}
+				}
+				ImGui::EndCombo();
+			}
+			if (project.AspectRatio() > 0.0f)
+				ImGui::TextDisabled("The Game locks its window to %u:%u; the Game view switches to it when you save.", project.aspectWidth, project.aspectHeight);
+			else
+				ImGui::TextDisabled("Free aspect (either side is 0): the Game window can be any shape.");
+
+			ImGui::SeparatorText("Window  (applies next launch)");
+			ImGui::SetNextItemWidth(260.0f);
+			ImGui::InputText("Title", m_projectWindowTitle, sizeof(m_projectWindowTitle));
+			WindowSizeInput("Size", graphics.windowWidth, graphics.windowHeight);
+
+			ImGui::EndTabItem();
+		}
+
+		// ================= Game: the standalone game's own values ===============================
+		if (ImGui::BeginTabItem("Game"))
+		{
+			AppOverrides& game = m_gameOverrides;
+
+			ImGui::TextDisabled("Only the Game app uses these. Unticked fields use the Shared value.");
+
+			// ---- Startup scene ----
+			ImGui::SeparatorText("Project  (applies next launch)");
+			bool const sceneOn = OverrideToggle("##OverrideScene", game.startupScene.has_value());
+			if (sceneOn && !game.startupScene) game.startupScene = project.startupScene;
+			if (!sceneOn) game.startupScene.reset();
+			{
+				std::string shown = sceneOn ? *game.startupScene : project.startupScene;
+				ImGui::BeginDisabled(!sceneOn);
+				StartupSceneCombo("Startup Scene##Game", shown, m_projectSceneFiles, m_assets);
+				ImGui::EndDisabled();
+				if (sceneOn) game.startupScene = shown;
+			}
+			ImGui::TextDisabled("Aspect ratio is not overridable: it stays shared so the Editor's Game view frames the game the same way.");
+
+			// ---- Window ----
+			ImGui::SeparatorText("Window  (applies next launch)");
+
+			bool const titleOn = OverrideToggle("##OverrideTitle", game.windowTitle.has_value());
+			if (titleOn && !game.windowTitle) {
+				game.windowTitle = std::string(m_projectWindowTitle);
+				std::snprintf(m_gameWindowTitle, sizeof(m_gameWindowTitle), "%s", m_projectWindowTitle);
+			}
+			if (!titleOn) game.windowTitle.reset();
+			ImGui::SetNextItemWidth(260.0f);
+			if (titleOn) {
+				if (ImGui::InputText("Title##Game", m_gameWindowTitle, sizeof(m_gameWindowTitle)))
+					game.windowTitle = std::string(m_gameWindowTitle);
+			}
+			else {
+				ImGui::BeginDisabled();
+				char shared[sizeof(m_projectWindowTitle)];
+				std::snprintf(shared, sizeof(shared), "%s", m_projectWindowTitle);
+				ImGui::InputText("Title##Game", shared, sizeof(shared));
+				ImGui::EndDisabled();
+			}
+
+			// Width and height are overridden together - a half-overridden size is never what you want.
+			bool const sizeOn = OverrideToggle("##OverrideSize", game.windowWidth.has_value() || game.windowHeight.has_value());
+			if (sizeOn) {
+				if (!game.windowWidth)  game.windowWidth  = graphics.windowWidth;
+				if (!game.windowHeight) game.windowHeight = graphics.windowHeight;
+				WindowSizeInput("Size##Game", *game.windowWidth, *game.windowHeight);
+			}
+			else {
+				game.windowWidth.reset();
+				game.windowHeight.reset();
+				uint32_t w = graphics.windowWidth, h = graphics.windowHeight;
+				ImGui::BeginDisabled();
+				WindowSizeInput("Size##Game", w, h);
+				ImGui::EndDisabled();
+			}
+
+			// What the game will actually start with, all overrides applied.
+			EngineConfig shared = m_projectSettings;
+			shared.graphics.windowTitle = m_projectWindowTitle;
+			EngineConfig const result = game.ApplyTo(shared);
+			ImGui::Spacing();
+			ImGui::TextDisabled("The Game will start as \"%s\", %u x %u, opening %s.",
+				result.graphics.windowTitle.c_str(), result.graphics.windowWidth, result.graphics.windowHeight,
+				result.project.startupScene.empty() ? "no scene" : result.project.startupScene.c_str());
+
+			ImGui::EndTabItem();
+		}
+		ImGui::EndTabBar();
+	}
+
+	// ---- Save / Cancel (both tabs) ----
+	ImGui::Spacing();
+	ImGui::Separator();
+	if (ImGui::Button("Save", ImVec2(120.0f, 0.0f))) {
+		graphics.windowTitle = m_projectWindowTitle;
+		bool const ok = EngineConfigLoader::Save(m_projectSettings, m_projectSettingsPath)
+		             && EngineConfigLoader::SaveOverrides(AppKind::Game, m_gameOverrides, m_projectSettingsPath);
+		if (ok) {
+			// The aspect ratio is the one setting the open editor can show straight away.
+			if (auto gameView = EditorManager::GetInstance().GetPanel<GameView>(ImguiPanels::GAMESCENE))
+				gameView->SetProjectAspect(project.aspectWidth, project.aspectHeight);
+			CRU_USER_INFO("[Menu] Project settings saved - startup scene and window changes apply on next launch");
+			ImGui::CloseCurrentPopup();
+		}
+		else {
+			CRU_USER_ERROR("[Menu] Could not save the project settings - see the log for why");
+		}
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+		ImGui::CloseCurrentPopup();
+
+	ImGui::EndPopup();
 }

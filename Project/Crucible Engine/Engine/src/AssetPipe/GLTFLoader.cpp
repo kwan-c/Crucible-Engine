@@ -257,6 +257,15 @@ namespace {
             gm.emissiveFactor = glm::vec3(f[0].GetFloat(), f[1].GetFloat(), f[2].GetFloat());
         }
 
+        // Cut-out and double-sided (both optional; defaults OPAQUE, 0.5, false).
+        if (mat.HasMember("alphaMode") && mat["alphaMode"].IsString()) {
+            const std::string mode = mat["alphaMode"].GetString();
+            if      (mode == "MASK")  { gm.alphaMode = GLTFAlphaMode::Mask; }
+            else if (mode == "BLEND") { gm.alphaMode = GLTFAlphaMode::Blend; }
+        }
+        if (mat.HasMember("alphaCutoff") && mat["alphaCutoff"].IsNumber()) { gm.alphaCutoff = mat["alphaCutoff"].GetFloat(); }
+        if (mat.HasMember("doubleSided") && mat["doubleSided"].IsBool())   { gm.doubleSided = mat["doubleSided"].GetBool(); }
+
         return gm;
     }
 

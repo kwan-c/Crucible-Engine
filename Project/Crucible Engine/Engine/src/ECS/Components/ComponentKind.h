@@ -75,8 +75,16 @@ namespace Crucible
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
 		EntityName = 17,         // every entity's display name (mandatory) - Components.h
+		UICanvas = 18, 
+		UIRect = 19, 
+		UIImage = 20, 
+		UIButton = 21, 
+		UIText = 22,
+		UISlider = 23,           // UI: a draggable value (UI/UIComponents.h)
+		Water = 24,
 
-		MAXCOMPONENT = 18
+
+		MAXCOMPONENT = 25
 	};
 
 
@@ -182,9 +190,9 @@ namespace Crucible
 	 component here (matching its ComponentKind entry above) and
 	 RegisterAll() picks it up automatically.
 *************************************************************************/
-#define CRUCIBLE_COMPONENT_LIST(X)                                         \
- X(Transform)                                                                \
- X(RigidBody)                                                                \
+#define CRUCIBLE_COMPONENT_LIST(X)                                             \
+ X(Transform)                                                                  \
+ X(RigidBody)                                                                  \
  X(MeshRenderer)                                                               \
  X(AudioSource)                                                                \
  X(Collider)                                                                   \
@@ -201,5 +209,12 @@ namespace Crucible
  X(MaterialParams)                                                             \
  X(StressMover)                                                                \
  X(EntityName)                                                                 \
+ X(UICanvas)																   \
+ X(UIRect)																	   \
+ X(UIImage)																	   \
+ X(UIButton)																   \
+ X(UIText)																	   \
+ X(UISlider)														           \
+ X(Water)                                                                      \
 
 }

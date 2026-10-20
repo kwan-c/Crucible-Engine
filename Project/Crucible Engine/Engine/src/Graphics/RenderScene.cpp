@@ -160,6 +160,16 @@ namespace Crucible {
 
     }   // RenderScene::IsDrawable()
 
+    uint64_t RenderScene::DepthKey(MeshHandle mesh, MaterialHandle material) const {
+
+        // The depth-only passes (shadows, ambient occlusion, selection mask) only care about a
+        // material that is cut-out or double-sided; for those the key carries it (as id + 1, so 0
+        // can mean "none").
+        const uint64_t high = m_resources.NeedsMaterialInDepthPasses(material) ? uint64_t{ material.id } + 1 : 0;
+        return high << 32 | mesh.id;
+
+    }   // RenderScene::DepthKey()
+
     MaterialHandle RenderScene::ResolveMaterial(MaterialHandle material) const {
 
         // The main pass always needs SOME material set bound (the pipeline layout declares set 1
@@ -199,13 +209,15 @@ namespace Crucible {
         if (m_treeHits.size() < size_t{ treeParts } * kMaxPasses) { m_treeHits.resize(size_t{ treeParts } * kMaxPasses); }
 
         // A hit's sort key: by (material, mesh) in the main pass; by mesh alone in the depth-only
-        // cascades, where the material doesn't matter and batches can merge across materials.
-        // Returns false for what can't be drawn (it still counts as seen).
+        // cascades (DepthKey), where the material doesn't matter and batches can merge across
+        // materials - unless it is cut-out or double-sided. Returns false for what can't be drawn
+        // (it still counts as seen).
         const auto keysOf = [&](uint32_t proxy, uint64_t& mainKey, uint64_t& depthKey) {
             const ProxyDraw& d = m_proxyDraw[proxy];
             if (!IsDrawable(d.mesh)) { return false; }
-            depthKey = d.mesh.id;
-            mainKey  = static_cast<uint64_t>(ResolveMaterial(d.material).id) << 32 | d.mesh.id;
+            const MaterialHandle material = ResolveMaterial(d.material);
+            depthKey = DepthKey(d.mesh, material);
+            mainKey  = static_cast<uint64_t>(material.id) << 32 | d.mesh.id;
             return true;
         };
 
@@ -257,7 +269,8 @@ namespace Crucible {
                 if (m_resources.GetMeshBounds(item.mesh, mn, mx) && !frusta[pass].Intersects(AABB::Transform(AABB(mn, mx), item.model))) { continue; }
                 ++immediate.seen;
                 if (!IsDrawable(item.mesh)) { continue; }
-                const uint64_t key = pass == 0 ? static_cast<uint64_t>(ResolveMaterial(item.material).id) << 32 | item.mesh.id : uint64_t{ item.mesh.id };
+                const MaterialHandle material = ResolveMaterial(item.material);
+                const uint64_t key = pass == 0 ? static_cast<uint64_t>(material.id) << 32 | item.mesh.id : DepthKey(item.mesh, material);
                 immediate.items.push_back(SortItem{ key, kImmediateRef | q });
             }
             GroupPass(pass, treeParts, chunks);
@@ -275,7 +288,9 @@ namespace Crucible {
             for (uint32_t b : ps.keyOrder) {
                 const Bucket& bucket = ps.buckets[b];
                 const MeshHandle     mesh{ static_cast<uint32_t>(bucket.key & 0xFFFFFFFFu) };
-                const MaterialHandle material = pass == 0 ? MaterialHandle{ static_cast<uint32_t>(bucket.key >> 32) } : MaterialHandle{};
+                const uint32_t       high = static_cast<uint32_t>(bucket.key >> 32);
+                const MaterialHandle material = pass == 0 ? MaterialHandle{ high }
+                                              : high != 0 ? MaterialHandle{ high - 1 } : MaterialHandle{};   // see DepthKey
                 out.push_back(DrawBatch{ mesh, material, ps.firstInstance + bucket.first, bucket.count });
             }
             next += static_cast<uint32_t>(ps.grouped.size());
@@ -394,12 +409,18 @@ namespace Crucible {
         m_casterItems.clear();
         for (uint32_t id : m_outlineProxies) {
             if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid) {
-                m_casterItems.push_back(RenderItem{ m_proxies[id].mesh, MaterialHandle{}, m_proxies[id].model });
+                // The material only when the mask needs it (a cut-out leaf's outline follows the leaf).
+                const MaterialHandle material = ResolveMaterial(m_proxyDraw[id].material);
+                m_casterItems.push_back(RenderItem{ m_proxies[id].mesh,
+                                                    m_resources.NeedsMaterialInDepthPasses(material) ? material : MaterialHandle{},
+                                                    m_proxies[id].model });
             }
         }
         if (!m_casterItems.empty()) {
-            // AppendBatches merges consecutive items with the same mesh into one instanced draw.
-            std::sort(m_casterItems.begin(), m_casterItems.end(), [](const RenderItem& a, const RenderItem& b) { return a.mesh < b.mesh; });
+            // AppendBatches merges consecutive items with the same mesh (and material) into one instanced draw.
+            std::sort(m_casterItems.begin(), m_casterItems.end(), [](const RenderItem& a, const RenderItem& b) {
+                return a.mesh == b.mesh ? a.material.id < b.material.id : a.mesh < b.mesh;
+            });
             AppendBatches(m_casterItems, out, false);
         }
 
@@ -412,8 +433,9 @@ namespace Crucible {
 
             if (!IsDrawable(item.mesh)) { continue; }
 
-            // Depth-only passes leave the material Invalid, so their batches merge across materials.
-            const MaterialHandle material = byMaterial ? ResolveMaterial(item.material) : MaterialHandle{};
+            // Depth-only passes keep the item's material as given (Invalid unless it is cut-out or
+            // double-sided), so their batches merge across ordinary materials.
+            const MaterialHandle material = byMaterial ? ResolveMaterial(item.material) : item.material;
 
             const uint32_t index = AllocateInstances(1);
             m_instanceScratch[index] = InstanceData{ item.model, item.params };

@@ -29,13 +29,16 @@ namespace Crucible {
         /*********************************************************************
          \brief  Creates the pass's pipeline. Call once, before recording.
  \details Depth only, position-only vertex input, no culling, slope-scaled
-                 depth bias. Layout = set 0 + a 4-byte vertex push constant
-                 (the cascade index).
+                 depth bias. Layout = set 0 + set 1 (a material) + a push
+                 constant (the cascade index, then CutoutPush). A second
+                 pipeline draws cut-out materials: it also reads the uv and
+                 drops the pixels the material's alpha cuts out.
          \param[in] context         The VulkanContext to create it through.
-         \param[in] frameSetLayout  Layout of set 0 (the per-frame data).
-         \param[in] depthFormat     The shadow map's format.
+         \param[in] frameSetLayout     Layout of set 0 (the per-frame data).
+         \param[in] materialSetLayout  Layout of a material's set (set 1).
+         \param[in] depthFormat        The shadow map's format.
          *********************************************************************/
-        void Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::Format depthFormat);
+        void Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout, vk::Format depthFormat);
 
         /*********************************************************************
          \brief  Creates the shadow map (one layer per cascade), a view of the
@@ -82,6 +85,7 @@ namespace Crucible {
 
     private:
         vk::raii::Pipeline       m_shadowPipeline = nullptr;
+        vk::raii::Pipeline       m_shadowCutoutPipeline = nullptr;   // cut-out materials (leaves)
         vk::raii::PipelineLayout m_shadowLayout = nullptr;
 
         // One D32 array image (a layer per cascade) shared by every view: each view renders its

@@ -54,8 +54,8 @@ namespace {
 
 	// ---- Add Component rules --------------------------------------------------------------
 	//
-	// Three hooks, each a do-nothing template plus specialisations/overloads for the components
-	// that need them. ALL of them must be declared above AddNewComponent: a template only sees
+	// Four hooks, each a do-nothing template plus specialisations/overloads for the components
+	// that need them. ALL of them must be declared above AddNewComponent / MakeComponentRemover: a template only sees
 	// overloads declared before it, and a missing one silently falls back to the do-nothing version.
 	//
 	// The physics rules come from ECSPhysicsSystem:
@@ -138,6 +138,87 @@ namespace {
 		}
 	}
 
+	// ---- UI rules (UI/UIComponents.h): Unity's [RequireComponent] for the UI types ----
+	//   - UIImage, UIText, UISlider -> need a UIRect: it is where they sit and how big they are.
+	//   - UIButton          -> needs a UIRect, and a UIImage: the button's picture, which its
+	//                          state colours tint.
+	//   - All of them (UIRect too) are only drawn under an entity with a UICanvas. That is a
+	//     warning, not an automatic add: the canvas is normally a parent entity, not this one.
+
+	// True when the entity or one of its ancestors has a UICanvas.
+	bool IsUnderUICanvas(Crucible::World& world, Crucible::Entity entity) {
+		for (Crucible::Entity e = entity; e.IsValid(); e = world.GetParent(e)) {
+			if (world.HasComponent<Crucible::UICanvas>(e)) return true;
+		}
+		return false;
+	}
+
+	void WarnIfNotUnderUICanvas(Crucible::World& world, Crucible::Entity entity) {
+		if (!IsUnderUICanvas(world, entity)) {
+			CRU_USER_WARN("Entity {}: not under a UICanvas, so it won't be drawn - make it a child of an entity with a UICanvas", entity.index);
+		}
+	}
+
+	void EnsureUIRect(Crucible::World& world, Crucible::Entity entity, char const* addedName) {
+		if (!world.HasComponent<Crucible::UIRect>(entity)) {
+			world.AddComponent<Crucible::UIRect>(entity, Crucible::UIRect{});
+			CRU_USER_INFO("Entity {}: also added a UIRect - a {} needs one for its position and size", entity.index, addedName);
+		}
+		WarnIfNotUnderUICanvas(world, entity);
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		WarnIfNotUnderUICanvas(world, entity);
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIImage>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIImage");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIText>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIText");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UISlider>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UISlider");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIButton>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIButton");
+		if (!world.HasComponent<Crucible::UIImage>(entity)) {
+			world.AddComponent<Crucible::UIImage>(entity, Crucible::UIImage{});
+			CRU_USER_INFO("Entity {}: also added a UIImage - it is the button's picture, tinted by the button's state colours", entity.index);
+		}
+	}
+
+	// 4. Why T can't be removed from this entity right now (the Remove Component item is greyed
+	//    out with this tooltip), or nullptr if it can. The other side of the "also added" rules
+	//    in hook 3: a component another one depends on stays until that one is removed (Unity's
+	//    [RequireComponent] blocks removal the same way).
+	template <typename T>
+	char const* RemoveBlockedReason(Crucible::World&, Crucible::Entity) { return nullptr; }
+
+	template <>
+	char const* RemoveBlockedReason<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		if (world.HasComponent<Crucible::UIButton>(entity)) return "The UIButton on this entity needs it.\nRemove the UIButton (and UIImage) first.";
+		if (world.HasComponent<Crucible::UIImage>(entity))  return "The UIImage on this entity needs it for its position and size.\nRemove the UIImage first.";
+		if (world.HasComponent<Crucible::UIText>(entity))   return "The UIText on this entity needs it for its position and size.\nRemove the UIText first.";
+		if (world.HasComponent<Crucible::UISlider>(entity)) return "The UISlider on this entity needs it for its position and size.\nRemove the UISlider first.";
+		return nullptr;
+	}
+
+	template <>
+	char const* RemoveBlockedReason<Crucible::UIImage>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::UIButton>(entity)
+			? "The UIButton on this entity uses it as its picture.\nRemove the UIButton first."
+			: nullptr;
+	}
+
 	// MUST come after every hook above.
 	template <typename T>
 	void AddNewComponent(Crucible::World& world, Crucible::SceneManager& scenes, Crucible::Entity entity) {
@@ -165,6 +246,11 @@ namespace {
 	template <typename T>
 	std::function<void()> MakeComponentRemover(Crucible::World& world, Crucible::Entity entity) {
 		if constexpr (Crucible::RemovableComponent<T>) {
+			if (char const* reason = RemoveBlockedReason<T>(world, entity)) {
+				// The menu greys these out, so this only fires if something else calls it.
+				CRU_USER_WARN("Cannot remove {} from entity {}: {}", Crucible::ComponentTraits<T>::name, entity.index, reason);
+				return {};
+			}
 			return [&world, entity] {
 				world.RemoveComponent<T>(entity);
 				CRU_USER_INFO("Removed {} from entity {}", Crucible::ComponentTraits<T>::name, entity.index);
@@ -473,8 +559,10 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 				bool const open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);    \
 				if constexpr (RemovableComponent<T>) {                                                       \
 					if (ImGui::BeginPopupContextItem("##ComponentMenu")) {                                   \
-						if (ImGui::MenuItem("Remove Component"))                                             \
+						char const* const removeBlocked = RemoveBlockedReason<T>(m_world, entity);           \
+						if (ImGui::MenuItem("Remove Component", nullptr, false, removeBlocked == nullptr))   \
 							{ deferredRemove = MakeComponentRemover<T>(m_world, entity); removeLabel = "Remove " + header; }  \
+						if (removeBlocked) ImGui::SetItemTooltip("%s", removeBlocked);                       \
 						ImGui::EndPopup();                                                                   \
 					}                                                                                        \
 				}                                                                                            \
@@ -663,6 +751,46 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 	changed |= ImGui::SliderFloat("Metallic", &data.factors.metallicFactor, 0.0f, 1.0f);
 	changed |= ImGui::SliderFloat("Roughness", &data.factors.roughnessFactor, 0.0f, 1.0f);
 	changed |= ImGui::ColorEdit3("Emissive Factor", &data.factors.emissiveFactor.x);
+
+	ImGui::Separator();
+	// ---- How it is lit, and its shape ----
+	// Shading: Scene follows the Skybox's Toon Shading switch; Toon/Realistic ignore it, so one scene
+	// can mix styles (a realistic prop in a toon world, or the reverse).
+	{
+		constexpr char const* kShadingNames[] = { "Scene", "Toon", "Realistic" };
+		int shading = std::clamp(static_cast<int>(data.shading), 0, 2);
+		if (ImGui::Combo("Shading", &shading, kShadingNames, IM_ARRAYSIZE(kShadingNames))) {
+			data.shading = static_cast<MaterialShading>(shading);
+			changed = true;
+		}
+		ImGui::SetItemTooltip("Scene: toon or realistic, as the Skybox's Toon Shading says.\nToon / Realistic: always that, whatever the scene uses.");
+	}
+	changed |= ImGui::SliderFloat("Alpha Cutoff", &data.alphaCutoff, 0.0f, 1.0f, data.alphaCutoff > 0.0f ? "%.2f" : "%.2f (off)");
+	ImGui::SetItemTooltip("Cut-out (leaves, fences): pixels whose alpha (albedo texture x tint alpha) is below\nthis are not drawn - in shadows and ambient occlusion too. 0 = off (solid).");
+	changed |= ImGui::Checkbox("Double-Sided", &data.doubleSided);
+	ImGui::SetItemTooltip("Draw both sides (leaf cards, thin sheets). The back is lit as its own front.");
+
+	// ---- Toon overrides: only used when this material is toon-shaded ----
+	if (ImGui::TreeNode("Toon Overrides")) {
+		ImGui::BeginDisabled(data.shading == MaterialShading::Realistic);
+		changed |= ImGui::Checkbox("Own Edge", &data.toon.ownEdge);
+		ImGui::SetItemTooltip("Use this edge instead of the Skybox's (e.g. a wide soft one for foliage)");
+		ImGui::BeginDisabled(!data.toon.ownEdge);
+		changed |= ImGui::SliderFloat("Edge Threshold", &data.toon.threshold, 0.0f, 0.9f);
+		changed |= ImGui::SliderFloat("Edge Softness", &data.toon.softness, 0.0f, 1.0f);
+		ImGui::EndDisabled();
+		changed |= ImGui::Checkbox("Own Shade Colour", &data.toon.ownShadeColour);
+		ImGui::SetItemTooltip("Tint the shaded side with this colour instead of the Skybox's");
+		ImGui::BeginDisabled(!data.toon.ownShadeColour);
+		changed |= ImGui::ColorEdit3("Shade Colour", &data.toon.shadeColour.x);
+		ImGui::EndDisabled();
+		changed |= ImGui::ColorEdit3("Lit Colour", &data.toon.litColour.x);
+		ImGui::SetItemTooltip("Multiplies the light on the lit side (white = no change).\nWarm lit + cool shade gives a yellow-to-teal gradient across a canopy.");
+		changed |= ImGui::SliderFloat("Outline", &data.toon.outline, 0.0f, 1.0f);
+		ImGui::SetItemTooltip("Strength of the toon outlines on this material (the Skybox's Toon Line settings);\n0 = none, e.g. for foliage or terrain.");
+		ImGui::EndDisabled();
+		ImGui::TreePop();
+	}
 
 	ImGui::Separator();
 	ImGui::TextDisabled("Drag a texture asset from the Asset Browser onto a slot:");
@@ -886,8 +1014,101 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			}
 		}
 		ImGui::EndDisabled();
+
+		changed |= DrawPropertyExtras(obj, label);
 	}
 	return changed;
+}
+
+bool Crucible::Inspector::DrawPropertyExtras(rttr::instance& obj, std::string const& name) {
+	if (name == "ambientFromSky") {
+		if (Skybox* skybox = obj.try_convert<Skybox>()) { return DrawPickFromSky(*skybox); }
+	}
+	return false;
+}
+
+bool Crucible::Inspector::DrawPickFromSky(Skybox& skybox) {
+	// With Ambient From Sky off, the two hand-picked colours light the scene (the toon scenes'
+	// choice). This fills them from the sky image's own light, as a starting point: what a surface
+	// facing straight up / straight down gets from it - exactly what Ambient From Sky gives those
+	// two directions - or the same colours scaled to a chosen brightness (a night sky's own light
+	// is usually far too dark to use as it is).
+	ImGui::Indent();
+	if (ImGui::SmallButton("Pick from Sky...")) { ImGui::OpenPopup("Pick Ambient from Sky"); }
+	ImGui::SetItemTooltip("Fill Ambient Sky and Ambient Ground from the sky image's light,\n"
+	                      "as a starting point for hand-picked ambient colours.");
+	ImGui::Unindent();
+
+	if (!ImGui::BeginPopup("Pick Ambient from Sky")) { return false; }
+
+	// The sky this Skybox shows (same rule as RenderExtractSystem): its asset, else its runtime
+	// cubemap, else the built-in sky. Read every frame the popup is open - a few multiplies.
+	CubemapHandle sky = skybox.cubemap;
+	if (ResourceManager* rm = EditorManager::GetInstance().GetResources(); rm && skybox.skyboxAsset != 0) {
+		sky = rm->GetCubemap(skybox.skyboxAsset);
+	}
+	// Ambient From Sky scales the sky's light by Intensity (and both modes by Ambient Intensity),
+	// so the colours include Intensity to come out the same.
+	float const     intensity = std::max(skybox.intensity, 0.0f);
+	glm::vec3 const up   = m_renderer.GetSkyIrradiance(sky, glm::vec3(0.0f,  1.0f, 0.0f)) * intensity;
+	glm::vec3 const down = m_renderer.GetSkyIrradiance(sky, glm::vec3(0.0f, -1.0f, 0.0f)) * intensity;
+	auto const luminance = [](glm::vec3 const& c) { return glm::dot(c, glm::vec3(0.2126f, 0.7152f, 0.0722f)); };
+	float const skyBrightness = luminance(0.5f * (up + down));
+
+	static int   s_mode       = 0;       // 0 = as the sky is, 1 = scaled to s_brightness
+	static float s_brightness = 0.5f;    // average brightness of the two colours (mode 1)
+	static bool  s_switchOff  = true;    // also turn Ambient From Sky off
+
+	// Swatches show the values as stored (linear), like the colour fields themselves.
+	auto const swatchRow = [](char const* id, char const* label, glm::vec3 const& c) {
+		ImGui::ColorButton(id, ImVec4(c.x, c.y, c.z, 1.0f), ImGuiColorEditFlags_NoAlpha | ImGuiColorEditFlags_Float);
+		ImGui::SameLine();
+		ImGui::Text("%-7s %.3f, %.3f, %.3f", label, c.x, c.y, c.z);
+	};
+
+	ImGui::TextUnformatted("The sky image's light (what Ambient From Sky gives):");
+	swatchRow("##skyUp",   "Up",   up);
+	swatchRow("##skyDown", "Down", down);
+	ImGui::TextDisabled("Average brightness %.3f", skyBrightness);
+
+	ImGui::SeparatorText("Pick");
+	bool const canScale = skyBrightness > 1e-5f;
+	if (!canScale) { s_mode = 0; }
+	ImGui::RadioButton("As the sky is", &s_mode, 0);
+	ImGui::SetItemTooltip("Exactly the sky's light: switching Ambient From Sky off then looks almost\n"
+	                      "the same (only the sky's side-to-side differences are lost).");
+	ImGui::BeginDisabled(!canScale);
+	ImGui::RadioButton("At brightness", &s_mode, 1);
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth(120.0f);
+	if (ImGui::SliderFloat("##brightness", &s_brightness, 0.01f, 2.0f, "%.3f", ImGuiSliderFlags_Logarithmic)) { s_mode = 1; }
+	ImGui::SetItemTooltip("The sky's colours, scaled so their average brightness is this.\n"
+	                      "About 0.5 for a bright day, 0.03-0.08 for a night scene.");
+	ImGui::EndDisabled();
+	if (!canScale) { ImGui::TextDisabled("This sky gives no light to scale."); }
+
+	float const     scale     = (s_mode == 1 && canScale) ? s_brightness / skyBrightness : 1.0f;
+	glm::vec3 const newSky    = up * scale;
+	glm::vec3 const newGround = down * scale;
+	swatchRow("##newSky",    "Sky",    newSky);
+	swatchRow("##newGround", "Ground", newGround);
+
+	ImGui::Checkbox("Switch Ambient From Sky off", &s_switchOff);
+	ImGui::SetItemTooltip("The two colours only light the scene while Ambient From Sky is off.");
+
+	bool applied = false;
+	if (ImGui::Button("Apply")) {
+		skybox.ambientSky    = newSky;
+		skybox.ambientGround = newGround;
+		if (s_switchOff) { skybox.ambientFromSky = false; }
+		applied = true;
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::SetItemTooltip("Sets Ambient Sky and Ambient Ground (Ctrl+Z undoes it).");
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
+	ImGui::EndPopup();
+	return applied;
 }
 
 bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
@@ -907,6 +1128,69 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
 
 	ImGui::SeparatorText("Material");
 	return DrawMaterialSection(renderer);   // your existing function, returning bool
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {
+	// sceneAsset is hidden from the generic fields (a raw id means nothing to a person): pick the
+	// scene from the project's scene files instead. Only shown when the button loads a scene.
+	if (button.onClick != UIButton::ClickAction::LoadScene) { return false; }
+
+	AssetEntry const* current = button.sceneAsset != 0 ? m_assets.FindByGuid(xresource::instance_guid{ button.sceneAsset }) : nullptr;
+	char const* preview = current ? current->virtualPath.c_str() : (button.sceneAsset != 0 ? "(missing scene)" : "None");
+
+	bool changed = false;
+	if (ImGui::BeginCombo("scene", preview)) {
+		if (ImGui::Selectable("None", button.sceneAsset == 0)) { button.sceneAsset = 0; changed = true; }
+		for (AssetEntry const* entry : m_assets.GetByType(AssetType::Scene)) {
+			bool const selected = entry->guid.m_Value == button.sceneAsset;
+			if (ImGui::Selectable(entry->virtualPath.c_str(), selected)) { button.sceneAsset = entry->guid.m_Value; changed = true; }
+			if (selected) { ImGui::SetItemDefaultFocus(); }
+		}
+		ImGui::EndCombo();
+	}
+	if (button.sceneAsset == 0) { ImGui::TextDisabled("Pick the scene this button loads."); }
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UISlider& slider) {
+	// The direction, drawn here instead of with the generic fields because a change between
+	// horizontal and vertical must also turn the slider's rect: a 240 x 24 slider switched to
+	// Bottom-to-Top would otherwise run along its 24 px height, with almost no room to drag.
+	// Unity's Slider does the same. Both changes land in the same edit, so one undo reverts both.
+	struct Option { char const* name; UISlider::Direction value; };
+	static constexpr Option kOptions[] = {
+		{ "LeftToRight", UISlider::Direction::LeftToRight },
+		{ "RightToLeft", UISlider::Direction::RightToLeft },
+		{ "BottomToTop", UISlider::Direction::BottomToTop },
+		{ "TopToBottom", UISlider::Direction::TopToBottom },
+	};
+	auto isVertical = [](UISlider::Direction d) { return d == UISlider::Direction::BottomToTop || d == UISlider::Direction::TopToBottom; };
+
+	char const* current = kOptions[0].name;
+	for (Option const& option : kOptions) { if (option.value == slider.direction) { current = option.name; } }
+
+	bool changed = false;
+	if (ImGui::BeginCombo("direction", current)) {
+		for (Option const& option : kOptions) {
+			bool const selected = option.value == slider.direction;
+			if (ImGui::Selectable(option.name, selected) && !selected) {
+				if (isVertical(option.value) != isVertical(slider.direction)) {
+					// Turn the rect: width <-> height, and the pivot with it, so it keeps its shape
+					// around the same point. Only touches UIRect's fields - no structural change, so
+					// `slider` stays valid.
+					if (UIRect* rect = m_world.GetComponent<UIRect>(m_selected)) {
+						std::swap(rect->size.x, rect->size.y);
+						std::swap(rect->pivot.x, rect->pivot.y);
+					}
+				}
+				slider.direction = option.value;
+				changed = true;
+			}
+			if (selected) { ImGui::SetItemDefaultFocus(); }
+		}
+		ImGui::EndCombo();
+	}
+	return changed;
 }
 
 // ===========================================================================

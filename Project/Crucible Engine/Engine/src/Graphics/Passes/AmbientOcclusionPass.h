@@ -29,9 +29,12 @@ namespace Crucible {
                  before recording.
          \param[in] context              The VulkanContext to create them through.
          \param[in] frameSetLayout       Layout of set 0 (the per-frame data).
+         \param[in] materialSetLayout    Layout of a material's set (set 1 of
+                                         the pre-pass, for cut-out materials).
          \param[in] twoTextureSetLayout  Layout of a set with two sampled textures.
          *********************************************************************/
-        void Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout twoTextureSetLayout);
+        void Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout,
+                    vk::DescriptorSetLayout twoTextureSetLayout);
 
         /*********************************************************************
          \brief  Records ambient occlusion for one view.
@@ -50,7 +53,8 @@ namespace Crucible {
 
     private:
         vk::raii::Pipeline       m_depthPrepassPipeline = nullptr;   // meshes -> depth + normals
-        vk::raii::PipelineLayout m_prepassLayout = nullptr;          // set 0 only
+        vk::raii::Pipeline       m_cutoutPrepassPipeline = nullptr;  // the same for cut-out materials
+        vk::raii::PipelineLayout m_prepassLayout = nullptr;          // set 0, set 1 (material), CutoutPush
         vk::raii::Pipeline       m_aoPipeline = nullptr;             // depth + normals -> occlusion
         vk::raii::Pipeline       m_aoBlurPipeline = nullptr;         // occlusion + depth -> smoothed
         vk::raii::PipelineLayout m_aoLayout = nullptr;               // two textures + PostPush
