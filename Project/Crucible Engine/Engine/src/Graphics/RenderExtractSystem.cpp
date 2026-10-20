@@ -26,8 +26,76 @@
 #include "ECS/HierarchyTransformSystem.h"
 #include "Animation/AnimatedModelSystem.h"
 #include "Resources/ResourceManager.h"
+#include "Diagnostics/Logger.h"
 
 namespace Crucible {
+
+    void RenderExtractSystem::ReleaseDraws(ProxyRecord& record) {
+        if (record.proxy.IsValid()) m_renderer.DestroyRenderProxy(record.proxy);
+        for (const auto& part : record.parts) m_renderer.DestroyRenderProxy(part.proxy);
+        record.proxy = {}; record.parts.clear(); record.model.reset();
+        record.restPose = {}; record.modelAsset = 0;
+        record.restPoseValid = false;
+    }
+
+    void RenderExtractSystem::Shutdown() noexcept {
+        for (auto& record : m_records) ReleaseDraws(record);
+        m_records.clear(); m_activeRecords.clear();
+    }
+
+    void RenderExtractSystem::ExtractModel(Entity entity, const WorldTransform& transform,
+                                           const MeshRenderer& renderer, const AnimatedModel* animation,
+                                           ProxyRecord& record) {
+        if (record.modelAsset != renderer.modelAsset) {
+            ReleaseDraws(record);
+            record.modelAsset = renderer.modelAsset;
+            record.model = m_resources ? m_resources->GetRenderedModel(renderer.modelAsset) : nullptr;
+            if (record.model) {
+                const auto& model = *record.model->definition;
+                record.restPoseValid = EvaluateModelPose(model, InvalidModelIndex, 0, record.restPose);
+                if (!record.restPoseValid)
+                    CRU_WARN("[Render] Model {} has an unrepresentable default pose; static model drawing is disabled", renderer.modelAsset);
+                std::vector<uint32_t> pending = model.sceneRoots;
+                while (!pending.empty()) {
+                    const uint32_t index = pending.back(); pending.pop_back();
+                    const auto& node = model.nodes[index];
+                    pending.insert(pending.end(), node.children.begin(), node.children.end());
+                    if (node.mesh == InvalidModelIndex) continue;
+                    for (uint32_t primitive = 0; primitive < model.meshes[node.mesh].primitives.size(); ++primitive)
+                        record.parts.push_back({index, primitive, m_renderer.CreateRenderProxy(EntityToUserData(entity))});
+                }
+            }
+        }
+        if (!record.model) return;
+        const bool validPose = animation ? animation->poseValid && animation->evaluatedAsset == renderer.modelAsset : record.restPoseValid;
+        if (!validPose) {
+            for (const auto& part : record.parts) m_renderer.SetRenderProxy(part.proxy, {}, {}, glm::mat4(1), false);
+            return;
+        }
+        const auto& pose = animation ? animation->pose : record.restPose;
+        const auto& model = *record.model->definition;
+        MaterialHandle global = renderer.materialAsset && m_resources
+            ? m_resources->GetMaterial(renderer.materialAsset) : renderer.material;
+        const auto params = record.paramsFrame == m_frame ? record.params : glm::vec4(1,0,0,0);
+        for (const auto& part : record.parts) {
+            const auto& node = model.nodes[part.node];
+            const auto& primitive = model.meshes[node.mesh].primitives[part.primitive];
+            MaterialHandle material = global;
+            if (m_resources && primitive.material < renderer.materialOverrides.size() && renderer.materialOverrides[primitive.material]) {
+                const auto slot = m_resources->GetMaterial(renderer.materialOverrides[primitive.material]);
+                if (slot.IsValid()) material = slot;
+            }
+            if (!material.IsValid() && primitive.material < record.model->materials.size()) material = record.model->materials[primitive.material];
+            if (!material.IsValid()) material = m_renderer.GetDefaultMaterial();
+            const auto& palette = pose.palettes[part.node];
+            const auto bounds = EvaluateModelPrimitiveBounds(record.model->bounds[node.mesh][part.primitive], palette);
+            const bool skinned = primitive.hasSkinning && node.skin != InvalidModelIndex;
+            const bool visible = renderer.visible && transform.valid && validPose && bounds.IsValid() && (!skinned || !palette.empty());
+            m_renderer.SetRenderProxy(part.proxy, record.model->meshes[node.mesh][part.primitive], material,
+                transform.matrix * pose.global[part.node], visible, params);
+            m_renderer.SetRenderProxyAnimation(part.proxy, palette, bounds.min, bounds.max);
+        }
+    }
 
     void RenderExtractSystem::Describe(SystemDesc& desc) const {
 
@@ -101,19 +169,15 @@ namespace Crucible {
         });
 
         m_query->ForEach([this, &world](Entity entity, const WorldTransform& worldTransform, const MeshRenderer& meshRenderer) {
-            if (world.HasComponent<AnimatedModel>(entity)) return; // the complete-model system owns these draws
-
             if (entity.index >= m_records.size()) { m_records.resize(static_cast<size_t>(entity.index) + 1); }
             ProxyRecord& record = m_records[entity.index];
-            if (!record.proxy.IsValid()) {
-                record.proxy      = m_renderer.CreateRenderProxy(EntityToUserData(entity));   // Raycast() hands this back
+            if (record.seenFrame == 0) {
                 record.generation = entity.generation;
                 m_activeRecords.push_back(entity.index);
             } else if (record.generation != entity.generation) {
                 // The slot was reused by a new entity before the sweep noticed the old one died:
                 // replace the proxy (the index is already in m_activeRecords).
-                m_renderer.DestroyRenderProxy(record.proxy);
-                record.proxy      = m_renderer.CreateRenderProxy(EntityToUserData(entity));
+                ReleaseDraws(record);
                 record.generation = entity.generation;
             }
             record.seenFrame = m_frame;
@@ -123,9 +187,16 @@ namespace Crucible {
             // not pickable in the Scene view either.
             if (record.waterFrame == m_frame) {
                 record.waterMesh = (m_resources && meshRenderer.meshAsset != 0) ? m_resources->GetMesh(meshRenderer.meshAsset) : meshRenderer.mesh;
-                m_renderer.SetRenderProxy(record.proxy, {}, {}, worldTransform.matrix, false);
+                ReleaseDraws(record);
                 return;
             }
+
+            if (meshRenderer.modelAsset != 0) {
+                ExtractModel(entity, worldTransform, meshRenderer, world.Read<AnimatedModel>(entity), record);
+                return;
+            }
+            if (record.modelAsset != 0) ReleaseDraws(record);
+            if (!record.proxy.IsValid()) record.proxy = m_renderer.CreateRenderProxy(EntityToUserData(entity));
 
             // Hidden, or not yet computed this frame (e.g. spawned during PreRender - see
             // WorldTransform's own doc comment): keep the proxy, but out of culling and picking.
@@ -158,7 +229,7 @@ namespace Crucible {
         for (size_t i = m_activeRecords.size(); i-- > 0;) {
             ProxyRecord& record = m_records[m_activeRecords[i]];
             if (record.seenFrame == m_frame) { continue; }
-            m_renderer.DestroyRenderProxy(record.proxy);
+            ReleaseDraws(record);
             record = ProxyRecord{};
             m_activeRecords[i] = m_activeRecords.back();
             m_activeRecords.pop_back();

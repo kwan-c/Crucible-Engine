@@ -52,6 +52,7 @@
 #include "ECS/Systems/IECSSystems.h"
 #include "ECS/Systems/Query.h"
 #include "Graphics/RenderSystem.h"
+#include "Resources/RenderedModel.h"
 
 namespace Crucible
 {
@@ -111,6 +112,7 @@ namespace Crucible
 						  IECSSystem's interface).
 		 *********************************************************************/
 		void Update(World& world, SystemContext& ctx) override;
+		void Shutdown() noexcept override;
 
 	private:
 		using ExtractQuery = Query<const WorldTransform, const MeshRenderer>;
@@ -129,9 +131,9 @@ namespace Crucible
 		std::optional<ParamsQuery>  m_paramsQuery;   // same
 		std::optional<WaterQuery>   m_waterQuery;    // same
 
-		// One render proxy per MeshRenderer entity, indexed by Entity::index (a flat array, so the
+		// One record per MeshRenderer entity, indexed by Entity::index (a flat array, so the
 		// per-frame lookup is O(1) even with tens of thousands of enemies). An entity not seen in
-		// a frame (destroyed, or its MeshRenderer removed) has its proxy destroyed in the sweep.
+		// a frame (destroyed, or its MeshRenderer removed) has all its proxies destroyed in the sweep.
 		struct ProxyRecord {
 			RenderProxyHandle proxy;
 			std::uint32_t     generation = 0;
@@ -142,7 +144,16 @@ namespace Crucible
 			// surface (waterMesh, resolved this frame) instead of an ordinary object.
 			std::uint64_t     waterFrame = 0;                     // frame the entity was last seen with a Water
 			MeshHandle        waterMesh;
+			std::uint64_t modelAsset = 0;
+			std::shared_ptr<const RenderedModel> model;
+			ModelPose restPose;
+			bool restPoseValid = false;
+			struct Part { uint32_t node, primitive; RenderProxyHandle proxy; };
+			std::vector<Part> parts;
 		};
+		void ReleaseDraws(ProxyRecord& record);
+		void ExtractModel(Entity entity, const WorldTransform& transform, const MeshRenderer& renderer,
+		                  const AnimatedModel* animation, ProxyRecord& record);
 
 		// This frame's water surfaces (gathered before the MeshRenderer loop, which may hand
 		// them their mesh), submitted after it.

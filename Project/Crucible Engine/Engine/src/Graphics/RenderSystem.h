@@ -804,6 +804,8 @@ namespace Crucible {
             Invalid MaterialHandle; the scene pass always binds a
             material descriptor set per draw.
          *********************************************************************/
+        // Current mesh-local bounds apply to rigid animated nodes as well as skins.
+        // An empty palette means rigid; invalid bounds revert to the mesh's rest bounds.
         ENGINE_API void SetRenderProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
                                                const glm::vec3& boundsMin, const glm::vec3& boundsMax);
 

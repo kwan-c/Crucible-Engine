@@ -430,6 +430,8 @@ namespace Crucible {
     void ResourceManager::AssignMesh(MeshRenderer& renderer, AssetId id) {
 
         renderer.meshAsset = id;
+        renderer.modelAsset = 0;
+        renderer.materialOverrides.clear();
         renderer.mesh      = GetMesh(id);
         CRU_DEBUG("[Resources] AssignMesh: {} -> handle {}", GetName(id),
                   renderer.mesh.IsValid() ? std::to_string(renderer.mesh.id) : std::string("INVALID"));
@@ -478,6 +480,24 @@ namespace Crucible {
     //  LOADERS (compiled model resources and existing image/material formats)
     // ------------------------------------------------------------------------------------------------------------- //
 
+    TextureHandle ResourceManager::GetModelTexture(AssetId id, uint32_t texture, bool isSRGB) {
+        const auto model = GetModel(id);
+        if (!model || texture >= model->textures.size()) {
+            WarnOnce(id, "Embedded texture reference is not valid for this compiled model");
+            return {};
+        }
+        const auto& image = model->images[model->textures[texture].image];
+        try {
+            const auto handle = m_renderer.CreateTextureFromMemory(image.bytes.data(), image.bytes.size(), isSRGB,
+                "model:" + ToHex(id) + ":texture:" + std::to_string(texture) + (isSRGB ? ":srgb" : ":linear"));
+            m_modelTextureSources[handle.id] = {id, texture};
+            return handle;
+        } catch (const std::exception& error) {
+            WarnOnce(id, std::string("Embedded texture could not be uploaded: ") + error.what());
+            return {};
+        }
+    }
+
     std::shared_ptr<const RenderedModel> ResourceManager::GetRenderedModel(AssetId id) {
         if (auto it = m_renderedModels.find(id); it != m_renderedModels.end()) return it->second;
         m_renderedModels[id] = nullptr;
@@ -502,9 +522,7 @@ namespace Crucible {
                 }
                 auto texture = [&](const ModelTextureInfo& info, bool srgb) -> TextureHandle {
                     if (info.texture == InvalidModelIndex) return {};
-                    const auto& image = definition->images[definition->textures[info.texture].image];
-                    return m_renderer.CreateTextureFromMemory(image.bytes.data(), image.bytes.size(), srgb,
-                        prefix + "texture:" + std::to_string(info.texture) + (srgb ? ":srgb" : ":linear"));
+                    return GetModelTexture(id, info.texture, srgb);
                 };
                 material.albedo = texture(source.baseColor, true);
                 material.normal = texture(source.normal, false);
@@ -514,9 +532,11 @@ namespace Crucible {
                 result->materials.push_back(m_renderer.CreateMaterial(material));
             }
             result->meshes.resize(definition->meshes.size());
+            result->bounds.resize(definition->meshes.size());
             for (size_t mesh = 0; mesh < definition->meshes.size(); ++mesh) {
                 for (size_t primitive = 0; primitive < definition->meshes[mesh].primitives.size(); ++primitive) {
                     const auto& source = definition->meshes[mesh].primitives[primitive];
+                    result->bounds[mesh].push_back(BuildModelPrimitiveBounds(source));
                     MeshData geometry;
                     geometry.indices = source.indices;
                     geometry.vertices.reserve(source.vertices.size());
@@ -606,9 +626,16 @@ namespace Crucible {
             if (auto textures = doc.FindMember("textures"); textures != doc.MemberEnd() && textures->value.IsObject()) {
                 for (const SlotDesc& slot : kSlots) {
                     auto it = textures->value.FindMember(slot.key);
-                    if (it == textures->value.MemberEnd() || !it->value.IsString()) { continue; }
-                    const AssetId textureId = FromHex(it->value.GetString());
-                    data.*slot.member = GetTexture(textureId, slot.isSRGB);   // Invalid -> renderer placeholder
+                    if (it == textures->value.MemberEnd()) continue;
+                    if (it->value.IsString()) {
+                        data.*slot.member = GetTexture(FromHex(it->value.GetString()), slot.isSRGB);
+                    } else if (it->value.IsObject()) {
+                        const auto parent = it->value.FindMember("model");
+                        const auto index = it->value.FindMember("texture");
+                        if (parent != it->value.MemberEnd() && parent->value.IsString() &&
+                            index != it->value.MemberEnd() && index->value.IsUint())
+                            data.*slot.member = GetModelTexture(FromHex(parent->value.GetString()), index->value.GetUint(), slot.isSRGB);
+                    }
                 }
             }
         }
@@ -657,20 +684,26 @@ namespace Crucible {
         writer.Key("outline");        writer.Double(data.toon.outline);
         writer.EndObject();
 
-        // Textures by asset GUID (hex, same format as .meta files). A slot whose texture didn't
-        // come from this ResourceManager (e.g. embedded in a .glb) has no GUID and is saved empty.
+        // Standalone textures use asset GUIDs; embedded textures use a compiled-model GUID
+        // and texture index so editable material copies retain their images after restart.
         writer.Key("textures");
         writer.StartObject();
         for (const SlotDesc& slot : kSlots) {
             const TextureHandle handle = data.*slot.member;
             const AssetId textureId = handle.IsValid() ? FindId(handle) : 0;
+            writer.Key(slot.key);
+            const auto embedded = m_modelTextureSources.find(handle.id);
+            if (handle.IsValid() && textureId == 0 && embedded != m_modelTextureSources.end()) {
+                writer.StartObject();
+                writer.Key("model"); writer.String(ToHex(embedded->second.model).c_str());
+                writer.Key("texture"); writer.Uint(embedded->second.texture);
+                writer.EndObject();
+                continue;
+            }
             if (handle.IsValid() && textureId == 0) {
-                // Bound, but not created through GetTexture (e.g. a texture embedded in a .glb, or
-                // one loaded straight from a path), so there is no GUID to write. It will be
-                // missing when the .mat is loaded again.
+                // A procedural/untracked runtime texture has no reloadable asset reference.
                 CRU_USER_WARN("[Resources] SerializeMaterial: '{}' texture has no asset id - saved as empty", slot.key);
             }
-            writer.Key(slot.key);
             writer.String(textureId ? ToHex(textureId).c_str() : "");
         }
         writer.EndObject();

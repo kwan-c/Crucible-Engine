@@ -120,6 +120,7 @@ namespace Crucible {
         uint32_t             cutoutPushOffset = 0;  ///< where CutoutPush sits in it
         bool                 dynamicCull = false;   ///< both pipelines take the cull mode as dynamic state
         vk::CullModeFlags    cull = vk::CullModeFlagBits::eBack;   ///< for single-sided materials (when dynamicCull)
+        bool                 dynamicFrontFace = false; ///< both pipelines take front-face winding as dynamic state
     };
 
     class RenderResources {

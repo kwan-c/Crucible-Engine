@@ -36,6 +36,7 @@
 #pragma once
 
 #include <cstdint>
+#include "Animation/ModelPose.h"
 
 #include"ComponentKind.h"
 #include"Math/Math.h"
@@ -119,14 +120,20 @@ namespace Crucible
 	 *************************************************************************/
 	struct AnimatedModel
 	{
-		std::uint64_t modelAsset = 0;
+		// Playback/pose for the complete model owned by MeshRenderer on this entity.
 		std::uint32_t clip = 0;
 		float speed = 1.0f;
-		float time = 0.0f; // runtime seconds relative to this clip's first key
-		bool playing = true;
 		bool loop = true;
 		bool previewInEditor = true;
-		bool visible = true;
+		bool playOnStart = true;
+
+		// Per-entity CPU state only. Never reflected/serialized or shared between instances.
+		float time = 0.0f;
+		bool playing = true;
+		bool initialized = false, poseValid = false, poseFailed = false;
+		std::uint64_t evaluatedAsset = 0;
+		std::uint32_t evaluatedClip = InvalidModelIndex;
+		ModelPose pose;
 	};
 
 	struct MeshRenderer
@@ -147,6 +154,12 @@ namespace Crucible
 		// them 0 for procedural/runtime-created meshes and materials - the handles are used as-is.
 		std::uint64_t meshAsset = 0;
 		std::uint64_t materialAsset = 0;
+
+		// Complete compiled model; when nonzero this takes precedence over meshAsset/mesh.
+		std::uint64_t modelAsset = 0;
+		// Indexed by imported material index. 0 inherits the global material or import default.
+		// materialAsset/material above are the optional override for every model primitive.
+		std::vector<std::uint64_t> materialOverrides;
 	};
 	
 	/*************************************************************************

@@ -141,6 +141,22 @@ namespace Crucible::EntityIO {
             }
         }
 
+        // Upgrade the early preview format at the common scene/prefab/snapshot boundary.
+        // Renderer ownership is authoritative in new files; never overwrite its settings.
+        const std::string animationPath = componentsPath + "/AnimatedModel";
+        if (world.HasComponent<AnimatedModel>(entity)) {
+            if (!doc.Has(animationPath + "/playOnStart") && doc.Has(animationPath + "/playing"))
+                world.Write<AnimatedModel>(entity)->playOnStart = doc.Get<bool>(animationPath + "/playing", true);
+            if (doc.Has(animationPath + "/modelAsset")) {
+                const auto* existing = world.Read<MeshRenderer>(entity);
+                MeshRenderer renderer = existing ? *existing : MeshRenderer{};
+                if (renderer.modelAsset == 0) renderer.modelAsset = doc.Get<uint64_t>(animationPath + "/modelAsset", 0);
+                if (!doc.Has(componentsPath + "/MeshRenderer/visible"))
+                    renderer.visible = doc.Get<bool>(animationPath + "/visible", true);
+                if (existing) *world.Write<MeshRenderer>(entity) = std::move(renderer);
+                else { world.AddComponent<MeshRenderer>(entity, std::move(renderer)); ++applied; }
+            }
+        }
         return applied;
     }
 

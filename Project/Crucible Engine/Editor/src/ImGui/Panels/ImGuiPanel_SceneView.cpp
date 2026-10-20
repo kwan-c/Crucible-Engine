@@ -207,8 +207,7 @@ void Crucible::SceneView::FrameSelected() {
 
 		bool usedMesh = false;
 		glm::vec3 modelMin, modelMax;
-		if (m_world.HasComponent<AnimatedModel>(entity) &&
-		    m_renderer.GetObjectBounds(EntityToUserData(entity), modelMin, modelMax)) {
+		if (m_renderer.GetObjectBounds(EntityToUserData(entity), modelMin, modelMax)) {
 			add(AABB(modelMin, modelMax));
 			usedMesh = true;
 		}

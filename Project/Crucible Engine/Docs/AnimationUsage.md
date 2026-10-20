@@ -16,8 +16,11 @@ You can also launch the editor from its output folder with:
 
 Select either model entity in the Hierarchy. The Inspector's AnimatedModel
 section provides a clip selector, Play/Pause, Stop, a time slider, speed,
-looping, visibility and Preview In Editor. Scrubbing pauses that instance.
-Rest pose shows the model's authored transforms. Negative speed plays backward.
+looping, Play On Start and Preview In Editor. Visibility and materials live on
+MeshRenderer. Scrubbing pauses that instance without changing saved playback settings.
+Rest pose shows the model's authored transforms. Negative speed plays backward;
+a newly selected playing reverse clip starts at its last key. Zero speed holds
+the current pose. Non-looping playback stops at the boundary it reaches.
 Press F in the Scene view to frame the selected model's current bounds.
 
 ## Use another GLB
@@ -27,10 +30,12 @@ Press F in the Scene view to frame the selected model's current bounds.
    Restart the editor after rebuilding changed sources. See ModelImport.md.
 2. Hierarchy's + menu -> Create Animated Model. Alternatively add AnimatedModel
    to an existing entity through Add Component.
-3. Pick the compiled .cmodel in `modelAsset` and choose a clip. No MeshRenderer is required.
-   If both components are present, AnimatedModel supplies the model's draws.
-4. Save the scene normally. Model asset, clip index and playback settings are
-   serialized; poses, render handles and runtime time are rebuilt after load.
+3. In MeshRenderer, choose the compiled .cmodel in **Model**. In AnimatedModel,
+   choose a clip. Both components are created by Create Animated Model. Adding
+   AnimatedModel through Add Component also adds a missing MeshRenderer.
+4. Save the scene normally. The renderer saves its model/material references; the animation saves clip and
+   playback settings. Poses, render handles, running/paused state and runtime
+   time are rebuilt after load.
 
 Preview In Editor advances clips while editing. The global Pause state freezes
 automatic animation advancement. Global Stop restores the authored scene using
@@ -40,16 +45,21 @@ button pauses that one instance at its clip's first frame.
 
 ## Implementation
 
-- `Animation/ModelPose`: defaults -> LINEAR/STEP TRS sampling (shortest-path
-  quaternion slerp) -> parent-first global node matrices -> joint palettes.
-  Times are relative to each clip's original first key.
+- `Animation/ModelPose`: StepModelPlayback updates the per-instance clock;
+  SampleModelLocalPose resets defaults and samples LINEAR/STEP TRS;
+  BuildModelPose generates parent-first globals and mesh-local joint palettes.
+  Rotation endpoints are normalized before shortest-path slerp. Times are
+  relative to each clip's first key. See AnimationRuntime.md for API contracts.
 - `ResourceManager::GetRenderedModel`: shared uploads of every mesh primitive
   and embedded material. It uses the immutable imported definition and does not
   share per-instance clocks or poses.
-- `Animation/AnimatedModelSystem`: per-entity runtime state and persistent
-  proxies for every mesh node in the selected scene. Runs after hierarchy
-  propagation in PreRender, including edit mode. Removing a component, changing
-  its asset, destroying an entity or replacing the scene releases its proxies.
+- `Animation/AnimatedModelSystem`: per-entity playback and CPU poses, including
+  edit-mode preview. It owns no renderer or GPU handles.
+- `Graphics/RenderExtractSystem`: draws every MeshRenderer, including complete
+  models. It owns all model-part proxies and applies the animation pose or rest
+  pose, material overrides, visibility and MaterialParams. Removing MeshRenderer,
+  changing its model or replacing/destroying the entity releases its proxies.
+  Removing only AnimatedModel retains the complete model in rest pose.
 - Skin matrices are `inverse(meshNodeGlobal) * jointGlobal * inverseBind`.
   The draw's world matrix is `entityWorld * meshNodeGlobal`. Rigid nodes use
   that same node hierarchy without skinning.
@@ -60,9 +70,14 @@ button pauses that one instance at its clip's first frame.
 - `ModelVertex.slang` supplies deformation to the main, solid/cutout shadow,
   selection-mask and depth/normal shaders. Normals use inverse-transpose
   transforms; tangents are re-orthogonalized. Static meshes have no palette.
-- Per-influence bounds are built at upload/instance creation. Each frame the
-  transformed envelopes conservatively enclose the weighted vertices; culling,
-  framing and selection do not depend on the rest-pose box.
+- Per-influence bounds are built once per uploaded primitive and shared across
+  instances. Each frame their transformed envelopes conservatively enclose
+  weighted vertices, with outward float padding; culling, framing and selection
+  follow the animated pose. Rigid animated nodes also use current bounds.
+- Normal/tangent directions are computed without depending on absolute model
+  scale. Collapsed/parallel tangents have a finite orthogonal fallback.
+- The frame-owned instance/palette buffer checks the GPU storage-buffer range;
+  all main/shadow/outline views retain independent draw offsets after growth.
 
 ## Current limits
 
@@ -77,12 +92,34 @@ button pauses that one instance at its clip's first frame.
   and explicit GPU eviction are not implemented.
 - Materials follow the existing renderer's sampler/PBR behavior; BLEND is
   rendered as cutout, and advanced glTF material extensions are not added.
-- A mesh node with a singular (zero-scale) transform hides its skinned parts
-  for that pose rather than uploading invalid inverse matrices.
+- A singular or numerically unrepresentable mesh binding hides its skinned
+  parts for that pose. Small invertible scales remain supported. A non-finite
+  global pose is skipped with a warning; valid evaluation restores it.
 
 The earlier dedicated test/inspection projects remain removed. The production
 CrucibleModelCompiler is now a normal offline build dependency, not a preview test.
 No separate test project needs to be built or run to preview animation.
 
-The preview's pose, rendering and ECS code predates the latest Milestone 1 session;
-that session changes its resource input to compiled models and preserves controls.
+The initial preview predates the revised roadmap. Milestone 1 added compiled
+resource input, Milestone 2 reviewed its CPU pose/playback code, and Milestone 3
+reviewed and extended rendering/bounds. See AnimatedRendering.md for GPU checks.
+Milestone 4 completes the shared renderer/editor workflow; see AnimationIntegration.md.
+
+## Assign materials and textures
+
+In MeshRenderer, **All materials** can assign one .mat to the entire model.
+Leave it empty for imported defaults. Expand **Material slots** to assign a .mat
+to an individual imported material index; a slot override takes precedence over
+the global assignment. Clearing a slot restores inheritance. Slot names may be
+empty or duplicated, so indices identify them.
+
+Each section uses the existing material editor: New, Make Editable Copy/Make
+Unique, texture drag/drop, factors and Save Material. Imported defaults are
+shared and read-only. Make Editable Copy creates a normal .mat; embedded images
+retain a compiled-model reference so they survive restart. Save Material writes
+its texture/factor edits; Save Scene writes the assignments.
+
+A model can also be rendered without AnimatedModel, using its complete rest pose.
+The legacy Mesh field still supports existing primitive/single-mesh entities.
+Older animation-only scenes/prefabs migrate to MeshRenderer when loaded; saving
+them writes the new layout.

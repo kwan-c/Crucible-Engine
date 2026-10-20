@@ -657,6 +657,7 @@ std::unique_ptr<Crucible::EditorCommand> Crucible::Hierarchy::Reparent(Entity ch
 
 void Crucible::Hierarchy::CreateAnimatedModel() {
     const auto entity = m_world.CreateEntity();
+    m_world.AddComponent<MeshRenderer>(entity, MeshRenderer{});
     m_world.AddComponent<AnimatedModel>(entity, AnimatedModel{});
     if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
         inspector->SetSelectedEntity(entity);

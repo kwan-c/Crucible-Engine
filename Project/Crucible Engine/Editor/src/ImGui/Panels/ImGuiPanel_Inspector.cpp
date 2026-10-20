@@ -18,6 +18,7 @@
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
 #include "Resources/ModelResource.h"
+#include "Resources/RenderedModel.h"
 #include "Undo/EntityCommands.h"
 #include "../EditorWidgets.h"
 
@@ -108,6 +109,12 @@ namespace {
 	// 3. After T is on the entity: add or adjust the other components it needs to work.
 	template <typename T>
 	void AddRequiredComponents(Crucible::World&, Crucible::Entity) {}
+
+	template <>
+	void AddRequiredComponents<Crucible::AnimatedModel>(Crucible::World& world, Crucible::Entity entity) {
+		if (!world.HasComponent<Crucible::MeshRenderer>(entity))
+			world.AddComponent<Crucible::MeshRenderer>(entity, Crucible::MeshRenderer{});
+	}
 
 	template <>
 	void AddRequiredComponents<Crucible::RigidBody>(Crucible::World& world, Crucible::Entity entity) {
@@ -606,7 +613,7 @@ CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 	}
 }
 
-bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
+bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool importedDefault) {
 	// What gets saved for a material is only MeshRenderer::materialAsset (an id). Everything this
 	// section edits - tint, factors, textures - lives in the material itself, so it survives a
 	// reload only if that material is a .mat file and the edits are written to it (SaveMaterial).
@@ -687,7 +694,9 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 
 	bool const editable = rm->IsMaterialFile(renderer.materialAsset);
 	if (!editable) {
-		if (renderer.materialAsset == 0) {
+		if (importedDefault && renderer.materialAsset == 0) {
+			ImGui::TextDisabled("Inherited material. Make an editable copy to override its textures or factors.");
+		} else if (renderer.materialAsset == 0) {
 			// Created by older code (or at runtime) with no asset behind it.
 			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "Unsaved material (no asset) - lost on reload");
 		} else {
@@ -695,8 +704,7 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Make Editable Copy")) {
-			// Factors copy across. Textures copy only if they came from Assets/ - ones embedded in
-			// a .glb have no id and SerializeMaterial will warn and save that slot empty.
+			// ResourceManager preserves standalone and compiled-model texture references.
 			std::string const source = renderer.materialAsset ? rm->GetName(renderer.materialAsset) : std::string("Material");
 			return createAsset(m_renderer.GetMaterialData(renderer.material), baseName(source), "Make Editable Copy");
 		}
@@ -705,10 +713,13 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 		// How many objects in the scene use this .mat - edits below change every one of them.
 		int users = 0;
 		m_world.CreateQuery<const MeshRenderer>().ForEach(
-			[&](Entity, MeshRenderer const& other) { if (other.materialAsset == renderer.materialAsset) { ++users; } });
+			[&](Entity, MeshRenderer const& other) {
+				if (other.materialAsset == renderer.materialAsset) ++users;
+				users += static_cast<int>(std::count(other.materialOverrides.begin(), other.materialOverrides.end(), renderer.materialAsset));
+			});
 
 		if (users > 1) {
-			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "Shared by %d objects - edits change all of them", users);
+			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "Used by %d assignments - edits change all of them", users);
 			ImGui::SameLine();
 			if (ImGui::SmallButton("Make Unique")) {
 				return createAsset(m_renderer.GetMaterialData(renderer.material),
@@ -1093,12 +1104,13 @@ bool Crucible::Inspector::DrawPickFromSky(Skybox& skybox) {
 
 bool Crucible::Inspector::DrawComponentExtras(AnimatedModel& animation) {
     auto* resources = EditorManager::GetInstance().GetResources();
-    if (!resources || !animation.modelAsset) {
-        ImGui::TextWrapped("Choose a compiled model (.cmodel) in modelAsset to preview its complete model and animation.");
+    const auto* renderer = m_world.Read<MeshRenderer>(m_selected);
+    if (!resources || !renderer || !renderer->modelAsset) {
+        ImGui::TextWrapped("Choose a compiled Model in MeshRenderer. Animation supplies its pose; MeshRenderer supplies its materials and visibility.");
         return false;
     }
-    const auto model = resources->GetModel(animation.modelAsset);
-    if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console for the import error."); return false; }
+    const auto model = resources->GetModel(renderer->modelAsset);
+    if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console."); return false; }
     bool changed = false;
     const auto name = [&](uint32_t index) {
         if (index >= model->animations.size()) return std::string("Rest pose");
@@ -1121,13 +1133,12 @@ bool Crucible::Inspector::DrawComponentExtras(AnimatedModel& animation) {
         if (ImGui::Button(animation.playing ? "Pause" : "Play")) {
             if (!animation.playing && animation.time >= duration && animation.speed >= 0.0f) animation.time = 0.0f;
             if (!animation.playing && animation.time <= 0.0f && animation.speed < 0.0f) animation.time = duration;
-            animation.playing = !animation.playing; changed = true;
+            animation.playing = !animation.playing;
         }
         ImGui::SameLine();
-        if (ImGui::Button("Stop")) { animation.playing = false; animation.time = 0.0f; changed = true; }
-        if (ImGui::SliderFloat("Time (seconds)", &animation.time, 0.0f, duration, "%.3f")) {
-            animation.playing = false; changed = true;
-        }
+        if (ImGui::Button("Stop")) { animation.playing = false; animation.time = 0.0f; }
+        if (ImGui::SliderFloat("Time (seconds)", &animation.time, 0.0f, duration, "%.3f")) animation.playing = false;
+        ImGui::TextDisabled("Playback buttons and scrub time are temporary; Play On Start is saved.");
     }
     ImGui::Text("%zu nodes, %zu meshes, %zu skins, %zu clips", model->nodes.size(), model->meshes.size(),
                 model->skins.size(), model->animations.size());
@@ -1135,22 +1146,58 @@ bool Crucible::Inspector::DrawComponentExtras(AnimatedModel& animation) {
 }
 
 bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
-	// The pickers above only change meshAsset/materialAsset. Pull the runtime handles in line with
-	// them so the mesh label and the material section below act on what is actually drawn.
-	// (Cheap: ResourceManager caches, so this is a map lookup per frame.)
-	if (ResourceManager* rm = EditorManager::GetInstance().GetResources()) {
-		rm->Resolve(renderer);
-	}
-
-	if (renderer.mesh.IsValid()) {
-		ImGui::Text("Mesh: %s (id %u)", m_renderer.GetMeshName(renderer.mesh).c_str(), renderer.mesh.id);
-	}
-	else {
-		ImGui::TextDisabled("Mesh: none");
-	}
-
-	ImGui::SeparatorText("Material");
-	return DrawMaterialSection(renderer);   // your existing function, returning bool
+    auto* rm = EditorManager::GetInstance().GetResources();
+    if (!rm) return false;
+    bool changed = false;
+    uint64_t modelId = renderer.modelAsset;
+    if (AssetRefField("Model", ResourceKind::Model, modelId)) {
+        renderer.modelAsset = modelId; renderer.materialOverrides.clear();
+        if (modelId) { renderer.meshAsset = 0; renderer.mesh = {}; }
+        changed = true;
+    }
+    if (!renderer.modelAsset) {
+        uint64_t meshId = renderer.meshAsset;
+        if (AssetRefField("Mesh", ResourceKind::Mesh, meshId)) { rm->AssignMesh(renderer, meshId); changed = true; }
+        rm->Resolve(renderer);
+        if (renderer.mesh.IsValid()) ImGui::Text("Mesh: %s (id %u)", m_renderer.GetMeshName(renderer.mesh).c_str(), renderer.mesh.id);
+        ImGui::SeparatorText("Material");
+        return DrawMaterialSection(renderer) || changed;
+    }
+    const auto model = rm->GetRenderedModel(renderer.modelAsset);
+    if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console."); return changed; }
+    ImGui::SeparatorText("All materials");
+    ImGui::TextWrapped("Leave Material empty to use imported defaults. Slot overrides below take precedence.");
+    MeshRenderer globalView;
+    globalView.materialAsset = renderer.materialAsset;
+    globalView.material = renderer.materialAsset ? rm->GetMaterial(renderer.materialAsset) : renderer.material;
+    if (!globalView.material.IsValid() && !model->materials.empty()) globalView.material = model->materials.front();
+    if (DrawMaterialSection(globalView, !renderer.materialAsset && !renderer.material.IsValid())) {
+        renderer.materialAsset = globalView.materialAsset;
+        renderer.material = globalView.materialAsset ? globalView.material : MaterialHandle{};
+        changed = true;
+    }
+    ImGui::SeparatorText("Material slots");
+    for (size_t slot = 0; slot < model->materials.size(); ++slot) {
+        ImGui::PushID(static_cast<int>(slot));
+        const auto& imported = model->definition->materials[slot];
+        const std::string label = std::to_string(slot) + ": " + (imported.name.empty() ? "Unnamed material" : imported.name);
+        if (ImGui::TreeNode(label.c_str())) {
+            const uint64_t current = slot < renderer.materialOverrides.size() ? renderer.materialOverrides[slot] : 0;
+            MeshRenderer view;
+            view.materialAsset = current;
+            view.material = current ? rm->GetMaterial(current) :
+                renderer.materialAsset ? rm->GetMaterial(renderer.materialAsset) :
+                renderer.material.IsValid() ? renderer.material : model->materials[slot];
+            if (DrawMaterialSection(view, !current)) {
+                if (renderer.materialOverrides.size() <= slot) renderer.materialOverrides.resize(slot + 1, 0);
+                renderer.materialOverrides[slot] = view.materialAsset;
+                changed = true;
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    return changed;
 }
 
 bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {

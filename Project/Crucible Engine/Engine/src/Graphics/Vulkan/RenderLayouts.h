@@ -89,6 +89,9 @@ namespace Crucible {
         }
     };
 
+    static_assert(sizeof(Vertex) == 92 && offsetof(Vertex, joints) == 60 && offsetof(Vertex, weights) == 76,
+                  "Vertex joint/weight attributes must match the shared GPU vertex layout.");
+
     /*************************************************************************
      \brief
         Owns the descriptor set layouts that more than one render pass (or

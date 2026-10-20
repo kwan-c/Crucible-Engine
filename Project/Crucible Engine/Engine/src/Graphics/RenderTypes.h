@@ -116,6 +116,11 @@ namespace Crucible {
         glm::uvec4     skin{0u}; // palette offset/count in this frame's instance buffer
     };
 
+    inline bool IsMirroredTransform(const glm::mat4& model) {
+        // Double precision avoids determinant underflow at small model scales.
+        return glm::determinant(glm::dmat3(model)) < 0.0;
+    }
+
     /*************************************************************************
      \brief
         Uploaded once per frame in flight (descriptor set 0, binding 0).
@@ -224,6 +229,8 @@ namespace Crucible {
         glm::uvec4 skin{0u}; // x = first palette entry, y = number of joints; zero = rigid
     };
     static_assert(sizeof(InstanceData) == 96, "InstanceData must match the shaders' std430 stride.");
+    static_assert(offsetof(InstanceData, params) == 64 && offsetof(InstanceData, skin) == 80,
+                  "InstanceData offsets must match ModelVertex.slang.");
 
     /*************************************************************************
      \brief  Push constant of the selection outline's composite pass

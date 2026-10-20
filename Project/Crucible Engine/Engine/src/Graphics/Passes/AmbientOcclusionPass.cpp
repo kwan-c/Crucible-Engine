@@ -20,7 +20,8 @@ namespace Crucible {
                                       vk::DescriptorSetLayout twoTextureSetLayout) {
 
         // Cull mode is dynamic so double-sided materials can turn it off (as in the scene pass).
-        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor, vk::DynamicState::eCullMode };
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+            vk::DynamicState::eCullMode, vk::DynamicState::eFrontFace };
         vk::PipelineDynamicStateCreateInfo dynamicState{
             .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
             .pDynamicStates    = dynamicStates.data()
@@ -201,7 +202,8 @@ namespace Crucible {
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_prepassLayout, 0, frameSet, nullptr);
             const DepthPassPipelines pipelines{ .solid = *m_depthPrepassPipeline, .cutout = *m_cutoutPrepassPipeline, .layout = *m_prepassLayout,
                                                 .cutoutPushStages = vk::ShaderStageFlagBits::eFragment, .cutoutPushOffset = 0,
-                                                .dynamicCull = true, .cull = vk::CullModeFlagBits::eBack };
+                                                  .dynamicCull = true, .cull = vk::CullModeFlagBits::eBack,
+                                                  .dynamicFrontFace = true };
             m_resources.DrawDepthBatches(cmd, meshes, pipelines);   // binds the pipelines itself
             cmd.endRendering();
         }

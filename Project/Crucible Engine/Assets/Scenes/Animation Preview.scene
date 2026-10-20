@@ -24,13 +24,17 @@
                     }
                 },
                 "AnimatedModel": {
-                    "modelAsset": 11181561406948196535,
                     "clip": 4,
                     "speed": 1,
-                    "playing": true,
                     "loop": true,
                     "previewInEditor": true,
-                    "visible": true
+                    "playOnStart": true
+                },
+                "MeshRenderer": {
+                    "modelAsset": 11181561406948196535,
+                    "visible": true,
+                    "materialAsset": 0,
+                    "materialOverrides": []
                 }
             }
         },
@@ -56,13 +60,17 @@
                     }
                 },
                 "AnimatedModel": {
-                    "modelAsset": 11181561406948196535,
                     "clip": 0,
                     "speed": 0.7,
-                    "playing": true,
                     "loop": true,
                     "previewInEditor": true,
-                    "visible": true
+                    "playOnStart": true
+                },
+                "MeshRenderer": {
+                    "modelAsset": 11181561406948196535,
+                    "visible": true,
+                    "materialAsset": 0,
+                    "materialOverrides": []
                 }
             }
         },

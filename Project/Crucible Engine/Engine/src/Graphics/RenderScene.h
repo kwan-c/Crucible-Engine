@@ -202,8 +202,8 @@ namespace Crucible {
         };
         struct Bucket {                         // one key's run in a pass's grouped list
             uint64_t key;
-            uint32_t first;
-            uint32_t count;
+            std::array<uint32_t, 2> first{};     // ordinary, mirrored
+            std::array<uint32_t, 2> count{};
         };
         struct PassScratch {
             HitList               immediate;    // immediate items this pass sees
@@ -231,6 +231,7 @@ namespace Crucible {
         // needed. Shared by the window's and every viewport's set 0 for that frame index.
         std::vector<InstanceData>                   m_instanceScratch;      // only grows: the first m_instanceCount are this frame's
         uint32_t                                    m_instanceCount = 0;
+        uint32_t                                    m_maxInstanceCount = 0;
         std::vector<VulkanBuffer>                   m_instanceBuffers;
         std::vector<void*>                          m_instanceBuffersMapped;
         std::vector<uint32_t>                       m_instanceCapacity;     // in instances

@@ -211,7 +211,7 @@ place it in AssetsSource, build, inspect its .cmodel with the compiler command,
 restart and select it in modelAsset. Unsupported exports fail the build with an
 asset-specific diagnostic rather than falling back to GLB at runtime.
 
-## Next session: Milestone 2
+## Milestone 2 handoff
 
 Start from GetModel and ModelResource, never from GLTFLoader or file names. Keep
 clocks/poses/palettes per instance, and keep shared definitions immutable. Preserve
@@ -220,3 +220,5 @@ evaluate rigid nodes as well as joints. The existing working tree already has
 ModelPose/AnimatedModelSystem and preview rendering from the previous request;
 review that implementation against the new roadmap instead of adding a parallel
 runtime. No Animator Controller or graph editor has been implemented.
+
+Milestone 2 has now been reviewed and extended; see [AnimationRuntime.md](AnimationRuntime.md).

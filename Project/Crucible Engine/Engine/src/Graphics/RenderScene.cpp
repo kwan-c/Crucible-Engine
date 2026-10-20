@@ -7,17 +7,23 @@
 
 #include "Graphics/Camera.h"
 #include "Graphics/DebugDraw.h"
+#include "Graphics/ModelBounds.h"
 #include "Threading/WorkerPool.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <stdexcept>
 
 namespace Crucible {
 
     void RenderScene::Init(uint32_t framesInFlight) {
 
         const uint32_t frames = framesInFlight;
+        m_maxInstanceCount = static_cast<uint32_t>(std::min<uint64_t>(UINT32_MAX,
+            m_context.GetPhysicalDevice().getProperties().limits.maxStorageBufferRange / sizeof(InstanceData)));
+        if (m_maxInstanceCount < kInitialInstanceCapacity)
+            throw std::runtime_error("GPU storage buffer range is too small for the instance/palette buffer");
         for (uint32_t i = 0; i < frames; ++i) {
             m_instanceBuffers.emplace_back();
             m_instanceBuffers.back().Create(m_context, vk::DeviceSize{ kInitialInstanceCapacity } * sizeof(InstanceData),
@@ -39,7 +45,7 @@ namespace Crucible {
         if (!proxy.palette.empty() && palette.empty()) std::erase(m_animatedProxies, handle.id);
         proxy.palette.assign(palette.begin(), palette.end());
         proxy.skin = glm::uvec4(0u);
-        proxy.poseBounds = !palette.empty();
+        proxy.poseBounds = AABB(boundsMin, boundsMax).IsValid();
         proxy.poseMin = boundsMin; proxy.poseMax = boundsMax;
         RefreshProxyBounds(handle.id);
     }
@@ -132,7 +138,9 @@ namespace Crucible {
             return;
         }
 
-        const AABB world = AABB::Transform(AABB(mn, mx), p.model);
+        const AABB local(mn, mx);
+        const AABB world = p.poseBounds ? TransformModelBounds(local, p.model) : AABB::Transform(local, p.model);
+        if (!world.IsValid()) { removeFromIndex(); return; }
         if (p.spatial == SpatialIndex::kInvalid) { p.spatial = m_spatial.Insert(world, id); }
         else                                     { m_spatial.Update(p.spatial, world); }
 
@@ -175,6 +183,8 @@ namespace Crucible {
     uint32_t RenderScene::AllocateInstances(uint32_t count) {
 
         const uint32_t first = m_instanceCount;
+        if (count > m_maxInstanceCount - m_instanceCount)
+            throw std::length_error("Frame instances and joint palettes exceed the GPU storage buffer range");
         m_instanceCount += count;
         if (m_instanceCount > m_instanceScratch.size()) {
             m_instanceScratch.resize(std::max<size_t>(m_instanceCount, m_instanceScratch.size() * 2));
@@ -307,9 +317,11 @@ namespace Crucible {
         });
 
         // 3. Each pass's instances go one after another, in pass order; one batch per key run.
-        uint32_t viewInstances = 0;
-        for (uint32_t pass = 0; pass < passes; ++pass) { viewInstances += static_cast<uint32_t>(m_pass[pass].grouped.size()); }
-        const uint32_t firstOfView = AllocateInstances(viewInstances);
+        uint64_t viewInstances = 0;
+        for (uint32_t pass = 0; pass < passes; ++pass) { viewInstances += m_pass[pass].grouped.size(); }
+        if (viewInstances > m_maxInstanceCount)
+            throw std::length_error("View instances exceed the GPU storage buffer range");
+        const uint32_t firstOfView = AllocateInstances(static_cast<uint32_t>(viewInstances));
         uint32_t next = firstOfView;
         for (uint32_t pass = 0; pass < passes; ++pass) {
             PassScratch& ps = m_pass[pass];
@@ -321,7 +333,10 @@ namespace Crucible {
                 const uint32_t       high = static_cast<uint32_t>(bucket.key >> 32);
                 const MaterialHandle material = pass == 0 ? MaterialHandle{ high }
                                               : high != 0 ? MaterialHandle{ high - 1 } : MaterialHandle{};   // see DepthKey
-                out.push_back(DrawBatch{ mesh, material, ps.firstInstance + bucket.first, bucket.count });
+                for (uint32_t orientation = 0; orientation < 2; ++orientation)
+                    if (bucket.count[orientation])
+                        out.push_back(DrawBatch{ mesh, material, ps.firstInstance + bucket.first[orientation],
+                                                 bucket.count[orientation], orientation != 0 });
             }
             next += static_cast<uint32_t>(ps.grouped.size());
         }
@@ -398,7 +413,7 @@ namespace Crucible {
                 }
                 ps.slotKey[slot]    = key;
                 ps.slotBucket[slot] = static_cast<uint32_t>(ps.buckets.size());
-                ps.buckets.push_back(Bucket{ key, 0, 0 });
+                ps.buckets.push_back(Bucket{ key });
             }
             return ps.buckets[ps.slotBucket[slot]];
         };
@@ -408,10 +423,16 @@ namespace Crucible {
             fn(ps.immediate);
         };
 
-        // Count.
+        const auto orientationOf = [&](const SortItem& item) -> uint32_t {
+            const glm::mat4& model = item.ref & kImmediateRef
+                ? m_renderQueue[item.ref & ~kImmediateRef].model : m_proxies[item.ref].model;
+            return IsMirroredTransform(model) ? 1u : 0u;
+        };
+
+        // Count each winding separately: an instanced draw has one front-face state.
         uint32_t total = 0;
         forEachList([&](const HitList& list) {
-            for (const SortItem& item : list.items) { ++bucketOf(item.key).count; }
+            for (const SortItem& item : list.items) { ++bucketOf(item.key).count[orientationOf(item)]; }
             total += static_cast<uint32_t>(list.items.size());
         });
 
@@ -420,14 +441,20 @@ namespace Crucible {
         for (uint32_t b = 0; b < ps.keyOrder.size(); ++b) { ps.keyOrder[b] = b; }
         std::sort(ps.keyOrder.begin(), ps.keyOrder.end(), [&](uint32_t a, uint32_t b) { return ps.buckets[a].key < ps.buckets[b].key; });
         uint32_t first = 0;
-        for (uint32_t b : ps.keyOrder) { ps.buckets[b].first = first; first += ps.buckets[b].count; ps.buckets[b].count = 0; }
+        for (uint32_t b : ps.keyOrder) for (uint32_t orientation = 0; orientation < 2; ++orientation) {
+            auto& bucket = ps.buckets[b];
+            bucket.first[orientation] = first;
+            first += bucket.count[orientation];
+            bucket.count[orientation] = 0;
+        }
 
         // Place (count is rebuilt as each bucket's fill level).
         ps.grouped.resize(total);
         forEachList([&](const HitList& list) {
             for (const SortItem& item : list.items) {
                 Bucket& bucket = bucketOf(item.key);
-                ps.grouped[bucket.first + bucket.count++] = item;
+                const uint32_t orientation = orientationOf(item);
+                ps.grouped[bucket.first[orientation] + bucket.count[orientation]++] = item;
             }
         });
 
@@ -468,6 +495,7 @@ namespace Crucible {
             // Depth-only passes keep the item's material as given (Invalid unless it is cut-out or
             // double-sided), so their batches merge across ordinary materials.
             const MaterialHandle material = byMaterial ? ResolveMaterial(item.material) : item.material;
+            const bool mirrored = IsMirroredTransform(item.model);
 
             const uint32_t index = AllocateInstances(1);
             m_instanceScratch[index] = InstanceData{ item.model, item.params, item.skin };
@@ -475,12 +503,13 @@ namespace Crucible {
 
             if (!batches.empty()) {
                 DrawBatch& last = batches.back();
-                if (last.mesh == item.mesh && last.material == material && last.firstInstance + last.instanceCount == index) {
+                if (last.mesh == item.mesh && last.material == material && last.mirrored == mirrored &&
+                    last.firstInstance + last.instanceCount == index) {
                     ++last.instanceCount;
                     continue;
                 }
             }
-            batches.push_back(DrawBatch{ item.mesh, material, index, 1 });
+            batches.push_back(DrawBatch{ item.mesh, material, index, 1, mirrored });
         }
         return added;
 
@@ -496,7 +525,9 @@ namespace Crucible {
         // references it yet. The caller re-points this frame index's sets at the new buffer.
         if (count > m_instanceCapacity[frameIndex]) {
             uint32_t capacity = m_instanceCapacity[frameIndex];
-            while (capacity < count) { capacity *= 2; }
+            while (capacity < count) {
+                capacity = static_cast<uint32_t>(std::min<uint64_t>(uint64_t(capacity) * 2, m_maxInstanceCount));
+            }
             m_instanceBuffers[frameIndex].Create(m_context, vk::DeviceSize{ capacity } * sizeof(InstanceData),
                 vk::BufferUsageFlagBits::eStorageBuffer,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);

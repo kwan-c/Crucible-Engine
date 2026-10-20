@@ -181,6 +181,7 @@ namespace Crucible {
         // Existing GetMesh/GetMaterial still expose the first primitive only.
         std::shared_ptr<const ModelResource> GetModel(AssetId id);
         std::shared_ptr<const RenderedModel> GetRenderedModel(AssetId id);
+        TextureHandle GetModelTexture(AssetId model, uint32_t texture, bool isSRGB);
 
         /*********************************************************************
          \brief  The material for "Default Material", a .mat asset, or a
@@ -360,6 +361,8 @@ namespace Crucible {
         std::unordered_map<std::uint32_t, AssetId>  m_meshIds;      // handle.id -> asset
         std::unordered_map<std::uint32_t, AssetId>  m_materialIds;
         std::unordered_map<std::uint32_t, AssetId>  m_textureIds;
+        struct ModelTextureSource { AssetId model; uint32_t texture; };
+        std::unordered_map<uint32_t, ModelTextureSource> m_modelTextureSources;
 
         std::unordered_map<AssetId, bool>           m_warned;
     };

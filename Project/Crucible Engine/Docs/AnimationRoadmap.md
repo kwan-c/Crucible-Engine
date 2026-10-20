@@ -8,10 +8,10 @@ VR tracking and motion capture are outside this roadmap.
 
 | Milestone | Scope | Current status |
 |---|---|---|
-| 1 - Model and animation asset compilation | Complete source interpretation, validated .cmodel output, GUID integration and compiled-only runtime loading | Completed in this session using the existing full-model importer. See ModelImport.md. |
-| 2 - Animation runtime and pose evaluation | Sampling, playback, looping/speed, hierarchy, rigid nodes and joint palettes | Existing uncommitted ModelPose/AnimatedModelSystem implementation from earlier work; preserved, not newly implemented in this session. Review against the revised requirements next. |
-| 3 - Animated rendering | Vulkan skinning/rigid nodes, independent instances, materials, shadows/outlines/depth-normal and bounds | Existing preview implementation preserved. No rendering feature extension in this session. |
-| 4 - ECS, editor and lifecycle integration | Components, scheduling, serialization, Play/Pause/Stop and cleanup | Existing preview integration preserved. Production lifecycle review remains part of this milestone. |
+| 1 - Model and animation asset compilation | Complete source interpretation, validated .cmodel output, GUID integration and compiled-only runtime loading | Completed in the preceding session. See ModelImport.md. |
+| 2 - Animation runtime and pose evaluation | Sampling, playback, looping/speed, hierarchy, rigid nodes and joint palettes | Completed: existing evaluator reviewed and extended with reusable sampling/build stages, robust playback and numerical handling. See AnimationRuntime.md. |
+| 3 - Animated rendering | Vulkan skinning/rigid nodes, independent instances, materials, shadows/outlines/depth-normal and bounds | Completed: GPU deformation and all required passes verified; stable normal/tangent handling, shared conservative bounds and buffer-limit checks added. See AnimatedRendering.md. |
+| 4 - ECS, editor and lifecycle integration | Components, scheduling, serialization, Play/Pause/Stop and cleanup | Completed: full models and material slots belong to MeshRenderer/RenderExtractSystem; pose-only animation, editor reuse, legacy migration and lifecycle checks. See AnimationIntegration.md. |
 | 5 - Animator Controller runtime | Configurable states/transitions/parameters/conditions/exit times/crossfades independent of editor | Not started. |
 | 6 - Visual Animator graph editor | Graph authoring, saving/loading and live controller inspection | Not started. |
 | 7 - Modular animations and weapon integration | Independent instances, animated sockets and modular weapon playback | Not started. |
@@ -41,6 +41,5 @@ VR tracking and motion capture are outside this roadmap.
 - Controllers must work without the graph editor. Weapons eventually use independent
   instances and animated sockets, not combined clips for every action combination.
 
-See AnimationUsage.md for the existing preview controls and limitations. This
-session stops after Milestone 1; later implementations have not been certified
-complete merely because their older preview code is present.
+See AnimationUsage.md for the existing preview controls and limitations. Milestone 4 is complete;
+this implementation stops before the controller runtime in Milestone 5.

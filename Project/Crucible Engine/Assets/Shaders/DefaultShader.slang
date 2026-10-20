@@ -100,9 +100,8 @@ VSOutput vertMain(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     // Inverse-transpose normals and re-orthogonalized tangents support scaled animated nodes.
     float3x3 modelUpper = (float3x3)model;
     output.normalWS    = ModelNormal(modelUpper, input.inNormal);
-    output.tangentWS   = normalize(mul(modelUpper, input.inTangent.xyz));
-    output.tangentWS   = normalize(output.tangentWS - output.normalWS * dot(output.normalWS, output.tangentWS));
-    output.tangentSign = input.inTangent.w * (determinant(modelUpper) < 0.0 ? -1.0 : 1.0);
+    output.tangentWS   = ModelTangent(modelUpper, output.normalWS, input.inTangent.xyz);
+    output.tangentSign = input.inTangent.w * (determinant(ModelDirectionTransform(modelUpper)) < 0.0 ? -1.0 : 1.0);
 
     // Toon outlines: the breakup pattern is read at the mesh's own position, in metres (scaled
     // like the object, but not turned or moved with it), so the gaps stay put on the surface of
