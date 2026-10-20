@@ -18,6 +18,7 @@ namespace Crucible {
         bool Load(const std::string& json, std::string& error);
         bool Serialize(std::string& json, std::string& error) const;
         void MarkSaved();
+        void DiscardChanges();
         bool Dirty() const;
         bool RuntimeMatchesSaved() const;
         Snapshot& Data() { return m_data; }

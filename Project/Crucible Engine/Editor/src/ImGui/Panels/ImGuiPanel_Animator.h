@@ -25,6 +25,7 @@ namespace Crucible {
         enum class Pending { None, Open, New, Reload, Close, Exit };
         void Request(Pending, uint64_t asset = 0);
         void ApplyPending();
+        void DiscardDraft();
         bool Load(uint64_t asset);
         void DrawToolbar(bool playing);
         void DrawParameters(bool readOnly);

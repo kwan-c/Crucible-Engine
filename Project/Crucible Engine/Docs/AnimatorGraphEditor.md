@@ -88,6 +88,12 @@ the draft. If the file changed externally since it was opened, Save refuses to
 overwrite it; use Reload or Save As. The external conflict check is performed on
 Save, not by a background file watcher.
 
+Discard restores the complete last-saved document and clears its draft history;
+discarding an untitled controller removes that draft. Closing the panel after
+Save or Discard therefore leaves no abandoned unsaved document to prompt again
+when another controller is opened. Cancel keeps the current draft. Pending close
+requests are resolved once, before another close can be queued on that frame.
+
 Writes validate before touching disk, use a same-directory temporary file and
 rename, then refresh the existing AssetManager index. ResourceManager publishes
 a new immutable definition only when runtime data changed. Layout-only saves

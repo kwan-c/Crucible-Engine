@@ -82,9 +82,11 @@ namespace Crucible
 		UIText = 22,
 		UISlider = 23,           // UI: a draggable value (UI/UIComponents.h)
 		Water = 24,
+		AnimatedModel = 25,
+		SocketAttachment = 26,
 
 
-		MAXCOMPONENT = 25
+		MAXCOMPONENT = 27
 	};
 
 
@@ -216,5 +218,7 @@ namespace Crucible
  X(UIText)																	   \
  X(UISlider)														           \
  X(Water)                                                                      \
+ X(AnimatedModel)                                                              \
+ X(SocketAttachment)                                                           \
 
 }

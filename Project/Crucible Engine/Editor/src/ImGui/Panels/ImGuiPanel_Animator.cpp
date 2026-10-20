@@ -54,6 +54,10 @@ namespace Crucible {
     }
     void AnimatorPanel::RequestNew() { Show(); Request(Pending::New); }
     void AnimatorPanel::Request(Pending action, uint64_t asset) {
+        // A docked tab can request Close on multiple frames while its modal is up.
+        // Keep the original action until Save/Discard/Cancel resolves it.
+        if (m_pending != Pending::None) return;
+        m_dragNode = -2; m_connecting = false;
         m_document.EndEdit(); m_pending = action; m_pendingAsset = asset;
         if (IsUnsaved()) { m_openGuard = true; Show(); } else ApplyPending();
     }
@@ -63,11 +67,21 @@ namespace Crucible {
     }
     void AnimatorPanel::ApplyPending() {
         const auto action = m_pending; const auto asset = m_pendingAsset;
-        m_pending = Pending::None; m_continueAfterSave = false;
+        auto callback = std::move(m_exitContinuation);
+        m_exitContinuation = {};
+        m_pending = Pending::None; m_pendingAsset = 0;
+        m_continueAfterSave = m_openGuard = m_openSaveAs = false;
         if (action == Pending::Open || action == Pending::Reload) Load(asset);
         else if (action == Pending::New) { m_document.New(); m_hasDocument = true; m_asset = 0; m_savedText.clear(); m_error.clear(); ResetSelection(); m_pan = {45, 175}; m_zoom = 1; m_fitRequested = true; }
         else if (action == Pending::Close) m_visible = false;
-        else if (action == Pending::Exit) { auto callback = std::move(m_exitContinuation); if (callback) callback(); }
+        else if (action == Pending::Exit && callback) callback();
+    }
+    void AnimatorPanel::DiscardDraft() {
+        // Hiding the window is not a discard: switching assets later still consults
+        // this document. Restore the save point even if the pending load fails.
+        m_document.DiscardChanges();
+        if (!m_asset) m_hasDocument = false; // an abandoned untitled draft has no asset
+        m_error.clear(); ResetSelection();
     }
     bool AnimatorPanel::Load(uint64_t asset) {
         const auto* entry = m_core.GetAssets().FindByGuid(xresource::instance_guid{asset});
@@ -142,9 +156,11 @@ namespace Crucible {
             } else ImGui::TextWrapped("Create a controller, open one from the picker, double-click an .animcontroller in Assets, or choose Use Selected Entity.");
             m_document.EndEdit(ImGui::IsAnyItemActive() || m_dragNode != -2);
         }
+        // Queue a tab/window close before resolving its modal, so Cancel or a
+        // successful Save/Discard cannot be replaced by the same close afterward.
+        if (!open) Request(Pending::Close);
         DrawDialogs(playing);
         ImGui::End(); ImGui::PopStyleVar();
-        if (!open) Request(Pending::Close);
     }
     void AnimatorPanel::DrawToolbar(bool playing) {
         ImGui::BeginDisabled(playing);
@@ -493,6 +509,8 @@ namespace Crucible {
     void AnimatorPanel::DrawDialogs(bool playing) {
         if (m_openGuard) { ImGui::OpenPopup("Unsaved Animator"); m_openGuard = false; }
         if (ImGui::BeginPopupModal("Unsaved Animator", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            // A save may already have completed through another editor action.
+            if (!IsUnsaved()) { ImGui::CloseCurrentPopup(); ApplyPending(); ImGui::EndPopup(); return; }
             ImGui::TextUnformatted("Save this controller before continuing?");
             if (!m_error.empty()) ImGui::TextWrapped("%s", m_error.c_str());
             ImGui::BeginDisabled(playing);
@@ -501,9 +519,9 @@ namespace Crucible {
                 else if (Save()) { ImGui::CloseCurrentPopup(); ApplyPending(); }
             }
             ImGui::EndDisabled(); ImGui::SameLine();
-            if (ImGui::Button("Discard", {100, 0})) { ImGui::CloseCurrentPopup(); ApplyPending(); }
+            if (ImGui::Button("Discard", {100, 0})) { DiscardDraft(); ImGui::CloseCurrentPopup(); ApplyPending(); }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel", {100, 0})) { m_pending = Pending::None; m_exitContinuation = {}; ImGui::CloseCurrentPopup(); }
+            if (ImGui::Button("Cancel", {100, 0})) { m_pending = Pending::None; m_pendingAsset = 0; m_continueAfterSave = m_openGuard = false; m_exitContinuation = {}; ImGui::CloseCurrentPopup(); }
             ImGui::EndPopup();
         }
         if (m_openSaveAs) { ImGui::OpenPopup("Save Animator As"); m_openSaveAs = false; }
@@ -514,7 +532,7 @@ namespace Crucible {
             ImGui::BeginDisabled(playing);
             if (ImGui::Button("Save", {100, 0}) && SaveAs(m_savePath)) { const bool finish = m_continueAfterSave; ImGui::CloseCurrentPopup(); if (finish) ApplyPending(); }
             ImGui::EndDisabled(); ImGui::SameLine();
-            if (ImGui::Button("Cancel", {100, 0})) { m_pending = Pending::None; m_continueAfterSave = false; m_exitContinuation = {}; ImGui::CloseCurrentPopup(); }
+            if (ImGui::Button("Cancel", {100, 0})) { m_pending = Pending::None; m_pendingAsset = 0; m_continueAfterSave = m_openGuard = false; m_exitContinuation = {}; ImGui::CloseCurrentPopup(); }
             ImGui::EndPopup();
         }
     }

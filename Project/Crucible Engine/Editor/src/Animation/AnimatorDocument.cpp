@@ -99,6 +99,10 @@ namespace Crucible {
         } catch (const std::exception& e) { error = e.what(); return false; }
     }
     void AnimatorDocument::MarkSaved() { EndEdit(); m_saved = m_data; }
+    void AnimatorDocument::DiscardChanges() {
+        m_data = m_saved;
+        m_before.reset(); m_undo.clear(); m_redo.clear();
+    }
     bool AnimatorDocument::Dirty() const { return !Same(m_data, m_saved); }
     bool AnimatorDocument::RuntimeMatchesSaved() const { return SameRuntime(m_data.controller, m_saved.controller); }
     void AnimatorDocument::BeginEdit() { if (!m_before) m_before = m_data; }
