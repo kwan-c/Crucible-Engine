@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include "Scripting/ScriptingConfig.h"
 
 namespace Crucible
 {
@@ -74,6 +75,7 @@ namespace Crucible
 		NetworkConfig  network;
 		AudioConfig    audio;
 		ProjectConfig  project;
+		ScriptingConfig scripting;
 	};
 
 	// The values one app's section ("editor" / "game") in EngineConfig.json changes, for the

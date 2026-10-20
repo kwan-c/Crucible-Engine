@@ -35,9 +35,9 @@ add_subdirectory(Tools/ModelCompiler)
 # Engine Projects
 # ------------------------------------------------------------
 add_subdirectory(Engine)
+add_subdirectory(ManagedScripts)
 add_subdirectory(Editor)
 add_subdirectory(Game)
-#add_subdirectory(ManagedScripts)
 
 # Set startup project for Visual Studio
 if(MSVC)

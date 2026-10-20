@@ -193,6 +193,16 @@ namespace Crucible
 				ReadString(*project, "startupScene", config.project.startupScene);
 				ReadAspect(*project, "aspectRatio", config.project.aspectWidth, config.project.aspectHeight);
 			}
+			if (const JsonValue* scripting = FindSection(root, "scripting")) {
+				ReadBool(*scripting, "enabled", config.scripting.enabled);
+				ReadString(*scripting, "runtimeDirectory", config.scripting.runtimeDirectory);
+				ReadBool(*scripting, "verifyManagedExecution", config.scripting.verifyManagedExecution);
+				ReadString(*scripting, "startupAssembly", config.scripting.startupAssembly);
+				ReadString(*scripting, "startupNamespace", config.scripting.startupNamespace);
+				ReadString(*scripting, "startupClass", config.scripting.startupClass);
+				ReadString(*scripting, "startupMethod", config.scripting.startupMethod);
+				ReadBool(*scripting, "startupStatic", config.scripting.startupStatic);
+			}
 		}
 
 		rapidjson::Document ReadRoot(const std::filesystem::path& path)
@@ -291,6 +301,14 @@ namespace Crucible
 
 		doc.Set("project/startupScene", config.project.startupScene);
 		doc.SetList("project/aspectRatio", std::vector<std::uint32_t>{ config.project.aspectWidth, config.project.aspectHeight });
+		doc.Set("scripting/enabled", config.scripting.enabled);
+		doc.Set("scripting/runtimeDirectory", config.scripting.runtimeDirectory);
+		doc.Set("scripting/verifyManagedExecution", config.scripting.verifyManagedExecution);
+		doc.Set("scripting/startupAssembly", config.scripting.startupAssembly);
+		doc.Set("scripting/startupNamespace", config.scripting.startupNamespace);
+		doc.Set("scripting/startupClass", config.scripting.startupClass);
+		doc.Set("scripting/startupMethod", config.scripting.startupMethod);
+		doc.Set("scripting/startupStatic", config.scripting.startupStatic);
 
 		if (!doc.SaveToFile(path))
 		{

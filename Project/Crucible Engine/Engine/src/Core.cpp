@@ -21,6 +21,7 @@
 #include "Graphics/StressMoverSystem.h"   // TEMPORARY: load testing
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"
+#include "Scripting/ScriptRuntime.h"
 
 // STL
 #include <algorithm>
@@ -64,6 +65,9 @@ namespace Crucible {
     bool Core::Init()
     {
         std::cout << "The Hearth smoulders...\n";
+        m_scriptRuntime = std::make_unique<ScriptRuntime>();
+        if (!m_scriptRuntime->Initialize(m_config.scripting)) return false;
+        if (!m_scriptRuntime->RunStartupEntry(m_config.scripting)) return false;
 
         // Input attaches before anything else installs GLFW callbacks. ImGui's backend
         // chains to callbacks that are already registered, but anything installed after it
@@ -191,6 +195,10 @@ namespace Crucible {
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
+
+        // Managed instances/bindings added later must be released before final cleanup.
+        // Play/Stop never destroys or restarts the process-wide Mono runtime.
+        if (m_scriptRuntime) m_scriptRuntime->Shutdown();
 
         m_input.Shutdown();
         m_window->ShutDown();
