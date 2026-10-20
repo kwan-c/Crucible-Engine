@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.5
+* \version       1.7
 * \brief
 *                Implementation of World: entity creation/destruction
 *                and the archetype-move logic used by
@@ -54,12 +54,19 @@
 *                negative scales (mirrored keep-world
 *                solves are refused); shared PlaceNewEntity (single + batch
 *                creation) and UnlinkFromSiblings (detach + destroy hook)
+*    -v1.6       entity names: every creation path names an unnamed entity
+*                "Entity N" (spawns once their With<T>() values are in)
+*    -v1.7       NormalizeName applies both naming rules on every path
+*                (blank -> default, default-shaped -> reserved);
+*                ReissueDefaultName, DeferredNaming; SetEntityName refused
+*                inside declared systems (allowed while a Query iterates)
 *
 **************************************************************************/
 
 #include "World.h"
 #include "Animation/ModelSockets.h"
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -70,11 +77,40 @@
 #include <limits>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 
 #include <Diagnostics/Logger.h>
 
 namespace Crucible
 {
+	namespace
+	{
+		// Empty or only whitespace: not a name, so the entity gets a default.
+		bool IsBlankName(const std::string& name) noexcept
+		{
+			for (const char c : name)
+			{
+				if (c != ' ' && c != '\t' && c != '\n' && c != '\r' && c != '\f' && c != '\v') return false;
+			}
+			return true;
+		}
+
+		// N for a name shaped exactly like a default ("Entity N", N >= 1); 0 for anything else.
+		std::uint32_t DefaultNameNumber(std::string_view name) noexcept
+		{
+			constexpr std::string_view prefix = "Entity ";
+			if (!name.starts_with(prefix)) return 0;
+			name.remove_prefix(prefix.size());
+			if (name.empty() || name.size() > 9 || name.front() == '0') return 0;
+			std::uint32_t number = 0;
+			for (const char c : name)
+			{
+				if (c < '0' || c > '9') return 0;
+				number = number * 10 + static_cast<std::uint32_t>(c - '0');
+			}
+			return number;
+		}
+	}
 
 	//build archetype registry over m_components
 	World::World() :m_archetypes(m_components)
@@ -133,9 +169,135 @@ namespace Crucible
 		Archetype* archetype = m_archetypes.FindOrCreate(signature);
 		const Entity entity = PlaceNewEntity(*archetype);
 
-		if (fireAddHooks) FireAddHooksForRow(*archetype, m_entities.RecordAt(entity.index).row, entity);
+		// Without hooks (a CommandBuffer spawn) the caller names it after its With<T>() values.
+		if (fireAddHooks)
+		{
+			try { NormalizeName(entity); }
+			catch (...) { DestroyEntityImpl(entity, false); throw; }
+			FireAddHooksForRow(*archetype, m_entities.RecordAt(entity.index).row, entity);
+		}
 
 		return entity;
+	}
+
+	Entity World::CreateNamedEntity(std::string name, const ComponentSignature& signature)
+	{
+		const Entity entity = CreateEntityImpl(signature, false);
+		try { ApplyName(entity, std::move(name)); }
+		catch (...) { DestroyEntityImpl(entity, false); throw; }
+		NotifyComponentsAdded(entity);   // hooks see the name
+		return entity;
+	}
+
+	void World::SetEntityName(Entity entity, std::string name)
+	{
+		const EntityRecord& record = RequireRenamableEntity(entity, "SetEntityName");
+		ApplyName(entity, std::move(name));
+		record.archetype->GetColumn(ComponentTypeId<EntityName>()).Touch(record.row, m_currentTick);
+	}
+
+	void World::ReissueDefaultName(Entity entity)
+	{
+		const EntityRecord& record = RequireRenamableEntity(entity, "ReissueDefaultName");
+		std::string& name = NameOf(entity);
+		if (!IsBlankName(name) && DefaultNameNumber(name) == 0) return;   // a custom name: keep it
+		name.clear();
+		NormalizeName(entity);
+		record.archetype->GetColumn(ComponentTypeId<EntityName>()).Touch(record.row, m_currentTick);
+	}
+
+	void World::RecalculateEntityNameCounter()
+	{
+		const ComponentId id = ComponentTypeId<EntityName>();
+
+		// Pass 1: the highest default number in use, so pass 2 cannot repeat one.
+		std::uint32_t highest = 0;
+		bool anyBlank = false;
+		for (Archetype* archetype : m_archetypes.All())
+		{
+			const std::uint32_t count = archetype->EntityCount();
+			for (std::uint32_t row = 0; row < count; ++row)
+			{
+				const std::string& name = static_cast<const EntityName*>(archetype->GetComponentPtr(id, row))->name;
+				if (IsBlankName(name)) anyBlank = true;
+				else highest = std::max(highest, DefaultNameNumber(name));
+			}
+		}
+		m_nextEntityNumber = highest + 1;
+
+		// Pass 2: name the blanks (inside a DeferredNaming, its own rescan at the end does).
+		if (!anyBlank || m_deferNamingDepth > 0) return;
+		for (Archetype* archetype : m_archetypes.All())
+		{
+			const std::uint32_t count = archetype->EntityCount();
+			for (std::uint32_t row = 0; row < count; ++row)
+			{
+				std::string& name = static_cast<EntityName*>(archetype->GetComponentPtr(id, row))->name;
+				if (!IsBlankName(name)) continue;
+				name = "Entity " + std::to_string(m_nextEntityNumber);
+				++m_nextEntityNumber;
+				archetype->GetColumn(id).Touch(row, m_currentTick);
+			}
+		}
+	}
+
+	// --- naming internals -------------------------------------------------------------------
+
+	const EntityRecord& World::RequireRenamableEntity(Entity entity, const char* operation) const
+	{
+		// No archetype changes, so a rename is fine mid-iteration (the editor renames from inside
+		// its Hierarchy loop). But it can move the shared default counter, so a declared system -
+		// which may run alongside others - must rename through its CommandBuffer.
+		if (Detail::RestrictedSystem())
+		{
+			CheckStructuralAccess((std::string("World::") + operation).c_str());
+		}
+		if (!m_entities.IsAlive(entity))
+		{
+			throw std::invalid_argument(std::string("World::") + operation + " called with a dead/stale Entity");
+		}
+		return m_entities.Record(entity);
+	}
+
+	std::string& World::NameOf(Entity entity)
+	{
+		const EntityRecord& record = m_entities.Record(entity);
+		return static_cast<EntityName*>(record.archetype->GetComponentPtr(ComponentTypeId<EntityName>(), record.row))->name;
+	}
+
+	void World::NormalizeName(Entity entity)
+	{
+		std::string& name = NameOf(entity);
+		if (IsBlankName(name))
+		{
+			if (m_deferNamingDepth > 0) return;   // named when the DeferredNaming ends
+			name = "Entity " + std::to_string(m_nextEntityNumber);
+			++m_nextEntityNumber;                  // only once the name is in (to_string may throw)
+			return;
+		}
+		// A name shaped like a default: no later default may repeat it.
+		const std::uint32_t number = DefaultNameNumber(name);
+		if (number >= m_nextEntityNumber) m_nextEntityNumber = number + 1;
+	}
+
+	void World::ApplyName(Entity entity, std::string name)
+	{
+		NameOf(entity) = std::move(name);
+		NormalizeName(entity);
+	}
+
+	void World::EndDeferredNaming() noexcept
+	{
+		if (--m_deferNamingDepth > 0) return;
+		try
+		{
+			RecalculateEntityNameCounter();
+		}
+		catch (const std::exception& e)
+		{
+			// Out of memory (a destructor cannot throw): some loaded entities may stay unnamed.
+			CRU_ERROR("World: naming the loaded entities failed: {}", e.what());
+		}
 	}
 
 	Entity World::PlaceNewEntity(Archetype& archetype)
@@ -184,7 +346,10 @@ namespace Crucible
 		try
 		{
 			for (uint32_t i = 0; i < count; ++i)
+			{
 				created.push_back(PlaceNewEntity(*archetype));   // capacity reserved above
+				NormalizeName(created.back());
+			}
 		}
 		catch (...)
 		{
@@ -204,6 +369,7 @@ namespace Crucible
 	void World::NotifyComponentsAdded(Entity entity)
 	{
 		if (!m_entities.IsAlive(entity)) return;
+		NormalizeName(entity);   // a spawn's With<EntityName>() value, or a default if it had none
 		const EntityRecord& record = m_entities.Record(entity);
 		FireAddHooksForRow(*record.archetype, record.row, entity);
 	}
@@ -335,6 +501,7 @@ namespace Crucible
 		}
 
 		for (Entity entity : alive) DestroyEntity(entity);
+		m_nextEntityNumber = 1;   // nothing left to collide with
 	}
 
 

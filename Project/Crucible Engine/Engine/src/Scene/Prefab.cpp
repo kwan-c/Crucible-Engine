@@ -3,7 +3,7 @@
   \author     Tok Duan Jie Nelson
   \par        Email: t.duanjienelson@digipen.edu
   \date       29 September 2026
-  \version    1.0
+  \version    1.1
   \brief
     Prefab save and instantiate implementation.
   \details
@@ -17,6 +17,8 @@
     Prefab.h, Scene.cpp, EntityIO.cpp
   \history
     - 1.0 (29 September 2026): Initial version.
+    - 1.1 (17 October 2026): an instance whose saved name is a default
+      ("Entity 3") gets a fresh one (World::ReissueDefaultName).
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -131,6 +133,7 @@ namespace Crucible {
 
         const Entity entity = world.CreateEntity();
         EntityIO::ReadComponents(world, entity, m_doc, PREFAB_COMPONENTS);
+        world.ReissueDefaultName(entity);   // "Entity 3" was the source's default, not this instance's; custom names stay
 
         return entity;
     }
