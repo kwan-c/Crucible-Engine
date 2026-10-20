@@ -29,6 +29,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # Third-Party Dependencies (shared across projects)
 # ------------------------------------------------------------
 add_subdirectory(Extern)
+add_subdirectory(Tools/ModelCompiler)
 
 # ------------------------------------------------------------
 # Engine Projects

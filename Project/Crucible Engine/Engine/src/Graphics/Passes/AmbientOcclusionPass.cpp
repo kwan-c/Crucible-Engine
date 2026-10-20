@@ -59,11 +59,13 @@ namespace Crucible {
 
         auto binding    = Vertex::GetBindingDescription();
         auto attributes = Vertex::GetAttributeDescriptions();
+        const std::array solidAttributes{attributes[0], attributes[1], attributes[5], attributes[6]};
+        const std::array cutoutAttributes{attributes[0], attributes[1], attributes[2], attributes[5], attributes[6]};
         vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
             .vertexBindingDescriptionCount   = 1,
             .pVertexBindingDescriptions      = &binding,
-            .vertexAttributeDescriptionCount = 2,   // position and normal
-            .pVertexAttributeDescriptions    = &attributes[0]
+            .vertexAttributeDescriptionCount = static_cast<uint32_t>(solidAttributes.size()),   // position and normal
+            .pVertexAttributeDescriptions    = solidAttributes.data()
         };
 
         // Set 0 (camera and instance data); set 1 and CutoutPush only for the cut-out pipeline.
@@ -100,7 +102,8 @@ namespace Crucible {
             { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "depthNormalCutoutVert" },
             { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "depthNormalCutoutFrag" }
         };
-        vertexInputInfo.vertexAttributeDescriptionCount = 3;   // position, normal, uv
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
+        vertexInputInfo.pVertexAttributeDescriptions = cutoutAttributes.data();   // position, normal, uv
         chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;
         m_cutoutPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
 

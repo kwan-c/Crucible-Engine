@@ -75,7 +75,9 @@ namespace Crucible {
 
         // ---- Per view ----
         /// Empties the frame's instance list. Call before the frame's first view.
-        void BeginViews() { m_instanceCount = 0; }
+        void BeginViews();
+        void SetProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
+                               const glm::vec3& boundsMin, const glm::vec3& boundsMax);
         /*********************************************************************
          \brief  Everything one view draws from the scene: what its camera
                  sees, sorted by (material, mesh), and what each shadow
@@ -117,6 +119,7 @@ namespace Crucible {
         size_t     InstanceBufferCount() const        { return m_instanceBuffers.size(); }
 
         // ---- Queries ----
+        bool GetObjectBounds(std::uint64_t userData, glm::vec3& boundsMin, glm::vec3& boundsMax) const;
         bool Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const;
         const SpatialIndex& Spatial() const { return m_spatial; }
 
@@ -153,6 +156,10 @@ namespace Crucible {
 
         // Persistent render proxies + the spatial index they live in (see CreateRenderProxy).
         struct RenderProxy {
+            std::vector<glm::mat4> palette;
+            glm::uvec4 skin{0u};
+            glm::vec3 poseMin{0.0f}, poseMax{0.0f};
+            bool poseBounds = false;
             MeshHandle           mesh;
             MaterialHandle       material;
             glm::mat4            model{ 1.0f };
@@ -172,6 +179,7 @@ namespace Crucible {
         };
         std::vector<ProxyDraw>      m_proxyDraw;
         std::vector<uint32_t>       m_freeProxies;
+        std::vector<uint32_t>       m_animatedProxies;
         std::vector<uint32_t>       m_proxiesAwaitingBounds;
         SpatialIndex                m_spatial{ 0.25f };
         std::vector<RenderItem>     m_casterItems;      // scratch: the selection outline's item
@@ -211,10 +219,11 @@ namespace Crucible {
         std::vector<HitList>                m_chunkHits;   // [chunk * kMaxPasses + pass]: moving proxies
         std::array<PassScratch, kMaxPasses> m_pass;
 
-        // Selection outline (SetOutlinedObject / SetOutlinedObjects). One cached proxy id per
-        // outlined object, 0xFFFFFFFF while it has none (e.g. a light, or not uploaded yet).
+        // Selection outline: cached proxy ids for every part of the selected objects.
+        // Refresh only when selection or the set of live proxies changes.
         std::vector<std::uint64_t>  m_outlineUserData;
         std::vector<uint32_t>       m_outlineProxies;
+        uint64_t m_proxyRevision = 1, m_outlineResolvedRevision = 0;
 
         // Instances: every object drawn this frame by every pass of every view, one model matrix
         // each (set 0, binding 2). Built on the CPU as each view is prepared, copied in one go by

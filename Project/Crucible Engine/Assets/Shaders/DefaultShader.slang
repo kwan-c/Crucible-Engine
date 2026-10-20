@@ -14,6 +14,8 @@ struct VSInput {
     float2 inUV;
     float3 inColor;
     float4 inTangent;   // xyz = tangent direction, w = bitangent handedness sign (+-1)
+    uint4 inJoints;
+    float4 inWeights;
 };
 
 // Per-frame data (FrameUniforms, `frame`) and the fog functions, shared with the sky and particles.
@@ -22,10 +24,7 @@ struct VSInput {
 #include "Lighting.slang"
 
 // One instance (set 0, binding 2). Must match Crucible::InstanceData (RenderTypes.h).
-struct InstanceData {
-    float4x4 model;
-    float4   params;   // x = multiplier on the material's emissive, yzw = spare (MaterialParams component)
-};
+#include "ModelVertex.slang"
 
 // Per-draw data: the current material's scalar settings (constant across a batch, since batches
 // never cross materials). Must match Crucible::PushConstants (RenderTypes.h) byte for byte - the
@@ -58,8 +57,6 @@ static const uint kFlagOwnShade     = 8;
 // Every object drawn this frame, by every view and pass (Renderer::UploadInstances). A draw's
 // instances are contiguous; drawIndexed's firstInstance points at the first one, and
 // SV_VulkanInstanceID (gl_InstanceIndex) already includes that offset.
-[[vk::binding(2, 0)]]
-StructuredBuffer<InstanceData> instances;
 
 // Ambient occlusion for this view (Post.slang's aoFrag/aoBlurFrag): 1 = open, lower = tucked into
 // a crease or corner. Half resolution; all white when the effect is off.
@@ -92,7 +89,7 @@ struct VSOutput {
 VSOutput vertMain(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     VSOutput output;
 
-    float4x4 model = instances[instanceID].model;
+    float4x4 model = ModelVertexTransform(instanceID, input.inJoints, input.inWeights);
     float4 worldPos4 = mul(model, float4(input.inPosition, 1.0));
     output.worldPos = worldPos4.xyz;
     output.pos = mul(frame.proj, mul(frame.view, worldPos4));
@@ -100,16 +97,12 @@ VSOutput vertMain(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     output.uv = input.inUV;
     output.instanceParams = instances[instanceID].params;
 
-    // NOTE: correct for uniform scale only. Non-uniform scale needs the inverse-transpose of the
-    // model's upper-left 3x3 for the normal specifically; the tangent, being a surface direction
-    // rather than a normal, would need the model's 3x3 directly even then - the two would diverge
-    // under non-uniform scale. Both use the same simplified transform here so they stay mutually
-    // consistent (a correctly-lit-but-slightly-wrong-under-non-uniform-scale TBN beats a
-    // correctly-transformed normal paired with a now-non-orthogonal tangent).
+    // Inverse-transpose normals and re-orthogonalized tangents support scaled animated nodes.
     float3x3 modelUpper = (float3x3)model;
-    output.normalWS    = normalize(mul(modelUpper, input.inNormal));
+    output.normalWS    = ModelNormal(modelUpper, input.inNormal);
     output.tangentWS   = normalize(mul(modelUpper, input.inTangent.xyz));
-    output.tangentSign = input.inTangent.w;
+    output.tangentWS   = normalize(output.tangentWS - output.normalWS * dot(output.normalWS, output.tangentWS));
+    output.tangentSign = input.inTangent.w * (determinant(modelUpper) < 0.0 ? -1.0 : 1.0);
 
     // Toon outlines: the breakup pattern is read at the mesh's own position, in metres (scaled
     // like the object, but not turned or moved with it), so the gaps stay put on the surface of

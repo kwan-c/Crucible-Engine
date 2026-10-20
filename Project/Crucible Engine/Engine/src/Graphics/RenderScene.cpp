@@ -31,6 +31,32 @@ namespace Crucible {
 
     }   // RenderScene::Init()
 
+    void RenderScene::SetProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
+                                        const glm::vec3& boundsMin, const glm::vec3& boundsMax) {
+        if (!handle.IsValid() || handle.id >= m_proxies.size() || !m_proxies[handle.id].alive) return;
+        auto& proxy = m_proxies[handle.id];
+        if (proxy.palette.empty() && !palette.empty()) m_animatedProxies.push_back(handle.id);
+        if (!proxy.palette.empty() && palette.empty()) std::erase(m_animatedProxies, handle.id);
+        proxy.palette.assign(palette.begin(), palette.end());
+        proxy.skin = glm::uvec4(0u);
+        proxy.poseBounds = !palette.empty();
+        proxy.poseMin = boundsMin; proxy.poseMax = boundsMax;
+        RefreshProxyBounds(handle.id);
+    }
+
+    void RenderScene::BeginViews() {
+        m_instanceCount = 0;
+        for (uint32_t id : m_animatedProxies) {
+            auto& proxy = m_proxies[id];
+            if (!proxy.alive || !proxy.visible || proxy.palette.empty()) { proxy.skin = glm::uvec4(0u); continue; }
+            const uint32_t count = static_cast<uint32_t>(proxy.palette.size());
+            const uint32_t offset = AllocateInstances(count);
+            proxy.skin = glm::uvec4(offset, count, 0u, 0u);
+            for (uint32_t joint = 0; joint < count; ++joint)
+                m_instanceScratch[offset + joint] = InstanceData{proxy.palette[joint]};
+        }
+    }
+
     void RenderScene::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) {
 
         m_renderQueue.push_back(RenderItem{ mesh, material, model, params });
@@ -47,6 +73,7 @@ namespace Crucible {
         m_proxyDraw[id] = ProxyDraw{};
         m_proxies[id].alive = true;
         m_proxies[id].userData = userData;
+        ++m_proxyRevision;
         return RenderProxyHandle{ id };
 
     }   // RenderScene::CreateProxy()
@@ -77,6 +104,8 @@ namespace Crucible {
         RenderProxy& p = m_proxies[handle.id];
         if (p.spatial != SpatialIndex::kInvalid) { m_spatial.Remove(p.spatial); }
         p = RenderProxy{};
+        std::erase(m_animatedProxies, handle.id);
+        ++m_proxyRevision;
         m_proxyDraw[handle.id] = ProxyDraw{};
         m_freeProxies.push_back(handle.id);
 
@@ -94,7 +123,8 @@ namespace Crucible {
         if (!p.visible || !p.mesh.IsValid()) { removeFromIndex(); return; }
 
         glm::vec3 mn, mx;
-        if (!m_resources.GetMeshBounds(p.mesh, mn, mx)) {
+        if (p.poseBounds) { mn = p.poseMin; mx = p.poseMax; }
+        else if (!m_resources.GetMeshBounds(p.mesh, mn, mx)) {
             // Mesh not uploaded yet (CreateMeshAsync): not drawable anyway; retry next frame.
             removeFromIndex();
             p.awaitingBounds = true;
@@ -138,7 +168,7 @@ namespace Crucible {
         if (wanted == m_outlineUserData) { return; }   // called every frame by the editor: usually unchanged
 
         m_outlineUserData = std::move(wanted);
-        m_outlineProxies.assign(m_outlineUserData.size(), 0xFFFFFFFFu);   // re-resolved lazily (ResolveOutlineProxies)
+        m_outlineResolvedRevision = m_proxyRevision ^ 1u; // selection changed; refresh the cached parts
 
     }   // RenderScene::SetOutlinedObjects()
 
@@ -310,10 +340,10 @@ namespace Crucible {
                 const SortItem& item = m_pass[pass].grouped[index - m_pass[pass].firstInstance];
                 if (item.ref & kImmediateRef) {
                     const RenderItem& r = m_renderQueue[item.ref & ~kImmediateRef];
-                    m_instanceScratch[index] = InstanceData{ r.model, pass == 0 ? r.params : noParams };
+                    m_instanceScratch[index] = InstanceData{ r.model, pass == 0 ? r.params : noParams, r.skin };
                 } else {
                     const RenderProxy& p = m_proxies[item.ref];
-                    m_instanceScratch[index] = InstanceData{ p.model, pass == 0 ? p.params : noParams };
+                    m_instanceScratch[index] = InstanceData{ p.model, pass == 0 ? p.params : noParams, p.skin };
                 }
             }
         });
@@ -405,15 +435,17 @@ namespace Crucible {
 
     void RenderScene::BuildOutlineBatches(std::vector<DrawBatch>& out) {
 
+        if (m_outlineUserData.empty()) return;
         ResolveOutlineProxies();
         m_casterItems.clear();
+        // A model entity owns several proxies. Outline every part sharing its entity key.
         for (uint32_t id : m_outlineProxies) {
             if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid) {
                 // The material only when the mask needs it (a cut-out leaf's outline follows the leaf).
                 const MaterialHandle material = ResolveMaterial(m_proxyDraw[id].material);
                 m_casterItems.push_back(RenderItem{ m_proxies[id].mesh,
                                                     m_resources.NeedsMaterialInDepthPasses(material) ? material : MaterialHandle{},
-                                                    m_proxies[id].model });
+                                                    m_proxies[id].model, m_proxies[id].params, m_proxies[id].skin });
             }
         }
         if (!m_casterItems.empty()) {
@@ -438,7 +470,7 @@ namespace Crucible {
             const MaterialHandle material = byMaterial ? ResolveMaterial(item.material) : item.material;
 
             const uint32_t index = AllocateInstances(1);
-            m_instanceScratch[index] = InstanceData{ item.model, item.params };
+            m_instanceScratch[index] = InstanceData{ item.model, item.params, item.skin };
             ++added;
 
             if (!batches.empty()) {
@@ -481,24 +513,13 @@ namespace Crucible {
 
     void RenderScene::ResolveOutlineProxies() {
 
-        constexpr uint32_t kNone = 0xFFFFFFFFu;
-        bool stale = false;
-        for (std::size_t i = 0; i < m_outlineUserData.size(); ++i) {
-            const uint32_t id = m_outlineProxies[i];
-            if (id < m_proxies.size() && m_proxies[id].alive && m_proxies[id].userData == m_outlineUserData[i]) { continue; }
-            m_outlineProxies[i] = kNone;
-            stale = true;
+        if (m_outlineResolvedRevision == m_proxyRevision) return;
+        m_outlineProxies.clear();
+        for (uint32_t id = 0; id < m_proxies.size(); ++id) {
+            if (m_proxies[id].alive && std::find(m_outlineUserData.begin(), m_outlineUserData.end(),
+                    m_proxies[id].userData) != m_outlineUserData.end()) m_outlineProxies.push_back(id);
         }
-        if (!stale) { return; }
-
-        // Stale or never looked up: one linear scan for all of them together (selection changes
-        // are rare; a selected entity with no proxy, e.g. a light, costs one cheap scan per frame).
-        for (uint32_t p = 0; p < m_proxies.size(); ++p) {
-            if (!m_proxies[p].alive) { continue; }
-            for (std::size_t i = 0; i < m_outlineUserData.size(); ++i) {
-                if (m_outlineProxies[i] == kNone && m_proxies[p].userData == m_outlineUserData[i]) { m_outlineProxies[i] = p; break; }
-            }
-        }
+        m_outlineResolvedRevision = m_proxyRevision;
 
     }   // RenderScene::ResolveOutlineProxies()
 
@@ -524,6 +545,17 @@ namespace Crucible {
 
     }   // anonymous namespace
 
+    bool RenderScene::GetObjectBounds(std::uint64_t userData, glm::vec3& boundsMin, glm::vec3& boundsMax) const {
+        AABB bounds;
+        for (const auto& proxy : m_proxies) {
+            if (proxy.alive && proxy.userData == userData && proxy.spatial != SpatialIndex::kInvalid)
+                bounds = AABB::Union(bounds, m_spatial.GetBounds(proxy.spatial));
+        }
+        if (!bounds.IsValid()) return false;
+        boundsMin = bounds.min; boundsMax = bounds.max;
+        return true;
+    }
+
     bool RenderScene::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const {
 
         const float len = glm::length(direction);
@@ -540,7 +572,7 @@ namespace Crucible {
             const GpuMesh& mesh = m_resources.Meshes()[p.mesh.id];
 
             float tHit = -1.0f;
-            if (mesh.cpuIndices.empty()) {
+            if (mesh.cpuIndices.empty() || !p.palette.empty()) {
                 tHit = tBox;   // no geometry kept: the tight box is the best we can do
             } else {
                 // Into object space: t is preserved because the mapping is affine.

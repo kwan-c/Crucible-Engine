@@ -163,7 +163,7 @@ namespace Crucible {
             e == ".bmp" || e == ".dds" || e == ".hdr")
             return AssetType::Texture;
  
-        if (e == ".gltf" || e == ".glb" || e == ".fbx" || e == ".obj" || e == ".dae")
+        if (e == ".cmodel" || e == ".gltf" || e == ".glb" || e == ".fbx" || e == ".obj" || e == ".dae")
             return AssetType::Model;
  
         if (e == ".vert" || e == ".frag" || e == ".geom" || e == ".comp" ||

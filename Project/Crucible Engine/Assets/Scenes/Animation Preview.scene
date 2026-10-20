@@ -1,0 +1,165 @@
+{
+    "version": 1,
+    "name": "Animation Preview",
+    "entities": [
+        {
+            "id": "5F13FF78672A4BC9",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -5.5,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "AnimatedModel": {
+                    "modelAsset": 11181561406948196535,
+                    "clip": 4,
+                    "speed": 1,
+                    "playing": true,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "visible": true
+                }
+            }
+        },
+        {
+            "id": "7F1BC843765049C9",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 5.5,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "AnimatedModel": {
+                    "modelAsset": 11181561406948196535,
+                    "clip": 0,
+                    "speed": 0.7,
+                    "playing": true,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "visible": true
+                }
+            }
+        },
+        {
+            "id": "48E28DE722304599",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 7,
+                        "z": 28
+                    },
+                    "rotation": {
+                        "x": -0.10452846326765347,
+                        "y": 0,
+                        "z": 0,
+                        "w": 0.9945218953682733
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 55,
+                    "nearZ": 0.1,
+                    "farZ": 200,
+                    "priority": 0
+                }
+            }
+        },
+        {
+            "id": "AF3E75CDA161462B",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 8,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": -0.42261826174069944,
+                        "y": 0,
+                        "z": 0,
+                        "w": 0.9063077870366499
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1,
+                        "y": 0.95,
+                        "z": 0.85
+                    },
+                    "intensity": 3,
+                    "range": 30,
+                    "innerConeDeg": 20,
+                    "outerConeDeg": 30,
+                    "enabled": true,
+                    "castShadows": true
+                }
+            }
+        },
+        {
+            "id": "40898ADBC14B4B0D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": -0.05,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 15,
+                        "y": 1,
+                        "z": 15
+                    }
+                },
+                "MeshRenderer": {
+                    "meshAsset": 3649096549467294993,
+                    "materialAsset": 0,
+                    "visible": true
+                }
+            }
+        }
+    ]
+}

@@ -13,6 +13,7 @@
 **************************************************************************/
 
 #include "ResourceManager.h"
+#include "Resources/RenderedModel.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -24,7 +25,7 @@
 #include <rapidjson/stringbuffer.h>
 
 #include "AssetPipe/Assetmanager.h"
-#include "AssetPipe/GLTFLoader.h"
+#include "Resources/CompiledModel.h"
 #include "ECS/Components/Components.h"
 #include "Graphics/RenderSystem.h"
 #include "Diagnostics/Logger.h"
@@ -177,6 +178,37 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------------------------- //
     //  GET
     // ------------------------------------------------------------------------------------------------------------- //
+
+    std::shared_ptr<const ModelResource> ResourceManager::GetModel(AssetId id) {
+        if (id == 0) { return {}; }
+        if (auto found = m_models.find(id); found != m_models.end()) { return found->second; }
+        m_models[id] = nullptr;
+        const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+        std::vector<unsigned char> bytes;
+        if (!entry || entry->type != AssetType::Model) {
+            WarnOnce(id, "Could not read model asset");
+            return {};
+        }
+        if (entry->extension != ".cmodel") {
+            WarnOnce(id, "Source model cannot be loaded at runtime; compile it from AssetsSource first");
+            return {};
+        }
+        if (entry->sizeBytes > MaxCompiledModelBytes || !m_assets.ReadBytes(entry->virtualPath, bytes)) {
+            WarnOnce(id, "Compiled model is unreadable or exceeds the 1 GiB limit");
+            return {};
+        }
+        ModelImportResult imported = DecodeCompiledModel(bytes, id);
+        if (!imported.ok) {
+            WarnOnce(id, "Compiled model load failed: " + imported.error);
+            return {};
+        }
+        for (const auto& warning : imported.model.warnings) {
+            CRU_WARN("[Resources] {}: {}", entry->virtualPath, warning);
+        }
+        auto model = std::make_shared<ModelResource>(std::move(imported.model));
+        m_models[id] = model;
+        return model;
+    }
 
     MeshHandle ResourceManager::GetMesh(AssetId id) {
 
@@ -343,6 +375,7 @@ namespace Crucible {
                 case ResourceKind::Mesh:     { auto it = m_meshes.find(id);    return it != m_meshes.end()    && it->second.IsValid(); }
                 case ResourceKind::Material: { auto it = m_materials.find(id); return it != m_materials.end() && it->second.IsValid(); }
                 case ResourceKind::Audio:    return false;   // never loaded here; ECSAudioSystem loads audio itself
+                case ResourceKind::Model:    { auto it = m_models.find(id); return it != m_models.end() && bool(it->second); }
                 default:                    { auto it = m_textures.find(id);  return it != m_textures.end()  && (it->second.srgb.IsValid() || it->second.linear.IsValid()); }
             }
         };
@@ -364,6 +397,9 @@ namespace Crucible {
         };
 
         switch (kind) {
+            case ResourceKind::Model:
+                addAssets(AssetType::Model, "", false);
+                break;
             case ResourceKind::Mesh:
                 addAssets(AssetType::Model, "", false);
                 break;
@@ -439,8 +475,67 @@ namespace Crucible {
     }   // ResourceManager::Resolve()
 
     // ------------------------------------------------------------------------------------------------------------- //
-    //  LOADERS (the only code that knows file formats - swap these when engine formats land)
+    //  LOADERS (compiled model resources and existing image/material formats)
     // ------------------------------------------------------------------------------------------------------------- //
+
+    std::shared_ptr<const RenderedModel> ResourceManager::GetRenderedModel(AssetId id) {
+        if (auto it = m_renderedModels.find(id); it != m_renderedModels.end()) return it->second;
+        m_renderedModels[id] = nullptr;
+        auto definition = GetModel(id);
+        if (!definition) return {};
+        try {
+            auto result = std::make_shared<RenderedModel>();
+            result->definition = definition;
+            result->materials.reserve(definition->materials.size());
+            const std::string prefix = "model:" + ToHex(id) + ":";
+            for (const auto& source : definition->materials) {
+                MaterialData material;
+                material.factors.albedoTint = source.baseColorFactor;
+                material.factors.emissiveFactor = source.emissiveFactor;
+                material.factors.metallicFactor = source.metallicFactor;
+                material.factors.roughnessFactor = source.roughnessFactor;
+                material.doubleSided = source.doubleSided;
+                material.alphaCutoff = source.alphaMode == ModelAlphaMode::Mask ? std::clamp(source.alphaCutoff, 0.0f, 1.0f) :
+                    source.alphaMode == ModelAlphaMode::Blend ? 0.5f : 0.0f;
+                if (source.alphaMode == ModelAlphaMode::Blend) {
+                    CRU_INFO("[Resources] Model {}: alphaMode BLEND rendered as cut-out at 0.5 (no blended materials yet)", id);
+                }
+                auto texture = [&](const ModelTextureInfo& info, bool srgb) -> TextureHandle {
+                    if (info.texture == InvalidModelIndex) return {};
+                    const auto& image = definition->images[definition->textures[info.texture].image];
+                    return m_renderer.CreateTextureFromMemory(image.bytes.data(), image.bytes.size(), srgb,
+                        prefix + "texture:" + std::to_string(info.texture) + (srgb ? ":srgb" : ":linear"));
+                };
+                material.albedo = texture(source.baseColor, true);
+                material.normal = texture(source.normal, false);
+                material.metallicRoughness = texture(source.metallicRoughness, false);
+                material.emissive = texture(source.emissive, true);
+                material.occlusion = texture(source.occlusion, false);
+                result->materials.push_back(m_renderer.CreateMaterial(material));
+            }
+            result->meshes.resize(definition->meshes.size());
+            for (size_t mesh = 0; mesh < definition->meshes.size(); ++mesh) {
+                for (size_t primitive = 0; primitive < definition->meshes[mesh].primitives.size(); ++primitive) {
+                    const auto& source = definition->meshes[mesh].primitives[primitive];
+                    MeshData geometry;
+                    geometry.indices = source.indices;
+                    geometry.vertices.reserve(source.vertices.size());
+                    for (const auto& vertex : source.vertices) {
+                        Vertex converted{vertex.position, vertex.normal, vertex.uv, glm::vec3(vertex.color), vertex.tangent};
+                        converted.joints = vertex.joints; converted.weights = vertex.weights;
+                        geometry.vertices.push_back(converted);
+                    }
+                    result->meshes[mesh].push_back(m_renderer.CreateMesh(geometry,
+                        prefix + std::to_string(mesh) + ":" + std::to_string(primitive)));
+                }
+            }
+            m_renderedModels[id] = result;
+            return result;
+        } catch (const std::exception& error) {
+            WarnOnce(id, std::string("Complete model upload failed: ") + error.what());
+            return {};
+        }
+    }
 
     bool ResourceManager::LoadModel(AssetId modelId) {
 
@@ -448,70 +543,22 @@ namespace Crucible {
         m_subAssets[materialId]  = SubAsset{ modelId, ResourceKind::Material };
         m_meshes[modelId]        = MeshHandle{};   // pessimistic: stays Invalid unless we succeed
 
-        const AssetEntry* entry = m_assets.FindByGuid(ToGuid(modelId));
-        std::vector<unsigned char> bytes;
-        if (!entry || !m_assets.ReadBytes(entry->virtualPath, bytes)) {
-            WarnOnce(modelId, "Could not read model");
+        // Keep the legacy first-primitive/material GUID aliases while sharing the
+        // complete model's GPU resources with animated/full-model callers.
+        const auto rendered = GetRenderedModel(modelId);
+        if (!rendered || rendered->meshes.empty() || rendered->meshes[0].empty()) {
+            WarnOnce(modelId, "Model has no first primitive for the static mesh view");
             return false;
         }
-
-        // TEMPORARY source-format path: .glb parsed at load time. Replace with the engine mesh
-        // format's reader once the importer produces one.
-        GLTFAsset glb = GLTFLoader::LoadGLB(bytes);
-        if (!glb.ok) {
-            WarnOnce(modelId, "Model parse failed: " + glb.error);
-            return false;
-        }
-
-        try {
-            const MeshHandle mesh = m_renderer.CreateMesh(glb.mesh, entry->virtualPath);
-            m_meshes[modelId]     = mesh;
-            m_meshIds[mesh.id]    = modelId;
-
-            if (glb.material) {
-                const GLTFMaterial& gm = *glb.material;
-                const std::string keyPrefix = "asset:" + ToHex(modelId) + ":";
-
-                MaterialData data;
-                data.factors.albedoTint      = gm.baseColorFactor;
-                data.factors.emissiveFactor  = gm.emissiveFactor;
-                data.factors.metallicFactor  = gm.metallicFactor;
-                data.factors.roughnessFactor = gm.roughnessFactor;
-                // Cut-out: MASK keeps its cutoff. BLEND (see-through) has no engine equivalent yet,
-                // so it is cut out at 0.5 too - right for foliage, which is what Blender exports as
-                // BLEND unless the alpha goes through a clip. An alphaCutoff of 0 cuts nothing.
-                if (gm.alphaMode == GLTFAlphaMode::Mask) {
-                    data.alphaCutoff = std::clamp(gm.alphaCutoff, 0.0f, 1.0f);
-                } else if (gm.alphaMode == GLTFAlphaMode::Blend) {
-                    data.alphaCutoff = 0.5f;
-                    CRU_INFO("[Resources] {}: alphaMode BLEND imported as cut-out at 0.5 (no blended materials yet)", entry->virtualPath);
-                }
-                data.doubleSided = gm.doubleSided;
-
-                auto embedded = [&](bool has, std::size_t image, bool isSRGB, const char* slot) -> TextureHandle {
-                    if (!has || image >= glb.images.size()) { return {}; }
-                    const auto& img = glb.images[image];
-                    return m_renderer.CreateTextureFromMemory(img.bytes.data(), img.bytes.size(), isSRGB, keyPrefix + slot);
-                };
-                data.albedo            = embedded(gm.hasBaseColor,         gm.baseColorImage,         true,  "albedo");
-                data.normal            = embedded(gm.hasNormal,            gm.normalImage,            false, "normal");
-                data.metallicRoughness = embedded(gm.hasMetallicRoughness, gm.metallicRoughnessImage, false, "metallicRoughness");
-                data.emissive          = embedded(gm.hasEmissive,          gm.emissiveImage,          true,  "emissive");
-                data.occlusion         = embedded(gm.hasOcclusion,         gm.occlusionImage,         false, "occlusion");
-
-                const MaterialHandle material = m_renderer.CreateMaterial(data);
-                m_materials[materialId]   = material;
-                m_materialIds[material.id] = materialId;
-            } else {
-                // No material in the file: the embedded-material id means "the default material".
-                m_materials[materialId] = m_renderer.GetDefaultMaterial();
-            }
-        } catch (const std::exception& e) {
-            WarnOnce(modelId, std::string("Model upload failed: ") + e.what());
-            return false;
-        }
-
-        CRU_INFO("[Resources] Loaded model {}", entry->virtualPath);
+        const MeshHandle mesh = rendered->meshes[0][0];
+        m_meshes[modelId] = mesh;
+        m_meshIds[mesh.id] = modelId;
+        const auto index = rendered->definition->meshes[0].primitives[0].material;
+        const MaterialHandle material = index == InvalidModelIndex ?
+            m_renderer.GetDefaultMaterial() : rendered->materials[index];
+        m_materials[materialId] = material;
+        if (index != InvalidModelIndex) m_materialIds[material.id] = materialId;
+        CRU_INFO("[Resources] Loaded compiled model {}", modelId);
         return true;
 
     }   // ResourceManager::LoadModel()

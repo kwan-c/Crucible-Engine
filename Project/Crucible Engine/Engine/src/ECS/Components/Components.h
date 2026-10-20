@@ -117,6 +117,18 @@ namespace Crucible
 		false, so a not-yet-loaded model is simply not drawn yet rather
 		than crashing.
 	 *************************************************************************/
+	struct AnimatedModel
+	{
+		std::uint64_t modelAsset = 0;
+		std::uint32_t clip = 0;
+		float speed = 1.0f;
+		float time = 0.0f; // runtime seconds relative to this clip's first key
+		bool playing = true;
+		bool loop = true;
+		bool previewInEditor = true;
+		bool visible = true;
+	};
+
 	struct MeshRenderer
 	{
 		bool visible = true;
@@ -558,6 +570,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(Transform, Transform);
 	CRUCIBLE_COMPONENT(RigidBody, RigidBody);
 	CRUCIBLE_COMPONENT(MeshRenderer, MeshRenderer);
+	CRUCIBLE_COMPONENT(AnimatedModel, AnimatedModel);
 	CRUCIBLE_COMPONENT(HierarchyNode, HierarchyNode);
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 	CRUCIBLE_COMPONENT(Light, Light);

@@ -1,0 +1,46 @@
+# Crucible animation roadmap
+
+The attached seven-milestone plan supersedes the previous five-milestone plan.
+Each source model is self-contained. Source assets compile offline into the engine's
+own representation; runtime does not parse GLB. No source names, bone names, clip
+counts, joint orders or weapon combinations determine generic import behavior.
+VR tracking and motion capture are outside this roadmap.
+
+| Milestone | Scope | Current status |
+|---|---|---|
+| 1 - Model and animation asset compilation | Complete source interpretation, validated .cmodel output, GUID integration and compiled-only runtime loading | Completed in this session using the existing full-model importer. See ModelImport.md. |
+| 2 - Animation runtime and pose evaluation | Sampling, playback, looping/speed, hierarchy, rigid nodes and joint palettes | Existing uncommitted ModelPose/AnimatedModelSystem implementation from earlier work; preserved, not newly implemented in this session. Review against the revised requirements next. |
+| 3 - Animated rendering | Vulkan skinning/rigid nodes, independent instances, materials, shadows/outlines/depth-normal and bounds | Existing preview implementation preserved. No rendering feature extension in this session. |
+| 4 - ECS, editor and lifecycle integration | Components, scheduling, serialization, Play/Pause/Stop and cleanup | Existing preview integration preserved. Production lifecycle review remains part of this milestone. |
+| 5 - Animator Controller runtime | Configurable states/transitions/parameters/conditions/exit times/crossfades independent of editor | Not started. |
+| 6 - Visual Animator graph editor | Graph authoring, saving/loading and live controller inspection | Not started. |
+| 7 - Modular animations and weapon integration | Independent instances, animated sockets and modular weapon playback | Not started. |
+
+## Contracts for later milestones
+
+- ResourceManager owns GUID lookup/caching. ModelResource remains shared immutable
+  definition data; per-instance clocks, TRS/global poses, palettes and controller
+  parameters do not belong in the compiled resource or shared definition.
+- Keep nodes/bones in model arrays; do not require an ECS entity for every bone.
+- nodeOrder is parent-first regardless of source index order. Preserve exact static
+  matrix nodes, initialize TRS from defaults, replace only animated properties.
+- A mesh's skin binding belongs to its node. JOINTS_0 indexes that skin's jointNodes,
+  not model nodes. Meshes may have different bindings on different instances.
+- Evaluate rigid mesh nodes and skeletal joints using the same hierarchy. A model
+  may contain both, multiple skins, or no skin. Never fuse separate source exports.
+- Clip names are optional/non-unique. Indices identify clips; controller/gameplay
+  names and selection policy belong to configuration in later milestones.
+- Existing rendering uses entityWorld * meshNodeGlobal and binding palettes
+  inverse(meshNodeGlobal) * jointGlobal * inverseBindMatrix. Keep one consistent
+  coordinate contract across pose evaluation, rendering and later sockets.
+- Preserve conservative animated bounds and frame-owned, per-instance palette
+  ranges shared across main/shadow/outline/depth-normal passes. Keep static APIs.
+- Integrate lifecycle and scheduling through current engine systems: freeze clocks
+  deliberately, release proxies on destruction/reassignment/scene replacement,
+  and distinguish authored settings from runtime state.
+- Controllers must work without the graph editor. Weapons eventually use independent
+  instances and animated sockets, not combined clips for every action combination.
+
+See AnimationUsage.md for the existing preview controls and limitations. This
+session stops after Milestone 1; later implementations have not been certified
+complete merely because their older preview code is present.

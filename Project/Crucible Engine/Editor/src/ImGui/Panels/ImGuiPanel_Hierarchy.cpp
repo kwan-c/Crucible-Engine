@@ -52,7 +52,8 @@ void Crucible::Hierarchy::Update(float dt) {
 				if (ImGui::MenuItem("Create Empty")) {
 					CreateEmptyObject();
 				}
-				if (ImGui::BeginMenu("3D Objects")) {
+			if (ImGui::MenuItem("Create Animated Model")) { CreateAnimatedModel(); }
+			if (ImGui::BeginMenu("3D Objects")) {
 					if (ImGui::MenuItem("Create Cube")) {
 						CreatePrimitive("Cube");
 					}
@@ -652,6 +653,17 @@ std::unique_ptr<Crucible::EditorCommand> Crucible::Hierarchy::Reparent(Entity ch
 		*m_world.Read<Transform>(child) };
 
 	return std::make_unique<ReparentCommand>(history.KeyOf(child), before, after, label);
+}
+
+void Crucible::Hierarchy::CreateAnimatedModel() {
+    const auto entity = m_world.CreateEntity();
+    m_world.AddComponent<AnimatedModel>(entity, AnimatedModel{});
+    if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+        inspector->SetSelectedEntity(entity);
+    auto& history = EditorManager::GetInstance().GetHistory();
+    history.Push(std::make_unique<CreateEntityCommand>(history.KeyOf(entity), EntityState::Capture(m_world, entity),
+                                                     "Create Animated Model"));
+    m_scenes.MarkDirty();
 }
 
 void Crucible::Hierarchy::CreateEmptyObject() {

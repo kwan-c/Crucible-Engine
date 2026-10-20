@@ -82,7 +82,8 @@ namespace Crucible
 		Water = 23,
 
 
-		MAXCOMPONENT = 24
+		AnimatedModel = 24,
+		MAXCOMPONENT = 25
 	};
 
 
@@ -196,5 +197,6 @@ namespace Crucible
  X(UIText)																	   \
  X(UISlider)														           \
  X(Water)                                                                      \
+ X(AnimatedModel)                                                              \
 
 }

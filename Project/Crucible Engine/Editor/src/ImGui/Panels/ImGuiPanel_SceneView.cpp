@@ -206,7 +206,13 @@ void Crucible::SceneView::FrameSelected() {
 		if (!wt || !wt->valid) { continue; }   // created this frame: not placed yet
 
 		bool usedMesh = false;
-		if (MeshRenderer const* mr = m_world.Read<MeshRenderer>(entity)) {
+		glm::vec3 modelMin, modelMax;
+		if (m_world.HasComponent<AnimatedModel>(entity) &&
+		    m_renderer.GetObjectBounds(EntityToUserData(entity), modelMin, modelMax)) {
+			add(AABB(modelMin, modelMax));
+			usedMesh = true;
+		}
+		if (!usedMesh) if (MeshRenderer const* mr = m_world.Read<MeshRenderer>(entity)) {
 			// Entities loaded from a scene carry only meshAsset (the handle is resolved per frame
 			// by RenderExtractSystem), so resolve it the same way here.
 			MeshHandle const mesh = (mr->meshAsset != 0) ? m_resources.GetMesh(mr->meshAsset) : mr->mesh;

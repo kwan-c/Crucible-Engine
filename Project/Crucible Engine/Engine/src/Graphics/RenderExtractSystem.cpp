@@ -24,6 +24,7 @@
 // forward declaration is not enough - see IECSSystems.h's note on RunAfter/RunBefore), hence
 // this include living in the .cpp rather than the header.
 #include "ECS/HierarchyTransformSystem.h"
+#include "Animation/AnimatedModelSystem.h"
 #include "Resources/ResourceManager.h"
 
 namespace Crucible {
@@ -36,6 +37,8 @@ namespace Crucible {
             .Uses<CameraQuery>()                     // reads WorldTransform + CameraComponent
             .Uses<ParamsQuery>()                     // reads MeshRenderer + MaterialParams
             .Uses<WaterQuery>()                      // reads WorldTransform + Water
+            .Uses<Query<const AnimatedModel>>()
+            .RunAfter<AnimatedModelSystem>()
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer; not thread-safe today
 
@@ -97,7 +100,8 @@ namespace Crucible {
             m_waterItems.push_back(item);
         });
 
-        m_query->ForEach([this](Entity entity, const WorldTransform& worldTransform, const MeshRenderer& meshRenderer) {
+        m_query->ForEach([this, &world](Entity entity, const WorldTransform& worldTransform, const MeshRenderer& meshRenderer) {
+            if (world.HasComponent<AnimatedModel>(entity)) return; // the complete-model system owns these draws
 
             if (entity.index >= m_records.size()) { m_records.resize(static_cast<size_t>(entity.index) + 1); }
             ProxyRecord& record = m_records[entity.index];

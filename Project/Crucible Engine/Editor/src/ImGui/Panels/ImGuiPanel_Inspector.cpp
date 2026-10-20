@@ -17,6 +17,7 @@
 #include "Scene/SceneManager.h"
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
+#include "Resources/ModelResource.h"
 #include "Undo/EntityCommands.h"
 #include "../EditorWidgets.h"
 
@@ -285,6 +286,7 @@ namespace {
 			case Crucible::ResourceKind::Material: return "material";
 			case Crucible::ResourceKind::Texture:  return "texture";
 			case Crucible::ResourceKind::Audio:    return "audio";
+			case Crucible::ResourceKind::Model:    return "model";
 		}
 		return "unknown";
 	}
@@ -1087,6 +1089,49 @@ bool Crucible::Inspector::DrawPickFromSky(Skybox& skybox) {
 	if (ImGui::Button("Cancel")) { ImGui::CloseCurrentPopup(); }
 	ImGui::EndPopup();
 	return applied;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(AnimatedModel& animation) {
+    auto* resources = EditorManager::GetInstance().GetResources();
+    if (!resources || !animation.modelAsset) {
+        ImGui::TextWrapped("Choose a compiled model (.cmodel) in modelAsset to preview its complete model and animation.");
+        return false;
+    }
+    const auto model = resources->GetModel(animation.modelAsset);
+    if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console for the import error."); return false; }
+    bool changed = false;
+    const auto name = [&](uint32_t index) {
+        if (index >= model->animations.size()) return std::string("Rest pose");
+        const auto& clip = model->animations[index];
+        return std::to_string(index) + ": " + (clip.name.empty() ? "Unnamed clip" : clip.name);
+    };
+    if (ImGui::BeginCombo("Clip", name(animation.clip).c_str())) {
+        if (ImGui::Selectable("Rest pose", animation.clip == InvalidModelIndex)) {
+            animation.clip = InvalidModelIndex; animation.time = 0.0f; changed = true;
+        }
+        for (uint32_t index = 0; index < model->animations.size(); ++index) {
+            if (ImGui::Selectable(name(index).c_str(), animation.clip == index)) {
+                animation.clip = index; animation.time = 0.0f; changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (animation.clip < model->animations.size()) {
+        const float duration = model->animations[animation.clip].duration;
+        if (ImGui::Button(animation.playing ? "Pause" : "Play")) {
+            if (!animation.playing && animation.time >= duration && animation.speed >= 0.0f) animation.time = 0.0f;
+            if (!animation.playing && animation.time <= 0.0f && animation.speed < 0.0f) animation.time = duration;
+            animation.playing = !animation.playing; changed = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Stop")) { animation.playing = false; animation.time = 0.0f; changed = true; }
+        if (ImGui::SliderFloat("Time (seconds)", &animation.time, 0.0f, duration, "%.3f")) {
+            animation.playing = false; changed = true;
+        }
+    }
+    ImGui::Text("%zu nodes, %zu meshes, %zu skins, %zu clips", model->nodes.size(), model->meshes.size(),
+                model->skins.size(), model->animations.size());
+    return changed;
 }
 
 bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {

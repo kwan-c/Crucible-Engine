@@ -11,10 +11,7 @@ struct FrameUniforms {
     float4x4 proj;
 };
 
-struct InstanceData {
-    float4x4 model;
-    float4   params;   // unused here; keeps the 80-byte stride of Crucible::InstanceData
-};
+#include "ModelVertex.slang"
 
 // Cut-out materials (leaves): the mask follows their shape, not their cards (Crucible::CutoutPush,
 // and the material's albedo texture at set 1).
@@ -24,13 +21,13 @@ struct CutoutPush {
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms>  frame;
-[[vk::binding(2, 0)]] StructuredBuffer<InstanceData> instances;
+
 [[vk::binding(0, 1)]] Sampler2D                      albedoTex;
 [[vk::push_constant]] ConstantBuffer<CutoutPush>     pc;
 
 [shader("vertex")]
-float4 maskVert(float3 position : POSITION, uint instanceID : SV_VulkanInstanceID) : SV_Position {
-    float4 world = mul(instances[instanceID].model, float4(position, 1.0));
+float4 maskVert([[vk::location(0)]] float3 position : POSITION, [[vk::location(5)]] uint4 joints : BLENDINDICES, [[vk::location(6)]] float4 weights : BLENDWEIGHT, uint instanceID : SV_VulkanInstanceID) : SV_Position {
+    float4 world = mul(ModelVertexTransform(instanceID, joints, weights), float4(position, 1.0));
     return mul(frame.proj, mul(frame.view, world));
 }
 
@@ -46,9 +43,9 @@ struct CutoutVSOutput {
 
 [shader("vertex")]
 // uv is Vertex::uv, vertex input location 2 (OutlinePass binds locations 0 and 2 only).
-CutoutVSOutput maskCutoutVert([[vk::location(0)]] float3 position : POSITION, [[vk::location(2)]] float2 uv : TEXCOORD0, uint instanceID : SV_VulkanInstanceID) {
+CutoutVSOutput maskCutoutVert([[vk::location(0)]] float3 position : POSITION, [[vk::location(2)]] float2 uv : TEXCOORD0, [[vk::location(5)]] uint4 joints : BLENDINDICES, [[vk::location(6)]] float4 weights : BLENDWEIGHT, uint instanceID : SV_VulkanInstanceID) {
     CutoutVSOutput output;
-    float4 world = mul(instances[instanceID].model, float4(position, 1.0));
+    float4 world = mul(ModelVertexTransform(instanceID, joints, weights), float4(position, 1.0));
     output.pos = mul(frame.proj, mul(frame.view, world));
     output.uv  = uv;
     return output;

@@ -60,6 +60,8 @@ namespace Crucible {
         glm::vec2 uv;
         glm::vec3 color;
         glm::vec4 tangent;
+        glm::uvec4 joints{0u};
+        glm::vec4 weights{0.0f};
 
         /*********************************************************************
          \brief  Vertex input binding description (binding 0, per-vertex).
@@ -72,15 +74,17 @@ namespace Crucible {
         /*********************************************************************
          \brief  Vertex input attribute descriptions for pos/normal/uv/
                  color/tangent, in that location order.
-         \return The five attribute descriptions.
+         \return The seven attribute descriptions (including joint indices and weights).
          *********************************************************************/
-        static std::array<vk::VertexInputAttributeDescription, 5> GetAttributeDescriptions() {
+        static std::array<vk::VertexInputAttributeDescription, 7> GetAttributeDescriptions() {
             return { {
                 {.location = 0, .binding = 0, .format = vk::Format::eR32G32B32Sfloat,    .offset = offsetof(Vertex, pos)},
                 {.location = 1, .binding = 0, .format = vk::Format::eR32G32B32Sfloat,    .offset = offsetof(Vertex, normal)},
                 {.location = 2, .binding = 0, .format = vk::Format::eR32G32Sfloat,       .offset = offsetof(Vertex, uv)},
                 {.location = 3, .binding = 0, .format = vk::Format::eR32G32B32Sfloat,    .offset = offsetof(Vertex, color)},
-                {.location = 4, .binding = 0, .format = vk::Format::eR32G32B32A32Sfloat, .offset = offsetof(Vertex, tangent)}
+                {.location = 4, .binding = 0, .format = vk::Format::eR32G32B32A32Sfloat, .offset = offsetof(Vertex, tangent)},
+                {.location = 5, .binding = 0, .format = vk::Format::eR32G32B32A32Uint, .offset = offsetof(Vertex, joints)},
+                {.location = 6, .binding = 0, .format = vk::Format::eR32G32B32A32Sfloat, .offset = offsetof(Vertex, weights)}
             } };
         }
     };
