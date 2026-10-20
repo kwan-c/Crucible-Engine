@@ -146,7 +146,7 @@ namespace Crucible {
         /*********************************************************************
          \brief  Creates an empty mesh whose geometry the CPU replaces as often
                  as every frame (UpdateDynamicMesh) - procedural, animated
-                 geometry such as trails or ribbons. Not drawn until it has some.
+                 geometry such as vines. Not drawn until it has some.
          \details
             Draw it with Submit() (it is culled with the bounds of its latest
             geometry). A render proxy would keep the bounds it had when

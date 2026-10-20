@@ -355,6 +355,110 @@ namespace Crucible
 		float      phase = 0.f;
 	};
 
+	/// What a Vine does when it lets go of what it is holding (Vine::letGo).
+	enum class VineLetGo : std::uint8_t
+	{
+		Unwind,   // retracts back along its path into the root, then grows onto the next target
+		Snap,     // breaks off: goes limp, hangs, withers, then regrows from the root
+		Slide     // (switching targets only) stays grown and slithers over to the new target
+	};
+
+	/*************************************************************************
+	 \brief
+		Procedural vines: a few strands that grow out of this entity and
+		coil around one of its children (the "weapon"), sway and lag behind
+		when things move, and let go when told to. PROOF OF CONCEPT for the
+		nature golems' part switching - expect the fields to change.
+
+	 \details
+		VineSystem builds the strands every frame (a small rope simulation
+		pulled towards a curve: root -> arch -> coil -> curled tip) and draws
+		them as world-space dynamic meshes, leaves included. Nothing here is
+		an entity; the state lives in the system, keyed by this entity.
+
+		Which child, and when
+		  - targetChild: index of the child to wrap (0 = first). Changing it
+		    switches weapons; the strands let go of the old one first.
+		  - attached: false = let go of the target (and don't take another).
+		  - letGo: how they let go (VineLetGo). A target that disappears
+		    (destroyed, or no longer a child) always snaps.
+		  - startGrown: true = already wrapped when the scene loads.
+		  - growTime / unwindTime / witherTime: seconds for each.
+		Shape (metres; the entity's and target's scale is ignored)
+		  - strands: how many (1-8).
+		  - rootOffset: centre of the roots, along this entity's axes.
+		  - rootRadius: the roots sit on a ring of this radius facing the
+		    target.
+		  - arch: how far the stretch between root and coil bows outwards.
+		  - wrapFrom / wrapTo: the part of the target that is wrapped, as
+		    fractions of its mesh's height along its local Y (0 = bottom,
+		    1 = top).
+		  - wrapRadius: coil radius; 0 = fit the target's mesh (its widest
+		    half-width along local X/Z plus the strand thickness).
+		  - turns: coils over the wrapped part (negative = other way round).
+		  - tendril: length of the free, curled tip past the coil.
+		  - thickness / tipThickness: strand radius at the root, and the
+		    fraction of it left at the tip.
+		  - variation: 0 = identical strands, 1 = noticeably different.
+		Motion
+		  - cling: how firmly the strands hold their shape (1/s).
+		  - slack: 0 = the arch is held stiffly, 1 = it hangs like a rope.
+		  - inertia: 0 = follows every move rigidly, 1 = lags far behind.
+		  - gravity: multiplies gravity on the loose parts.
+		  - sway: idle movement of the loose parts, in metres.
+		Leaves
+		  - leafSpacing: average distance between leaves (0 = none).
+		  - leafSize: leaf length. leafDroop: 0 = stiff, 1 = hangs.
+		Look
+		  - rootColour -> tipColour along each strand, leafColour, and
+		    witherColour for a snapped vine (all sRGB, multiplied with the
+		    material's albedo).
+		  - materialAsset / leafMaterialAsset: Material assets; 0 = a plain
+		    built-in one (so the colours above are all you see).
+		  - seed: different seeds give different-looking vines.
+	 *************************************************************************/
+	struct Vine
+	{
+		bool          attached = true;
+		int           targetChild = 0;
+		VineLetGo     letGo = VineLetGo::Unwind;
+		bool          startGrown = true;
+		float         growTime = 1.2f;
+		float         unwindTime = 0.8f;
+		float         witherTime = 1.5f;
+
+		int           strands = 3;
+		Math::vec3    rootOffset{ 0.f, 0.f, 0.f };
+		float         rootRadius = 0.06f;
+		float         arch = 0.06f;
+		float         wrapFrom = 0.3f;
+		float         wrapTo = 0.7f;
+		float         wrapRadius = 0.f;
+		float         turns = 2.5f;
+		float         tendril = 0.12f;
+		float         thickness = 0.012f;
+		float         tipThickness = 0.4f;
+		float         variation = 0.5f;
+
+		float         cling = 30.f;
+		float         slack = 0.4f;
+		float         inertia = 0.35f;
+		float         gravity = 1.f;
+		float         sway = 0.01f;
+
+		float         leafSpacing = 0.09f;
+		float         leafSize = 0.06f;
+		float         leafDroop = 0.3f;
+
+		Math::vec3    rootColour{ 0.28f, 0.20f, 0.12f };
+		Math::vec3    tipColour{ 0.42f, 0.62f, 0.22f };
+		Math::vec3    leafColour{ 0.32f, 0.62f, 0.20f };
+		Math::vec3    witherColour{ 0.45f, 0.33f, 0.18f };
+		std::uint64_t materialAsset = 0;
+		std::uint64_t leafMaterialAsset = 0;
+		int           seed = 1;
+	};
+
 	/*************************************************************************
 	 \brief
 		A water surface: a pond, lake or slow river, drawn in the style of
@@ -564,6 +668,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(ParticleEmitter, ParticleEmitter);
 	CRUCIBLE_COMPONENT(MaterialParams, MaterialParams);
 	CRUCIBLE_COMPONENT(StressMover, StressMover);
+	CRUCIBLE_COMPONENT(Vine, Vine);
 	CRUCIBLE_COMPONENT(Water, Water);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".

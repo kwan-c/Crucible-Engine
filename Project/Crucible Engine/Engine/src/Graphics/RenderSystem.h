@@ -195,7 +195,7 @@ namespace Crucible {
          \brief
             Creates an empty mesh whose geometry the CPU rewrites as often as
             every frame (UpdateDynamicMesh) - for procedural, animated
-            geometry such as trails or ribbons.
+            geometry such as vines.
 
          \param[in] debugName Optional name (see CreateMesh()).
          \return A handle; nothing is drawn until UpdateDynamicMesh() gives
