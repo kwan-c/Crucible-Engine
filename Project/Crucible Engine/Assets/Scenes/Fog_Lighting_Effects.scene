@@ -70,6 +70,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 1"
                 }
             }
         },
@@ -147,6 +150,9 @@
                     "lightIntensity": 8.0,
                     "lightRange": 6.0,
                     "seed": 1
+                },
+                "EntityName": {
+                    "name": "Entity 24"
                 }
             }
         },
@@ -172,6 +178,9 @@
                         "y": 1.0,
                         "z": 1.0
                     }
+                },
+                "EntityName": {
+                    "name": "Entity 26"
                 },
                 "UIRect": {
                     "anchorMin": {
@@ -276,6 +285,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 2"
                 }
             }
         },
@@ -347,6 +359,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 3"
                 }
             }
         },
@@ -384,6 +399,9 @@
                     "outerConeDeg": 30.0,
                     "enabled": true,
                     "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Entity 28"
                 }
             }
         },
@@ -407,6 +425,9 @@
                         "y": 1.0,
                         "z": 1.0
                     }
+                },
+                "EntityName": {
+                    "name": "Entity 31"
                 },
                 "UICanvas": {
                     "enabled": true,
@@ -490,6 +511,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 4"
                 }
             }
         },
@@ -561,6 +585,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 5"
                 }
             }
         },
@@ -632,6 +659,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 6"
                 }
             }
         },
@@ -703,6 +733,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 7"
                 }
             }
         },
@@ -774,6 +807,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 8"
                 }
             }
         },
@@ -826,6 +862,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 32"
                 }
             }
         },
@@ -903,6 +942,9 @@
                     "lightIntensity": 10.0,
                     "lightRange": 6.0,
                     "seed": 1
+                },
+                "EntityName": {
+                    "name": "Entity 25"
                 }
             }
         },
@@ -1030,6 +1072,9 @@
                     "moveSpeed": 6.0,
                     "jumpHeight": 1.5,
                     "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "test 1"
                 }
             }
         },
@@ -1101,6 +1146,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 9"
                 }
             }
         },
@@ -1153,6 +1201,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 33"
                 }
             }
         },
@@ -1224,6 +1275,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 10"
                 }
             }
         },
@@ -1249,6 +1303,9 @@
                         "y": 1.0,
                         "z": 1.0
                     }
+                },
+                "EntityName": {
+                    "name": "Entity 27"
                 },
                 "UIRect": {
                     "anchorMin": {
@@ -1353,6 +1410,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 11"
                 }
             }
         },
@@ -1378,6 +1438,9 @@
                         "y": 1.0,
                         "z": 1.0
                     }
+                },
+                "EntityName": {
+                    "name": "Entity 43"
                 },
                 "UIRect": {
                     "anchorMin": {
@@ -1465,6 +1528,9 @@
                         "y": 1.0,
                         "z": 1.0
                     }
+                },
+                "EntityName": {
+                    "name": "Entity 45"
                 },
                 "UIRect": {
                     "anchorMin": {
@@ -1588,6 +1654,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 12"
                 }
             }
         },
@@ -1659,6 +1728,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 13"
                 }
             }
         },
@@ -1730,6 +1802,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 14"
                 }
             }
         },
@@ -1782,6 +1857,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 34"
                 }
             }
         },
@@ -1825,6 +1903,9 @@
                     "maxPitch": 70.0,
                     "yaw": 0.0,
                     "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Entity 46"
                 }
             }
         },
@@ -1877,6 +1958,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 35"
                 }
             }
         },
@@ -1948,6 +2032,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 15"
                 }
             }
         },
@@ -2019,6 +2106,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 16"
                 }
             }
         },
@@ -2090,6 +2180,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 17"
                 }
             }
         },
@@ -2142,6 +2235,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 36"
                 }
             }
         },
@@ -2194,6 +2290,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 37"
                 }
             }
         },
@@ -2265,6 +2364,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 18"
                 }
             }
         },
@@ -2302,6 +2404,9 @@
                     "outerConeDeg": 30.0,
                     "enabled": true,
                     "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Entity 29"
                 }
             }
         },
@@ -2354,6 +2459,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 38"
                 }
             }
         },
@@ -2425,6 +2533,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 19"
                 }
             }
         },
@@ -2496,6 +2607,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 20"
                 }
             }
         },
@@ -2521,6 +2635,9 @@
                         "y": 1.0,
                         "z": 1.0
                     }
+                },
+                "EntityName": {
+                    "name": "Entity 44"
                 },
                 "UIRect": {
                     "anchorMin": {
@@ -2635,6 +2752,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 39"
                 }
             }
         },
@@ -2706,6 +2826,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 21"
                 }
             }
         },
@@ -2743,6 +2866,9 @@
                     "outerConeDeg": 19.049999237060547,
                     "enabled": true,
                     "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Entity 30"
                 }
             }
         },
@@ -2786,6 +2912,9 @@
                     "nearZ": 0.10000000149011612,
                     "farZ": 1000.0,
                     "priority": 0
+                },
+                "EntityName": {
+                    "name": "Entity 47"
                 }
             }
         },
@@ -2838,6 +2967,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 40"
                 }
             }
         },
@@ -2909,6 +3041,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 22"
                 }
             }
         },
@@ -2961,6 +3096,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Entity 41"
                 }
             }
         },
@@ -3032,6 +3170,9 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Entity 23"
                 }
             }
         }

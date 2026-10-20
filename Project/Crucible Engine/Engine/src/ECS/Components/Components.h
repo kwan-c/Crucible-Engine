@@ -569,7 +569,7 @@ namespace Crucible
 	struct EntityName
 	{
 		std::string name;
-    }
+	};
 
 	// Bind each component above to its ComponentKind (see ComponentKind.h)
 	// and give ComponentRegistry a compile-time name for it.
