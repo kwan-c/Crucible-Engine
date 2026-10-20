@@ -23,6 +23,16 @@ a newly selected playing reverse clip starts at its last key. Zero speed holds
 the current pose. Non-looping playback stops at the boundary it reaches.
 Press F in the Scene view to frame the selected model's current bounds.
 
+## Controllers (Milestone 5)
+
+Open `Scenes/Animator Controller Preview.scene` to see the two golems crossfade
+between configured states. In AnimatedModel, select a Controller and use its live
+state display, playback buttons and Runtime Parameters. Controller None retains
+the direct clip workflow above. Model/material/visibility controls stay on
+MeshRenderer. See [AnimatorController.md](AnimatorController.md) for the demo,
+asset schema, gameplay API and transition rules. **Edit Controller Graph** opens
+the visual authoring panel; see [AnimatorGraphEditor.md](AnimatorGraphEditor.md).
+
 ## Use another GLB
 
 1. Put the self-contained GLB inside `AssetsSource/Models`, then build Editor.
@@ -81,8 +91,9 @@ button pauses that one instance at its clip's first frame.
 
 ## Current limits
 
-- No blending, gameplay state machine, retargeting, root-motion gameplay or
-  independent modular weapon animation yet (Milestones 5-7).
+- Controllers support configured states/transitions, crossfades and visual graph
+  authoring. Modular weapon animation remains Milestone 7. Retargeting,
+  root-motion extraction, blend trees and animation layers are not implemented.
 - Supported animation interpolation remains LINEAR and STEP. Import rejects
   CUBICSPLINE, morphs and other unsupported features explicitly.
 - Weighted meshes are picked through their current conservative bounds;

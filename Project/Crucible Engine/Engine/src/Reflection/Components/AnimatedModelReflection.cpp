@@ -6,9 +6,10 @@ RTTR_REGISTRATION {
     using namespace Crucible;
     rttr::registration::class_<AnimatedModel>("AnimatedModel")
         .constructor<>()
+        .property("controllerAsset", &AnimatedModel::controllerAsset)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
         .property("clip", &AnimatedModel::clip)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
         .property("speed", &AnimatedModel::speed)
-        .property("loop", &AnimatedModel::loop)
+        .property("loop", &AnimatedModel::loop)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
         .property("previewInEditor", &AnimatedModel::previewInEditor)
         .property("playOnStart", &AnimatedModel::playOnStart);
 }

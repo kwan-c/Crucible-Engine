@@ -74,6 +74,7 @@ namespace Crucible {
     struct MaterialData;
     struct ModelResource;
     struct RenderedModel;
+    struct AnimatorController;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -94,7 +95,8 @@ namespace Crucible {
         Material,
         Texture,
         Audio,     // audio files; listed for the Inspector's picker only - the renderer never loads them
-        Model      // complete CPU model definition; GetModel does not upload GPU resources
+        Model,     // complete CPU model definition; GetModel does not upload GPU resources
+        AnimatorController
     };
 
     /*************************************************************************
@@ -180,6 +182,12 @@ namespace Crucible {
         // No node poses, GPU uploads or animation playback are created here.
         // Existing GetMesh/GetMaterial still expose the first primitive only.
         std::shared_ptr<const ModelResource> GetModel(AssetId id);
+        std::shared_ptr<const AnimatorController> GetAnimatorController(AssetId id);
+        // Editor asset saves preserve GUIDs and publish a new immutable definition.
+        // Existing instances retain the previous definition until their next reset.
+        bool SaveAnimatorController(AssetId id, const std::string& json, std::string* error = nullptr);
+        AssetId CreateAnimatorControllerAsset(const std::string& virtualPath, const std::string& json,
+                                             std::string* error = nullptr);
         std::shared_ptr<const RenderedModel> GetRenderedModel(AssetId id);
         TextureHandle GetModelTexture(AssetId model, uint32_t texture, bool isSRGB);
 
@@ -334,6 +342,8 @@ namespace Crucible {
         static AssetId BuiltinId(const char* name);
 
     private:
+        AssetId WriteAnimatorControllerFile(const std::string& path, const std::string& json,
+                                           bool createNew, std::string* error);
         struct SubAsset { AssetId parent = 0; ResourceKind kind = ResourceKind::Material; };
         struct TextureSlots { TextureHandle srgb{}; TextureHandle linear{}; bool triedSrgb = false; bool triedLinear = false; };
 
@@ -353,6 +363,7 @@ namespace Crucible {
 
         std::unordered_map<AssetId, MeshHandle>     m_meshes;      // Invalid value = failed load
         std::unordered_map<AssetId, std::shared_ptr<const ModelResource>> m_models; // null = failed CPU import
+        std::unordered_map<AssetId, std::shared_ptr<const AnimatorController>> m_controllers;
         std::unordered_map<AssetId, std::shared_ptr<const RenderedModel>> m_renderedModels;
         std::unordered_map<AssetId, MaterialHandle> m_materials;   // Invalid value = failed load
         std::unordered_map<AssetId, TextureSlots>   m_textures;

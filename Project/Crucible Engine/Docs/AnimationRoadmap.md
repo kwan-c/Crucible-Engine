@@ -12,8 +12,8 @@ VR tracking and motion capture are outside this roadmap.
 | 2 - Animation runtime and pose evaluation | Sampling, playback, looping/speed, hierarchy, rigid nodes and joint palettes | Completed: existing evaluator reviewed and extended with reusable sampling/build stages, robust playback and numerical handling. See AnimationRuntime.md. |
 | 3 - Animated rendering | Vulkan skinning/rigid nodes, independent instances, materials, shadows/outlines/depth-normal and bounds | Completed: GPU deformation and all required passes verified; stable normal/tangent handling, shared conservative bounds and buffer-limit checks added. See AnimatedRendering.md. |
 | 4 - ECS, editor and lifecycle integration | Components, scheduling, serialization, Play/Pause/Stop and cleanup | Completed: full models and material slots belong to MeshRenderer/RenderExtractSystem; pose-only animation, editor reuse, legacy migration and lifecycle checks. See AnimationIntegration.md. |
-| 5 - Animator Controller runtime | Configurable states/transitions/parameters/conditions/exit times/crossfades independent of editor | Not started. |
-| 6 - Visual Animator graph editor | Graph authoring, saving/loading and live controller inspection | Not started. |
+| 5 - Animator Controller runtime | Configurable states/transitions/parameters/conditions/exit times/crossfades independent of editor | Completed: versioned controller assets, typed per-instance parameters, ordered transitions/exit gates, local-pose crossfades, gameplay API and Inspector preview. See AnimatorController.md. |
+| 6 - Visual Animator graph editor | Graph authoring, saving/loading and live controller inspection | Completed: dockable state graph, typed parameter/transition authoring, layout persistence, undo/redo, safe save/reload and live inspection. See AnimatorGraphEditor.md. |
 | 7 - Modular animations and weapon integration | Independent instances, animated sockets and modular weapon playback | Not started. |
 
 ## Contracts for later milestones
@@ -41,5 +41,5 @@ VR tracking and motion capture are outside this roadmap.
 - Controllers must work without the graph editor. Weapons eventually use independent
   instances and animated sockets, not combined clips for every action combination.
 
-See AnimationUsage.md for the existing preview controls and limitations. Milestone 4 is complete;
-this implementation stops before the controller runtime in Milestone 5.
+See AnimationUsage.md for preview controls and limitations. Milestone 6 is complete;
+this implementation stops before modular/weapon animation in Milestone 7.

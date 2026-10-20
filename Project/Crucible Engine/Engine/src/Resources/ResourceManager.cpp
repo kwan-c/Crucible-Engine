@@ -19,6 +19,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
+#include <filesystem>
 
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
@@ -26,6 +27,7 @@
 
 #include "AssetPipe/Assetmanager.h"
 #include "Resources/CompiledModel.h"
+#include "Resources/AnimatorControllerIO.h"
 #include "ECS/Components/Components.h"
 #include "Graphics/RenderSystem.h"
 #include "Diagnostics/Logger.h"
@@ -210,6 +212,81 @@ namespace Crucible {
         return model;
     }
 
+    std::shared_ptr<const AnimatorController> ResourceManager::GetAnimatorController(AssetId id) {
+        if (!id) return {};
+        if (auto found = m_controllers.find(id); found != m_controllers.end()) return found->second;
+        m_controllers[id] = nullptr;
+        const auto* entry = m_assets.FindByGuid(ToGuid(id));
+        std::vector<unsigned char> bytes;
+        if (!entry || entry->type != AssetType::AnimatorController || entry->sizeBytes > MaxAnimatorControllerBytes ||
+            !m_assets.ReadBytes(entry->virtualPath, bytes)) {
+            WarnOnce(id, "Could not read Animator Controller (limit 4 MiB)"); return {};
+        }
+        auto decoded = DecodeAnimatorController(bytes);
+        if (!decoded.ok) { WarnOnce(id, "Animator Controller load failed: " + decoded.error); return {}; }
+        auto definition = std::make_shared<AnimatorController>(std::move(decoded.controller));
+        m_controllers[id] = definition;
+        return definition;
+    }
+
+    bool ResourceManager::SaveAnimatorController(AssetId id, const std::string& json, std::string* error) {
+        const auto* entry = m_assets.FindByGuid(ToGuid(id));
+        if (!entry || entry->type != AssetType::AnimatorController) {
+            if (error) *error = "Controller asset is missing from the index";
+            return false;
+        }
+        const std::string path = entry->virtualPath; // Refresh invalidates index pointers
+        return WriteAnimatorControllerFile(path, json, false, error) == id;
+    }
+
+    AssetId ResourceManager::CreateAnimatorControllerAsset(const std::string& path, const std::string& json, std::string* error) {
+        return WriteAnimatorControllerFile(path, json, true, error);
+    }
+
+    AssetId ResourceManager::WriteAnimatorControllerFile(const std::string& path, const std::string& json,
+                                                        bool createNew, std::string* error) {
+        namespace fs = std::filesystem;
+        const auto fail = [&](const std::string& reason) -> AssetId { if (error) *error = reason; return 0; };
+        auto decoded = DecodeAnimatorController({reinterpret_cast<const unsigned char*>(json.data()), json.size()});
+        if (!decoded.ok) return fail(decoded.error);
+        const fs::path relative(path);
+        if (relative.empty() || relative.is_absolute() || relative.has_root_name() || relative.extension() != ".animcontroller")
+            return fail("Choose a relative .animcontroller path inside Assets");
+        for (const auto& part : relative) if (part == "..") return fail("Controller path cannot leave Assets");
+        std::error_code ec;
+        const auto root = fs::weakly_canonical(m_assets.GetAssetRoot(), ec);
+        if (ec) return fail("Could not resolve Assets root");
+        const auto target = fs::weakly_canonical(root / relative, ec);
+        if (ec) return fail("Could not resolve controller path");
+        auto inRoot = target.lexically_relative(root);
+        if (inRoot.empty() || inRoot.is_absolute()) return fail("Controller path cannot leave Assets");
+        for (const auto& part : inRoot) if (part == "..") return fail("Controller path cannot leave Assets");
+        const bool exists = fs::exists(target, ec);
+        if (ec) return fail("Could not check controller destination");
+        if (createNew && (exists || fs::exists(fs::path(target.string() + ".meta")))) return fail("Save As needs a new filename; existing assets are not overwritten");
+        if (!createNew && !exists) return fail("Controller disappeared from disk; use Save As");
+        const std::string temporary = path + ".animator-write.tmp";
+        const auto temporaryFile = fs::path(target.string() + ".animator-write.tmp");
+        if (fs::exists(temporaryFile, ec) || ec) return fail("Controller temporary save path is already in use");
+        if (!m_assets.WriteText(temporary, json)) {
+            fs::remove(temporaryFile, ec); return fail("Could not write controller temporary file");
+        }
+        // Standard filesystem rename replaces an existing file atomically on the
+        // same volume. A failed write/rename leaves the saved controller intact.
+        fs::rename(temporaryFile, target, ec);
+        if (ec) { fs::remove(temporaryFile, ec); return fail("Could not replace controller file"); }
+        if (!m_assets.Refresh()) return fail("Controller written but Assets refresh failed");
+        RefreshCatalog();
+        const auto id = GetIdForPath(path);
+        if (!id) return fail("Controller written but missing from refreshed index");
+        const auto previous = m_controllers.find(id);
+        if (previous == m_controllers.end() || !previous->second || !SameAnimatorControllerDefinition(*previous->second, decoded.controller))
+            m_controllers[id] = std::make_shared<AnimatorController>(std::move(decoded.controller));
+        m_warned.erase(id);
+        if (error) error->clear();
+        return id;
+    }
+
     MeshHandle ResourceManager::GetMesh(AssetId id) {
 
         if (id == 0) { return {}; }
@@ -376,6 +453,7 @@ namespace Crucible {
                 case ResourceKind::Material: { auto it = m_materials.find(id); return it != m_materials.end() && it->second.IsValid(); }
                 case ResourceKind::Audio:    return false;   // never loaded here; ECSAudioSystem loads audio itself
                 case ResourceKind::Model:    { auto it = m_models.find(id); return it != m_models.end() && bool(it->second); }
+                case ResourceKind::AnimatorController: { auto it = m_controllers.find(id); return it != m_controllers.end() && bool(it->second); }
                 default:                    { auto it = m_textures.find(id);  return it != m_textures.end()  && (it->second.srgb.IsValid() || it->second.linear.IsValid()); }
             }
         };
@@ -397,6 +475,9 @@ namespace Crucible {
         };
 
         switch (kind) {
+            case ResourceKind::AnimatorController:
+                addAssets(AssetType::AnimatorController, "", false);
+                break;
             case ResourceKind::Model:
                 addAssets(AssetType::Model, "", false);
                 break;

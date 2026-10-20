@@ -11,6 +11,7 @@
 */
 
 #include "ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/EditorWidgets.h"
 #include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
@@ -294,6 +295,7 @@ namespace {
 			case Crucible::ResourceKind::Texture:  return "texture";
 			case Crucible::ResourceKind::Audio:    return "audio";
 			case Crucible::ResourceKind::Model:    return "model";
+			case Crucible::ResourceKind::AnimatorController: return "animator controller";
 		}
 		return "unknown";
 	}
@@ -1104,14 +1106,69 @@ bool Crucible::Inspector::DrawPickFromSky(Skybox& skybox) {
 
 bool Crucible::Inspector::DrawComponentExtras(AnimatedModel& animation) {
     auto* resources = EditorManager::GetInstance().GetResources();
+    bool changed = AssetRefField("Controller", ResourceKind::AnimatorController, animation.controllerAsset);
+    if (animation.controllerAsset && ImGui::Button("Edit Controller Graph")) {
+        if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) animator->RequestOpen(animation.controllerAsset);
+    }
     const auto* renderer = m_world.Read<MeshRenderer>(m_selected);
     if (!resources || !renderer || !renderer->modelAsset) {
         ImGui::TextWrapped("Choose a compiled Model in MeshRenderer. Animation supplies its pose; MeshRenderer supplies its materials and visibility.");
-        return false;
+        return changed;
     }
     const auto model = resources->GetModel(renderer->modelAsset);
-    if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console."); return false; }
-    bool changed = false;
+    if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console."); return changed; }
+    if (animation.controllerAsset) {
+        const auto definition = resources->GetAnimatorController(animation.controllerAsset);
+        if (!definition) { ImGui::TextWrapped("Controller could not be loaded. See Console."); return changed; }
+        if (animation.controllerFailed) { ImGui::TextWrapped("Controller is incompatible with this model. See Console."); return changed; }
+        if (!animation.controller.Initialized() || animation.evaluatedController != animation.controllerAsset || animation.controllerDefinition != definition) return changed;
+        auto& runtime = animation.controller;
+        const uint32_t current = runtime.CurrentState(), next = runtime.NextState();
+        if (current < definition->states.size()) ImGui::Text("State: %s", definition->states[current].name.c_str());
+        if (next < definition->states.size()) ImGui::Text("To: %s (%.0f%%)", definition->states[next].name.c_str(), runtime.TransitionWeight() * 100.0f);
+        ImGui::Text("Time: %.3fs | cycles: %.3f", runtime.Time(), runtime.NormalizedProgress());
+        if (ImGui::Button(animation.playing ? "Pause controller" : "Play controller")) animation.playing = !animation.playing;
+        ImGui::SameLine();
+        if (ImGui::Button("Stop controller")) {
+            runtime.Reset(*definition, *model, nullptr, animation.speed); animation.playing = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Restart controller")) {
+            runtime.Reset(*definition, *model, nullptr, animation.speed); animation.playing = true;
+        }
+        ImGui::SeparatorText("Runtime parameters");
+        for (uint32_t index = 0; index < definition->parameters.size(); ++index) {
+            const auto& parameter = definition->parameters[index];
+            const auto* value = runtime.Parameter(index);
+            if (!value) continue;
+            ImGui::PushID(static_cast<int>(index));
+            switch (parameter.type) {
+            case AnimatorParameterType::Float: {
+                float number = value->number;
+                if (ImGui::DragFloat(parameter.name.c_str(), &number, 0.01f)) runtime.SetFloat(parameter.name, number);
+                break;
+            }
+            case AnimatorParameterType::Integer: {
+                int integer = value->integer;
+                if (ImGui::InputInt(parameter.name.c_str(), &integer)) runtime.SetInteger(parameter.name, integer);
+                break;
+            }
+            case AnimatorParameterType::Bool: {
+                bool boolean = value->boolean;
+                if (ImGui::Checkbox(parameter.name.c_str(), &boolean)) runtime.SetBool(parameter.name, boolean);
+                break;
+            }
+            case AnimatorParameterType::Trigger:
+                if (ImGui::Button(parameter.name.c_str())) runtime.SetTrigger(parameter.name);
+                if (value->boolean) { ImGui::SameLine(); ImGui::TextDisabled("pending"); }
+                break;
+            }
+            ImGui::PopID();
+        }
+        ImGui::TextWrapped("Runtime controls and parameters are temporary. Controller defaults are stored in the .animcontroller asset.");
+        return changed;
+    }
+    changed = ImGui::Checkbox("Loop", &animation.loop) || changed;
     const auto name = [&](uint32_t index) {
         if (index >= model->animations.size()) return std::string("Rest pose");
         const auto& clip = model->animations[index];

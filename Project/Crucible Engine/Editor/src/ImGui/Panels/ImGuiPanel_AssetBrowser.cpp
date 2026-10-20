@@ -18,6 +18,7 @@
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Core.h"
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 
@@ -94,6 +95,7 @@ namespace {
 		case AssetType::Material: return IM_COL32(200, 170, 70, 255);
 		case AssetType::Script:   return IM_COL32(100, 185, 120, 255);
 		case AssetType::Text:     return IM_COL32(150, 150, 165, 255);
+		case AssetType::AnimatorController: return IM_COL32(170, 120, 220, 255);
 		default:                  return IM_COL32(90, 90, 95, 255);
 		}
 	}
@@ -662,6 +664,9 @@ void Crucible::AssetBrowser::DrawGrid() {
 	if (ImGui::BeginPopupContextWindow("##GridContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
 		bool const searching = m_search[0] != '\0';
 		if (ImGui::MenuItem("New Folder", nullptr, false, !searching && IsRefreshAllowed())) CreateFolder();
+		if (ImGui::MenuItem("Create Animator Controller", nullptr, false, !searching && IsRefreshAllowed())) {
+			if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) animator->RequestNew();
+		}
 		if (IsInScenesFolder(m_currentFolder) && ImGui::MenuItem("Create Scene", nullptr, false, !searching && IsRefreshAllowed())) CreateScene();
 		if (IsInScriptsFolder(m_currentFolder) && ImGui::MenuItem("Create Script", nullptr, false, !searching && IsRefreshAllowed())) CreateScript();
 		if (ImGui::MenuItem("Show in Explorer")) ShowInExplorer(AbsolutePathOf(m_currentFolder), false);
@@ -878,6 +883,11 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	}
 
 	switch (item.type) {
+	case AssetType::AnimatorController:
+		if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) {
+			if (const auto* entry = m_assets.Find(item.virtualPath)) animator->RequestOpen(entry->guid.m_Value);
+		}
+		return;
 	case AssetType::Scene: {
 		fs::path const file = AbsolutePathOf(item.virtualPath);
 		if (m_scenes.HasPath() && SamePath(m_scenes.CurrentPath(), file)) {

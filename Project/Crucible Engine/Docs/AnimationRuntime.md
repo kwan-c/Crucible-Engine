@@ -178,3 +178,6 @@ Milestone 3 has now been completed; see [AnimatedRendering.md](AnimatedRendering
 Milestone 4 moves GPU/proxy ownership into RenderExtractSystem and keeps CPU poses
 on each AnimatedModel component. Authored Play On Start is separate from the
 runtime playing/time values; see AnimationIntegration.md.
+
+Milestone 5 now uses these same sampling/build stages for local-pose crossfades
+and configurable state machines; see AnimatorController.md.

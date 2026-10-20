@@ -36,7 +36,9 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include "Animation/ModelPose.h"
+#include "Animation/AnimatorController.h"
 
 #include"ComponentKind.h"
 #include"Math/Math.h"
@@ -126,6 +128,7 @@ namespace Crucible
 		bool loop = true;
 		bool previewInEditor = true;
 		bool playOnStart = true;
+		std::uint64_t controllerAsset = 0; // 0 keeps direct single-clip playback
 
 		// Per-entity CPU state only. Never reflected/serialized or shared between instances.
 		float time = 0.0f;
@@ -134,6 +137,10 @@ namespace Crucible
 		std::uint64_t evaluatedAsset = 0;
 		std::uint32_t evaluatedClip = InvalidModelIndex;
 		ModelPose pose;
+		std::uint64_t evaluatedController = 0;
+		bool controllerFailed = false;
+		AnimatorInstance controller;
+		std::shared_ptr<const AnimatorController> controllerDefinition; // pins a saved revision until reset
 	};
 
 	struct MeshRenderer

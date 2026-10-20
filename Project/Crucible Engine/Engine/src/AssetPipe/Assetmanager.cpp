@@ -113,6 +113,7 @@ namespace Crucible {
         case AssetType::Material: return "Material";
         case AssetType::Script:   return "Script";
         case AssetType::Text:     return "Text";
+        case AssetType::AnimatorController: return "AnimatorController";
         case AssetType::Unknown:  return "Unknown";
         case AssetType::Count:    break;
         }
@@ -182,6 +183,9 @@ namespace Crucible {
 
         if (e == ".mat")    
             return AssetType::Material;
+
+        if (e == ".animcontroller")
+            return AssetType::AnimatorController;
  
         if (e == ".ttf" || e == ".otf")
             return AssetType::Font;

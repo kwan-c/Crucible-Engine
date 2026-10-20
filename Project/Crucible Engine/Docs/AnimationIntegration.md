@@ -149,6 +149,7 @@ milestone4-capture-verification.log, milestone4-captures/ and the native probe.
    component removal, model replacement and scene reload. Removing only
    AnimatedModel leaves the full model in rest pose.
 
-Milestone 5 is next: a configurable controller runtime that writes this same
-per-entity pose contract. A controller graph UI and weapon/socket playback are
-not required to use the current material workflow.
+Milestone 5 now adds a configurable controller runtime that writes this same
+per-entity pose contract; see AnimatorController.md. A controller graph UI and
+weapon/socket playback remain later milestones and are not required to use the
+current material workflow.
