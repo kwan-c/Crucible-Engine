@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -24,6 +24,7 @@
 *    -v1.0       initial fixed component-kind enum + binding macros
 *    -v1.1       HierarchyNode and WorldTransform kinds; WorldManaged and
 *                Mandatory traits, RemovableComponent concept
+*    -v1.2       EntityName kind (17); WorldValidated trait
 *
 *
 **************************************************************************/
@@ -73,16 +74,17 @@ namespace Crucible
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
-		UICanvas = 17, 
-		UIRect = 18, 
-		UIImage = 19, 
-		UIButton = 20, 
-		UIText = 21,
-		UISlider = 22,           // UI: a draggable value (UI/UIComponents.h)
-		Water = 23,
+		EntityName = 17,         // every entity's display name (mandatory) - Components.h
+		UICanvas = 18, 
+		UIRect = 19, 
+		UIImage = 20, 
+		UIButton = 21, 
+		UIText = 22,
+		UISlider = 23,           // UI: a draggable value (UI/UIComponents.h)
+		Water = 24,
 
 
-		MAXCOMPONENT = 24
+		MAXCOMPONENT = 25
 	};
 
 
@@ -112,6 +114,23 @@ namespace Crucible
 	 *************************************************************************/
 	template <typename T>
 	struct WorldManaged : std::false_type {};
+
+	/*************************************************************************
+	 \brief
+		True for components anyone may read, but whose values World must
+		check before they are stored (EntityName: the naming rules in
+		World.h).
+	 \details
+		Written only through World calls that check the value -
+		World::SetEntityName and AddComponent/EmplaceComponent (also
+		reached from CommandBuffer, scene loading and undo). Mutable
+		pointers are refused at compile time: World::GetComponent/Write and
+		non-const Query static_assert against it, and AddComponent,
+		EmplaceComponent and the OnComponentAdded/Removed hooks give only a
+		const reference. Specialised in Components.h.
+	 *************************************************************************/
+	template <typename T>
+	struct WorldValidated : std::false_type {};
 
 	/*************************************************************************
 	 \brief
@@ -189,6 +208,7 @@ namespace Crucible
  X(ParticleEmitter)                                                            \
  X(MaterialParams)                                                             \
  X(StressMover)                                                                \
+ X(EntityName)                                                                 \
  X(UICanvas)																   \
  X(UIRect)																	   \
  X(UIImage)																	   \

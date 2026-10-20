@@ -304,7 +304,8 @@ void Crucible::Menu::DrawOpenScenePopup()
 // values - those live in the .mat files. So saving the scene also writes any material edited in
 // the Inspector since its last save, otherwise "saved" scenes would reload with old materials.
 // Runs before the scene save and independently of it: a failed material is logged and left
-// marked unsaved, but does not block the scene from saving.
+// marked unsaved, but does not block the scene from saving. Commits the Inspector's open edit
+// first, so a name still being typed is part of what is saved.
 void Crucible::Menu::SaveEditedMaterials()
 {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
@@ -312,6 +313,7 @@ void Crucible::Menu::SaveEditedMaterials()
 		CRU_WARN("[Menu] No Inspector panel - edited materials were not saved with the scene");
 		return;
 	}
+	inspector->CommitPendingEdit();   // a name or value still being typed is saved too
 	if (std::size_t const failed = inspector->SaveUnsavedMaterials())
 		CRU_USER_WARN("[Menu] {} edited material(s) could not be saved - see the errors above", failed);
 }

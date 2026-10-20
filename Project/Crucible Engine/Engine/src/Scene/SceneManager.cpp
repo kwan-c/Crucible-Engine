@@ -133,7 +133,7 @@ namespace Crucible {
 		// RenderExtractSystem resolves it through Core's ResourceManager every frame (the
 		// same way an entity loaded from a scene file draws). BuiltinId is static and the
 		// id is stable across runs
-		const Entity ground = world.CreateEntity();
+		const Entity ground = world.CreateNamedEntity("Ground");
 		MeshRenderer mr{};
 		mr.meshAsset = ResourceManager::BuiltinId("Cube");
 		mr.colour    = { .5f, .5f, .5f, .5f };   // default colour is (0,0,0,0)
@@ -143,7 +143,7 @@ namespace Crucible {
 
 		// Directional light - same values as the Hierarchy's Create > Light >
 		// Directional. Adding it takes over from the Renderer's built-in sun.
-		const Entity sun = world.CreateEntity();
+		const Entity sun = world.CreateNamedEntity("Directional Light");
 		Light light{};
 		light.type      = LightType::Directional;
 		light.intensity = 1.f;
@@ -162,7 +162,16 @@ namespace Crucible {
 		// Scene::Load validates the file before destroying anything, so a
 		// false return means the world, the guid map and our path are all
 		// still exactly as they were.
-		if (!m_scene.Load(m_world, file))
+		bool loaded = false;
+		{
+			// Entities are created before their names are read, so a default handed out
+			// mid-load could repeat a name later in the file. Instead, blank names (an
+			// entity saved without one, or before EntityName existed) are filled when the
+			// scope ends, after the highest "Entity N" the file holds.
+			World::DeferredNaming loading(m_world);
+			loaded = m_scene.Load(m_world, file);
+		}
+		if (!loaded)
 		{
 			CRU_USER_ERROR("SceneManager: failed to load '{}' - keeping '{}'", file.string(), m_scene.Name());
 			return;
@@ -194,7 +203,13 @@ namespace Crucible {
 	bool SceneManager::RestoreSnapshot(const Snapshot& snapshot) {
 		// Scene checks the snapshot before destroying anything, so a false
 		// here with no "part-way" error means the world is untouched.
-		if (!m_scene.RestoreSnapshot(m_world, snapshot.scene))
+		bool restored = false;
+		{
+			// Same as ApplyLoad. The rescan at the end also gives runtime spawns' numbers back.
+			World::DeferredNaming restoring(m_world);
+			restored = m_scene.RestoreSnapshot(m_world, snapshot.scene);
+		}
+		if (!restored)
 		{
 			return false;
 		}

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                iterate entities matching a set of component types
 *
@@ -33,6 +33,7 @@
 *    -v1.4       iteration checks the running system's declared access;
 *                a Query object rejects use from a second thread while in
 *                use (copies/moves get a fresh guard)
+*    -v1.5       WorldValidated components (EntityName) only as const
 *
 **************************************************************************/
 #pragma once
@@ -309,6 +310,8 @@ namespace Crucible
 		static_assert(sizeof...(Components) > 0, "Query needs at least one component type");
 		static_assert(((std::is_const_v<Components> || !WorldManaged<std::remove_const_t<Components>>::value) && ...),
 			"This component is managed by World (e.g. HierarchyNode): query it as const and change it through World's API");
+		static_assert(((std::is_const_v<Components> || !WorldValidated<std::remove_const_t<Components>>::value) && ...),
+			"World checks every write to this component (e.g. EntityName): query it as const and rename with World::SetEntityName");
 
 		template <typename C> using Bare = std::remove_const_t<C>;
 		using PointerArray = std::array<void*, sizeof...(Components)>;

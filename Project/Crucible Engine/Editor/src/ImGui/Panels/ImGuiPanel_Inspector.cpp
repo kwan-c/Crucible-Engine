@@ -19,6 +19,7 @@
 #include "Resources/ResourceManager.h"
 #include "Undo/EntityCommands.h"
 #include "../EditorWidgets.h"
+#include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
 #include <algorithm>
 #include <memory>
@@ -513,7 +514,28 @@ void Crucible::Inspector::Update(float) {
 }
 
 void Crucible::Inspector::DrawEntityInspector(Entity entity) {
-	ImGui::Text("Entity %u", entity.index);
+	// Name, at the top (Unity). Applied when the field is left (see m_nameBuffer); the edit
+	// grouping makes the whole rename ONE undo step. Left blank, it becomes "Entity N".
+	if (m_world.Read<EntityName>(entity)) {
+		if (!(m_nameEntity == entity)) { ApplyPendingName(); }   // another entity's unfinished name
+		if (!m_nameDirty) {
+			m_nameBuffer = m_world.Read<EntityName>(entity)->name;   // shows renames from anywhere (undo, scripts)
+			m_nameEntity = entity;
+		}
+
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("Name");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		ImGui::PushID(static_cast<int>(entity.index));   // another entity gets a fresh field, not this text
+		if (ImGui::InputText("##EntityName", &m_nameBuffer)) {
+			m_nameDirty = true;
+			NoteEdit("Rename");
+		}
+		bool const left = ImGui::IsItemDeactivated();
+		ImGui::PopID();
+		if (left) { ApplyPendingName(); }   // before this frame's commit captures the "after" state
+	}
 	ImGui::Separator();
 
 	bool changed = false;
@@ -528,7 +550,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform>)                         \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \
@@ -1183,7 +1205,21 @@ void Crucible::Inspector::NoteEdit(std::string label) {
 	}
 }
 
+void Crucible::Inspector::ApplyPendingName() {
+	if (!m_nameDirty) { return; }
+	m_nameDirty = false;
+	if (!m_world.IsAlive(m_nameEntity)) { return; }
+
+	EntityName const* current = m_world.Read<EntityName>(m_nameEntity);
+	if (current && current->name == m_nameBuffer) { return; }   // typed, then changed back
+
+	m_world.SetEntityName(m_nameEntity, m_nameBuffer);   // blank -> "Entity N" (World's naming rules)
+	m_nameBuffer = m_world.Read<EntityName>(m_nameEntity)->name;
+	m_scenes.MarkDirty();
+}
+
 void Crucible::Inspector::CommitPendingEdit() {
+	ApplyPendingName();   // a name still being typed is part of this edit
 	if (!m_editOpen) { return; }
 	m_editOpen = false;
 	std::string label = std::exchange(m_editLabel, std::string{});
