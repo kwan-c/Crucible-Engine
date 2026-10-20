@@ -122,6 +122,39 @@ namespace Crucible {
         return true;
     }
 
+    bool IsModelNodeInSubtree(const ModelResource& model, uint32_t node, uint32_t root) {
+        for (size_t guard = 0; node < model.nodes.size() && guard < model.nodes.size(); ++guard) {
+            if (root == InvalidModelIndex || node == root) return true;
+            node = model.nodes[node].parent;
+        }
+        return false;
+    }
+
+    bool ModelRootInverse(const ModelPose& pose, uint32_t root, glm::mat4& inverse) {
+        inverse = glm::mat4(1);
+        if (root == InvalidModelIndex) return true;
+        if (root >= pose.global.size()) return false;
+        const glm::dmat4 matrix(pose.global[root]);
+        const double determinant = glm::determinant(matrix);
+        if (!std::isfinite(determinant) || determinant == 0.0) return false;
+        inverse = glm::mat4(glm::inverse(matrix));
+        if (Finite(inverse)) return true;
+        inverse = glm::mat4(1);
+        return false;
+    }
+
+    bool ModelNodeTransform(const ModelResource& model, const ModelPose& pose,
+                            uint32_t root, uint32_t node, glm::mat4& transform) {
+        transform = glm::mat4(1);
+        glm::mat4 inverse;
+        if (node >= pose.global.size() || !IsModelNodeInSubtree(model, node, root) ||
+            !ModelRootInverse(pose, root, inverse)) return false;
+        const auto result = inverse * pose.global[node];
+        if (!Finite(result)) return false;
+        transform = result;
+        return true;
+    }
+
     bool EvaluateModelPose(const ModelResource& model, uint32_t clipIndex, float time, ModelPose& pose) {
         if (!SampleModelLocalPose(model, clipIndex, time, pose.local)) return ClearEvaluated(pose);
         return BuildModelPose(model, pose);

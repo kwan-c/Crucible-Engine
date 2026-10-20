@@ -73,6 +73,7 @@ namespace Crucible {
     struct MeshRenderer;
     struct MaterialData;
     struct ModelResource;
+    struct ModelPose;
     struct RenderedModel;
     struct AnimatorController;
 
@@ -182,6 +183,7 @@ namespace Crucible {
         // No node poses, GPU uploads or animation playback are created here.
         // Existing GetMesh/GetMaterial still expose the first primitive only.
         std::shared_ptr<const ModelResource> GetModel(AssetId id);
+        std::shared_ptr<const ModelPose> GetModelRestPose(AssetId id);
         std::shared_ptr<const AnimatorController> GetAnimatorController(AssetId id);
         // Editor asset saves preserve GUIDs and publish a new immutable definition.
         // Existing instances retain the previous definition until their next reset.
@@ -363,6 +365,7 @@ namespace Crucible {
 
         std::unordered_map<AssetId, MeshHandle>     m_meshes;      // Invalid value = failed load
         std::unordered_map<AssetId, std::shared_ptr<const ModelResource>> m_models; // null = failed CPU import
+        std::unordered_map<AssetId, std::shared_ptr<const ModelPose>> m_modelRestPoses;
         std::unordered_map<AssetId, std::shared_ptr<const AnimatorController>> m_controllers;
         std::unordered_map<AssetId, std::shared_ptr<const RenderedModel>> m_renderedModels;
         std::unordered_map<AssetId, MaterialHandle> m_materials;   // Invalid value = failed load

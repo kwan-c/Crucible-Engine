@@ -1,0 +1,381 @@
+{
+    "version": 1,
+    "name": "Modular Animation Preview",
+    "entities": [
+        {
+            "id": "83C745E1A02D1059",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.05000000074505806,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 15.0,
+                        "y": 1.0,
+                        "z": 15.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 3649096549467294993,
+                    "materialAsset": 0
+                }
+            }
+        },
+        {
+            "id": "BD2C2E5C1E7A69EF",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 7.0,
+                        "z": 28.0
+                    },
+                    "rotation": {
+                        "x": -0.10452846437692642,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9945219159126282
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 55.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 200.0,
+                    "priority": 0
+                }
+            }
+        },
+        {
+            "id": "8CFC62D631207867",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -5.5,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6726452403956826127,
+                    "modelRoot": 10
+                },
+                "AnimatedModel": {
+                    "clip": 4,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true,
+                    "controllerAsset": 11408579021198489275
+                }
+            }
+        },
+        {
+            "id": "9BC93E45B50A935D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 5.5,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 3267687890137219089,
+                    "modelRoot": 10
+                },
+                "AnimatedModel": {
+                    "clip": 0,
+                    "speed": 0.699999988079071,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true,
+                    "controllerAsset": 11408579021198489275
+                }
+            }
+        },
+        {
+            "id": "AAFE6516A829E00D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 8.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9063078165054321
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.949999988079071,
+                        "z": 0.8500000238418579
+                    },
+                    "intensity": 3.0,
+                    "range": 30.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                }
+            }
+        },
+        {
+            "id": "A4695711500198D7",
+            "parent": "8CFC62D631207867",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 3.0,
+                        "y": 1.0,
+                        "z": 0.1
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.85,
+                        "y": 0.85,
+                        "z": 0.85
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 3267687890137219089,
+                    "modelRoot": 13
+                },
+                "AnimatedModel": {
+                    "clip": 4,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true,
+                    "controllerAsset": 11258238734622207885
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "PrimaryWeapon",
+                    "modelAsset": 11181561406948196535,
+                    "node": 3
+                }
+            }
+        },
+        {
+            "id": "8F14E1B61CDAA407",
+            "parent": "A4695711500198D7",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0.9
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.09,
+                        "y": 0.09,
+                        "z": 0.09
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "meshAsset": 8362592118289502741,
+                    "modelAsset": 0,
+                    "materialAsset": 6726452403956826127,
+                    "materialOverrides": []
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Muzzle",
+                    "modelAsset": 11181561406948196535,
+                    "node": 12
+                }
+            }
+        },
+        {
+            "id": "AB27364266ECBADD",
+            "parent": "9BC93E45B50A935D",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -3.0,
+                        "y": 1.0,
+                        "z": 0.1
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.85,
+                        "y": 0.85,
+                        "z": 0.85
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6726452403956826127,
+                    "modelRoot": 18
+                },
+                "AnimatedModel": {
+                    "clip": 0,
+                    "speed": 0.7,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true,
+                    "controllerAsset": 9428797197945292689
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "PrimaryWeapon",
+                    "modelAsset": 11181561406948196535,
+                    "node": 3
+                }
+            }
+        },
+        {
+            "id": "BE53ED2A3A81BC9D",
+            "parent": "AB27364266ECBADD",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0.9
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.09,
+                        "y": 0.09,
+                        "z": 0.09
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "meshAsset": 8362592118289502741,
+                    "modelAsset": 0,
+                    "materialAsset": 3267687890137219089,
+                    "materialOverrides": []
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Muzzle",
+                    "modelAsset": 11181561406948196535,
+                    "node": 16
+                }
+            }
+        }
+    ]
+}

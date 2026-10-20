@@ -40,4 +40,11 @@ namespace Crucible {
     ENGINE_API bool BuildModelPose(const ModelResource& model, ModelPose& pose);
     ENGINE_API bool EvaluateModelPose(const ModelResource& model, uint32_t clip,
         float time, ModelPose& pose);
+
+    // InvalidModelIndex selects the complete model in its authored coordinates.
+    // A selected subtree is rebased to its root; palettes remain mesh-local.
+    ENGINE_API bool IsModelNodeInSubtree(const ModelResource& model, uint32_t node, uint32_t root);
+    ENGINE_API bool ModelRootInverse(const ModelPose& pose, uint32_t root, glm::mat4& inverse);
+    ENGINE_API bool ModelNodeTransform(const ModelResource& model, const ModelPose& pose,
+        uint32_t root, uint32_t node, glm::mat4& transform);
 }

@@ -181,6 +181,16 @@ namespace Crucible {
     //  GET
     // ------------------------------------------------------------------------------------------------------------- //
 
+    std::shared_ptr<const ModelPose> ResourceManager::GetModelRestPose(AssetId id) {
+        if (!id) return nullptr;
+        if (auto found = m_modelRestPoses.find(id); found != m_modelRestPoses.end()) return found->second;
+        auto model = GetModel(id);
+        auto pose = std::make_shared<ModelPose>();
+        if (!model || !EvaluateModelPose(*model, InvalidModelIndex, 0, *pose)) pose.reset();
+        m_modelRestPoses[id] = pose;
+        return pose;
+    }
+
     std::shared_ptr<const ModelResource> ResourceManager::GetModel(AssetId id) {
         if (id == 0) { return {}; }
         if (auto found = m_models.find(id); found != m_models.end()) { return found->second; }
@@ -509,6 +519,7 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------------------------- //
 
     void ResourceManager::AssignMesh(MeshRenderer& renderer, AssetId id) {
+        renderer.modelRoot = InvalidModelIndex;
 
         renderer.meshAsset = id;
         renderer.modelAsset = 0;

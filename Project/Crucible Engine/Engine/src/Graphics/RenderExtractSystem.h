@@ -145,6 +145,7 @@ namespace Crucible
 			std::uint64_t     waterFrame = 0;                     // frame the entity was last seen with a Water
 			MeshHandle        waterMesh;
 			std::uint64_t modelAsset = 0;
+			std::uint32_t modelRoot = InvalidModelIndex;
 			std::shared_ptr<const RenderedModel> model;
 			ModelPose restPose;
 			bool restPoseValid = false;

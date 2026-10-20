@@ -107,7 +107,8 @@ namespace Crucible
 		DeadParent,    // parent is non-null but dead/stale
 		SelfParent,    // child == parent
 		WouldCycle,    // parent is one of child's descendants
-		UnsupportedTransform   // worldPositionStays: a parent's world transform has a zero/non-finite scale (not invertible), or keeping the world pose would need a mirrored (negative) scale
+		UnsupportedTransform,  // keep-world requires an invertible representable parent frame
+		InvalidSocketBinding
 	};
 
 	/*************************************************************************
@@ -629,6 +630,9 @@ namespace Crucible
 		 \return The parent, or kNullEntity for a root or a dead entity.
 		 *********************************************************************/
 		Entity GetParent(Entity entity) const;
+		// Fresh local transforms plus the current CPU animation pose, including sockets.
+		bool TryGetWorldMatrix(Entity entity, Math::mat4& matrix) const;
+		bool TryGetParentFrame(Entity entity, Math::mat4& matrix) const;
 
 		/*********************************************************************
 		 \brief  Unity's Transform.childCount (0 for a dead entity).
@@ -750,6 +754,7 @@ namespace Crucible
 		{
 			const Transform* local = nullptr;
 			const HierarchyNode* links = nullptr;
+			const SocketAttachment* socket = nullptr;
 			WorldTransform* world = nullptr;
 			std::uint64_t localTick = 0;          // LastChanged<Transform>
 			std::uint64_t linksTick = 0;          // LastChanged<HierarchyNode>
@@ -895,6 +900,8 @@ namespace Crucible
 		out.local = static_cast<const Transform*>(local.At(row));
 		out.links = static_cast<const HierarchyNode*>(links.At(row));
 		out.world = static_cast<WorldTransform*>(world.At(row));
+		out.socket = a.Contains(ComponentTypeId<SocketAttachment>())
+			? static_cast<const SocketAttachment*>(a.GetColumn(ComponentTypeId<SocketAttachment>()).At(row)) : nullptr;
 		out.localTick = local.ChangedTicksData()[row];
 		out.linksTick = links.ChangedTicksData()[row];
 		out.worldTick = world.ChangedTicksData() + row;

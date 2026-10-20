@@ -154,6 +154,6 @@ under `build/setup-tools/milestone6-*`; no permanent test target is added.
 ## Milestone 7 handoff
 
 Controllers still produce the same per-instance model pose through the common
-renderer. Modular attachments, animated sockets and independent weapon animation
-are the next milestone. Layers, blend trees and root-motion extraction are outside
-this graph editor milestone.
+renderer. Milestone 7 now adds modular attachments, animated sockets and independent
+weapon animation; see [ModularAnimation.md](ModularAnimation.md). Layers, blend trees
+and root-motion extraction remain outside this graph editor milestone.

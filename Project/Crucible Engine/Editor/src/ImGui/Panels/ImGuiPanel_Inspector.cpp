@@ -20,6 +20,7 @@
 #include "Resources/ResourceManager.h"
 #include "Resources/ModelResource.h"
 #include "Resources/RenderedModel.h"
+#include "Animation/ModelSockets.h"
 #include "Undo/EntityCommands.h"
 #include "../EditorWidgets.h"
 
@@ -506,6 +507,22 @@ void Crucible::Inspector::Update(float) {
 			}
 
 			DrawEntityInspector(m_selected);
+			if (m_world.HasComponent<SocketAttachment>(m_selected) && ImGui::Button("Detach socket (keep world pose)")) {
+				CommitPendingEdit();
+				auto& history = EditorManager::GetInstance().GetHistory();
+				const auto key = history.KeyOf(m_selected);
+				const ReparentCommand::Placement beforePlacement{history.KeyOf(m_world.GetParent(m_selected)),
+					m_world.GetSiblingIndex(m_selected), *m_world.Read<Transform>(m_selected)};
+				const auto before = EntityState::Capture(m_world, m_selected);
+				if (DetachModelSocket(m_world, m_selected, true)) {
+					const ReparentCommand::Placement afterPlacement{kNullEntity, 0, *m_world.Read<Transform>(m_selected)};
+					std::vector<std::unique_ptr<EditorCommand>> parts;
+					parts.push_back(std::make_unique<ReparentCommand>(key, beforePlacement, afterPlacement, "Detach socket"));
+					parts.push_back(std::make_unique<EntityStateCommand>(key, before, EntityState::Capture(m_world, m_selected), "Detach socket"));
+					history.Push(std::make_unique<GroupCommand>(std::move(parts), "Detach socket"));
+					m_scenes.MarkDirty();
+				} else CRU_USER_WARN("Cannot detach socket: its world pose is unavailable or cannot be stored as Transform TRS.");
+			}
 			DrawAddComponentButton(m_selected);
 
 			// A drag keeps its widget active across many frames: commit once it is released,
@@ -1202,13 +1219,43 @@ bool Crucible::Inspector::DrawComponentExtras(AnimatedModel& animation) {
     return changed;
 }
 
+bool Crucible::Inspector::DrawComponentExtras(SocketAttachment& socket) {
+    auto* resources = EditorManager::GetInstance().GetResources();
+    const auto parent = m_world.GetParent(m_selected);
+    const auto* owner = m_world.Read<MeshRenderer>(parent);
+    if (!resources || !owner || !owner->modelAsset) {
+        ImGui::TextWrapped("Parent this entity to a model entity, then choose its attachment node.");
+        return false;
+    }
+    const auto model = resources->GetModel(owner->modelAsset);
+    if (!model) { ImGui::TextWrapped("Parent model could not be loaded."); return false; }
+    bool changed = false;
+    const std::string preview = socket.modelAsset == owner->modelAsset && socket.node < model->nodes.size()
+        ? std::to_string(socket.node) + ": " + model->nodes[socket.node].name : "Choose / rebind node";
+    if (ImGui::BeginCombo("Parent model node", preview.c_str())) {
+        for (uint32_t i = 0; i < model->nodes.size(); ++i) {
+            if (!IsModelNodeInSubtree(*model, i, owner->modelRoot)) continue;
+            const std::string label = std::to_string(i) + ": " + model->nodes[i].name;
+            if (ImGui::Selectable(label.c_str(), socket.modelAsset == owner->modelAsset && socket.node == i)) {
+                socket.modelAsset = owner->modelAsset; socket.node = i; changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    glm::mat4 frame;
+    ImGui::TextWrapped("%s", ToString(ModelSocketFrame(m_world, parent, socket, frame)));
+    ImGui::TextWrapped("Transform is the alignment offset in the animated node's coordinates. "
+        "Add AnimatedModel to a weapon for independent playback. Empty socket entities can hold muzzle markers or other children.");
+    return changed;
+}
+
 bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
     auto* rm = EditorManager::GetInstance().GetResources();
     if (!rm) return false;
     bool changed = false;
     uint64_t modelId = renderer.modelAsset;
     if (AssetRefField("Model", ResourceKind::Model, modelId)) {
-        renderer.modelAsset = modelId; renderer.materialOverrides.clear();
+        renderer.modelAsset = modelId; renderer.modelRoot = InvalidModelIndex; renderer.materialOverrides.clear();
         if (modelId) { renderer.meshAsset = 0; renderer.mesh = {}; }
         changed = true;
     }
@@ -1222,6 +1269,18 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
     }
     const auto model = rm->GetRenderedModel(renderer.modelAsset);
     if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console."); return changed; }
+    const auto& nodes = model->definition->nodes;
+    const std::string rootLabel = renderer.modelRoot == InvalidModelIndex ? "Whole model" :
+        renderer.modelRoot < nodes.size() ? std::to_string(renderer.modelRoot) + ": " + nodes[renderer.modelRoot].name : "Invalid node";
+    if (ImGui::BeginCombo("Model part root", rootLabel.c_str())) {
+        if (ImGui::Selectable("Whole model", renderer.modelRoot == InvalidModelIndex)) { renderer.modelRoot = InvalidModelIndex; changed = true; }
+        for (uint32_t i = 0; i < nodes.size(); ++i) {
+            const std::string label = std::to_string(i) + ": " + nodes[i].name;
+            if (ImGui::Selectable(label.c_str(), renderer.modelRoot == i)) { renderer.modelRoot = i; changed = true; }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("Draw this subtree at the entity origin. Choose a rig root to retain animation of its descendants.\nWhole model preserves the authored scene coordinates.");
     ImGui::SeparatorText("All materials");
     ImGui::TextWrapped("Leave Material empty to use imported defaults. Slot overrides below take precedence.");
     MeshRenderer globalView;

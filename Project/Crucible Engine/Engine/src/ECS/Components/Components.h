@@ -65,7 +65,7 @@ namespace Crucible
 
 	/*************************************************************************
 	 \brief  The entity's final transform in world space.
-	 \note   Written ONLY by HierarchyTransformSystem, first in PreRender
+	 \note   Written ONLY by HierarchyTransformSystem, after CPU poses in PreRender
 			 (after every earlier stage's commands and events). Read it from
 			 PreRender systems that RunAfter<HierarchyTransformSystem>(), or
 			 after the frame's systems (the renderer); edit Transform instead.
@@ -76,6 +76,7 @@ namespace Crucible
 	{
 		Math::mat4 matrix = Math::mat4(1.0f);
 		bool valid = false;   // false until the propagation system has computed it
+		bool socketApplied = false; // detects removal/disable without a local TRS edit
 	};
 
 	/*************************************************************************
@@ -164,9 +165,24 @@ namespace Crucible
 
 		// Complete compiled model; when nonzero this takes precedence over meshAsset/mesh.
 		std::uint64_t modelAsset = 0;
+		std::uint32_t modelRoot = InvalidModelIndex; // complete model, or a rebased node subtree
 		// Indexed by imported material index. 0 inherits the global material or import default.
 		// materialAsset/material above are the optional override for every model primitive.
 		std::vector<std::uint64_t> materialOverrides;
+	};
+
+	// Mount this entity on a node of its ECS parent's model. Transform is the
+	// alignment offset in that node's coordinates. No entity-per-bone hierarchy.
+	struct SocketAttachment
+	{
+		bool enabled = true;
+		std::string socketName; // optional gameplay alias; indices disambiguate duplicate node names
+		std::uint64_t modelAsset = 0; // expected parent model; changing models requires rebinding
+		std::uint32_t node = InvalidModelIndex;
+		// Runtime-only shared CPU resources, never serialized.
+		std::uint64_t cachedAsset = 0;
+		std::shared_ptr<const ModelResource> model;
+		std::shared_ptr<const ModelPose> restPose;
 	};
 	
 	/*************************************************************************
@@ -591,6 +607,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(RigidBody, RigidBody);
 	CRUCIBLE_COMPONENT(MeshRenderer, MeshRenderer);
 	CRUCIBLE_COMPONENT(AnimatedModel, AnimatedModel);
+	CRUCIBLE_COMPONENT(SocketAttachment, SocketAttachment);
 	CRUCIBLE_COMPONENT(HierarchyNode, HierarchyNode);
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 	CRUCIBLE_COMPONENT(Light, Light);

@@ -103,6 +103,7 @@ namespace Crucible {
 		template <typename T> bool DrawComponentExtras(T&) { return false; }
 		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
 		bool DrawComponentExtras(AnimatedModel& animation);
+		bool DrawComponentExtras(SocketAttachment& socket);
 		bool DrawComponentExtras(UIButton& button);         // scene dropdown for onClick = LoadScene
 		bool DrawComponentExtras(UISlider& slider);         // direction dropdown that also turns the UIRect
 		bool DrawMaterialSection(MeshRenderer& renderer, bool importedDefault = false);

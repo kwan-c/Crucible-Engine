@@ -83,7 +83,8 @@ namespace Crucible
 
 
 		AnimatedModel = 24,
-		MAXCOMPONENT = 25
+		SocketAttachment = 25,
+		MAXCOMPONENT = 26
 	};
 
 
@@ -198,5 +199,6 @@ namespace Crucible
  X(UISlider)														           \
  X(Water)                                                                      \
  X(AnimatedModel)                                                              \
+ X(SocketAttachment)                                                           \
 
 }

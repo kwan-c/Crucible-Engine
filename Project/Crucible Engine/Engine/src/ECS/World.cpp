@@ -58,6 +58,7 @@
 **************************************************************************/
 
 #include "World.h"
+#include "Animation/ModelSockets.h"
 
 #include <array>
 #include <cassert>
@@ -513,6 +514,7 @@ namespace Crucible
 		case ParentResult::DeadParent: return "parent is dead";
 		case ParentResult::SelfParent: return "an entity can't be its own parent";
 		case ParentResult::WouldCycle: return "parent is a descendant of child (would create a cycle)";
+		case ParentResult::InvalidSocketBinding: return "socket binding is unresolved or incompatible; use DetachModelSocket to unmount";
 		case ParentResult::UnsupportedTransform:
 			return "can't keep the world transform: a parent's world transform has a zero or non-finite scale, or the parents differ in handedness (would need a negative scale; use worldPositionStays = false)";
 		default:                       return "unknown";
@@ -610,7 +612,14 @@ namespace Crucible
 			if (e == target) return true;
 			const HierarchyNode* node = NodeOf(e);
 			if (!node) break;   // dead: contributes nothing
-			if (worldOut) world = LocalMatrix(LocalOf(e)) * world;
+			if (worldOut) {
+				Math::mat4 mount(1);
+				if (const auto* socket = Read<SocketAttachment>(e); socket && socket->enabled) {
+					if (ModelSocketFrame(*this, node->parent, *socket, mount) != SocketResult::Ready)
+						mount = Math::mat4(std::numeric_limits<float>::quiet_NaN());
+				}
+				world = mount * LocalMatrix(LocalOf(e)) * world;
+			}
 			if (++depth > kMaxHierarchySize) throw std::logic_error("World: parent chain too long - hierarchy links are corrupted");
 			e = node->parent;
 		}
@@ -794,6 +803,34 @@ namespace Crucible
 	}
 
 	// ---------------------------------------------------------------- mutations
+	bool World::TryGetWorldMatrix(Entity entity, Math::mat4& matrix) const {
+		CheckDeclaredAccess(MakeSignature<Transform, HierarchyNode, SocketAttachment, MeshRenderer, AnimatedModel>(), {},
+			"World::TryGetWorldMatrix reads");
+		matrix = Math::mat4(1);
+		if (!IsAlive(entity)) return false;
+		const auto result = ComputeWorldMatrix(entity);
+		for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r)
+			if (!std::isfinite(result[c][r])) return false;
+		matrix = result;
+		return true;
+	}
+
+	bool World::TryGetParentFrame(Entity entity, Math::mat4& matrix) const {
+		CheckDeclaredAccess(MakeSignature<Transform, HierarchyNode, SocketAttachment, MeshRenderer, AnimatedModel>(), {},
+			"World::TryGetParentFrame reads");
+		matrix = Math::mat4(1);
+		if (!IsAlive(entity)) return false;
+		const Entity parent = GetParent(entity);
+		if (parent.IsValid() && !TryGetWorldMatrix(parent, matrix)) return false;
+		if (const auto* socket = Read<SocketAttachment>(entity); socket && socket->enabled) {
+			Math::mat4 mount;
+			if (ModelSocketFrame(*this, parent, *socket, mount) != SocketResult::Ready) return false;
+			matrix *= mount;
+		}
+		for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r)
+			if (!std::isfinite(matrix[c][r])) { matrix = Math::mat4(1); return false; }
+		return true;
+	}
 
 	ParentResult World::SolveKeepWorld(const Transform& local, const Math::mat4& oldParentWorld,
 		const Math::mat4* newParentInverse, Transform& out) const
@@ -835,11 +872,20 @@ namespace Crucible
 		Transform solved{};
 		if (worldPositionStays)
 		{
+			Math::mat4 oldParentWorld = ComputeWorldMatrix(oldParent);
+			if (const auto* socket = Read<SocketAttachment>(child); socket && socket->enabled) {
+				Math::mat4 oldMount, newMount;
+				if (ModelSocketFrame(*this, oldParent, *socket, oldMount) != SocketResult::Ready ||
+					ModelSocketFrame(*this, parent, *socket, newMount) != SocketResult::Ready)
+					return ParentResult::InvalidSocketBinding;
+				oldParentWorld *= oldMount;
+				newParentWorld *= newMount;
+			}
 			// The new parent must be invertible, or no local Transform reaches the old world
 			// spot. A root needs no inverse (identity).
 			Math::mat4 newParentInverse;
 			if (parent.IsValid() && !TryAffineInverse(newParentWorld, newParentInverse)) return ParentResult::UnsupportedTransform;
-			const ParentResult solve = SolveKeepWorld(*LocalOf(child), ComputeWorldMatrix(oldParent),
+			const ParentResult solve = SolveKeepWorld(*LocalOf(child), oldParentWorld,
 				parent.IsValid() ? &newParentInverse : nullptr, solved);
 			if (solve != ParentResult::Ok) return solve;
 		}
@@ -877,6 +923,8 @@ namespace Crucible
 		std::vector<Transform> solved(children.size());
 		for (std::size_t i = 0; i < children.size(); ++i)
 		{
+			if (const auto* socket = Read<SocketAttachment>(children[i]); socket && socket->enabled)
+				throw std::invalid_argument("World::DetachChildren: use DetachModelSocket for mounted children");
 			if (SolveKeepWorld(*LocalOf(children[i]), parentWorld, nullptr, solved[i]) != ParentResult::Ok)
 				throw std::invalid_argument(std::string("World::DetachChildren: ") + ToString(ParentResult::UnsupportedTransform));
 		}

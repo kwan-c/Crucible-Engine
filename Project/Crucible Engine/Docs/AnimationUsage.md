@@ -33,6 +33,12 @@ MeshRenderer. See [AnimatorController.md](AnimatorController.md) for the demo,
 asset schema, gameplay API and transition rules. **Edit Controller Graph** opens
 the visual authoring panel; see [AnimatorGraphEditor.md](AnimatorGraphEditor.md).
 
+## Modular weapons (Milestone 7)
+
+For attached, independently animated weapons, open **Scenes/Modular Animation Preview.scene**.
+See [ModularAnimation.md](ModularAnimation.md) for model-part selection, socket authoring,
+weapon controls, gameplay APIs and verification steps. This completes Milestone 7.
+
 ## Use another GLB
 
 1. Put the self-contained GLB inside `AssetsSource/Models`, then build Editor.
@@ -91,8 +97,8 @@ button pauses that one instance at its clip's first frame.
 
 ## Current limits
 
-- Controllers support configured states/transitions, crossfades and visual graph
-  authoring. Modular weapon animation remains Milestone 7. Retargeting,
+- Controllers support configured states/transitions, crossfades, visual graph
+  authoring and independently animated socket-mounted weapons. Retargeting,
   root-motion extraction, blend trees and animation layers are not implemented.
 - Supported animation interpolation remains LINEAR and STEP. Import rejects
   CUBICSPLINE, morphs and other unsupported features explicitly.

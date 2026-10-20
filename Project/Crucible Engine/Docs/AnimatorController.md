@@ -253,5 +253,5 @@ resource limitation: edit the asset and restart. The runtime has no editor depen
 
 Milestone 6 now authors these same definitions and inspects these instances through
 the graph panel; see AnimatorGraphEditor.md. Its saves publish definition revisions
-safely and layout-only saves preserve playback. Milestone 7 will add sockets and
-independent modular/weapon playback; it has not been implemented.
+safely and layout-only saves preserve playback. Milestone 7 adds sockets and
+independent modular/weapon playback; see [ModularAnimation.md](ModularAnimation.md).

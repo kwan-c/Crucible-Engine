@@ -15,6 +15,7 @@
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/RenderExtractSystem.h"
 #include "Animation/AnimatedModelSystem.h"
+#include "Animation/SocketAttachmentSystem.h"
 #include "Graphics/DebugDrawSystem.h"
 #include "Graphics/ParticleSystem.h"
 #include "Graphics/StressMoverSystem.h"   // TEMPORARY: load testing
@@ -167,8 +168,9 @@ namespace Crucible {
         m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
         m_systems.RegisterSystem<ECSPhysicsSystem>();
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
-        m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
+        m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode);
+        m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection

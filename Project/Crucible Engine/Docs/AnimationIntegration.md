@@ -1,7 +1,8 @@
 # Milestone 4: ECS, editor and lifecycle integration
 
 Milestone 4 completes the normal renderer/editor workflow for complete models.
-Controllers, blending, graph authoring and sockets remain Milestones 5-7.
+Controllers, blending, graph authoring and sockets are covered by the completed
+Milestones 5-7; see AnimatorController.md, AnimatorGraphEditor.md and ModularAnimation.md.
 
 ## Ownership and flow
 

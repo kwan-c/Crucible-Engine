@@ -46,9 +46,10 @@ namespace Crucible {
     void RenderExtractSystem::ExtractModel(Entity entity, const WorldTransform& transform,
                                            const MeshRenderer& renderer, const AnimatedModel* animation,
                                            ProxyRecord& record) {
-        if (record.modelAsset != renderer.modelAsset) {
+        if (record.modelAsset != renderer.modelAsset || record.modelRoot != renderer.modelRoot) {
             ReleaseDraws(record);
             record.modelAsset = renderer.modelAsset;
+            record.modelRoot = renderer.modelRoot;
             record.model = m_resources ? m_resources->GetRenderedModel(renderer.modelAsset) : nullptr;
             if (record.model) {
                 const auto& model = *record.model->definition;
@@ -56,6 +57,10 @@ namespace Crucible {
                 if (!record.restPoseValid)
                     CRU_WARN("[Render] Model {} has an unrepresentable default pose; static model drawing is disabled", renderer.modelAsset);
                 std::vector<uint32_t> pending = model.sceneRoots;
+                if (renderer.modelRoot != InvalidModelIndex) {
+                    pending.clear();
+                    if (renderer.modelRoot < model.nodes.size()) pending.push_back(renderer.modelRoot);
+                }
                 while (!pending.empty()) {
                     const uint32_t index = pending.back(); pending.pop_back();
                     const auto& node = model.nodes[index];
@@ -67,12 +72,14 @@ namespace Crucible {
             }
         }
         if (!record.model) return;
-        const bool validPose = animation ? animation->poseValid && animation->evaluatedAsset == renderer.modelAsset : record.restPoseValid;
+        const auto& pose = animation ? animation->pose : record.restPose;
+        glm::mat4 rootInverse;
+        const bool validPose = (animation ? animation->poseValid && animation->evaluatedAsset == renderer.modelAsset : record.restPoseValid)
+            && ModelRootInverse(pose, renderer.modelRoot, rootInverse);
         if (!validPose) {
             for (const auto& part : record.parts) m_renderer.SetRenderProxy(part.proxy, {}, {}, glm::mat4(1), false);
             return;
         }
-        const auto& pose = animation ? animation->pose : record.restPose;
         const auto& model = *record.model->definition;
         MaterialHandle global = renderer.materialAsset && m_resources
             ? m_resources->GetMaterial(renderer.materialAsset) : renderer.material;
@@ -92,7 +99,7 @@ namespace Crucible {
             const bool skinned = primitive.hasSkinning && node.skin != InvalidModelIndex;
             const bool visible = renderer.visible && transform.valid && validPose && bounds.IsValid() && (!skinned || !palette.empty());
             m_renderer.SetRenderProxy(part.proxy, record.model->meshes[node.mesh][part.primitive], material,
-                transform.matrix * pose.global[part.node], visible, params);
+                transform.matrix * rootInverse * pose.global[part.node], visible, params);
             m_renderer.SetRenderProxyAnimation(part.proxy, palette, bounds.min, bounds.max);
         }
     }

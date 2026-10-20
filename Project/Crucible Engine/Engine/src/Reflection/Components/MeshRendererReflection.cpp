@@ -47,6 +47,8 @@ RTTR_REGISTRATION
         .property("visible",       &MeshRenderer::visible)
         .property("modelAsset",    &MeshRenderer::modelAsset)
             (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("modelRoot", &MeshRenderer::modelRoot)
+            (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
         .property("materialOverrides", &MeshRenderer::materialOverrides)
             (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
         .property("colour",        &MeshRenderer::colour)
