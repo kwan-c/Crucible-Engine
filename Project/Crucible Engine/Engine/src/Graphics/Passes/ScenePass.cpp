@@ -22,7 +22,7 @@ namespace Crucible {
         // ---- Meshes ----
         {
             // Programmable stages (Vertex and Fragment shaders) ----------------------------------- //
-            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/DefaultShader.spv");
+            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "DefaultShader.spv");
 
             vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
                 .stage = vk::ShaderStageFlagBits::eVertex,
@@ -152,7 +152,7 @@ namespace Crucible {
 
         // ---- Sky ----
         {
-            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/Skybox.spv");
+            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "Skybox.spv");
 
             vk::PipelineShaderStageCreateInfo shaderStages[] = {
                 { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "skyVert" },

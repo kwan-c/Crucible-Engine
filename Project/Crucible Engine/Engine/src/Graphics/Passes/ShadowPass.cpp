@@ -31,7 +31,7 @@ namespace Crucible {
     void ShadowPass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout, vk::Format depthFormat) {
 
 
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/Shadow.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "Shadow.spv");
 
         // Solid materials: vertex stage only. With no fragment shader the rasterizer still writes
         // depth, which is all a shadow map needs (and keeps early-Z).

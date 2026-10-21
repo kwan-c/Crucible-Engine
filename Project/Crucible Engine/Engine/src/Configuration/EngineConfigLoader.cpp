@@ -9,7 +9,7 @@
 
 #include "EngineConfigLoader.h"
 #include "Json/JsonReader.h"
-#include "AssetPipe/Assetmanager.h"
+#include "AssetPipe/AssetPaths.h"
 #include "Json/JsonWrapper.h"
 #include <Diagnostics/Logger.h>
 
@@ -252,9 +252,8 @@ namespace Crucible
 
 	std::filesystem::path EngineConfigLoader::FindConfigFile()
 	{
-		const std::filesystem::path assetRoot = AssetManager::FindAssetRoot({});
-		if (assetRoot.empty()) return {};
-		return assetRoot / CONFIG_RELATIVE_PATH;
+		if (AssetRoot().empty()) return {};
+		return AssetPath(CONFIG_RELATIVE_PATH);
 	}
 
 	bool EngineConfigLoader::Save(const EngineConfig& config, const std::filesystem::path& path)

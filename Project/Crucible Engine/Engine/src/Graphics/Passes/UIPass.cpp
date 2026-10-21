@@ -77,7 +77,7 @@ namespace Crucible {
         m_texturePool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
 
         // ---- Pipeline ----
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(m_context, "../../../Assets/Shaders/UI.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(m_context, "UI.spv");
 
         vk::PipelineShaderStageCreateInfo shaderStages[] = {
             { .stage = vk::ShaderStageFlagBits::eVertex,   .module = *shaderModule, .pName = "uiVert" },
