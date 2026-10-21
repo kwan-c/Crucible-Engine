@@ -1163,8 +1163,9 @@ bool Crucible::Inspector::DrawComponentExtras(AnimatedModel& animation) {
         if (!animation.controller.Initialized() || animation.evaluatedController != animation.controllerAsset || animation.controllerDefinition != definition) return changed;
         auto& runtime = animation.controller;
         const uint32_t current = runtime.CurrentState(), next = runtime.NextState();
-        if (current < definition->states.size()) ImGui::Text("State: %s", definition->states[current].name.c_str());
+        ImGui::Text("State: %s", current < definition->states.size() ? definition->states[current].name.c_str() : "-");
         if (next < definition->states.size()) ImGui::Text("To: %s (%.0f%%)", definition->states[next].name.c_str(), runtime.TransitionWeight() * 100.0f);
+        else ImGui::TextDisabled("To: -"); // reserve the transition row so playback never shifts the controls
         ImGui::Text("Time: %.3fs | cycles: %.3f", runtime.Time(), runtime.NormalizedProgress());
         if (ImGui::Button(animation.playing ? "Pause controller" : "Play controller")) animation.playing = !animation.playing;
         ImGui::SameLine();

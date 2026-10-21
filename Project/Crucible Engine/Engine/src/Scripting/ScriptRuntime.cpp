@@ -1,6 +1,7 @@
 #include "Scripting/ScriptRuntime.h"
 #include "Diagnostics/Logger.h"
 #include <cstdint>
+#include <cmath>
 #include <algorithm>
 #include <cstring>
 #include <filesystem>
@@ -39,6 +40,22 @@ namespace Crucible {
         enum class ProcessRuntime { NeverStarted, Active, Finished };
         ProcessRuntime processRuntime = ProcessRuntime::NeverStarted;
         std::mutex runtimeGate;
+        std::thread::id runtimeOwnerThread;
+        thread_local unsigned managedCallDepth = 0;
+
+        // Managed code can call native adapters from constructors, reflection,
+        // exception formatting and finalizers as well as lifecycle callbacks.
+        struct ManagedCallScope {
+            ManagedCallScope() { ++managedCallDepth; }
+            ~ManagedCallScope() { --managedCallDepth; }
+            ManagedCallScope(const ManagedCallScope&) = delete;
+            ManagedCallScope& operator=(const ManagedCallScope&) = delete;
+        };
+
+        void CleanupDomain(MonoDomain* domain) {
+            ManagedCallScope scope;
+            mono_jit_cleanup(domain);
+        }
 
         std::filesystem::path ExecutableDirectory() {
             std::vector<wchar_t> buffer(512);
@@ -107,6 +124,7 @@ namespace Crucible {
         }
 
         std::string ManagedException(MonoObject* exception) {
+            ManagedCallScope scope;
             GcRoot root(exception);
             auto* type = mono_object_get_class(root.Get());
             const std::string space = mono_class_get_namespace(type);
@@ -129,6 +147,7 @@ namespace Crucible {
             for (auto* type = mono_object_get_class(owner.Get()); type && !method; type = mono_class_get_parent(type))
                 method = mono_class_get_method_from_name(type, name, count);
             if (!method) { error = std::string("Framework reflection method is unavailable: ") + name; return false; }
+            ManagedCallScope scope;
             MonoObject* exception = nullptr;
             auto* value = mono_runtime_invoke(method, owner.Get(), arguments, &exception);
             if (exception) { error = ManagedException(exception); return false; }
@@ -250,6 +269,7 @@ namespace Crucible {
 
         bool CallManaged(MonoDomain* domain, MonoMethod* method, MonoObject* object,
                          const std::vector<ScriptValue>& arguments, ScriptValue& result, std::string& error) {
+            ManagedCallScope scope;
             struct Argument { uint8_t boolean = 0; int32_t integer = 0; float single = 0; double real = 0; GcRoot text; };
             GcRoot target(object);
             std::vector<Argument> storage(arguments.size());
@@ -299,6 +319,31 @@ namespace Crucible {
             return true;
         }
 
+        MonoMethod* LifecycleMethod(MonoDomain* domain, MonoClass* type, const char* name,
+                                    const std::vector<ScriptValue>& arguments, std::string& error) {
+            auto* method = FindMethod(type, name, false, arguments, error);
+            if (!method || ManagedKind(mono_signature_get_return_type(mono_method_signature(method))) != ValueKind::Void) {
+                error = std::string("Lifecycle requires public instance void ") + name +
+                    (arguments.empty() ? "()" : "(float)");
+                return nullptr;
+            }
+            // async void looks like void in a signature but can outlive this call
+            // and raise exceptions outside mono_runtime_invoke's exception guard.
+            auto* marker = mono_class_from_name(mono_get_corlib(), "System.Runtime.CompilerServices", "AsyncStateMachineAttribute");
+            if (!marker) { error = "Framework async-method metadata is unavailable"; return nullptr; }
+            GcRoot reflected(reinterpret_cast<MonoObject*>(mono_method_get_object(domain, method, type)));
+            GcRoot attribute(reinterpret_cast<MonoObject*>(mono_type_get_object(domain, mono_class_get_type(marker))));
+            uint8_t inherit = 0;
+            void* parameters[] = {attribute.Get(), &inherit};
+            GcRoot defined;
+            if (!Reflect(reflected.Get(), "IsDefined", 2, parameters, defined, error) || !defined.Get()) return nullptr;
+            if (*static_cast<uint8_t*>(mono_object_unbox(defined.Get()))) {
+                error = std::string("Lifecycle callbacks must be synchronous; async void is unsupported: ") + name;
+                return nullptr;
+            }
+            return method;
+        }
+
         bool CheckManagedExecution(std::string& error) {
             // Execute a known BCL method through Mono's JIT. This verifies managed
             // execution without adding an assembly loader or gameplay API in S1.
@@ -309,6 +354,7 @@ namespace Crucible {
             if (!method) { error = "System.Math.Abs(Int32) is unavailable in the deployed framework"; return false; }
             int32_t input = -314159;
             void* arguments[] = {&input};
+            ManagedCallScope scope;
             MonoObject* exception = nullptr;
             auto* result = mono_runtime_invoke(method, nullptr, arguments, &exception);
             if (exception) {
@@ -340,6 +386,65 @@ namespace Crucible {
         std::map<uint64_t, Assembly> assemblies;
         std::map<uint64_t, Object> objects;
         std::set<MonoClass*> validatedClasses;
+        struct Instance {
+            ScriptInstanceInfo info;
+            ScriptObjectHandle object;
+            MonoMethod* create = nullptr;
+            MonoMethod* update = nullptr;
+            MonoMethod* destroy = nullptr;
+        };
+        uint64_t nextInstance = 1;
+        std::map<uint64_t, Instance> instances;
+
+        Instance* GetInstance(ScriptInstanceHandle handle) {
+            const auto found = instances.find(handle.value);
+            if (found == instances.end()) { Fail("Unknown or stale script instance handle"); return nullptr; }
+            return &found->second;
+        }
+        std::string Label(const Instance& instance) const {
+            return (instance.info.nameSpace.empty() ? "" : instance.info.nameSpace + ".") + instance.info.name +
+                " [" + std::to_string(instance.info.handle.value) + "]";
+        }
+        bool Callback(Instance& instance, MonoMethod* method, const char* name,
+                      const std::vector<ScriptValue>& arguments, std::string& failure) {
+            const auto found = objects.find(instance.object.value);
+            if (found == objects.end()) { failure = Label(instance) + ": managed object was released"; return false; }
+            ScriptValue result;
+            auto* target = mono_gchandle_get_target(found->second.handle);
+            if (!target) { failure = Label(instance) + ": managed object was released"; return false; }
+            if (!CallManaged(root, method, target, arguments, result, failure)) {
+                failure = Label(instance) + " " + name + ": " + failure;
+                return false;
+            }
+            return true;
+        }
+        void ReleaseObject(ScriptObjectHandle& object) {
+            const auto found = objects.find(object.value);
+            if (found != objects.end()) { mono_gchandle_free(found->second.handle); objects.erase(found); }
+            object = {};
+        }
+        bool Dispose(Instance& instance, std::string& failure) {
+            if (!instance.object) return true; // fault cleanup already attempted OnDestroy
+            bool success;
+            try { success = Callback(instance, instance.destroy, "OnDestroy", {}, failure); }
+            catch (...) { ReleaseObject(instance.object); throw; }
+            ReleaseObject(instance.object); // release even when managed teardown throws
+            return success;
+        }
+        bool StopInstances() {
+            std::string firstError;
+            for (auto it = instances.rbegin(); it != instances.rend(); ++it) {
+                std::string failure;
+                if (!Dispose(it->second, failure)) {
+                    if (firstError.empty()) firstError = failure;
+                    Fail(failure);
+                }
+                CRU_INFO("[Scripting] Stopped lifecycle instance {} after {} updates", Label(it->second), it->second.info.updateCount);
+            }
+            instances.clear();
+            error = std::move(firstError);
+            return error.empty();
+        }
 
         Assembly* GetAssembly(ScriptAssemblyHandle handle) {
             const auto found = assemblies.find(handle.value);
@@ -374,6 +479,7 @@ namespace Crucible {
             return type;
         }
         void ReleaseManaged() {
+            instances.clear();
             for (const auto& [id, object] : objects) { (void)id; mono_gchandle_free(object.handle); }
             objects.clear();
             validatedClasses.clear();
@@ -389,6 +495,7 @@ namespace Crucible {
             if (state != ScriptRuntimeState::Running) return Fail("Managed operation requires a running Mono host");
 #if CRUCIBLE_WITH_MONO
             if (ownerThread != std::this_thread::get_id()) return Fail("Managed operations must use the Mono initialization thread");
+            if (managedCallDepth) return Fail("Cannot re-enter the managed host during managed execution");
 #endif
             error.clear();
             return true;
@@ -407,6 +514,11 @@ namespace Crucible {
     bool ScriptRuntime::Initialize(const ScriptingConfig& config) {
         auto& data = *m_impl;
 #if CRUCIBLE_WITH_MONO
+        // Reject before the process mutex: teardown can run managed finalizers
+        // or callbacks while holding it, including callbacks into another host.
+        if (managedCallDepth) return data.Fail("Cannot initialize the managed host during managed execution");
+        if (runtimeOwnerThread != std::thread::id{} && runtimeOwnerThread != std::this_thread::get_id())
+            return data.Fail("Mono lifecycle calls must use the initialization thread");
         std::lock_guard lock(runtimeGate);
         if (data.root) {
             if (data.ownerThread == std::this_thread::get_id()) { data.error.clear(); return true; }
@@ -454,6 +566,7 @@ namespace Crucible {
             // Even a failed JIT initialization may have changed process-global state.
             processRuntime = ProcessRuntime::Finished;
             data.ownerThread = std::this_thread::get_id();
+            runtimeOwnerThread = data.ownerThread;
             data.root = mono_jit_init_version("Crucible.Root", "v4.0.30319");
             if (!data.root) return fail("Mono could not initialize its CLR v4 root domain");
             processRuntime = ProcessRuntime::Active;
@@ -464,7 +577,7 @@ namespace Crucible {
             // Future subsystem-owned bindings register here before S2 loads user
             // assemblies. S1 intentionally registers no engine/internal calls.
             if (config.verifyManagedExecution && !CheckManagedExecution(data.error)) {
-                mono_jit_cleanup(data.root); data.root = nullptr;
+                CleanupDomain(data.root); data.root = nullptr;
                 processRuntime = ProcessRuntime::Finished;
                 return fail(data.error);
             }
@@ -474,7 +587,7 @@ namespace Crucible {
         } catch (const std::exception& exception) {
             if (data.root) {
                 data.ReleaseManaged();
-                mono_jit_cleanup(data.root); data.root = nullptr;
+                CleanupDomain(data.root); data.root = nullptr;
                 processRuntime = ProcessRuntime::Finished;
             }
             return fail(exception.what());
@@ -484,17 +597,23 @@ namespace Crucible {
 
     void ScriptRuntime::Shutdown() noexcept {
 #if CRUCIBLE_WITH_MONO
-        std::lock_guard lock(runtimeGate);
         auto& data = *m_impl;
         if (!data.root) return;
+        if (managedCallDepth) {
+            try { CRU_ERROR("[Scripting] Shutdown refused during managed execution"); } catch (...) {}
+            return;
+        }
         if (data.ownerThread != std::this_thread::get_id()) {
             // Do not clean up a runtime from an unregistered/wrong native thread.
             // The owner must retry on its initialization thread before destroying the host.
             try { CRU_ERROR("[Scripting] Shutdown refused: use the Mono initialization thread"); } catch (...) {}
             return;
         }
+        std::lock_guard lock(runtimeGate);
+        try { data.error.clear(); data.StopInstances(); }
+        catch (...) { try { CRU_ERROR("[Scripting] Native failure while disposing script instances"); } catch (...) {} }
         data.ReleaseManaged();
-        mono_jit_cleanup(data.root); data.root = nullptr;
+        CleanupDomain(data.root); data.root = nullptr;
         processRuntime = ProcessRuntime::Finished;
         data.state = ScriptRuntimeState::Stopped;
         data.verified = false;
@@ -610,6 +729,7 @@ namespace Crucible {
         if (descriptor) mono_method_desc_free(descriptor);
         if (!constructor) return data.Fail("Framework Activator.CreateInstance(Type) is unavailable");
         void* arguments[] = {reflected.Get()};
+        ManagedCallScope scope;
         MonoObject* exception = nullptr;
         auto* created = mono_runtime_invoke(constructor, nullptr, arguments, &exception);
         if (exception) return data.Fail("Constructing " + name + ": " + ManagedException(exception));
@@ -618,6 +738,7 @@ namespace Crucible {
         const uint32_t root = mono_gchandle_new(instance.Get(), false);
         try { object.value = data.nextObject++; data.objects.emplace(object.value, Impl::Object{root, type}); }
         catch (...) { mono_gchandle_free(root); object = {}; throw; }
+        data.error.clear();
         return true;
 #else
         (void)assembly; (void)nameSpace; (void)name;
@@ -654,6 +775,7 @@ namespace Crucible {
         auto* target = mono_gchandle_get_target(found->second.handle);
         if (!target) return data.Fail("Managed object was released");
         if (!CallManaged(data.root, callable, target, arguments, result, error)) return data.Fail("Calling " + method + ": " + error);
+        data.error.clear();
         return true;
 #else
         (void)object; (void)method; (void)arguments;
@@ -675,11 +797,172 @@ namespace Crucible {
         auto* callable = FindMethod(type, method, true, arguments, error);
         if (!callable) return data.Fail(error);
         if (!CallManaged(data.root, callable, nullptr, arguments, result, error)) return data.Fail("Calling " + name + "." + method + ": " + error);
+        data.error.clear();
         return true;
 #else
         (void)assembly; (void)nameSpace; (void)name; (void)method; (void)arguments;
         return false;
 #endif
+    }
+
+    bool ScriptRuntime::CreateInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+                                       const std::string& name, ScriptInstanceHandle& instance, bool enabled) {
+        instance = {}; auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        auto* loaded = data.GetAssembly(assembly);
+        if (!loaded) return false;
+        auto* type = data.GetClass(*loaded, nameSpace, name);
+        if (!type) return false;
+        std::string failure;
+        auto* create = LifecycleMethod(data.root, type, "OnCreate", {}, failure);
+        if (!create) return data.Fail(name + ": " + failure);
+        auto* update = LifecycleMethod(data.root, type, "OnUpdate", {0.0f}, failure);
+        if (!update) return data.Fail(name + ": " + failure);
+        auto* destroy = LifecycleMethod(data.root, type, "OnDestroy", {}, failure);
+        if (!destroy) return data.Fail(name + ": " + failure);
+        ScriptObjectHandle object;
+        if (!CreateObject(assembly, nameSpace, name, object)) return false;
+        const uint64_t id = data.nextInstance++;
+        Impl::Instance* owned = nullptr;
+        try {
+            auto [found, inserted] = data.instances.emplace(id, Impl::Instance{
+                {{id}, assembly, nameSpace, name, enabled ? ScriptInstanceState::Running : ScriptInstanceState::Disabled},
+                object, create, update, destroy});
+            (void)inserted; owned = &found->second;
+        } catch (...) { data.ReleaseObject(object); throw; }
+        if (!data.Callback(*owned, create, "OnCreate", {}, failure)) {
+            std::string cleanup;
+            if (!data.Dispose(*owned, cleanup)) failure += "\nCleanup also failed: " + cleanup;
+            data.instances.erase(id);
+            return data.Fail(failure);
+        }
+        instance.value = id;
+        data.error.clear();
+        CRU_INFO("[Scripting] Created lifecycle instance {}", data.Label(*owned));
+        return true;
+#else
+        (void)assembly; (void)nameSpace; (void)name; (void)enabled;
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::SetInstanceEnabled(ScriptInstanceHandle instance, bool enabled) {
+        auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        auto* owned = data.GetInstance(instance);
+        if (!owned) return false;
+        if (owned->info.state == ScriptInstanceState::Faulted) return data.Fail("Faulted instances must be destroyed and recreated");
+        owned->info.state = enabled ? ScriptInstanceState::Running : ScriptInstanceState::Disabled;
+        return true;
+#else
+        (void)instance; (void)enabled;
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::GetInstanceInfo(ScriptInstanceHandle instance, ScriptInstanceInfo& info) {
+        info = {}; auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        const auto* owned = data.GetInstance(instance);
+        if (!owned) return false;
+        info = owned->info; return true;
+#else
+        (void)instance;
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::ListInstances(std::vector<ScriptInstanceInfo>& instances) {
+        instances.clear(); auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        for (const auto& [id, instance] : data.instances) { (void)id; instances.push_back(instance.info); }
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::UpdateInstances(float deltaTime) {
+        auto& data = *m_impl;
+        if (!data.Ready()) return false;
+        if (!std::isfinite(deltaTime) || deltaTime < 0) return data.Fail("Script delta time must be finite and nonnegative");
+#if CRUCIBLE_WITH_MONO
+        std::string firstError;
+        for (auto& [id, instance] : data.instances) {
+            (void)id;
+            if (instance.info.state != ScriptInstanceState::Running) continue;
+            std::string failure;
+            if (!data.Callback(instance, instance.update, "OnUpdate", {deltaTime}, failure)) {
+                instance.info.state = ScriptInstanceState::Faulted;
+                std::string cleanup;
+                if (!data.Dispose(instance, cleanup)) failure += "\nCleanup also failed: " + cleanup;
+                instance.info.lastError = failure;
+                if (firstError.empty()) firstError = failure;
+                data.Fail(failure); // only once: faulted instances no longer receive updates
+            } else {
+                ++instance.info.updateCount;
+                instance.info.elapsedSeconds += deltaTime;
+            }
+        }
+        data.error = std::move(firstError);
+        return data.error.empty();
+#else
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::DestroyInstance(ScriptInstanceHandle& instance) {
+        auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        if (!instance) return true;
+        auto* owned = data.GetInstance(instance);
+        if (!owned) return false;
+        std::string failure;
+        const bool success = data.Dispose(*owned, failure);
+        CRU_INFO("[Scripting] Destroyed lifecycle instance {} after {} updates", data.Label(*owned), owned->info.updateCount);
+        data.instances.erase(instance.value); instance = {};
+        if (success) data.error.clear();
+        return success || data.Fail(failure);
+#else
+        (void)instance;
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::DestroyAllInstances() {
+        auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        return data.StopInstances();
+#else
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::CreateConfiguredInstances(const ScriptingConfig& config) {
+        if (!config.enabled || config.instances.empty()) return true;
+        auto& data = *m_impl;
+        if (!data.Ready()) return false;
+        std::vector<ScriptInstanceHandle> created;
+        for (const auto& definition : config.instances) {
+            ScriptAssemblyHandle assembly;
+            ScriptInstanceHandle instance;
+            if (!LoadAssembly(definition.assembly, assembly) ||
+                !CreateInstance(assembly, definition.nameSpace, definition.className, instance, definition.enabled)) {
+                std::string failure = "Creating configured script '" + definition.className + "': " + data.error;
+                for (auto it = created.rbegin(); it != created.rend(); ++it) {
+                    if (!DestroyInstance(*it)) failure += "\nRollback cleanup failed: " + data.error;
+                }
+                return data.Fail(failure);
+            }
+            created.push_back(instance);
+        }
+        return true;
     }
 
     bool ScriptRuntime::RunStartupEntry(const ScriptingConfig& config) {

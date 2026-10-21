@@ -16,8 +16,8 @@ namespace Crucible {
         AnimatorDocument() { New(); }
         void New();
         bool Load(const std::string& json, std::string& error);
-        bool Serialize(std::string& json, std::string& error) const;
-        void MarkSaved();
+        bool Serialize(std::string& json, std::string& error, std::optional<uint64_t> sourceModel = std::nullopt) const;
+        void MarkSaved(std::optional<uint64_t> sourceModel = std::nullopt);
         void DiscardChanges();
         bool Dirty() const;
         bool RuntimeMatchesSaved() const;

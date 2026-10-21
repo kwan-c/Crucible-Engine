@@ -35,12 +35,15 @@ namespace Crucible {
         void DrawDialogs(bool playing);
         void ResetSelection();
         void DeleteSelection();
-        bool ValidateForSave(std::string& json);
+        uint64_t SelectedClipSourceModel() const;
+        uint64_t ClipSourceModel();
+        bool ValidateForSave(std::string& json, uint64_t& sourceModel);
         uint32_t LiveCurrent() const;
         uint32_t LiveNext() const;
         Core& m_core;
         AnimatorDocument m_document;
         uint64_t m_asset = 0;
+        uint64_t m_clipSourceContext = 0; // last matching entity's model; selection is not an authored edit
         std::string m_savedText, m_error;
         bool m_hasDocument = false, m_visible = false, m_focused = false;
         Pending m_pending = Pending::None;

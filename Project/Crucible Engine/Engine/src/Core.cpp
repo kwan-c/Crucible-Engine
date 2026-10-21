@@ -115,6 +115,10 @@ namespace Crucible {
         // The engine starts in Edit: AudioSources stay silent until Play (PlayMode switches it).
         if (ECSAudioSystem* audio = m_systems.FindSystem<ECSAudioSystem>()) audio->SetEditMode(true);
 
+        // Standalone host instances start after Core is initialized. Entity/scene
+        // adapters and gameplay bindings remain a separate, team-owned feature.
+        if (!m_scriptRuntime->CreateConfiguredInstances(m_config.scripting)) return false;
+
         return true;
     }
 
@@ -144,6 +148,10 @@ namespace Crucible {
             // end the simulation. The scene request goes first, so Play captures the scene just loaded.
             m_scenes->ApplyPending();
             m_playMode->ApplyRequests();
+
+            // S3 instances follow Core's frame/lifetime, independent of scene and
+            // PlayMode state. A future gameplay adapter will own its own instances.
+            if (m_scriptRuntime->IsRunning()) m_scriptRuntime->UpdateInstances(dt);
 
             m_world->SetDeltaTime(dt);
             m_world->AdvanceTick();
@@ -183,6 +191,8 @@ namespace Crucible {
     }
 
     void Core::CleanUp() {
+        // Run managed teardown while Core's resources/systems are still alive.
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }

@@ -2,8 +2,9 @@
 
 S2 adds standalone C# execution to the Core-owned Mono host from
 [S1](ScriptingRuntime.md). Both Editor and Game can build, load and invoke the
-same managed DLL. No entity component, per-frame script callback or engine API
-binding is introduced. Those remain S3 and the deferred S5 respectively.
+same managed DLL. This page describes the S2 raw-object API. S3 now adds
+[managed instance callbacks](ScriptingLifecycle.md); entity components and engine
+API bindings remain deferred to S5.
 
 ## Build and try the example
 
@@ -147,9 +148,9 @@ arbitrary object parameters/results, Int64 and async return types are outside S2
   Temporary call arguments/results are rooted and pinned while native code uses
   their addresses. Handle copies refer to the same owned object; destroying one
   invalidates its aliases. Handles are host-local and must never be serialized.
-- Destroy releases a GC reference. It does not synchronously collect the object
-  or invoke Dispose/OnDestroy. S3 will define lifecycle callbacks and instance
-  management on top of this API. Remaining roots are released before final JIT
+- DestroyObject releases a GC reference. It does not synchronously collect the
+  object or invoke Dispose/OnDestroy. S3's separate instance API adds lifecycle
+  callbacks and ownership. Remaining roots are released before final JIT
   cleanup. Core still retains one root runtime across scene and PlayMode changes.
 - Constructor and method exceptions return false, with the managed type and
   available exception text/stack. A throwing exception formatter has a safe
@@ -183,5 +184,6 @@ Builds and verification fixtures/logs are ignored under
 does not claim long-duration stability, Release packaging, debugger support or
 hot reload.
 
-Next: [S3 managed instance lifecycle](ScriptingRoadmap.md). Engine bindings remain
-deferred to the approved S5 interface and subsystem owners.
+S3 is complete; see [ScriptingLifecycle.md](ScriptingLifecycle.md). Next is S4
+development infrastructure. Engine bindings remain deferred to the approved S5
+interface and subsystem owners.

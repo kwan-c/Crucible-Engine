@@ -73,7 +73,7 @@ namespace Crucible {
         m_data = std::move(data); MarkSaved(); m_undo.clear(); m_redo.clear(); m_before.reset(); error.clear();
         return true;
     }
-    bool AnimatorDocument::Serialize(std::string& json, std::string& error) const {
+    bool AnimatorDocument::Serialize(std::string& json, std::string& error, std::optional<uint64_t> sourceModel) const {
         try {
             if (m_data.positions.size() != m_data.controller.states.size() || !ValidPoint(m_data.anyState) ||
                 std::any_of(m_data.positions.begin(), m_data.positions.end(), [](auto p) { return !ValidPoint(p); }))
@@ -90,7 +90,7 @@ namespace Crucible {
             editor.AddMember("version", 1, allocator);
             editor.AddMember("positions", positions, allocator);
             editor.AddMember("anyState", point(m_data.anyState), allocator);
-            char guid[17]; std::snprintf(guid, sizeof(guid), "%016llX", static_cast<unsigned long long>(m_data.previewModel));
+            char guid[17]; std::snprintf(guid, sizeof(guid), "%016llX", static_cast<unsigned long long>(sourceModel.value_or(m_data.previewModel)));
             editor.AddMember("previewModel", rapidjson::Value(guid, allocator), allocator);
             doc.AddMember("editor", editor, allocator);
             rapidjson::StringBuffer buffer; rapidjson::PrettyWriter<rapidjson::StringBuffer> writer(buffer); doc.Accept(writer);
@@ -98,7 +98,16 @@ namespace Crucible {
             json.assign(buffer.GetString(), buffer.GetSize()); error.clear(); return true;
         } catch (const std::exception& e) { error = e.what(); return false; }
     }
-    void AnimatorDocument::MarkSaved() { EndEdit(); m_saved = m_data; }
+    void AnimatorDocument::MarkSaved(std::optional<uint64_t> sourceModel) {
+        EndEdit();
+        // Remember automatically inferred context only after a successful write,
+        // without adding a separate undo step or dirtying the draft on selection.
+        if (sourceModel) {
+            m_data.previewModel = *sourceModel;
+            if (m_before) m_before->previewModel = *sourceModel;
+        }
+        m_saved = m_data;
+    }
     void AnimatorDocument::DiscardChanges() {
         m_data = m_saved;
         m_before.reset(); m_undo.clear(); m_redo.clear();

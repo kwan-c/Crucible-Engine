@@ -72,7 +72,7 @@ namespace Crucible {
         m_pending = Pending::None; m_pendingAsset = 0;
         m_continueAfterSave = m_openGuard = m_openSaveAs = false;
         if (action == Pending::Open || action == Pending::Reload) Load(asset);
-        else if (action == Pending::New) { m_document.New(); m_hasDocument = true; m_asset = 0; m_savedText.clear(); m_error.clear(); ResetSelection(); m_pan = {45, 175}; m_zoom = 1; m_fitRequested = true; }
+        else if (action == Pending::New) { m_document.New(); m_hasDocument = true; m_asset = 0; m_clipSourceContext = 0; m_savedText.clear(); m_error.clear(); ResetSelection(); m_pan = {45, 175}; m_zoom = 1; m_fitRequested = true; }
         else if (action == Pending::Close) m_visible = false;
         else if (action == Pending::Exit && callback) callback();
     }
@@ -80,6 +80,7 @@ namespace Crucible {
         // Hiding the window is not a discard: switching assets later still consults
         // this document. Restore the save point even if the pending load fails.
         m_document.DiscardChanges();
+        m_clipSourceContext = 0;
         if (!m_asset) m_hasDocument = false; // an abandoned untitled draft has no asset
         m_error.clear(); ResetSelection();
     }
@@ -89,22 +90,42 @@ namespace Crucible {
         if (!entry || entry->type != AssetType::AnimatorController || entry->sizeBytes > MaxAnimatorControllerBytes ||
             !m_core.GetAssets().ReadText(entry->virtualPath, text)) { m_error = "Could not read controller asset"; return false; }
         if (!m_document.Load(text, m_error)) return false;
-        m_savedText = std::move(text); m_asset = asset; m_hasDocument = true;
+        m_savedText = std::move(text); m_asset = asset; m_hasDocument = true; m_clipSourceContext = 0;
         ResetSelection(); m_pan = {45, 175}; m_zoom = 1.0f; m_fitRequested = true; return true;
     }
-    bool AnimatorPanel::ValidateForSave(std::string& text) {
+    uint64_t AnimatorPanel::SelectedClipSourceModel() const {
+        const auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+        const auto entity = inspector ? inspector->GetSelectedEntity() : kNullEntity;
+        const auto& world = m_core.GetWorld();
+        if (!world.IsAlive(entity)) return 0;
+        const auto* renderer = world.Read<MeshRenderer>(entity);
+        const auto* animation = world.Read<AnimatedModel>(entity);
+        // A new draft may use the selected model before it has a controller assigned.
+        if (!renderer || (m_asset && (!animation || animation->controllerAsset != m_asset))) return 0;
+        return renderer->modelAsset;
+    }
+    uint64_t AnimatorPanel::ClipSourceModel() {
+        if (const auto selected = SelectedClipSourceModel()) m_clipSourceContext = selected;
+        return m_clipSourceContext ? m_clipSourceContext : m_document.Data().previewModel;
+    }
+    bool AnimatorPanel::ValidateForSave(std::string& text, uint64_t& sourceModel) {
         if (m_core.GetScenes().IsPlaySessionActive()) { m_error = "Stop Play Mode to save a controller"; return false; }
         m_document.EndEdit();
-        const auto model = m_document.Data().previewModel ? m_core.GetResources().GetModel(m_document.Data().previewModel) : nullptr;
-        if (m_document.Data().previewModel && !model) { m_error = "Preview model is missing; choose another model or None"; return false; }
+        sourceModel = ClipSourceModel();
+        const auto model = sourceModel ? m_core.GetResources().GetModel(sourceModel) : nullptr;
+        if (sourceModel && !model) {
+            m_error = SelectedClipSourceModel() ? "The selected entity's Model could not be loaded. Check MeshRenderer."
+                : "Clip source model is missing. Select a model entity or change the source under Advanced.";
+            return false;
+        }
         if (!ValidateAnimatorController(m_document.Data().controller, m_error, model.get())) return false;
-        return m_document.Serialize(text, m_error);
+        return m_document.Serialize(text, m_error, sourceModel);
     }
     bool AnimatorPanel::Save() {
         if (!m_hasDocument) return false;
         if (!m_asset) { m_openSaveAs = true; return false; }
-        std::string text;
-        if (!ValidateForSave(text)) return false;
+        std::string text; uint64_t sourceModel = 0;
+        if (!ValidateForSave(text, sourceModel)) return false;
         const auto* entry = m_core.GetAssets().FindByGuid(xresource::instance_guid{m_asset});
         std::string onDisk;
         if (!entry || entry->sizeBytes > MaxAnimatorControllerBytes || !m_core.GetAssets().ReadText(entry->virtualPath, onDisk)) {
@@ -112,14 +133,15 @@ namespace Crucible {
         }
         if (onDisk != m_savedText) { m_error = "Controller changed on disk. Reload it or use Save As to preserve both versions."; return false; }
         if (!m_core.GetResources().SaveAnimatorController(m_asset, text, &m_error)) return false;
-        m_savedText = text; m_document.MarkSaved();
+        m_savedText = text; m_document.MarkSaved(sourceModel);
         return true;
     }
     bool AnimatorPanel::SaveAs(const std::string& path) {
-        std::string text; if (!m_hasDocument || !ValidateForSave(text)) return false;
+        std::string text; uint64_t sourceModel = 0;
+        if (!m_hasDocument || !ValidateForSave(text, sourceModel)) return false;
         const auto id = m_core.GetResources().CreateAnimatorControllerAsset(path, text, &m_error);
         if (!id) return false;
-        m_asset = id; m_savedText = std::move(text); m_document.MarkSaved();
+        m_asset = id; m_savedText = std::move(text); m_document.MarkSaved(sourceModel);
         if (auto browser = EditorManager::GetInstance().GetPanel<AssetBrowser>(ImguiPanels::ASSETBROWSER)) browser->Refresh();
         return true;
     }
@@ -390,19 +412,25 @@ namespace Crucible {
     void AnimatorPanel::DrawDetails(bool readOnly) {
         auto& data = m_document.Data(); auto& c = data.controller;
         ImGui::BeginDisabled(readOnly);
-        ImGui::SeparatorText("Preview model");
         auto& resources = m_core.GetResources();
-        if (ImGui::BeginCombo("##PreviewModel", data.previewModel ? resources.GetName(data.previewModel).c_str() : "None (clip indices)")) {
-            if (ImGui::Selectable("None", !data.previewModel)) data.previewModel = 0;
-            for (const auto& model : resources.List(ResourceKind::Model)) {
-                ImGui::PushID(static_cast<int>(model.id)); if (ImGui::Selectable(model.name.c_str(), data.previewModel == model.id)) data.previewModel = model.id; ImGui::PopID();
+        const auto activeSource = ClipSourceModel();
+        if (!SelectedClipSourceModel() && ImGui::CollapsingHeader("Advanced")) {
+            ImGui::TextWrapped("Choose a clip source only when editing without a matching model entity selected.");
+            if (ImGui::BeginCombo("Clip source model", activeSource ? resources.GetName(activeSource).c_str() : "None (clip indices)")) {
+                if (ImGui::Selectable("None", !activeSource)) { data.previewModel = 0; m_clipSourceContext = 0; }
+                for (const auto& model : resources.List(ResourceKind::Model)) {
+                    ImGui::PushID(static_cast<int>(model.id));
+                    if (ImGui::Selectable(model.name.c_str(), activeSource == model.id)) { data.previewModel = model.id; m_clipSourceContext = 0; }
+                    ImGui::PopID();
+                }
+                ImGui::EndCombo();
             }
-            ImGui::EndCombo();
         }
         if (m_state >= 0 && m_state < static_cast<int>(c.states.size())) {
             auto& s = c.states[m_state]; ImGui::SeparatorText("State");
             EditText("Name", s.name);
-            auto model = data.previewModel ? resources.GetModel(data.previewModel) : nullptr;
+            const auto source = ClipSourceModel();
+            const auto model = source ? resources.GetModel(source) : nullptr;
             if (model) {
                 const auto clipName = [&](uint32_t index) { return index == InvalidModelIndex ? std::string("Rest pose") : index < model->animations.size() ? std::to_string(index) + ": " + model->animations[index].name : std::string("Invalid clip index"); };
                 if (ImGui::BeginCombo("Clip", clipName(s.clip).c_str())) {
@@ -489,8 +517,11 @@ namespace Crucible {
         const auto& definition = *a->controllerDefinition;
         if (!m_document.RuntimeMatchesSaved()) ImGui::TextWrapped("Draft differs from runtime. Save in Edit Mode to apply it. Live values below use the saved definition.");
         const auto current = a->controller.CurrentState(), next = a->controller.NextState();
-        if (current < definition.states.size()) ImGui::Text("Current: %s", definition.states[current].name.c_str());
-        if (next < definition.states.size()) { ImGui::Text("Next: %s", definition.states[next].name.c_str()); ImGui::ProgressBar(a->controller.TransitionWeight(), {-1, 0}); }
+        const bool transitioning = next < definition.states.size();
+        ImGui::Text("Current: %s", current < definition.states.size() ? definition.states[current].name.c_str() : "-");
+        if (transitioning) ImGui::Text("Next: %s", definition.states[next].name.c_str());
+        else ImGui::TextDisabled("Next: -");
+        ImGui::ProgressBar(transitioning ? a->controller.TransitionWeight() : 0.0f, {-1, 0}, transitioning ? nullptr : "No transition");
         ImGui::Text("Time %.3fs | progress %.3f", a->controller.Time(), a->controller.NormalizedProgress());
         if (ImGui::Button(a->playing ? "Pause instance" : "Play instance")) a->playing = !a->playing;
         const bool currentRevision = a->controllerDefinition == m_core.GetResources().GetAnimatorController(m_asset);

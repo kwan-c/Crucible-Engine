@@ -138,6 +138,26 @@ namespace Crucible
 			output = member->value.GetString();
 		}
 
+		void ReadScriptInstances(const JsonValue& scripting, std::vector<ScriptInstanceConfig>& output)
+		{
+			const auto member = scripting.FindMember("instances");
+			if (member == scripting.MemberEnd()) return;
+			if (!member->value.IsArray()) throw std::runtime_error("EngineConfigLoader: scripting.instances must be an array.");
+			std::vector<ScriptInstanceConfig> instances;
+			for (const auto& value : member->value.GetArray()) {
+				if (!value.IsObject()) throw std::runtime_error("EngineConfigLoader: each scripting instance must be an object.");
+				ScriptInstanceConfig instance;
+				ReadString(value, "assembly", instance.assembly);
+				ReadString(value, "namespace", instance.nameSpace);
+				ReadString(value, "class", instance.className);
+				ReadBool(value, "enabled", instance.enabled);
+				if (instance.assembly.empty() || instance.className.empty())
+					throw std::runtime_error("EngineConfigLoader: scripting instances require assembly and class (namespace may be empty).");
+				instances.push_back(std::move(instance));
+			}
+			output = std::move(instances); // per-app arrays replace the shared list, including []
+		}
+
 		// "aspectRatio": [16, 9]  ->  width / height. [0, 0] means free aspect.
 		void ReadAspect(const JsonValue& object, const char* key, std::uint32_t& width, std::uint32_t& height)
 		{
@@ -202,6 +222,7 @@ namespace Crucible
 				ReadString(*scripting, "startupClass", config.scripting.startupClass);
 				ReadString(*scripting, "startupMethod", config.scripting.startupMethod);
 				ReadBool(*scripting, "startupStatic", config.scripting.startupStatic);
+				ReadScriptInstances(*scripting, config.scripting.instances);
 			}
 		}
 
@@ -309,6 +330,15 @@ namespace Crucible
 		doc.Set("scripting/startupClass", config.scripting.startupClass);
 		doc.Set("scripting/startupMethod", config.scripting.startupMethod);
 		doc.Set("scripting/startupStatic", config.scripting.startupStatic);
+		doc.SetList("scripting/instances", std::vector<std::string>{});
+		for (std::size_t i = 0; i < config.scripting.instances.size(); ++i) {
+			const auto pathPrefix = "scripting/instances/" + std::to_string(i) + "/";
+			const auto& instance = config.scripting.instances[i];
+			doc.Set(pathPrefix + "assembly", instance.assembly);
+			doc.Set(pathPrefix + "namespace", instance.nameSpace);
+			doc.Set(pathPrefix + "class", instance.className);
+			doc.Set(pathPrefix + "enabled", instance.enabled);
+		}
 
 		if (!doc.SaveToFile(path))
 		{

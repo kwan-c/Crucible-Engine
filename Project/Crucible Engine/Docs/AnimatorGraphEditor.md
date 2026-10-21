@@ -28,9 +28,16 @@ assign it in the golem's AnimatedModel Controller picker.
 ## Authoring
 
 - **States:** edit name, clip, playback speed and looping; set the entry, duplicate
-  a state, or delete it and its links. A Preview Model gives indexed clip names;
-  without one, edit clip indices directly (`-1` means rest pose). Preview Model
-  is editor metadata, not a model imposed on the runtime controller.
+  a state, or delete it and its links. Clip names come automatically from the
+  selected entity's MeshRenderer when it uses this controller (or while creating
+  a new controller). The last inferred model remains available after deselection
+  or Save As. Selecting entities does not dirty the controller.
+- **Standalone clip source:** when no matching model entity is selected, the
+  collapsed **Advanced** section provides **Clip source model** for authoring an
+  unassigned controller. It falls back to remembered/saved model context. This
+  manual setting is hidden during normal entity-based editing. Without a source,
+  edit clip indices directly (`-1` means rest pose). It is editor metadata; the
+  entity's MeshRenderer still determines the actual runtime model.
 - **Transitions:** edit source/destination, crossfade seconds, normalized offset,
   exit time and self-transition policy. Conditions are ANDed. Add/remove conditions,
   choose a parameter and a compatible operator, and enter typed numeric thresholds.
@@ -48,7 +55,10 @@ assign it in the golem's AnimatedModel Controller picker.
 
 Draft names/settings may temporarily be invalid while typing. Validation reports
 the problem and blocks Save rather than publishing an incomplete controller.
-A selected Preview Model also validates every clip index before saving.
+The inferred or manually chosen clip source also validates clip indices before
+saving. A successful Save/Save As remembers it in the existing `previewModel`
+editor metadata field. Failed saves keep the draft and its save point intact;
+inferred context does not create an extra undo step.
 
 The asset has a separate 20-step undo/redo history; a continuous drag/text edit is
 one step. Use the panel's buttons or Ctrl+Z/Ctrl+Y (also Ctrl+Shift+Z) while it has
@@ -64,7 +74,7 @@ GUID. It requires a new filename and does not overwrite an existing asset.
 **Save** preserves the current asset's GUID. Asset renaming still uses the GUID
 lookup, so saving follows the asset's indexed path after an Asset Browser rename.
 
-Node positions, Any State position and optional Preview Model GUID are stored as
+Node positions, Any State position and optional clip-source Model GUID are stored as
 versioned editor metadata in that same file:
 
 ```json
@@ -121,6 +131,11 @@ are suppressed and live controls explicitly use the saved definition. A layout
 edit alone does not suppress highlights. Use the Inspector/Hierarchy selection to
 switch between independent instances. Selection restoration after Play/Stop uses
 the editor's existing scene-GUID mechanism.
+
+Inspector state/transition/time rows keep a fixed height. The Animator live view
+also reserves its next-state row and blend bar, showing no transition between
+blends. Repeated transitions therefore do not move the playback or parameter
+controls below the status display.
 
 ## Implementation and verification
 

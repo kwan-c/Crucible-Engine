@@ -28,7 +28,7 @@ is part of S1-S4.
 |---|---|---|
 | S1 - Native runtime host | Optional Windows x64 Mono SDK integration; Core-owned process-lifetime host; shared configuration/logging; portable Editor/Game deployment; managed execution diagnostic | Implemented. See ScriptingRuntime.md for setup and verification. |
 | S2 - Assembly management | Build/consume a small managed C# DLL using the chosen framework profile; load assemblies through the host; discover classes, construct objects and invoke methods without gameplay APIs | Implemented. The standalone C# example executes through Core; see ScriptingAssemblies.md for usage and verification. |
-| S3 - Managed instance lifecycle | Manage instances using S2's GC handles and exception handling; establish standalone creation/update/disposal conventions and failure policy; release references before runtime teardown | Pending. Deterministic instance lifecycle works without adding another ECS or ScriptComponent. |
+| S3 - Managed instance lifecycle | Manage instances using S2's GC handles and exception handling; establish standalone creation/update/disposal conventions and failure policy; release references before runtime teardown | Implemented. Core-lifetime instances, cached synchronous callbacks, enable/fault policy and cleanup work without another ECS or ScriptComponent. See ScriptingLifecycle.md. |
 | S4 - Development infrastructure | Complete C# build/deployment workflow, compiler diagnostics, dependency resolution and failure recovery; define a safe reload policy and document extension rules | Pending. Teammates can build and debug the scripting foundation reproducibly. Reload is explicit or restart-based until domain/thread/reference constraints are understood. |
 | S5 - Team-owned engine bindings | Agree on the interop contract, then connect subsystem-owned entity/transform/physics/input/animation/audio/resource APIs and an approved gameplay/ECS adapter | Deferred. Requires the tech lead/team to approve scope and API ownership. |
 
@@ -65,7 +65,7 @@ distribution selected for S1 is Mono 6.12.0.206 x64/SGen. This is the legacy Mon
 product and framework profile, not the modern .NET runtime. Changing to .NET
 hosting later would be a separate agreed architecture change.
 
-## S3 handoff
+## S4 handoff
 
 S2 provides Core::GetScriptRuntime, assembly/object handles, checked class discovery,
 construction, exact typed invocation and explicit GC-root release. It builds a
@@ -73,11 +73,18 @@ standalone example offline using Mono's 4.5 profile and C# 7.2 compiler. An opti
 configured entry demonstrates one-shot user code during Core initialization;
 it is not a frame lifecycle. See ScriptingAssemblies.md.
 
-Build S3 instance management on these handles rather than exposing the private root
-domain. Define creation/update/disposal conventions, when failed instances stop
-receiving callbacks, and how Core shuts them down before Mono cleanup. Do not
-create another ECS or ScriptComponent. The S2 one-shot entry remains optional;
-neither it nor the host's BCL check establishes an automatic script-class lifecycle.
+S3 now owns instances through separate native handles. Classes supply synchronous
+public void OnCreate(), OnUpdate(float), and OnDestroy(). Opt-in configured
+instances follow Core's lifetime/frame loop, independent of scene and PlayMode
+state. Failed updates stop only that instance and release its managed root after
+one cleanup attempt. See ScriptingLifecycle.md for the contract and verification.
+
+S4 should make build/compiler diagnostics, dependency failures and developer
+workflows easier to use. Keep restart as the working reload policy. Any future
+domain reload must account for S2 raw objects, S3 cached methods/classes and GC
+handles, plus managed threads, delegates and native callbacks. Stopping S3 instances
+alone is not sufficient to unload a domain. Preserve the single root runtime and
+avoid speculative hot reload. Gameplay/ECS adapters and subsystem bindings remain S5.
 
 Future native binding registration belongs at the host's documented post-JIT,
 pre-user-assembly initialization point. S1 registers no internal calls and

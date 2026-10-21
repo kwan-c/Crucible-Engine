@@ -2,8 +2,9 @@
 
 S1 embeds a managed runtime in the existing Engine.dll/Core lifecycle. This page
 documents that foundation. [S2](ScriptingAssemblies.md) now adds C# DLL loading,
-discovery, objects and invocation. Automatic lifecycle callbacks and engine
-bindings remain later work in ScriptingRoadmap.md.
+discovery, objects and invocation. [S3](ScriptingLifecycle.md) now provides standalone
+instance lifecycle callbacks. Development tooling and engine bindings remain later
+work in ScriptingRoadmap.md.
 
 ## Distribution and compatibility
 
@@ -151,7 +152,7 @@ an application that has no Mono dependency at all.
   final cleanup it releases entities, systems and layers first, then shuts Mono
   down once. Destruction/repeated Shutdown is safe. Final Mono cleanup cannot be
   followed by initialization in that same process; the guard reports an error.
-- S3 must release managed instances/callbacks before final host shutdown. S4 must
+- S3 releases managed instances/callbacks before final host shutdown. S4 must
   manage reload separately; no domain unload or hot-reload API exists in S1.
 
 The post-JIT, pre-user-assembly point in ScriptRuntime.cpp is reserved for future

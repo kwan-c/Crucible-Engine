@@ -8,6 +8,17 @@ namespace Crucible {
     // Host-local handles, never serialized. Copying does not create another object.
     struct ScriptAssemblyHandle { uint64_t value = 0; explicit operator bool() const { return value != 0; } };
     struct ScriptObjectHandle { uint64_t value = 0; explicit operator bool() const { return value != 0; } };
+    struct ScriptInstanceHandle { uint64_t value = 0; explicit operator bool() const { return value != 0; } };
+    enum class ScriptInstanceState { Running, Disabled, Faulted };
+    struct ScriptInstanceInfo {
+        ScriptInstanceHandle handle;
+        ScriptAssemblyHandle assembly;
+        std::string nameSpace, name;
+        ScriptInstanceState state = ScriptInstanceState::Disabled;
+        uint64_t updateCount = 0;
+        double elapsedSeconds = 0;
+        std::string lastError;
+    };
     struct ScriptClassInfo {
         std::string nameSpace, name;
         bool isAbstract = false;

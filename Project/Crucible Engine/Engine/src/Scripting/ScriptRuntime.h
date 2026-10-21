@@ -43,6 +43,18 @@ namespace Crucible {
             const std::vector<ScriptValue>& arguments, ScriptValue& result);
         // Optional one-shot configured entry; not a frame callback or gameplay lifecycle.
         bool RunStartupEntry(const ScriptingConfig& config);
+        // S3 contract: public instance void OnCreate(), OnUpdate(float), OnDestroy().
+        // The host owns the object; callback methods are validated before construction.
+        bool CreateInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+            const std::string& name, ScriptInstanceHandle& instance, bool enabled = true);
+        bool SetInstanceEnabled(ScriptInstanceHandle instance, bool enabled);
+        bool GetInstanceInfo(ScriptInstanceHandle instance, ScriptInstanceInfo& info);
+        bool ListInstances(std::vector<ScriptInstanceInfo>& instances);
+        bool UpdateInstances(float deltaTime);
+        bool DestroyInstance(ScriptInstanceHandle& instance);
+        bool DestroyAllInstances();
+        // Opt-in config batch; a failed creation rolls back only this batch.
+        bool CreateConfiguredInstances(const ScriptingConfig& config);
     private:
         struct Impl;
         std::unique_ptr<Impl> m_impl;
