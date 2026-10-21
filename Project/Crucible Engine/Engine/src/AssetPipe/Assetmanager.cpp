@@ -28,6 +28,7 @@
 #include "AssetManager.h"
 #include "AssetRegistry.h"
 #include "AssetPaths.h"
+#include "Systems/ExecutablePath.h"
  
 #include <algorithm>
 #include <array>
@@ -40,17 +41,6 @@
 #include <string>
 #include <xresource_guid.h>
 
-#ifdef _WIN32
-// Only for GetModuleFileNameW (GetExecutableDirectory). Keep windows.h from dragging in half
-// the OS and from defining min and max as macros (they would break std::min / std::max below).
-#ifndef WIN32_LEAN_AND_MEAN
-#define WIN32_LEAN_AND_MEAN
-#endif
-#ifndef NOMINMAX
-#define NOMINMAX
-#endif
-#include <windows.h>
-#endif
 
 namespace fs = std::filesystem;
  
@@ -216,37 +206,8 @@ namespace Crucible {
  
     fs::path AssetManager::GetExecutableDirectory()
     {
-#ifdef _WIN32
-        // GetModuleFileNameW(nullptr, ...) gives the process's .exe (Editor.exe / Mekanomachia.exe),
-        // not Engine.dll - the .exe's folder is the one the search should start from. It cuts the
-        // path off without failing when the buffer is too small (the return value then equals the
-        // buffer size), so grow the buffer until the whole path fits.
-        std::wstring buffer(MAX_PATH, L'\0');
-        for (;;)
-        {
-            const DWORD length = GetModuleFileNameW(nullptr, buffer.data(), static_cast<DWORD>(buffer.size()));
-            if (length == 0)
-                break;                                    // the call failed
-            if (length < buffer.size())
-            {
-                buffer.resize(length);
-                return fs::path(buffer).parent_path();    // drop "Mekanomachia.exe"
-            }
-            if (buffer.size() >= 32768)
-                break;                                    // longer than any path Windows allows
-            buffer.resize(buffer.size() * 2);
-        }
-#else
-        // Linux: the running executable is always linked here.
-        std::error_code linkEc;
-        const fs::path exe = fs::read_symlink("/proc/self/exe", linkEc);
-        if (!linkEc)
-            return exe.parent_path();
-#endif
-        // The OS could not tell us: fall back to the working directory.
-        std::error_code ec;
-        const fs::path cwd = fs::current_path(ec);
-        return ec ? fs::path{} : cwd;
+        // Shared with the logger (crucible.log goes next to the .exe) - see Systems/ExecutablePath.h.
+        return ExecutableDirectory();
     }
  
     fs::path AssetManager::FindAssetRoot(const std::string& explicitRoot)

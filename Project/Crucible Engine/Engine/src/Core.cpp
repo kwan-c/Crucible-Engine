@@ -72,7 +72,9 @@ namespace Crucible {
         // Shared asset index + resource cache. Before RegisterEngineSystems(): the render
         // extraction system resolves MeshRenderer/Skybox asset ids through the ResourceManager.
         m_assets = std::make_unique<AssetManager>();
-        if (!m_assets->Init()) { CRU_WARN("[Core] AssetManager found no asset root; asset ids will not resolve"); }
+        // Without an asset index nothing resolves (scenes, meshes, materials): stop rather than run
+        // a half-working engine. The mains' RequireAssetRoot() check normally catches this first.
+        if (!m_assets->Init()) { CRU_ERROR("[Core] AssetManager found no asset root - cannot start"); return false; }
         m_resources = std::make_unique<ResourceManager>(*m_assets, *m_renderer);
         m_resources->Init();
 

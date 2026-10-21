@@ -2,6 +2,7 @@
 
 #include "LogSink.h"
 #include "LogTime.h"
+#include "Systems/ExecutablePath.h"
 
 #include <atomic>
 #include <cstdlib>
@@ -40,6 +41,7 @@ namespace Crucible::Debug
             std::atomic<bool> initialised{ false };
 
             std::string startedAt;      // wall-clock text, captured once at Init
+            std::filesystem::path logFilePath;   // resolved path of the open log file, or empty
             TimePoint   startTick{};    // monotonic, for the runtime figure
         };
 
@@ -118,13 +120,22 @@ namespace Crucible::Debug
 
             // The file sink is created before anything is logged, so the
             // opening banner is the first line in the file.
+            state.logFilePath.clear();
             if (!config.logFile.empty())
             {
-                auto file = std::make_unique<FileSink>(config.logFile);
+                // Relative -> next to the .exe (see LogConfig::logFile).
+                std::filesystem::path path = config.logFile;
+                if (path.is_relative() && !ExecutableDirectory().empty())
+                {
+                    path = ExecutableDirectory() / path;
+                }
+
+                auto file = std::make_unique<FileSink>(path);
 
                 if (file->IsOpen())
                 {
                     state.sinks.push_back(std::move(file));
+                    state.logFilePath = path;
                 }
             }
 
@@ -141,9 +152,11 @@ namespace Crucible::Debug
         // self-explanatory when someone sends you one.
         LogSetting("Logger", "console",         config.consoleSink);
         LogSetting("Logger", "vsOutput",        config.debugOutputSink);
-        LogSetting("Logger", "logFile",         config.logFile.empty()
+        // UTF-8, not .string(): that throws on Windows for folder names outside the code page.
+        const std::u8string logFileText = state.logFilePath.u8string();
+        LogSetting("Logger", "logFile",         state.logFilePath.empty()
                                                     ? std::string{ "(none)" }
-                                                    : config.logFile.string());
+                                                    : std::string(reinterpret_cast<const char*>(logFileText.data()), logFileText.size()));
         LogSetting("Logger", "minLevel",        LevelName(config.minLevel));
         LogSetting("Logger", "sourceLocations", config.showSourceLocation);
 
@@ -227,6 +240,18 @@ namespace Crucible::Debug
     double ElapsedSeconds()
     {
         return SecondsSince(State().startTick);
+    }
+
+    std::filesystem::path LogFilePath()
+    {
+        auto& state = State();
+        if (!state.initialised)
+        {
+            Init();     // same as the first log call would
+        }
+
+        const std::scoped_lock lock{ state.mutex };
+        return state.logFilePath;
     }
 
     // --------------------------------------------------------------- Logging

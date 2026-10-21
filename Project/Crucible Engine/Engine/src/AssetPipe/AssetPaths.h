@@ -20,6 +20,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 #include <string_view>
 
 #include "EngineExport.h"
@@ -34,5 +35,14 @@ namespace Crucible {
 	// AssetRoot() / relative, e.g. AssetPath("Shaders/DefaultShader.spv").
 	// With no Assets folder found this is just `relative`, so a failed open names the file.
 	ENGINE_API std::filesystem::path AssetPath(std::string_view relative);
+
+	// For mains, before anything else: true if the Assets folder was found. If not, shows the
+	// player what was searched and how to fix it (ShowFatalError), and the main should just
+	// return - nothing after it can work without Assets (shaders, config, scenes).
+	ENGINE_API bool RequireAssetRoot();
+
+	// A path as UTF-8 text, for messages and logs. Use instead of path.string(): on Windows that
+	// throws for folder names the system code page can't represent (easy to hit under OneDrive).
+	ENGINE_API std::string PathToUtf8(const std::filesystem::path& path);
 
 }

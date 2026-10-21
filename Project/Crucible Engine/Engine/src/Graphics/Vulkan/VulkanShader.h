@@ -50,7 +50,7 @@ namespace Crucible {
         // non-English names (common under OneDrive) work too.
         std::ifstream ifs(path, std::ios::ate | std::ios::binary);
         if (!ifs.is_open()) {
-            throw std::runtime_error("[Renderer | Shader] Failed to open " + path.generic_string() +
+            throw std::runtime_error("[Renderer | Shader] Failed to open " + PathToUtf8(path) +
                                      " - is the Assets folder there? (it is searched for upward from the "
                                      "executable; set CRUCIBLE_ASSET_ROOT to point at it directly)");
         }
@@ -59,7 +59,7 @@ namespace Crucible {
         // Vulkan would reject it far less readably than this.
         const std::streamoff byteCount = ifs.tellg();
         if (byteCount <= 0 || byteCount % static_cast<std::streamoff>(sizeof(uint32_t)) != 0) {
-            throw std::runtime_error("[Renderer | Shader] " + path.generic_string() + " is empty or not valid SPIR-V (" +
+            throw std::runtime_error("[Renderer | Shader] " + PathToUtf8(path) + " is empty or not valid SPIR-V (" +
                                      std::to_string(byteCount) + " bytes) - try rebuilding to recompile the shaders");
         }
 
@@ -67,7 +67,7 @@ namespace Crucible {
         std::vector<uint32_t> code(static_cast<size_t>(byteCount) / sizeof(uint32_t));
         ifs.seekg(0, std::ios::beg);
         if (!ifs.read(reinterpret_cast<char*>(code.data()), byteCount)) {
-            throw std::runtime_error("[Renderer | Shader] Failed to read " + path.generic_string());
+            throw std::runtime_error("[Renderer | Shader] Failed to read " + PathToUtf8(path));
         }
 
         vk::ShaderModuleCreateInfo createInfo{

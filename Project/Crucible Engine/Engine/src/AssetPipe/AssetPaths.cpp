@@ -13,6 +13,10 @@
 #include "AssetPipe/AssetPaths.h"
 #include "AssetPipe/Assetmanager.h"
 #include "Diagnostics/Logger.h"
+#include "Diagnostics/FatalError.h"
+#include "Systems/ExecutablePath.h"
+
+#include <system_error>
 
 namespace Crucible {
 
@@ -26,10 +30,39 @@ namespace Crucible {
 			if (found.empty())
 				CRU_WARN("[AssetPaths] No 'Assets' folder found (checked CRUCIBLE_ASSET_ROOT, then upward from the executable and the working directory)");
 			else
-				CRU_INFO("[AssetPaths] Assets folder: {}", found.generic_string());
+				CRU_INFO("[AssetPaths] Assets folder: {}", PathToUtf8(found));
 			return found;
 		}();
 		return root;
+	}
+
+	bool RequireAssetRoot()
+	{
+		if (!AssetRoot().empty())
+			return true;
+
+		std::error_code ec;
+		const std::filesystem::path cwd = std::filesystem::current_path(ec);
+
+		std::string message =
+			"The 'Assets' folder could not be found, so the program cannot start.\n\n"
+			"Looked in:\n"
+			"  - the CRUCIBLE_ASSET_ROOT environment variable (not set, or not a folder)\n"
+			"  - " + PathToUtf8(ExecutableDirectory()) + " and the folders above it\n";
+		if (!ec && cwd != ExecutableDirectory())
+			message += "  - " + PathToUtf8(cwd) + " and the folders above it\n";
+		message +=
+			"\nPut the Assets folder next to the program, or set CRUCIBLE_ASSET_ROOT "
+			"to its full path.";
+
+		ShowFatalError("Assets folder not found", message);
+		return false;
+	}
+
+	std::string PathToUtf8(const std::filesystem::path& path)
+	{
+		const std::u8string text = path.generic_u8string();
+		return std::string(reinterpret_cast<const char*>(text.data()), text.size());
 	}
 
 	std::filesystem::path AssetPath(std::string_view relative)
