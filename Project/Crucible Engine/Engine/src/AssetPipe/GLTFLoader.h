@@ -81,6 +81,13 @@ namespace Crucible {
         it (TextureHandle only exists once a texture has actually been
         uploaded to the GPU, which hasn't happened yet at parse time).
      *************************************************************************/
+    /// glTF material.alphaMode: how the base colour's alpha is used.
+    enum class GLTFAlphaMode : uint8_t {
+        Opaque,   ///< "OPAQUE" (the default): alpha ignored
+        Mask,     ///< "MASK": pixels below alphaCutoff are cut out (leaves, fences)
+        Blend     ///< "BLEND": see-through (the engine has no blended materials yet - cut out at 0.5)
+    };
+
     struct GLTFMaterial {
         bool        hasBaseColor = false;           std::size_t baseColorImage = 0;
         bool        hasNormal = false;              std::size_t normalImage = 0;
@@ -92,6 +99,10 @@ namespace Crucible {
         glm::vec3   emissiveFactor{ 0.0f, 0.0f, 0.0f };
         float       metallicFactor  = 1.0f;
         float       roughnessFactor = 1.0f;
+
+        GLTFAlphaMode alphaMode   = GLTFAlphaMode::Opaque;
+        float         alphaCutoff = 0.5f;    // MASK only (the spec's default is 0.5)
+        bool          doubleSided = false;   // Blender: Backface Culling off -> true
     };
 
     /*************************************************************************

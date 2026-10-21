@@ -47,6 +47,9 @@ namespace Crucible
 
         Renderer& GetRenderer() const { return *m_renderer; }
 
+        // The settings this Core was started with (see EngineConfigLoader::LoadForApp).
+        const EngineConfig& GetConfig() const noexcept { return m_config; }
+
         // Fixes the window's shape to `width`:`height` (e.g. 16, 9) so the game is framed the
         // same on every machine, or frees it again. Meant for the standalone game and its
         // settings menu; the editor leaves the window free. See WindowManager::LockAspectRatio.

@@ -52,7 +52,7 @@ namespace Crucible {
 		void Update(float dt) override;
 
 		// The generic rttr-instance path (see file header comment).
-		template<typename T> void SetTarget(T& obj) { CommitPendingEdit(); m_draw = [&obj] { DrawInstance(obj); }; m_selected = kNullEntity; m_selection.clear(); }
+		template<typename T> void SetTarget(T& obj) { CommitPendingEdit(); m_draw = [this, &obj] { DrawInstance(obj); }; m_selected = kNullEntity; m_selection.clear(); }
 		void ClearTarget() { CommitPendingEdit(); m_draw = nullptr; m_selected = kNullEntity; m_selection.clear(); }
 
 		// Any panel's own UI, drawn in the Inspector instead of an entity - e.g. the Asset
@@ -91,7 +91,11 @@ namespace Crucible {
 		std::size_t SaveUnsavedMaterials();
 
 	private:
-		static bool DrawInstance(rttr::instance obj);   // true if a value changed
+		bool DrawInstance(rttr::instance obj);   // true if a value changed
+		// Helpers drawn straight after one particular field (e.g. "Pick from Sky" after Skybox's
+		// ambientFromSky), next to the values they fill in. True if they changed something.
+		bool DrawPropertyExtras(rttr::instance& obj, std::string const& name);
+		bool DrawPickFromSky(Skybox& skybox);
 
 		void DrawEntityInspector(Entity entity);
 		void DrawAddComponentButton(Entity entity);
@@ -100,6 +104,8 @@ namespace Crucible {
 
 		template <typename T> bool DrawComponentExtras(T&) { return false; }
 		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
+		bool DrawComponentExtras(UIButton& button);         // scene dropdown for onClick = LoadScene
+		bool DrawComponentExtras(UISlider& slider);         // direction dropdown that also turns the UIRect
 		bool DrawMaterialSection(MeshRenderer& renderer);
 
 		std::function<void()> m_draw;
@@ -130,5 +136,15 @@ namespace Crucible {
 		std::string m_editLabel;
 		Entity      m_editEntity = kNullEntity;
 		bool        m_editOpen = false;
+
+		// ---- Name field ----
+		// Typed into m_nameBuffer (any length, UTF-8) and written to the entity only when the
+		// field is left or the edit is committed (selection change, Play, Save, Undo...), so the
+		// entity never holds a blank or half-typed name. World::SetEntityName applies the naming
+		// rules: a name left blank becomes the next "Entity N".
+		void ApplyPendingName();
+		std::string m_nameBuffer;
+		Entity      m_nameEntity = kNullEntity;   // whose name m_nameBuffer holds
+		bool        m_nameDirty = false;          // typed into, not written yet
 	};
 }

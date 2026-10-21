@@ -88,8 +88,17 @@ VSOutput particleVert(uint vertexID : SV_VulkanVertexID) {
     return output;
 }
 
+// The scene pass has a second output, the toon outline pass's line data. Particles leave it as
+// it is: they write zero there with zero alpha, which the shared blend state (ONE,
+// ONE_MINUS_SRC_ALPHA) turns into "keep what is there" - one blend state for both outputs, so no
+// independentBlend device feature is needed.
+struct ParticleOutput {
+    float4 colour : SV_Target0;
+    float4 lines  : SV_Target1;
+};
+
 [shader("fragment")]
-float4 particleFrag(VSOutput input) : SV_Target {
+ParticleOutput particleFrag(VSOutput input) {
     float4 texel;
     if (pc.params.w > 0.5) {
         texel = particleTex.Sample(input.uv);
@@ -105,5 +114,8 @@ float4 particleFrag(VSOutput input) : SV_Target {
     // Fog: a glowing (additive) particle just dims; an ordinary one is covered like a surface.
     bool   additive = pc.params.z > 0.5;
     float3 rgb      = additive ? color.rgb * input.fog.a : color.rgb * input.fog.a + input.fog.rgb;
-    return float4(rgb * color.a, additive ? 0.0 : color.a);
+    ParticleOutput output;
+    output.colour = float4(rgb * color.a, additive ? 0.0 : color.a);
+    output.lines  = float4(0.0, 0.0, 0.0, 0.0);
+    return output;
 }

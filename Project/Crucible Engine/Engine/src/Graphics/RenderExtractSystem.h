@@ -118,6 +118,7 @@ namespace Crucible
 		using SkyboxQuery  = Query<const Skybox>;
 		using CameraQuery  = Query<const WorldTransform, const CameraComponent>;
 		using ParamsQuery  = Query<const MeshRenderer, const MaterialParams>;
+		using WaterQuery   = Query<const WorldTransform, const Water>;
 
 		Renderer& m_renderer;
 		ResourceManager* m_resources = nullptr;   // resolves asset ids (MeshRenderer/Skybox); may be null
@@ -126,6 +127,7 @@ namespace Crucible
 		std::optional<SkyboxQuery>  m_skyboxQuery;   // same
 		std::optional<CameraQuery>  m_cameraQuery;   // same
 		std::optional<ParamsQuery>  m_paramsQuery;   // same
+		std::optional<WaterQuery>   m_waterQuery;    // same
 
 		// One render proxy per MeshRenderer entity, indexed by Entity::index (a flat array, so the
 		// per-frame lookup is O(1) even with tens of thousands of enemies). An entity not seen in
@@ -136,7 +138,21 @@ namespace Crucible
 			std::uint64_t     seenFrame  = 0;
 			glm::vec4         params{ 1.0f, 0.0f, 0.0f, 0.0f };   // from a MaterialParams component, when the entity has one
 			std::uint64_t     paramsFrame = 0;                    // frame `params` was last written
+			// A Water component on the same entity: its MeshRenderer's mesh is the water's
+			// surface (waterMesh, resolved this frame) instead of an ordinary object.
+			std::uint64_t     waterFrame = 0;                     // frame the entity was last seen with a Water
+			MeshHandle        waterMesh;
 		};
+
+		// This frame's water surfaces (gathered before the MeshRenderer loop, which may hand
+		// them their mesh), submitted after it.
+		struct WaterItem {
+			std::uint32_t entityIndex = 0;
+			glm::mat4     model{ 1.0f };
+			WaterSettings settings;
+		};
+		std::vector<WaterItem> m_waterItems;
+		MeshHandle             m_planeMesh;   // the built-in Plane: a Water's surface when it has no MeshRenderer
 		std::vector<ProxyRecord>   m_records;
 		std::vector<std::uint32_t> m_activeRecords;   // entity indices that currently own a proxy
 		std::uint64_t              m_frame = 0;

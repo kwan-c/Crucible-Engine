@@ -1,11 +1,13 @@
 #include <memory>
 
 #include "Core.h"
+#include "Configuration/EngineConfigLoader.h"
 #include "ImGui/ImGuiLayer.h"
 
 int main()
 {
-    Crucible::Core core;
+    // Same config file as the Game (Assets/Config/EngineConfig.json), plus its "editor" overrides.
+    Crucible::Core core(Crucible::EngineConfigLoader::LoadForApp(Crucible::AppKind::Editor));
 
     if (!core.Init())
     {

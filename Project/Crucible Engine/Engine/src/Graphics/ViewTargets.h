@@ -48,12 +48,28 @@ namespace Crucible {
         vk::raii::DescriptorSet                          aoDepthSet = nullptr;   // depth + normals, for the occlusion pass
         vk::raii::DescriptorSet                          aoBlurSet = nullptr;    // raw occlusion + depth, for the blur pass
         // MSAA (samples > 1): the scene is drawn into these multisampled images, which are
-        // then resolved (averaged) into hdrImage and the view's ordinary depth image.
+        // then resolved (averaged) into hdrImage and the view's ordinary depth image. With water
+        // in view they are kept between the two halves of the scene pass (ScenePass).
         uint32_t                                         samples = 1;
         VulkanImage                                      msaaColor;
         vk::raii::ImageView                              msaaColorView = nullptr;
         VulkanImage                                      msaaDepth;
         vk::raii::ImageView                              msaaDepthView = nullptr;
+        // Toon outlines: the scene pass's second output (RenderLayouts::kLineDataFormat), which
+        // the outline pass reads, and its multisampled twin when samples > 1.
+        VulkanImage                                      lineData;
+        vk::raii::ImageView                              lineDataView = nullptr;
+        vk::raii::DescriptorSet                          lineDataSet = nullptr;  // lineData, for the outline pass
+        VulkanImage                                      msaaLineData;
+        vk::raii::ImageView                              msaaLineDataView = nullptr;
+        // Water (WaterPass): copies of the scene drawn before the water - its colour and depth -
+        // which the water reads while it is drawn over the originals. Filled by ScenePass only
+        // when the view has water in sight.
+        VulkanImage                                      sceneCopy;
+        vk::raii::ImageView                              sceneCopyView = nullptr;
+        VulkanImage                                      depthCopy;               // the depth image's format
+        vk::raii::ImageView                              depthCopyView = nullptr;
+        vk::raii::DescriptorSet                          waterSet = nullptr;      // sceneCopy + depthCopy, for the water pass
     };
 
     // Creates and resizes PostTargets, and owns what they are built from: the descriptor pool
@@ -79,8 +95,9 @@ namespace Crucible {
                   vk::DescriptorSetLayout twoTextureSetLayout, vk::Format depthFormat);
 
         /*********************************************************************
-         \brief  (Re)creates a view's HDR image, MSAA pair, bloom chain and
-                 ambient occlusion images at the given size, and points its
+         \brief  (Re)creates a view's HDR image, MSAA images, bloom chain,
+                 ambient occlusion images and water copies at the given
+                 size, and points its
                  descriptor sets at them. The sets are allocated the first
                  time and reused after that.
          \param[in,out] targets  The view's targets.

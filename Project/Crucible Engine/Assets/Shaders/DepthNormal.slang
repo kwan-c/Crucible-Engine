@@ -17,8 +17,17 @@ struct InstanceData {
     float4   params;   // unused here; keeps the 80-byte stride of Crucible::InstanceData
 };
 
+// Cut-out materials (leaves) use the second pair of entry points, which drop the pixels the main
+// pass will drop (Crucible::CutoutPush, and the material's albedo texture at set 1).
+struct CutoutPush {
+    float alphaCutoff;
+    float alphaTint;   // the material's albedoTint.a
+};
+
 [[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms>  frame;
 [[vk::binding(2, 0)]] StructuredBuffer<InstanceData> instances;
+[[vk::binding(0, 1)]] Sampler2D                      albedoTex;
+[[vk::push_constant]] ConstantBuffer<CutoutPush>     pc;
 
 struct VSInput {
     float3 position;
@@ -28,6 +37,18 @@ struct VSInput {
 struct VSOutput {
     float4 pos : SV_Position;
     float3 normalVS;
+};
+
+struct CutoutVSInput {
+    float3 position;
+    float3 normal;
+    float2 uv;
+};
+
+struct CutoutVSOutput {
+    float4 pos : SV_Position;
+    float3 normalVS;
+    float2 uv;
 };
 
 [shader("vertex")]
@@ -42,8 +63,26 @@ VSOutput depthNormalVert(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     return output;
 }
 
+// A double-sided material's back faces store their own (flipped) normal, as the main pass lights them.
 [shader("fragment")]
-float4 depthNormalFrag(VSOutput input) : SV_Target {
+float4 depthNormalFrag(VSOutput input, bool frontFacing : SV_IsFrontFace) : SV_Target {
     // -1..1 stored as 0..1.
-    return float4(normalize(input.normalVS) * 0.5 + 0.5, 1.0);
+    return float4(normalize(input.normalVS) * (frontFacing ? 0.5 : -0.5) + 0.5, 1.0);
+}
+
+[shader("vertex")]
+CutoutVSOutput depthNormalCutoutVert(CutoutVSInput input, uint instanceID : SV_VulkanInstanceID) {
+    CutoutVSOutput output;
+    float4x4 model = instances[instanceID].model;
+    float4   world = mul(model, float4(input.position, 1.0));
+    output.pos      = mul(frame.proj, mul(frame.view, world));
+    output.normalVS = mul((float3x3)frame.view, mul((float3x3)model, input.normal));
+    output.uv       = input.uv;
+    return output;
+}
+
+[shader("fragment")]
+float4 depthNormalCutoutFrag(CutoutVSOutput input, bool frontFacing : SV_IsFrontFace) : SV_Target {
+    if (albedoTex.Sample(input.uv).a * pc.alphaTint < pc.alphaCutoff) { discard; }
+    return float4(normalize(input.normalVS) * (frontFacing ? 0.5 : -0.5) + 0.5, 1.0);
 }

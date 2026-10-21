@@ -22,29 +22,51 @@
 
 #include "ImGui/ImGuiManager.h"
 #include <Graphics/ViewportPanel.h>
+#include <Configuration/EngineConfig.h>
+
+#include <string>
 
 namespace Crucible {
 
 	class GameView : public EditorPanel {
 	public:
-		explicit GameView(Renderer& renderer) : m_renderer(renderer), m_viewport(renderer, ViewportRole::Game) {}
+		// `project` supplies the game's aspect ratio (EngineConfig.json "project": { "aspectRatio" }).
+		// When it has one, the view starts on a "Game (W:H)" entry so editor Play is framed the
+		// way the standalone game's window is; the other aspects stay one click away.
+		GameView(Renderer& renderer, ProjectConfig const& project);
+
+		// Point the "Game (W:H)" entry at a new shape (after File > Project Settings saves) and
+		// switch to it. 0:0 removes the entry and falls back to Free Aspect if it was selected.
+		void SetProjectAspect(uint32_t width, uint32_t height);
 
 		// REQUIRED Overrides
 		void Init() override;
 		void Update(float dt) override;
 
-		// Letterboxed size in pixels of the game image (respects the selected aspect ratio).
+		// The resolution the game camera renders at: the letterboxed image size for Free Aspect and
+		// the ratios, exactly width x height for a fixed resolution.
 		ImVec2 GetViewportSize() const { return m_viewportSize; }
 		bool   IsViewportHovered() const { return m_hovered; }
 
+		// Where the game image is drawn (ImGui screen pixels) and how much it is shrunk to fit
+		// (1 unless a fixed resolution is bigger than the panel). Together they turn a mouse
+		// position into game-screen pixels: (mouse - GetImageMin()) / GetDisplayScale().
+		ImVec2 GetImageMin() const     { return m_imageMin; }
+		float  GetDisplayScale() const { return m_displayScale; }
+
 	private:
 		void DrawToolbar();
+		void PublishPlacement();   // Renderer::SetGameScreenPlacement with this frame's image rect, scale and hover
 
 		Renderer&     m_renderer;
 		ViewportPanel m_viewport;
 
-		int    m_aspectIndex = 0;   // index into the aspect table in the .cpp (0 = free aspect)
+		int    m_aspectIndex = 0;   // index into the aspect table in the .cpp (0 = free aspect), or kProjectAspect
+		float       m_projectRatio = 0.0f;   // the game's width / height from the config, 0 = none
+		std::string m_projectLabel;          // "Game (16:9)"
 		ImVec2 m_viewportSize{ 0.0f, 0.0f };
+		ImVec2 m_imageMin{ 0.0f, 0.0f };   // top-left of the drawn image, ImGui screen pixels
+		float  m_displayScale = 1.0f;      // drawn size / rendered size
 		bool   m_hovered = false;
 	};
 

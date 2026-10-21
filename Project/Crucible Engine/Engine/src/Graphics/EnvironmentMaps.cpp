@@ -518,4 +518,17 @@ namespace Crucible {
 
     }   // EnvironmentMaps::CreateCubemapFromEquirect()
 
+    glm::vec3 EvaluateSkyIrradiance(const std::array<glm::vec4, 9>& sh, const glm::vec3& n) {
+
+        // Must stay the same as SkyIrradiance in DefaultShader.slang (and the coefficient order
+        // BuildEnvironmentLighting writes).
+        const glm::vec3 e = glm::vec3(sh[0])
+                          + glm::vec3(sh[1]) * n.y + glm::vec3(sh[2]) * n.z + glm::vec3(sh[3]) * n.x
+                          + glm::vec3(sh[4]) * (n.x * n.y) + glm::vec3(sh[5]) * (n.y * n.z)
+                          + glm::vec3(sh[6]) * (3.0f * n.z * n.z - 1.0f)
+                          + glm::vec3(sh[7]) * (n.x * n.z) + glm::vec3(sh[8]) * (n.x * n.x - n.y * n.y);
+        return glm::max(e, glm::vec3(0.0f));
+
+    }   // EvaluateSkyIrradiance()
+
 }   // NAMESPACE CRUCIBLE

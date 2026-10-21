@@ -18,8 +18,8 @@
 * drag-to-parent then act on the whole selection as ONE undo step. When both a parent and its
 * child are selected, only the parent is acted on (the child comes along with it).
 *
-* There is no Name/Tag component yet (see ECS/Components/Components.h), so entities are labelled
-* by their raw index for now ("Entity 3") - swap in a real name lookup once one exists.
+* Rows are labelled with the entity's EntityName (see ECS/Components/Components.h), falling back
+* to its raw index ("Entity 3") if the name is empty.
 *
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
 * All Rights Reserved
@@ -100,6 +100,9 @@ namespace Crucible {
 		// Draws one entity's row (and, if expanded, its children) recursively.
 		void DrawEntityNode(Entity entity);
 
+		// Creates a new entity with only the mandatory base components (Transform, WorldTransform, HierarchyNode - see kMandatoryComponents), default-valued: a root at the origin.
+		void CreateEmptyObject();
+
 		// Creating Primitives (cube, sphere, etc.) is a common editor action, so the "+" menu in the toolbar
 		// calls this to spawn a new entity with a MeshRenderer and the requested primitive mesh.
 		void CreatePrimitive(const std::string& meshName);
@@ -111,9 +114,30 @@ namespace Crucible {
 		// Spawns a new entity with a Camera component (the Game view looks through it).
 		void CreateCameraObject();
 
+		// A root entity with a UICanvas: where screen-space UI elements go (as its children).
+		void CreateCanvasObject();
+
+		// "Image", "Button" or "Slider": a UI element (UIRect + UIImage / UIButton / UISlider) placed under the selected
+		// entity if it is part of a UI tree, else under the first screen-space canvas, else under a
+		// new canvas made with it. One undo step either way.
+		void CreateUIElement(const std::string& kind);
+
+		// Double-click / F: frames the selected entity where it is edited. A screen-space UI element
+		// (or its canvas) switches to the UI Editor tab and frames it there; anything else switches
+		// to the Scene tab and frames the selection (SceneView::FrameSelected).
+		void FocusSelection();
+
+		// The entity just created by CreateUIElement: the rows above it open once so it is visible.
+		// Cleared after the tree is drawn.
+		Entity m_revealEntity = kNullEntity;
+
 		// Spawns a new entity with a ParticleEmitter set up as one of the presets in
 		// Graphics/ParticlePresets.h: "Sparks", "Fire", "Smoke" or "Splash".
 		void CreateParticleObject(const std::string& effect);
+
+		// Spawns a new entity with a Water component: a 10 x 10 m surface (the built-in plane,
+		// scaled) at the origin. It needs ground under it to show depth, shores and foam.
+		void CreateWaterObject();
 	};
 
 }

@@ -12,17 +12,29 @@
 #include "Graphics/Vulkan/VulkanShader.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstddef>
 
 namespace Crucible {
 
-    void ShadowPass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::Format depthFormat) {
+    namespace {
+        // The push constant: the cascade (vertex), then CutoutPush (cut-out fragment shader).
+        struct ShadowPush {
+            uint32_t   cascade = 0;
+            CutoutPush cutout{};
+        };
+        static_assert(sizeof(ShadowPush) == 12 && offsetof(ShadowPush, cutout) == 4, "ShadowPush must match Shadow.slang.");
+        constexpr vk::ShaderStageFlags kShadowPushStages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+    }
+
+    void ShadowPass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout, vk::Format depthFormat) {
 
 
         vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/Shadow.spv");
 
-        // Vertex stage only: with no fragment shader the rasterizer still writes depth, which is
-        // all a shadow map needs.
+        // Solid materials: vertex stage only. With no fragment shader the rasterizer still writes
+        // depth, which is all a shadow map needs (and keeps early-Z).
         vk::PipelineShaderStageCreateInfo stage{ .stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "shadowVert" };
 
         // Same vertex buffers as the main pass, but only location 0 (position) is read.
@@ -67,10 +79,12 @@ namespace Crucible {
             .stencilTestEnable     = vk::False
         };
 
-        vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eVertex, .offset = 0, .size = sizeof(uint32_t) };
-        vk::DescriptorSetLayout setLayout = frameSetLayout;
+        // One layout for both pipelines (so switching between them keeps the sets bound): set 1 is
+        // the material, which only the cut-out pipeline reads.
+        vk::PushConstantRange push{ .stageFlags = kShadowPushStages, .offset = 0, .size = sizeof(ShadowPush) };
+        const std::array<vk::DescriptorSetLayout, 2> setLayouts{ frameSetLayout, materialSetLayout };
         vk::PipelineLayoutCreateInfo layoutInfo{
-            .setLayoutCount = 1, .pSetLayouts = &setLayout,
+            .setLayoutCount = static_cast<uint32_t>(setLayouts.size()), .pSetLayouts = setLayouts.data(),
             .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
         m_shadowLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
 
@@ -92,6 +106,18 @@ namespace Crucible {
             {.colorAttachmentCount = 0, .depthAttachmentFormat = depthFormat }
         };
         m_shadowPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+
+        // Cut-out: also the uv (location 2), and a fragment shader that drops cut-out pixels.
+        const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
+            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "shadowCutoutVert" },
+            { .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "shadowCutoutFrag" }
+        };
+        const std::array<vk::VertexInputAttributeDescription, 2> cutoutAttributes{ attributes[0], attributes[2] };
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
+        vertexInputInfo.pVertexAttributeDescriptions    = cutoutAttributes.data();
+        chain.get<vk::GraphicsPipelineCreateInfo>().stageCount = 2;
+        chain.get<vk::GraphicsPipelineCreateInfo>().pStages    = cutoutStages;
+        m_shadowCutoutPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
 
     }   // ShadowPass::Create()
 
@@ -246,14 +272,17 @@ namespace Crucible {
             };
             cmd.beginRendering(renderingInfo);
 
-            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_shadowPipeline);
             // Same flipped viewport as every other pass, so the shader's uv mapping is uniform.
             cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(mapSize), static_cast<float>(mapSize),
                                             -static_cast<float>(mapSize), 0.0f, 1.0f));
             cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_shadowLayout, 0, frameSet, nullptr);
-            cmd.pushConstants<uint32_t>(*m_shadowLayout, vk::ShaderStageFlagBits::eVertex, 0, c);
-            m_resources.DrawBatches(cmd, cascades[c]);
+            const ShadowPush push{ c, CutoutPush{} };
+            cmd.pushConstants<ShadowPush>(*m_shadowLayout, kShadowPushStages, 0, push);
+            const DepthPassPipelines pipelines{ .solid = *m_shadowPipeline, .cutout = *m_shadowCutoutPipeline, .layout = *m_shadowLayout,
+                                                .cutoutPushStages = kShadowPushStages, .cutoutPushOffset = offsetof(ShadowPush, cutout),
+                                                .dynamicCull = false };
+            m_resources.DrawDepthBatches(cmd, cascades[c], pipelines);   // binds the pipelines itself
 
             cmd.endRendering();
         }

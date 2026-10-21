@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -30,12 +30,14 @@
 	*             instead of an Euler-angle constructor	
 	* -v1.3       Audio renamed to AudioSource (clashed with class Crucible::Audio)
 	* -v1.4       AudioSource moved to Audio/AudioComponents.h
+	* -v1.5       EntityName (mandatory display name, WorldValidated)
 	*
 	*
 	**************************************************************************/
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include"ComponentKind.h"
 #include"Math/Math.h"
@@ -46,6 +48,7 @@
 #include"Graphics/MaterialHandle.h"   // MaterialHandle - same reasoning: header-only, no Vulkan
 #include"Graphics/CubemapHandle.h"    // CubemapHandle (Skybox) - same reasoning
 #include"Graphics/LightTypes.h"       // LightType (Light) - same reasoning
+#include"../../UI/UIComponents.h"
 
 namespace Crucible
 {
@@ -241,6 +244,52 @@ namespace Crucible
 		float         vignetteSoftness = 0.5f;
 		float         filmGrain = 0.f;
 		float         chromaticAberration = 0.f;
+		// Toon shading for every mesh whose material's Shading is "Scene" (instead of the
+		// realistic lighting); these settings are also the toon look of materials set to "Toon":
+		//   threshold / softness: where the light/shade edge falls (0..1 of the light a surface
+		//     gets, so 0.1 = just before the light grazes it) and how soft it is (small = hard).
+		//   shadeColour: tint of the shaded side (sRGB; slightly cool - the sky's own colour
+		//     does most of the work).
+		//   shadeBrightness: the shaded side is lit by the sky's light (ambientFromSky / the
+		//     ambient colours, x ambientIntensity) times this - so shade follows the sky (blue by
+		//     day, warm at sunset, dark at night) without brightening the lit side.
+		//   litShading: how much the lit side still shades by angle (0 = one flat tone, so faces
+		//     turned differently look the same; 1 = full shading).
+		//   edgeColour / edgeWidth / edgeStrength: the coloured band painters put just inside the
+		//     lit side of the edge; the tint keeps its brightness, only the hue shifts.
+		//   ambientFlatten: 0 = the sky's light shades surfaces softly by direction, 1 = flat.
+		//   highlight: a hard-edged shine on smooth (rough < 0.85) and metal surfaces; 0 = none.
+		//   reflections: how much sky reflection toon surfaces keep (0 = none, the toon look).
+		// Toon outlines (toon-shaded materials only; each material scales them by its Outline):
+		//   lines: on/off. lineDarkness: how much darker than the surface a line is (0..1).
+		//   lineWidth: in pixels (0.5..3, fractions give a partly darkened last pixel).
+		//   lineCreaseAngle / lineCreaseStrength: how sharp a fold inside a shape must be to get a line
+		//     (degrees), and how dark those lines are next to silhouettes (0 = silhouettes only).
+		//   lineDepthGap: how far (as a fraction of the distance) a shape must stand in front of what
+		//     is behind it to get a silhouette line. lineBreakup / lineBreakupSize: how much of each
+		//     line is left out (0 = solid) and the size of the gaps (metres; fixed to the surfaces).
+		//   lineFadeDistance: lines fade out by this distance (metres), and fade with fog too.
+		bool          toonShading = false;
+		float         toonThreshold = 0.1f;
+		float         toonSoftness = 0.03f;
+		Math::vec3    toonShadeColour{ 0.85f, 0.87f, 0.95f };
+		float         toonShadeBrightness = 1.5f;
+		float         toonLitShading = 0.4f;
+		Math::vec3    toonEdgeColour{ 1.0f, 0.62f, 0.42f };
+		float         toonEdgeWidth = 0.15f;
+		float         toonEdgeStrength = 0.6f;
+		float         toonAmbientFlatten = 0.7f;
+		float         toonHighlight = 1.f;
+		float         toonReflections = 0.f;
+		bool          toonLines = true;
+		float         toonLineDarkness = 0.6f;
+		float         toonLineWidth = 1.f;
+		float         toonLineCreaseAngle = 75.f;
+		float         toonLineCreaseStrength = 0.5f;
+		float         toonLineDepthGap = 0.03f;
+		float         toonLineBreakup = 0.35f;
+		float         toonLineBreakupSize = 0.25f;
+		float         toonLineFadeDistance = 60.f;
 		// Texture asset id of an equirectangular sky (.hdr ideally), resolved through
 		// ResourceManager::GetCubemap. Saved in scenes; when non-zero it wins over `cubemap`.
 		std::uint64_t skyboxAsset = 0;
@@ -307,6 +356,63 @@ namespace Crucible
 		float      radius = 6.f;
 		float      speed = 0.5f;
 		float      phase = 0.f;
+	};
+
+	/*************************************************************************
+	 \brief
+		A water surface: a pond, lake or slow river, drawn in the style of
+		the "Umiko" reference (WaterPass / Water.slang).
+
+	 \details
+		The surface is the built-in Plane (1 x 1 m, facing up) scaled by the
+		entity's Transform - scale X and Z to size the water, and place it at
+		the water line. If the entity also has a MeshRenderer, that mesh is
+		the surface instead (shaped in Blender, say) and is not drawn as an
+		ordinary object. Seen from above only.
+
+		What it shows comes from what lies under it, so it needs ground (a
+		bottom and shores) beneath it:
+		  - shallowColour -> deepColour with the water's depth (sRGB, as
+		    picked); deepDepth: metres of water for the full deep colour.
+		  - clarity: how far (m) through the water the bottom still shows.
+		  - refraction: how much the ripples bend the view of the bottom,
+		    and how much cast shadows on the surface wobble with them (0..1).
+		  - foamColour; foamWidth: the crisp shore band, in metres of water
+		    depth (0 = no foam), plus a thinner line lapping further out;
+		    foamBreakup: 0 = an even band, 1 = ragged and broken.
+		  - rippleSize (m), rippleSpeed (m/s), rippleStrength (how far they
+		    tilt the surface); rippleLines: thin drawn strokes on open water
+		    (0 = none); rippleFoam: switches those strokes on or off, keeping
+		    the rippleLines amount (the shore foam is not affected);
+		    rippleLineColour: their colour (the shore foam keeps foamColour).
+		  - glints: strength of the hard sparkles of the sun and lamps;
+		    glintColour tints them (white = the light's own colour).
+		  - reflection: how much sky the surface reflects at grazing angles;
+		    reflectionColour tints the reflected sky (white = as it is).
+		  Colours are sRGB, as picked.
+		Toon-shaded scenes light the water with the Skybox's toon edge and
+		shade tint, so shadows on it are crisp.
+	 *************************************************************************/
+	struct Water
+	{
+		Math::vec3 shallowColour{ 0.45f, 0.85f, 0.72f };
+		Math::vec3 deepColour{ 0.05f, 0.35f, 0.55f };
+		float      deepDepth = 2.5f;
+		float      clarity = 3.f;
+		float      refraction = 0.4f;
+		Math::vec3 foamColour{ 1.f, 1.f, 1.f };
+		float      foamWidth = 0.2f;
+		float      foamBreakup = 0.5f;
+		float      rippleSize = 2.f;
+		float      rippleSpeed = 0.25f;
+		float      rippleStrength = 0.25f;
+		bool       rippleFoam = true;
+		float      rippleLines = 0.3f;
+		Math::vec3 rippleLineColour{ 1.f, 1.f, 1.f };
+		float      glints = 1.f;
+		Math::vec3 glintColour{ 1.f, 1.f, 1.f };
+		float      reflection = 0.5f;
+		Math::vec3 reflectionColour{ 1.f, 1.f, 1.f };
 	};
 
 	/// Where a ParticleEmitter's new particles appear, in the emitter's local space.
@@ -464,6 +570,22 @@ namespace Crucible
 		void AddTorque   (const Math::vec3& t) { torque  += t; }   // Unity's Rigidbody.AddTorque
 		void ApplyImpulse(const Math::vec3& i) { impulse += i; }   // Unity's AddForce(..., ForceMode.Impulse)
 	};
+    
+	/*************************************************************************
+	 \brief
+		The entity's display name (Hierarchy, Inspector). Mandatory: every
+		entity has one, saved with the scene like any other component.
+	 \details
+		Empty means "not named yet": the World gives such an entity the next
+		numbered default ("Entity 1", "Entity 2"...) when it is created - see
+		World::CreateNamedEntity and World::SetEntityName. Names need not be
+		unique; only the generated defaults are kept distinct. Read-only
+		outside World (WorldValidated): rename with World::SetEntityName.
+	 *************************************************************************/
+	struct EntityName
+	{
+		std::string name;
+	};
 
 	// Bind each component above to its ComponentKind (see ComponentKind.h)
 	// and give ComponentRegistry a compile-time name for it.
@@ -477,6 +599,8 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(ParticleEmitter, ParticleEmitter);
 	CRUCIBLE_COMPONENT(MaterialParams, MaterialParams);
 	CRUCIBLE_COMPONENT(StressMover, StressMover);
+	CRUCIBLE_COMPONENT(EntityName, EntityName);
+	CRUCIBLE_COMPONENT(Water, Water);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
 	template<>
@@ -494,6 +618,10 @@ namespace Crucible
 	template <> struct Mandatory<Transform> : std::true_type {};
 	template <> struct Mandatory<WorldTransform> : std::true_type {};
 	template <> struct Mandatory<HierarchyNode> : std::true_type {};
+	template <> struct Mandatory<EntityName> : std::true_type {};
+
+	// Read anywhere; written only through World (SetEntityName, AddComponent), which applies the naming rules.
+	template <> struct WorldValidated<EntityName> : std::true_type {};
 
 
 }

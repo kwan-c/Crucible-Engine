@@ -246,6 +246,18 @@ namespace Crucible{
         return g_instance->m_mouseLocked;
     }
 
+    bool Input::IsPointerOverUI() {
+        if (g_instance == nullptr) { return false; }
+
+        return g_instance->m_pointerOverUI;
+    }
+
+    void Input::SetPointerOverUI(bool over) {
+        if (g_instance == nullptr) { return; }
+
+        g_instance->m_pointerOverUI = over;
+    }
+
     void Input::MouseButtonCallback(GLFWwindow* window, int button, int action, int mods) {
         (void)window; (void)mods;
 

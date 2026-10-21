@@ -143,9 +143,10 @@ namespace Crucible {
         };
         vp.colorView = vk::raii::ImageView(m_context.GetDevice(), colorViewInfo);
 
+        // Transfer source: the scene pass copies it for the water (PostTargets::depthCopy).
         vp.depthImage.Create(m_context, width, height, depthFormat,
             vk::ImageTiling::eOptimal,
-            vk::ImageUsageFlagBits::eDepthStencilAttachment,
+            vk::ImageUsageFlagBits::eDepthStencilAttachment | vk::ImageUsageFlagBits::eTransferSrc,
             vk::MemoryPropertyFlagBits::eDeviceLocal);
         vk::ImageViewCreateInfo depthViewInfo{
             .image = vp.depthImage.GetImage(),
