@@ -21,7 +21,7 @@
     How the output types differ:
       - Mtsdf:  4-channel atlas. RGB = multi-channel distance (median = the
                 distance), A = true distance (for outline / glow / shadow).
-                Upload as TexturePixelFormat::RGBA8, draw with UIDrawMode::Msdf.
+                Upload as TexturePixelFormat::RGBA8, draw with UIDrawMode::Mtsdf.
       - Sdf:    1-channel distance atlas. Upload as Alpha8, draw with
                 UIDrawMode::Sdf.
       - Bitmap: 1-channel coverage atlas, rasterized at fixed pixel sizes.
@@ -65,7 +65,7 @@ namespace Crucible {
     /// "Bitmap", "SDF" or "MTSDF".
     ENGINE_API const char* ToString(FontOutputType type);
 
-    /// How the renderer must draw a font of this type (Bitmap -> Image, Sdf -> Sdf, Mtsdf -> Msdf).
+    /// How the renderer must draw a font of this type (Bitmap -> Image, Sdf -> Sdf, Mtsdf -> Mtsdf).
     ENGINE_API UIDrawMode DrawModeFor(FontOutputType type);
 
     /// Font-wide metrics, in ems (see the file header).
@@ -214,7 +214,7 @@ namespace Crucible {
     struct FontAsset {
         FontData      data;
         TextureHandle texture{};                      ///< The atlas, uploaded.
-        UIDrawMode    drawMode = UIDrawMode::Msdf;    ///< DrawModeFor(data.outputType).
+        UIDrawMode    drawMode = UIDrawMode::Mtsdf;   ///< DrawModeFor(data.outputType).
     };
 
 #ifdef _MSC_VER

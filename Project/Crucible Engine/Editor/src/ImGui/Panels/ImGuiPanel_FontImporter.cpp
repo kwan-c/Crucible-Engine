@@ -311,8 +311,10 @@ void Crucible::FontImporter::DrawSettings() {
 		HelpMarker("Pixels per em in the atlas. Bigger keeps finer detail and sharper corners, but the atlas "
 		           "grows with the square of it. 32-64 is typical.");
 		ImGui::DragFloat("Pixel Range", &m_edit.pixelRange, 0.05f, 1.0f, 32.0f, "%.1f px", ImGuiSliderFlags_AlwaysClamp);
-		HelpMarker("How far from the outline the distance field reaches, in atlas pixels. Also the limit "
-		           "for outline / glow thickness later. 4 is a good default.");
+		HelpMarker("How far from the outline the distance field reaches, in atlas pixels. It also limits "
+		           "UIText's outline / glow / shadow blur: they can reach Pixel Range / 2 atlas pixels past "
+		           "the letters (the Inspector shows that in screen pixels). 8 is the default; raise it for "
+		           "thick outlines or wide glows (the atlas grows a little).");
 	}
 
 	ImGui::DragInt("Padding", &m_edit.padding, 0.1f, 0, 16, "%d px", ImGuiSliderFlags_AlwaysClamp);

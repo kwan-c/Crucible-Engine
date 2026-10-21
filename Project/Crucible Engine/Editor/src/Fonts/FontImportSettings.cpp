@@ -117,7 +117,7 @@ namespace Crucible {
 		clampInt(atlasMaxSize, kMinAtlas, kMaxAtlas, "atlas max size");
 
 		if (!(pixelRange >= kMinPixelRange && pixelRange <= kMaxPixelRange)) {   // also catches NaN
-			const float fixed = std::isnan(pixelRange) ? 4.0f : std::clamp(pixelRange, kMinPixelRange, kMaxPixelRange);
+			const float fixed = std::isnan(pixelRange) ? 8.0f : std::clamp(pixelRange, kMinPixelRange, kMaxPixelRange);
 			changes.push_back("pixel range " + std::to_string(pixelRange) + " is out of range, using " + std::to_string(fixed));
 			pixelRange = fixed;
 		}

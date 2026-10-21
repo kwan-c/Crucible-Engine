@@ -103,6 +103,7 @@ namespace Crucible {
             uint32_t          indexCount = 0;
             int32_t           vertexOffset = 0;
             float             pixelRange = 0.0f;   // UIDrawCommand::pixelRange
+            UITextEffects     effects{};           // UIDrawCommand::effects
             vk::DescriptorSet set{};   // filled by Upload()
         };
         // One Submit() call: a run of m_commands, for one target.

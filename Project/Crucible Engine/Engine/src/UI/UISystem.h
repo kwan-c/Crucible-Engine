@@ -58,6 +58,7 @@ namespace Crucible {
 	class World;
 	class Renderer;
 	class ResourceManager;
+	struct FontAsset;
 	class SceneManager;
 	class AssetManager;
 
@@ -132,6 +133,20 @@ namespace Crucible {
 		ENGINE_API void AppendDrawList(World& world, const std::vector<LayoutItem>& items, ResourceManager* resources,
 		                               std::vector<UIVertex>& vertices, std::vector<std::uint32_t>& indices,
 		                               std::vector<UIDrawCommand>& commands);
+
+		/*********************************************************************
+		 \brief  Field units (see UITextEffects) per reference pixel, for text of
+				 `fontSize` in this font. 0 for bitmap fonts (no field).
+		 *********************************************************************/
+		ENGINE_API float TextEffectFieldPerPixel(const FontAsset& font, float fontSize);
+
+		/*********************************************************************
+		 \brief  The widest outline + glow (+ bold) a font allows at `fontSize`,
+				 in reference pixels: the distance field only reaches half its
+				 pixel range past each edge. 0 for bitmap fonts. Raise the
+				 font's Pixel Range in the Font Importer for more.
+		 *********************************************************************/
+		ENGINE_API float MaxTextEffectWidth(const FontAsset& font, float fontSize);
 
 		/// Is the in-game menu open (UIMenuSystem)? Gameplay can use it to ignore input or pause.
 		ENGINE_API bool IsMenuOpen();

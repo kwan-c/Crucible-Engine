@@ -150,7 +150,7 @@ namespace Crucible {
         switch (type) {
             case FontOutputType::Bitmap: return UIDrawMode::Image;   // Alpha8 coverage: texel * colour
             case FontOutputType::Sdf:    return UIDrawMode::Sdf;
-            case FontOutputType::Mtsdf:  return UIDrawMode::Msdf;
+            case FontOutputType::Mtsdf:  return UIDrawMode::Mtsdf;   // median for the letter, alpha for effects
         }
         return UIDrawMode::Image;
     }

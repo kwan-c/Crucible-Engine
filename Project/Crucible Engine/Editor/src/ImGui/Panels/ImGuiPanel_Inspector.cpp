@@ -17,6 +17,7 @@
 #include "Scene/SceneManager.h"
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
+#include "UI/UISystem.h"   // UI::MaxTextEffectWidth, for the text effects
 #include "Undo/EntityCommands.h"
 #include "../EditorWidgets.h"
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
@@ -1249,6 +1250,58 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		} else {
 			ImGui::TextDisabled("%s font: sharp at any size", ToString(font->data.outputType));
 		}
+
+		// ---- Effects: each with its checkbox; its settings greyed out while it is off.
+		ImGui::SeparatorText("Effects");
+		bool const bitmap = font == nullptr || font->data.outputType == FontOutputType::Bitmap;
+		float const maxWidth = font ? UI::MaxTextEffectWidth(*font, text.bestFit ? text.maxFontSize : text.fontSize) : 0.0f;
+		if (bitmap) {
+			ImGui::TextColored(EditorTheme::GetPalette().warning, "Bitmap font: outline and glow need an SDF / MTSDF font.");
+			ImGui::TextDisabled("Shadow still works (a flat copy, no softness).");
+		} else {
+			ImGui::TextDisabled("Outline + glow (+ bold) can reach %.1f px at this size.", maxWidth);
+			ImGui::SetItemTooltip("The font's distance field ends half its Pixel Range past each edge;\n"
+			                      "wider settings are clamped. Raise Pixel Range in the Font Importer for more.");
+		}
+
+		auto widthWarning = [&](float width) {
+			if (!bitmap && width > maxWidth + 0.01f) {
+				ImGui::SameLine();
+				ImGui::TextColored(EditorTheme::GetPalette().warning, "(max %.1f)", maxWidth);
+			}
+		};
+
+		ImGui::BeginDisabled(bitmap);
+		changed |= ImGui::Checkbox("outline", &text.outline);
+		ImGui::BeginDisabled(!text.outline);
+		ImGui::Indent();
+		changed |= ImGui::ColorEdit4("outline colour", &text.outlineColour.x, ImGuiColorEditFlags_AlphaBar);
+		changed |= ImGui::DragFloat("outline width", &text.outlineWidth, 0.05f, 0.0f, 64.0f, "%.1f px", ImGuiSliderFlags_AlwaysClamp);
+		widthWarning(text.outlineWidth);
+		ImGui::Unindent();
+		ImGui::EndDisabled();
+
+		changed |= ImGui::Checkbox("glow", &text.glow);
+		ImGui::BeginDisabled(!text.glow);
+		ImGui::Indent();
+		changed |= ImGui::ColorEdit4("glow colour", &text.glowColour.x, ImGuiColorEditFlags_AlphaBar);
+		changed |= ImGui::DragFloat("glow width", &text.glowWidth, 0.05f, 0.0f, 64.0f, "%.1f px", ImGuiSliderFlags_AlwaysClamp);
+		widthWarning((text.outline ? text.outlineWidth : 0.0f) + text.glowWidth);
+		changed |= ImGui::SliderFloat("glow softness", &text.glowSoftness, 0.0f, 1.0f, "%.2f");
+		ImGui::Unindent();
+		ImGui::EndDisabled();
+		ImGui::EndDisabled();
+
+		changed |= ImGui::Checkbox("shadow", &text.shadow);
+		ImGui::BeginDisabled(!text.shadow);
+		ImGui::Indent();
+		changed |= ImGui::ColorEdit4("shadow colour", &text.shadowColour.x, ImGuiColorEditFlags_AlphaBar);
+		changed |= ImGui::DragFloat2("shadow offset", &text.shadowOffset.x, 0.1f, -64.0f, 64.0f, "%.1f px");
+		ImGui::BeginDisabled(bitmap);
+		changed |= ImGui::SliderFloat("shadow softness", &text.shadowSoftness, 0.0f, 1.0f, "%.2f");
+		ImGui::EndDisabled();
+		ImGui::Unindent();
+		ImGui::EndDisabled();
 	}
 	return changed;
 }

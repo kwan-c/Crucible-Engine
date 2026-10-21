@@ -25,8 +25,17 @@ namespace Crucible {
             glm::vec2 invTargetSize;   // 1 / target size in pixels
             uint32_t  mode;            // UIDrawMode
             float     pixelRange;      // UIDrawCommand::pixelRange (distance-field text)
+            // UITextEffects - every field 4 bytes, so the C++ and Slang layouts can't disagree.
+            uint32_t  outlineColour;
+            uint32_t  glowColour;
+            float     outlineWidth;
+            float     glowWidth;
+            float     glowSoftness;
+            float     dilate;
+            float     shadowSoftness;
+            uint32_t  flags;           // bit 0: shadow pass
         };
-        static_assert(sizeof(UIPush) == 32, "UIPush must match UI.slang.");
+        static_assert(sizeof(UIPush) == 64, "UIPush must match UI.slang.");
 
     }   // namespace
 
@@ -209,7 +218,7 @@ namespace Crucible {
             m_commands.push_back({ .texture = in.texture, .mode = in.mode, .clipRect = in.clipRect,
                                    .firstIndex = baseIndex + in.firstIndex, .indexCount = count,
                                    .vertexOffset = static_cast<int32_t>(baseVertex) + in.vertexOffset,
-                                   .pixelRange = in.pixelRange });
+                                   .pixelRange = in.pixelRange, .effects = in.effects });
             ++submission.commandCount;
         }
         if (submission.commandCount == 0) { return; }
@@ -317,7 +326,9 @@ namespace Crucible {
         cmd.bindVertexBuffers(0, *m_vertexBuffers[frameIndex].GetBuffer(), { vk::DeviceSize{ 0 } });
         cmd.bindIndexBuffer(*m_indexBuffers[frameIndex].GetBuffer(), 0, vk::IndexType::eUint32);
 
-        UIPush push{ .transform = transform, .invTargetSize = glm::vec2(1.0f / width, 1.0f / height), .mode = 0, .pixelRange = 0.0f };
+        UIPush push{};
+        push.transform     = transform;
+        push.invTargetSize = glm::vec2(1.0f / width, 1.0f / height);
         vk::DescriptorSet boundSet{};
 
         for (const Submission& submission : m_submissions) {
@@ -341,6 +352,15 @@ namespace Crucible {
                 }
                 push.mode = static_cast<uint32_t>(command.mode);
                 push.pixelRange = command.pixelRange;
+                const UITextEffects& fx = command.effects;
+                push.outlineColour  = fx.outlineColour;
+                push.glowColour     = fx.glowColour;
+                push.outlineWidth   = fx.outlineWidth;
+                push.glowWidth      = fx.glowWidth;
+                push.glowSoftness   = fx.glowSoftness;
+                push.dilate         = fx.dilate;
+                push.shadowSoftness = fx.shadowSoftness;
+                push.flags          = fx.shadowPass ? 1u : 0u;
                 cmd.pushConstants<UIPush>(*m_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, push);
 
                 cmd.drawIndexed(command.indexCount, 1, command.firstIndex, command.vertexOffset, 0);

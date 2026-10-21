@@ -19,7 +19,7 @@
 *	  "outputType": "MTSDF",              // "Bitmap" | "SDF" | "MTSDF"
 *	  "bitmapSizes": [16, 32],            // Bitmap: pixel sizes to bake
 *	  "glyphSize": 48,                    // SDF/MTSDF: pixels per em in the atlas
-*	  "pixelRange": 4,                    // SDF/MTSDF: distance range in atlas pixels
+*	  "pixelRange": 8,                    // SDF/MTSDF: distance range in atlas pixels
 *	  "padding": 2,                       // empty atlas pixels between glyphs
 *	  "includeAscii": true,               // the 95 printable ASCII characters
 *	  "ranges": ["00C0-00FF", "20AC"],    // extra characters, hex codepoints
@@ -45,7 +45,8 @@ namespace Crucible {
 		FontOutputType   outputType   = FontOutputType::Bitmap;
 		std::vector<int> bitmapSizes  = { 16, 32 };   ///< Bitmap only. Pixels per em, ascending, no repeats.
 		int              glyphSize    = 48;           ///< SDF/MTSDF only. Bigger = sharper corners, bigger atlas.
-		float            pixelRange   = 4.0f;         ///< SDF/MTSDF only. How far the field reaches; also the outline/glow limit.
+		float            pixelRange   = 8.0f;         ///< SDF/MTSDF only. How far the field reaches; also the outline/glow limit
+		                                              ///< (effects reach pixelRange / 2 atlas pixels past the edge).
 		int              padding      = 2;            ///< Empty atlas pixels around every glyph, so filtering never reads a neighbour.
 		bool             includeAscii = true;
 		std::vector<std::pair<std::uint32_t, std::uint32_t>> ranges;   ///< Inclusive codepoint ranges.

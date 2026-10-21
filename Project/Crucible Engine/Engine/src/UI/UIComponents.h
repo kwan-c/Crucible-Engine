@@ -159,6 +159,11 @@ namespace Crucible {
 		- bold / underline: the whole text (<b> / <u> do a part).
 		- bestFit: fontSize is ignored; the largest size between minFontSize
 		  and maxFontSize at which all the text fits the rect is used.
+		- Effects (outline, glow, shadow), sizes in reference pixels like
+		  fontSize. Outline and glow need an SDF / MTSDF font and can only
+		  reach as far as its distance field (UI::MaxTextEffectWidth - raise
+		  the font's Pixel Range for more); wider is clamped. Shadow works
+		  with every font (a bitmap one gets a flat offset copy, no blur).
 	 *************************************************************************/
 	struct UIText {
 		Math::vec4    colour{ 1.0f };      // sRGB, 0-1
@@ -179,6 +184,20 @@ namespace Crucible {
 		bool          bestFit          = false;                   // size the text to fit the rect (fontSize ignored)
 		float         minFontSize      = 10.0f;                   // best fit's smallest size, reference pixels
 		float         maxFontSize      = 40.0f;                   // best fit's largest size, reference pixels
+
+		bool          outline          = false;
+		Math::vec4    outlineColour{ 0.0f, 0.0f, 0.0f, 1.0f };    // sRGB, 0-1
+		float         outlineWidth     = 2.0f;                    // reference pixels outside the letters' edge
+
+		bool          glow             = false;
+		Math::vec4    glowColour{ 1.0f, 0.85f, 0.4f, 0.8f };      // sRGB, 0-1
+		float         glowWidth        = 3.0f;                    // reference pixels outside the outline (or the letters)
+		float         glowSoftness     = 0.5f;                    // 0 = an even band, 1 = fades quickly
+
+		bool          shadow           = false;
+		Math::vec4    shadowColour{ 0.0f, 0.0f, 0.0f, 0.6f };     // sRGB, 0-1
+		Math::vec2    shadowOffset{ 2.0f, 2.0f };                 // reference pixels, +y down
+		float         shadowSoftness   = 0.0f;                    // 0 = crisp, 1 = as blurred as the font allows
 	};
 	CRUCIBLE_COMPONENT(UIText, UIText)
 
@@ -391,6 +410,19 @@ RTTR_REGISTRATION
 		.property("bestFit",          &UIText::bestFit)
 		.property("minFontSize",      &UIText::minFontSize)
 		.property("maxFontSize",      &UIText::maxFontSize)
+		// Effects: drawn by DrawComponentExtras(UIText&) in an "Effects" group, each with its checkbox,
+		// the sizes greyed out while it is off, and the font's maximum width shown.
+		.property("outline",          &UIText::outline)        (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("outlineColour",    &UIText::outlineColour)  (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true), rttr::metadata(MetaDataTypes::COLOUR, true))
+		.property("outlineWidth",     &UIText::outlineWidth)   (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("glow",             &UIText::glow)           (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("glowColour",       &UIText::glowColour)     (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true), rttr::metadata(MetaDataTypes::COLOUR, true))
+		.property("glowWidth",        &UIText::glowWidth)      (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("glowSoftness",     &UIText::glowSoftness)   (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("shadow",           &UIText::shadow)         (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("shadowColour",     &UIText::shadowColour)   (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true), rttr::metadata(MetaDataTypes::COLOUR, true))
+		.property("shadowOffset",     &UIText::shadowOffset)   (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("shadowSoftness",   &UIText::shadowSoftness) (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
 	;
 }
 
