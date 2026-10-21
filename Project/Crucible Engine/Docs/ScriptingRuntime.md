@@ -3,8 +3,10 @@
 S1 embeds a managed runtime in the existing Engine.dll/Core lifecycle. This page
 documents that foundation. [S2](ScriptingAssemblies.md) now adds C# DLL loading,
 discovery, objects and invocation. [S3](ScriptingLifecycle.md) now provides standalone
-instance lifecycle callbacks. Development tooling and engine bindings remain later
-work in ScriptingRoadmap.md.
+instance lifecycle callbacks. [S4](ScriptingDevelopment.md) adds project script
+creation, build/deployment tooling and diagnostics. [S5](ScriptingEntities.md) adds
+entity script components, owner identity and logging; subsystem APIs remain
+team-owned extension work in ScriptingRoadmap.md.
 
 ## Distribution and compatibility
 

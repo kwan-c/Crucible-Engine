@@ -378,7 +378,9 @@ namespace Crucible {
                 if (!readOnly && hovered >= -1) m_dragNode = hovered;
             }
         }
-        if (m_dragNode != -2 && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !readOnly) {
+        // Selecting a node must not author a new position because of click jitter.
+        // Use the same drag threshold as the rest of ImGui before moving it.
+        if (m_dragNode != -2 && ImGui::IsMouseDragging(ImGuiMouseButton_Left) && !readOnly) {
             auto& p = m_dragNode < 0 ? data.anyState : data.positions[m_dragNode];
             p.x = std::clamp(p.x + io.MouseDelta.x / m_zoom, -1e6f, 1e6f); p.y = std::clamp(p.y + io.MouseDelta.y / m_zoom, -1e6f, 1e6f);
         }

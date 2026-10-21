@@ -668,7 +668,6 @@ void Crucible::AssetBrowser::DrawGrid() {
 			if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) animator->RequestNew();
 		}
 		if (IsInScenesFolder(m_currentFolder) && ImGui::MenuItem("Create Scene", nullptr, false, !searching && IsRefreshAllowed())) CreateScene();
-		if (IsInScriptsFolder(m_currentFolder) && ImGui::MenuItem("Create Script", nullptr, false, !searching && IsRefreshAllowed())) CreateScript();
 		if (ImGui::MenuItem("Show in Explorer")) ShowInExplorer(AbsolutePathOf(m_currentFolder), false);
 		ImGui::Separator();
 		if (ImGui::MenuItem("Refresh", "F5", false, IsRefreshAllowed())) Refresh();
@@ -938,38 +937,6 @@ void Crucible::AssetBrowser::CreateScene() {
 	Refresh();
 	CRU_USER_INFO("Created scene {}", virtualPath);
 	BeginRename(virtualPath);   // Unity: type its name straight away
-}
-
-// ------------------------------------------------------------------ create script
-
-bool Crucible::AssetBrowser::IsInScriptsFolder(std::string const& folder) const {
-	std::string const f = ToLowerCopy(folder);
-	return f == "scripts" || f.rfind("scripts/", 0) == 0;
-}
-
-void Crucible::AssetBrowser::CreateScript() {
-	if (!IsRefreshAllowed() || !IsInScriptsFolder(m_currentFolder)) return;
-
-	// No spaces in the default name: a Lua script's name usually ends up as a module /
-	// table name too.
-	std::string const base = m_currentFolder + "/NewScript";
-	std::string stem = base;
-	std::error_code ec;
-	for (int i = 1; fs::exists(AbsolutePathOf(stem + ".lua"), ec) && i < 1000; ++i)
-		stem = base + std::to_string(i);
-	std::string const virtualPath = stem + ".lua";
-
-	// Empty on purpose; the scripting system decides what a script has to contain.
-	std::ofstream file(fs::path(AbsolutePathOf(virtualPath)), std::ios::binary);
-	if (!file) {
-		CRU_USER_WARN("Could not create script '{}'", virtualPath);
-		return;
-	}
-	file.close();
-
-	Refresh();   // indexes it and writes its .meta
-	CRU_USER_INFO("Created script {}", virtualPath);
-	BeginRename(virtualPath);
 }
 
 // ------------------------------------------------------------------ delete

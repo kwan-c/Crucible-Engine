@@ -84,9 +84,10 @@ namespace Crucible
 		Water = 24,
 		AnimatedModel = 25,
 		SocketAttachment = 26,
+		ScriptComponent = 27,
 
 
-		MAXCOMPONENT = 27
+		MAXCOMPONENT = 28
 	};
 
 
@@ -220,5 +221,6 @@ namespace Crucible
  X(Water)                                                                      \
  X(AnimatedModel)                                                              \
  X(SocketAttachment)                                                           \
+ X(ScriptComponent)                                                            \
 
 }

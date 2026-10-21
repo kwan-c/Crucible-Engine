@@ -22,6 +22,7 @@
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"
 #include "Scripting/ScriptRuntime.h"
+#include "Scripting/EntityScriptSystem.h"
 
 // STL
 #include <algorithm>
@@ -115,8 +116,8 @@ namespace Crucible {
         // The engine starts in Edit: AudioSources stay silent until Play (PlayMode switches it).
         if (ECSAudioSystem* audio = m_systems.FindSystem<ECSAudioSystem>()) audio->SetEditMode(true);
 
-        // Standalone host instances start after Core is initialized. Entity/scene
-        // adapters and gameplay bindings remain a separate, team-owned feature.
+        // Standalone instances retain Core lifetime alongside the separate
+        // Play-scoped ScriptComponent instances owned by EntityScriptSystem.
         if (!m_scriptRuntime->CreateConfiguredInstances(m_config.scripting)) return false;
 
         return true;
@@ -149,8 +150,8 @@ namespace Crucible {
             m_scenes->ApplyPending();
             m_playMode->ApplyRequests();
 
-            // S3 instances follow Core's frame/lifetime, independent of scene and
-            // PlayMode state. A future gameplay adapter will own its own instances.
+            // S3 instances follow Core lifetime. This tick excludes entity-owned
+            // instances, which EntityScriptSystem schedules through PlayMode.
             if (m_scriptRuntime->IsRunning()) m_scriptRuntime->UpdateInstances(dt);
 
             m_world->SetDeltaTime(dt);
@@ -162,6 +163,8 @@ namespace Crucible {
             for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
         }
+        // Entity teardown precedes GPU shutdown as well as world destruction.
+        if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
         m_renderer->ShutDown();
     }
 
@@ -174,6 +177,7 @@ namespace Crucible {
 
     void Core::RegisterEngineSystems()
     {
+        m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get());                            // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
@@ -191,6 +195,7 @@ namespace Crucible {
     }
 
     void Core::CleanUp() {
+        if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
         // Run managed teardown while Core's resources/systems are still alive.
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
         // Destroy entities while systems are still alive, so resource-owning

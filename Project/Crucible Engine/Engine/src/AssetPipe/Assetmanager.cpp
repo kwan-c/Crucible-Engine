@@ -190,7 +190,7 @@ namespace Crucible {
         if (e == ".ttf" || e == ".otf")
             return AssetType::Font;
  
-        if (e == ".lua" || e == ".cs")
+        if (e == ".cs")
             return AssetType::Script;
  
         if (e == ".json" || e == ".txt" || e == ".xml" ||

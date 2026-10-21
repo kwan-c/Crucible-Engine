@@ -52,9 +52,20 @@
 #include"Graphics/CubemapHandle.h"    // CubemapHandle (Skybox) - same reasoning
 #include"Graphics/LightTypes.h"       // LightType (Light) - same reasoning
 #include"../../UI/UIComponents.h"
+#include "Scripting/ScriptTypes.h"
 
 namespace Crucible
 {
+    // Authored configuration only. Managed objects and transient diagnostics
+    // belong to EntityScriptSystem, never to scene/undo/component copies.
+    struct ScriptComponent {
+        bool enabled = true;
+        std::string assembly = "Managed/Crucible.Scripts.dll";
+        std::string nameSpace = "Crucible.Scripts";
+        std::string className;
+        std::vector<ScriptFieldValue> fields;
+        bool operator==(const ScriptComponent&) const = default;
+    };
 	/*************************************************************************
 	 \brief  Position of an entity in local/world space.
 	 *************************************************************************/
@@ -626,6 +637,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(MeshRenderer, MeshRenderer);
 	CRUCIBLE_COMPONENT(AnimatedModel, AnimatedModel);
 	CRUCIBLE_COMPONENT(SocketAttachment, SocketAttachment);
+	CRUCIBLE_COMPONENT(ScriptComponent, ScriptComponent);
 	CRUCIBLE_COMPONENT(HierarchyNode, HierarchyNode);
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 	CRUCIBLE_COMPONENT(Light, Light);

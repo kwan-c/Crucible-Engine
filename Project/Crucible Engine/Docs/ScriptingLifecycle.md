@@ -3,6 +3,8 @@
 S3 adds owned, standalone managed instances to the existing Mono host. It uses
 S2's assembly loading and GC handles, with cached callbacks and a consistent
 failure/cleanup policy. No ScriptComponent, entity API or gameplay binding is added.
+For creating and building your own scripts, use the [S4 workflow](ScriptingDevelopment.md).
+For entity-attached scripts with PlayMode lifetime, use [S5](ScriptingEntities.md).
 
 ## Try it in Editor or Game
 
@@ -80,10 +82,10 @@ Stop and scene replacement. This policy makes the foundation usable without an
 ECS/gameplay adapter. Scene changes and Stop do not recreate these instances or
 reset their managed fields. Use SetInstanceEnabled to suspend an individual one.
 
-This does not define gameplay script behavior. An approved future S5 adapter
-will own entity/component instances and connect their creation, updates and
-destruction to existing ECS and PlayMode rules. It must reuse this host rather
-than introducing another ECS or restarting Mono on Play/Stop.
+This does not define gameplay script behavior. The [S5 adapter](ScriptingEntities.md)
+now owns entity/component instances and connects creation, updates and destruction
+to existing ECS and PlayMode rules. It reuses this host. Entity-owned instances
+are excluded from the standalone UpdateInstances tick.
 
 Core destroys managed instances before destroying world entities/systems/layers.
 The runtime stays alive until the existing final host-shutdown point. Shutdown
@@ -188,4 +190,5 @@ Completed Debug/x64 checks:
 Verification sources/logs are ignored under `build/setup-tools/scripting-s3-*`;
 no permanent test target or fixture asset is added. Release packaging, long-run
 stability, debugger integration, hot reload and gameplay bindings remain unverified
-or deferred. [S4](ScriptingRoadmap.md) is the next milestone.
+or deferred. [S4 development tooling](ScriptingDevelopment.md) is now available;
+S5 now provides the entity component workflow; subsystem bindings remain team-owned.

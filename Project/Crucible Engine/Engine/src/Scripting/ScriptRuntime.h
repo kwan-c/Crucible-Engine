@@ -55,7 +55,24 @@ namespace Crucible {
         bool DestroyAllInstances();
         // Opt-in config batch; a failed creation rolls back only this batch.
         bool CreateConfiguredInstances(const ScriptingConfig& config);
+        // Entity adapters own scheduling; UpdateInstances ticks standalone ones only.
+        bool DiscoverEntityClasses(ScriptAssemblyHandle assembly, std::vector<ScriptClassInfo>& classes);
+        bool CreateEntityInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+            const std::string& name, uint32_t index, uint32_t generation, ScriptInstanceHandle& instance);
+        bool UpdateEntityInstance(ScriptInstanceHandle instance, float deltaTime);
+        // Public mutable instance fields: bool/int/float/double/string, including
+        // inherited fields. Default inspection constructs once per class, without callbacks.
+        bool GetEntityFieldDefaults(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+            const std::string& name, std::vector<ScriptFieldValue>& fields);
+        bool CreateEntityInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+            const std::string& name, uint32_t index, uint32_t generation, ScriptInstanceHandle& instance,
+            const std::vector<ScriptFieldValue>& fields);
+        bool ReadEntityFields(ScriptInstanceHandle instance, std::vector<ScriptFieldValue>& fields);
+        bool SetEntityFields(ScriptInstanceHandle instance, const std::vector<ScriptFieldValue>& fields);
     private:
+        bool CreateInstanceImpl(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+            const std::string& name, ScriptInstanceHandle& instance, bool enabled,
+            const uint32_t* entityIdentity, const std::vector<ScriptFieldValue>* fields = nullptr);
         struct Impl;
         std::unique_ptr<Impl> m_impl;
     };

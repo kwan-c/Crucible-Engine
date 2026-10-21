@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cmath>
 #include <algorithm>
+#include <bit>
 #include <cstring>
 #include <filesystem>
 #include <limits>
@@ -26,6 +27,7 @@
 #include <mono/metadata/class.h>
 #include <mono/metadata/debug-helpers.h>
 #include <mono/metadata/mono-config.h>
+#include <mono/metadata/loader.h>
 #include <mono/metadata/object.h>
 #include <mono/metadata/row-indexes.h>
 #include <mono/metadata/reflection.h>
@@ -123,6 +125,19 @@ namespace Crucible {
             return WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, chars, length, text.data(), count, nullptr, nullptr) == count;
         }
 
+        // C ABI boundary: never let native exceptions cross into managed code.
+        void ManagedLog(int32_t level, MonoString* message) noexcept {
+            try {
+                GcRoot root(reinterpret_cast<MonoObject*>(message));
+                std::string text;
+                if (root.Get() && !FromManagedString(reinterpret_cast<MonoString*>(root.Get()), text))
+                    text = "<invalid UTF-16 log message>";
+                if (level == 2) CRU_USER_ERROR("[Script] {}", text);
+                else if (level == 1) CRU_USER_WARN("[Script] {}", text);
+                else CRU_USER_INFO("[Script] {}", text);
+            } catch (...) {}
+        }
+
         std::string ManagedException(MonoObject* exception) {
             ManagedCallScope scope;
             GcRoot root(exception);
@@ -177,6 +192,15 @@ namespace Crucible {
                         if (!Reflect(member.Get(), "get_ReturnType", 0, nullptr, returnType, error)) return false;
                     }
                 }
+            }
+            // Resolve public field signatures through checked managed reflection
+            // before native metadata access (missing dependencies can otherwise abort Mono).
+            GcRoot fields;
+            if (!Reflect(reflectedType, "GetFields", 0, nullptr, fields, error) || !fields.Get()) return false;
+            auto* fieldArray = reinterpret_cast<MonoArray*>(fields.Get());
+            for (uintptr_t i = 0; i < mono_array_length(fieldArray); ++i) {
+                GcRoot field(mono_array_get(fieldArray, MonoObject*, i)), fieldType;
+                if (!Reflect(field.Get(), "get_FieldType", 0, nullptr, fieldType, error)) return false;
             }
             return true;
         }
@@ -319,6 +343,98 @@ namespace Crucible {
             return true;
         }
 
+        struct InspectableField { MonoClassField* field; ScriptFieldValue value; };
+        std::vector<InspectableField> InspectableFields(MonoClass* type) {
+            std::vector<InspectableField> result;
+            for (auto* owner = type; owner; owner = mono_class_get_parent(owner)) {
+                void* iterator = nullptr;
+                while (auto* field = mono_class_get_fields(owner, &iterator)) {
+                    const auto flags = mono_field_get_flags(field);
+                    if ((flags & MONO_FIELD_ATTR_FIELD_ACCESS_MASK) != MONO_FIELD_ATTR_PUBLIC ||
+                        flags & (MONO_FIELD_ATTR_STATIC | MONO_FIELD_ATTR_INIT_ONLY | MONO_FIELD_ATTR_LITERAL | MONO_FIELD_ATTR_NOT_SERIALIZED)) continue;
+                    ScriptFieldValue value;
+                    switch (ManagedKind(mono_field_get_type(field))) {
+                    case ValueKind::Boolean: value.type = ScriptFieldType::Boolean; break;
+                    case ValueKind::Int32: value.type = ScriptFieldType::Int32; break;
+                    case ValueKind::Single: value.type = ScriptFieldType::Single; break;
+                    case ValueKind::Double: value.type = ScriptFieldType::Double; break;
+                    case ValueKind::String: value.type = ScriptFieldType::String; break;
+                    default: continue;
+                    }
+                    const std::string space = mono_class_get_namespace(owner);
+                    value.declaringType = (space.empty() ? "" : space + ".") + mono_class_get_name(owner);
+                    value.name = mono_field_get_name(field);
+                    result.push_back({field, std::move(value)});
+                }
+            }
+            return result;
+        }
+        bool ReadFields(MonoObject* object, MonoClass* type, std::vector<ScriptFieldValue>& fields, std::string& error) {
+            GcRoot owner(object);
+            std::vector<ScriptFieldValue> result;
+            for (auto entry : InspectableFields(type)) {
+                auto& value = entry.value;
+                switch (value.type) {
+                case ScriptFieldType::Boolean: {
+                    uint8_t flag = 0; mono_field_get_value(owner.Get(), entry.field, &flag); value.boolean = flag != 0; break;
+                }
+                case ScriptFieldType::Int32: mono_field_get_value(owner.Get(), entry.field, &value.integer); break;
+                case ScriptFieldType::Single: mono_field_get_value(owner.Get(), entry.field, &value.single); break;
+                case ScriptFieldType::Double: mono_field_get_value(owner.Get(), entry.field, &value.real); break;
+                case ScriptFieldType::String: {
+                    MonoString* text = nullptr; mono_field_get_value(owner.Get(), entry.field, &text);
+                    GcRoot stringRoot(reinterpret_cast<MonoObject*>(text));
+                    value.stringIsNull = !text;
+                    if (text && !FromManagedString(reinterpret_cast<MonoString*>(stringRoot.Get()), value.text)) {
+                        error = "Public field contains invalid UTF-16: " + value.name; return false;
+                    }
+                    break;
+                }
+                }
+                result.push_back(std::move(value));
+            }
+            fields = std::move(result); return true;
+        }
+        bool WriteFields(MonoDomain* domain, MonoObject* object, MonoClass* type,
+                         const std::vector<ScriptFieldValue>& fields, std::string& error) {
+            const auto schema = InspectableFields(type);
+            std::vector<std::pair<MonoClassField*, const ScriptFieldValue*>> writes;
+            // Validate the entire batch first. Obsolete/renamed/type-changed overrides
+            // remain serialized but cannot write a different field after recompilation.
+            for (const auto& value : fields) {
+                const auto found = std::find_if(schema.begin(), schema.end(), [&](const auto& entry) { return SameScriptField(entry.value, value); });
+                if (found == schema.end()) continue;
+                if ((value.type == ScriptFieldType::Single && !std::isfinite(value.single)) ||
+                    (value.type == ScriptFieldType::Double && !std::isfinite(value.real))) {
+                    error = "Public field requires a finite number: " + value.name; return false;
+                }
+                if (value.type == ScriptFieldType::String && !value.stringIsNull) {
+                    std::wstring wide;
+                    if (!ToUtf16(value.text, wide)) { error = "Public field is not valid UTF-8: " + value.name; return false; }
+                }
+                writes.emplace_back(found->field, &value);
+            }
+            GcRoot owner(object);
+            for (const auto& [field, input] : writes) {
+                auto value = *input;
+                switch (value.type) {
+                case ScriptFieldType::Boolean: {
+                    uint8_t flag = value.boolean ? 1 : 0; mono_field_set_value(owner.Get(), field, &flag); break;
+                }
+                case ScriptFieldType::Int32: mono_field_set_value(owner.Get(), field, &value.integer); break;
+                case ScriptFieldType::Single: mono_field_set_value(owner.Get(), field, &value.single); break;
+                case ScriptFieldType::Double: mono_field_set_value(owner.Get(), field, &value.real); break;
+                case ScriptFieldType::String: {
+                    std::wstring wide; ToUtf16(value.text, wide);
+                    GcRoot text(value.stringIsNull ? nullptr : reinterpret_cast<MonoObject*>(mono_string_new_utf16(domain,
+                        reinterpret_cast<const mono_unichar2*>(wide.data()), static_cast<int32_t>(wide.size()))));
+                    mono_field_set_value(owner.Get(), field, text.Get()); break;
+                }
+                }
+            }
+            return true;
+        }
+
         MonoMethod* LifecycleMethod(MonoDomain* domain, MonoClass* type, const char* name,
                                     const std::vector<ScriptValue>& arguments, std::string& error) {
             auto* method = FindMethod(type, name, false, arguments, error);
@@ -386,6 +502,7 @@ namespace Crucible {
         std::map<uint64_t, Assembly> assemblies;
         std::map<uint64_t, Object> objects;
         std::set<MonoClass*> validatedClasses;
+        std::map<MonoClass*, std::vector<ScriptFieldValue>> fieldDefaults;
         struct Instance {
             ScriptInstanceInfo info;
             ScriptObjectHandle object;
@@ -445,6 +562,21 @@ namespace Crucible {
             error = std::move(firstError);
             return error.empty();
         }
+        bool Step(Instance& instance, float deltaTime) {
+            if (instance.info.state != ScriptInstanceState::Running) return true;
+            std::string failure;
+            if (!Callback(instance, instance.update, "OnUpdate", {deltaTime}, failure)) {
+                instance.info.state = ScriptInstanceState::Faulted;
+                std::string cleanup;
+                if (!Dispose(instance, cleanup)) failure += "\nCleanup also failed: " + cleanup;
+                instance.info.lastError = failure;
+                return Fail(failure);
+            }
+            ++instance.info.updateCount;
+            instance.info.elapsedSeconds += deltaTime;
+            error.clear();
+            return true;
+        }
 
         Assembly* GetAssembly(ScriptAssemblyHandle handle) {
             const auto found = assemblies.find(handle.value);
@@ -482,6 +614,7 @@ namespace Crucible {
             instances.clear();
             for (const auto& [id, object] : objects) { (void)id; mono_gchandle_free(object.handle); }
             objects.clear();
+            fieldDefaults.clear();
             validatedClasses.clear();
             assemblies.clear(); // metadata/images are owned by Mono until final cleanup
         }
@@ -570,6 +703,7 @@ namespace Crucible {
             data.root = mono_jit_init_version("Crucible.Root", "v4.0.30319");
             if (!data.root) return fail("Mono could not initialize its CLR v4 root domain");
             processRuntime = ProcessRuntime::Active;
+            mono_add_internal_call("Crucible.Log::WriteInternal", reinterpret_cast<const void*>(ManagedLog));
             if (char* version = mono_get_runtime_build_info()) {
                 data.version = version; mono_free(version);
             }
@@ -807,13 +941,143 @@ namespace Crucible {
 
     bool ScriptRuntime::CreateInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
                                        const std::string& name, ScriptInstanceHandle& instance, bool enabled) {
+        return CreateInstanceImpl(assembly, nameSpace, name, instance, enabled, nullptr);
+    }
+
+    bool ScriptRuntime::CreateEntityInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+                                            const std::string& name, uint32_t index, uint32_t generation,
+                                            ScriptInstanceHandle& instance) {
+        const uint32_t identity[] = {index, generation};
+        if (!index) { instance = {}; return m_impl->Fail("An entity script requires a non-null owner"); }
+        return CreateInstanceImpl(assembly, nameSpace, name, instance, true, identity);
+    }
+
+    bool ScriptRuntime::CreateEntityInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+                                            const std::string& name, uint32_t index, uint32_t generation,
+                                            ScriptInstanceHandle& instance, const std::vector<ScriptFieldValue>& fields) {
+        const uint32_t identity[] = {index, generation};
+        if (!index) { instance = {}; return m_impl->Fail("An entity script requires a non-null owner"); }
+        return CreateInstanceImpl(assembly, nameSpace, name, instance, true, identity, &fields);
+    }
+
+    bool ScriptRuntime::GetEntityFieldDefaults(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+                                              const std::string& name, std::vector<ScriptFieldValue>& fields) {
+        fields.clear(); auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        ScriptAssemblyHandle core;
+        if (!LoadAssembly("Managed/Crucible.ScriptCore.dll", core)) return false;
+        auto* framework = data.GetAssembly(core); auto* loaded = data.GetAssembly(assembly);
+        auto* base = framework ? data.GetClass(*framework, "Crucible", "EntityScript") : nullptr;
+        auto* type = loaded ? data.GetClass(*loaded, nameSpace, name) : nullptr;
+        if (!base || !type) return false;
+        if (!mono_class_is_subclass_of(type, base, false)) return data.Fail("Public fields require an EntityScript class");
+        if (const auto found = data.fieldDefaults.find(type); found != data.fieldDefaults.end()) { fields = found->second; return true; }
+        if (InspectableFields(type).empty()) { data.fieldDefaults.emplace(type, fields); return true; }
+        ScriptObjectHandle object;
+        if (!CreateObject(assembly, nameSpace, name, object)) return false;
+        bool success;
+        std::string failure;
+        try {
+            const auto& entry = data.objects.at(object.value);
+            success = ReadFields(mono_gchandle_get_target(entry.handle), type, fields, failure);
+        } catch (...) { data.ReleaseObject(object); throw; }
+        data.ReleaseObject(object); // inspection never invokes lifecycle callbacks
+        if (!success) return data.Fail(failure);
+        data.fieldDefaults.emplace(type, fields); return true;
+#else
+        (void)assembly; (void)nameSpace; (void)name; return false;
+#endif
+    }
+
+    bool ScriptRuntime::ReadEntityFields(ScriptInstanceHandle instance, std::vector<ScriptFieldValue>& fields) {
+        fields.clear(); auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        const auto* owned = data.GetInstance(instance);
+        if (!owned) return false;
+        if (!owned->info.entityOwned || !owned->object) return data.Fail("Entity fields require a live entity-owned script instance");
+        const auto found = data.objects.find(owned->object.value);
+        if (found == data.objects.end()) return data.Fail("Managed object was released");
+        std::string failure;
+        if (!ReadFields(mono_gchandle_get_target(found->second.handle), found->second.type, fields, failure)) return data.Fail(failure);
+        return true;
+#else
+        (void)instance; return false;
+#endif
+    }
+
+    bool ScriptRuntime::SetEntityFields(ScriptInstanceHandle instance, const std::vector<ScriptFieldValue>& fields) {
+        auto& data = *m_impl;
+        if (!data.Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        const auto* owned = data.GetInstance(instance);
+        if (!owned) return false;
+        if (!owned->info.entityOwned || !owned->object) return data.Fail("Entity fields require a live entity-owned script instance");
+        const auto found = data.objects.find(owned->object.value);
+        if (found == data.objects.end()) return data.Fail("Managed object was released");
+        std::string failure;
+        if (!WriteFields(data.root, mono_gchandle_get_target(found->second.handle), found->second.type, fields, failure)) return data.Fail(failure);
+        return true;
+#else
+        (void)instance; (void)fields; return false;
+#endif
+    }
+
+    bool ScriptRuntime::DiscoverEntityClasses(ScriptAssemblyHandle assembly, std::vector<ScriptClassInfo>& classes) {
+        classes.clear();
+        std::vector<ScriptClassInfo> candidates;
+        ScriptAssemblyHandle core;
+        if (!LoadAssembly("Managed/Crucible.ScriptCore.dll", core) || !DiscoverClasses(assembly, candidates)) return false;
+#if CRUCIBLE_WITH_MONO
+        auto& data = *m_impl;
+        auto* loaded = data.GetAssembly(assembly);
+        auto* framework = data.GetAssembly(core);
+        auto* base = framework ? data.GetClass(*framework, "Crucible", "EntityScript") : nullptr;
+        if (!base || !loaded) return false;
+        std::vector<ScriptClassInfo> eligible;
+        for (const auto& candidate : candidates) {
+            if (candidate.isAbstract || !candidate.hasPublicDefaultConstructor) continue;
+            auto* type = data.GetClass(*loaded, candidate.nameSpace, candidate.name);
+            if (!type) return false;
+            if (mono_class_is_subclass_of(type, base, false)) eligible.push_back(candidate);
+        }
+        classes = std::move(eligible);
+        return true;
+#else
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::CreateInstanceImpl(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+                                           const std::string& name, ScriptInstanceHandle& instance, bool enabled,
+                                           const uint32_t* entityIdentity, const std::vector<ScriptFieldValue>* fields) {
         instance = {}; auto& data = *m_impl;
         if (!data.Ready()) return false;
 #if CRUCIBLE_WITH_MONO
+        MonoClass* base = nullptr;
+        MonoMethod* bind = nullptr;
+        if (entityIdentity) {
+            ScriptAssemblyHandle core;
+            if (!LoadAssembly("Managed/Crucible.ScriptCore.dll", core)) return false;
+            auto* framework = data.GetAssembly(core);
+            base = framework ? data.GetClass(*framework, "Crucible", "EntityScript") : nullptr;
+            if (!base) return false;
+            bind = mono_class_get_method_from_name(base, "BindEntity", 2);
+            if (!bind) return data.Fail("EntityScript.BindEntity is unavailable; rebuild ScriptCore");
+        }
         auto* loaded = data.GetAssembly(assembly);
         if (!loaded) return false;
         auto* type = data.GetClass(*loaded, nameSpace, name);
         if (!type) return false;
+        if (base && !mono_class_is_subclass_of(type, base, false)) return data.Fail("Entity scripts must inherit Crucible.EntityScript: " + name);
+        if (!entityIdentity) {
+            for (auto* parent = type; parent; parent = mono_class_get_parent(parent)) {
+                if (std::strcmp(mono_class_get_name(parent), "EntityScript") == 0 &&
+                    std::strcmp(mono_class_get_namespace(parent), "Crucible") == 0)
+                    return data.Fail("EntityScript classes require a Script component or CreateEntityInstance; they cannot run as standalone instances");
+            }
+        }
         std::string failure;
         auto* create = LifecycleMethod(data.root, type, "OnCreate", {}, failure);
         if (!create) return data.Fail(name + ": " + failure);
@@ -823,6 +1087,23 @@ namespace Crucible {
         if (!destroy) return data.Fail(name + ": " + failure);
         ScriptObjectHandle object;
         if (!CreateObject(assembly, nameSpace, name, object)) return false;
+        if (entityIdentity) {
+            ScriptValue result;
+            auto* target = mono_gchandle_get_target(data.objects.at(object.value).handle);
+            const std::vector<ScriptValue> identity{std::bit_cast<int32_t>(entityIdentity[0]), std::bit_cast<int32_t>(entityIdentity[1])};
+            if (!CallManaged(data.root, bind, target, identity, result, failure)) {
+                data.ReleaseObject(object);
+                return data.Fail("Binding entity: " + failure);
+            }
+        }
+        if (fields) {
+            const auto& entry = data.objects.at(object.value);
+            try {
+                if (!WriteFields(data.root, mono_gchandle_get_target(entry.handle), entry.type, *fields, failure)) {
+                    data.ReleaseObject(object); return data.Fail(failure);
+                }
+            } catch (...) { data.ReleaseObject(object); throw; }
+        }
         const uint64_t id = data.nextInstance++;
         Impl::Instance* owned = nullptr;
         try {
@@ -831,6 +1112,11 @@ namespace Crucible {
                 object, create, update, destroy});
             (void)inserted; owned = &found->second;
         } catch (...) { data.ReleaseObject(object); throw; }
+        if (entityIdentity) {
+            owned->info.entityOwned = true;
+            owned->info.entityIndex = entityIdentity[0];
+            owned->info.entityGeneration = entityIdentity[1];
+        }
         if (!data.Callback(*owned, create, "OnCreate", {}, failure)) {
             std::string cleanup;
             if (!data.Dispose(*owned, cleanup)) failure += "\nCleanup also failed: " + cleanup;
@@ -842,7 +1128,7 @@ namespace Crucible {
         CRU_INFO("[Scripting] Created lifecycle instance {}", data.Label(*owned));
         return true;
 #else
-        (void)assembly; (void)nameSpace; (void)name; (void)enabled;
+        (void)assembly; (void)nameSpace; (void)name; (void)enabled; (void)entityIdentity; (void)fields;
         return false;
 #endif
     }
@@ -894,23 +1180,27 @@ namespace Crucible {
         std::string firstError;
         for (auto& [id, instance] : data.instances) {
             (void)id;
-            if (instance.info.state != ScriptInstanceState::Running) continue;
-            std::string failure;
-            if (!data.Callback(instance, instance.update, "OnUpdate", {deltaTime}, failure)) {
-                instance.info.state = ScriptInstanceState::Faulted;
-                std::string cleanup;
-                if (!data.Dispose(instance, cleanup)) failure += "\nCleanup also failed: " + cleanup;
-                instance.info.lastError = failure;
-                if (firstError.empty()) firstError = failure;
-                data.Fail(failure); // only once: faulted instances no longer receive updates
-            } else {
-                ++instance.info.updateCount;
-                instance.info.elapsedSeconds += deltaTime;
-            }
+            if (instance.info.entityOwned) continue;
+            if (!data.Step(instance, deltaTime) && firstError.empty()) firstError = data.error;
         }
         data.error = std::move(firstError);
         return data.error.empty();
 #else
+        return false;
+#endif
+    }
+
+    bool ScriptRuntime::UpdateEntityInstance(ScriptInstanceHandle instance, float deltaTime) {
+        auto& data = *m_impl;
+        if (!data.Ready()) return false;
+        if (!std::isfinite(deltaTime) || deltaTime < 0) return data.Fail("Script delta time must be finite and nonnegative");
+#if CRUCIBLE_WITH_MONO
+        auto* owned = data.GetInstance(instance);
+        if (!owned) return false;
+        if (!owned->info.entityOwned) return data.Fail("Entity update requires an entity-owned instance");
+        return data.Step(*owned, deltaTime);
+#else
+        (void)instance;
         return false;
 #endif
     }

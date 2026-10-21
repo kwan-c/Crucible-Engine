@@ -4,7 +4,8 @@ S2 adds standalone C# execution to the Core-owned Mono host from
 [S1](ScriptingRuntime.md). Both Editor and Game can build, load and invoke the
 same managed DLL. This page describes the S2 raw-object API. S3 now adds
 [managed instance callbacks](ScriptingLifecycle.md); entity components and engine
-API bindings remain deferred to S5.
+API bindings remain team-owned; [S5](ScriptingEntities.md) now provides the entity
+component workflow and basic identity/logging.
 
 ## Build and try the example
 
@@ -20,6 +21,9 @@ runs `mcs.exe` offline, targeting its 4.5 framework profile, C# 7.2, AnyCPU and 
 library output. No dotnet SDK, NuGet restore or global Mono installation is used.
 The `.mdb` is deployed as a symbol artifact; managed debugger attachment has
 not been implemented or verified.
+
+For your own scripts, [S4](ScriptingDevelopment.md) adds automatic project source
+discovery, a class generator, managed-only builds and explicit dependency handling.
 
 User code does not run automatically with the default settings. To run the example
 once during Editor startup, merge this into the existing `editor` object in
@@ -184,6 +188,6 @@ Builds and verification fixtures/logs are ignored under
 does not claim long-duration stability, Release packaging, debugger support or
 hot reload.
 
-S3 is complete; see [ScriptingLifecycle.md](ScriptingLifecycle.md). Next is S4
-development infrastructure. Engine bindings remain deferred to the approved S5
-interface and subsystem owners.
+S3 and S4 are complete; see [ScriptingLifecycle.md](ScriptingLifecycle.md) and
+[ScriptingDevelopment.md](ScriptingDevelopment.md). [S5](ScriptingEntities.md) adds
+entity components, owner identity and logging; other APIs remain with subsystem owners.

@@ -18,11 +18,10 @@
 * Interaction:
 *	click          select
 *	double-click   folder: open it.  .scene: open the scene (same guard as File > Open).
-*	               script (.lua/.cs): open that file in VS Code.  Anything else: logged.
+*	               C# script (.cs): open that file in VS Code.  Anything else: logged.
 *	drag           starts a drag-drop with EditorWidgets::kAssetPayload (virtual path)
 *	right-click    context menu (Rename, Show in Explorer, Copy Path, Copy GUID, New Folder,
-*	               Create Scene - inside Scenes/ only -, Create Script - inside Scripts/
-*	               only - and Refresh)
+*	               Create Scene - inside Scenes/ only - and Refresh)
 *	F2             rename the selection (a file's .meta moves with it, so its guid is kept)
 *	Backspace      go to parent folder,  F5  refresh
 *
@@ -109,11 +108,6 @@ namespace Crucible {
 		// ---- Create Scene (only offered inside Scenes/) ----
 		bool IsInScenesFolder(std::string const& folder) const;
 		void CreateScene();
-
-		// ---- Create Script (only offered inside Scripts/) ----
-		// An empty .lua file, then straight into rename like Create Scene.
-		bool IsInScriptsFolder(std::string const& folder) const;
-		void CreateScript();
 
 		// ---- Rename (F2 / right-click) ----
 		// The field is drawn over the tile's label; the rename itself happens after the frame's

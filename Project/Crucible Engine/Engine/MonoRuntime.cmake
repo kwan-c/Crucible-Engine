@@ -35,23 +35,33 @@ endif()
 
 function(crucible_deploy_mono target)
     if(CRUCIBLE_ENABLE_MONO)
+        get_property(managed_files GLOBAL PROPERTY CRUCIBLE_MANAGED_FILES)
+        get_property(managed_targets GLOBAL PROPERTY CRUCIBLE_MANAGED_TARGETS)
+        list(REMOVE_DUPLICATES managed_files)
+        set(manifest "${CMAKE_BINARY_DIR}/ManagedScripts/$<CONFIG>/${target}-files.txt")
+        file(GENERATE OUTPUT "${manifest}" CONTENT "$<JOIN:${managed_files},\n>\n")
+        find_program(CRUCIBLE_POWERSHELL NAMES powershell REQUIRED)
+        # This target builds/deploys C# without rebuilding the native engine.
+        add_custom_target(${target}ManagedScripts
+            COMMAND "${CRUCIBLE_POWERSHELL}" -NoProfile -ExecutionPolicy Bypass
+                -File "${CMAKE_SOURCE_DIR}/Tools/DeployManaged.ps1"
+                -FilesManifest "${manifest}"
+                -Destination "$<TARGET_FILE_DIR:${target}>/Managed"
+                -ApplicationPath "$<TARGET_FILE_DIR:${target}>/$<TARGET_FILE_NAME:${target}>"
+                -MonoSdk "${CRUCIBLE_MONO_ROOT}"
+            VERBATIM)
+        add_dependencies(${target}ManagedScripts ${managed_targets})
+        set_target_properties(${target}ManagedScripts PROPERTIES FOLDER "Managed")
         # This target runs on incremental builds too, so a removed deployment is repaired.
         add_custom_target(${target}MonoRuntime
             COMMAND "${CMAKE_COMMAND}"
                 "-DMONO_SDK=${CRUCIBLE_MONO_ROOT}"
                 "-DMONO_DEST=$<TARGET_FILE_DIR:${target}>"
                 -P "${CMAKE_SOURCE_DIR}/Engine/DeployMono.cmake"
-            COMMAND "${CMAKE_COMMAND}" -E make_directory "$<TARGET_FILE_DIR:${target}>/Managed"
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${CMAKE_BINARY_DIR}/ManagedScripts/$<CONFIG>/Crucible.Examples.dll"
-                "$<TARGET_FILE_DIR:${target}>/Managed/Crucible.Examples.dll"
-            COMMAND "${CMAKE_COMMAND}" -E copy_if_different
-                "${CMAKE_BINARY_DIR}/ManagedScripts/$<CONFIG>/Crucible.Examples.dll.mdb"
-                "$<TARGET_FILE_DIR:${target}>/Managed/Crucible.Examples.dll.mdb"
             COMMENT "Deploying Mono runtime for ${target}"
             VERBATIM)
         set_target_properties(${target}MonoRuntime PROPERTIES FOLDER "CMakePredefinedTargets")
-        add_dependencies(${target}MonoRuntime CrucibleManagedExamples)
+        add_dependencies(${target}MonoRuntime ${target}ManagedScripts)
         add_dependencies(${target} ${target}MonoRuntime)
     endif()
 endfunction()

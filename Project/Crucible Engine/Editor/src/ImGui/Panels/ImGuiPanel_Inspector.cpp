@@ -21,6 +21,10 @@
 #include "Resources/ModelResource.h"
 #include "Resources/RenderedModel.h"
 #include "Animation/ModelSockets.h"
+#include "Scripting/ScriptRuntime.h"
+#include "Scripting/EntityScriptSystem.h"
+#include "Scripting/ScriptAuthoring.h"
+#include "Core.h"
 #include "Undo/EntityCommands.h"
 #include "../EditorWidgets.h"
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
@@ -30,10 +34,26 @@
 #include <utility>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <vector>
 
 namespace {
+	constexpr char ProjectScriptAssembly[] = "Managed/Crucible.Scripts.dll";
+	constexpr char ProjectScriptNamespace[] = "Crucible.Scripts";
+	template<class T> std::string ComponentHeader(const T&) { return std::string(Crucible::ComponentTraits<T>::name); }
+	std::string ComponentHeader(const Crucible::ScriptComponent& script) {
+		return script.className.empty() ? "Missing C# script" : script.className;
+	}
+
+	bool SameScriptName(std::string_view a, std::string_view b) {
+		auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c; };
+		return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
+			[&](char left, char right) { return lower(left) == lower(right); });
+	}
+
 	// One Unity-style constraints row: "Freeze Position   [ ] X  [ ] Y  [ ] Z".
 	// Both rows line their checkboxes up at the same x, past the longer of the two labels.
 	bool DrawFreezeRow(char const* label, bool& x, bool& y, bool& z) {
@@ -536,6 +556,7 @@ void Crucible::Inspector::Update(float) {
 		} else {
 			ImGui::TextDisabled("Nothing selected");
 		}
+		DrawCreateScriptModal();
 	}
 
 	ImGui::End();
@@ -582,8 +603,8 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \
-				std::string const header(ComponentTraits<T>::name);                                          \
-				ImGui::PushID(header.c_str());                                                               \
+				std::string const header = ComponentHeader(*component);                                     \
+				ImGui::PushID(ComponentTraits<T>::name.data());                                               \
 				bool const open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);    \
 				if constexpr (RemovableComponent<T>) {                                                       \
 					if (ImGui::BeginPopupContextItem("##ComponentMenu")) {                                   \
@@ -620,8 +641,11 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 	}
 
 	if (ImGui::BeginPopup("AddComponentPopup")) {
-		// Add component selection logic here
-		if (ImGui::IsWindowAppearing()) { m_addComponentFilter.Clear(); ImGui::SetKeyboardFocusHere(); }
+		if (ImGui::IsWindowAppearing()) {
+			m_addComponentFilter.Clear();
+			RefreshScriptClasses(ProjectScriptAssembly);
+			ImGui::SetKeyboardFocusHere();
+		}
 		m_addComponentFilter.Draw("##search", 200.0f);
 
 		bool any = false;
@@ -629,7 +653,7 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 		// Same X-macro as the inspector loop. Skips mandatory components (Transform,
 		// WorldTransform, HierarchyNode), World-managed ones, and ones already present.
 #define CRU_ADD_COMPONENT_ITEM(T)																			    \
-		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value) {									        \
+		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !std::is_same_v<T, ScriptComponent>) { \
 			std::string_view const name = ComponentTraits<T>::name;											        \
 			if (!m_world.HasComponent<T>(entity) &&															        \
 				m_addComponentFilter.PassFilter(name.data(), name.data() + name.size())) {					        \
@@ -647,8 +671,55 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 #undef CRU_ADD_COMPONENT_ITEM
 
+		// ScriptComponent is an implementation detail here: users attach a named C# class.
+		auto* core = EditorManager::GetInstance().GetCore();
+		const auto* attached = m_world.Read<ScriptComponent>(entity);
+		const char* blocked = core && core->IsInPlaySession() ? "Stop to attach or create scripts." :
+			attached && !attached->className.empty() ?
+			"One script per entity is supported. Remove the existing script component before attaching another." : nullptr;
+		std::string search = m_addComponentFilter.InputBuf;
+		const auto first = search.find_first_not_of(" \t\r\n");
+		search = first == std::string::npos ? "" : search.substr(first, search.find_last_not_of(" \t\r\n") - first + 1);
+		bool exactScript = false, scriptHeading = false;
+		for (const auto& type : m_scriptClasses) {
+			const auto fullName = (type.nameSpace.empty() ? "" : type.nameSpace + ".") + type.name;
+			exactScript |= SameScriptName(search, type.name) || SameScriptName(search, fullName);
+			if (!m_addComponentFilter.PassFilter(fullName.c_str())) continue;
+			if (!scriptHeading) { ImGui::SeparatorText("C# scripts"); scriptHeading = true; }
+			any = true;
+			ImGui::BeginDisabled(blocked != nullptr);
+			if (ImGui::Selectable((fullName + " (C#)").c_str()))
+				AssignScript(entity, ProjectScriptAssembly, type.nameSpace, type.name);
+			ImGui::EndDisabled();
+			if (blocked) ImGui::SetItemTooltip("%s", blocked);
+		}
+		if (!search.empty() && !exactScript) {
+			if (!scriptHeading) ImGui::SeparatorText("C# scripts");
+			any = true;
+			std::error_code ec;
+			const auto source = std::filesystem::path(m_assets.GetAssetRoot()).parent_path() /
+				"ManagedScripts/Scripts" / (search + ".cs");
+			// Never suggest creating a duplicate source file just because its assembly is stale.
+			if (ScriptAuthoring::IsIdentifier(search) && std::filesystem::exists(source, ec)) {
+				ImGui::TextDisabled("Source file already exists.");
+				ImGui::TextDisabled("Close, build scripts and restart to attach it.");
+			} else {
+				const bool validName = ScriptAuthoring::IsIdentifier(search);
+				ImGui::BeginDisabled(blocked != nullptr || !validName);
+				if (ImGui::Selectable(("Create C# script \"" + search + "\"").c_str()))
+					RequestCreateScript(entity, search, ProjectScriptNamespace);
+				ImGui::EndDisabled();
+				ImGui::SetItemTooltip("%s", blocked ? blocked : !validName ?
+					"Use letters, digits and underscores, starting with a letter or underscore." :
+					"Create and attach a new C# script. Save the scene, close, build and restart before Play.");
+			}
+		}
+		if (!m_scriptPickerError.empty()) {
+			ImGui::TextDisabled("Script class list unavailable (hover for details)");
+			ImGui::SetItemTooltip("%s", m_scriptPickerError.c_str());
+		}
 		if (!any) {
-			ImGui::TextDisabled("No components available");
+			ImGui::TextDisabled("No matching components or scripts");
 		}
 		ImGui::EndPopup();
 	}
@@ -1444,4 +1515,152 @@ void Crucible::Inspector::CommitPendingEdit() {
 	history.Push(std::make_unique<EntityStateCommand>(
 		history.KeyOf(m_editEntity), std::move(m_editBefore), std::move(after), std::move(label)));
 	m_editBefore.clear();
+}
+
+void Crucible::Inspector::RefreshScriptClasses(const std::string& assemblyPath) {
+    m_scriptAssembly = assemblyPath;
+    m_scriptClasses.clear(); m_scriptPickerError.clear();
+    auto* core = EditorManager::GetInstance().GetCore();
+    if (!core || !core->GetScriptRuntime().IsRunning()) {
+        m_scriptPickerError = "Class selection requires a Mono-enabled build. You can still create C# source files.";
+        return;
+    }
+    auto& host = core->GetScriptRuntime();
+    ScriptAssemblyHandle assembly;
+    if (!host.LoadAssembly(assemblyPath, assembly) || !host.DiscoverEntityClasses(assembly, m_scriptClasses))
+        m_scriptPickerError = host.LastError();
+    std::sort(m_scriptClasses.begin(), m_scriptClasses.end(), [](const auto& a, const auto& b) {
+        return std::tie(a.name, a.nameSpace) < std::tie(b.name, b.nameSpace);
+    });
+}
+
+void Crucible::Inspector::RequestCreateScript(Entity entity, std::string name, std::string nameSpace) {
+    m_scriptCreateTarget = entity;
+    m_scriptNewName = std::move(name); m_scriptNewNamespace = std::move(nameSpace);
+    m_scriptCreateError.clear(); m_scriptCreateRequested = true;
+}
+
+void Crucible::Inspector::AssignScript(Entity entity, const std::string& assembly, const std::string& nameSpace,
+                                     const std::string& name) {
+    CommitPendingEdit();
+    m_editBefore = EntityState::Capture(m_world, entity); m_editEntity = entity;
+    if (!m_world.HasComponent<ScriptComponent>(entity)) m_world.AddComponent<ScriptComponent>(entity, ScriptComponent{});
+    auto* script = m_world.Write<ScriptComponent>(entity);
+    script->assembly = assembly; script->nameSpace = nameSpace; script->className = name;
+    script->fields.clear();
+    if (m_scriptNoticeTarget == entity) m_scriptNotice.clear();
+    NoteEdit("Attach " + name); m_scenes.MarkDirty(); CommitPendingEdit();
+}
+
+bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
+    if (script.className.empty()) {
+        ImGui::TextDisabled("Remove this component and attach a C# script through Add Component.");
+        return false;
+    }
+    auto* core = EditorManager::GetInstance().GetCore();
+    const bool inSession = core && core->IsInPlaySession();
+    auto* runtime = core && core->GetScriptRuntime().IsRunning() ? &core->GetScriptRuntime() : nullptr;
+    if (m_scriptFieldAssembly != script.assembly || m_scriptFieldNamespace != script.nameSpace || m_scriptFieldClass != script.className) {
+        m_scriptFieldAssembly = script.assembly; m_scriptFieldNamespace = script.nameSpace; m_scriptFieldClass = script.className;
+        m_scriptFieldDefaults.clear(); m_scriptFieldError.clear();
+        ScriptAssemblyHandle assembly;
+        if (!runtime) m_scriptFieldError = "A Mono-enabled Editor is needed to inspect compiled public fields.";
+        else if (!runtime->LoadAssembly(script.assembly, assembly) ||
+                 !runtime->GetEntityFieldDefaults(assembly, script.nameSpace, script.className, m_scriptFieldDefaults))
+            m_scriptFieldError = runtime->LastError();
+    }
+    auto fields = m_scriptFieldDefaults;
+    if (!m_scriptFieldError.empty()) fields = script.fields; // authored values survive unavailable assemblies
+    else for (auto& field : fields) {
+        const auto saved = std::find_if(script.fields.begin(), script.fields.end(), [&](const auto& value) { return SameScriptField(field, value); });
+        if (saved != script.fields.end()) field = *saved;
+    }
+    EntityScriptStatus status;
+    if (core) if (auto* system = core->Systems().FindSystem<EntityScriptSystem>()) status = system->Status(m_selected);
+    ScriptInstanceInfo info;
+    bool live = inSession && runtime && status.instance && runtime->GetInstanceInfo(status.instance, info) && info.state != ScriptInstanceState::Faulted;
+    if (live) {
+        if (m_scriptFieldReadFailure.value == status.instance.value) live = false;
+        else if (!runtime->ReadEntityFields(status.instance, fields)) {
+            m_scriptFieldReadFailure = status.instance; m_scriptFieldReadError = runtime->LastError(); live = false;
+        }
+    }
+    bool changed = false;
+    ImGui::BeginDisabled(inSession && !live);
+    for (auto field : fields) {
+        std::string label;
+        for (size_t i = 0; i < field.name.size(); ++i) {
+            const char c = field.name[i];
+            if (c == '_') { label += ' '; continue; }
+            if (i && c >= 'A' && c <= 'Z' && field.name[i-1] >= 'a' && field.name[i-1] <= 'z') label += ' ';
+            label += label.empty() && c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+        }
+        if (std::count_if(fields.begin(), fields.end(), [&](const auto& other) { return other.name == field.name; }) > 1)
+            label += " (" + field.declaringType + ")";
+        label += "###" + field.name;
+        ImGui::PushID(field.declaringType.c_str());
+        bool edited = false;
+        switch (field.type) {
+        case ScriptFieldType::Boolean: edited = ImGui::Checkbox(label.c_str(), &field.boolean); break;
+        case ScriptFieldType::Int32: edited = ImGui::InputScalar(label.c_str(), ImGuiDataType_S32, &field.integer); break;
+        case ScriptFieldType::Single: edited = ImGui::InputFloat(label.c_str(), &field.single, 0, 0, "%.6g"); break;
+        case ScriptFieldType::Double: edited = ImGui::InputDouble(label.c_str(), &field.real, 0, 0, "%.12g"); break;
+        case ScriptFieldType::String:
+            edited = ImGui::InputText(label.c_str(), &field.text);
+            if (edited) field.stringIsNull = false;
+            break;
+        }
+        if (edited && ((field.type == ScriptFieldType::Single && !std::isfinite(field.single)) ||
+                       (field.type == ScriptFieldType::Double && !std::isfinite(field.real)))) edited = false;
+        if (edited) {
+            if (live) runtime->SetEntityFields(status.instance, {field}); // Play edits stay on the managed instance
+            else {
+                auto saved = std::find_if(script.fields.begin(), script.fields.end(), [&](const auto& value) { return SameScriptField(field, value); });
+                if (saved == script.fields.end()) script.fields.push_back(std::move(field)); else *saved = std::move(field);
+                changed = true;
+            }
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndDisabled();
+    if (fields.empty() && m_scriptFieldError.empty()) ImGui::TextDisabled("No public fields.");
+    std::string error = !status.error.empty() ? status.error : m_scriptFieldError;
+    if (status.instance.value == m_scriptFieldReadFailure.value && status.instance) error = m_scriptFieldReadError;
+    if (!error.empty()) { ImGui::TextDisabled("Script unavailable or failed (hover for details)"); ImGui::SetItemTooltip("%s", error.c_str()); }
+    if (m_scriptNoticeTarget == m_selected && !m_scriptNotice.empty()) ImGui::TextWrapped("%s", m_scriptNotice.c_str());
+    return changed;
+}
+
+void Crucible::Inspector::DrawCreateScriptModal() {
+    if (m_scriptCreateRequested && !ImGui::IsPopupOpen("AddComponentPopup")) {
+        ImGui::OpenPopup("Create C# script");
+        m_scriptCreateRequested = false;
+    }
+    if (!ImGui::BeginPopupModal("Create C# script", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    ImGui::InputText("Class name", &m_scriptNewName);
+    ImGui::InputText("Namespace", &m_scriptNewNamespace);
+    ImGui::TextUnformatted("Creates C# source and attaches it to the selected entity.\nSave the scene, close Editor, build scripts, then restart.");
+    auto* core = EditorManager::GetInstance().GetCore();
+    const auto* existing = m_world.IsAlive(m_scriptCreateTarget) ? m_world.Read<ScriptComponent>(m_scriptCreateTarget) : nullptr;
+    const bool valid = m_scriptCreateTarget == m_selected && m_world.IsAlive(m_scriptCreateTarget) &&
+        (!existing || existing->className.empty()) &&
+        (!core || !core->IsInPlaySession());
+    ImGui::BeginDisabled(!valid);
+    if (ImGui::Button("Create and assign")) {
+        std::filesystem::path output;
+        const auto projectRoot = std::filesystem::path(m_assets.GetAssetRoot()).parent_path();
+        if (ScriptAuthoring::Create(projectRoot, m_scriptNewName, m_scriptNewNamespace, output, m_scriptCreateError)) {
+            AssignScript(m_selected, ProjectScriptAssembly, m_scriptNewNamespace, m_scriptNewName);
+            m_scriptNoticeTarget = m_selected;
+            m_scriptNotice = "Source created. Save the scene, close Editor, build scripts and restart before Play.";
+            CRU_USER_INFO("Created entity script: {}", output.string());
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+    if (!valid) ImGui::TextUnformatted("Select the original entity, stop Play and check its script component before creating.");
+    if (!m_scriptCreateError.empty()) ImGui::TextWrapped("%s", m_scriptCreateError.c_str());
+    ImGui::EndPopup();
 }

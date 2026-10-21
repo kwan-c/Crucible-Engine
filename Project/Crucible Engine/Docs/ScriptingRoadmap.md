@@ -5,9 +5,12 @@ separate S1-S5 roadmap; the animation roadmap M1-M7 is already complete.
 
 The assigned scope is the managed runtime and its execution infrastructure.
 Subsystem owners retain responsibility for their future engine API bindings.
-S5 is deferred until the team approves that interface. No scripting ECS component,
-gameplay framework, physics/Animator/input bindings, or visual scripting editor
-is part of S1-S4.
+The user has now authorized starting S5 with the entity script workflow. That
+portion adds a ScriptComponent, EntityScript base/identity, named Inspector
+sections with public primitive fields, PlayMode adapter and logging. Public
+field overrides use the existing scene/undo/snapshot serialization.
+Subsystem-specific APIs remain owned by the team;
+no competing gameplay framework or visual scripting editor is introduced.
 
 ## What already exists
 
@@ -15,8 +18,9 @@ is part of S1-S4.
   lifecycle, layers, resources, scene manager, ECS systems and PlayMode.
 - Both executables use EngineConfigLoader, including shared settings and per-app
   overrides. Existing logging can report native and managed-host failures.
-- AssetManager already recognizes .cs and .lua as Script assets, but recognition
-  is not compilation or execution. Assets/Scripts/scripttest.lua is empty.
+- AssetManager recognizes .cs as Script assets; compilation uses
+  ManagedScripts/Scripts. Add Component searches compiled C# entity classes and
+  offers creation for new names. The unused legacy script-creation path is removed.
 - There was no Mono SDK, C# runtime host, managed project or script-instance
   manager. Commented ManagedScripts entries were placeholders, not working code.
 - The existing GUID/resource pipeline, scene snapshots, PlayMode, renderer,
@@ -29,8 +33,8 @@ is part of S1-S4.
 | S1 - Native runtime host | Optional Windows x64 Mono SDK integration; Core-owned process-lifetime host; shared configuration/logging; portable Editor/Game deployment; managed execution diagnostic | Implemented. See ScriptingRuntime.md for setup and verification. |
 | S2 - Assembly management | Build/consume a small managed C# DLL using the chosen framework profile; load assemblies through the host; discover classes, construct objects and invoke methods without gameplay APIs | Implemented. The standalone C# example executes through Core; see ScriptingAssemblies.md for usage and verification. |
 | S3 - Managed instance lifecycle | Manage instances using S2's GC handles and exception handling; establish standalone creation/update/disposal conventions and failure policy; release references before runtime teardown | Implemented. Core-lifetime instances, cached synchronous callbacks, enable/fault policy and cleanup work without another ECS or ScriptComponent. See ScriptingLifecycle.md. |
-| S4 - Development infrastructure | Complete C# build/deployment workflow, compiler diagnostics, dependency resolution and failure recovery; define a safe reload policy and document extension rules | Pending. Teammates can build and debug the scripting foundation reproducibly. Reload is explicit or restart-based until domain/thread/reference constraints are understood. |
-| S5 - Team-owned engine bindings | Agree on the interop contract, then connect subsystem-owned entity/transform/physics/input/animation/audio/resource APIs and an approved gameplay/ECS adapter | Deferred. Requires the tech lead/team to approve scope and API ownership. |
+| S4 - Development infrastructure | Complete C# build/deployment workflow, compiler diagnostics, dependency resolution and failure recovery; define a safe reload policy and document extension rules | Implemented. Automatic project source discovery, managed-only targets, compiler logs, explicit DLL references, guarded deployment and close-build-restart workflow. See ScriptingDevelopment.md. |
+| S5 - Entity workflow and team-owned bindings | Script component/Inspector authoring, managed entity identity/logging and the existing ECS/PlayMode adapter; subsystem owners extend the agreed API | Entity workflow implemented; see ScriptingEntities.md. Transform/physics/input/Animator/audio/resource bindings remain owner-specific follow-up work. |
 
 ## Decisions that fit this engine
 
@@ -65,7 +69,7 @@ distribution selected for S1 is Mono 6.12.0.206 x64/SGen. This is the legacy Mon
 product and framework profile, not the modern .NET runtime. Changing to .NET
 hosting later would be a separate agreed architecture change.
 
-## S4 handoff
+## S5 handoff
 
 S2 provides Core::GetScriptRuntime, assembly/object handles, checked class discovery,
 construction, exact typed invocation and explicit GC-root release. It builds a
@@ -79,16 +83,26 @@ instances follow Core's lifetime/frame loop, independent of scene and PlayMode
 state. Failed updates stop only that instance and release its managed root after
 one cleanup attempt. See ScriptingLifecycle.md for the contract and verification.
 
-S4 should make build/compiler diagnostics, dependency failures and developer
-workflows easier to use. Keep restart as the working reload policy. Any future
-domain reload must account for S2 raw objects, S3 cached methods/classes and GC
-handles, plus managed threads, delegates and native callbacks. Stopping S3 instances
-alone is not sufficient to unload a domain. Preserve the single root runtime and
-avoid speculative hot reload. Gameplay/ECS adapters and subsystem bindings remain S5.
+S4 now builds project scripts under ManagedScripts/Scripts automatically, supports
+explicit additional managed libraries/references, and deploys them using the same
+Editor/Game dependency graph. Tools/NewScript.ps1 creates a lifecycle class;
+Tools/BuildScripts.ps1 builds/deploys without rebuilding the native applications.
+Compiler errors preserve the previous successful library outputs and block
+dependent deployment. See ScriptingDevelopment.md for workflows and verification.
 
-Future native binding registration belongs at the host's documented post-JIT,
-pre-user-assembly initialization point. S1 registers no internal calls and
-provides no subsystem APIs. Owners will add approved adapters there in S5.
+Close-build-restart is the supported reload policy. Deployment refuses to replace
+managed files in a running application. Any future domain reload must account for
+S2 raw objects, S3 cached methods/classes and GC handles, plus managed threads,
+delegates and native callbacks. Stopping S3 instances alone is insufficient.
+Preserve the single root runtime. The S5 EntityScriptSystem now connects component
+instances to the current World and PlayMode; standalone S3 instances keep their
+original policy. See ScriptingEntities.md for lifecycle and extension rules.
+
+Native binding registration belongs at the host's documented post-JIT,
+pre-user-assembly initialization point. S5 registers the Log internal call there;
+subsystem owners can extend that pattern using checked native adapters and owner
+lifetime validation. No transform/physics/input/animation/audio/resource API has
+been assumed for them.
 
 Sources: [Mono Windows distribution](https://www.mono-project.com/download/stable/)
 and [Mono embedding lifecycle/API](https://www.mono-project.com/docs/advanced/embedding/).
