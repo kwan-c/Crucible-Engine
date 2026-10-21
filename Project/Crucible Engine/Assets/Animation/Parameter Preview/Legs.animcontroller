@@ -1,0 +1,244 @@
+{
+    "version": 1,
+    "entryState": 0,
+    "parameters": [
+        {
+            "name": "Walk",
+            "type": "Bool",
+            "default": false
+        },
+        {
+            "name": "Boost",
+            "type": "Bool",
+            "default": false
+        },
+        {
+            "name": "Jump",
+            "type": "Bool",
+            "default": false
+        }
+    ],
+    "states": [
+        {
+            "name": "Neutral",
+            "clip": 2,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "Locomotion",
+            "clip": 4,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "Boost",
+            "clip": 0,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "BoostStop",
+            "clip": 1,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "Jump",
+            "clip": 3,
+            "speed": 1.0,
+            "loop": false
+        }
+    ],
+    "transitions": [
+        {
+            "from": "Any",
+            "to": 2,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ]
+        },
+        {
+            "from": "Any",
+            "to": 4,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 2,
+                    "mode": "If"
+                },
+                {
+                    "parameter": 1,
+                    "mode": "IfNot"
+                }
+            ]
+        },
+        {
+            "from": 2,
+            "to": 3,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 1,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 2,
+                    "mode": "IfNot"
+                }
+            ]
+        },
+        {
+            "from": 0,
+            "to": 1,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "If"
+                },
+                {
+                    "parameter": 1,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 2,
+                    "mode": "IfNot"
+                }
+            ]
+        },
+        {
+            "from": 1,
+            "to": 0,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 1,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 2,
+                    "mode": "IfNot"
+                }
+            ]
+        },
+        {
+            "from": 3,
+            "to": 1,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "If"
+                },
+                {
+                    "parameter": 1,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 2,
+                    "mode": "IfNot"
+                }
+            ],
+            "hasExitTime": true,
+            "exitTime": 0.25
+        },
+        {
+            "from": 3,
+            "to": 0,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 1,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 2,
+                    "mode": "IfNot"
+                }
+            ],
+            "hasExitTime": true,
+            "exitTime": 1
+        },
+        {
+            "from": 4,
+            "to": 1,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 2,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 0,
+                    "mode": "If"
+                },
+                {
+                    "parameter": 1,
+                    "mode": "IfNot"
+                }
+            ]
+        },
+        {
+            "from": 4,
+            "to": 0,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 2,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 0,
+                    "mode": "IfNot"
+                },
+                {
+                    "parameter": 1,
+                    "mode": "IfNot"
+                }
+            ]
+        }
+    ],
+    "editor": {
+        "version": 1,
+        "positions": [
+            [
+                0,
+                0
+            ],
+            [
+                300,
+                0
+            ],
+            [
+                300,
+                -190
+            ],
+            [
+                600,
+                -190
+            ],
+            [
+                0,
+                210
+            ]
+        ],
+        "anyState": [
+            -280,
+            -150
+        ],
+        "previewModel": "9B2CE2DB6F5D40B7"
+    }
+}

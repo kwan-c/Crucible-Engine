@@ -7,7 +7,7 @@ $ErrorActionPreference = 'Stop'
 if (@('OnCreate','OnUpdate','OnDestroy') -ccontains $Name) {
     throw 'Choose a class name different from its OnCreate, OnUpdate and OnDestroy callback methods.'
 }
-foreach ($reserved in @('Crucible.EntityScript','Crucible.EntityIdentity','Crucible.Log')) {
+foreach ($reserved in @('Crucible.EntityScript','Crucible.EntityIdentity','Crucible.Log','Crucible.Animator')) {
     if ((($Namespace+'.'+$Name) -ceq $reserved) -or ($Namespace -ceq $reserved) -or $Namespace.StartsWith($reserved+'.',[StringComparison]::Ordinal)) {
         throw 'That name is reserved by ScriptCore. Use a namespace such as Crucible.Scripts.'
     }

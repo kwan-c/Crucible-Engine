@@ -79,6 +79,11 @@ namespace Crucible {
                                        speed < 0 ? -state.speed : state.speed, duration, state.loop).time;
         const double progress = clock.progress + distance / duration;
         clock.progress = std::isfinite(progress) ? progress : std::numeric_limits<double>::max();
+        // The sample clock clamps in float precision; accumulated double progress
+        // can otherwise stop just below one and never satisfy a 100% exit time.
+        // Preserve any extra travel accumulated by direction changes mid-clip.
+        if (!state.loop && ((rate > 0 && clock.time >= duration) || (rate < 0 && clock.time <= 0)))
+            clock.progress = std::max(clock.progress, 1.0);
     }
 
     bool AnimatorInstance::Conditions(const AnimatorTransition& transition) const {

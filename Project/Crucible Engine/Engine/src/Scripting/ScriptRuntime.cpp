@@ -1,4 +1,5 @@
 #include "Scripting/ScriptRuntime.h"
+#include "Scripting/ScriptAnimatorBinding.h"
 #include "Diagnostics/Logger.h"
 #include <cstdint>
 #include <cmath>
@@ -44,6 +45,7 @@ namespace Crucible {
         std::mutex runtimeGate;
         std::thread::id runtimeOwnerThread;
         thread_local unsigned managedCallDepth = 0;
+        thread_local IScriptAnimatorBinding* animatorBinding = nullptr;
 
         // Managed code can call native adapters from constructors, reflection,
         // exception formatting and finalizers as well as lifecycle callbacks.
@@ -123,6 +125,22 @@ namespace Crucible {
             if (!count) return false;
             text.resize(count);
             return WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, chars, length, text.data(), count, nullptr, nullptr) == count;
+        }
+
+        int32_t ManagedAnimatorParameter(int32_t index, int32_t generation, MonoString* name,
+                                        int32_t operation, int32_t integer, float number) noexcept {
+            try {
+                // Thread-local registration rejects worker/finalizer threads before
+                // touching a managed object or the ECS. All native exceptions stay here.
+                if (!animatorBinding || !name || operation < 0 || operation > 4 || !std::isfinite(number)) return 0;
+                if (mono_string_length(name) > 1024) return 0;
+                GcRoot root(reinterpret_cast<MonoObject*>(name));
+                ScriptAnimatorCommand command;
+                if (!FromManagedString(reinterpret_cast<MonoString*>(root.Get()), command.name)) return 0;
+                command.operation = static_cast<ScriptAnimatorOperation>(operation);
+                command.integer = integer; command.number = number;
+                return animatorBinding->SetParameter(static_cast<uint32_t>(index), static_cast<uint32_t>(generation), command) ? 1 : 0;
+            } catch (...) { return 0; }
         }
 
         // C ABI boundary: never let native exceptions cross into managed code.
@@ -704,12 +722,13 @@ namespace Crucible {
             if (!data.root) return fail("Mono could not initialize its CLR v4 root domain");
             processRuntime = ProcessRuntime::Active;
             mono_add_internal_call("Crucible.Log::WriteInternal", reinterpret_cast<const void*>(ManagedLog));
+            mono_add_internal_call("Crucible.Animator::SetParameterInternal", reinterpret_cast<const void*>(ManagedAnimatorParameter));
             if (char* version = mono_get_runtime_build_info()) {
                 data.version = version; mono_free(version);
             }
             CRU_INFO("[Scripting] Mono {} initialized from {}", data.version, Utf8(directory));
-            // Future subsystem-owned bindings register here before S2 loads user
-            // assemblies. S1 intentionally registers no engine/internal calls.
+            // Bindings are registered before user assemblies. Core attaches the
+            // animation adapter only after the existing world/systems are ready.
             if (config.verifyManagedExecution && !CheckManagedExecution(data.error)) {
                 CleanupDomain(data.root); data.root = nullptr;
                 processRuntime = ProcessRuntime::Finished;
@@ -744,6 +763,7 @@ namespace Crucible {
             return;
         }
         std::lock_guard lock(runtimeGate);
+        animatorBinding = nullptr;
         try { data.error.clear(); data.StopInstances(); }
         catch (...) { try { CRU_ERROR("[Scripting] Native failure while disposing script instances"); } catch (...) {} }
         data.ReleaseManaged();
@@ -1021,6 +1041,16 @@ namespace Crucible {
         return true;
 #else
         (void)instance; (void)fields; return false;
+#endif
+    }
+
+    bool ScriptRuntime::SetAnimatorBinding(IScriptAnimatorBinding* binding) {
+        if (!m_impl->Ready()) return false;
+#if CRUCIBLE_WITH_MONO
+        animatorBinding = binding;
+        return true;
+#else
+        (void)binding; return false;
 #endif
     }
 

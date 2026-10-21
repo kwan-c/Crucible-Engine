@@ -4,7 +4,7 @@ if(NOT CRUCIBLE_ENABLE_MONO)
 endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/ManagedLibrary.cmake")
 crucible_add_managed_library(CrucibleScriptCore
-    ASSEMBLY Crucible.ScriptCore SOURCES Runtime/EntityScript.cs)
+    ASSEMBLY Crucible.ScriptCore SOURCES Runtime/EntityScript.cs Runtime/Animator.cs)
 crucible_add_managed_library(CrucibleManagedExamples
     ASSEMBLY Crucible.Examples
     SOURCES Examples/Counter.cs Examples/LifecycleCounter.cs)

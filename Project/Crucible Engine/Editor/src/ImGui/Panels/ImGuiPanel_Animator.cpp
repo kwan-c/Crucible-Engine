@@ -37,6 +37,11 @@ namespace Crucible {
             }
             return changed;
         }
+        void NextToolbarItem(const char* label) {
+            ImGui::SameLine();
+            if (ImGui::GetContentRegionAvail().x < ImGui::CalcTextSize(label).x + 2 * ImGui::GetStyle().FramePadding.x)
+                ImGui::NewLine();
+        }
         const char* parameterTypes[] = {"Float", "Integer", "Bool", "Trigger"};
         const char* conditionModes[] = {"If", "IfNot", "Greater", "Less", "Equals", "NotEqual"};
     }
@@ -259,7 +264,32 @@ namespace Crucible {
         auto& data = m_document.Data(); auto& c = data.controller;
         ImGui::BeginDisabled(readOnly);
         if (ImGui::Button("+ State")) { m_state = static_cast<int>(m_document.AddState({-m_pan.x / m_zoom + 40, -m_pan.y / m_zoom + 50})); m_transition = -1; m_anySelected = false; }
-        ImGui::EndDisabled(); ImGui::SameLine();
+        NextToolbarItem("Add Animation");
+        const auto source = ClipSourceModel();
+        const auto model = source ? m_core.GetResources().GetModel(source) : nullptr;
+        ImGui::BeginDisabled(!model || model->animations.empty());
+        if (ImGui::Button("Add Animation")) ImGui::OpenPopup("Add animation clip");
+        if (ImGui::BeginPopup("Add animation clip")) {
+            if (model) for (uint32_t clip = 0; clip < model->animations.size(); ++clip) {
+                ImGui::PushID(static_cast<int>(clip));
+                const auto name = std::to_string(clip) + ": " + model->animations[clip].name;
+                if (ImGui::Selectable(name.c_str())) {
+                    m_state = static_cast<int>(m_document.AddClipState(*model, clip, {-m_pan.x / m_zoom + 40, -m_pan.y / m_zoom + 50}));
+                    m_transition = -1; m_anySelected = false; m_fitRequested = true;
+                }
+                ImGui::PopID();
+            }
+            ImGui::EndPopup();
+        }
+        NextToolbarItem("Add Missing Clips");
+        if (ImGui::Button("Add Missing Clips")) {
+            float bottom = 0;
+            for (auto p : data.positions) bottom = std::max(bottom, p.y + 150);
+            if (m_document.AddMissingClips(*model, {0, bottom})) m_fitRequested = true;
+        }
+        ImGui::SetItemTooltip("Create a node for every clip not already used in this controller. One Undo restores the graph.");
+        ImGui::EndDisabled();
+        ImGui::EndDisabled(); NextToolbarItem("Fit");
         bool fit = ImGui::Button("Fit");
         if (m_fitRequested) {
             m_fitRequested = false; const auto space = ImGui::GetContentRegionAvail();

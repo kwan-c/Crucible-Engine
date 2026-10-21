@@ -25,6 +25,10 @@ Press F in the Scene view to frame the selected model's current bounds.
 
 ## Controllers (Milestone 5)
 
+The newer **Scenes/Animator Parameter Preview.scene** contains all seven
+available animation families and C# Inspector booleans for transitions.
+See [AnimatorParameterPreview.md](AnimatorParameterPreview.md).
+
 Open `Scenes/Animator Controller Preview.scene` to see the two golems crossfade
 between configured states. In AnimatedModel, select a Controller and use its live
 state display, playback buttons and Runtime Parameters. Controller None retains

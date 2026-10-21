@@ -8,8 +8,10 @@ Subsystem owners retain responsibility for their future engine API bindings.
 The user has now authorized starting S5 with the entity script workflow. That
 portion adds a ScriptComponent, EntityScript base/identity, named Inspector
 sections with public primitive fields, PlayMode adapter and logging. Public
-field overrides use the existing scene/undo/snapshot serialization.
-Subsystem-specific APIs remain owned by the team;
+field overrides use the existing scene/undo/snapshot serialization. An
+animation-only follow-up now exposes typed Animator parameters and preview graphs;
+see [AnimatorParameterPreview.md](AnimatorParameterPreview.md).
+Other subsystem-specific APIs remain owned by the team;
 no competing gameplay framework or visual scripting editor is introduced.
 
 ## What already exists
@@ -34,7 +36,7 @@ no competing gameplay framework or visual scripting editor is introduced.
 | S2 - Assembly management | Build/consume a small managed C# DLL using the chosen framework profile; load assemblies through the host; discover classes, construct objects and invoke methods without gameplay APIs | Implemented. The standalone C# example executes through Core; see ScriptingAssemblies.md for usage and verification. |
 | S3 - Managed instance lifecycle | Manage instances using S2's GC handles and exception handling; establish standalone creation/update/disposal conventions and failure policy; release references before runtime teardown | Implemented. Core-lifetime instances, cached synchronous callbacks, enable/fault policy and cleanup work without another ECS or ScriptComponent. See ScriptingLifecycle.md. |
 | S4 - Development infrastructure | Complete C# build/deployment workflow, compiler diagnostics, dependency resolution and failure recovery; define a safe reload policy and document extension rules | Implemented. Automatic project source discovery, managed-only targets, compiler logs, explicit DLL references, guarded deployment and close-build-restart workflow. See ScriptingDevelopment.md. |
-| S5 - Entity workflow and team-owned bindings | Script component/Inspector authoring, managed entity identity/logging and the existing ECS/PlayMode adapter; subsystem owners extend the agreed API | Entity workflow implemented; see ScriptingEntities.md. Transform/physics/input/Animator/audio/resource bindings remain owner-specific follow-up work. |
+| S5 - Entity workflow and team-owned bindings | Script component/Inspector authoring, managed entity identity/logging and the existing ECS/PlayMode adapter; subsystem owners extend the agreed API | Entity workflow and Animator parameter writes implemented; see ScriptingEntities.md and AnimatorParameterPreview.md. Transform/physics/input/audio/resource bindings remain owner-specific follow-up work. |
 
 ## Decisions that fit this engine
 
@@ -99,10 +101,11 @@ instances to the current World and PlayMode; standalone S3 instances keep their
 original policy. See ScriptingEntities.md for lifecycle and extension rules.
 
 Native binding registration belongs at the host's documented post-JIT,
-pre-user-assembly initialization point. S5 registers the Log internal call there;
-subsystem owners can extend that pattern using checked native adapters and owner
-lifetime validation. No transform/physics/input/animation/audio/resource API has
-been assumed for them.
+pre-user-assembly initialization point. S5 registers Log and Animator parameter
+internal calls there. Animator uses an SDK-free animation-system adapter, validates
+entity generation/session/assignment and queues writes before pose evaluation.
+Subsystem owners can extend that pattern with their own lifetime-checked adapters.
+Transform, physics, input, audio and resource APIs remain unimplemented.
 
 Sources: [Mono Windows distribution](https://www.mono-project.com/download/stable/)
 and [Mono embedding lifecycle/API](https://www.mono-project.com/docs/advanced/embedding/).

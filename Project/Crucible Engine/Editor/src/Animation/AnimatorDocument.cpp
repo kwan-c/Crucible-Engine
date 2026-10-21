@@ -142,6 +142,32 @@ namespace Crucible {
         const auto source = m_data.controller.states[state]; auto p = m_data.positions[state]; p.x += 35; p.y += 35;
         auto index = AddState(p); if (index != InvalidModelIndex) { auto name = m_data.controller.states[index].name; m_data.controller.states[index] = source; m_data.controller.states[index].name = name; } return index;
     }
+    uint32_t AnimatorDocument::AddClipState(const ModelResource& model, uint32_t clip, AnimatorGraphPoint position) {
+        if (clip >= model.animations.size() || !ValidPoint(position)) return InvalidModelIndex;
+        const auto index = AddState(position);
+        if (index == InvalidModelIndex) return index;
+        auto& states = m_data.controller.states;
+        const auto base = model.animations[clip].name.empty() ? "Clip " + std::to_string(clip) : model.animations[clip].name;
+        auto name = base;
+        for (size_t suffix = 2; std::any_of(states.begin(), states.end(), [&](const auto& state) { return &state != &states[index] && state.name == name; }); ++suffix)
+            name = base + " " + std::to_string(suffix);
+        states[index].name = std::move(name); states[index].clip = clip;
+        return index;
+    }
+    size_t AnimatorDocument::AddMissingClips(const ModelResource& model, AnimatorGraphPoint origin) {
+        if (!ValidPoint(origin)) return 0;
+        std::vector<bool> present(model.animations.size(), false);
+        for (const auto& state : m_data.controller.states)
+            if (state.clip < present.size()) present[state.clip] = true;
+        size_t added = 0;
+        for (uint32_t clip = 0; clip < model.animations.size(); ++clip) {
+            if (present[clip]) continue;
+            AnimatorGraphPoint position{origin.x + float(added % 4) * 280, origin.y + float(added / 4) * 145};
+            if (AddClipState(model, clip, position) == InvalidModelIndex) break;
+            ++added;
+        }
+        return added;
+    }
     void AnimatorDocument::RemoveState(uint32_t state) {
         auto& c = m_data.controller;
         if (state >= c.states.size() || c.states.size() == 1) return;

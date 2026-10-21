@@ -3,8 +3,40 @@
 #include "Resources/ResourceManager.h"
 #include "Systems/PlayMode.h"
 #include "Diagnostics/Logger.h"
+#include <algorithm>
+#include <cmath>
 
 namespace Crucible {
+    bool AnimatedModelSystem::SetParameter(uint32_t index, uint32_t generation, const ScriptAnimatorCommand& command) {
+        if (!m_world || !m_playMode.InSession() || command.name.empty() || command.name.size() > 1024 ||
+            command.operation < ScriptAnimatorOperation::Bool || command.operation > ScriptAnimatorOperation::ResetTrigger || !std::isfinite(command.number)) return false;
+        const Entity entity{index, generation};
+        if (!m_world->IsAlive(entity)) return false;
+        const auto* animation = m_world->Read<AnimatedModel>(entity);
+        const auto* renderer = m_world->Read<MeshRenderer>(entity);
+        if (!animation || !renderer || !animation->controllerAsset || !renderer->modelAsset) return false;
+        const auto definition = m_resources.GetAnimatorController(animation->controllerAsset);
+        if (!definition) return false;
+        const auto type = command.operation == ScriptAnimatorOperation::Bool ? AnimatorParameterType::Bool :
+            command.operation == ScriptAnimatorOperation::Float ? AnimatorParameterType::Float :
+            command.operation == ScriptAnimatorOperation::Integer ? AnimatorParameterType::Integer : AnimatorParameterType::Trigger;
+        if (std::none_of(definition->parameters.begin(), definition->parameters.end(), [&](const auto& parameter) {
+                return parameter.name == command.name && parameter.type == type;
+            })) return false;
+        const uint64_t key = (uint64_t(generation) << 32) | index;
+        auto& pending = m_pending[key];
+        if (pending.model != renderer->modelAsset || pending.controller != animation->controllerAsset ||
+            pending.session != m_playMode.SessionRevision() || pending.definition != definition)
+            pending = {renderer->modelAsset, animation->controllerAsset, m_playMode.SessionRevision(), definition, {}};
+        // Last write wins per parameter, including SetTrigger/ResetTrigger.
+        const auto existing = std::find_if(pending.commands.begin(), pending.commands.end(), [&](const auto& value) { return value.name == command.name; });
+        if (existing != pending.commands.end()) *existing = command;
+        else {
+            if (pending.commands.size() >= 4096) return false;
+            pending.commands.push_back(command);
+        }
+        return true;
+    }
     void AnimatedModelSystem::Describe(SystemDesc& desc) const {
         desc.Uses<ModelQuery>().Affinity(SystemAffinity::MainThread);
     }
@@ -15,7 +47,7 @@ namespace Crucible {
         const bool restart = m_sessionRevision != m_playMode.SessionRevision();
         const bool stopped = restart && state == PlayState::Edit;
         m_sessionRevision = m_playMode.SessionRevision();
-        m_query->ForEach([&](Entity, const MeshRenderer& renderer, AnimatedModel& animation) {
+        m_query->ForEach([&](Entity entity, const MeshRenderer& renderer, AnimatedModel& animation) {
             const bool changedAsset = !animation.initialized || animation.evaluatedAsset != renderer.modelAsset;
             const bool changedClip = animation.evaluatedClip != animation.clip;
             const bool changedController = animation.evaluatedController != animation.controllerAsset;
@@ -53,6 +85,20 @@ namespace Crucible {
                     if (animation.controllerFailed)
                         CRU_WARN("[Animation] Controller {} is incompatible with model {}: {}", animation.controllerAsset, renderer.modelAsset, error);
                 }
+                const auto pending = m_pending.find((uint64_t(entity.generation) << 32) | entity.index);
+                if (pending != m_pending.end() && animation.controller.Initialized() && m_playMode.InSession()) {
+                    const auto& values = pending->second;
+                    if (values.model == renderer.modelAsset && values.controller == animation.controllerAsset &&
+                        values.session == m_playMode.SessionRevision() && values.definition == definition) {
+                        for (const auto& command : values.commands) switch (command.operation) {
+                        case ScriptAnimatorOperation::Bool: animation.controller.SetBool(command.name, command.integer != 0); break;
+                        case ScriptAnimatorOperation::Float: animation.controller.SetFloat(command.name, command.number); break;
+                        case ScriptAnimatorOperation::Integer: animation.controller.SetInteger(command.name, command.integer); break;
+                        case ScriptAnimatorOperation::Trigger: animation.controller.SetTrigger(command.name); break;
+                        case ScriptAnimatorOperation::ResetTrigger: animation.controller.ResetTrigger(command.name); break;
+                        }
+                    }
+                }
                 animation.poseValid = definition && !animation.controllerFailed &&
                     animation.controller.Update(world.DeltaTime(), animation.speed, advance, animation.pose);
                 animation.time = animation.controller.Time();
@@ -77,5 +123,6 @@ namespace Crucible {
                 CRU_WARN("[Animation] Model {} produced non-finite transforms; skipping its pose", renderer.modelAsset);
             animation.poseFailed = !animation.poseValid;
         });
+        m_pending.clear(); // drops requests for removed owners and replaced models/controllers too
     }
 }

@@ -7,6 +7,7 @@
 #include <vector>
 
 namespace Crucible {
+    class IScriptAnimatorBinding;
     enum class ScriptRuntimeState { NotStarted, Unavailable, Disabled, Running, Stopped, Failed };
 
     // One process-lifetime, main-thread Mono host. No ECS, assets, gameplay bindings
@@ -69,6 +70,8 @@ namespace Crucible {
             const std::vector<ScriptFieldValue>& fields);
         bool ReadEntityFields(ScriptInstanceHandle instance, std::vector<ScriptFieldValue>& fields);
         bool SetEntityFields(ScriptInstanceHandle instance, const std::vector<ScriptFieldValue>& fields);
+        // Non-owning; initialization thread only. Clear before destroying the adapter.
+        bool SetAnimatorBinding(IScriptAnimatorBinding* binding);
     private:
         bool CreateInstanceImpl(ScriptAssemblyHandle assembly, const std::string& nameSpace,
             const std::string& name, ScriptInstanceHandle& instance, bool enabled,

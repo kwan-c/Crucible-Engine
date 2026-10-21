@@ -2,9 +2,10 @@
 
 The S5 entity workflow attaches C# instances to the existing ECS using one
 ScriptComponent per entity. It adds Inspector creation/selection, authored scene
-data, PlayMode scheduling, owner identity and managed logging. Subsystem-specific
-transform, physics, input, animation, audio and resource APIs remain team-owned
-extension work; those APIs are not introduced here.
+data, PlayMode scheduling, owner identity and managed logging. The animation-only
+follow-up adds Animator parameter writes and example graphs; see
+[AnimatorParameterPreview.md](AnimatorParameterPreview.md). Transform, physics,
+input, audio and resource APIs remain team-owned extension work.
 
 ## Create a script from an entity
 
@@ -23,7 +24,7 @@ extension work; those APIs are not introduced here.
    ```
 
 6. Restart Editor, reopen the saved scene, and press Play. The component heading
-   is the script name. Public fields appear below its enabled checkbox; the
+   is the script name with a `.cs` suffix. Public fields appear below its enabled checkbox; the
    template writes creation and destruction messages to the Editor Console.
 
 For existing compiled scripts, use **Add Component**. It lists public,
@@ -123,7 +124,7 @@ entity scripts belong on ScriptComponent, not in that list.
 ## Managed API
 
 Project scripts reference the new `Crucible.ScriptCore.dll` automatically. Its
-source is `ManagedScripts/Runtime/EntityScript.cs`; it is built/deployed alongside
+sources are under `ManagedScripts/Runtime`; it is built/deployed alongside
 Crucible.Scripts and the existing examples using the S4 dependency helper.
 
 ```csharp
@@ -236,8 +237,14 @@ definition/session; the component and normal engine features remain usable.
 
 ## Subsystem-owner handoff
 
-The currently exposed managed API is EntityScript, EntityIdentity and Log. These
-do not replace the engine's ECS or implement teammates' gameplay systems.
+The currently exposed managed API is EntityScript, EntityIdentity, Log and an
+entity-bound Animator parameter facade. Animator supports SetBool, SetFloat,
+SetInteger, SetTrigger and ResetTrigger; it queues typed writes through the
+existing animation system without moving entities. It is bound before OnCreate,
+and calls return false for stale/missing targets, invalid parameter types or names,
+worker threads and calls outside a Play session. See AnimatorParameterPreview.md
+for the contract and example scene. These APIs retain the engine's ECS and
+subsystem ownership.
 
 For each further API, agree on an SDK-free native adapter owned by that subsystem.
 Add checked Mono marshalling/registration inside ScriptRuntime.cpp, where the
@@ -250,7 +257,7 @@ callback lifetime and error behavior as part of each adapter.
 
 Do not reenter public host lifecycle APIs from managed callbacks. Do not restart
 Mono on Play/Stop or overwrite assemblies in a running application. Background
-task/thread tracking, managed-field Inspector serialization, multiple script
+task/thread tracking, additional serialized field types, multiple script
 slots per entity, debugger attachment and hot reload are separate work.
 
 ## Verification
@@ -287,7 +294,8 @@ The original UI test source was removed and its project DLL rebuilt. The later
 Add Component workflow includes the reusable ScriptLogProbe example above; no
 shared scene/config is changed. Native Release packaging,
 managed debugger attachment and long-duration stability are unverified. The
-component workflow is implemented; subsystem-specific S5 bindings remain pending.
+component workflow and Animator parameter writes are implemented; other
+subsystem-specific S5 bindings remain pending.
 
 The Add Component C# search update is also verified in the rendered Inspector:
 case-insensitive existing-class search/attachment, disabled duplicate attachment,

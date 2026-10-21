@@ -1,0 +1,504 @@
+{
+    "version": 1,
+    "name": "Animator Parameter Preview",
+    "entities": [
+        {
+            "id": "B6650AD0A9E45D57",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.05000000074505806,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 15.0,
+                        "y": 1.0,
+                        "z": 15.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 3649096549467294993,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Ground"
+                }
+            }
+        },
+        {
+            "id": "A7B317B5FBA87E36",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 10,
+                        "z": 36
+                    },
+                    "rotation": {
+                        "x": -0.10452846437692642,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9945219159126282
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 55.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 200.0,
+                    "priority": 0
+                },
+                "EntityName": {
+                    "name": "Preview Camera"
+                }
+            }
+        },
+        {
+            "id": "918D46404C0032A8",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 8.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9063078165054321
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.949999988079071,
+                        "z": 0.8500000238418579
+                    },
+                    "intensity": 3.0,
+                    "range": 30.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Sun"
+                }
+            }
+        },
+        {
+            "id": "AFBDA2F433B0FAB2",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -7,
+                        "y": 0,
+                        "z": -4
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 10,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 6726452403956826127
+                },
+                "EntityName": {
+                    "name": "Legs - toggle Walk, Boost, Jump"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 13755394259741958645,
+                    "clip": 2,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "LegAnimationPreview",
+                    "fields": []
+                }
+            }
+        },
+        {
+            "id": "B413713CC11175C3",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 2,
+                        "z": -4
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 13,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 3267687890137219089
+                },
+                "EntityName": {
+                    "name": "Cannon - animation only"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 12283868391475324995,
+                    "clip": 6,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "WeaponReloadPreview",
+                    "fields": []
+                }
+            }
+        },
+        {
+            "id": "A75D6C688000C802",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 7,
+                        "y": 2,
+                        "z": -4
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 18,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 3267687890137219089
+                },
+                "EntityName": {
+                    "name": "Arm Crossbow - animation only"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 13165193977104786397,
+                    "clip": 9,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "WeaponReloadPreview",
+                    "fields": []
+                }
+            }
+        },
+        {
+            "id": "944706FBF5C68DCE",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -7,
+                        "y": 2,
+                        "z": 4
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 23,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 3267687890137219089
+                },
+                "EntityName": {
+                    "name": "Crossbow - animation only"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 9224876165322318384,
+                    "clip": 12,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "WeaponFirePreview",
+                    "fields": []
+                }
+            }
+        },
+        {
+            "id": "9756A87A1821A3B8",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 2,
+                        "z": 4
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 3267687890137219089
+                },
+                "EntityName": {
+                    "name": "Mace - animation only"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 11364749242261030829,
+                    "clip": 14,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "WeaponFirePreview",
+                    "fields": []
+                }
+            }
+        },
+        {
+            "id": "975A4925CBB62BA7",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 7,
+                        "y": 2,
+                        "z": 4
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 31,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 3267687890137219089
+                },
+                "EntityName": {
+                    "name": "Sword - animation only"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 11335554433218733875,
+                    "clip": 16,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "WeaponFirePreview",
+                    "fields": []
+                }
+            }
+        },
+        {
+            "id": "80D0A589135D260F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 2,
+                        "z": 10
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 37,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 3267687890137219089
+                },
+                "EntityName": {
+                    "name": "Throwing Axe - animation only"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 11857755839416334785,
+                    "clip": 18,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "WeaponFirePreview",
+                    "fields": []
+                }
+            }
+        }
+    ]
+}

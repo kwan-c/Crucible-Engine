@@ -17,10 +17,12 @@ namespace Crucible
     {
         private bool bound;
         public EntityIdentity Entity { get; private set; }
+        public Animator Animator { get; private set; }
         internal void BindEntity(int index, int generation)
         {
             if (bound) throw new InvalidOperationException("An EntityScript instance cannot be rebound.");
             Entity = new EntityIdentity(unchecked((uint)index), unchecked((uint)generation));
+            Animator = new global::Crucible.Animator(Entity);
             bound = true;
         }
         public virtual void OnCreate() { }

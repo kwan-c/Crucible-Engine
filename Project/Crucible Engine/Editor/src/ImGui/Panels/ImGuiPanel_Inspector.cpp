@@ -45,7 +45,7 @@ namespace {
 	constexpr char ProjectScriptNamespace[] = "Crucible.Scripts";
 	template<class T> std::string ComponentHeader(const T&) { return std::string(Crucible::ComponentTraits<T>::name); }
 	std::string ComponentHeader(const Crucible::ScriptComponent& script) {
-		return script.className.empty() ? "Missing C# script" : script.className;
+		return script.className.empty() ? "Missing C# script" : script.className + ".cs";
 	}
 
 	bool SameScriptName(std::string_view a, std::string_view b) {

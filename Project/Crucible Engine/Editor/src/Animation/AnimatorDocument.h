@@ -30,6 +30,8 @@ namespace Crucible {
         bool CanUndo() const;
         bool CanRedo() const { return !m_redo.empty(); }
         uint32_t AddState(AnimatorGraphPoint position);
+        uint32_t AddClipState(const ModelResource& model, uint32_t clip, AnimatorGraphPoint position);
+        size_t AddMissingClips(const ModelResource& model, AnimatorGraphPoint origin);
         uint32_t DuplicateState(uint32_t state);
         void RemoveState(uint32_t state);
         void RemoveParameter(uint32_t parameter);

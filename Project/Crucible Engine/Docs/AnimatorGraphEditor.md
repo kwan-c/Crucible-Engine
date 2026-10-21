@@ -18,12 +18,17 @@ to the Editor. No runtime node graph, new importer or third-party dependency is 
 5. Create states with **+ State** or the canvas context menu. Drag from a state's
    right-hand dot to a destination, or choose **Create transition** and click a
    destination. Esc cancels a connection. Any State is a source only.
+   **Add Animation** creates a named clip state directly. **Add Missing Clips**
+   adds a node for each unused clip index in the source model as one Undo step.
 6. Save the controller to apply changes. Scene saving still stores entity
    assignments; controller saving stores the state machine and graph layout.
 
 The original Animation Preview scene and the sample controller do not need to be
 changed to try the editor. Use **Save As** to make a new controller asset, then
 assign it in the golem's AnimatedModel Controller picker.
+
+For all 19 current model clips, organized leg/weapon graphs, and a stationary
+C# boolean-driven example, see [AnimatorParameterPreview.md](AnimatorParameterPreview.md).
 
 ## Authoring
 
