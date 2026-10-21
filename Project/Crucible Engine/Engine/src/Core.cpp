@@ -112,6 +112,10 @@ namespace Crucible {
         return true;
     }
 
+    void Core::RequestQuit() {
+        if (m_window) { m_window->RequestClose(); }
+    }
+
     void Core::Run() {
 
         double lastTime = glfwGetTime();

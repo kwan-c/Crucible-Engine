@@ -241,7 +241,10 @@ namespace Crucible {
 		it until release (even outside), each change sends
 		UIEvents::SliderChanged; Pressed while dragged, Hovered under the mouse.
 		A click sends UIEvents::ButtonClicked, then runs the button's own
-		onClick action (load a scene, close the menu).
+		onClick action (load a scene, close the menu). Quit and Custom are
+		only reported - UIEvents::QuitRequested / CustomAction - because what
+		they mean is the app's call (GameApp quits / runs its action table;
+		the editor stops Play / logs).
 		While the cursor is locked (mouse-look) the UI ignores the mouse and
 		every button shows Normal.
 	 \note  SimulationOnly, so the editor's clicks in Edit mode never press

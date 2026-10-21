@@ -62,6 +62,8 @@ namespace Crucible {
     void WindowManager::PollEvents() { glfwPollEvents(); }
     bool WindowManager::ShouldClose() const { return glfwWindowShouldClose(m_pWindow); }
 
+    void WindowManager::RequestClose() { if (m_pWindow) { glfwSetWindowShouldClose(m_pWindow, GLFW_TRUE); } }
+
     void WindowManager::FramebufferResizeCallback(GLFWwindow* window, int width, int height)
     {
         (void)width;

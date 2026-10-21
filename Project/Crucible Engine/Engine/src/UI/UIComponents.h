@@ -125,10 +125,15 @@ namespace Crucible {
 			None,        // nothing built in: game code reacts to UIEvents::ButtonClicked
 			LoadScene,   // load sceneAsset (a level switch; in the editor, Stop still restores the original scene)
 			CloseMenu,   // close the in-game menu (a "Resume" button): UI::SetMenuOpen(false)
+			Quit,        // quit the game: sends UIEvents::QuitRequested. The game closes its window;
+			             //   the editor stops Play mode instead (like Unity's Application.Quit).
+			Custom,      // sends UIEvents::CustomAction with actionId, for game code (GameApp's action
+			             //   table, later scripts) to run - "OpenSettings", "StartCoOp", ...
 		};
 
 		ClickAction   onClick    = ClickAction::None;
 		std::uint64_t sceneAsset = 0;          // LoadScene: the scene's asset id (.meta GUID), so renaming the file keeps it
+		std::string   actionId;                // Custom: the action's name (case-sensitive)
 
 		Math::vec4 normal{ 1.0f };
 		Math::vec4 hovered{ 0.9f, 0.9f, 0.9f, 1.0f };
@@ -310,7 +315,9 @@ RTTR_REGISTRATION
 	(
 		rttr::value("None",      UIButton::ClickAction::None),
 		rttr::value("LoadScene", UIButton::ClickAction::LoadScene),
-		rttr::value("CloseMenu", UIButton::ClickAction::CloseMenu)
+		rttr::value("CloseMenu", UIButton::ClickAction::CloseMenu),
+		rttr::value("Quit",      UIButton::ClickAction::Quit),
+		rttr::value("Custom",    UIButton::ClickAction::Custom)
 	);
 
 	rttr::registration::class_<UIButton>("UIButton")
@@ -319,6 +326,9 @@ RTTR_REGISTRATION
 		.property("sceneAsset",   &UIButton::sceneAsset)
 			// Drawn as a scene dropdown by the Inspector (DrawComponentExtras(UIButton&)): a raw
 			// id means nothing to a person. Still saved like any other property.
+			(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("actionId",     &UIButton::actionId)
+			// Drawn by DrawComponentExtras(UIButton&), only when onClick is Custom.
 			(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
 		.property("normal",       &UIButton::normal)
 			(rttr::metadata(MetaDataTypes::COLOUR, true))

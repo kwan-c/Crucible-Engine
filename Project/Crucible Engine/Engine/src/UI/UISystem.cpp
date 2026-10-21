@@ -671,6 +671,19 @@ namespace Crucible {
 		if (Input::IsReleased(KeyCode::MouseLeft)) {
 			if (m_pressed.IsValid() && m_pressed == hoveredButton) {
 				ctx.events.EmitEngine(UIEvents::ButtonClicked{ m_pressed });
+				// Quit and Custom mean something only the app knows (close the game window, or stop
+				// Play in the editor; run a named action), so they are reported, not carried out here.
+				if (const UIButton* button = world.Read<UIButton>(m_pressed)) {
+					if (button->onClick == UIButton::ClickAction::Quit) {
+						ctx.events.EmitEngine(UIEvents::QuitRequested{ m_pressed });
+					} else if (button->onClick == UIButton::ClickAction::Custom) {
+						if (button->actionId.empty()) {
+							CRU_USER_WARN("UI button (entity {}): onClick is Custom but actionId is empty", m_pressed.index);
+						} else {
+							ctx.events.EmitEngine(UIEvents::CustomAction{ m_pressed, button->actionId });
+						}
+					}
+				}
 				RunClickAction(world, m_pressed);
 			}
 			m_pressed = kNullEntity;
@@ -712,6 +725,8 @@ namespace Crucible {
 
 		switch (button->onClick) {
 			case UIButton::ClickAction::None:
+			case UIButton::ClickAction::Quit:     // reported as UIEvents::QuitRequested (see Update)
+			case UIButton::ClickAction::Custom:   // reported as UIEvents::CustomAction
 				break;
 
 			case UIButton::ClickAction::CloseMenu:

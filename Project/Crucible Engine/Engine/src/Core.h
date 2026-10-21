@@ -128,6 +128,11 @@ namespace Crucible
         // The play-mode controller itself.
         PlayMode& GetPlayMode() noexcept { return *m_playMode; }
 
+        // Quits: the main loop ends after the current frame and the engine shuts down normally,
+        // as if the window's X was clicked. For the standalone game (a UI "Quit" button); the
+        // editor intercepts window closes (unsaved-changes prompt) and doesn't use this.
+        void RequestQuit();
+
     private:
         EngineConfig m_config;
         void RegisterEngineSystems();

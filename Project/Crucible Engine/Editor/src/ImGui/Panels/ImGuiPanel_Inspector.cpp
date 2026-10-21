@@ -1133,6 +1133,20 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
 }
 
 bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {
+	// Custom: the action's name (actionId is hidden from the generic fields so it only shows here).
+	if (button.onClick == UIButton::ClickAction::Custom) {
+		bool const edited = ImGui::InputText("actionId", &button.actionId);
+		if (button.actionId.empty()) {
+			ImGui::TextColored(EditorTheme::GetPalette().warning, "Name the action this button runs.");
+		}
+		ImGui::TextDisabled("Run by the game: GameApp::RegisterAction(\"%s\", ...)", button.actionId.empty() ? "..." : button.actionId.c_str());
+		return edited;
+	}
+	if (button.onClick == UIButton::ClickAction::Quit) {
+		ImGui::TextDisabled("Closes the game. In the editor it stops Play mode.");
+		return false;
+	}
+
 	// sceneAsset is hidden from the generic fields (a raw id means nothing to a person): pick the
 	// scene from the project's scene files instead. Only shown when the button loads a scene.
 	if (button.onClick != UIButton::ClickAction::LoadScene) { return false; }

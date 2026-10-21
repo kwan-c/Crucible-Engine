@@ -24,6 +24,9 @@ namespace Crucible {
 
         void PollEvents();
         bool ShouldClose() const;
+        // Asks the window to close, exactly as if its X was clicked: Core::Run's loop ends after
+        // this frame and shuts down normally.
+        void RequestClose();
 
         GLFWwindow* GetNativeHandle() const { return m_pWindow; }
         int GetWidth() const { return m_width; }

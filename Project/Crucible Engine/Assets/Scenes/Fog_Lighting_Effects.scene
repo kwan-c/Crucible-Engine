@@ -1456,8 +1456,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 54.15911865234375,
-                        "y": 214.47283935546875
+                        "x": -77.78230285644531,
+                        "y": 191.85430908203125
                     },
                     "size": {
                         "x": 160.0,
@@ -1476,8 +1476,9 @@
                     "textureAsset": 0
                 },
                 "UIButton": {
-                    "onClick": "None",
+                    "onClick": "Quit",
                     "sceneAsset": 0,
+                    "actionId": "",
                     "normal": {
                         "x": 1.0,
                         "y": 1.0,
@@ -1503,6 +1504,58 @@
                         "w": 0.5
                     },
                     "interactable": true
+                },
+                "UIText": {
+                    "text": "quit game",
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 24.75,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": true,
+                    "underline": true,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
                 }
             }
         },
@@ -2757,8 +2810,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -372.0688171386719,
-                        "y": 313.6182556152344
+                        "x": -293.8465881347656,
+                        "y": 192.7293701171875
                     },
                     "size": {
                         "x": 160.0,
@@ -2779,6 +2832,7 @@
                 "UIButton": {
                     "onClick": "LoadScene",
                     "sceneAsset": 11221343899601584135,
+                    "actionId": "",
                     "normal": {
                         "x": 1.0,
                         "y": 1.0,
@@ -2804,6 +2858,58 @@
                         "w": 0.5
                     },
                     "interactable": true
+                },
+                "UIText": {
+                    "text": "switch scene",
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 16.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": true,
+                    "underline": true,
+                    "bestFit": true,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
                 }
             }
         },

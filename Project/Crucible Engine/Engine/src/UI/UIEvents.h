@@ -21,6 +21,8 @@
 
 #include "ECS/Core/ECSCore.h"   // Entity
 
+#include <string>
+
 namespace Crucible::UIEvents {
 
 	/// A UIButton was clicked: pressed AND released over it while it was interactable.
@@ -34,6 +36,19 @@ namespace Crucible::UIEvents {
 	struct SliderChanged {
 		Entity slider{};
 		float  value = 0.0f;
+	};
+
+	/// A button with onClick = Quit was clicked (sent after its ButtonClicked). The engine doesn't
+	/// quit by itself: the game (GameApp) calls Core::RequestQuit(); the editor stops Play mode.
+	struct QuitRequested {
+		Entity button{};
+	};
+
+	/// A button with onClick = Custom was clicked (sent after its ButtonClicked): run the action
+	/// named actionId. GameApp keeps a table of them (GameApp::RegisterAction); later, scripts.
+	struct CustomAction {
+		Entity      button{};
+		std::string actionId;
 	};
 
 }   // NAMESPACE CRUCIBLE::UIEVENTS
