@@ -2,7 +2,7 @@
   \file       UISystem.h
   \brief
     Screen-space UI: layout (UIRect -> a rectangle on the screen) and
-    drawing (UIImage -> quads for the renderer), shared by the game and the
+    drawing (UIImage / UISlider / UIText -> quads for the renderer), shared by the game and the
     editor's UI Editor tab, plus UIRenderSystem, which draws the game's UI.
   \details
     Layout, per screen-space UICanvas (lowest sortOrder first):
@@ -113,12 +113,21 @@ namespace Crucible {
 		ENGINE_API void LayoutScreenCanvases(World& world, Math::vec2 screenSize, std::vector<LayoutItem>& out, bool writeComputed);
 
 		/*********************************************************************
-		 \brief  Appends one quad per laid-out element with a UIImage: its
-				 colour, times the UIButton state's tint if it has one, and its
-				 texture. Consecutive quads with the same texture share a draw.
+		 \brief  Appends what every laid-out element draws, in this order:
+				 - UIImage: one quad, its colour times the UIButton state's
+				   tint if it has one, with its texture.
+				 - UISlider: track, fill, handle.
+				 - UIText: one quad per glyph (Text/TextLayout.h), with the
+				   font's atlas and draw mode. Truncate / Ellipsis cut at the
+				   rect (clip rect when upright, whole glyphs when turned);
+				   bitmap fonts are snapped to whole screen pixels.
+				 Consecutive quads with the same texture, mode and clip share a
+				 draw, so a label is one draw. Text layouts are cached between
+				 calls and redone only when the text or its settings change.
 		 \param[in] resources  Resolves UIImage::textureAsset into
-							   UIImage::texture (as MeshRenderer does). Null:
-							   use whatever UIImage::texture already holds.
+							   UIImage::texture (as MeshRenderer does) and
+							   UIText::fontAsset into a font. Null: images use
+							   whatever UIImage::texture holds; no text is drawn.
 		 *********************************************************************/
 		ENGINE_API void AppendDrawList(World& world, const std::vector<LayoutItem>& items, ResourceManager* resources,
 		                               std::vector<UIVertex>& vertices, std::vector<std::uint32_t>& indices,

@@ -183,7 +183,7 @@ namespace Crucible {
         if (e == ".mat")    
             return AssetType::Material;
  
-        if (e == ".ttf" || e == ".otf")
+        if (e == ".ttf" || e == ".otf" || e == ".cfont")   // .cfont = compiled by the editor (Text/FontData.h)
             return AssetType::Font;
  
         if (e == ".lua" || e == ".cs")

@@ -66,6 +66,8 @@ namespace Crucible {
         uint32_t      firstIndex = 0;                                    ///< Into UIDrawList::indices.
         uint32_t      indexCount = 0;                                    ///< A multiple of 3 (triangles).
         int32_t       vertexOffset = 0;                                  ///< Added to each index, so meshes can share an index pattern.
+        float         pixelRange = 0.0f;                                 ///< Sdf / Msdf: the atlas's distance range in texels (FontAtlas::pixelRange).
+                                                                         ///< > 0 gives the sharpest edge at any size; 0 = a generic soft edge.
     };
 
     /*************************************************************************

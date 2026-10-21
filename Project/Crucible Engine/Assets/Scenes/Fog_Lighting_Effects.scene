@@ -2187,6 +2187,81 @@
             }
         },
         {
+            "id": "B78438D9180EC003",
+            "parent": "2CF768D80E590001",
+            "siblingIndex": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Entity 48"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -456.6700744628906,
+                        "y": 33.835670471191406
+                    },
+                    "size": {
+                        "x": 1012.5,
+                        "y": 522.0703125
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "New Text!!!!!!!!",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.062745101749897,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 245.14999389648438,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": true,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 200.0
+                }
+            }
+        },
+        {
             "id": "BE4D08D31EF60001",
             "components": {
                 "Transform": {

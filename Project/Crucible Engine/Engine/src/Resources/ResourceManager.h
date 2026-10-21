@@ -39,6 +39,9 @@
 *                  - Textures: Texture assets (.png/.jpg/...), sRGB or linear.
 *                  - Cubemaps: Texture assets loaded as an equirectangular
 *                    panorama (.hdr or LDR) for Skybox.
+*                  - Fonts: compiled .cfont files (see Text/FontData.h),
+*                    with their atlas uploaded. A .ttf/.otf id resolves to
+*                    the .cfont next to it, once it has been compiled.
 *                Loads are synchronous and on demand (first Get). Nothing is
 *                unloaded yet - the Renderer has no Destroy* API - so
 *                resources live until shutdown.
@@ -54,6 +57,7 @@
 **************************************************************************/
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -63,6 +67,7 @@
 #include "Graphics/MaterialHandle.h"
 #include "Graphics/TextureHandle.h"
 #include "Graphics/CubemapHandle.h"
+#include "Text/FontData.h"
 
 namespace Crucible {
 
@@ -89,7 +94,8 @@ namespace Crucible {
         Mesh,
         Material,
         Texture,
-        Audio      // audio files; listed for the Inspector's picker only - the renderer never loads them
+        Audio,     // audio files; listed for the Inspector's picker only - the renderer never loads them
+        Font       // compiled fonts (.cfont) - see GetFont()
     };
 
     /*************************************************************************
@@ -210,6 +216,37 @@ namespace Crucible {
         TextureHandle  GetTextureByPath(const std::string& virtualPath, bool isSRGB = true);
 
         /*********************************************************************
+         \brief  A compiled font with its atlas uploaded, for drawing text.
+         \param[in] id A .cfont asset id, or a .ttf/.otf id (which resolves
+                       to the .cfont with the same name next to it, e.g.
+                       "Fonts/Arial.ttf" -> "Fonts/Arial.cfont").
+         \return The font, or null if id is 0, unknown, not compiled yet,
+                 or failed to load (logged once). Owned here: valid until
+                 ReloadFont() for that font or this manager is destroyed.
+         *********************************************************************/
+        const FontAsset* GetFont(AssetId id);
+
+        /// The font UIText uses when it names none (or its own can't be loaded).
+        /// Whatever kDefaultFontPath is compiled to in the Font Importer is what you get.
+        static constexpr const char* kDefaultFontPath = "Fonts/LiberationSans-Regular.ttf";
+
+        /*********************************************************************
+         \brief  GetFont() for kDefaultFontPath.
+         \return Null if that font is missing or not compiled (warned once).
+         *********************************************************************/
+        const FontAsset* GetDefaultFont();
+
+        /*********************************************************************
+         \brief  Forgets a loaded (or failed) font so the next GetFont()
+                 reads its .cfont again - call after the editor recompiles
+                 it. Pointers from earlier GetFont() calls become invalid.
+         \param[in] id Same ids as GetFont().
+         \note   The old atlas stays on the GPU until shutdown (the Renderer
+                 has no DestroyTexture yet).
+         *********************************************************************/
+        void ReloadFont(AssetId id);
+
+        /*********************************************************************
          \brief  The asset id for a virtual path (0 if not indexed).
          \param[in] virtualPath e.g. "Models/Cannon.glb".
          \return The id.
@@ -328,6 +365,8 @@ namespace Crucible {
         bool LoadModel(AssetId modelId);                         // fills m_meshes[modelId] + embedded material
         MaterialHandle LoadMaterialFile(AssetId id);             // .mat (JSON)
         std::string SerializeMaterial(const MaterialData& data) const;
+        AssetId ResolveFontId(AssetId id) const;                 // .ttf/.otf -> its .cfont; .cfont -> itself; else 0
+        std::unique_ptr<FontAsset> LoadFont(AssetId fontId);    // .cfont -> FontData + uploaded atlas
 
         void RegisterBuiltins();
         void WarnOnce(AssetId id, const std::string& message);
@@ -342,6 +381,7 @@ namespace Crucible {
         std::unordered_map<AssetId, MaterialHandle> m_materials;   // Invalid value = failed load
         std::unordered_map<AssetId, TextureSlots>   m_textures;
         std::unordered_map<AssetId, CubemapHandle>  m_cubemaps;    // Invalid value = failed load
+        std::unordered_map<AssetId, std::unique_ptr<FontAsset>> m_fonts;   // keyed by .cfont id; null = failed load
 
         std::unordered_map<std::uint32_t, AssetId>  m_meshIds;      // handle.id -> asset
         std::unordered_map<std::uint32_t, AssetId>  m_materialIds;

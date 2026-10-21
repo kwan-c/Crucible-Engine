@@ -140,6 +140,9 @@ void Crucible::Hierarchy::Update(float dt) {
 					if (ImGui::MenuItem("Create Slider")) {
 						CreateUIElement("Slider");
 					}
+					if (ImGui::MenuItem("Create Text")) {
+						CreateUIElement("Text");
+					}
 					ImGui::EndMenu();
 				}
 				if (ImGui::MenuItem("Create Camera")) {
@@ -826,7 +829,7 @@ void Crucible::Hierarchy::FocusSelection() {
 
 void Crucible::Hierarchy::CreateUIElement(const std::string& kind) {
 
-	if (kind != "Image" && kind != "Button" && kind != "Slider") {
+	if (kind != "Image" && kind != "Button" && kind != "Slider" && kind != "Text") {
 		CRU_USER_WARN("Unknown UI element: {}", kind);
 		return;
 	}
@@ -854,15 +857,24 @@ void Crucible::Hierarchy::CreateUIElement(const std::string& kind) {
 	}
 
 	// The element itself. Centred on its parent (UIRect's default anchors and pivot).
-	// A slider draws its own track / fill / handle, so it has no UIImage.
+	// A slider draws its own track / fill / handle, and text its glyphs, so neither has a UIImage.
 	Entity const element = m_world.CreateEntity();
 	UIRect rect{};
 	if (kind == "Button") { rect.size = { 160.0f, 40.0f }; }
 	if (kind == "Slider") { rect.size = { 240.0f, 24.0f }; }
+	if (kind == "Text")   { rect.size = { 200.0f, 50.0f }; rect.raycastTarget = false; }   // a label never blocks a click (e.g. on a button under it)
 	m_world.AddComponent<UIRect>(element, rect);
-	if (kind != "Slider") { m_world.AddComponent<UIImage>(element, UIImage{}); }
+	if (kind == "Image" || kind == "Button") { m_world.AddComponent<UIImage>(element, UIImage{}); }
 	if (kind == "Button") { m_world.AddComponent<UIButton>(element, UIButton{}); }
 	if (kind == "Slider") { m_world.AddComponent<UISlider>(element, UISlider{}); }
+	if (kind == "Text") {
+		UIText text{};
+		text.text = "New Text";
+		text.fontSize = 24.0f;
+		text.horizontalAlign = TextAlignH::Center;
+		text.verticalAlign = TextAlignV::Middle;
+		m_world.AddComponent<UIText>(element, text);
+	}
 
 	// Last child = drawn on top of its siblings. worldPositionStays = false keeps the identity local
 	// Transform (screen-space UI ignores it anyway), so a parent's scale can never refuse the move.

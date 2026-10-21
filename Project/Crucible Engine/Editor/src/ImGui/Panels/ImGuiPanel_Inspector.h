@@ -104,6 +104,7 @@ namespace Crucible {
 		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
 		bool DrawComponentExtras(UIButton& button);         // scene dropdown for onClick = LoadScene
 		bool DrawComponentExtras(UISlider& slider);         // direction dropdown that also turns the UIRect
+		bool DrawComponentExtras(UIText& text);             // multi-line text box, 3 x 3 alignment grid, font status
 		bool DrawMaterialSection(MeshRenderer& renderer);
 
 		std::function<void()> m_draw;

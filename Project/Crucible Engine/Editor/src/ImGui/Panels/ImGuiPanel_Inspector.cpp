@@ -286,6 +286,7 @@ namespace {
 			case Crucible::ResourceKind::Material: return "material";
 			case Crucible::ResourceKind::Texture:  return "texture";
 			case Crucible::ResourceKind::Audio:    return "audio";
+			case Crucible::ResourceKind::Font:     return "font";
 		}
 		return "unknown";
 	}
@@ -1189,6 +1190,65 @@ bool Crucible::Inspector::DrawComponentExtras(UISlider& slider) {
 			if (selected) { ImGui::SetItemDefaultFocus(); }
 		}
 		ImGui::EndCombo();
+	}
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
+	bool changed = false;
+
+	// ---- Text: a multi-line box (the generic string field is one line). Enter types a new line;
+	// the edit is one undo step from the first key to clicking away, like every Inspector field.
+	ImGui::TextUnformatted("text");
+	float const lines  = std::clamp(static_cast<float>(std::count(text.text.begin(), text.text.end(), '\n') + 1), 3.0f, 10.0f);
+	ImVec2 const size(-FLT_MIN, ImGui::GetTextLineHeight() * lines + ImGui::GetStyle().FramePadding.y * 2.0f);
+	if (ImGui::InputTextMultiline("##text", &text.text, size, ImGuiInputTextFlags_AllowTabInput)) { changed = true; }
+
+	// ---- Alignment: Unity's 3 x 3 grid. Each button sets both axes; the current one is lit.
+	ImGui::TextUnformatted("alignment");
+	ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.35f);
+	ImGui::BeginGroup();
+	static constexpr char const* kRowNames[] = { "Top", "Middle", "Bottom" };
+	static constexpr char const* kColumnNames[] = { "Left", "Center", "Right" };
+	static constexpr char const* kGlyphs[3][3] = { { "TL", "T", "TR" }, { "L", "C", "R" }, { "BL", "B", "BR" } };
+	for (int row = 0; row < 3; ++row) {
+		for (int column = 0; column < 3; ++column) {
+			TextAlignH const h = static_cast<TextAlignH>(column);
+			TextAlignV const v = static_cast<TextAlignV>(row);
+			bool const active = text.horizontalAlign == h && text.verticalAlign == v;
+			ImGui::PushID(row * 3 + column);
+			if (active) { ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive)); }
+			if (column > 0) { ImGui::SameLine(0.0f, 2.0f); }
+			if (ImGui::Button(kGlyphs[row][column], ImVec2(28.0f, 0.0f)) && !active) {
+				text.horizontalAlign = h;
+				text.verticalAlign = v;
+				changed = true;
+			}
+			if (active) { ImGui::PopStyleColor(); }
+			ImGui::SetItemTooltip("%s %s", kRowNames[row], kColumnNames[column]);
+			ImGui::PopID();
+		}
+	}
+	ImGui::EndGroup();
+
+	// ---- Which font is actually used (a font that isn't compiled falls back to the default).
+	if (ResourceManager* rm = EditorManager::GetInstance().GetResources()) {
+		FontAsset const* font = text.fontAsset != 0 ? rm->GetFont(text.fontAsset) : nullptr;
+		if (text.fontAsset != 0 && font == nullptr) {
+			ImGui::TextColored(EditorTheme::GetPalette().warning, "Font not loaded - using the default font (see the Console)");
+		}
+		if (font == nullptr) { font = rm->GetDefaultFont(); }
+		if (font == nullptr) {
+			ImGui::TextColored(EditorTheme::GetPalette().error, "No font: compile %s in the Font Importer", ResourceManager::kDefaultFontPath);
+		} else if (font->data.outputType == FontOutputType::Bitmap) {
+			std::string sizes;
+			for (FontSizeGroup const& group : font->data.groups) {
+				sizes += (sizes.empty() ? "" : ", ") + std::to_string(static_cast<int>(group.pixelSize));
+			}
+			ImGui::TextDisabled("Bitmap font: sharp at %s px on screen", sizes.c_str());
+		} else {
+			ImGui::TextDisabled("%s font: sharp at any size", ToString(font->data.outputType));
+		}
 	}
 	return changed;
 }

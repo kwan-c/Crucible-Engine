@@ -288,6 +288,118 @@ namespace Crucible {
 
     }   // ResourceManager::GetTextureByPath()
 
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  FONTS
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    namespace {
+        constexpr const char* kCompiledFontExtension = ".cfont";
+    }
+
+    AssetId ResourceManager::ResolveFontId(AssetId id) const {
+
+        const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+        if (!entry || entry->type != AssetType::Font) { return 0; }
+        if (entry->extension == kCompiledFontExtension) { return id; }
+
+        // A source font (.ttf/.otf): its compiled font sits next to it with the same name.
+        const std::string& path = entry->virtualPath;
+        const std::string compiled = path.substr(0, path.size() - entry->extension.size()) + kCompiledFontExtension;
+        const AssetEntry* compiledEntry = m_assets.Find(compiled);
+        return compiledEntry ? compiledEntry->guid.m_Value : 0;
+
+    }   // ResourceManager::ResolveFontId()
+
+    const FontAsset* ResourceManager::GetFont(AssetId id) {
+
+        if (id == 0) { return nullptr; }
+
+        const AssetId fontId = ResolveFontId(id);
+        if (fontId == 0) {
+            const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+            if (entry && entry->type == AssetType::Font) {
+                WarnOnce(id, "Font is not compiled yet - select it in the Asset Browser and press Compile");
+            } else {
+                WarnOnce(id, "Not a font asset");
+            }
+            return nullptr;
+        }
+
+        auto it = m_fonts.find(fontId);
+        if (it == m_fonts.end()) {
+            it = m_fonts.emplace(fontId, LoadFont(fontId)).first;   // null is cached too: no retry every frame
+        }
+        return it->second.get();
+
+    }   // ResourceManager::GetFont()
+
+    const FontAsset* ResourceManager::GetDefaultFont() {
+
+        const AssetId id = GetIdForPath(kDefaultFontPath);
+        if (id == 0) {
+            static bool s_warned = false;
+            if (!s_warned) {
+                s_warned = true;
+                CRU_USER_WARN("[Resources] The default font '{}' is missing from the Assets folder - text without a font won't draw",
+                              kDefaultFontPath);
+            }
+            return nullptr;
+        }
+        return GetFont(id);
+
+    }   // ResourceManager::GetDefaultFont()
+
+    void ResourceManager::ReloadFont(AssetId id) {
+
+        const AssetId fontId = ResolveFontId(id);
+        if (fontId != 0) {
+            m_fonts.erase(fontId);
+            m_warned.erase(fontId);
+        }
+        m_warned.erase(id);
+
+    }   // ResourceManager::ReloadFont()
+
+    std::unique_ptr<FontAsset> ResourceManager::LoadFont(AssetId fontId) {
+
+        const AssetEntry* entry = m_assets.FindByGuid(ToGuid(fontId));
+        if (!entry) { WarnOnce(fontId, "Font asset not found"); return nullptr; }
+
+        std::vector<unsigned char> bytes;
+        if (!m_assets.ReadBytes(entry->virtualPath, bytes) || bytes.empty()) {
+            WarnOnce(fontId, "Could not read font");
+            return nullptr;
+        }
+
+        auto font = std::make_unique<FontAsset>();
+        std::string error;
+        if (!ReadFont(std::span<const std::uint8_t>(bytes.data(), bytes.size()), font->data, error)) {
+            WarnOnce(fontId, "Font load failed: " + error);
+            return nullptr;
+        }
+
+        const FontAtlas& atlas = font->data.atlas;
+        const TexturePixelFormat format = atlas.channels == 4 ? TexturePixelFormat::RGBA8   // MTSDF: data, not colour
+                                                              : TexturePixelFormat::Alpha8; // SDF / Bitmap
+        try {
+            // No mipmaps: averaging neighbouring glyphs would make them bleed into each other.
+            font->texture = m_renderer.CreateTextureFromPixels(atlas.pixels.data(), atlas.width, atlas.height, format, false);
+        } catch (const std::exception& e) {
+            WarnOnce(fontId, std::string("Font atlas upload failed: ") + e.what());
+            return nullptr;
+        }
+        font->drawMode = DrawModeFor(font->data.outputType);
+
+        // The pixels now live on the GPU (copied before CreateTextureFromPixels returned).
+        font->data.atlas.pixels.clear();
+        font->data.atlas.pixels.shrink_to_fit();
+
+        CRU_INFO("[Resources] Font {} loaded: {}, {} glyphs, {}x{} atlas", entry->virtualPath,
+                 ToString(font->data.outputType), font->data.glyphs.size(), atlas.width, atlas.height);
+        return font;
+
+    }   // ResourceManager::LoadFont()
+
     AssetId ResourceManager::GetIdForPath(const std::string& virtualPath) const {
 
         return m_assets.GetGuid(virtualPath).m_Value;
@@ -343,6 +455,7 @@ namespace Crucible {
                 case ResourceKind::Mesh:     { auto it = m_meshes.find(id);    return it != m_meshes.end()    && it->second.IsValid(); }
                 case ResourceKind::Material: { auto it = m_materials.find(id); return it != m_materials.end() && it->second.IsValid(); }
                 case ResourceKind::Audio:    return false;   // never loaded here; ECSAudioSystem loads audio itself
+                case ResourceKind::Font:     { auto it = m_fonts.find(id);     return it != m_fonts.end()     && it->second != nullptr; }
                 default:                    { auto it = m_textures.find(id);  return it != m_textures.end()  && (it->second.srgb.IsValid() || it->second.linear.IsValid()); }
             }
         };
@@ -376,6 +489,14 @@ namespace Crucible {
                 break;
             case ResourceKind::Audio:
                 addAssets(AssetType::Audio, "", false);
+                break;
+            case ResourceKind::Font:
+                // Only compiled fonts can be drawn; a .ttf is picked by compiling it first.
+                for (const AssetEntry* entry : m_assets.GetByType(AssetType::Font)) {
+                    const AssetId id = entry->guid.m_Value;
+                    if (id == 0 || entry->extension != kCompiledFontExtension) { continue; }
+                    assets.push_back({ id, kind, entry->virtualPath, false, isLoaded(id) });
+                }
                 break;
         }
 

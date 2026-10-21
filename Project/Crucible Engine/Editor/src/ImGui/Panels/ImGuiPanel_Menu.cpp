@@ -16,6 +16,7 @@
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
+#include "ImGui/Panels/ImGuiPanel_FontImporter.h"
 #include "Configuration/EngineConfigLoader.h"
 
 #include <GLFW/glfw3.h>
@@ -148,6 +149,11 @@ void Crucible::Menu::Update(float) {
 			// The third argument is a bool* that MenuItem toggles for us (shows a tick).
 			ImGui::MenuItem("ImGui Demo Window", nullptr, &m_showDemoWindow);
 			ImGui::MenuItem("FPS Counter", nullptr, &m_showFps);
+			if (auto fonts = EditorManager::GetInstance().GetPanel<FontImporter>(ImguiPanels::FONTIMPORTER)) {
+				if (ImGui::MenuItem("Font Importer", nullptr, fonts->IsOpen())) {
+					if (fonts->IsOpen()) { fonts->SetOpen(false); } else { fonts->Open(""); }
+				}
+			}
 			ImGui::Separator();
 			if (ImGui::BeginMenu("Theme"))
 			{

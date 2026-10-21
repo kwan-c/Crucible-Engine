@@ -36,7 +36,8 @@ enum class ImguiPanels
 	ASSETBROWSER,
 	PLAYPAUSE,
 	CONSOLE,
-	ANIMATOR
+	ANIMATOR,
+	FONTIMPORTER	// floating window, opened from the Asset Browser or View > Font Importer
 };
 
 namespace Crucible {

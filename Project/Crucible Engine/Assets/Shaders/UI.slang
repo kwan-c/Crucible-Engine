@@ -11,7 +11,7 @@ struct UIPush {
     float4 transform;       // xy = scale, zw = offset: canvas pixels -> target pixels
     float2 invTargetSize;   // 1 / the target's size in pixels
     uint   mode;            // UIDrawMode: 0 image, 1 signed distance (alpha), 2 multi-channel signed distance
-    uint   pad;
+    float  pixelRange;      // distance-field atlases: the field's range in atlas texels (0 = unknown)
 };
 
 [[vk::push_constant]] ConstantBuffer<UIPush> pc;
@@ -65,11 +65,24 @@ float4 uiFrag(VSOutput input) : SV_Target {
         return texel * input.colour;
     }
 
-    // Distance-field text. The edge is where the stored distance is 0.5. fwidth is how much the
-    // distance changes from one screen pixel to the next, so the edge is always about one pixel
-    // soft - sharp at any size and zoom (and later at an angle, for world-space text).
-    float dist     = pc.mode == 2 ? Median(texel.r, texel.g, texel.b) : texel.a;
-    float width    = max(fwidth(dist), 1.0e-5);
-    float coverage = saturate((dist - 0.5) / width + 0.5);
+    // Distance-field text. The edge is where the stored distance is 0.5.
+    float dist = pc.mode == 2 ? Median(texel.r, texel.g, texel.b) : texel.a;
+    float coverage;
+    if (pc.pixelRange > 0.0) {
+        // msdf-atlas-gen's formula: the field's range in SCREEN pixels, from how many screen pixels
+        // one atlas texel covers right now (fwidth of the UV). Exact, so the edge stays one pixel
+        // soft at any size, scale or angle - and it doesn't depend on the (noisy, at corners)
+        // derivative of the median.
+        uint w, h;
+        uiTexture.GetDimensions(w, h);
+        float2 unitRange     = pc.pixelRange / float2(w, h);
+        float2 screenTexSize = 1.0 / max(fwidth(input.uv), float2(1.0e-6));
+        float  screenRange   = max(0.5 * dot(unitRange, screenTexSize), 1.0);
+        coverage = saturate(screenRange * (dist - 0.5) + 0.5);
+    } else {
+        // No range given: about one pixel of softness from how fast the distance changes.
+        float width = max(fwidth(dist), 1.0e-5);
+        coverage = saturate((dist - 0.5) / width + 0.5);
+    }
     return float4(input.colour.rgb, input.colour.a * coverage);
 }

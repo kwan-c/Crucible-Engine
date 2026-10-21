@@ -18,6 +18,7 @@
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Core.h"
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
+#include "ImGui/Panels/ImGuiPanel_FontImporter.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 
@@ -774,6 +775,12 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	if ((item.isFolder || item.type == AssetType::Scene || item.type == AssetType::Script) && ImGui::MenuItem("Open"))
 		OpenItem(item);
 
+	if (!item.isFolder && item.type == AssetType::Font) {
+		if (ImGui::MenuItem("Open in Font Importer"))
+			OpenItem(item);
+		ImGui::Separator();
+	}
+
 	// Greyed out rather than hidden when there is no audio system, so it is obvious the
 	// feature exists and something is missing.
 	// The right-click already selected it, so the preview clip is this one; these are the
@@ -894,6 +901,11 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	}
 	case AssetType::Script:
 		OpenInVSCode(AbsolutePathOf(item.virtualPath));
+		return;
+	case AssetType::Font:
+		// .ttf/.otf: its import settings; .cfont: the font it was compiled from.
+		if (auto fonts = EditorManager::GetInstance().GetPanel<FontImporter>(ImguiPanels::FONTIMPORTER))
+			fonts->Open(item.virtualPath);
 		return;
 	default:
 		CRU_INFO("[AssetBrowser] Open {} ({}): no editor for this type yet", item.virtualPath, ToString(item.type));

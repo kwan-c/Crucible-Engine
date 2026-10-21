@@ -788,6 +788,19 @@ namespace Crucible {
         ENGINE_API vk::ImageView  GetViewportColorView(ViewportHandle handle) const;
 
         /*********************************************************************
+         \brief  A texture's image view, so the editor can show it with
+                 ImGui_ImplVulkan_AddTexture(GetViewportSampler(), view,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) - e.g. a font
+                 atlas preview.
+         \param[in] handle A texture this Renderer made.
+         \return The view.
+         \throws std::runtime_error for an unknown handle.
+         \note   A texture is uploaded at the start of the frame after it was
+                 created; don't draw it in an ImGui frame before that.
+         *********************************************************************/
+        ENGINE_API vk::ImageView  GetTextureView(TextureHandle handle) const;
+
+        /*********************************************************************
          \brief
             Queues one draw for this frame.
 

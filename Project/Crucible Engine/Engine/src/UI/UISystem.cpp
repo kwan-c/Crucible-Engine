@@ -14,9 +14,13 @@
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
 #include "Scene/SceneManager.h"
+#include "Text/TextLayout.h"
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace Crucible {
@@ -170,6 +174,65 @@ namespace Crucible {
 		}
 
 		// The colour a button's current state multiplies its image by.
+		// ---- Text ------------------------------------------------------------------------------
+
+		// Laid-out text, kept between frames: a label is only laid out again when something that
+		// changes its layout changes. Keyed by entity + bitmap size group (the game and the UI
+		// Editor tab can pick different baked sizes for the same label). Layout is in reference
+		// pixels, so both views share an entry otherwise.
+		struct TextCacheEntry {
+			const FontAsset*   font = nullptr;
+			std::uint32_t      texture = TextureHandle::Invalid;   // changes when the font is reloaded, even at the same address
+			std::string        text;
+			TextLayoutSettings settings;
+			TextLayoutResult   result;
+			std::uint64_t      lastUse = 0;
+		};
+		std::unordered_map<std::uint64_t, TextCacheEntry> g_textCache;
+		std::uint64_t                                     g_textClock = 0;     // one tick per AppendDrawList call
+		std::unordered_set<std::uint64_t>                 g_warnedMissing;     // (font, codepoint) already reported
+
+		constexpr std::uint64_t kTextCacheKeepTicks = 600;   // entries unused this long are dropped (deleted labels)
+
+		bool SameSettings(const TextLayoutSettings& a, const TextLayoutSettings& b) {
+			return a.fontSize == b.fontSize && a.box == b.box && a.alignH == b.alignH && a.alignV == b.alignV
+			    && a.wrap == b.wrap && a.overflow == b.overflow && a.lineSpacing == b.lineSpacing
+			    && a.characterSpacing == b.characterSpacing && a.sizeGroup == b.sizeGroup
+			    && a.richText == b.richText && a.bold == b.bold && a.underline == b.underline && a.bestFit == b.bestFit
+			    && a.minFontSize == b.minFontSize && a.maxFontSize == b.maxFontSize && a.pixelScale == b.pixelScale;
+		}
+
+		const TextLayoutResult& LayoutCached(Entity entity, const FontAsset& font, const std::string& text, const TextLayoutSettings& settings) {
+			const std::uint64_t key = (static_cast<std::uint64_t>(entity.generation & 0xFFFFu) << 48)
+			                        | (static_cast<std::uint64_t>(settings.sizeGroup & 0xFFu) << 40)
+			                        | static_cast<std::uint64_t>(entity.index);
+			TextCacheEntry& entry = g_textCache[key];
+			entry.lastUse = g_textClock;
+			if (entry.font != &font || entry.texture != font.texture.id || entry.text != text || !SameSettings(entry.settings, settings)) {
+				entry.font     = &font;
+				entry.texture  = font.texture.id;
+				entry.text     = text;
+				entry.settings = settings;
+				LayoutText(font.data, text, settings, entry.result);
+
+				for (const std::uint32_t cp : entry.result.missing) {
+					const std::uint64_t warnKey = (static_cast<std::uint64_t>(font.texture.id) << 32) | cp;
+					if (g_warnedMissing.insert(warnKey).second) {
+						CRU_USER_WARN("[UI] Entity {}: the font has no character U+{:04X}, drawn as '?' - add it in the Font Importer",
+						              entity.index, cp);
+					}
+				}
+			}
+			return entry.result;
+		}
+
+		void PruneTextCache() {
+			if (g_textClock % 256 != 0) { return; }
+			for (auto it = g_textCache.begin(); it != g_textCache.end();) {
+				if (g_textClock - it->second.lastUse > kTextCacheKeepTicks) { it = g_textCache.erase(it); } else { ++it; }
+			}
+		}
+
 		Math::vec4 ButtonTint(const UIButton& button) {
 			if (!button.interactable || button.state == UIButton::State::Disabled) { return button.disabled; }
 			switch (button.state) {
@@ -221,26 +284,35 @@ namespace Crucible {
 	                        std::vector<UIVertex>& vertices, std::vector<std::uint32_t>& indices,
 	                        std::vector<UIDrawCommand>& commands) {
 
+		++g_textClock;
+		PruneTextCache();
+
 		// One quad: `local` is a rect in the element's own (upright) space, so it goes through the
 		// element's transform and a turned element draws turned. Merged into the previous draw when
-		// the texture matches and it follows straight on.
-		auto quad = [&](const LayoutItem& item, const Math::vec4& local, const Math::vec4& colour, TextureHandle texture) {
+		// the texture, mode, clip and range match and it follows straight on - so a whole label is
+		// one draw. `uv` is the texture rect (0,0 = top-left); `clip` is in screen (canvas) pixels.
+		const Math::vec4 noClip = UIDrawCommand{}.clipRect;
+		auto quad = [&](const LayoutItem& item, const Math::vec4& local, const Math::vec4& colour, TextureHandle texture,
+		                const Math::vec4& uv = Math::vec4(0.0f, 0.0f, 1.0f, 1.0f), UIDrawMode mode = UIDrawMode::Image,
+		                const Math::vec4* clip = nullptr, float pixelRange = 0.0f) {
 			if (colour.a <= 0.0f || local.z <= local.x || local.w <= local.y) { return; }   // invisible / empty
 
 			const std::uint32_t packed = PackUIColour(colour);
 			const std::uint32_t base   = static_cast<std::uint32_t>(vertices.size());
-			vertices.push_back({ item.ToScreen({ local.x, local.y }), { 0.0f, 0.0f }, packed });
-			vertices.push_back({ item.ToScreen({ local.z, local.y }), { 1.0f, 0.0f }, packed });
-			vertices.push_back({ item.ToScreen({ local.z, local.w }), { 1.0f, 1.0f }, packed });
-			vertices.push_back({ item.ToScreen({ local.x, local.w }), { 0.0f, 1.0f }, packed });
+			vertices.push_back({ item.ToScreen({ local.x, local.y }), { uv.x, uv.y }, packed });
+			vertices.push_back({ item.ToScreen({ local.z, local.y }), { uv.z, uv.y }, packed });
+			vertices.push_back({ item.ToScreen({ local.z, local.w }), { uv.z, uv.w }, packed });
+			vertices.push_back({ item.ToScreen({ local.x, local.w }), { uv.x, uv.w }, packed });
 
 			const std::uint32_t first = static_cast<std::uint32_t>(indices.size());
 			for (std::uint32_t i : { 0u, 1u, 2u, 0u, 2u, 3u }) { indices.push_back(base + i); }
 
-			const UIDrawCommand fresh{ .texture = texture, .mode = UIDrawMode::Image, .firstIndex = first, .indexCount = 6 };
+			const UIDrawCommand fresh{ .texture = texture, .mode = mode, .clipRect = clip ? *clip : noClip,
+			                           .firstIndex = first, .indexCount = 6, .pixelRange = pixelRange };
 			if (!commands.empty()) {
 				UIDrawCommand& last = commands.back();
 				if (last.texture == texture && last.mode == fresh.mode && last.clipRect == fresh.clipRect &&
+				    last.pixelRange == fresh.pixelRange &&
 				    last.vertexOffset == 0 && last.firstIndex + last.indexCount == first) {
 					last.indexCount += 6;
 					return;
@@ -274,6 +346,97 @@ namespace Crucible {
 				quad(item, parts.fill,   slider->fillColour * fade, TextureHandle{});
 				quad(item, parts.handle, slider->handleColour * fade * SliderHandleTint(*slider), TextureHandle{});
 			}
+
+			// Text last, so a button's label sits on its picture.
+			const UIText* text = world.Read<UIText>(item.entity);
+			if (text == nullptr || resources == nullptr || text->text.empty() || text->colour.a <= 0.0f || !(item.scale > 0.0f)) { continue; }
+
+			const FontAsset* font = text->fontAsset != 0 ? resources->GetFont(text->fontAsset) : nullptr;
+			if (font == nullptr) { font = resources->GetDefaultFont(); }   // no font picked, or it can't be loaded
+			if (font == nullptr || !font->texture.IsValid()) { continue; }
+
+			// Laid out in reference pixels (the rect divided by the canvas scale), then scaled back up,
+			// so the layout is the same at any screen size.
+			const float scale = item.scale;
+			TextLayoutSettings settings;
+			settings.fontSize         = text->fontSize;
+			settings.box              = { (item.rect.z - item.rect.x) / scale, (item.rect.w - item.rect.y) / scale };
+			settings.alignH           = text->horizontalAlign;
+			settings.alignV           = text->verticalAlign;
+			settings.wrap             = text->wrap;
+			settings.overflow         = text->overflow;
+			settings.lineSpacing      = text->lineSpacing;
+			settings.characterSpacing = text->characterSpacing;
+			settings.richText         = text->richText;
+			settings.bold             = text->bold;
+			settings.underline        = text->underline;
+			settings.bestFit          = text->bestFit;
+			settings.minFontSize      = text->minFontSize;
+			settings.maxFontSize      = text->maxFontSize;
+			const bool bitmap         = font->data.outputType == FontOutputType::Bitmap;
+			settings.pixelScale       = bitmap ? scale : 0.0f;   // bitmap: the baked size nearest the on-screen size, for whatever size is used
+			// Only part of the cache key (so the game and the UI Editor tab, at different scales, keep
+			// separate entries instead of taking turns); LayoutText picks the group from pixelScale.
+			settings.sizeGroup        = bitmap ? font->data.ClosestGroup((text->bestFit ? text->maxFontSize : text->fontSize) * scale) : 0;
+
+			const TextLayoutResult& layout = LayoutCached(item.entity, *font, text->text, settings);
+			if (layout.quads.empty() && layout.underlines.empty()) { continue; }
+
+			// Upright (not turned): the clip rect can cut glyphs at the rect's edges exactly, and bitmap
+			// glyphs can be put on whole screen pixels so they stay sharp.
+			const glm::mat3& m   = item.toScreen;
+			const bool upright   = std::fabs(m[0][1]) < 1.0e-5f && std::fabs(m[1][0]) < 1.0e-5f;
+			const bool cut       = text->overflow != TextOverflow::Overflow;
+			const Math::vec4 box = upright && cut ? item.Bounds() : noClip;
+			const Math::vec2 origin(item.rect.x, item.rect.y);
+
+			for (const TextGlyphQuad& glyph : layout.quads) {
+				Math::vec4 local(origin.x + glyph.rect.x * scale, origin.y + glyph.rect.y * scale,
+				                 origin.x + glyph.rect.z * scale, origin.y + glyph.rect.w * scale);
+
+				// Turned: no clip rect can follow the rect, so a glyph that pokes out is left out whole.
+				if (cut && !upright && (local.x < item.rect.x - 0.5f || local.z > item.rect.z + 0.5f ||
+				                        local.y < item.rect.y - 0.5f || local.w > item.rect.w + 0.5f)) {
+					continue;
+				}
+				if (bitmap && upright && m[0][0] != 0.0f && m[1][1] != 0.0f) {
+					const Math::vec2 pen    = item.ToScreen(origin + glyph.pen * scale);
+					const Math::vec2 offset = (glm::round(pen) - pen) / Math::vec2(m[0][0], m[1][1]);
+					local += Math::vec4(offset, offset);
+				}
+				// <color>: its colour, with the component's alpha on top (so fading the text fades it too).
+				const Math::vec4 colour = glyph.hasColour ? Math::vec4(Math::vec3(glyph.colour), glyph.colour.a * text->colour.a) : text->colour;
+				quad(item, local, colour, font->texture, glyph.uv, font->drawMode, &box, font->data.atlas.pixelRange);
+
+				// <b>: the glyph again, in steps of at most one pixel up to boldWidth to the right, which
+				// thickens every stroke - works the same for bitmap and distance-field fonts.
+				if (glyph.boldWidth > 0.0f) {
+					const float width = glyph.boldWidth * scale;
+					const int   steps = std::max(1, static_cast<int>(std::ceil(width)));
+					for (int step = 1; step <= steps; ++step) {
+						const float dx = width * static_cast<float>(step) / static_cast<float>(steps);
+						quad(item, local + Math::vec4(dx, 0.0f, dx, 0.0f), colour, font->texture, glyph.uv, font->drawMode, &box, font->data.atlas.pixelRange);
+					}
+				}
+			}
+
+			// Underlines: solid bars (no texture), at least one screen pixel thick, on whole pixels when upright.
+			for (const TextDecoration& bar : layout.underlines) {
+				Math::vec4 local(origin.x + bar.rect.x * scale, origin.y + bar.rect.y * scale,
+				                 origin.x + bar.rect.z * scale, origin.y + bar.rect.w * scale);
+				const float thickness = std::max(local.w - local.y, 1.0f);
+				if (upright && m[1][1] != 0.0f) {
+					const float top = item.ToScreen({ local.x, local.y }).y;
+					local.y += (std::round(top) - top) / m[1][1];
+				}
+				local.w = local.y + thickness;
+				if (cut && !upright && (local.x < item.rect.x - 0.5f || local.z > item.rect.z + 0.5f ||
+				                        local.y < item.rect.y - 0.5f || local.w > item.rect.w + 0.5f)) {
+					continue;
+				}
+				const Math::vec4 colour = bar.hasColour ? Math::vec4(Math::vec3(bar.colour), bar.colour.a * text->colour.a) : text->colour;
+				quad(item, local, colour, TextureHandle{}, Math::vec4(0.0f, 0.0f, 1.0f, 1.0f), UIDrawMode::Image, &box);
+			}
 		}
 	}
 
@@ -282,7 +445,7 @@ namespace Crucible {
 	// ------------------------------------------------------------------------------------------- //
 
 	void UIRenderSystem::Describe(SystemDesc& desc) const {
-		desc.Reads<UICanvas, UIButton, UISlider, HierarchyNode>()   // canvases, button / slider states, the tree
+		desc.Reads<UICanvas, UIButton, UISlider, UIText, HierarchyNode>()   // canvases, button / slider states, text, the tree
 			.Writes<UIRect, UIImage>()                      // UIRect::computed, UIImage::texture
 			.Affinity(SystemAffinity::MainThread);          // touches the Renderer
 	}

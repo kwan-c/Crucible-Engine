@@ -24,7 +24,7 @@ namespace Crucible {
             glm::vec4 transform;       // xy = scale, zw = offset: canvas pixels -> target pixels
             glm::vec2 invTargetSize;   // 1 / target size in pixels
             uint32_t  mode;            // UIDrawMode
-            uint32_t  pad;
+            float     pixelRange;      // UIDrawCommand::pixelRange (distance-field text)
         };
         static_assert(sizeof(UIPush) == 32, "UIPush must match UI.slang.");
 
@@ -208,7 +208,8 @@ namespace Crucible {
             }
             m_commands.push_back({ .texture = in.texture, .mode = in.mode, .clipRect = in.clipRect,
                                    .firstIndex = baseIndex + in.firstIndex, .indexCount = count,
-                                   .vertexOffset = static_cast<int32_t>(baseVertex) + in.vertexOffset });
+                                   .vertexOffset = static_cast<int32_t>(baseVertex) + in.vertexOffset,
+                                   .pixelRange = in.pixelRange });
             ++submission.commandCount;
         }
         if (submission.commandCount == 0) { return; }
@@ -316,7 +317,7 @@ namespace Crucible {
         cmd.bindVertexBuffers(0, *m_vertexBuffers[frameIndex].GetBuffer(), { vk::DeviceSize{ 0 } });
         cmd.bindIndexBuffer(*m_indexBuffers[frameIndex].GetBuffer(), 0, vk::IndexType::eUint32);
 
-        UIPush push{ .transform = transform, .invTargetSize = glm::vec2(1.0f / width, 1.0f / height), .mode = 0, .pad = 0 };
+        UIPush push{ .transform = transform, .invTargetSize = glm::vec2(1.0f / width, 1.0f / height), .mode = 0, .pixelRange = 0.0f };
         vk::DescriptorSet boundSet{};
 
         for (const Submission& submission : m_submissions) {
@@ -339,6 +340,7 @@ namespace Crucible {
                     boundSet = command.set;
                 }
                 push.mode = static_cast<uint32_t>(command.mode);
+                push.pixelRange = command.pixelRange;
                 cmd.pushConstants<UIPush>(*m_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, push);
 
                 cmd.drawIndexed(command.indexCount, 1, command.firstIndex, command.vertexOffset, 0);

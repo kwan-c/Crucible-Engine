@@ -18,7 +18,8 @@
 * Interaction:
 *	click          select
 *	double-click   folder: open it.  .scene: open the scene (same guard as File > Open).
-*	               script (.lua/.cs): open that file in VS Code.  Anything else: logged.
+*	               script (.lua/.cs): open that file in VS Code.  font (.ttf/.otf/.cfont): the
+*	               Font Importer window.  Anything else: logged.
 *	drag           starts a drag-drop with EditorWidgets::kAssetPayload (virtual path)
 *	right-click    context menu (Rename, Show in Explorer, Copy Path, Copy GUID, New Folder,
 *	               Create Scene - inside Scenes/ only -, Create Script - inside Scripts/

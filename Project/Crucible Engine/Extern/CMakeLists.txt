@@ -332,7 +332,6 @@ target_link_libraries(EngineThirdParty INTERFACE
     rttr_core
     stb
     rapidjson
-    CrucibleFonts   # FreeType + msdfgen + msdf-atlas-gen (font atlas baking)
 )
 
 # ----------------------------------- #
@@ -346,4 +345,5 @@ target_link_libraries(EditorThirdParty INTERFACE
     imgui
     imgui_backends
     imguizmo
+    CrucibleFonts   # FreeType + msdfgen + msdf-atlas-gen: the font compiler (Editor/src/Fonts). The engine only reads .cfont files.
 )

@@ -715,6 +715,12 @@ namespace Crucible {
 
     }   // Renderer::GetViewportColorView()
 
+    vk::ImageView Renderer::GetTextureView(TextureHandle handle) const {
+
+        return *m_resources.GetTextureOrThrow(handle).view;
+
+    }   // Renderer::GetTextureView()
+
     void Renderer::CreateUniformBuffers() {
 
         for (uint32_t i = 0; i < m_frameManager.MaxFramesInFlight(); ++i) {
