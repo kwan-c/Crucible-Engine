@@ -648,6 +648,42 @@ namespace Crucible {
 
     }   // Renderer::ProjectToGameScreen()
 
+    void Renderer::SetGameScreenPlacement(const glm::vec2& windowOrigin, float scale, bool pointerOver) {
+
+        m_gameScreenOrigin      = windowOrigin;
+        m_gameScreenScale       = scale;
+        m_gameScreenPointerOver = pointerOver;
+
+    }   // Renderer::SetGameScreenPlacement()
+
+    bool Renderer::WindowToGameScreen(const glm::vec2& windowPos, glm::vec2& outPixels) const {
+
+        const glm::uvec2 size = GetGameScreenSize();
+        if (size.x == 0 || size.y == 0) { return false; }
+
+        glm::vec2 pixels;
+        if (m_viewportSet.All().empty()) {
+            // Standalone: the window is the game screen. GLFW reports the cursor in window units,
+            // the swapchain is in framebuffer pixels; on a high-DPI display they differ.
+            int width = 0, height = 0;
+            glfwGetWindowSize(m_window.GetNativeHandle(), &width, &height);
+            if (width <= 0 || height <= 0) { return false; }
+            pixels = windowPos * glm::vec2(size) / glm::vec2(static_cast<float>(width), static_cast<float>(height));
+        }
+        else {
+            // Editor: the Game view's image, wherever it sits in the panel and however it is scaled.
+            if (!m_gameScreenPointerOver || m_gameScreenScale <= 0.0f) { return false; }
+            pixels = (windowPos - m_gameScreenOrigin) / m_gameScreenScale;
+        }
+
+        if (pixels.x < 0.0f || pixels.y < 0.0f || pixels.x >= static_cast<float>(size.x) || pixels.y >= static_cast<float>(size.y)) {
+            return false;   // in the letterbox bars, or off the window
+        }
+        outPixels = pixels;
+        return true;
+
+    }   // Renderer::WindowToGameScreen()
+
     void Renderer::SetOutlinedObject(std::uint64_t userData) {
 
         m_scene.SetOutlinedObject(userData);

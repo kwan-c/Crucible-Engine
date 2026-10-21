@@ -18,6 +18,7 @@
 
 #include "Core.h"
 #include "ImGui/EditorTheme.h"
+#include "ImGui/Panels/ImGuiPanel_Inspector.h"
 
 namespace Crucible {
 
@@ -32,6 +33,15 @@ namespace {
     ImVec4 StopColor()  { return EditorTheme::GetPalette().error; }
 
     ImVec4 Scale(ImVec4 c, float k) { return ImVec4(c.x * k, c.y * k, c.z * k, c.w); }
+
+    // A name still being typed in the Inspector is applied (and recorded) before a Play or Stop
+    // request: the request runs at the start of next frame, before the Inspector sees its field lose
+    // focus, so Play would otherwise capture the old name.
+    void CommitInspectorEdit() {
+        if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR)) {
+            inspector->CommitPendingEdit();
+        }
+    }
     ImVec4 Mix(ImVec4 a, ImVec4 b, float t) {
         return ImVec4(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t);
     }
@@ -173,6 +183,7 @@ void PlayPause::Update(float)
         if (TransportButton("##Play", running ? "Exit Play Mode (Ctrl+P)" : "Play (Ctrl+P)",
                             TransportIcon::Play, PlayColor(), running && !paused, !waiting, buttonSize)
             || (playKey && !waiting)) {
+            CommitInspectorEdit();
             if (running) m_core.RequestStop();
             else         m_core.RequestPlay();
         }
@@ -187,8 +198,10 @@ void PlayPause::Update(float)
 
         ImGui::SameLine();
         if (TransportButton("##Stop", "Stop", TransportIcon::Stop, StopColor(), false,
-                            running && !waiting, buttonSize))
+                            running && !waiting, buttonSize)) {
+            CommitInspectorEdit();
             m_core.RequestStop();
+        }
 
         // Only show status when it fits without crowding the centered controls. A failed
         // request is shown in place of the status until the next transition succeeds.

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Declares the ECS lifecycle event types (EntityDestroyed,
 *                ComponentAdded<T>, ComponentRemoved<T>) and EcsEventBridge,
@@ -31,6 +31,7 @@
 *
 * \history
 *    -v1.0       initial opt-in hook-to-event bridge
+*    -v1.1       hooks take const T& (World passes EntityName only as const)
 *
 **************************************************************************/
 #pragma once
@@ -176,7 +177,7 @@ namespace Crucible
 			const ComponentId id = ComponentTypeId<T>();
 			if (m_addedEnabled.test(id)) return;
 			EventBus* bus = &m_bus;
-			m_world.OnComponentAdded<T>([bus](World&, Entity e, T&)
+			m_world.OnComponentAdded<T>([bus](World&, Entity e, const T&)
 				{
 					bus->Enqueue(EcsEvents::ComponentAdded<T>{ e });
 				});
@@ -195,7 +196,7 @@ namespace Crucible
 			if (m_removedEnabled.test(id)) return;
 			EventBus* bus = &m_bus;
 			// Remove hooks run BEFORE the component is torn down, so the copy is still valid here.
-			m_world.OnComponentRemoved<T>([bus](World&, Entity e, T& value)
+			m_world.OnComponentRemoved<T>([bus](World&, Entity e, const T& value)
 				{
 					bus->Enqueue(EcsEvents::ComponentRemoved<T>{ e, value });
 				});

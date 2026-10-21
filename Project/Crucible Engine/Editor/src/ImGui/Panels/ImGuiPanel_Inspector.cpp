@@ -19,6 +19,7 @@
 #include "Resources/ResourceManager.h"
 #include "Undo/EntityCommands.h"
 #include "../EditorWidgets.h"
+#include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
 #include <algorithm>
 #include <memory>
@@ -53,8 +54,8 @@ namespace {
 
 	// ---- Add Component rules --------------------------------------------------------------
 	//
-	// Three hooks, each a do-nothing template plus specialisations/overloads for the components
-	// that need them. ALL of them must be declared above AddNewComponent: a template only sees
+	// Four hooks, each a do-nothing template plus specialisations/overloads for the components
+	// that need them. ALL of them must be declared above AddNewComponent / MakeComponentRemover: a template only sees
 	// overloads declared before it, and a missing one silently falls back to the do-nothing version.
 	//
 	// The physics rules come from ECSPhysicsSystem:
@@ -137,6 +138,87 @@ namespace {
 		}
 	}
 
+	// ---- UI rules (UI/UIComponents.h): Unity's [RequireComponent] for the UI types ----
+	//   - UIImage, UIText, UISlider -> need a UIRect: it is where they sit and how big they are.
+	//   - UIButton          -> needs a UIRect, and a UIImage: the button's picture, which its
+	//                          state colours tint.
+	//   - All of them (UIRect too) are only drawn under an entity with a UICanvas. That is a
+	//     warning, not an automatic add: the canvas is normally a parent entity, not this one.
+
+	// True when the entity or one of its ancestors has a UICanvas.
+	bool IsUnderUICanvas(Crucible::World& world, Crucible::Entity entity) {
+		for (Crucible::Entity e = entity; e.IsValid(); e = world.GetParent(e)) {
+			if (world.HasComponent<Crucible::UICanvas>(e)) return true;
+		}
+		return false;
+	}
+
+	void WarnIfNotUnderUICanvas(Crucible::World& world, Crucible::Entity entity) {
+		if (!IsUnderUICanvas(world, entity)) {
+			CRU_USER_WARN("Entity {}: not under a UICanvas, so it won't be drawn - make it a child of an entity with a UICanvas", entity.index);
+		}
+	}
+
+	void EnsureUIRect(Crucible::World& world, Crucible::Entity entity, char const* addedName) {
+		if (!world.HasComponent<Crucible::UIRect>(entity)) {
+			world.AddComponent<Crucible::UIRect>(entity, Crucible::UIRect{});
+			CRU_USER_INFO("Entity {}: also added a UIRect - a {} needs one for its position and size", entity.index, addedName);
+		}
+		WarnIfNotUnderUICanvas(world, entity);
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		WarnIfNotUnderUICanvas(world, entity);
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIImage>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIImage");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIText>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIText");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UISlider>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UISlider");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIButton>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIButton");
+		if (!world.HasComponent<Crucible::UIImage>(entity)) {
+			world.AddComponent<Crucible::UIImage>(entity, Crucible::UIImage{});
+			CRU_USER_INFO("Entity {}: also added a UIImage - it is the button's picture, tinted by the button's state colours", entity.index);
+		}
+	}
+
+	// 4. Why T can't be removed from this entity right now (the Remove Component item is greyed
+	//    out with this tooltip), or nullptr if it can. The other side of the "also added" rules
+	//    in hook 3: a component another one depends on stays until that one is removed (Unity's
+	//    [RequireComponent] blocks removal the same way).
+	template <typename T>
+	char const* RemoveBlockedReason(Crucible::World&, Crucible::Entity) { return nullptr; }
+
+	template <>
+	char const* RemoveBlockedReason<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		if (world.HasComponent<Crucible::UIButton>(entity)) return "The UIButton on this entity needs it.\nRemove the UIButton (and UIImage) first.";
+		if (world.HasComponent<Crucible::UIImage>(entity))  return "The UIImage on this entity needs it for its position and size.\nRemove the UIImage first.";
+		if (world.HasComponent<Crucible::UIText>(entity))   return "The UIText on this entity needs it for its position and size.\nRemove the UIText first.";
+		if (world.HasComponent<Crucible::UISlider>(entity)) return "The UISlider on this entity needs it for its position and size.\nRemove the UISlider first.";
+		return nullptr;
+	}
+
+	template <>
+	char const* RemoveBlockedReason<Crucible::UIImage>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::UIButton>(entity)
+			? "The UIButton on this entity uses it as its picture.\nRemove the UIButton first."
+			: nullptr;
+	}
+
 	// MUST come after every hook above.
 	template <typename T>
 	void AddNewComponent(Crucible::World& world, Crucible::SceneManager& scenes, Crucible::Entity entity) {
@@ -164,6 +246,11 @@ namespace {
 	template <typename T>
 	std::function<void()> MakeComponentRemover(Crucible::World& world, Crucible::Entity entity) {
 		if constexpr (Crucible::RemovableComponent<T>) {
+			if (char const* reason = RemoveBlockedReason<T>(world, entity)) {
+				// The menu greys these out, so this only fires if something else calls it.
+				CRU_USER_WARN("Cannot remove {} from entity {}: {}", Crucible::ComponentTraits<T>::name, entity.index, reason);
+				return {};
+			}
 			return [&world, entity] {
 				world.RemoveComponent<T>(entity);
 				CRU_USER_INFO("Removed {} from entity {}", Crucible::ComponentTraits<T>::name, entity.index);
@@ -427,7 +514,28 @@ void Crucible::Inspector::Update(float) {
 }
 
 void Crucible::Inspector::DrawEntityInspector(Entity entity) {
-	ImGui::Text("Entity %u", entity.index);
+	// Name, at the top (Unity). Applied when the field is left (see m_nameBuffer); the edit
+	// grouping makes the whole rename ONE undo step. Left blank, it becomes "Entity N".
+	if (m_world.Read<EntityName>(entity)) {
+		if (!(m_nameEntity == entity)) { ApplyPendingName(); }   // another entity's unfinished name
+		if (!m_nameDirty) {
+			m_nameBuffer = m_world.Read<EntityName>(entity)->name;   // shows renames from anywhere (undo, scripts)
+			m_nameEntity = entity;
+		}
+
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("Name");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		ImGui::PushID(static_cast<int>(entity.index));   // another entity gets a fresh field, not this text
+		if (ImGui::InputText("##EntityName", &m_nameBuffer)) {
+			m_nameDirty = true;
+			NoteEdit("Rename");
+		}
+		bool const left = ImGui::IsItemDeactivated();
+		ImGui::PopID();
+		if (left) { ApplyPendingName(); }   // before this frame's commit captures the "after" state
+	}
 	ImGui::Separator();
 
 	bool changed = false;
@@ -442,7 +550,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform>)                         \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \
@@ -451,8 +559,10 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 				bool const open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);    \
 				if constexpr (RemovableComponent<T>) {                                                       \
 					if (ImGui::BeginPopupContextItem("##ComponentMenu")) {                                   \
-						if (ImGui::MenuItem("Remove Component"))                                             \
+						char const* const removeBlocked = RemoveBlockedReason<T>(m_world, entity);           \
+						if (ImGui::MenuItem("Remove Component", nullptr, false, removeBlocked == nullptr))   \
 							{ deferredRemove = MakeComponentRemover<T>(m_world, entity); removeLabel = "Remove " + header; }  \
+						if (removeBlocked) ImGui::SetItemTooltip("%s", removeBlocked);                       \
 						ImGui::EndPopup();                                                                   \
 					}                                                                                        \
 				}                                                                                            \
@@ -1020,6 +1130,69 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
 	return DrawMaterialSection(renderer);   // your existing function, returning bool
 }
 
+bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {
+	// sceneAsset is hidden from the generic fields (a raw id means nothing to a person): pick the
+	// scene from the project's scene files instead. Only shown when the button loads a scene.
+	if (button.onClick != UIButton::ClickAction::LoadScene) { return false; }
+
+	AssetEntry const* current = button.sceneAsset != 0 ? m_assets.FindByGuid(xresource::instance_guid{ button.sceneAsset }) : nullptr;
+	char const* preview = current ? current->virtualPath.c_str() : (button.sceneAsset != 0 ? "(missing scene)" : "None");
+
+	bool changed = false;
+	if (ImGui::BeginCombo("scene", preview)) {
+		if (ImGui::Selectable("None", button.sceneAsset == 0)) { button.sceneAsset = 0; changed = true; }
+		for (AssetEntry const* entry : m_assets.GetByType(AssetType::Scene)) {
+			bool const selected = entry->guid.m_Value == button.sceneAsset;
+			if (ImGui::Selectable(entry->virtualPath.c_str(), selected)) { button.sceneAsset = entry->guid.m_Value; changed = true; }
+			if (selected) { ImGui::SetItemDefaultFocus(); }
+		}
+		ImGui::EndCombo();
+	}
+	if (button.sceneAsset == 0) { ImGui::TextDisabled("Pick the scene this button loads."); }
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UISlider& slider) {
+	// The direction, drawn here instead of with the generic fields because a change between
+	// horizontal and vertical must also turn the slider's rect: a 240 x 24 slider switched to
+	// Bottom-to-Top would otherwise run along its 24 px height, with almost no room to drag.
+	// Unity's Slider does the same. Both changes land in the same edit, so one undo reverts both.
+	struct Option { char const* name; UISlider::Direction value; };
+	static constexpr Option kOptions[] = {
+		{ "LeftToRight", UISlider::Direction::LeftToRight },
+		{ "RightToLeft", UISlider::Direction::RightToLeft },
+		{ "BottomToTop", UISlider::Direction::BottomToTop },
+		{ "TopToBottom", UISlider::Direction::TopToBottom },
+	};
+	auto isVertical = [](UISlider::Direction d) { return d == UISlider::Direction::BottomToTop || d == UISlider::Direction::TopToBottom; };
+
+	char const* current = kOptions[0].name;
+	for (Option const& option : kOptions) { if (option.value == slider.direction) { current = option.name; } }
+
+	bool changed = false;
+	if (ImGui::BeginCombo("direction", current)) {
+		for (Option const& option : kOptions) {
+			bool const selected = option.value == slider.direction;
+			if (ImGui::Selectable(option.name, selected) && !selected) {
+				if (isVertical(option.value) != isVertical(slider.direction)) {
+					// Turn the rect: width <-> height, and the pivot with it, so it keeps its shape
+					// around the same point. Only touches UIRect's fields - no structural change, so
+					// `slider` stays valid.
+					if (UIRect* rect = m_world.GetComponent<UIRect>(m_selected)) {
+						std::swap(rect->size.x, rect->size.y);
+						std::swap(rect->pivot.x, rect->pivot.y);
+					}
+				}
+				slider.direction = option.value;
+				changed = true;
+			}
+			if (selected) { ImGui::SetItemDefaultFocus(); }
+		}
+		ImGui::EndCombo();
+	}
+	return changed;
+}
+
 // ===========================================================================
 //  Undo
 // ===========================================================================
@@ -1032,7 +1205,21 @@ void Crucible::Inspector::NoteEdit(std::string label) {
 	}
 }
 
+void Crucible::Inspector::ApplyPendingName() {
+	if (!m_nameDirty) { return; }
+	m_nameDirty = false;
+	if (!m_world.IsAlive(m_nameEntity)) { return; }
+
+	EntityName const* current = m_world.Read<EntityName>(m_nameEntity);
+	if (current && current->name == m_nameBuffer) { return; }   // typed, then changed back
+
+	m_world.SetEntityName(m_nameEntity, m_nameBuffer);   // blank -> "Entity N" (World's naming rules)
+	m_nameBuffer = m_world.Read<EntityName>(m_nameEntity)->name;
+	m_scenes.MarkDirty();
+}
+
 void Crucible::Inspector::CommitPendingEdit() {
+	ApplyPendingName();   // a name still being typed is part of this edit
 	if (!m_editOpen) { return; }
 	m_editOpen = false;
 	std::string label = std::exchange(m_editLabel, std::string{});

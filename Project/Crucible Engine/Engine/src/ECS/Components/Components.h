@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -30,12 +30,14 @@
 	*             instead of an Euler-angle constructor	
 	* -v1.3       Audio renamed to AudioSource (clashed with class Crucible::Audio)
 	* -v1.4       AudioSource moved to Audio/AudioComponents.h
+	* -v1.5       EntityName (mandatory display name, WorldValidated)
 	*
 	*
 	**************************************************************************/
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include"ComponentKind.h"
 #include"Math/Math.h"
@@ -46,6 +48,7 @@
 #include"Graphics/MaterialHandle.h"   // MaterialHandle - same reasoning: header-only, no Vulkan
 #include"Graphics/CubemapHandle.h"    // CubemapHandle (Skybox) - same reasoning
 #include"Graphics/LightTypes.h"       // LightType (Light) - same reasoning
+#include"../../UI/UIComponents.h"
 
 namespace Crucible
 {
@@ -655,6 +658,22 @@ namespace Crucible
 
 		RigidBodyConstraints constraints{};   // frozen axes; e.g. freeze rotation X+Z so a player body never tips over
 	};
+    
+	/*************************************************************************
+	 \brief
+		The entity's display name (Hierarchy, Inspector). Mandatory: every
+		entity has one, saved with the scene like any other component.
+	 \details
+		Empty means "not named yet": the World gives such an entity the next
+		numbered default ("Entity 1", "Entity 2"...) when it is created - see
+		World::CreateNamedEntity and World::SetEntityName. Names need not be
+		unique; only the generated defaults are kept distinct. Read-only
+		outside World (WorldValidated): rename with World::SetEntityName.
+	 *************************************************************************/
+	struct EntityName
+	{
+		std::string name;
+	};
 
 	// Bind each component above to its ComponentKind (see ComponentKind.h)
 	// and give ComponentRegistry a compile-time name for it.
@@ -669,6 +688,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(MaterialParams, MaterialParams);
 	CRUCIBLE_COMPONENT(StressMover, StressMover);
 	CRUCIBLE_COMPONENT(Vine, Vine);
+	CRUCIBLE_COMPONENT(EntityName, EntityName);
 	CRUCIBLE_COMPONENT(Water, Water);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
@@ -687,6 +707,10 @@ namespace Crucible
 	template <> struct Mandatory<Transform> : std::true_type {};
 	template <> struct Mandatory<WorldTransform> : std::true_type {};
 	template <> struct Mandatory<HierarchyNode> : std::true_type {};
+	template <> struct Mandatory<EntityName> : std::true_type {};
+
+	// Read anywhere; written only through World (SetEntityName, AddComponent), which applies the naming rules.
+	template <> struct WorldValidated<EntityName> : std::true_type {};
 
 
 }

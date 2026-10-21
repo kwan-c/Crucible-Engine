@@ -102,6 +102,8 @@ namespace Crucible {
 
 		template <typename T> bool DrawComponentExtras(T&) { return false; }
 		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
+		bool DrawComponentExtras(UIButton& button);         // scene dropdown for onClick = LoadScene
+		bool DrawComponentExtras(UISlider& slider);         // direction dropdown that also turns the UIRect
 		bool DrawMaterialSection(MeshRenderer& renderer);
 
 		std::function<void()> m_draw;
@@ -132,5 +134,15 @@ namespace Crucible {
 		std::string m_editLabel;
 		Entity      m_editEntity = kNullEntity;
 		bool        m_editOpen = false;
+
+		// ---- Name field ----
+		// Typed into m_nameBuffer (any length, UTF-8) and written to the entity only when the
+		// field is left or the edit is committed (selection change, Play, Save, Undo...), so the
+		// entity never holds a blank or half-typed name. World::SetEntityName applies the naming
+		// rules: a name left blank becomes the next "Entity N".
+		void ApplyPendingName();
+		std::string m_nameBuffer;
+		Entity      m_nameEntity = kNullEntity;   // whose name m_nameBuffer holds
+		bool        m_nameDirty = false;          // typed into, not written yet
 	};
 }
