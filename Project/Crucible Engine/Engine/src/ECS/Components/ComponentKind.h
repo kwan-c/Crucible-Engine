@@ -74,7 +74,6 @@ namespace Crucible
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
-		MAXCOMPONENT = 19
 		EntityName = 17,         // every entity's display name (mandatory) - Components.h
 		UICanvas = 18, 
 		UIRect = 19, 
