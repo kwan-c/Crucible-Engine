@@ -45,10 +45,16 @@ RTTR_REGISTRATION
     rttr::registration::class_<MeshRenderer>("MeshRenderer")
         .constructor<>()
         .property("visible",       &MeshRenderer::visible)
+        .property("modelAsset",    &MeshRenderer::modelAsset)
+            (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("modelRoot", &MeshRenderer::modelRoot)
+            (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("materialOverrides", &MeshRenderer::materialOverrides)
+            (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
         .property("colour",        &MeshRenderer::colour)
             (rttr::metadata(MetaDataTypes::COLOUR, true))
         .property("meshAsset",     &MeshRenderer::meshAsset)
-            (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Mesh))
+            (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
         .property("materialAsset", &MeshRenderer::materialAsset)
             (rttr::metadata(MetaDataTypes::ASSET_REF, ResourceKind::Material),
              // Picked in the Inspector's Material section instead (with New / Make Unique), so it

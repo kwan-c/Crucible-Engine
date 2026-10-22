@@ -7,17 +7,23 @@
 
 #include "Graphics/Camera.h"
 #include "Graphics/DebugDraw.h"
+#include "Graphics/ModelBounds.h"
 #include "Threading/WorkerPool.h"
 
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <stdexcept>
 
 namespace Crucible {
 
     void RenderScene::Init(uint32_t framesInFlight) {
 
         const uint32_t frames = framesInFlight;
+        m_maxInstanceCount = static_cast<uint32_t>(std::min<uint64_t>(UINT32_MAX,
+            m_context.GetPhysicalDevice().getProperties().limits.maxStorageBufferRange / sizeof(InstanceData)));
+        if (m_maxInstanceCount < kInitialInstanceCapacity)
+            throw std::runtime_error("GPU storage buffer range is too small for the instance/palette buffer");
         for (uint32_t i = 0; i < frames; ++i) {
             m_instanceBuffers.emplace_back();
             m_instanceBuffers.back().Create(m_context, vk::DeviceSize{ kInitialInstanceCapacity } * sizeof(InstanceData),
@@ -30,6 +36,32 @@ namespace Crucible {
         m_renderQueue.reserve(1024);
 
     }   // RenderScene::Init()
+
+    void RenderScene::SetProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
+                                        const glm::vec3& boundsMin, const glm::vec3& boundsMax) {
+        if (!handle.IsValid() || handle.id >= m_proxies.size() || !m_proxies[handle.id].alive) return;
+        auto& proxy = m_proxies[handle.id];
+        if (proxy.palette.empty() && !palette.empty()) m_animatedProxies.push_back(handle.id);
+        if (!proxy.palette.empty() && palette.empty()) std::erase(m_animatedProxies, handle.id);
+        proxy.palette.assign(palette.begin(), palette.end());
+        proxy.skin = glm::uvec4(0u);
+        proxy.poseBounds = AABB(boundsMin, boundsMax).IsValid();
+        proxy.poseMin = boundsMin; proxy.poseMax = boundsMax;
+        RefreshProxyBounds(handle.id);
+    }
+
+    void RenderScene::BeginViews() {
+        m_instanceCount = 0;
+        for (uint32_t id : m_animatedProxies) {
+            auto& proxy = m_proxies[id];
+            if (!proxy.alive || !proxy.visible || proxy.palette.empty()) { proxy.skin = glm::uvec4(0u); continue; }
+            const uint32_t count = static_cast<uint32_t>(proxy.palette.size());
+            const uint32_t offset = AllocateInstances(count);
+            proxy.skin = glm::uvec4(offset, count, 0u, 0u);
+            for (uint32_t joint = 0; joint < count; ++joint)
+                m_instanceScratch[offset + joint] = InstanceData{proxy.palette[joint]};
+        }
+    }
 
     void RenderScene::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) {
 
@@ -47,6 +79,7 @@ namespace Crucible {
         m_proxyDraw[id] = ProxyDraw{};
         m_proxies[id].alive = true;
         m_proxies[id].userData = userData;
+        ++m_proxyRevision;
         return RenderProxyHandle{ id };
 
     }   // RenderScene::CreateProxy()
@@ -77,6 +110,8 @@ namespace Crucible {
         RenderProxy& p = m_proxies[handle.id];
         if (p.spatial != SpatialIndex::kInvalid) { m_spatial.Remove(p.spatial); }
         p = RenderProxy{};
+        std::erase(m_animatedProxies, handle.id);
+        ++m_proxyRevision;
         m_proxyDraw[handle.id] = ProxyDraw{};
         m_freeProxies.push_back(handle.id);
 
@@ -94,7 +129,8 @@ namespace Crucible {
         if (!p.visible || !p.mesh.IsValid()) { removeFromIndex(); return; }
 
         glm::vec3 mn, mx;
-        if (!m_resources.GetMeshBounds(p.mesh, mn, mx)) {
+        if (p.poseBounds) { mn = p.poseMin; mx = p.poseMax; }
+        else if (!m_resources.GetMeshBounds(p.mesh, mn, mx)) {
             // Mesh not uploaded yet (CreateMeshAsync): not drawable anyway; retry next frame.
             removeFromIndex();
             p.awaitingBounds = true;
@@ -102,7 +138,9 @@ namespace Crucible {
             return;
         }
 
-        const AABB world = AABB::Transform(AABB(mn, mx), p.model);
+        const AABB local(mn, mx);
+        const AABB world = p.poseBounds ? TransformModelBounds(local, p.model) : AABB::Transform(local, p.model);
+        if (!world.IsValid()) { removeFromIndex(); return; }
         if (p.spatial == SpatialIndex::kInvalid) { p.spatial = m_spatial.Insert(world, id); }
         else                                     { m_spatial.Update(p.spatial, world); }
 
@@ -138,13 +176,15 @@ namespace Crucible {
         if (wanted == m_outlineUserData) { return; }   // called every frame by the editor: usually unchanged
 
         m_outlineUserData = std::move(wanted);
-        m_outlineProxies.assign(m_outlineUserData.size(), 0xFFFFFFFFu);   // re-resolved lazily (ResolveOutlineProxies)
+        m_outlineResolvedRevision = m_proxyRevision ^ 1u; // selection changed; refresh the cached parts
 
     }   // RenderScene::SetOutlinedObjects()
 
     uint32_t RenderScene::AllocateInstances(uint32_t count) {
 
         const uint32_t first = m_instanceCount;
+        if (count > m_maxInstanceCount - m_instanceCount)
+            throw std::length_error("Frame instances and joint palettes exceed the GPU storage buffer range");
         m_instanceCount += count;
         if (m_instanceCount > m_instanceScratch.size()) {
             m_instanceScratch.resize(std::max<size_t>(m_instanceCount, m_instanceScratch.size() * 2));
@@ -277,9 +317,11 @@ namespace Crucible {
         });
 
         // 3. Each pass's instances go one after another, in pass order; one batch per key run.
-        uint32_t viewInstances = 0;
-        for (uint32_t pass = 0; pass < passes; ++pass) { viewInstances += static_cast<uint32_t>(m_pass[pass].grouped.size()); }
-        const uint32_t firstOfView = AllocateInstances(viewInstances);
+        uint64_t viewInstances = 0;
+        for (uint32_t pass = 0; pass < passes; ++pass) { viewInstances += m_pass[pass].grouped.size(); }
+        if (viewInstances > m_maxInstanceCount)
+            throw std::length_error("View instances exceed the GPU storage buffer range");
+        const uint32_t firstOfView = AllocateInstances(static_cast<uint32_t>(viewInstances));
         uint32_t next = firstOfView;
         for (uint32_t pass = 0; pass < passes; ++pass) {
             PassScratch& ps = m_pass[pass];
@@ -291,7 +333,10 @@ namespace Crucible {
                 const uint32_t       high = static_cast<uint32_t>(bucket.key >> 32);
                 const MaterialHandle material = pass == 0 ? MaterialHandle{ high }
                                               : high != 0 ? MaterialHandle{ high - 1 } : MaterialHandle{};   // see DepthKey
-                out.push_back(DrawBatch{ mesh, material, ps.firstInstance + bucket.first, bucket.count });
+                for (uint32_t orientation = 0; orientation < 2; ++orientation)
+                    if (bucket.count[orientation])
+                        out.push_back(DrawBatch{ mesh, material, ps.firstInstance + bucket.first[orientation],
+                                                 bucket.count[orientation], orientation != 0 });
             }
             next += static_cast<uint32_t>(ps.grouped.size());
         }
@@ -310,10 +355,10 @@ namespace Crucible {
                 const SortItem& item = m_pass[pass].grouped[index - m_pass[pass].firstInstance];
                 if (item.ref & kImmediateRef) {
                     const RenderItem& r = m_renderQueue[item.ref & ~kImmediateRef];
-                    m_instanceScratch[index] = InstanceData{ r.model, pass == 0 ? r.params : noParams };
+                    m_instanceScratch[index] = InstanceData{ r.model, pass == 0 ? r.params : noParams, r.skin };
                 } else {
                     const RenderProxy& p = m_proxies[item.ref];
-                    m_instanceScratch[index] = InstanceData{ p.model, pass == 0 ? p.params : noParams };
+                    m_instanceScratch[index] = InstanceData{ p.model, pass == 0 ? p.params : noParams, p.skin };
                 }
             }
         });
@@ -368,7 +413,7 @@ namespace Crucible {
                 }
                 ps.slotKey[slot]    = key;
                 ps.slotBucket[slot] = static_cast<uint32_t>(ps.buckets.size());
-                ps.buckets.push_back(Bucket{ key, 0, 0 });
+                ps.buckets.push_back(Bucket{ key });
             }
             return ps.buckets[ps.slotBucket[slot]];
         };
@@ -378,10 +423,16 @@ namespace Crucible {
             fn(ps.immediate);
         };
 
-        // Count.
+        const auto orientationOf = [&](const SortItem& item) -> uint32_t {
+            const glm::mat4& model = item.ref & kImmediateRef
+                ? m_renderQueue[item.ref & ~kImmediateRef].model : m_proxies[item.ref].model;
+            return IsMirroredTransform(model) ? 1u : 0u;
+        };
+
+        // Count each winding separately: an instanced draw has one front-face state.
         uint32_t total = 0;
         forEachList([&](const HitList& list) {
-            for (const SortItem& item : list.items) { ++bucketOf(item.key).count; }
+            for (const SortItem& item : list.items) { ++bucketOf(item.key).count[orientationOf(item)]; }
             total += static_cast<uint32_t>(list.items.size());
         });
 
@@ -390,14 +441,20 @@ namespace Crucible {
         for (uint32_t b = 0; b < ps.keyOrder.size(); ++b) { ps.keyOrder[b] = b; }
         std::sort(ps.keyOrder.begin(), ps.keyOrder.end(), [&](uint32_t a, uint32_t b) { return ps.buckets[a].key < ps.buckets[b].key; });
         uint32_t first = 0;
-        for (uint32_t b : ps.keyOrder) { ps.buckets[b].first = first; first += ps.buckets[b].count; ps.buckets[b].count = 0; }
+        for (uint32_t b : ps.keyOrder) for (uint32_t orientation = 0; orientation < 2; ++orientation) {
+            auto& bucket = ps.buckets[b];
+            bucket.first[orientation] = first;
+            first += bucket.count[orientation];
+            bucket.count[orientation] = 0;
+        }
 
         // Place (count is rebuilt as each bucket's fill level).
         ps.grouped.resize(total);
         forEachList([&](const HitList& list) {
             for (const SortItem& item : list.items) {
                 Bucket& bucket = bucketOf(item.key);
-                ps.grouped[bucket.first + bucket.count++] = item;
+                const uint32_t orientation = orientationOf(item);
+                ps.grouped[bucket.first[orientation] + bucket.count[orientation]++] = item;
             }
         });
 
@@ -405,15 +462,17 @@ namespace Crucible {
 
     void RenderScene::BuildOutlineBatches(std::vector<DrawBatch>& out) {
 
+        if (m_outlineUserData.empty()) return;
         ResolveOutlineProxies();
         m_casterItems.clear();
+        // A model entity owns several proxies. Outline every part sharing its entity key.
         for (uint32_t id : m_outlineProxies) {
             if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid) {
                 // The material only when the mask needs it (a cut-out leaf's outline follows the leaf).
                 const MaterialHandle material = ResolveMaterial(m_proxyDraw[id].material);
                 m_casterItems.push_back(RenderItem{ m_proxies[id].mesh,
                                                     m_resources.NeedsMaterialInDepthPasses(material) ? material : MaterialHandle{},
-                                                    m_proxies[id].model });
+                                                    m_proxies[id].model, m_proxies[id].params, m_proxies[id].skin });
             }
         }
         if (!m_casterItems.empty()) {
@@ -436,19 +495,21 @@ namespace Crucible {
             // Depth-only passes keep the item's material as given (Invalid unless it is cut-out or
             // double-sided), so their batches merge across ordinary materials.
             const MaterialHandle material = byMaterial ? ResolveMaterial(item.material) : item.material;
+            const bool mirrored = IsMirroredTransform(item.model);
 
             const uint32_t index = AllocateInstances(1);
-            m_instanceScratch[index] = InstanceData{ item.model, item.params };
+            m_instanceScratch[index] = InstanceData{ item.model, item.params, item.skin };
             ++added;
 
             if (!batches.empty()) {
                 DrawBatch& last = batches.back();
-                if (last.mesh == item.mesh && last.material == material && last.firstInstance + last.instanceCount == index) {
+                if (last.mesh == item.mesh && last.material == material && last.mirrored == mirrored &&
+                    last.firstInstance + last.instanceCount == index) {
                     ++last.instanceCount;
                     continue;
                 }
             }
-            batches.push_back(DrawBatch{ item.mesh, material, index, 1 });
+            batches.push_back(DrawBatch{ item.mesh, material, index, 1, mirrored });
         }
         return added;
 
@@ -464,7 +525,9 @@ namespace Crucible {
         // references it yet. The caller re-points this frame index's sets at the new buffer.
         if (count > m_instanceCapacity[frameIndex]) {
             uint32_t capacity = m_instanceCapacity[frameIndex];
-            while (capacity < count) { capacity *= 2; }
+            while (capacity < count) {
+                capacity = static_cast<uint32_t>(std::min<uint64_t>(uint64_t(capacity) * 2, m_maxInstanceCount));
+            }
             m_instanceBuffers[frameIndex].Create(m_context, vk::DeviceSize{ capacity } * sizeof(InstanceData),
                 vk::BufferUsageFlagBits::eStorageBuffer,
                 vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
@@ -481,24 +544,13 @@ namespace Crucible {
 
     void RenderScene::ResolveOutlineProxies() {
 
-        constexpr uint32_t kNone = 0xFFFFFFFFu;
-        bool stale = false;
-        for (std::size_t i = 0; i < m_outlineUserData.size(); ++i) {
-            const uint32_t id = m_outlineProxies[i];
-            if (id < m_proxies.size() && m_proxies[id].alive && m_proxies[id].userData == m_outlineUserData[i]) { continue; }
-            m_outlineProxies[i] = kNone;
-            stale = true;
+        if (m_outlineResolvedRevision == m_proxyRevision) return;
+        m_outlineProxies.clear();
+        for (uint32_t id = 0; id < m_proxies.size(); ++id) {
+            if (m_proxies[id].alive && std::find(m_outlineUserData.begin(), m_outlineUserData.end(),
+                    m_proxies[id].userData) != m_outlineUserData.end()) m_outlineProxies.push_back(id);
         }
-        if (!stale) { return; }
-
-        // Stale or never looked up: one linear scan for all of them together (selection changes
-        // are rare; a selected entity with no proxy, e.g. a light, costs one cheap scan per frame).
-        for (uint32_t p = 0; p < m_proxies.size(); ++p) {
-            if (!m_proxies[p].alive) { continue; }
-            for (std::size_t i = 0; i < m_outlineUserData.size(); ++i) {
-                if (m_outlineProxies[i] == kNone && m_proxies[p].userData == m_outlineUserData[i]) { m_outlineProxies[i] = p; break; }
-            }
-        }
+        m_outlineResolvedRevision = m_proxyRevision;
 
     }   // RenderScene::ResolveOutlineProxies()
 
@@ -524,6 +576,17 @@ namespace Crucible {
 
     }   // anonymous namespace
 
+    bool RenderScene::GetObjectBounds(std::uint64_t userData, glm::vec3& boundsMin, glm::vec3& boundsMax) const {
+        AABB bounds;
+        for (const auto& proxy : m_proxies) {
+            if (proxy.alive && proxy.userData == userData && proxy.spatial != SpatialIndex::kInvalid)
+                bounds = AABB::Union(bounds, m_spatial.GetBounds(proxy.spatial));
+        }
+        if (!bounds.IsValid()) return false;
+        boundsMin = bounds.min; boundsMax = bounds.max;
+        return true;
+    }
+
     bool RenderScene::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const {
 
         const float len = glm::length(direction);
@@ -540,7 +603,7 @@ namespace Crucible {
             const GpuMesh& mesh = m_resources.Meshes()[p.mesh.id];
 
             float tHit = -1.0f;
-            if (mesh.cpuIndices.empty()) {
+            if (mesh.cpuIndices.empty() || !p.palette.empty()) {
                 tHit = tBox;   // no geometry kept: the tight box is the best we can do
             } else {
                 // Into object space: t is preserved because the mapping is affine.

@@ -529,11 +529,18 @@ namespace Crucible {
         vk::CullModeFlags cullBound   = p.cull;
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, p.solid);
         if (p.dynamicCull) { cmd.setCullMode(cullBound); }
+        bool mirroredBound = false;
+        if (p.dynamicFrontFace) { cmd.setFrontFace(vk::FrontFace::eCounterClockwise); }
 
         MeshHandle     boundMesh;
         MaterialHandle boundMaterial;
         uint32_t       indexCount = 0;
         for (const DrawBatch& batch : batches) {
+
+            if (p.dynamicFrontFace && batch.mirrored != mirroredBound) {
+                cmd.setFrontFace(batch.mirrored ? vk::FrontFace::eClockwise : vk::FrontFace::eCounterClockwise);
+                mirroredBound = batch.mirrored;
+            }
 
             if (!(batch.material == boundMaterial)) {
                 const MaterialData* data = batch.material.IsValid() && batch.material.id < m_materials.size()

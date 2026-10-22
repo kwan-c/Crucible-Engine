@@ -27,6 +27,7 @@ endif()
 
 # Link against Crucible engine
 target_link_libraries(Game PRIVATE Engine)
+crucible_deploy_mono(Game)
 
 # Set output name and Visual Studio debugging directory
 set_target_properties(Game PROPERTIES

@@ -23,6 +23,7 @@
 #include <Core.h>
 #include "ECS/ECSAudioSystem.h"
 #include "Input/InputSystem.h"   // the game's cursor lock, see the end of ImGuiManager::Update
+#include "UI/UISystem.h"         // UI::IsMenuOpen: the game's in-game menu owns the cursor while open
 
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
@@ -31,8 +32,10 @@
 #include "ImGui/Panels/ImGuiPanel_Hierarchy.h"
 #include "ImGui/Panels/ImGuiPanel_SceneView.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
+#include "ImGui/Panels/ImGuiPanel_UIView.h"
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/Panels/ImGuiPanel_Console.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
 
 
@@ -121,6 +124,36 @@ namespace {
 		}
 
 		ImGui::DockBuilderFinish(dockspace);
+	}
+
+	// A panel added after imgui.ini was last saved has no entry in it. With a saved layout present,
+	// BuildDefaultLayout() is skipped, so ImGui would open that panel as a floating window. Dock each
+	// such panel next to a panel sharing its m_dockArea instead (e.g. the UI view joins Scene / Game).
+	// Panels the ini already knows are left alone, so a panel the user moved stays where they put it.
+	// Must run before the panels' first Begin(), which is when ImGui reads a window's dock id.
+	void DockPanelsNewToIni()
+	{
+		auto& panels = Crucible::EditorManager::GetInstance().m_panels;
+
+		for (auto& entry : panels)
+		{
+			auto const& p = entry.second;
+			if (!p->m_docked || p->m_panelName.empty()) continue;
+			if (ImGui::FindWindowSettingsByID(ImHashStr(p->m_panelName.c_str())) != nullptr) continue;   // known to the ini
+
+			for (auto& other : panels)
+			{
+				auto const& q = other.second;
+				if (q == p || !q->m_docked || q->m_dockArea != p->m_dockArea || q->m_panelName.empty()) continue;
+
+				ImGuiWindowSettings const* settings = ImGui::FindWindowSettingsByID(ImHashStr(q->m_panelName.c_str()));
+				if (settings != nullptr && settings->DockId != 0)
+				{
+					ImGui::DockBuilderDockWindow(p->m_panelName.c_str(), settings->DockId);
+					break;
+				}
+			}
+		}
 	}
 }
 // ---- dock layout (end) ----
@@ -226,6 +259,8 @@ void Crucible::ImGuiManager::Update(float dt) {
 		g_forceReset = false;
 		if (force || !HasUserLayout(dockspace_id))
 			BuildDefaultLayout(dockspace_id, viewport->WorkSize);
+		else
+			DockPanelsNewToIni();   // the saved layout stays; only panels it has never seen get docked
 	}
 
 	ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f), ImGuiDockNodeFlags_PassthruCentralNode);
@@ -252,6 +287,10 @@ void Crucible::ImGuiManager::Update(float dt) {
 		currentPanel.second->Update(dt);
 	}
 
+	// Whether the cursor was locked at the end of last frame's editor update, i.e. before this
+	// frame's systems ran (see the Esc rule below).
+	static bool s_cursorLockedLastFrame = false;
+
 	// The game's mouse look, with Unity's Game-view cursor rules. The game locks the cursor
 	// when Play or Resume starts (ECSPlayerControllerSystem); getting it back is the editor's
 	// job: Esc frees it, a left click on the Game view takes it again, and Pause / Stop always
@@ -260,9 +299,15 @@ void Crucible::ImGuiManager::Update(float dt) {
 		ImGuiIO& io = ImGui::GetIO();
 		if (core->GetPlayState() == PlayState::Playing) {
 			auto gameView = EditorManager::GetInstance().GetPanel<GameView>(ImguiPanels::GAMESCENE);
-			if (Input::IsMouseLocked() && Input::IsPressed(KeyCode::Escape))
+			// Esc frees the cursor only if it was already locked before this frame's systems ran:
+			// the game's UIMenuSystem also answers Esc, and closing its menu re-locks the cursor this
+			// same frame - the editor must not undo that.
+			if (Input::IsMouseLocked() && s_cursorLockedLastFrame && Input::IsPressed(KeyCode::Escape))
 				Input::SetMouseLocked(false);
-			else if (!Input::IsMouseLocked() && gameView && gameView->IsViewportHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+			// ...but not when the click is on the game's UI (that click is for a button), nor while the
+			// game wants a free cursor (its menu is open, or a title-screen canvas is shown).
+			else if (!Input::IsMouseLocked() && gameView && gameView->IsViewportHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
+			         && !Input::IsPointerOverUI() && !UI::IsCursorNeeded())
 				Input::SetMouseLocked(true);
 		}
 		else if (Input::IsMouseLocked()) {
@@ -274,6 +319,8 @@ void Crucible::ImGuiManager::Update(float dt) {
 		// NoMouse makes the editor ignore the mouse until the cursor is free again.
 		if (Input::IsMouseLocked()) io.ConfigFlags |=  ImGuiConfigFlags_NoMouse;
 		else                        io.ConfigFlags &= ~ImGuiConfigFlags_NoMouse;
+
+		s_cursorLockedLastFrame = Input::IsMouseLocked();
 	}
 }
 
@@ -336,7 +383,8 @@ void Crucible::EditorManager::Init(Core& core)
 	//
 	// Panels in the same dock area become tabs, ordered by their ImguiPanels value.
 	m_panels[ImguiPanels::EDITORSCENE] = std::make_shared<SceneView>(core.GetRenderer(), core.GetResources(), core.GetScenes(), core.GetWorld());
-	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(core.GetRenderer());
+	m_panels[ImguiPanels::UISCENE] = std::make_shared<UIView>(core.GetRenderer(), core.GetWorld());
+	m_panels[ImguiPanels::GAMESCENE] = std::make_shared<GameView>(core.GetRenderer(), core.GetConfig().project);
 	m_panels[ImguiPanels::MENU] = std::make_shared<Menu>(core.GetScenes(), core.GetAssets());
 	m_panels[ImguiPanels::HIERARCHY] = std::make_shared<Hierarchy>(core.GetWorld(), core.GetResources(), core.GetScenes());
 	m_panels[ImguiPanels::INSPECTOR] = std::make_shared<Inspector>(core.GetWorld(), core.GetRenderer(), core.GetScenes(), core.GetAssets());
@@ -346,6 +394,7 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(core.GetAssets(), core.GetScenes(), audio);   // audio may be null: previews just do nothing
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>(core);   // queues Play/Pause/Resume/Stop on Core
+	m_panels[ImguiPanels::ANIMATOR] = std::make_shared<AnimatorPanel>(core);
 
 	for (auto& panel : m_panels)
 		panel.second->Init();

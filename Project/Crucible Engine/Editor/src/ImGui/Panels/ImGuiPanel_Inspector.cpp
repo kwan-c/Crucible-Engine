@@ -11,24 +11,49 @@
 */
 
 #include "ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/EditorWidgets.h"
 #include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
 #include "Scene/SceneManager.h"
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
+#include "Resources/ModelResource.h"
+#include "Resources/RenderedModel.h"
+#include "Animation/ModelSockets.h"
+#include "Scripting/ScriptRuntime.h"
+#include "Scripting/EntityScriptSystem.h"
+#include "Scripting/ScriptAuthoring.h"
+#include "Core.h"
 #include "Undo/EntityCommands.h"
 #include "../EditorWidgets.h"
+#include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
 #include <algorithm>
 #include <memory>
 #include <utility>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 #include <string>
+#include <tuple>
+#include <type_traits>
 #include <vector>
 
 namespace {
+	constexpr char ProjectScriptAssembly[] = "Managed/Crucible.Scripts.dll";
+	constexpr char ProjectScriptNamespace[] = "Crucible.Scripts";
+	template<class T> std::string ComponentHeader(const T&) { return std::string(Crucible::ComponentTraits<T>::name); }
+	std::string ComponentHeader(const Crucible::ScriptComponent& script) {
+		return script.className.empty() ? "Missing C# script" : script.className + ".cs";
+	}
+
+	bool SameScriptName(std::string_view a, std::string_view b) {
+		auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? c + ('a' - 'A') : c; };
+		return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(),
+			[&](char left, char right) { return lower(left) == lower(right); });
+	}
+
 	// One Unity-style constraints row: "Freeze Position   [ ] X  [ ] Y  [ ] Z".
 	// Both rows line their checkboxes up at the same x, past the longer of the two labels.
 	bool DrawFreezeRow(char const* label, bool& x, bool& y, bool& z) {
@@ -53,8 +78,8 @@ namespace {
 
 	// ---- Add Component rules --------------------------------------------------------------
 	//
-	// Three hooks, each a do-nothing template plus specialisations/overloads for the components
-	// that need them. ALL of them must be declared above AddNewComponent: a template only sees
+	// Four hooks, each a do-nothing template plus specialisations/overloads for the components
+	// that need them. ALL of them must be declared above AddNewComponent / MakeComponentRemover: a template only sees
 	// overloads declared before it, and a missing one silently falls back to the do-nothing version.
 	//
 	// The physics rules come from ECSPhysicsSystem:
@@ -109,6 +134,12 @@ namespace {
 	void AddRequiredComponents(Crucible::World&, Crucible::Entity) {}
 
 	template <>
+	void AddRequiredComponents<Crucible::AnimatedModel>(Crucible::World& world, Crucible::Entity entity) {
+		if (!world.HasComponent<Crucible::MeshRenderer>(entity))
+			world.AddComponent<Crucible::MeshRenderer>(entity, Crucible::MeshRenderer{});
+	}
+
+	template <>
 	void AddRequiredComponents<Crucible::RigidBody>(Crucible::World& world, Crucible::Entity entity) {
 		if (world.HasComponent<Crucible::CharacterController>(entity)) {
 			CRU_USER_WARN("RigidBody on entity {} has no effect: it has a CharacterController, which moves itself", entity.index);
@@ -135,6 +166,87 @@ namespace {
 		if (world.HasComponent<Crucible::RigidBody>(entity)) {
 			CRU_USER_WARN("Entity {}: its RigidBody is ignored now that it has a CharacterController - consider removing it", entity.index);
 		}
+	}
+
+	// ---- UI rules (UI/UIComponents.h): Unity's [RequireComponent] for the UI types ----
+	//   - UIImage, UIText, UISlider -> need a UIRect: it is where they sit and how big they are.
+	//   - UIButton          -> needs a UIRect, and a UIImage: the button's picture, which its
+	//                          state colours tint.
+	//   - All of them (UIRect too) are only drawn under an entity with a UICanvas. That is a
+	//     warning, not an automatic add: the canvas is normally a parent entity, not this one.
+
+	// True when the entity or one of its ancestors has a UICanvas.
+	bool IsUnderUICanvas(Crucible::World& world, Crucible::Entity entity) {
+		for (Crucible::Entity e = entity; e.IsValid(); e = world.GetParent(e)) {
+			if (world.HasComponent<Crucible::UICanvas>(e)) return true;
+		}
+		return false;
+	}
+
+	void WarnIfNotUnderUICanvas(Crucible::World& world, Crucible::Entity entity) {
+		if (!IsUnderUICanvas(world, entity)) {
+			CRU_USER_WARN("Entity {}: not under a UICanvas, so it won't be drawn - make it a child of an entity with a UICanvas", entity.index);
+		}
+	}
+
+	void EnsureUIRect(Crucible::World& world, Crucible::Entity entity, char const* addedName) {
+		if (!world.HasComponent<Crucible::UIRect>(entity)) {
+			world.AddComponent<Crucible::UIRect>(entity, Crucible::UIRect{});
+			CRU_USER_INFO("Entity {}: also added a UIRect - a {} needs one for its position and size", entity.index, addedName);
+		}
+		WarnIfNotUnderUICanvas(world, entity);
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		WarnIfNotUnderUICanvas(world, entity);
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIImage>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIImage");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIText>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIText");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UISlider>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UISlider");
+	}
+
+	template <>
+	void AddRequiredComponents<Crucible::UIButton>(Crucible::World& world, Crucible::Entity entity) {
+		EnsureUIRect(world, entity, "UIButton");
+		if (!world.HasComponent<Crucible::UIImage>(entity)) {
+			world.AddComponent<Crucible::UIImage>(entity, Crucible::UIImage{});
+			CRU_USER_INFO("Entity {}: also added a UIImage - it is the button's picture, tinted by the button's state colours", entity.index);
+		}
+	}
+
+	// 4. Why T can't be removed from this entity right now (the Remove Component item is greyed
+	//    out with this tooltip), or nullptr if it can. The other side of the "also added" rules
+	//    in hook 3: a component another one depends on stays until that one is removed (Unity's
+	//    [RequireComponent] blocks removal the same way).
+	template <typename T>
+	char const* RemoveBlockedReason(Crucible::World&, Crucible::Entity) { return nullptr; }
+
+	template <>
+	char const* RemoveBlockedReason<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		if (world.HasComponent<Crucible::UIButton>(entity)) return "The UIButton on this entity needs it.\nRemove the UIButton (and UIImage) first.";
+		if (world.HasComponent<Crucible::UIImage>(entity))  return "The UIImage on this entity needs it for its position and size.\nRemove the UIImage first.";
+		if (world.HasComponent<Crucible::UIText>(entity))   return "The UIText on this entity needs it for its position and size.\nRemove the UIText first.";
+		if (world.HasComponent<Crucible::UISlider>(entity)) return "The UISlider on this entity needs it for its position and size.\nRemove the UISlider first.";
+		return nullptr;
+	}
+
+	template <>
+	char const* RemoveBlockedReason<Crucible::UIImage>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::UIButton>(entity)
+			? "The UIButton on this entity uses it as its picture.\nRemove the UIButton first."
+			: nullptr;
 	}
 
 	// MUST come after every hook above.
@@ -164,6 +276,11 @@ namespace {
 	template <typename T>
 	std::function<void()> MakeComponentRemover(Crucible::World& world, Crucible::Entity entity) {
 		if constexpr (Crucible::RemovableComponent<T>) {
+			if (char const* reason = RemoveBlockedReason<T>(world, entity)) {
+				// The menu greys these out, so this only fires if something else calls it.
+				CRU_USER_WARN("Cannot remove {} from entity {}: {}", Crucible::ComponentTraits<T>::name, entity.index, reason);
+				return {};
+			}
 			return [&world, entity] {
 				world.RemoveComponent<T>(entity);
 				CRU_USER_INFO("Removed {} from entity {}", Crucible::ComponentTraits<T>::name, entity.index);
@@ -199,6 +316,8 @@ namespace {
 			case Crucible::ResourceKind::Material: return "material";
 			case Crucible::ResourceKind::Texture:  return "texture";
 			case Crucible::ResourceKind::Audio:    return "audio";
+			case Crucible::ResourceKind::Model:    return "model";
+			case Crucible::ResourceKind::AnimatorController: return "animator controller";
 		}
 		return "unknown";
 	}
@@ -409,6 +528,22 @@ void Crucible::Inspector::Update(float) {
 			}
 
 			DrawEntityInspector(m_selected);
+			if (m_world.HasComponent<SocketAttachment>(m_selected) && ImGui::Button("Detach socket (keep world pose)")) {
+				CommitPendingEdit();
+				auto& history = EditorManager::GetInstance().GetHistory();
+				const auto key = history.KeyOf(m_selected);
+				const ReparentCommand::Placement beforePlacement{history.KeyOf(m_world.GetParent(m_selected)),
+					m_world.GetSiblingIndex(m_selected), *m_world.Read<Transform>(m_selected)};
+				const auto before = EntityState::Capture(m_world, m_selected);
+				if (DetachModelSocket(m_world, m_selected, true)) {
+					const ReparentCommand::Placement afterPlacement{kNullEntity, 0, *m_world.Read<Transform>(m_selected)};
+					std::vector<std::unique_ptr<EditorCommand>> parts;
+					parts.push_back(std::make_unique<ReparentCommand>(key, beforePlacement, afterPlacement, "Detach socket"));
+					parts.push_back(std::make_unique<EntityStateCommand>(key, before, EntityState::Capture(m_world, m_selected), "Detach socket"));
+					history.Push(std::make_unique<GroupCommand>(std::move(parts), "Detach socket"));
+					m_scenes.MarkDirty();
+				} else CRU_USER_WARN("Cannot detach socket: its world pose is unavailable or cannot be stored as Transform TRS.");
+			}
 			DrawAddComponentButton(m_selected);
 
 			// A drag keeps its widget active across many frames: commit once it is released,
@@ -421,13 +556,35 @@ void Crucible::Inspector::Update(float) {
 		} else {
 			ImGui::TextDisabled("Nothing selected");
 		}
+		DrawCreateScriptModal();
 	}
 
 	ImGui::End();
 }
 
 void Crucible::Inspector::DrawEntityInspector(Entity entity) {
-	ImGui::Text("Entity %u", entity.index);
+	// Name, at the top (Unity). Applied when the field is left (see m_nameBuffer); the edit
+	// grouping makes the whole rename ONE undo step. Left blank, it becomes "Entity N".
+	if (m_world.Read<EntityName>(entity)) {
+		if (!(m_nameEntity == entity)) { ApplyPendingName(); }   // another entity's unfinished name
+		if (!m_nameDirty) {
+			m_nameBuffer = m_world.Read<EntityName>(entity)->name;   // shows renames from anywhere (undo, scripts)
+			m_nameEntity = entity;
+		}
+
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted("Name");
+		ImGui::SameLine();
+		ImGui::SetNextItemWidth(-FLT_MIN);
+		ImGui::PushID(static_cast<int>(entity.index));   // another entity gets a fresh field, not this text
+		if (ImGui::InputText("##EntityName", &m_nameBuffer)) {
+			m_nameDirty = true;
+			NoteEdit("Rename");
+		}
+		bool const left = ImGui::IsItemDeactivated();
+		ImGui::PopID();
+		if (left) { ApplyPendingName(); }   // before this frame's commit captures the "after" state
+	}
 	ImGui::Separator();
 
 	bool changed = false;
@@ -442,17 +599,19 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform>)                         \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \
-				std::string const header(ComponentTraits<T>::name);                                          \
-				ImGui::PushID(header.c_str());                                                               \
+				std::string const header = ComponentHeader(*component);                                     \
+				ImGui::PushID(ComponentTraits<T>::name.data());                                               \
 				bool const open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);    \
 				if constexpr (RemovableComponent<T>) {                                                       \
 					if (ImGui::BeginPopupContextItem("##ComponentMenu")) {                                   \
-						if (ImGui::MenuItem("Remove Component"))                                             \
+						char const* const removeBlocked = RemoveBlockedReason<T>(m_world, entity);           \
+						if (ImGui::MenuItem("Remove Component", nullptr, false, removeBlocked == nullptr))   \
 							{ deferredRemove = MakeComponentRemover<T>(m_world, entity); removeLabel = "Remove " + header; }  \
+						if (removeBlocked) ImGui::SetItemTooltip("%s", removeBlocked);                       \
 						ImGui::EndPopup();                                                                   \
 					}                                                                                        \
 				}                                                                                            \
@@ -482,8 +641,11 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 	}
 
 	if (ImGui::BeginPopup("AddComponentPopup")) {
-		// Add component selection logic here
-		if (ImGui::IsWindowAppearing()) { m_addComponentFilter.Clear(); ImGui::SetKeyboardFocusHere(); }
+		if (ImGui::IsWindowAppearing()) {
+			m_addComponentFilter.Clear();
+			RefreshScriptClasses(ProjectScriptAssembly);
+			ImGui::SetKeyboardFocusHere();
+		}
 		m_addComponentFilter.Draw("##search", 200.0f);
 
 		bool any = false;
@@ -491,7 +653,7 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 		// Same X-macro as the inspector loop. Skips mandatory components (Transform,
 		// WorldTransform, HierarchyNode), World-managed ones, and ones already present.
 #define CRU_ADD_COMPONENT_ITEM(T)																			    \
-		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value) {									        \
+		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !std::is_same_v<T, ScriptComponent>) { \
 			std::string_view const name = ComponentTraits<T>::name;											        \
 			if (!m_world.HasComponent<T>(entity) &&															        \
 				m_addComponentFilter.PassFilter(name.data(), name.data() + name.size())) {					        \
@@ -509,14 +671,61 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 #undef CRU_ADD_COMPONENT_ITEM
 
+		// ScriptComponent is an implementation detail here: users attach a named C# class.
+		auto* core = EditorManager::GetInstance().GetCore();
+		const auto* attached = m_world.Read<ScriptComponent>(entity);
+		const char* blocked = core && core->IsInPlaySession() ? "Stop to attach or create scripts." :
+			attached && !attached->className.empty() ?
+			"One script per entity is supported. Remove the existing script component before attaching another." : nullptr;
+		std::string search = m_addComponentFilter.InputBuf;
+		const auto first = search.find_first_not_of(" \t\r\n");
+		search = first == std::string::npos ? "" : search.substr(first, search.find_last_not_of(" \t\r\n") - first + 1);
+		bool exactScript = false, scriptHeading = false;
+		for (const auto& type : m_scriptClasses) {
+			const auto fullName = (type.nameSpace.empty() ? "" : type.nameSpace + ".") + type.name;
+			exactScript |= SameScriptName(search, type.name) || SameScriptName(search, fullName);
+			if (!m_addComponentFilter.PassFilter(fullName.c_str())) continue;
+			if (!scriptHeading) { ImGui::SeparatorText("C# scripts"); scriptHeading = true; }
+			any = true;
+			ImGui::BeginDisabled(blocked != nullptr);
+			if (ImGui::Selectable((fullName + " (C#)").c_str()))
+				AssignScript(entity, ProjectScriptAssembly, type.nameSpace, type.name);
+			ImGui::EndDisabled();
+			if (blocked) ImGui::SetItemTooltip("%s", blocked);
+		}
+		if (!search.empty() && !exactScript) {
+			if (!scriptHeading) ImGui::SeparatorText("C# scripts");
+			any = true;
+			std::error_code ec;
+			const auto source = std::filesystem::path(m_assets.GetAssetRoot()).parent_path() /
+				"ManagedScripts/Scripts" / (search + ".cs");
+			// Never suggest creating a duplicate source file just because its assembly is stale.
+			if (ScriptAuthoring::IsIdentifier(search) && std::filesystem::exists(source, ec)) {
+				ImGui::TextDisabled("Source file already exists.");
+				ImGui::TextDisabled("Close, build scripts and restart to attach it.");
+			} else {
+				const bool validName = ScriptAuthoring::IsIdentifier(search);
+				ImGui::BeginDisabled(blocked != nullptr || !validName);
+				if (ImGui::Selectable(("Create C# script \"" + search + "\"").c_str()))
+					RequestCreateScript(entity, search, ProjectScriptNamespace);
+				ImGui::EndDisabled();
+				ImGui::SetItemTooltip("%s", blocked ? blocked : !validName ?
+					"Use letters, digits and underscores, starting with a letter or underscore." :
+					"Create and attach a new C# script. Save the scene, close, build and restart before Play.");
+			}
+		}
+		if (!m_scriptPickerError.empty()) {
+			ImGui::TextDisabled("Script class list unavailable (hover for details)");
+			ImGui::SetItemTooltip("%s", m_scriptPickerError.c_str());
+		}
 		if (!any) {
-			ImGui::TextDisabled("No components available");
+			ImGui::TextDisabled("No matching components or scripts");
 		}
 		ImGui::EndPopup();
 	}
 }
 
-bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
+bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool importedDefault) {
 	// What gets saved for a material is only MeshRenderer::materialAsset (an id). Everything this
 	// section edits - tint, factors, textures - lives in the material itself, so it survives a
 	// reload only if that material is a .mat file and the edits are written to it (SaveMaterial).
@@ -597,7 +806,9 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 
 	bool const editable = rm->IsMaterialFile(renderer.materialAsset);
 	if (!editable) {
-		if (renderer.materialAsset == 0) {
+		if (importedDefault && renderer.materialAsset == 0) {
+			ImGui::TextDisabled("Inherited material. Make an editable copy to override its textures or factors.");
+		} else if (renderer.materialAsset == 0) {
 			// Created by older code (or at runtime) with no asset behind it.
 			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "Unsaved material (no asset) - lost on reload");
 		} else {
@@ -605,8 +816,7 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 		}
 		ImGui::SameLine();
 		if (ImGui::Button("Make Editable Copy")) {
-			// Factors copy across. Textures copy only if they came from Assets/ - ones embedded in
-			// a .glb have no id and SerializeMaterial will warn and save that slot empty.
+			// ResourceManager preserves standalone and compiled-model texture references.
 			std::string const source = renderer.materialAsset ? rm->GetName(renderer.materialAsset) : std::string("Material");
 			return createAsset(m_renderer.GetMaterialData(renderer.material), baseName(source), "Make Editable Copy");
 		}
@@ -615,10 +825,13 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer) {
 		// How many objects in the scene use this .mat - edits below change every one of them.
 		int users = 0;
 		m_world.CreateQuery<const MeshRenderer>().ForEach(
-			[&](Entity, MeshRenderer const& other) { if (other.materialAsset == renderer.materialAsset) { ++users; } });
+			[&](Entity, MeshRenderer const& other) {
+				if (other.materialAsset == renderer.materialAsset) ++users;
+				users += static_cast<int>(std::count(other.materialOverrides.begin(), other.materialOverrides.end(), renderer.materialAsset));
+			});
 
 		if (users > 1) {
-			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "Shared by %d objects - edits change all of them", users);
+			ImGui::TextColored(Crucible::EditorTheme::GetPalette().warning, "Used by %d assignments - edits change all of them", users);
 			ImGui::SameLine();
 			if (ImGui::SmallButton("Make Unique")) {
 				return createAsset(m_renderer.GetMaterialData(renderer.material),
@@ -1001,23 +1214,263 @@ bool Crucible::Inspector::DrawPickFromSky(Skybox& skybox) {
 	return applied;
 }
 
+bool Crucible::Inspector::DrawComponentExtras(AnimatedModel& animation) {
+    auto* resources = EditorManager::GetInstance().GetResources();
+    bool changed = AssetRefField("Controller", ResourceKind::AnimatorController, animation.controllerAsset);
+    if (animation.controllerAsset && ImGui::Button("Edit Controller Graph")) {
+        if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) animator->RequestOpen(animation.controllerAsset);
+    }
+    const auto* renderer = m_world.Read<MeshRenderer>(m_selected);
+    if (!resources || !renderer || !renderer->modelAsset) {
+        ImGui::TextWrapped("Choose a compiled Model in MeshRenderer. Animation supplies its pose; MeshRenderer supplies its materials and visibility.");
+        return changed;
+    }
+    const auto model = resources->GetModel(renderer->modelAsset);
+    if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console."); return changed; }
+    if (animation.controllerAsset) {
+        const auto definition = resources->GetAnimatorController(animation.controllerAsset);
+        if (!definition) { ImGui::TextWrapped("Controller could not be loaded. See Console."); return changed; }
+        if (animation.controllerFailed) { ImGui::TextWrapped("Controller is incompatible with this model. See Console."); return changed; }
+        if (!animation.controller.Initialized() || animation.evaluatedController != animation.controllerAsset || animation.controllerDefinition != definition) return changed;
+        auto& runtime = animation.controller;
+        const uint32_t current = runtime.CurrentState(), next = runtime.NextState();
+        ImGui::Text("State: %s", current < definition->states.size() ? definition->states[current].name.c_str() : "-");
+        if (next < definition->states.size()) ImGui::Text("To: %s (%.0f%%)", definition->states[next].name.c_str(), runtime.TransitionWeight() * 100.0f);
+        else ImGui::TextDisabled("To: -"); // reserve the transition row so playback never shifts the controls
+        ImGui::Text("Time: %.3fs | cycles: %.3f", runtime.Time(), runtime.NormalizedProgress());
+        if (ImGui::Button(animation.playing ? "Pause controller" : "Play controller")) animation.playing = !animation.playing;
+        ImGui::SameLine();
+        if (ImGui::Button("Stop controller")) {
+            runtime.Reset(*definition, *model, nullptr, animation.speed); animation.playing = false;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Restart controller")) {
+            runtime.Reset(*definition, *model, nullptr, animation.speed); animation.playing = true;
+        }
+        ImGui::SeparatorText("Runtime parameters");
+        for (uint32_t index = 0; index < definition->parameters.size(); ++index) {
+            const auto& parameter = definition->parameters[index];
+            const auto* value = runtime.Parameter(index);
+            if (!value) continue;
+            ImGui::PushID(static_cast<int>(index));
+            switch (parameter.type) {
+            case AnimatorParameterType::Float: {
+                float number = value->number;
+                if (ImGui::DragFloat(parameter.name.c_str(), &number, 0.01f)) runtime.SetFloat(parameter.name, number);
+                break;
+            }
+            case AnimatorParameterType::Integer: {
+                int integer = value->integer;
+                if (ImGui::InputInt(parameter.name.c_str(), &integer)) runtime.SetInteger(parameter.name, integer);
+                break;
+            }
+            case AnimatorParameterType::Bool: {
+                bool boolean = value->boolean;
+                if (ImGui::Checkbox(parameter.name.c_str(), &boolean)) runtime.SetBool(parameter.name, boolean);
+                break;
+            }
+            case AnimatorParameterType::Trigger:
+                if (ImGui::Button(parameter.name.c_str())) runtime.SetTrigger(parameter.name);
+                if (value->boolean) { ImGui::SameLine(); ImGui::TextDisabled("pending"); }
+                break;
+            }
+            ImGui::PopID();
+        }
+        ImGui::TextWrapped("Runtime controls and parameters are temporary. Controller defaults are stored in the .animcontroller asset.");
+        return changed;
+    }
+    changed = ImGui::Checkbox("Loop", &animation.loop) || changed;
+    const auto name = [&](uint32_t index) {
+        if (index >= model->animations.size()) return std::string("Rest pose");
+        const auto& clip = model->animations[index];
+        return std::to_string(index) + ": " + (clip.name.empty() ? "Unnamed clip" : clip.name);
+    };
+    if (ImGui::BeginCombo("Clip", name(animation.clip).c_str())) {
+        if (ImGui::Selectable("Rest pose", animation.clip == InvalidModelIndex)) {
+            animation.clip = InvalidModelIndex; animation.time = 0.0f; changed = true;
+        }
+        for (uint32_t index = 0; index < model->animations.size(); ++index) {
+            if (ImGui::Selectable(name(index).c_str(), animation.clip == index)) {
+                animation.clip = index; animation.time = 0.0f; changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    if (animation.clip < model->animations.size()) {
+        const float duration = model->animations[animation.clip].duration;
+        if (ImGui::Button(animation.playing ? "Pause" : "Play")) {
+            if (!animation.playing && animation.time >= duration && animation.speed >= 0.0f) animation.time = 0.0f;
+            if (!animation.playing && animation.time <= 0.0f && animation.speed < 0.0f) animation.time = duration;
+            animation.playing = !animation.playing;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Stop")) { animation.playing = false; animation.time = 0.0f; }
+        if (ImGui::SliderFloat("Time (seconds)", &animation.time, 0.0f, duration, "%.3f")) animation.playing = false;
+        ImGui::TextDisabled("Playback buttons and scrub time are temporary; Play On Start is saved.");
+    }
+    ImGui::Text("%zu nodes, %zu meshes, %zu skins, %zu clips", model->nodes.size(), model->meshes.size(),
+                model->skins.size(), model->animations.size());
+    return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(SocketAttachment& socket) {
+    auto* resources = EditorManager::GetInstance().GetResources();
+    const auto parent = m_world.GetParent(m_selected);
+    const auto* owner = m_world.Read<MeshRenderer>(parent);
+    if (!resources || !owner || !owner->modelAsset) {
+        ImGui::TextWrapped("Parent this entity to a model entity, then choose its attachment node.");
+        return false;
+    }
+    const auto model = resources->GetModel(owner->modelAsset);
+    if (!model) { ImGui::TextWrapped("Parent model could not be loaded."); return false; }
+    bool changed = false;
+    const std::string preview = socket.modelAsset == owner->modelAsset && socket.node < model->nodes.size()
+        ? std::to_string(socket.node) + ": " + model->nodes[socket.node].name : "Choose / rebind node";
+    if (ImGui::BeginCombo("Parent model node", preview.c_str())) {
+        for (uint32_t i = 0; i < model->nodes.size(); ++i) {
+            if (!IsModelNodeInSubtree(*model, i, owner->modelRoot)) continue;
+            const std::string label = std::to_string(i) + ": " + model->nodes[i].name;
+            if (ImGui::Selectable(label.c_str(), socket.modelAsset == owner->modelAsset && socket.node == i)) {
+                socket.modelAsset = owner->modelAsset; socket.node = i; changed = true;
+            }
+        }
+        ImGui::EndCombo();
+    }
+    glm::mat4 frame;
+    ImGui::TextWrapped("%s", ToString(ModelSocketFrame(m_world, parent, socket, frame)));
+    ImGui::TextWrapped("Transform is the alignment offset in the animated node's coordinates. "
+        "Add AnimatedModel to a weapon for independent playback. Empty socket entities can hold muzzle markers or other children.");
+    return changed;
+}
+
 bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
-	// The pickers above only change meshAsset/materialAsset. Pull the runtime handles in line with
-	// them so the mesh label and the material section below act on what is actually drawn.
-	// (Cheap: ResourceManager caches, so this is a map lookup per frame.)
-	if (ResourceManager* rm = EditorManager::GetInstance().GetResources()) {
-		rm->Resolve(renderer);
-	}
+    auto* rm = EditorManager::GetInstance().GetResources();
+    if (!rm) return false;
+    bool changed = false;
+    uint64_t modelId = renderer.modelAsset;
+    if (AssetRefField("Model", ResourceKind::Model, modelId)) {
+        renderer.modelAsset = modelId; renderer.modelRoot = InvalidModelIndex; renderer.materialOverrides.clear();
+        if (modelId) { renderer.meshAsset = 0; renderer.mesh = {}; }
+        changed = true;
+    }
+    if (!renderer.modelAsset) {
+        uint64_t meshId = renderer.meshAsset;
+        if (AssetRefField("Mesh", ResourceKind::Mesh, meshId)) { rm->AssignMesh(renderer, meshId); changed = true; }
+        rm->Resolve(renderer);
+        if (renderer.mesh.IsValid()) ImGui::Text("Mesh: %s (id %u)", m_renderer.GetMeshName(renderer.mesh).c_str(), renderer.mesh.id);
+        ImGui::SeparatorText("Material");
+        return DrawMaterialSection(renderer) || changed;
+    }
+    const auto model = rm->GetRenderedModel(renderer.modelAsset);
+    if (!model) { ImGui::TextWrapped("Model could not be loaded. See Console."); return changed; }
+    const auto& nodes = model->definition->nodes;
+    const std::string rootLabel = renderer.modelRoot == InvalidModelIndex ? "Whole model" :
+        renderer.modelRoot < nodes.size() ? std::to_string(renderer.modelRoot) + ": " + nodes[renderer.modelRoot].name : "Invalid node";
+    if (ImGui::BeginCombo("Model part root", rootLabel.c_str())) {
+        if (ImGui::Selectable("Whole model", renderer.modelRoot == InvalidModelIndex)) { renderer.modelRoot = InvalidModelIndex; changed = true; }
+        for (uint32_t i = 0; i < nodes.size(); ++i) {
+            const std::string label = std::to_string(i) + ": " + nodes[i].name;
+            if (ImGui::Selectable(label.c_str(), renderer.modelRoot == i)) { renderer.modelRoot = i; changed = true; }
+        }
+        ImGui::EndCombo();
+    }
+    ImGui::SetItemTooltip("Draw this subtree at the entity origin. Choose a rig root to retain animation of its descendants.\nWhole model preserves the authored scene coordinates.");
+    ImGui::SeparatorText("All materials");
+    ImGui::TextWrapped("Leave Material empty to use imported defaults. Slot overrides below take precedence.");
+    MeshRenderer globalView;
+    globalView.materialAsset = renderer.materialAsset;
+    globalView.material = renderer.materialAsset ? rm->GetMaterial(renderer.materialAsset) : renderer.material;
+    if (!globalView.material.IsValid() && !model->materials.empty()) globalView.material = model->materials.front();
+    if (DrawMaterialSection(globalView, !renderer.materialAsset && !renderer.material.IsValid())) {
+        renderer.materialAsset = globalView.materialAsset;
+        renderer.material = globalView.materialAsset ? globalView.material : MaterialHandle{};
+        changed = true;
+    }
+    ImGui::SeparatorText("Material slots");
+    for (size_t slot = 0; slot < model->materials.size(); ++slot) {
+        ImGui::PushID(static_cast<int>(slot));
+        const auto& imported = model->definition->materials[slot];
+        const std::string label = std::to_string(slot) + ": " + (imported.name.empty() ? "Unnamed material" : imported.name);
+        if (ImGui::TreeNode(label.c_str())) {
+            const uint64_t current = slot < renderer.materialOverrides.size() ? renderer.materialOverrides[slot] : 0;
+            MeshRenderer view;
+            view.materialAsset = current;
+            view.material = current ? rm->GetMaterial(current) :
+                renderer.materialAsset ? rm->GetMaterial(renderer.materialAsset) :
+                renderer.material.IsValid() ? renderer.material : model->materials[slot];
+            if (DrawMaterialSection(view, !current)) {
+                if (renderer.materialOverrides.size() <= slot) renderer.materialOverrides.resize(slot + 1, 0);
+                renderer.materialOverrides[slot] = view.materialAsset;
+                changed = true;
+            }
+            ImGui::TreePop();
+        }
+        ImGui::PopID();
+    }
+    return changed;
+}
 
-	if (renderer.mesh.IsValid()) {
-		ImGui::Text("Mesh: %s (id %u)", m_renderer.GetMeshName(renderer.mesh).c_str(), renderer.mesh.id);
-	}
-	else {
-		ImGui::TextDisabled("Mesh: none");
-	}
+bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {
+	// sceneAsset is hidden from the generic fields (a raw id means nothing to a person): pick the
+	// scene from the project's scene files instead. Only shown when the button loads a scene.
+	if (button.onClick != UIButton::ClickAction::LoadScene) { return false; }
 
-	ImGui::SeparatorText("Material");
-	return DrawMaterialSection(renderer);   // your existing function, returning bool
+	AssetEntry const* current = button.sceneAsset != 0 ? m_assets.FindByGuid(xresource::instance_guid{ button.sceneAsset }) : nullptr;
+	char const* preview = current ? current->virtualPath.c_str() : (button.sceneAsset != 0 ? "(missing scene)" : "None");
+
+	bool changed = false;
+	if (ImGui::BeginCombo("scene", preview)) {
+		if (ImGui::Selectable("None", button.sceneAsset == 0)) { button.sceneAsset = 0; changed = true; }
+		for (AssetEntry const* entry : m_assets.GetByType(AssetType::Scene)) {
+			bool const selected = entry->guid.m_Value == button.sceneAsset;
+			if (ImGui::Selectable(entry->virtualPath.c_str(), selected)) { button.sceneAsset = entry->guid.m_Value; changed = true; }
+			if (selected) { ImGui::SetItemDefaultFocus(); }
+		}
+		ImGui::EndCombo();
+	}
+	if (button.sceneAsset == 0) { ImGui::TextDisabled("Pick the scene this button loads."); }
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UISlider& slider) {
+	// The direction, drawn here instead of with the generic fields because a change between
+	// horizontal and vertical must also turn the slider's rect: a 240 x 24 slider switched to
+	// Bottom-to-Top would otherwise run along its 24 px height, with almost no room to drag.
+	// Unity's Slider does the same. Both changes land in the same edit, so one undo reverts both.
+	struct Option { char const* name; UISlider::Direction value; };
+	static constexpr Option kOptions[] = {
+		{ "LeftToRight", UISlider::Direction::LeftToRight },
+		{ "RightToLeft", UISlider::Direction::RightToLeft },
+		{ "BottomToTop", UISlider::Direction::BottomToTop },
+		{ "TopToBottom", UISlider::Direction::TopToBottom },
+	};
+	auto isVertical = [](UISlider::Direction d) { return d == UISlider::Direction::BottomToTop || d == UISlider::Direction::TopToBottom; };
+
+	char const* current = kOptions[0].name;
+	for (Option const& option : kOptions) { if (option.value == slider.direction) { current = option.name; } }
+
+	bool changed = false;
+	if (ImGui::BeginCombo("direction", current)) {
+		for (Option const& option : kOptions) {
+			bool const selected = option.value == slider.direction;
+			if (ImGui::Selectable(option.name, selected) && !selected) {
+				if (isVertical(option.value) != isVertical(slider.direction)) {
+					// Turn the rect: width <-> height, and the pivot with it, so it keeps its shape
+					// around the same point. Only touches UIRect's fields - no structural change, so
+					// `slider` stays valid.
+					if (UIRect* rect = m_world.GetComponent<UIRect>(m_selected)) {
+						std::swap(rect->size.x, rect->size.y);
+						std::swap(rect->pivot.x, rect->pivot.y);
+					}
+				}
+				slider.direction = option.value;
+				changed = true;
+			}
+			if (selected) { ImGui::SetItemDefaultFocus(); }
+		}
+		ImGui::EndCombo();
+	}
+	return changed;
 }
 
 // ===========================================================================
@@ -1032,7 +1485,21 @@ void Crucible::Inspector::NoteEdit(std::string label) {
 	}
 }
 
+void Crucible::Inspector::ApplyPendingName() {
+	if (!m_nameDirty) { return; }
+	m_nameDirty = false;
+	if (!m_world.IsAlive(m_nameEntity)) { return; }
+
+	EntityName const* current = m_world.Read<EntityName>(m_nameEntity);
+	if (current && current->name == m_nameBuffer) { return; }   // typed, then changed back
+
+	m_world.SetEntityName(m_nameEntity, m_nameBuffer);   // blank -> "Entity N" (World's naming rules)
+	m_nameBuffer = m_world.Read<EntityName>(m_nameEntity)->name;
+	m_scenes.MarkDirty();
+}
+
 void Crucible::Inspector::CommitPendingEdit() {
+	ApplyPendingName();   // a name still being typed is part of this edit
 	if (!m_editOpen) { return; }
 	m_editOpen = false;
 	std::string label = std::exchange(m_editLabel, std::string{});
@@ -1048,4 +1515,152 @@ void Crucible::Inspector::CommitPendingEdit() {
 	history.Push(std::make_unique<EntityStateCommand>(
 		history.KeyOf(m_editEntity), std::move(m_editBefore), std::move(after), std::move(label)));
 	m_editBefore.clear();
+}
+
+void Crucible::Inspector::RefreshScriptClasses(const std::string& assemblyPath) {
+    m_scriptAssembly = assemblyPath;
+    m_scriptClasses.clear(); m_scriptPickerError.clear();
+    auto* core = EditorManager::GetInstance().GetCore();
+    if (!core || !core->GetScriptRuntime().IsRunning()) {
+        m_scriptPickerError = "Class selection requires a Mono-enabled build. You can still create C# source files.";
+        return;
+    }
+    auto& host = core->GetScriptRuntime();
+    ScriptAssemblyHandle assembly;
+    if (!host.LoadAssembly(assemblyPath, assembly) || !host.DiscoverEntityClasses(assembly, m_scriptClasses))
+        m_scriptPickerError = host.LastError();
+    std::sort(m_scriptClasses.begin(), m_scriptClasses.end(), [](const auto& a, const auto& b) {
+        return std::tie(a.name, a.nameSpace) < std::tie(b.name, b.nameSpace);
+    });
+}
+
+void Crucible::Inspector::RequestCreateScript(Entity entity, std::string name, std::string nameSpace) {
+    m_scriptCreateTarget = entity;
+    m_scriptNewName = std::move(name); m_scriptNewNamespace = std::move(nameSpace);
+    m_scriptCreateError.clear(); m_scriptCreateRequested = true;
+}
+
+void Crucible::Inspector::AssignScript(Entity entity, const std::string& assembly, const std::string& nameSpace,
+                                     const std::string& name) {
+    CommitPendingEdit();
+    m_editBefore = EntityState::Capture(m_world, entity); m_editEntity = entity;
+    if (!m_world.HasComponent<ScriptComponent>(entity)) m_world.AddComponent<ScriptComponent>(entity, ScriptComponent{});
+    auto* script = m_world.Write<ScriptComponent>(entity);
+    script->assembly = assembly; script->nameSpace = nameSpace; script->className = name;
+    script->fields.clear();
+    if (m_scriptNoticeTarget == entity) m_scriptNotice.clear();
+    NoteEdit("Attach " + name); m_scenes.MarkDirty(); CommitPendingEdit();
+}
+
+bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
+    if (script.className.empty()) {
+        ImGui::TextDisabled("Remove this component and attach a C# script through Add Component.");
+        return false;
+    }
+    auto* core = EditorManager::GetInstance().GetCore();
+    const bool inSession = core && core->IsInPlaySession();
+    auto* runtime = core && core->GetScriptRuntime().IsRunning() ? &core->GetScriptRuntime() : nullptr;
+    if (m_scriptFieldAssembly != script.assembly || m_scriptFieldNamespace != script.nameSpace || m_scriptFieldClass != script.className) {
+        m_scriptFieldAssembly = script.assembly; m_scriptFieldNamespace = script.nameSpace; m_scriptFieldClass = script.className;
+        m_scriptFieldDefaults.clear(); m_scriptFieldError.clear();
+        ScriptAssemblyHandle assembly;
+        if (!runtime) m_scriptFieldError = "A Mono-enabled Editor is needed to inspect compiled public fields.";
+        else if (!runtime->LoadAssembly(script.assembly, assembly) ||
+                 !runtime->GetEntityFieldDefaults(assembly, script.nameSpace, script.className, m_scriptFieldDefaults))
+            m_scriptFieldError = runtime->LastError();
+    }
+    auto fields = m_scriptFieldDefaults;
+    if (!m_scriptFieldError.empty()) fields = script.fields; // authored values survive unavailable assemblies
+    else for (auto& field : fields) {
+        const auto saved = std::find_if(script.fields.begin(), script.fields.end(), [&](const auto& value) { return SameScriptField(field, value); });
+        if (saved != script.fields.end()) field = *saved;
+    }
+    EntityScriptStatus status;
+    if (core) if (auto* system = core->Systems().FindSystem<EntityScriptSystem>()) status = system->Status(m_selected);
+    ScriptInstanceInfo info;
+    bool live = inSession && runtime && status.instance && runtime->GetInstanceInfo(status.instance, info) && info.state != ScriptInstanceState::Faulted;
+    if (live) {
+        if (m_scriptFieldReadFailure.value == status.instance.value) live = false;
+        else if (!runtime->ReadEntityFields(status.instance, fields)) {
+            m_scriptFieldReadFailure = status.instance; m_scriptFieldReadError = runtime->LastError(); live = false;
+        }
+    }
+    bool changed = false;
+    ImGui::BeginDisabled(inSession && !live);
+    for (auto field : fields) {
+        std::string label;
+        for (size_t i = 0; i < field.name.size(); ++i) {
+            const char c = field.name[i];
+            if (c == '_') { label += ' '; continue; }
+            if (i && c >= 'A' && c <= 'Z' && field.name[i-1] >= 'a' && field.name[i-1] <= 'z') label += ' ';
+            label += label.empty() && c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+        }
+        if (std::count_if(fields.begin(), fields.end(), [&](const auto& other) { return other.name == field.name; }) > 1)
+            label += " (" + field.declaringType + ")";
+        label += "###" + field.name;
+        ImGui::PushID(field.declaringType.c_str());
+        bool edited = false;
+        switch (field.type) {
+        case ScriptFieldType::Boolean: edited = ImGui::Checkbox(label.c_str(), &field.boolean); break;
+        case ScriptFieldType::Int32: edited = ImGui::InputScalar(label.c_str(), ImGuiDataType_S32, &field.integer); break;
+        case ScriptFieldType::Single: edited = ImGui::InputFloat(label.c_str(), &field.single, 0, 0, "%.6g"); break;
+        case ScriptFieldType::Double: edited = ImGui::InputDouble(label.c_str(), &field.real, 0, 0, "%.12g"); break;
+        case ScriptFieldType::String:
+            edited = ImGui::InputText(label.c_str(), &field.text);
+            if (edited) field.stringIsNull = false;
+            break;
+        }
+        if (edited && ((field.type == ScriptFieldType::Single && !std::isfinite(field.single)) ||
+                       (field.type == ScriptFieldType::Double && !std::isfinite(field.real)))) edited = false;
+        if (edited) {
+            if (live) runtime->SetEntityFields(status.instance, {field}); // Play edits stay on the managed instance
+            else {
+                auto saved = std::find_if(script.fields.begin(), script.fields.end(), [&](const auto& value) { return SameScriptField(field, value); });
+                if (saved == script.fields.end()) script.fields.push_back(std::move(field)); else *saved = std::move(field);
+                changed = true;
+            }
+        }
+        ImGui::PopID();
+    }
+    ImGui::EndDisabled();
+    if (fields.empty() && m_scriptFieldError.empty()) ImGui::TextDisabled("No public fields.");
+    std::string error = !status.error.empty() ? status.error : m_scriptFieldError;
+    if (status.instance.value == m_scriptFieldReadFailure.value && status.instance) error = m_scriptFieldReadError;
+    if (!error.empty()) { ImGui::TextDisabled("Script unavailable or failed (hover for details)"); ImGui::SetItemTooltip("%s", error.c_str()); }
+    if (m_scriptNoticeTarget == m_selected && !m_scriptNotice.empty()) ImGui::TextWrapped("%s", m_scriptNotice.c_str());
+    return changed;
+}
+
+void Crucible::Inspector::DrawCreateScriptModal() {
+    if (m_scriptCreateRequested && !ImGui::IsPopupOpen("AddComponentPopup")) {
+        ImGui::OpenPopup("Create C# script");
+        m_scriptCreateRequested = false;
+    }
+    if (!ImGui::BeginPopupModal("Create C# script", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
+    ImGui::InputText("Class name", &m_scriptNewName);
+    ImGui::InputText("Namespace", &m_scriptNewNamespace);
+    ImGui::TextUnformatted("Creates C# source and attaches it to the selected entity.\nSave the scene, close Editor, build scripts, then restart.");
+    auto* core = EditorManager::GetInstance().GetCore();
+    const auto* existing = m_world.IsAlive(m_scriptCreateTarget) ? m_world.Read<ScriptComponent>(m_scriptCreateTarget) : nullptr;
+    const bool valid = m_scriptCreateTarget == m_selected && m_world.IsAlive(m_scriptCreateTarget) &&
+        (!existing || existing->className.empty()) &&
+        (!core || !core->IsInPlaySession());
+    ImGui::BeginDisabled(!valid);
+    if (ImGui::Button("Create and assign")) {
+        std::filesystem::path output;
+        const auto projectRoot = std::filesystem::path(m_assets.GetAssetRoot()).parent_path();
+        if (ScriptAuthoring::Create(projectRoot, m_scriptNewName, m_scriptNewNamespace, output, m_scriptCreateError)) {
+            AssignScript(m_selected, ProjectScriptAssembly, m_scriptNewNamespace, m_scriptNewName);
+            m_scriptNoticeTarget = m_selected;
+            m_scriptNotice = "Source created. Save the scene, close Editor, build scripts and restart before Play.";
+            CRU_USER_INFO("Created entity script: {}", output.string());
+            ImGui::CloseCurrentPopup();
+        }
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine();
+    if (ImGui::Button("Cancel")) ImGui::CloseCurrentPopup();
+    if (!valid) ImGui::TextUnformatted("Select the original entity, stop Play and check its script component before creating.");
+    if (!m_scriptCreateError.empty()) ImGui::TextWrapped("%s", m_scriptCreateError.c_str());
+    ImGui::EndPopup();
 }

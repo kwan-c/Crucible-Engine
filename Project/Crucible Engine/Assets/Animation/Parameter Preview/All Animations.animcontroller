@@ -1,0 +1,543 @@
+{
+    "version": 1,
+    "entryState": 2,
+    "parameters": [
+        {
+            "name": "Clip",
+            "type": "Integer",
+            "default": 2
+        },
+        {
+            "name": "Select",
+            "type": "Trigger",
+            "default": false
+        }
+    ],
+    "states": [
+        {
+            "name": "Fast_Boost",
+            "clip": 0,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "Fast_BoostStop",
+            "clip": 1,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "Fast_Neutral",
+            "clip": 2,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "Heavy_Jump",
+            "clip": 3,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "Heavy_Walk",
+            "clip": 4,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "Canon_Fire",
+            "clip": 5,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "Canon_Neutral",
+            "clip": 6,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "Canon_Reload",
+            "clip": 7,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "CrossBowArm_Fire",
+            "clip": 8,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "CrossBowArm_Neutral",
+            "clip": 9,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "CrossBowArm_Reload",
+            "clip": 10,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "CrossBow_Fire",
+            "clip": 11,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "CrossBow_Neutral",
+            "clip": 12,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "MaceArm_Fire",
+            "clip": 13,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "MaceArm_Neutral",
+            "clip": 14,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "SwordArm_Fire",
+            "clip": 15,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "SwordArm_Neutral",
+            "clip": 16,
+            "speed": 1.0,
+            "loop": true
+        },
+        {
+            "name": "ThrowingAxe_Fire",
+            "clip": 17,
+            "speed": 1.0,
+            "loop": false
+        },
+        {
+            "name": "ThrowingAxe_Neutral",
+            "clip": 18,
+            "speed": 1.0,
+            "loop": true
+        }
+    ],
+    "transitions": [
+        {
+            "from": "Any",
+            "to": 0,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 0
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 1,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 1
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 2,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 2
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 3,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 3
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 4,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 4
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 5,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 5
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 6,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 6
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 7,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 7
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 8,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 8
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 9,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 9
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 10,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 10
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 11,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 11
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 12,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 12
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 13,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 13
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 14,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 14
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 15,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 15
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 16,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 16
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 17,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 17
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        },
+        {
+            "from": "Any",
+            "to": 18,
+            "duration": 0.12,
+            "conditions": [
+                {
+                    "parameter": 0,
+                    "mode": "Equals",
+                    "value": 18
+                },
+                {
+                    "parameter": 1,
+                    "mode": "If"
+                }
+            ],
+            "canTransitionToSelf": true
+        }
+    ],
+    "editor": {
+        "version": 1,
+        "positions": [
+            [
+                0.0,
+                0.0
+            ],
+            [
+                280.0,
+                0.0
+            ],
+            [
+                560.0,
+                0.0
+            ],
+            [
+                840.0,
+                0.0
+            ],
+            [
+                0.0,
+                145.0
+            ],
+            [
+                280.0,
+                145.0
+            ],
+            [
+                560.0,
+                145.0
+            ],
+            [
+                840.0,
+                145.0
+            ],
+            [
+                0.0,
+                290.0
+            ],
+            [
+                280.0,
+                290.0
+            ],
+            [
+                560.0,
+                290.0
+            ],
+            [
+                840.0,
+                290.0
+            ],
+            [
+                0.0,
+                435.0
+            ],
+            [
+                280.0,
+                435.0
+            ],
+            [
+                560.0,
+                435.0
+            ],
+            [
+                840.0,
+                435.0
+            ],
+            [
+                0.0,
+                580.0
+            ],
+            [
+                280.0,
+                580.0
+            ],
+            [
+                560.0,
+                580.0
+            ]
+        ],
+        "anyState": [
+            -280,
+            -150
+        ],
+        "previewModel": "9B2CE2DB6F5D40B7"
+    }
+}

@@ -113,7 +113,13 @@ namespace Crucible {
         MaterialHandle material;
         glm::mat4      model{ 1.0f };
         glm::vec4      params{ 1.0f, 0.0f, 0.0f, 0.0f };   // per-object material parameters, see InstanceData
+        glm::uvec4     skin{0u}; // palette offset/count in this frame's instance buffer
     };
+
+    inline bool IsMirroredTransform(const glm::mat4& model) {
+        // Double precision avoids determinant underflow at small model scales.
+        return glm::determinant(glm::dmat3(model)) < 0.0;
+    }
 
     /*************************************************************************
      \brief
@@ -208,7 +214,7 @@ namespace Crucible {
     /*************************************************************************
      \brief
         One drawn object, as the vertex shaders see it (set 0, binding 2:
-        StructuredBuffer<InstanceData>). 80 bytes under std430 and C++.
+        StructuredBuffer<InstanceData>). 96 bytes under std430 and C++.
      \details
         Every pass (main, shadow cascades, selection mask) of every view
         appends its objects to one per-frame array; a draw covers a
@@ -220,8 +226,11 @@ namespace Crucible {
         // material's emissive (glow), yzw = free for effects to come. Objects that share a
         // material can differ here and still be drawn in one instanced draw.
         glm::vec4 params{ 1.0f, 0.0f, 0.0f, 0.0f };
+        glm::uvec4 skin{0u}; // x = first palette entry, y = number of joints; zero = rigid
     };
-    static_assert(sizeof(InstanceData) == 80, "InstanceData must match the shaders' std430 stride.");
+    static_assert(sizeof(InstanceData) == 96, "InstanceData must match the shaders' std430 stride.");
+    static_assert(offsetof(InstanceData, params) == 64 && offsetof(InstanceData, skin) == 80,
+                  "InstanceData offsets must match ModelVertex.slang.");
 
     /*************************************************************************
      \brief  Push constant of the selection outline's composite pass

@@ -25,6 +25,7 @@
 
 namespace Crucible
 {
+    class ScriptRuntime;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -46,6 +47,10 @@ namespace Crucible
         void Run();
 
         Renderer& GetRenderer() const { return *m_renderer; }
+
+        // The settings this Core was started with (see EngineConfigLoader::LoadForApp).
+        const EngineConfig& GetConfig() const noexcept { return m_config; }
+        ScriptRuntime& GetScriptRuntime() const noexcept { return *m_scriptRuntime; }
 
         // Fixes the window's shape to `width`:`height` (e.g. 16, 9) so the game is framed the
         // same on every machine, or frees it again. Meant for the standalone game and its
@@ -154,6 +159,7 @@ namespace Crucible
         // Play mode: state, requests and the simulation switch. Declared after (so destroyed
         // before) the World, the buses and the systems.
         std::unique_ptr<PlayMode> m_playMode;
+        std::unique_ptr<ScriptRuntime> m_scriptRuntime;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;

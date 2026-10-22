@@ -28,6 +28,7 @@
 enum class ImguiPanels
 {
 	EDITORSCENE,
+	UISCENE,
 	GAMESCENE,
 	MENU,
 	HIERARCHY,

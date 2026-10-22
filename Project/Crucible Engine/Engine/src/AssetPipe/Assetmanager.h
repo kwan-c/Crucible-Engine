@@ -77,6 +77,7 @@ namespace Crucible {
         Material,
         Script,
         Text,
+        AnimatorController,
  
         Count
     };
@@ -665,7 +666,6 @@ namespace Crucible {
          *********************************************************************/
         static std::string ToLower(const std::string& str);
  
-    private:
         /*********************************************************************
          \brief
             Work out where the Assets folder is.
@@ -679,8 +679,13 @@ namespace Crucible {
             Tries, in order: the explicit path, the CRUCIBLE_ASSET_ROOT
             environment variable, then an upward walk from the executable's
             folder and from the working directory.
+
+            Public so code that runs before the AssetManager exists (the
+            engine config loader) can find files with the same rules.
          *********************************************************************/
         static std::filesystem::path FindAssetRoot(const std::string& explicitRoot);
+
+    private:
 
         /*********************************************************************
          \brief
