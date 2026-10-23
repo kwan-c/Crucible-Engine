@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                Declares ECSSystemManager: the top-level driver that
 *                owns an ECSSystemRegistry (see IECSSystemRegistry.h)
@@ -51,14 +51,20 @@
 *                EmitsGameplayEvents()
 *    -v1.7       SetSimulationActive(): SimulationOnly() systems are skipped
 *                while it is off; ResetSimulationSystems() for a new session
+*    -v1.8       component on/off routing for ReactiveTo<...>() systems:
+*                AttachWorld, per-system inboxes delivered before Update in
+*                the system's access scope (weak-linked World hooks); a
+*                removed component's queued changes are forgotten
 *
 **************************************************************************/
 #pragma once
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -200,6 +206,21 @@ namespace Crucible
         void Update(World& world);
 
         /*********************************************************************
+         \brief  Starts routing component on/off changes in `world` to the
+                 systems registered as reactive to them
+                 (RegisterSystem<T>().ReactiveTo<Components...>()).
+         \details Update() does this itself, so it is only needed to catch
+                  changes made before the first Update() (e.g. right after
+                  a scene loads in a startup script). Safe to call again;
+                  systems registered, or made reactive, later are picked up
+                  on the next call.
+                  The hooks it installs hold only a weak link to this
+                  manager: they do nothing once it is destroyed.
+         \note   Call outside Query iteration (it installs World hooks).
+         *********************************************************************/
+        void AttachWorld(World& world);
+
+        /*********************************************************************
          \brief  Calls Shutdown() on every initialised system, in reverse
                  execution order. Safe to call more than once.
          *********************************************************************/
@@ -290,13 +311,61 @@ namespace Crucible
             bool initialised = false;       // Init() succeeded, so Shutdown() is owed
             bool disabled = false;
 
+            // Reactive (ReactiveTo) inbox: every on/off change since the system last ran, in
+            // the order it happened - one callback each, so a switch off and back on is two.
+            // An entry whose component was removed is kept as `removed` (never delivered).
+            struct PendingActivation
+            {
+                Entity      entity;
+                ComponentId component;
+                bool        active;
+                bool        removed = false;
+            };
+            struct ActivationKey
+            {
+                std::uint32_t index;
+                std::uint32_t generation;
+                ComponentId   component;
+                bool operator==(const ActivationKey&) const = default;
+            };
+            struct ActivationKeyHash
+            {
+                std::size_t operator()(const ActivationKey& key) const noexcept
+                {
+                    const std::uint64_t entity = (static_cast<std::uint64_t>(key.index) << 32) | key.generation;
+                    return std::hash<std::uint64_t>{}(entity) ^ (std::hash<ComponentId>{}(key.component) * 0x9E3779B97F4A7C15ull);
+                }
+            };
+            std::vector<PendingActivation> activations;
+            std::unordered_map<ActivationKey, std::size_t, ActivationKeyHash> activationCount;   // queued entries per key
+
             void ClearOutboxes() noexcept
             {
                 engineOut.Clear();
                 gameplayOut.Clear();
                 networkOut.Clear();
             }
+
+            void ClearActivations() noexcept
+            {
+                activations.clear();
+                activationCount.clear();
+            }
         };
+
+        // What the World hooks reach the manager through: they keep only a weak_ptr to it, so
+        // a destroyed manager leaves nothing dangling in a World that outlives it.
+        struct ActivationRouter
+        {
+            ECSSystemManager* manager = nullptr;
+        };
+
+        // A component's active state changed (World hook): queue it for every reactive system.
+        void QueueActivation(Entity entity, ComponentId component, bool active);
+        // The component was removed (World hook): its queued changes belonged to that one, not to a re-added one.
+        void ForgetActivation(Entity entity, ComponentId component);
+        // Calls the system's OnComponentActivated/Deactivated for its inbox (inside its access scope).
+        void DeliverActivations(std::size_t index, World& world);
 
         /*********************************************************************
          \brief  Merges every system's outboxes of one stage into their
@@ -333,6 +402,9 @@ namespace Crucible
         bool m_simulationActive = true;           // false: SimulationOnly() systems are skipped
         bool m_iterating = false;                 // inside Init() or Update()
         std::thread::id m_mainThread{};           // thread that called Init(); MainThread systems run only here
+
+        std::shared_ptr<ActivationRouter> m_activationRouter;                  // created on first AttachWorld
+        std::unordered_map<World*, ComponentSignature> m_activationHooked;     // per World: ids with a routing hook
     };
 #ifdef _MSC_VER
 #pragma warning(pop)

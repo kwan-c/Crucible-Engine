@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Implementation of ComponentColumn's type-erased storage
 *                management (grow, push, swap-remove, move-between-columns).
@@ -25,6 +25,8 @@
 *    -v1.0       initial grow/push/swap-remove/move-between-columns implementation
 *    -v1.1       strong exception guarantee (commit-last appends, tick
 *                capacity reserved with data), PushBackMoved/PopBack
+*    -v1.2       on/off bytes (toggleable columns): reserved with the data,
+*                appended on, carried by MoveElementTo/SwapRemove
 *
 **************************************************************************/
 #include <algorithm>
@@ -44,12 +46,14 @@ namespace Crucible
 	}
 
 	ComponentColumn::ComponentColumn(ComponentColumn&& other)noexcept
-		:m_info(other.m_info), m_data(other.m_data), m_size(other.m_size), m_capacity(other.m_capacity),m_changedTicks(std::move(other.m_changedTicks))
+		:m_info(other.m_info), m_data(other.m_data), m_size(other.m_size), m_capacity(other.m_capacity),m_changedTicks(std::move(other.m_changedTicks)),
+		m_enabled(std::move(other.m_enabled)), m_disabledCount(other.m_disabledCount)
 	{
 		other.m_info = nullptr;
 		other.m_data = nullptr;
 		other.m_size = 0;
 		other.m_capacity = 0;
+		other.m_disabledCount = 0;
 	}
 
 	ComponentColumn& ComponentColumn::operator=(ComponentColumn&& other)noexcept
@@ -67,12 +71,15 @@ namespace Crucible
 		m_size = other.m_size;
 		m_capacity = other.m_capacity;
 		m_changedTicks = std::move(other.m_changedTicks);
+		m_enabled = std::move(other.m_enabled);
+		m_disabledCount = other.m_disabledCount;
 
 
 		other.m_info = nullptr;
 		other.m_data = nullptr;
 		other.m_size = 0;
 		other.m_capacity = 0;
+		other.m_disabledCount = 0;
 		return *this;
 	}
 
@@ -93,6 +100,7 @@ namespace Crucible
 
 		// Everything that can throw happens before the column is touched.
 		m_changedTicks.reserve(newCapacity);   // ticks first: later push_backs can then never throw
+		if (m_info->toggleable) m_enabled.reserve(newCapacity);   // same for the on/off bytes
 		auto* newData = static_cast<std::byte*>(::operator new(newCapacity * m_info->size, std::align_val_t{ m_info->alignment }));
 
 		// Relocate the live elements; moves/destructors are noexcept by contract.
@@ -122,6 +130,7 @@ namespace Crucible
 
 		// Commit: tick capacity was reserved with the data, so this can't throw.
 		m_changedTicks.push_back(0);
+		if (m_info->toggleable) m_enabled.push_back(1);   // a new component starts switched on
 		++m_size;
 		return slot;
 	}
@@ -135,6 +144,7 @@ namespace Crucible
 		else m_info->moveConstruct(slot, src);
 
 		m_changedTicks.push_back(0);
+		if (m_info->toggleable) m_enabled.push_back(1);   // MoveElementTo copies the source's state over this
 		++m_size;
 		return slot;
 	}
@@ -145,6 +155,11 @@ namespace Crucible
 		--m_size;
 		if (!m_info->isTriviallyDestructible) m_info->destroy(m_data + m_size * m_info->size);
 		m_changedTicks.pop_back();
+		if (!m_enabled.empty())
+		{
+			if (m_enabled.back() == 0) --m_disabledCount;
+			m_enabled.pop_back();
+		}
 	}
 
 	void ComponentColumn::SwapRemove(std::size_t row) noexcept
@@ -170,6 +185,14 @@ namespace Crucible
 		if (row != m_size - 1) m_changedTicks[row] = m_changedTicks[m_size - 1];
 		m_changedTicks.pop_back();
 
+		// The removed row's state goes with it; the last row's state follows its data into `row`.
+		if (!m_enabled.empty())
+		{
+			if (m_enabled[row] == 0) --m_disabledCount;
+			if (row != m_size - 1) m_enabled[row] = m_enabled[m_size - 1];
+			m_enabled.pop_back();
+		}
+
 		--m_size;
 	}
 
@@ -180,6 +203,11 @@ namespace Crucible
 
 		dst.PushBackMoved(At(row));
 		dst.m_changedTicks.back() = m_changedTicks[row];   // an archetype move is not a component change
+		if (!m_enabled.empty() && m_enabled[row] == 0)      // nor a switch on/off
+		{
+			dst.m_enabled.back() = 0;
+			++dst.m_disabledCount;
+		}
 	}
 
 	void ComponentColumn::Clear() noexcept
@@ -194,5 +222,7 @@ namespace Crucible
 		}
 		m_size = 0;
 		m_changedTicks.clear();
+		m_enabled.clear();
+		m_disabledCount = 0;
 	}
 }

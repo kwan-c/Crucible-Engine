@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                Declares IECSSystem: the base interface every ECS
 *                system (physics, rendering, audio, ...) must implement
@@ -36,6 +36,11 @@
 *                authorises ctx.events.EmitGameplay for a system
 *    -v1.7       SystemDesc::SimulationOnly() - runs only while the
 *                simulation is active (play mode)
+*    -v1.8       component on/off handling, set at registration:
+*                IECSSystem::ReactiveTo<T...>() / ReactiveComponents(),
+*                OnComponentActivated / OnComponentDeactivated;
+*                SystemDesc::reactiveComponents (for the schedule log).
+*                Filtered by default.
 *
 **************************************************************************/
 #pragma once
@@ -116,6 +121,9 @@ namespace Crucible
 		// true = runs only while the simulation is active (Playing); see
 		// ECSSystemManager::SetSimulationActive. Physics and gameplay set it.
 		bool simulationOnly = false;
+		// Components whose on/off changes this system is told about (IECSSystem::ReactiveTo, set
+		// at registration). Copied here by the manager for the schedule log; empty = filtered only.
+		ComponentSignature reactiveComponents;
 
 		std::vector<SystemDependency> runAfter;    // systems that must run before this one
 		std::vector<SystemDependency> runBefore;   // systems that must run after this one
@@ -260,6 +268,14 @@ namespace Crucible
 		}
 	};
 
+	class IECSSystem;
+	namespace Detail
+	{
+		// Whether System overrides OnComponentActivated or OnComponentDeactivated (defined below).
+		template <typename System>
+		consteval bool OverridesActivationCallbacks();
+	}
+
 	// base system class for ecs
 
 	/*************************************************************************
@@ -359,5 +375,98 @@ namespace Crucible
 				 after Init()), not every frame.
 		 *********************************************************************/
 		virtual void Describe([[maybe_unused]] SystemDesc& desc) const {}
+
+		/*********************************************************************
+		 \brief
+			Makes this system reactive to Components: besides the usual
+			query filtering, ECSSystemManager calls its OnComponentActivated
+			/ OnComponentDeactivated whenever one of them starts or stops
+			being active on an entity - switched on/off itself, or through a
+			component it requires (RigidBody when its Collider is switched
+			off). For systems that keep runtime state (physics bodies,
+			voices, gameplay state).
+		 \details
+			Meant to be chained onto registration; it returns the system
+			itself (its own type), so references keep working:
+			\code
+			m_systems.RegisterSystem<ECSPhysicsSystem>()
+				.ReactiveTo<Collider, RigidBody, CharacterController>();
+			auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(...)
+				.ReactiveTo<MeshRenderer>();
+			\endcode
+			Calling it again adds components; nothing removes them. A system
+			never made reactive is filtered only (the default). The manager
+			starts routing at its next Update (or AttachWorld), so configure
+			it at registration.
+		 \note   Fails to compile for a component that can't be switched off,
+				 for an empty list, and for a system that overrides neither
+				 callback.
+		 *********************************************************************/
+		template <ToggleableComponent... Components, typename Self>
+		Self& ReactiveTo(this Self& self);
+
+		/*********************************************************************
+		 \brief  The components this system is reactive to (ReactiveTo);
+				 empty for a filtered-only system.
+		 *********************************************************************/
+		const ComponentSignature& ReactiveComponents() const noexcept { return m_reactiveComponents; }
+
+		/*********************************************************************
+		 \brief  Reactive systems only (ReactiveTo): `component` - one the
+				 system is reactive to - started / stopped being active on
+				 entity: it, or a component it requires, was switched on/off.
+		 \details Delivered just before this system's next Update, inside
+				  its declared access scope, one call per change in the
+				  exact order the changes happened, across all entities
+				  and components. A component switched off and on again before
+				  delivery arrives as Deactivated then Activated. Not called
+				  for adding, removing or destroying components (changes
+				  queued for a component that is removed before delivery
+				  are dropped, even if it is added back), nor while
+				  the system isn't running (kept until it runs again; cleared
+				  when a play session starts or stops for SimulationOnly
+				  systems). An exception counts as a failure of the system's
+				  frame. Override either or both, public or private.
+		 *********************************************************************/
+		virtual void OnComponentActivated([[maybe_unused]] World& world, [[maybe_unused]] Entity entity,
+			[[maybe_unused]] ComponentId component) {}
+		virtual void OnComponentDeactivated([[maybe_unused]] World& world, [[maybe_unused]] Entity entity,
+			[[maybe_unused]] ComponentId component) {}
+
+	private:
+		ComponentSignature m_reactiveComponents;   // ReactiveTo
 	};
+
+	namespace Detail
+	{
+		template <typename System>
+		consteval bool OverridesActivationCallbacks()
+		{
+			using Callback = void (IECSSystem::*)(World&, Entity, ComponentId);
+			// The base versions are public, so a callback System can't reach from here is one
+			// System declared itself (private/protected override); a reachable one is System's
+			// own when its member pointer names System rather than IECSSystem.
+			bool overrides = false;
+			if constexpr (requires { &System::OnComponentActivated; })
+				overrides |= !std::is_same_v<decltype(&System::OnComponentActivated), Callback>;
+			else
+				overrides = true;
+			if constexpr (requires { &System::OnComponentDeactivated; })
+				overrides |= !std::is_same_v<decltype(&System::OnComponentDeactivated), Callback>;
+			else
+				overrides = true;
+			return overrides;
+		}
+	}
+
+	template <ToggleableComponent... Components, typename Self>
+	Self& IECSSystem::ReactiveTo(this Self& self)
+	{
+		static_assert(std::is_base_of_v<IECSSystem, Self>, "ReactiveTo: call it on a system");
+		static_assert(sizeof...(Components) > 0, "ReactiveTo<Components...>: name at least one component");
+		static_assert(Detail::OverridesActivationCallbacks<Self>(),
+			"ReactiveTo: this system overrides neither OnComponentActivated nor OnComponentDeactivated");
+		static_cast<IECSSystem&>(self).m_reactiveComponents |= MakeSignature<Components...>();
+		return self;
+	}
 }

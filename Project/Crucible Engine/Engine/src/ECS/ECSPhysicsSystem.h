@@ -58,6 +58,10 @@ namespace Crucible {
         void Shutdown() noexcept override;
         void Describe(SystemDesc& desc) const override;   // SimulationOnly: steps only while Playing
 
+        // Registered .ReactiveTo<CharacterController>() (Core): a CharacterController that is
+        // switched back on starts without the fall it had when it was switched off.
+        void OnComponentActivated(World& world, Entity entity, ComponentId component) override;
+
         // Physics belongs after gameplay has had its say and before rendering
         // reads the results - which is exactly what PostUpdate is for.
         SystemStage Stage() const override { return SystemStage::PostUpdate; }

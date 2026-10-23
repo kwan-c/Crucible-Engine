@@ -27,6 +27,13 @@ namespace Crucible {
 
 	namespace {
 
+		// A UI component switched off (World::SetComponentEnabled) - or one whose required
+		// component is - counts as missing: not laid out, drawn or clickable. Its data is kept.
+		template <typename T>
+		const T* ReadActive(World& world, Entity entity) {
+			return world.IsComponentActive<T>(entity) ? world.Read<T>(entity) : nullptr;
+		}
+
 		// 2D transforms as 3x3 matrices (column vectors, translation in the last column).
 		glm::mat3 Translate(Math::vec2 t) { glm::mat3 m(1.0f); m[2] = glm::vec3(t, 1.0f); return m; }
 
@@ -45,7 +52,7 @@ namespace Crucible {
 		// own space, and parentToScreen maps that space to the screen.
 		void LayoutNode(World& world, Entity entity, const Math::vec4& parentRect, const glm::mat3& parentToScreen, float scale,
 		                std::vector<UI::LayoutItem>& out, bool writeComputed) {
-			const UIRect* rect = world.Read<UIRect>(entity);
+			const UIRect* rect = ReadActive<UIRect>(world, entity);   // switched off: hidden, with its subtree
 			if (rect == nullptr) { return; }
 
 			const Math::vec2 parentMin(parentRect.x, parentRect.y);
@@ -326,9 +333,9 @@ namespace Crucible {
 
 		for (const LayoutItem& item : items) {
 			// The image (also a button's picture, or a background behind a slider).
-			if (const UIImage* image = world.Read<UIImage>(item.entity)) {
+			if (const UIImage* image = ReadActive<UIImage>(world, item.entity)) {
 				Math::vec4 colour = image->colour;
-				if (const UIButton* button = world.Read<UIButton>(item.entity)) { colour *= ButtonTint(*button); }
+				if (const UIButton* button = ReadActive<UIButton>(world, item.entity)) { colour *= ButtonTint(*button); }
 
 				// textureAsset is what's saved; the handle is resolved here every frame, like MeshRenderer.
 				TextureHandle texture = image->texture;
@@ -342,7 +349,7 @@ namespace Crucible {
 			}
 
 			// A slider draws its own parts on top: track, the filled part, then the handle.
-			if (const UISlider* slider = world.Read<UISlider>(item.entity)) {
+			if (const UISlider* slider = ReadActive<UISlider>(world, item.entity)) {
 				const SliderParts parts = LayoutSlider(item.rect, *slider, item.scale);
 				const Math::vec4 fade = SliderFade(*slider);   // whole slider, when disabled
 				quad(item, parts.track,  slider->trackColour * fade, TextureHandle{});
@@ -351,7 +358,7 @@ namespace Crucible {
 			}
 
 			// Text last, so a button's label sits on its picture.
-			const UIText* text = world.Read<UIText>(item.entity);
+			const UIText* text = ReadActive<UIText>(world, item.entity);
 			if (text == nullptr || resources == nullptr || text->text.empty() || text->colour.a <= 0.0f || !(item.scale > 0.0f)) { continue; }
 
 			const FontAsset* font = text->fontAsset != 0 ? resources->GetFont(text->fontAsset) : nullptr;
@@ -616,6 +623,14 @@ namespace Crucible {
 			.Affinity(SystemAffinity::MainThread);        // reads the Renderer and Input
 	}
 
+	// Switched off (or a component it requires was) mid-gesture: the gesture ends here, so
+	// switching it back on before release doesn't resume the drag or click. Delivered before
+	// Update, so the pointer stops counting as over the UI this frame.
+	void UIInputSystem::OnComponentDeactivated([[maybe_unused]] World& world, Entity entity, ComponentId component) {
+		if (component == ComponentTypeId<UIButton>() && entity == m_pressed)    { m_pressed = kNullEntity; }
+		if (component == ComponentTypeId<UISlider>() && entity == m_dragSlider) { m_dragSlider = kNullEntity; }
+	}
+
 	void UIInputSystem::Update(World& world, SystemContext& ctx) {
 
 		// Where the mouse is on the game screen. Nowhere while the cursor is locked (mouse-look:
@@ -638,13 +653,13 @@ namespace Crucible {
 		// disabled button still blocks (target stays set for IsPointerOverUI), but presses nothing.
 		Entity hoveredButton = kNullEntity;
 		if (target.IsValid()) {
-			if (const UIButton* button = world.Read<UIButton>(target); button && button->interactable) { hoveredButton = target; }
+			if (const UIButton* button = ReadActive<UIButton>(world, target); button && button->interactable) { hoveredButton = target; }
 		}
 
 		// The slider under the mouse, if it can be used.
 		Entity hoveredSlider = kNullEntity;
 		if (target.IsValid()) {
-			if (const UISlider* slider = world.Read<UISlider>(target); slider && slider->interactable) { hoveredSlider = target; }
+			if (const UISlider* slider = ReadActive<UISlider>(world, target); slider && slider->interactable) { hoveredSlider = target; }
 		}
 
 		// Press and click. A press that started on nothing (or on a blocker) clicks nothing.
@@ -655,7 +670,7 @@ namespace Crucible {
 		// Slider drag: the value follows the mouse - from the press (a jump to where it landed) until
 		// release, even outside the slider. Off the game screen it just holds its value.
 		if (m_dragSlider.IsValid() && onScreen) {
-			const UISlider* slider = world.Read<UISlider>(m_dragSlider);
+			const UISlider* slider = ReadActive<UISlider>(world, m_dragSlider);   // switched off mid-drag: stops following
 			const UI::LayoutItem* item = nullptr;
 			for (const UI::LayoutItem& candidate : m_layout) { if (candidate.entity == m_dragSlider) { item = &candidate; break; } }
 			if (slider && item) {

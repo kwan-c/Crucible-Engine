@@ -237,6 +237,9 @@ namespace Crucible {
 		  - Hovered: the mouse is over this button (and not pressing it).
 		  - Click: released over the same button it went down on.
 		  - Disabled: interactable is off. Never hovered, pressed or clicked.
+		  - Switched off (World::SetComponentEnabled on the UIButton / UISlider
+			or a component it requires): its press or drag is cancelled, so
+			switching it back on before release neither clicks nor drags.
 		Sliders: pressing one jumps its value to the mouse, dragging follows
 		it until release (even outside), each change sends
 		UIEvents::SliderChanged; Pressed while dragged, Hovered under the mouse.
@@ -263,6 +266,8 @@ namespace Crucible {
 
 	private:
 		void RunClickAction(World& world, Entity button);   // UIButton::onClick, after the event is sent
+		// ReactiveTo<UIButton, UISlider> (Core.cpp): a control switched off drops its press / drag.
+		void OnComponentDeactivated(World& world, Entity entity, ComponentId component) override;
 
 		Renderer&                   m_renderer;
 		SceneManager*               m_scenes = nullptr;

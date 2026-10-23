@@ -200,9 +200,12 @@ namespace Crucible {
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
-        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get());                            // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
-        m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
-        m_systems.RegisterSystem<ECSPhysicsSystem>();
+        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
+            .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
+        m_systems.RegisterSystem<ECSPlayerControllerSystem>()                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
+            .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
+        m_systems.RegisterSystem<ECSPhysicsSystem>()
+            .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());

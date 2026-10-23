@@ -34,6 +34,15 @@ namespace Crucible {
         desc.SimulationOnly();      // Playing only; Edit and Paused leave the keyboard to the editor
     }
 
+    // No longer driven by the keyboard: stand still, and drop a jump asked for this frame.
+    // Switched back on, the query below drives it again from the next Update.
+    void ECSPlayerControllerSystem::OnComponentDeactivated(World& world, Entity entity, [[maybe_unused]] ComponentId component) {
+        if (CharacterController* controller = world.GetComponent<CharacterController>(entity)) {
+            controller->SimpleMove(Math::vec3(0.0f, 0.0f, 0.0f));
+            controller->m_jumpHeight = 0.0f;
+        }
+    }
+
     /*!
         \brief
         Locks the cursor when Play or Resume starts, turns the camera pivot
@@ -106,7 +115,7 @@ namespace Crucible {
                     // mech that pitched with the camera would lie down to look at the
                     // floor. Written only when it changed, same reason as the pivot.
                     const PlayerController* player = world.Read<PlayerController>(mech);
-                    if (player != nullptr && player->m_faceCamera && yawRotation != parentRotation) {
+                    if (player != nullptr && world.IsComponentActive<PlayerController>(mech) && player->m_faceCamera && yawRotation != parentRotation) {
                         if (Transform* writable = world.GetComponent<Transform>(mech)) writable->rotation = yawRotation;
                         parentRotation = yawRotation;
                     }

@@ -160,7 +160,8 @@ namespace Crucible {
 
 		const Entity selected = GetSelectedEntity();
 
-		world.CreateQuery<const WorldTransform, const Light>()
+		// IncludeDisabled: a switched-off light keeps its (grey) gizmo, like one whose own flag is off.
+		world.BuildQuery<const WorldTransform, const Light>().IncludeDisabled().Build()
 			.ForEach([&](Entity entity, const WorldTransform& wt, const Light& light) {
 
 				if (!wt.valid) { return; }
@@ -173,7 +174,7 @@ namespace Crucible {
 				style.category  = DebugCategory::Lights;
 				style.depthTest = false;
 				style.color     = glm::vec4(glm::clamp(light.colour, glm::vec3(0.0f), glm::vec3(1.0f)), 1.0f);
-				if (!light.enabled) { style.color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f); }
+				if (!light.enabled || !world.IsComponentActive<Light>(entity)) { style.color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f); }
 
 				const bool isSelected = (entity == selected);
 				switch (light.type) {

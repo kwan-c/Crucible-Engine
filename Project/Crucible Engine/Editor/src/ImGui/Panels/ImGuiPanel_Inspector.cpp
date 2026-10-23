@@ -291,6 +291,57 @@ namespace {
 		}
 	}
 
+	// Header label with room on its left for the on/off checkbox (Unity style). "###" keeps the
+	// header's ID the component name, whatever text the header shows.
+	std::string HeaderLabelWithToggle(std::string const& header, std::string_view id) {
+		float const room  = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x;
+		float const space = std::max(ImGui::CalcTextSize(" ").x, 1.0f);
+		return std::string(static_cast<std::size_t>(room / space) + 1, ' ') + header + "###" + std::string(id);
+	}
+
+	// The on/off checkbox for components the ECS can switch off (World::SetComponentEnabled), drawn
+	// over the left end of the header just submitted (headerMin = its top-left). Template for the
+	// same reason as MakeComponentRemover: SetComponentEnabled<Transform> must not even be checked.
+	// Returns true when clicked; nowEnabled is the component's own on/off choice afterwards.
+	template <typename T>
+	bool DrawEnabledToggle(Crucible::World& world, Crucible::Entity entity, ImVec2 headerMin, bool& nowEnabled) {
+		if constexpr (Crucible::ToggleableComponent<T>) {
+			ImVec2 const resume = ImGui::GetCursorScreenPos();
+			ImGui::SetCursorScreenPos(ImVec2(headerMin.x + ImGui::GetTreeNodeToLabelSpacing(), headerMin.y));
+			bool enabled = world.IsComponentEnabled<T>(entity);
+			bool const clicked = ImGui::Checkbox("##Enabled", &enabled);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+				// Ticked but not running: say which component it is waiting for.
+				Crucible::ComponentId const blocker = world.FirstDisabledRequirement(entity, Crucible::ComponentTypeId<T>());
+				if (enabled && blocker != Crucible::kInvalidComponentId) {
+					ImGui::SetTooltip("Enabled, but not running: %s is switched off", world.Components().Get(blocker).name.data());
+				} else {
+					ImGui::SetTooltip(enabled ? "Enabled - untick to switch this component off (its settings are kept)"
+					                          : "Disabled - tick to switch this component back on");
+				}
+			}
+			ImGui::SetCursorScreenPos(resume);   // the fields continue under the header
+			if (clicked) { world.SetComponentEnabled<T>(entity, enabled); }
+			nowEnabled = enabled;
+			return clicked;
+		} else {
+			(void)world; (void)entity; (void)headerMin; (void)nowEnabled;
+			return false;
+		}
+	}
+
+	// Whether T is running: switched on, with every component it requires switched on (true for
+	// components that can't be switched off). A component that isn't gets a greyed header.
+	template <typename T>
+	bool IsComponentRunning(Crucible::World& world, Crucible::Entity entity) {
+		if constexpr (Crucible::ToggleableComponent<T>) {
+			return world.IsComponentActive<T>(entity);
+		} else {
+			(void)world; (void)entity;
+			return true;
+		}
+	}
+
 	// One material texture slot's drag-drop target. Draws a small placeholder box (no GPU->ImGui
 	// texture preview for material slots yet - ViewportPanel is the one place that pattern already
 	// exists, for the Scene/Game render targets) plus the slot's label, and returns the accepted
@@ -607,7 +658,14 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 			{                                                                                                \
 				std::string const header = ComponentHeader(*component);                                     \
 				ImGui::PushID(ComponentTraits<T>::name.data());                                               \
-				bool const open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);    \
+				bool const running = IsComponentRunning<T>(m_world, entity);   /* off: greyed header */    \
+				if (!running) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)); } \
+				bool const open = ToggleableComponent<T>                                                     \
+					? ImGui::CollapsingHeader(HeaderLabelWithToggle(header, ComponentTraits<T>::name).c_str(),  \
+					                          ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap) \
+					: ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);                \
+				if (!running) { ImGui::PopStyleColor(); }                                                    \
+				ImVec2 const headerMin = ImGui::GetItemRectMin();                                            \
 				if constexpr (RemovableComponent<T>) {                                                       \
 					if (ImGui::BeginPopupContextItem("##ComponentMenu")) {                                   \
 						char const* const removeBlocked = RemoveBlockedReason<T>(m_world, entity);           \
@@ -617,6 +675,9 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 						ImGui::EndPopup();                                                                   \
 					}                                                                                        \
 				}                                                                                            \
+				bool nowEnabled = true;                                                                      \
+				if (DrawEnabledToggle<T>(m_world, entity, headerMin, nowEnabled))                            \
+					{ changed = true; NoteEdit((nowEnabled ? "Enable " : "Disable ") + header); }            \
 				if (open)                                                                                    \
 				{                                                                                            \
 					bool const fieldEdited  = DrawInstance(*component);  \

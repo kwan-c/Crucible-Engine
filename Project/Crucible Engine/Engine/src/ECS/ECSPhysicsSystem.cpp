@@ -239,6 +239,17 @@ namespace Crucible {
         desc.SimulationOnly();      // Edit and Pause do not step; access stays undeclared, as before
     }
 
+    // Switched back on (itself, or by its requirements): no fall or speed carried over from
+    // before - also when the off/on happened between two physics updates, so the character was
+    // never removed. A jump asked for since is kept.
+    void ECSPhysicsSystem::OnComponentActivated(World& world, Entity entity, ComponentId component) {
+        if (component != ComponentTypeId<CharacterController>()) return;
+        if (CharacterController* controller = world.GetComponent<CharacterController>(entity)) {
+            controller->m_verticalSpeed = 0.0f;
+            controller->m_velocity      = Math::vec3(0.0f, 0.0f, 0.0f);
+        }
+    }
+
     /*!
         \brief
         Play: a brand-new Jolt world and a zeroed clock. The records are empty,
@@ -371,7 +382,10 @@ namespace Crucible {
 
         colliders->ForEach([&](Entity entity, const Transform& transform, const Collider& collider) {
             Record& record = Touch(entity);
-            SyncBody(record, transform, collider, ecs.Read<RigidBody>(entity));
+            // A switched-off RigidBody counts as absent: the body is static (still collides,
+            // no dynamics) until it is switched back on, keeping its velocity meanwhile.
+            SyncBody(record, transform, collider,
+                     ecs.IsComponentActive<RigidBody>(entity) ? ecs.Read<RigidBody>(entity) : nullptr);
         });
 
         characters->ForEach([&](Entity entity, const Transform& transform, CharacterController& controller) {

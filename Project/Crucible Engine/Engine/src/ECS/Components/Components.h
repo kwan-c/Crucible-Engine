@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.5
+* \version       1.6
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -31,6 +31,8 @@
 	* -v1.3       Audio renamed to AudioSource (clashed with class Crucible::Audio)
 	* -v1.4       AudioSource moved to Audio/AudioComponents.h
 	* -v1.5       EntityName (mandatory display name, WorldValidated)
+	* -v1.6       RequiresComponents pairs (what switching a component off
+	*             also stops); component fields unchanged
 	*
 	*
 	**************************************************************************/
@@ -668,6 +670,20 @@ namespace Crucible
 
 	// Read anywhere; written only through World (SetEntityName, AddComponent), which applies the naming rules.
 	template <> struct WorldValidated<EntityName> : std::true_type {};
+
+	// What each component needs on the SAME entity to run (RequiresComponents in
+	// ComponentKind.h): while a requirement is switched off, the component counts as
+	// off too and its systems skip it; it comes back on by itself. The same pairs the
+	// Inspector's Add Component rules create. Requirements follow through: switching
+	// UIRect off also stops UIButton (UIButton -> UIImage -> UIRect).
+	template <> struct RequiresComponents<RigidBody>        { using type = ComponentTypeList<Collider>; };
+	template <> struct RequiresComponents<PlayerController> { using type = ComponentTypeList<CharacterController>; };
+	template <> struct RequiresComponents<AnimatedModel>    { using type = ComponentTypeList<MeshRenderer>; };
+	template <> struct RequiresComponents<MaterialParams>   { using type = ComponentTypeList<MeshRenderer>; };
+	template <> struct RequiresComponents<UIImage>          { using type = ComponentTypeList<UIRect>; };
+	template <> struct RequiresComponents<UIText>           { using type = ComponentTypeList<UIRect>; };
+	template <> struct RequiresComponents<UISlider>         { using type = ComponentTypeList<UIRect>; };
+	template <> struct RequiresComponents<UIButton>         { using type = ComponentTypeList<UIImage>; };
 
 
 }

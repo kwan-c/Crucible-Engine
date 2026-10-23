@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Implementation of CommandBuffer's chunk management,
 *                DestroyEntity/SpawnEntity queuing, and Execute()/
@@ -52,6 +52,8 @@
 *    -v1.4       SetParent/DetachChildren/SetSiblingIndex/WithParent
 *                commands (logged and skipped when refused, never thrown);
 *                rollback unlinks a parented spawn before removing it
+*    -v1.5       SetComponentEnabled by ComponentId; WithDisabled spawns
+*                (m_spawnDisabled, applied at creation)
 *
 **************************************************************************/
 
@@ -82,7 +84,8 @@ namespace Crucible
 	CommandBuffer::CommandBuffer(CommandBuffer&& other) noexcept
 		: m_head(other.m_head), m_tail(other.m_tail), m_count(other.m_count),
 		m_spawnedEntities(std::move(other.m_spawnedEntities)),
-		m_spawnSignatures(std::move(other.m_spawnSignatures))
+		m_spawnSignatures(std::move(other.m_spawnSignatures)),
+		m_spawnDisabled(std::move(other.m_spawnDisabled))
 	{
 		other.m_head = nullptr;
 		other.m_tail = nullptr;
@@ -102,6 +105,7 @@ namespace Crucible
 		m_count = other.m_count;
 		m_spawnedEntities = std::move(other.m_spawnedEntities);
 		m_spawnSignatures = std::move(other.m_spawnSignatures);
+		m_spawnDisabled = std::move(other.m_spawnDisabled);
 
 		other.m_head = nullptr;
 		other.m_tail = nullptr;
@@ -161,6 +165,18 @@ namespace Crucible
 			Payload{ parent });
 	}
 
+	void CommandBuffer::SetComponentEnabled(Entity entity, ComponentId id, bool enabled)
+	{
+		struct Payload { Entity entity; ComponentId id; bool enabled; };
+		Emplace<Payload>(
+			[](std::byte* raw, World& world, CommandBuffer&)
+			{
+				const Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				world.TrySetComponentEnabled(p->entity, p->id, p->enabled);   // false (skipped) if gone
+			},
+			Payload{ entity, id, enabled });
+	}
+
 	void CommandBuffer::SetSiblingIndex(Entity entity, std::uint32_t index)
 	{
 		struct Payload { Entity entity; std::uint32_t index; };
@@ -206,6 +222,18 @@ namespace Crucible
 			Payload{ token, parent, worldPositionStays });
 	}
 
+	// Marks a component of a pending spawn as born switched off. It must already be one of
+	// the spawn's components (With<T>() first), so a typo can't silently add a default one.
+	void CommandBuffer::RecordSpawnDisabled(std::uint32_t token, std::uint32_t epoch, ComponentId id)
+	{
+		RequireLiveSpawn(token, epoch, "WithDisabled");
+		if (!m_spawnSignatures[token].test(id))
+		{
+			throw std::logic_error("CommandBuffer::EntitySpawn::WithDisabled - call With<T>() for this component first");
+		}
+		m_spawnDisabled[token].set(id);
+	}
+
 	// Reserves the next spawn token and its (initially empty) final
 	// signature - With<T>() calls fill the signature in before Execute()
 	// runs - and queues the creation command.
@@ -214,6 +242,7 @@ namespace Crucible
 		const std::uint32_t token = static_cast<std::uint32_t>(m_spawnedEntities.size());
 		m_spawnedEntities.push_back(kNullEntity);
 		m_spawnSignatures.emplace_back();
+		m_spawnDisabled.emplace_back();
 
 		struct Payload { std::uint32_t token; };
 
@@ -226,6 +255,8 @@ namespace Crucible
 				// once the With<T>() values have been written.
 				const Entity entity = world.CreateEntityImpl(commands.m_spawnSignatures[p->token], false);
 				commands.SetSpawnedEntity(p->token, entity);
+				// WithDisabled components are off from the start: nothing ever sees them on.
+				world.ApplySpawnDisabled(entity, commands.m_spawnDisabled[p->token]);
 			},
 			Payload{ token });
 
@@ -445,6 +476,7 @@ namespace Crucible
 		m_count = 0;
 		m_spawnedEntities.clear();
 		m_spawnSignatures.clear();
+		m_spawnDisabled.clear();
 		++m_spawnEpoch;   // spawn tokens restart at 0 - invalidate old EntitySpawn handles
 	}
 

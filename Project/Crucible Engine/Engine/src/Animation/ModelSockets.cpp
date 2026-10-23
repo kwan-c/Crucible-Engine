@@ -30,7 +30,9 @@ namespace Crucible {
         if (socket.node >= socket.model->nodes.size()) return SocketResult::InvalidNode;
         if (!IsModelNodeInSubtree(*socket.model, socket.node, renderer->modelRoot)) return SocketResult::OutsidePart;
         const ModelPose* pose = socket.restPose.get();
-        if (const auto* animation = world.Read<AnimatedModel>(owner)) {
+        // A switched-off AnimatedModel isn't evaluated: follow the rest pose, like the renderer.
+        const auto* animation = world.IsComponentActive<AnimatedModel>(owner) ? world.Read<AnimatedModel>(owner) : nullptr;
+        if (animation) {
             if (!animation->poseValid || animation->evaluatedAsset != socket.modelAsset) return SocketResult::InvalidPose;
             pose = &animation->pose;
         }

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                iterate entities matching a set of component types
 *
@@ -34,6 +34,11 @@
 *                a Query object rejects use from a second thread while in
 *                use (copies/moves get a fresh guard)
 *    -v1.5       WorldValidated components (EntityName) only as const
+*    -v1.6       on/off selector (EnabledFilter; QueryBuilder::WhereEnabled /
+*                WhereDisabled / IncludeDisabled): by default only rows whose
+*                named components are active (own switch + requirements);
+*                matching and caching unchanged. CountEntities applies the
+*                selector and checks declared read access.
 *
 **************************************************************************/
 #pragma once
@@ -60,6 +65,21 @@ namespace Crucible
 {
 	/*************************************************************************
 	 \brief
+		Which rows a query visits by on/off state (World::SetComponentEnabled).
+	 \details
+		A row is "active" when every component the query names is active:
+		switched on itself, and every component it requires on the entity
+		(RequiresComponents) switched on too.
+	 *************************************************************************/
+	enum class EnabledFilter : std::uint8_t
+	{
+		Enabled,    // only active rows (the default: systems skip switched-off components)
+		Disabled,   // only rows where at least one named component is not active
+		Any         // every row, whatever its state
+	};
+
+	/*************************************************************************
+	 \brief
 		Describes which components a query requires and which it excludes.
 
 	 \details
@@ -72,6 +92,9 @@ namespace Crucible
 		ComponentSignature required;
 		ComponentSignature excluded;
 		ComponentSignature optional; // reserved -- not used by matching yet
+		// Row-level only: archetype matching, and so the cached archetype list, ignore it.
+		// Exclude stays presence-based: a switched-off excluded component still excludes.
+		EnabledFilter enabledFilter = EnabledFilter::Enabled;
 
 		/*********************************************************************
 		 \brief  Whether an archetype's signature satisfies this description.
@@ -236,6 +259,45 @@ namespace Crucible
 		}
 
 	protected:
+		using EnabledBytes = std::array<const std::uint8_t*, kMaxComponents>;
+
+		/*********************************************************************
+		 \brief  The on/off byte arrays a row's state depends on in one
+				 archetype: every component the query names and every
+				 component those require (present on the archetype), leaving
+				 out columns where nothing is switched off.
+		 \return How many were written to out (0: every row is active).
+		 *********************************************************************/
+		std::size_t CollectEnabledBytes(const Archetype& archetype, EnabledBytes& out) const
+		{
+			ComponentSignature ids = m_description.required;
+			for (ComponentId id = 0; id < kMaxComponents; ++id)
+			{
+				if (m_description.required.test(id)) ids |= archetype.GetColumn(id).Info().requiredClosure;
+			}
+			ids &= archetype.Signature();
+			std::size_t count = 0;
+			for (ComponentId id = 0; id < kMaxComponents; ++id)
+			{
+				if (!ids.test(id)) continue;
+				const ComponentColumn& column = archetype.GetColumn(id);
+				if (column.DisabledCount() > 0) out[count++] = column.EnabledData();
+			}
+			return count;
+		}
+
+		/*********************************************************************
+		 \brief  Whether the selector lets `row` through, given the bytes
+				 from CollectEnabledBytes.
+		 *********************************************************************/
+		bool RowPasses(const EnabledBytes& bytes, std::size_t count, uint32_t row) const
+		{
+			if (m_description.enabledFilter == EnabledFilter::Any) return true;
+			bool active = true;
+			for (std::size_t i = 0; i < count && active; ++i) active = bytes[i][row] != 0;
+			return active == (m_description.enabledFilter == EnabledFilter::Enabled);
+		}
+
 		/*********************************************************************
 		 \brief
 			Marks this Query object as being iterated by the calling thread.
@@ -360,16 +422,31 @@ namespace Crucible
 		/*********************************************************************
 		 \brief  Counts how many entities currently match this query.
 		 \return Total entity count across every matching archetype.
-		 \details Calls Refresh() first, same as ForEach().
+		 \details Calls Refresh() first, same as ForEach(), and applies the
+				  same on/off selector. Counting reads the on/off state, so a
+				  running declared system needs at least read access to the
+				  named components (a non-const one only needs the read).
 		 *********************************************************************/
 		uint32_t CountEntities()
 		{
+			CheckDeclaredAccess(MakeSignature<Bare<Components>...>(), ComponentSignature{}, "counts a Query that");
 			UseGuard inUse(*this);
 			Refresh();
 			uint32_t total = 0;
 			for (Archetype* archetype : m_matching)
 			{
-				total += archetype->EntityCount();
+				EnabledBytes bytes{};
+				const std::size_t byteCount = m_description.enabledFilter == EnabledFilter::Any ? 0 : CollectEnabledBytes(*archetype, bytes);
+				if (byteCount == 0)
+				{
+					// Nothing switched off here: every row is active.
+					if (m_description.enabledFilter != EnabledFilter::Disabled) total += archetype->EntityCount();
+					continue;
+				}
+				for (uint32_t row = 0; row < archetype->EntityCount(); ++row)
+				{
+					if (RowPasses(bytes, byteCount, row)) ++total;
+				}
 			}
 			return total;
 		}
@@ -443,6 +520,11 @@ namespace Crucible
 					filterTicks = archetype->GetColumn(filterId).ChangedTicksData();
 				}
 
+				// On/off selector: with nothing switched off here, every row is active.
+				EnabledBytes bytes{};
+				const std::size_t byteCount = m_description.enabledFilter == EnabledFilter::Any ? 0 : CollectEnabledBytes(*archetype, bytes);
+				if (byteCount == 0 && m_description.enabledFilter == EnabledFilter::Disabled) continue;
+
 				const PointerArray columns{ archetype->GetColumnData(ComponentTypeId<Bare<Components>>())... };
 				const TickArray writeTicks{ WritableTicks<Components>(*archetype, stamping)... };
 				const std::vector<Entity>& entities = archetype->Entities();
@@ -450,6 +532,7 @@ namespace Crucible
 				for (uint32_t row = 0; row < count; ++row)
 				{
 					if (filterTicks && filterTicks[row] <= sinceTick) continue;
+					if (byteCount != 0 && !RowPasses(bytes, byteCount, row)) continue;
 					fn(entities[row], static_cast<Components*>(columns[I])[row]...);
 					(StampIfWritable<Components>(writeTicks[I], row, tick), ...);
 				}
@@ -476,6 +559,29 @@ namespace Crucible
 		QueryBuilder& Exclude()
 		{
 			m_description.excluded = MakeSignature<Excluded...>();
+			return *this;
+		}
+
+		// On/off selector (see EnabledFilter). WhereEnabled is the default: only rows whose
+		// named components are all active - switched on, with what they require switched on.
+		QueryBuilder& WhereEnabled()
+		{
+			m_description.enabledFilter = EnabledFilter::Enabled;
+			return *this;
+		}
+
+		// Only rows where at least one named component is NOT active (switched off, or
+		// something it requires is) - e.g. to tidy up after things that were switched off.
+		QueryBuilder& WhereDisabled()
+		{
+			m_description.enabledFilter = EnabledFilter::Disabled;
+			return *this;
+		}
+
+		// Every row whatever its state (editor tools, gizmos, serialization).
+		QueryBuilder& IncludeDisabled()
+		{
+			m_description.enabledFilter = EnabledFilter::Any;
 			return *this;
 		}
 
