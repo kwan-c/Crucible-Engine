@@ -255,6 +255,14 @@ namespace Crucible {
 
     }   // Renderer::DrawFrame()
 
+    bool Renderer::GetObjectBounds(std::uint64_t userData, glm::vec3& outMin, glm::vec3& outMax) const {
+        return m_scene.GetObjectBounds(userData, outMin, outMax);
+    }
+
+    void Renderer::SetRenderProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
+                                           const glm::vec3& boundsMin, const glm::vec3& boundsMax) {
+        m_scene.SetProxyAnimation(handle, palette, boundsMin, boundsMax);
+    }
     void Renderer::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) { m_scene.Submit(mesh, material, model, params); }
 
     void Renderer::CreatePrimitiveMeshes() {

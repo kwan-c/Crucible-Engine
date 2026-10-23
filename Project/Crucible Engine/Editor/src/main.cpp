@@ -1,5 +1,7 @@
 #include <exception>
 #include <memory>
+#include <iostream>
+#include <string_view>
 
 #include "Core.h"
 #include "Configuration/EngineConfigLoader.h"
@@ -7,9 +9,9 @@
 #include "Diagnostics/FatalError.h"
 #include "ImGui/ImGuiLayer.h"
 
-int main()
+int main(int argc, char** argv)
 {
-    // Before anything else: without the Assets folder there is no config, no shaders and no
+// Before anything else: without the Assets folder there is no config, no shaders and no
     // scenes. This says what was searched, instead of failing somewhere inside the engine.
     if (!Crucible::RequireAssetRoot())
     {
@@ -20,6 +22,18 @@ int main()
     // ends in a message box saying why, not an abort() dialog.
     try
     {
+        // Same config file as the Game (Assets/Config/EngineConfig.json), plus its "editor" overrides.
+        auto config = Crucible::EngineConfigLoader::LoadForApp(Crucible::AppKind::Editor);
+
+        // Open a scene directly without changing the team's shared startup configuration.
+        if (argc != 1) {
+            if (argc != 3 || std::string_view(argv[1]) != "--scene") {
+                std::cerr << "Usage: Editor [--scene path-relative-to-Assets]\n";
+                return 1;
+            }
+            config.project.startupScene = argv[2];
+        }
+        
         // Same config file as the Game (Assets/Config/EngineConfig.json), plus its "editor" overrides.
         Crucible::Core core(Crucible::EngineConfigLoader::LoadForApp(Crucible::AppKind::Editor));
 

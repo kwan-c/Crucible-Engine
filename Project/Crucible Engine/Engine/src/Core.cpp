@@ -14,11 +14,15 @@
 #include "Scene/Scene.h"
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/RenderExtractSystem.h"
+#include "Animation/AnimatedModelSystem.h"
+#include "Animation/SocketAttachmentSystem.h"
 #include "Graphics/DebugDrawSystem.h"
 #include "Graphics/ParticleSystem.h"
 #include "Graphics/StressMoverSystem.h"   // TEMPORARY: load testing
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"
+#include "Scripting/ScriptRuntime.h"
+#include "Scripting/EntityScriptSystem.h"
 
 // STL
 #include <algorithm>
@@ -76,6 +80,9 @@ namespace Crucible {
     bool Core::Init()
     {
         std::cout << "The Hearth smoulders...\n";
+        m_scriptRuntime = std::make_unique<ScriptRuntime>();
+        if (!m_scriptRuntime->Initialize(m_config.scripting)) return false;
+        if (!m_scriptRuntime->RunStartupEntry(m_config.scripting)) return false;
 
         // Input attaches before anything else installs GLFW callbacks. ImGui's backend
         // chains to callbacks that are already registered, but anything installed after it
@@ -125,6 +132,10 @@ namespace Crucible {
         // The engine starts in Edit: AudioSources stay silent until Play (PlayMode switches it).
         if (ECSAudioSystem* audio = m_systems.FindSystem<ECSAudioSystem>()) audio->SetEditMode(true);
 
+        // Standalone instances retain Core lifetime alongside the separate
+        // Play-scoped ScriptComponent instances owned by EntityScriptSystem.
+        if (!m_scriptRuntime->CreateConfiguredInstances(m_config.scripting)) return false;
+
         return true;
     }
 
@@ -164,6 +175,10 @@ namespace Crucible {
             m_scenes->ApplyPending();
             m_playMode->ApplyRequests();
 
+            // S3 instances follow Core lifetime. This tick excludes entity-owned
+            // instances, which EntityScriptSystem schedules through PlayMode.
+            if (m_scriptRuntime->IsRunning()) m_scriptRuntime->UpdateInstances(dt);
+
             m_world->SetDeltaTime(dt);
             m_world->AdvanceTick();
             m_playMode->UpdateSystems();        // every system (SimulationOnly ones only while Playing); each stage delivers its own events
@@ -173,6 +188,8 @@ namespace Crucible {
             for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
         }
+        // Entity teardown precedes GPU shutdown as well as world destruction.
+        if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
         m_renderer->ShutDown();
     }
 
@@ -185,13 +202,17 @@ namespace Crucible {
 
     void Core::RegisterEngineSystems()
     {
+        m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get());                            // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
         m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
         m_systems.RegisterSystem<ECSPhysicsSystem>();
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
-        m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
+        m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
+        auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
+        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(&animator);
+        m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
@@ -200,6 +221,10 @@ namespace Crucible {
     }
 
     void Core::CleanUp() {
+        if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
+        // Run managed teardown while Core's resources/systems are still alive.
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(nullptr);
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }
@@ -212,6 +237,9 @@ namespace Crucible {
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
+        // Managed instances/bindings added later must be released before final cleanup.
+        // Play/Stop never destroys or restarts the process-wide Mono runtime.
+        if (m_scriptRuntime) m_scriptRuntime->Shutdown();
 
         // Remember how the window was left (fullscreen / maximized) for the next launch.
         SaveWindowState();

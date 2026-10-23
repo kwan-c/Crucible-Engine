@@ -45,11 +45,12 @@ namespace Crucible {
             };
             auto binding    = Vertex::GetBindingDescription();
             auto attributes = Vertex::GetAttributeDescriptions();
+            const std::array solidAttributes{attributes[0], attributes[5], attributes[6]};
             vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
                 .vertexBindingDescriptionCount   = 1,
                 .pVertexBindingDescriptions      = &binding,
-                .vertexAttributeDescriptionCount = 1,
-                .pVertexAttributeDescriptions    = &attributes[0]
+                .vertexAttributeDescriptionCount = static_cast<uint32_t>(solidAttributes.size()),
+                .pVertexAttributeDescriptions    = solidAttributes.data()
             };
             vk::PipelineColorBlendAttachmentState blend{ .blendEnable = vk::False, .colorWriteMask = vk::ColorComponentFlagBits::eR };
             vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
@@ -88,7 +89,7 @@ namespace Crucible {
                 { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "maskCutoutVert" },
                 { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "maskCutoutFrag" }
             };
-            const std::array<vk::VertexInputAttributeDescription, 2> cutoutAttributes{ attributes[0], attributes[2] };
+            const std::array cutoutAttributes{ attributes[0], attributes[2], attributes[5], attributes[6] };
             vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
             vertexInputInfo.pVertexAttributeDescriptions    = cutoutAttributes.data();
             chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;

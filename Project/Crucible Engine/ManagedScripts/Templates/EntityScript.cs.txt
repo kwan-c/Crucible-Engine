@@ -1,0 +1,19 @@
+namespace {{NAMESPACE}}
+{
+    public sealed class {{CLASS}} : global::Crucible.EntityScript
+    {
+        public override void OnCreate()
+        {
+            global::Crucible.Log.Info("{{NAME}} created for entity " + this.Entity);
+        }
+
+        public override void OnUpdate(float deltaTime)
+        {
+        }
+
+        public override void OnDestroy()
+        {
+            global::Crucible.Log.Info("{{NAME}} destroyed for entity " + this.Entity);
+        }
+    }
+}

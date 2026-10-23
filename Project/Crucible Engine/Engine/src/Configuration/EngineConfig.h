@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include "Scripting/ScriptingConfig.h"
 
 namespace Crucible
 {
@@ -83,6 +84,7 @@ namespace Crucible
 		// Which app this config was loaded for (set by LoadForApp, never read from the file).
 		// Core uses it to save the window state into the right section of UserSettings.json.
 		AppKind        app = AppKind::Editor;
+		ScriptingConfig scripting;
 	};
 
 	// The values one app's section ("editor" / "game") in EngineConfig.json changes, for the

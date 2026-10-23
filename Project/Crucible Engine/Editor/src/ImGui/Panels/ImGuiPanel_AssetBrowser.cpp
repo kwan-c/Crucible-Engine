@@ -19,6 +19,7 @@
 #include "Core.h"
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 
@@ -95,6 +96,7 @@ namespace {
 		case AssetType::Material: return IM_COL32(200, 170, 70, 255);
 		case AssetType::Script:   return IM_COL32(100, 185, 120, 255);
 		case AssetType::Text:     return IM_COL32(150, 150, 165, 255);
+		case AssetType::AnimatorController: return IM_COL32(170, 120, 220, 255);
 		default:                  return IM_COL32(90, 90, 95, 255);
 		}
 	}
@@ -729,8 +731,10 @@ void Crucible::AssetBrowser::DrawGrid() {
 	if (ImGui::BeginPopupContextWindow("##GridContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
 		bool const searching = m_search[0] != '\0';
 		if (ImGui::MenuItem("New Folder", nullptr, false, !searching && IsRefreshAllowed())) CreateFolder();
+		if (ImGui::MenuItem("Create Animator Controller", nullptr, false, !searching && IsRefreshAllowed())) {
+			if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) animator->RequestNew();
+		}
 		if (IsInScenesFolder(m_currentFolder) && ImGui::MenuItem("Create Scene", nullptr, false, !searching && IsRefreshAllowed())) CreateScene();
-		if (IsInScriptsFolder(m_currentFolder) && ImGui::MenuItem("Create Script", nullptr, false, !searching && IsRefreshAllowed())) CreateScript();
 		if (ImGui::MenuItem("Show in Explorer")) ShowInExplorer(AbsolutePathOf(m_currentFolder), false);
 		ImGui::Separator();
 		if (ImGui::MenuItem("Refresh", "F5", false, IsRefreshAllowed())) Refresh();
@@ -968,6 +972,11 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	}
 
 	switch (item.type) {
+	case AssetType::AnimatorController:
+		if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) {
+			if (const auto* entry = m_assets.Find(item.virtualPath)) animator->RequestOpen(entry->guid.m_Value);
+		}
+		return;
 	case AssetType::Scene: {
 		fs::path const file = AbsolutePathOf(item.virtualPath);
 		if (m_scenes.HasPath() && SamePath(m_scenes.CurrentPath(), file)) {
@@ -1023,38 +1032,6 @@ void Crucible::AssetBrowser::CreateScene() {
 	Refresh();
 	CRU_USER_INFO("Created scene {}", virtualPath);
 	BeginRename(virtualPath);   // Unity: type its name straight away
-}
-
-// ------------------------------------------------------------------ create script
-
-bool Crucible::AssetBrowser::IsInScriptsFolder(std::string const& folder) const {
-	std::string const f = ToLowerCopy(folder);
-	return f == "scripts" || f.rfind("scripts/", 0) == 0;
-}
-
-void Crucible::AssetBrowser::CreateScript() {
-	if (!IsRefreshAllowed() || !IsInScriptsFolder(m_currentFolder)) return;
-
-	// No spaces in the default name: a Lua script's name usually ends up as a module /
-	// table name too.
-	std::string const base = m_currentFolder + "/NewScript";
-	std::string stem = base;
-	std::error_code ec;
-	for (int i = 1; fs::exists(AbsolutePathOf(stem + ".lua"), ec) && i < 1000; ++i)
-		stem = base + std::to_string(i);
-	std::string const virtualPath = stem + ".lua";
-
-	// Empty on purpose; the scripting system decides what a script has to contain.
-	std::ofstream file(fs::path(AbsolutePathOf(virtualPath)), std::ios::binary);
-	if (!file) {
-		CRU_USER_WARN("Could not create script '{}'", virtualPath);
-		return;
-	}
-	file.close();
-
-	Refresh();   // indexes it and writes its .meta
-	CRU_USER_INFO("Created script {}", virtualPath);
-	BeginRename(virtualPath);
 }
 
 // ------------------------------------------------------------------ delete

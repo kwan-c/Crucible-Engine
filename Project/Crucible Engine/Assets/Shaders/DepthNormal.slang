@@ -12,10 +12,7 @@ struct FrameUniforms {
     float4x4 proj;
 };
 
-struct InstanceData {
-    float4x4 model;
-    float4   params;   // unused here; keeps the 80-byte stride of Crucible::InstanceData
-};
+#include "ModelVertex.slang"
 
 // Cut-out materials (leaves) use the second pair of entry points, which drop the pixels the main
 // pass will drop (Crucible::CutoutPush, and the material's albedo texture at set 1).
@@ -25,13 +22,15 @@ struct CutoutPush {
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms>  frame;
-[[vk::binding(2, 0)]] StructuredBuffer<InstanceData> instances;
+
 [[vk::binding(0, 1)]] Sampler2D                      albedoTex;
 [[vk::push_constant]] ConstantBuffer<CutoutPush>     pc;
 
 struct VSInput {
-    float3 position;
-    float3 normal;
+    [[vk::location(0)]] float3 position;
+    [[vk::location(1)]] float3 normal;
+    [[vk::location(5)]] uint4 joints;
+    [[vk::location(6)]] float4 weights;
 };
 
 struct VSOutput {
@@ -40,9 +39,11 @@ struct VSOutput {
 };
 
 struct CutoutVSInput {
-    float3 position;
-    float3 normal;
-    float2 uv;
+    [[vk::location(0)]] float3 position;
+    [[vk::location(1)]] float3 normal;
+    [[vk::location(2)]] float2 uv;
+    [[vk::location(5)]] uint4 joints;
+    [[vk::location(6)]] float4 weights;
 };
 
 struct CutoutVSOutput {
@@ -54,11 +55,11 @@ struct CutoutVSOutput {
 [shader("vertex")]
 VSOutput depthNormalVert(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     VSOutput output;
-    float4x4 model = instances[instanceID].model;
+    float4x4 model = ModelVertexTransform(instanceID, input.joints, input.weights);
     float4   world = mul(model, float4(input.position, 1.0));
     output.pos = mul(frame.proj, mul(frame.view, world));
-    // Same simplification as the mesh shader: correct for uniform scale.
-    float3 normalWS = mul((float3x3)model, input.normal);
+    // Same inverse-transpose normal transform as the main pass.
+    float3 normalWS = ModelNormal((float3x3)model, input.normal);
     output.normalVS = mul((float3x3)frame.view, normalWS);
     return output;
 }
@@ -73,10 +74,10 @@ float4 depthNormalFrag(VSOutput input, bool frontFacing : SV_IsFrontFace) : SV_T
 [shader("vertex")]
 CutoutVSOutput depthNormalCutoutVert(CutoutVSInput input, uint instanceID : SV_VulkanInstanceID) {
     CutoutVSOutput output;
-    float4x4 model = instances[instanceID].model;
+    float4x4 model = ModelVertexTransform(instanceID, input.joints, input.weights);
     float4   world = mul(model, float4(input.position, 1.0));
     output.pos      = mul(frame.proj, mul(frame.view, world));
-    output.normalVS = mul((float3x3)frame.view, mul((float3x3)model, input.normal));
+    output.normalVS = mul((float3x3)frame.view, ModelNormal((float3x3)model, input.normal));
     output.uv       = input.uv;
     return output;
 }

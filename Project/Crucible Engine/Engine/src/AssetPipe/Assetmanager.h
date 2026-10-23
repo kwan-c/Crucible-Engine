@@ -77,6 +77,7 @@ namespace Crucible {
         Material,
         Script,
         Text,
+        AnimatorController,
  
         Count
     };

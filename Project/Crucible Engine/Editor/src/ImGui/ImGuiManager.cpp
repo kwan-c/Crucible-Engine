@@ -37,6 +37,7 @@
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/Panels/ImGuiPanel_Console.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
 
 
@@ -396,6 +397,7 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>(core);   // queues Play/Pause/Resume/Stop on Core
 	m_panels[ImguiPanels::FONTIMPORTER] = std::make_shared<FontImporter>(core.GetAssets(), core.GetRenderer(), core);   // .ttf -> .cfont (Editor/src/Fonts)
+	m_panels[ImguiPanels::ANIMATOR] = std::make_shared<AnimatorPanel>(core);
 
 	for (auto& panel : m_panels)
 		panel.second->Init();

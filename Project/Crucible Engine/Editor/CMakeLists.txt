@@ -37,6 +37,7 @@ target_include_directories(Editor
 # Link against the engine (brings in EngineThirdParty transitively) plus the
 # Editor-only ImGui libraries. Engine and Game must NOT link EditorThirdParty.
 target_link_libraries(Editor PRIVATE Engine EditorThirdParty)
+crucible_deploy_mono(Editor)
 
 # Copy Engine.dll to Editor output directory (ImGui is static, so no imgui.dll)
 add_custom_command(TARGET Editor POST_BUILD

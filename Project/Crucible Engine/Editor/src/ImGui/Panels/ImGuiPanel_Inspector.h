@@ -32,6 +32,7 @@
 #include "ECS/World.h"
 #include "ECS/Components/Components.h"
 #include "AssetPipe/Assetmanager.h"
+#include "Scripting/ScriptTypes.h"
 
 #include <cstdint>
 #include <functional>
@@ -102,10 +103,18 @@ namespace Crucible {
 
 		template <typename T> bool DrawComponentExtras(T&) { return false; }
 		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
+		bool DrawComponentExtras(AnimatedModel& animation);
+		bool DrawComponentExtras(SocketAttachment& socket);
+		bool DrawComponentExtras(ScriptComponent& script);
+		void DrawCreateScriptModal();
+		void RefreshScriptClasses(const std::string& assembly);
+		void RequestCreateScript(Entity entity, std::string name, std::string nameSpace);
+		void AssignScript(Entity entity, const std::string& assembly, const std::string& nameSpace,
+			const std::string& name);
 		bool DrawComponentExtras(UIButton& button);         // scene dropdown for onClick = LoadScene
 		bool DrawComponentExtras(UISlider& slider);         // direction dropdown that also turns the UIRect
 		bool DrawComponentExtras(UIText& text);             // multi-line text box, 3 x 3 alignment grid, font status
-		bool DrawMaterialSection(MeshRenderer& renderer);
+		bool DrawMaterialSection(MeshRenderer& renderer, bool importedDefault = false);
 
 		std::function<void()> m_draw;
 
@@ -135,6 +144,17 @@ namespace Crucible {
 		std::string m_editLabel;
 		Entity      m_editEntity = kNullEntity;
 		bool        m_editOpen = false;
+
+        std::string m_scriptAssembly;
+        std::vector<ScriptClassInfo> m_scriptClasses;
+        std::string m_scriptPickerError, m_scriptCreateError, m_scriptNotice;
+        std::string m_scriptNewName, m_scriptNewNamespace;
+        Entity m_scriptCreateTarget = kNullEntity, m_scriptNoticeTarget = kNullEntity;
+        bool m_scriptCreateRequested = false;
+        std::string m_scriptFieldAssembly, m_scriptFieldNamespace, m_scriptFieldClass, m_scriptFieldError;
+        std::vector<ScriptFieldValue> m_scriptFieldDefaults;
+        ScriptInstanceHandle m_scriptFieldReadFailure;
+        std::string m_scriptFieldReadError;
 
 		// ---- Name field ----
 		// Typed into m_nameBuffer (any length, UTF-8) and written to the entity only when the
