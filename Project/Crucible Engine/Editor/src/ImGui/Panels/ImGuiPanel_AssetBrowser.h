@@ -24,8 +24,12 @@
 *	double-click   folder: open it.  .scene: open the scene (same guard as File > Open).
 *	               C# script (.cs): open that file in VS Code.  Anything else: logged.
 *	drag           starts a drag-drop with EditorWidgets::kAssetPayload (virtual path)
-*	right-click    context menu (Rename, Show in Explorer, Copy Path, Copy GUID, New Folder,
+*	drop entity    a Hierarchy entity dropped on the grid is saved as a .cprefab in the folder
+*	               being viewed; dropped on a folder tile, in that folder (Prefabs/PrefabAuthoring.h)
+*	right-click    context menu (Rename, Delete, Show in Explorer, Copy Path, Copy GUID, New Folder,
 *	               Create Scene - inside Scenes/ only - and Refresh)
+*	Del            delete the selected file or folder. Asks first, listing any other asset that
+*	               still uses it; on Windows it goes to the Recycle Bin, .meta and all
 *	F2             rename the selection (a file's .meta moves with it, so its guid is kept)
 *	Backspace      go to parent folder,  F5  refresh
 *
@@ -38,6 +42,7 @@
 
 #include "ImGui/ImGuiManager.h"
 #include "AssetPipe/Assetmanager.h"
+#include "ECS/Core/ECSCore.h"   // Entity (Create Prefab drops)
 
 #include <cstdint>
 #include <optional>
@@ -121,13 +126,25 @@ namespace Crucible {
 		void ApplyPendingRename();
 		bool RenameOnDisk(std::string const& from, std::string const& newName, std::string& outVirtualPath);
 
-		// ---- Delete (Del / right-click; scene files only) ----
+		// ---- Delete (Del / right-click; any file or folder) ----
 		// Asks first in a modal. The delete itself happens after the frame's drawing
 		// (ApplyPendingDelete), like rename, so the item list never changes mid-loop.
 		void BeginDelete(std::string const& virtualPath);
 		void DrawDeleteConfirm();
 		void ApplyPendingDelete();
 		bool DeleteOnDisk(std::string const& virtualPath);
+		// Files outside `virtualPath` that refer to it - or, for a folder, to anything in it - by
+		// guid or by path. fileCount receives how many files are being deleted.
+		std::vector<std::string> FindReferences(std::string const& virtualPath, bool isFolder, std::size_t& fileCount) const;
+
+		// ---- Create Prefab (a Hierarchy entity dropped on the grid or on a folder tile) ----
+		// Saved after the frame's drawing (ApplyPendingPrefab), like rename, because saving
+		// refreshes the index and the item list.
+		struct PendingPrefab { Entity dragged; std::string folder; };
+		std::optional<PendingPrefab> m_pendingPrefab;
+		// Lets the item just drawn accept a Hierarchy entity; the prefab is saved in `folder`.
+		void AcceptEntityDrop(std::string const& folder);
+		void ApplyPendingPrefab();
 
 		AssetManager&   m_assets;               // Core's shared index (core.GetAssets())
 		SceneManager&   m_scenes;               // to open scenes, and to follow a rename of the open one
@@ -154,6 +171,13 @@ namespace Crucible {
 		std::string                m_deleteTarget;              // virtual path the confirm modal asks about ("" = none)
 		bool                       m_openDeleteConfirm = false; // open the modal next time it is drawn
 		std::optional<std::string> m_pendingDelete;             // confirmed; applied after drawing
+		// Gathered when the confirm modal opens (BeginDelete) and shown in it.
+		struct DeleteInfo {
+			bool                     isFolder  = false;
+			std::size_t              fileCount = 0;   // files that will go (a folder's contents; 1 for a file)
+			std::vector<std::string> usedBy;          // other assets that still reference them
+		};
+		DeleteInfo                 m_deleteInfo;
 
 		char  m_search[128] = {};
 		float m_tileSize = 72.0f;   // wide enough for ~12 characters a line

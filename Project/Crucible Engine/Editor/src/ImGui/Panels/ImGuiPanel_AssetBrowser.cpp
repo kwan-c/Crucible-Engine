@@ -22,12 +22,16 @@
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
+#include "Prefabs/PrefabAuthoring.h"
+#include "Scene/Prefab.h"   // kPrefabExtension
 
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 #include <string_view>
 #include <system_error>
 
@@ -116,9 +120,13 @@ namespace {
 	// Files that belong to another asset and are edited through it, not on their own: hidden from
 	// the browser like .meta files. A font's import settings ("Arial.ttf.fontsettings") are edited
 	// in the Font Importer.
+	// Their suffixes, appended to the owning asset's full name ("Arial.ttf" + ".fontsettings").
+	// Deleting the asset deletes these too (DeleteOnDisk), since nothing else can.
+	constexpr std::string_view kCompanionSuffixes[] = { ".fontsettings" };
+
 	bool IsHiddenCompanionFile(std::string const& name)
 	{
-		static constexpr std::string_view kSuffixes[] = { ".fontsettings" };
+		auto const& kSuffixes = kCompanionSuffixes;
 		std::string const lower = ToLowerCopy(name);
 		for (std::string_view suffix : kSuffixes) {
 			if (lower.size() >= suffix.size() && lower.compare(lower.size() - suffix.size(), suffix.size(), suffix) == 0) return true;
@@ -253,7 +261,16 @@ namespace {
 		return ToLowerCopy(fs::path(virtualPath).extension().string()) == ".scene";
 	}
 
-	// Removes one file. On Windows it goes to the Recycle Bin, so a mistaken delete can be
+	// Text files that can refer to other assets: by guid (scenes and prefabs store it as a
+	// number, e.g. "modelAsset": 1118...) or by path (materials name their textures).
+	bool CanReferenceAssets(fs::path const& p)
+	{
+		std::string const ext = ToLowerCopy(p.extension().string());
+		return ext == ".scene" || ext == Crucible::kPrefabExtension || ext == ".mat"
+			|| ext == ".animcontroller" || ext == ".json";
+	}
+
+	// Removes one file, or a folder with everything in it. On Windows it goes to the Recycle Bin, so a mistaken delete can be
 	// restored from there (Unity does the same); elsewhere it is deleted outright.
 	bool RemoveFile(fs::path const& path, std::string& error)
 	{
@@ -277,7 +294,7 @@ namespace {
 		return true;
 #else
 		std::error_code ec;
-		if (!fs::remove(path, ec)) {
+		if (fs::remove_all(path, ec) == 0 || ec) {
 			error = ec ? ec.message() : "the file does not exist";
 			return false;
 		}
@@ -448,6 +465,10 @@ void Crucible::AssetBrowser::Update(float) {
 	ImGui::BeginChild("##AssetGrid", ImVec2(0.0f, -footerHeight));
 	DrawGrid();
 	ImGui::EndChild();
+	// A Hierarchy entity dropped anywhere on the grid becomes a prefab in the folder being
+	// viewed (not while searching: the grid then shows several folders). A folder tile's own
+	// target is smaller, so ImGui prefers it when the drop lands on a folder.
+	if (m_search[0] == '\0') AcceptEntityDrop(m_currentFolder);
 
 	DrawFooter();
 
@@ -462,7 +483,7 @@ void Crucible::AssetBrowser::Update(float) {
 		// Shortcut, not IsKeyPressed: the Hierarchy registers Delete with RouteGlobal (delete the
 		// selected entities), and only a focus-route Shortcut claims the key ahead of it -
 		// otherwise one press would delete the scene file AND the selected entities.
-		if (IsSceneFile(m_selected) && m_renaming.empty() && ImGui::Shortcut(ImGuiKey_Delete))
+		if (!m_selected.empty() && m_renaming.empty() && ImGui::Shortcut(ImGuiKey_Delete))
 			BeginDelete(m_selected);
 	}
 
@@ -473,6 +494,7 @@ void Crucible::AssetBrowser::Update(float) {
 	// After drawing, like navigation below: renaming refreshes the index and the item list.
 	ApplyPendingRename();
 	ApplyPendingDelete();
+	ApplyPendingPrefab();
 
 	// Apply navigation after drawing, so the item list never changes mid-loop.
 	if (m_navigateTo) {
@@ -612,6 +634,34 @@ void Crucible::AssetBrowser::CreateFolder() {
 	else {
 		CRU_WARN("[AssetBrowser] Could not create folder '{}': {}", candidate, ec.message());
 	}
+}
+
+// ------------------------------------------------------------------ create prefab
+
+void Crucible::AssetBrowser::AcceptEntityDrop(std::string const& folder) {
+	// No highlight at all in Play Mode, the same rule as Hierarchy > Create Prefab.
+	if (!PrefabAuthoring::CanCreate() || !ImGui::BeginDragDropTarget()) return;
+	if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(EditorWidgets::kEntityPayload)) {
+		Entity dragged{};
+		std::memcpy(&dragged, payload->Data, sizeof(Entity));
+		m_pendingPrefab = PendingPrefab{ dragged, folder };
+	}
+	ImGui::EndDragDropTarget();
+}
+
+void Crucible::AssetBrowser::ApplyPendingPrefab() {
+	if (!m_pendingPrefab) return;
+	PendingPrefab const pending = std::move(*m_pendingPrefab);
+	m_pendingPrefab.reset();
+
+	Core* core = EditorManager::GetInstance().GetCore();
+	if (core == nullptr) return;
+	World& world = core->GetWorld();
+
+	// Refreshes this browser itself, so the new files are listed next frame.
+	std::vector<std::string> const created = PrefabAuthoring::CreatePrefabs(
+		world, PrefabAuthoring::DraggedEntities(world, pending.dragged), pending.folder);
+	if (!created.empty()) m_selected = created.front();
 }
 
 // ------------------------------------------------------------------ drawing
@@ -762,6 +812,10 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	bool const released = ImGui::InvisibleButton("##Tile", tileSize);
 	bool const hovered = ImGui::IsItemHovered();
 
+	// Dropping a Hierarchy entity on a folder saves the prefab in that folder. Right after the
+	// button, while it is still the last item.
+	if (item.isFolder) AcceptEntityDrop(item.virtualPath);
+
 	// Unity's rule: a click selects, a drag does not. The press only counts as a click if the
 	// mouse never moved past ImGui's drag threshold - the same threshold BeginDragDropSource
 	// below uses to start a drag - so dragging an asset onto the Inspector's picker leaves the
@@ -884,7 +938,7 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	if (ImGui::MenuItem("Rename", "F2", false, IsRefreshAllowed()))
 		BeginRename(item.virtualPath);
 
-	if (!item.isFolder && item.type == AssetType::Scene && ImGui::MenuItem("Delete", "Del", false, IsRefreshAllowed()))
+	if (ImGui::MenuItem("Delete", "Del", false, IsRefreshAllowed()))
 		BeginDelete(item.virtualPath);
 
 	if (ImGui::MenuItem("Show in Explorer"))
@@ -1041,17 +1095,79 @@ void Crucible::AssetBrowser::BeginDelete(std::string const& virtualPath) {
 		CRU_USER_WARN("Cannot delete while in play mode - press Stop first");
 		return;
 	}
-	if (!IsSceneFile(virtualPath)) return;   // only scene files can be deleted from here for now
+	if (virtualPath.empty()) return;   // the Assets folder itself
+
+	std::error_code ec;
+	fs::path const path = AbsolutePathOf(virtualPath);
+	if (!fs::exists(path, ec)) {
+		CRU_USER_WARN("Cannot delete '{}': it no longer exists", virtualPath);
+		return;
+	}
+
+	// Gathered once, when the modal opens: what will go, and what still uses it.
+	m_deleteInfo = DeleteInfo{};
+	m_deleteInfo.isFolder = fs::is_directory(path, ec);
+	m_deleteInfo.usedBy = FindReferences(virtualPath, m_deleteInfo.isFolder, m_deleteInfo.fileCount);
 
 	m_deleteTarget = virtualPath;
 	m_selected = virtualPath;
 	m_openDeleteConfirm = true;
 }
 
+std::vector<std::string> Crucible::AssetBrowser::FindReferences(std::string const& virtualPath, bool isFolder, std::size_t& fileCount) const {
+	fs::path const root{ m_assets.GetAssetRoot() };
+	fs::path const target = AbsolutePathOf(virtualPath);
+	fileCount = 0;
+
+	// What the files being deleted are known by: the guid as a number (how scenes and prefabs
+	// store it) and as hex (how .meta and the Copy GUID menu write it), and the quoted virtual
+	// path (how materials name their textures).
+	std::vector<std::string> needles;
+	auto addFile = [&](std::string const& vp) {
+		++fileCount;
+		needles.push_back("\"" + vp + "\"");
+		AssetEntry const* entry = m_assets.Find(vp);
+		if (entry && entry->guid.m_Value != 0) {
+			needles.push_back(std::to_string(entry->guid.m_Value));
+			needles.push_back(AssetRegistry::GuidToString(entry->guid));
+		}
+	};
+
+	std::error_code walk, ec;
+	if (!isFolder) {
+		addFile(virtualPath);
+	}
+	else {
+		for (fs::recursive_directory_iterator it(target, walk), end; !walk && it != end; it.increment(walk)) {
+			if (!it->is_regular_file(ec) || AssetRegistry::IsMetaFile(it->path())) continue;
+			addFile(virtualPath + "/" + fs::relative(it->path(), target, ec).generic_string());
+		}
+	}
+	if (needles.empty()) return {};
+
+	// Every file that can point at another asset, except the ones being deleted. A handful of
+	// small text files, so reading them whole each time the modal opens is fine.
+	std::vector<std::string> usedBy;
+	walk.clear();
+	for (fs::recursive_directory_iterator it(root, walk), end; !walk && it != end; it.increment(walk)) {
+		fs::path const& p = it->path();
+		if (!it->is_regular_file(ec) || !CanReferenceAssets(p) || IsInside(p, target)) continue;
+		if (it->file_size(ec) > (16u << 20)) continue;   // nothing that refers to assets is this big
+
+		std::ifstream in(p, std::ios::binary);
+		std::string const text{ std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>() };
+		bool const uses = std::any_of(needles.begin(), needles.end(),
+			[&](std::string const& needle) { return text.find(needle) != std::string::npos; });
+		if (uses) usedBy.push_back(fs::relative(p, root, ec).generic_string());
+	}
+	std::sort(usedBy.begin(), usedBy.end());
+	return usedBy;
+}
+
 void Crucible::AssetBrowser::DrawDeleteConfirm() {
 	// Opened here, at the panel's ID level, rather than from the tile's context menu, so
 	// OpenPopup and BeginPopupModal see the same ID.
-	char const* const kTitle = "Delete Scene?";
+	char const* const kTitle = "Delete Asset?";
 	if (m_openDeleteConfirm) {
 		ImGui::OpenPopup(kTitle);
 		m_openDeleteConfirm = false;
@@ -1061,16 +1177,40 @@ void Crucible::AssetBrowser::DrawDeleteConfirm() {
 	if (!ImGui::BeginPopupModal(kTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
 		return;
 
-	ImGui::Text("Delete '%s'?", m_deleteTarget.c_str());
+	ImVec4 const warn(1.0f, 0.75f, 0.3f, 1.0f);
+	DeleteInfo const& info = m_deleteInfo;
 
-	bool const isOpenScene = m_scenes.HasPath() && SamePath(m_scenes.CurrentPath(), AbsolutePathOf(m_deleteTarget));
+	if (info.isFolder) {
+		ImGui::Text("Delete the folder '%s'?", m_deleteTarget.c_str());
+		if (info.fileCount > 0)
+			ImGui::TextDisabled("Everything in it goes too: %zu file%s.", info.fileCount, info.fileCount == 1 ? "" : "s");
+	}
+	else {
+		ImGui::Text("Delete '%s'?", m_deleteTarget.c_str());
+	}
+
+	// The open scene is this file, or somewhere inside this folder.
+	bool const isOpenScene = m_scenes.HasPath() && IsInside(m_scenes.CurrentPath(), AbsolutePathOf(m_deleteTarget));
 	if (isOpenScene) {
 		ImGui::Spacing();
-		ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "This scene is open in the editor.");
+		ImGui::TextColored(warn, "%s", info.isFolder ? "The scene open in the editor is in this folder." : "This scene is open in the editor.");
 		ImGui::TextDisabled("It stays open, but unsaved: saving will ask for a new name.");
 	}
+
+	if (!info.usedBy.empty()) {
+		ImGui::Spacing();
+		ImGui::TextColored(warn, "Still used by %zu file%s:", info.usedBy.size(), info.usedBy.size() == 1 ? "" : "s");
+		constexpr std::size_t kShown = 8;
+		for (std::size_t i = 0; i < info.usedBy.size() && i < kShown; ++i)
+			ImGui::BulletText("%s", info.usedBy[i].c_str());
+		if (info.usedBy.size() > kShown)
+			ImGui::TextDisabled("...and %zu more", info.usedBy.size() - kShown);
+		ImGui::TextDisabled("Their references will point at nothing once it is gone.");
+	}
+
+	ImGui::Spacing();
 #ifdef _WIN32
-	ImGui::TextDisabled("The file and its .meta go to the Recycle Bin.");
+	ImGui::TextDisabled("%s", info.isFolder ? "The folder goes to the Recycle Bin." : "The file and its .meta go to the Recycle Bin.");
 #else
 	ImGui::TextDisabled("This cannot be undone.");
 #endif
@@ -1105,37 +1245,61 @@ void Crucible::AssetBrowser::ApplyPendingDelete() {
 
 	// Checked before deleting: afterwards the file is gone and the paths cannot be compared
 	// by what is on disk.
-	bool const wasOpen = m_scenes.HasPath() && SamePath(m_scenes.CurrentPath(), AbsolutePathOf(target));
+	bool const wasOpen = m_scenes.HasPath() && IsInside(m_scenes.CurrentPath(), AbsolutePathOf(target));
+	bool const wasFolder = m_deleteInfo.isFolder;
 
 	if (!DeleteOnDisk(target)) return;
 
 	// The open scene lost its file: keep it open, but make the next save ask for a name.
 	if (wasOpen) m_scenes.DetachCurrentFile();
 
-	if (m_selected == target) m_selected.clear();
+	// Deleted the folder being browsed, or one of its parents: show what is left.
+	if (m_currentFolder == target || m_currentFolder.rfind(target + "/", 0) == 0) {
+		m_currentFolder = ParentOf(target);
+		m_syncTree = true;
+	}
+	if (m_selected == target || m_selected.rfind(target + "/", 0) == 0) m_selected.clear();
+
 	Refresh();   // drops it from the index and the grid
-	CRU_USER_INFO("Deleted scene {}", target);
+	CRU_USER_INFO("Deleted {}{}", wasFolder ? "folder " : (IsSceneFile(target) ? "scene " : ""), target);
 }
 
 bool Crucible::AssetBrowser::DeleteOnDisk(std::string const& virtualPath) {
 	std::error_code ec;
-	fs::path const file = AbsolutePathOf(virtualPath);
-	if (!fs::is_regular_file(file, ec)) {
-		CRU_USER_WARN("Cannot delete '{}': the file no longer exists", virtualPath);
+	fs::path const path = AbsolutePathOf(virtualPath);
+	bool const isFolder = fs::is_directory(path, ec);
+	if (!isFolder && !fs::is_regular_file(path, ec)) {
+		CRU_USER_WARN("Cannot delete '{}': it no longer exists", virtualPath);
 		return false;
 	}
 
 	std::string why;
-	if (!RemoveFile(file, why)) {
+	if (!RemoveFile(path, why)) {
 		CRU_USER_WARN("Cannot delete '{}': {}", virtualPath, why);
 		return false;
 	}
 
 	// The .meta goes too, or the asset's guid would be left behind with nothing to point at.
-	fs::path const meta = AssetRegistry::MetaPathFor(file);
+	// (A folder's files take their .meta files with them.)
+	fs::path const meta = AssetRegistry::MetaPathFor(path);
 	if (fs::exists(meta, ec) && !RemoveFile(meta, why))
 		CRU_USER_WARN("Deleted '{}', but its .meta could not be removed: {}", virtualPath, why);
 
+	// Companion files edited through this asset (a font's .fontsettings) are hidden from the
+	// browser, so nobody could delete them later: they go with it, .meta and all.
+	if (!isFolder) {
+		for (std::string_view const suffix : kCompanionSuffixes) {
+			fs::path companion = path;
+			companion += std::string(suffix);
+			if (!fs::is_regular_file(companion, ec)) continue;
+			if (!RemoveFile(companion, why)) {
+				CRU_USER_WARN("Deleted '{}', but '{}' could not be removed: {}", virtualPath, companion.filename().string(), why);
+				continue;
+			}
+			fs::path const companionMeta = AssetRegistry::MetaPathFor(companion);
+			if (fs::exists(companionMeta, ec)) RemoveFile(companionMeta, why);
+		}
+	}
 	return true;
 }
 

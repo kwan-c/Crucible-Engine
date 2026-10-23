@@ -88,7 +88,7 @@ namespace Crucible {
 
         /*********************************************************************
          \brief  Replace the contents with a file's.
-         \param[in] path Full path to the .json / .scene / .prefab file.
+         \param[in] path Full path to the .json / .scene / .cprefab file.
          \return true if the file was read and parsed.
          \note   Logs and returns false on a parse error; never throws.
          *********************************************************************/

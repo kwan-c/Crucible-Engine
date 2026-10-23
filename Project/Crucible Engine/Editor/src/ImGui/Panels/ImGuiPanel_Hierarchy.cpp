@@ -20,6 +20,8 @@
 #include "ImGui/Panels/ImGuiPanel_SceneView.h"
 #include "ImGui/Panels/ImGuiPanel_UIView.h"
 #include "Undo/EntityCommands.h"
+#include "ImGui/EditorWidgets.h"
+#include "Prefabs/PrefabAuthoring.h"
 #include "Diagnostics/Logger.h"
 #include <Graphics/ParticlePresets.h>
 #include <imgui_internal.h>   // BeginDragDropTargetCustom (drop on empty space)
@@ -30,8 +32,9 @@
 #include <unordered_set>
 
 namespace {
-	// Drag-and-drop payload for a Hierarchy row (the dragged Entity, by value).
-	constexpr char const* kEntityPayload = "CRUCIBLE_ENTITY";
+	// Drag-and-drop payload for a Hierarchy row (the dragged Entity, by value). Shared through
+	// EditorWidgets.h because the Asset Browser accepts it too (drop an entity = create a prefab).
+	constexpr char const* kEntityPayload = Crucible::EditorWidgets::kEntityPayload;
 
 	// The row label: the entity's name, or "Entity <index>" if it has none.
 	std::string LabelOf(Crucible::World const& world, Crucible::Entity entity) {
@@ -198,6 +201,14 @@ void Crucible::Hierarchy::Update(float dt) {
 					m_pendingParent = kNullEntity;
 					RequestAction(PendingAction::Reparent, dragged);
 				}
+				// A .cprefab from the Asset Browser: placed as a root, at the origin.
+				if (PrefabAuthoring::IsDraggingPrefab()) {
+					if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) {
+						m_pendingPrefab = static_cast<char const*>(payload->Data);
+						m_pendingParent = kNullEntity;
+						RequestAction(PendingAction::PlacePrefab, kNullEntity);
+					}
+				}
 				ImGui::EndDragDropTarget();
 			}
 		}
@@ -352,6 +363,15 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 				}
 			}
 		}
+		// A .cprefab from the Asset Browser: placed as this entity's child, sitting exactly on it.
+		// Only accepted for prefabs, so other assets don't light the row up.
+		if (PrefabAuthoring::IsDraggingPrefab()) {
+			if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) {
+				m_pendingPrefab = static_cast<char const*>(payload->Data);
+				m_pendingParent = entity;
+				RequestAction(PendingAction::PlacePrefab, entity);   // deferred: we are inside the query loop
+			}
+		}
 		ImGui::EndDragDropTarget();
 	}
 
@@ -371,6 +391,8 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 		if (ImGui::MenuItem("Copy", "Ctrl+C"))                              { RequestAction(PendingAction::Copy, entity); }
 		if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_clipboard.empty())) { RequestAction(PendingAction::Paste, entity); }
 		if (ImGui::MenuItem("Duplicate", "Ctrl+D"))                         { RequestAction(PendingAction::Duplicate, entity); }
+		// Greyed out in Play Mode (PrefabAuthoring::CanCreate).
+		if (ImGui::MenuItem("Create Prefab", nullptr, false, PrefabAuthoring::CanCreate())) { RequestAction(PendingAction::CreatePrefab, entity); }
 		ImGui::Separator();
 		// Sibling order: what draws on top in the UI. Roots have none (canvases use sortOrder).
 		bool const orderable = m_world.GetParent(entity).IsValid();
@@ -560,6 +582,24 @@ void Crucible::Hierarchy::RunPendingAction() {
 		RecordCreated(roots, "Duplicate");   // after the rename, so redo brings the copy back named
 		break;
 	}
+
+	case PendingAction::PlacePrefab: {
+		// Selects the copy and records its own undo step (PrefabAuthoring::PlacePrefab).
+		Entity const placed = PrefabAuthoring::PlacePrefab(m_world, m_pendingPrefab, m_pendingParent);
+		if (m_world.IsAlive(placed)) {
+			m_revealEntity = placed;   // open its parent's rows so the new row is visible
+			m_rangeAnchor  = placed;
+		}
+		m_pendingPrefab.clear();
+		m_pendingParent = kNullEntity;
+		break;
+	}
+
+	case PendingAction::CreatePrefab:
+		// One .cprefab per top-level target (children included), in Assets/Prefabs. To pick the
+		// folder, drag the rows onto the Asset Browser instead. Saving reads the World only.
+		PrefabAuthoring::CreatePrefabs(m_world, targets, PrefabAuthoring::kDefaultFolder);
+		break;
 
 	case PendingAction::Delete:
 		DeleteEntities(targets);

@@ -182,7 +182,7 @@ namespace Crucible {
         if (e == ".scene")  
             return AssetType::Scene;
 
-        if (e == ".prefab") 
+        if (e == ".cprefab") 
             return AssetType::Prefab;
 
         if (e == ".mat")    
