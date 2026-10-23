@@ -18,6 +18,17 @@
 * drag-to-parent then act on the whole selection as ONE undo step. When both a parent and its
 * child are selected, only the parent is acted on (the child comes along with it).
 *
+* Sibling order (Unity's): children are listed - and screen-space UI is drawn - first to last, so
+* a later sibling draws on top of an earlier one and gets clicks first. Change it by:
+*	drag & drop      top quarter of a row: put the dragged entities just BEFORE it (same parent);
+*	                 bottom quarter: just AFTER it (or, on an open row with children, as its FIRST
+*	                 child); middle: make them its children (as before). A line / box shows which.
+*	right-click      Order > Bring to Front / Move Forward / Move Backward / Send to Back.
+*	Ctrl+] / Ctrl+[  move forward / backward one step; with Shift: to front / back. Also in the UI
+*	                 Editor tab (UIView calls Reorder / ReorderSelection).
+* Roots have no sibling order in the World, so they can't be reordered; whole canvases are ordered
+* by UICanvas::sortOrder instead. Each reorder is one undo step (ReparentCommand per entity moved).
+*
 * Rows are labelled with the entity's EntityName (see ECS/Components/Components.h), falling back
 * to its raw index ("Entity 3") if the name is empty.
 *
@@ -45,6 +56,23 @@ namespace Crucible {
 		void Init() override;
 		void Update(float dt) override;
 
+		// ---- Sibling order (draw order for UI: later = on top) ----
+		enum class OrderMove { Forward, Backward, ToFront, ToBack };
+
+		// Moves the entities among their siblings, keeping their order relative to each other, as
+		// one undo step. Roots are skipped (they have no order). Must not be called while the
+		// World is being iterated (the Hierarchy defers its own calls to after its tree loop).
+		void Reorder(std::vector<Entity> const& entities, OrderMove move);
+		// Reorder() on the Inspector's selection (top-level entities only).
+		void ReorderSelection(OrderMove move);
+		// "Bring to Front", ... - for menus.
+		static char const* OrderLabel(OrderMove move);
+		// The four Order menu items (Hierarchy row menu, UI Editor tab's right-click menu). Returns
+		// the move picked this frame, if any. `enabled` greys them out (e.g. a root).
+		static bool DrawOrderMenuItems(OrderMove& picked, bool enabled);
+		// Ctrl+] / Ctrl+[ (+Shift). Returns true and the move if one was pressed this frame.
+		static bool OrderShortcutPressed(OrderMove& move, ImGuiInputFlags route = 0);
+
 	private:
 		World& m_world;
 		SceneManager& m_scenes;
@@ -56,10 +84,17 @@ namespace Crucible {
 		std::optional<Query<const HierarchyNode>> m_query;
 		// Actions requested by the right-click menu or a shortcut. They change the World, which is not
 		// allowed while m_query is iterating, so they are stored and run after the loop.
-		enum class PendingAction { None, Copy, Paste, Duplicate, Delete, Reparent };
+		enum class PendingAction { None, Copy, Paste, Duplicate, Delete, Reparent, Place, Reorder };
 		PendingAction m_pendingAction = PendingAction::None;
 		Entity        m_pendingTarget = kNullEntity;   // the row acted on; if it is selected, the whole selection is
-		Entity        m_pendingParent = kNullEntity;   // Reparent only: the new parent (kNullEntity = root)
+		Entity        m_pendingParent = kNullEntity;   // Reparent / Place: the new parent (kNullEntity = root)
+
+		// Place: a drop between rows. The dragged entities go next to m_pendingAnchor (before or
+		// after it), or first under m_pendingParent when there is no anchor.
+		enum class DropZone { Into, Before, After, FirstChild };
+		Entity        m_pendingAnchor = kNullEntity;
+		DropZone      m_pendingZone   = DropZone::Into;
+		OrderMove     m_pendingMove   = OrderMove::Forward;   // Reorder
 
 		// One copied entity: its component snapshot, and the index of its parent in the same list
 		// (-1 for the top entity). Parents always come before their children.
@@ -89,6 +124,15 @@ namespace Crucible {
 		void ReparentAll(std::vector<Entity> const& children, Entity parent);
 		// Moves one entity and returns its undo command (nullptr if nothing changed or refused).
 		std::unique_ptr<EditorCommand> Reparent(Entity child, Entity parent, std::string const& label);
+		// A drop between rows: moves the entities under `parent` (keeping their world position)
+		// and puts them, in row order, before / after `anchor` (or first, with no anchor). One undo step.
+		void PlaceAll(std::vector<Entity> const& entities, Entity parent, Entity anchor, DropZone zone);
+		// Makes `parent`'s children follow `order` (every child, once), recording one
+		// ReparentCommand per child whose index changes (in the order applied, so undoing them
+		// backwards restores the original order exactly).
+		void ApplyChildOrder(Entity parent, std::vector<Entity> const& order, std::string const& label,
+		                     std::vector<std::unique_ptr<EditorCommand>>& parts);
+		std::vector<Entity> ChildrenOf(Entity parent) const;
 
 		// ---- Click selection ----
 		std::vector<Entity> m_rows;                      // every row drawn this frame, top to bottom

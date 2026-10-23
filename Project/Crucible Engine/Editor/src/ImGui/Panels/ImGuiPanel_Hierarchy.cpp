@@ -219,6 +219,11 @@ void Crucible::Hierarchy::Update(float dt) {
 			if (hasSelection && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D, ImGuiInputFlags_RouteGlobal)) { RequestAction(PendingAction::Duplicate, selected); }
 			if (hasSelection && ImGui::Shortcut(ImGuiKey_Delete, ImGuiInputFlags_RouteGlobal))            { RequestAction(PendingAction::Delete, selected); }
 
+			// Ctrl+] / Ctrl+[ (+Shift): sibling order. Only while the Hierarchy is focused (default
+			// route); the UI Editor tab has the same keys.
+			OrderMove move{};
+			if (hasSelection && OrderShortcutPressed(move)) { m_pendingMove = move; RequestAction(PendingAction::Reorder, selected); }
+
 			// F: frame the selection where it is edited (see FocusSelection). Default (focus) route,
 			// so only while the Hierarchy is focused - the Scene / UI views handle F themselves.
 			if (hasSelection && ImGui::Shortcut(ImGuiKey_F)) { FocusSelection(); }
@@ -305,12 +310,46 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 		else                                             { ImGui::Text("%s", label.c_str()); }
 		ImGui::EndDragDropSource();
 	}
+	// Dropping on a row: the top / bottom quarter puts the dragged entities next to it (sibling
+	// order = UI draw order), the middle makes them its children. Drawn ourselves (a line or a box),
+	// so the user can see which it will be before letting go.
 	if (ImGui::BeginDragDropTarget()) {
-		if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(kEntityPayload)) {
-			Entity dragged{};
-			std::memcpy(&dragged, payload->Data, sizeof(Entity));
-			m_pendingParent = entity;
-			RequestAction(PendingAction::Reparent, dragged);   // deferred: we are inside the query loop
+		if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(kEntityPayload,
+				ImGuiDragDropFlags_AcceptBeforeDelivery | ImGuiDragDropFlags_AcceptNoDrawDefaultRect)) {
+			ImVec2 const rmin = ImGui::GetItemRectMin();
+			ImVec2 const rmax = ImGui::GetItemRectMax();
+			float const t = (ImGui::GetIO().MousePos.y - rmin.y) / (std::max)(rmax.y - rmin.y, 1.0f);
+			bool const hasParent = m_world.GetParent(entity).IsValid();   // roots have no sibling order
+			bool const expanded  = childCount > 0 && open;
+
+			DropZone zone = DropZone::Into;
+			if (t < 0.25f && hasParent)      { zone = DropZone::Before; }
+			else if (t > 0.75f && expanded)  { zone = DropZone::FirstChild; }
+			else if (t > 0.75f && hasParent) { zone = DropZone::After; }
+
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			ImU32 const colour = ImGui::GetColorU32(ImGuiCol_DragDropTarget);
+			float const right = rmax.x;   // the row spans the panel's width (SpanAvailWidth)
+			switch (zone) {
+				case DropZone::Into:       dl->AddRect(rmin, rmax, colour, 2.0f, 0, 2.0f); break;
+				case DropZone::Before:     dl->AddLine(ImVec2(rmin.x, rmin.y), ImVec2(right, rmin.y), colour, 2.0f); break;
+				case DropZone::After:      dl->AddLine(ImVec2(rmin.x, rmax.y), ImVec2(right, rmax.y), colour, 2.0f); break;
+				case DropZone::FirstChild: dl->AddLine(ImVec2(rmin.x + ImGui::GetStyle().IndentSpacing, rmax.y), ImVec2(right, rmax.y), colour, 2.0f); break;
+			}
+
+			if (payload->IsDelivery()) {
+				Entity dragged{};
+				std::memcpy(&dragged, payload->Data, sizeof(Entity));
+				if (zone == DropZone::Into) {
+					m_pendingParent = entity;
+					RequestAction(PendingAction::Reparent, dragged);   // deferred: we are inside the query loop
+				} else {
+					m_pendingParent = zone == DropZone::FirstChild ? entity : m_world.GetParent(entity);
+					m_pendingAnchor = zone == DropZone::FirstChild ? kNullEntity : entity;
+					m_pendingZone   = zone;
+					RequestAction(PendingAction::Place, dragged);
+				}
+			}
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -331,6 +370,15 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 		if (ImGui::MenuItem("Copy", "Ctrl+C"))                              { RequestAction(PendingAction::Copy, entity); }
 		if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_clipboard.empty())) { RequestAction(PendingAction::Paste, entity); }
 		if (ImGui::MenuItem("Duplicate", "Ctrl+D"))                         { RequestAction(PendingAction::Duplicate, entity); }
+		ImGui::Separator();
+		// Sibling order: what draws on top in the UI. Roots have none (canvases use sortOrder).
+		bool const orderable = m_world.GetParent(entity).IsValid();
+		if (ImGui::BeginMenu("Order", orderable)) {
+			OrderMove move{};
+			if (DrawOrderMenuItems(move, true)) { m_pendingMove = move; RequestAction(PendingAction::Reorder, entity); }
+			ImGui::EndMenu();
+		}
+		if (!orderable) { ImGui::SetItemTooltip("Root entities have no order. Canvases: use UICanvas sortOrder."); }
 		ImGui::Separator();
 		if (ImGui::MenuItem(deleteLabel.c_str(), "Del"))                    { RequestAction(PendingAction::Delete, entity); }
 		ImGui::EndPopup();
@@ -520,7 +568,167 @@ void Crucible::Hierarchy::RunPendingAction() {
 		ReparentAll(targets, m_pendingParent);
 		m_pendingParent = kNullEntity;
 		break;
+	case PendingAction::Place:
+		PlaceAll(targets, m_pendingParent, m_pendingAnchor, m_pendingZone);
+		m_pendingParent = kNullEntity;
+		m_pendingAnchor = kNullEntity;
+		break;
+	case PendingAction::Reorder:
+		Reorder(targets, m_pendingMove);
+		break;
 	}
+}
+
+// ------------------------------------------------------------------------------------------------ //
+//  Sibling order
+// ------------------------------------------------------------------------------------------------ //
+
+char const* Crucible::Hierarchy::OrderLabel(OrderMove move) {
+	switch (move) {
+		case OrderMove::Forward:  return "Move Forward";
+		case OrderMove::Backward: return "Move Backward";
+		case OrderMove::ToFront:  return "Bring to Front";
+		case OrderMove::ToBack:   return "Send to Back";
+	}
+	return "Reorder";
+}
+
+bool Crucible::Hierarchy::DrawOrderMenuItems(OrderMove& picked, bool enabled) {
+	bool chosen = false;
+	auto item = [&](OrderMove move, char const* keys) {
+		if (ImGui::MenuItem(OrderLabel(move), keys, false, enabled)) { picked = move; chosen = true; }
+	};
+	item(OrderMove::ToFront,  "Ctrl+Shift+]");
+	item(OrderMove::Forward,  "Ctrl+]");
+	item(OrderMove::Backward, "Ctrl+[");
+	item(OrderMove::ToBack,   "Ctrl+Shift+[");
+	return chosen;
+}
+
+bool Crucible::Hierarchy::OrderShortcutPressed(OrderMove& move, ImGuiInputFlags route) {
+	if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_RightBracket, route)) { move = OrderMove::ToFront;  return true; }
+	if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_LeftBracket, route))  { move = OrderMove::ToBack;   return true; }
+	if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_RightBracket, route))                  { move = OrderMove::Forward;  return true; }
+	if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_LeftBracket, route))                   { move = OrderMove::Backward; return true; }
+	return false;
+}
+
+std::vector<Crucible::Entity> Crucible::Hierarchy::ChildrenOf(Entity parent) const {
+	std::vector<Entity> children;
+	if (parent.IsValid() && m_world.IsAlive(parent)) {
+		m_world.ForEachChild(parent, [&children](Entity child) { children.push_back(child); });
+	}
+	return children;
+}
+
+void Crucible::Hierarchy::ApplyChildOrder(Entity parent, std::vector<Entity> const& order, std::string const& label,
+                                          std::vector<std::unique_ptr<EditorCommand>>& parts) {
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	EntityKey const parentKey = history.KeyOf(parent);
+	for (std::uint32_t i = 0; i < order.size(); ++i) {
+		Entity const child = order[i];
+		std::uint32_t const index = m_world.GetSiblingIndex(child);
+		if (index == i) { continue; }
+		Transform const* local = m_world.Read<Transform>(child);
+		if (!local) { continue; }
+		ReparentCommand::Placement const before{ parentKey, index, *local };
+		m_world.SetSiblingIndex(child, i);
+		ReparentCommand::Placement const after{ parentKey, m_world.GetSiblingIndex(child), *local };
+		parts.push_back(std::make_unique<ReparentCommand>(history.KeyOf(child), before, after, label));
+	}
+}
+
+void Crucible::Hierarchy::PlaceAll(std::vector<Entity> const& entities, Entity parent, Entity anchor, DropZone zone) {
+	if (!parent.IsValid() || !m_world.IsAlive(parent)) { return; }
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR)) { inspector->CommitPendingEdit(); }
+
+	std::string const label = CountLabel("Move", entities.size());
+	std::vector<std::unique_ptr<EditorCommand>> parts;
+
+	// 1. Under the new parent first (keeps their world position, like a normal drop). The anchor
+	//    itself can be in the dragged selection: it stays where it is and the rest go around it.
+	std::vector<Entity> moving;
+	for (Entity const e : entities) {
+		if (e == anchor || e == parent || !m_world.IsAlive(e)) { continue; }
+		if (!(m_world.GetParent(e) == parent)) {
+			if (auto command = Reparent(e, parent, label)) { parts.push_back(std::move(command)); }
+		}
+		if (m_world.GetParent(e) == parent) { moving.push_back(e); }   // refused (e.g. a cycle): left out
+	}
+
+	// 2. Then the order: everyone else as they are, with the moved ones (in row order) dropped in
+	//    next to the anchor - or at the front for "first child".
+	if (!moving.empty()) {
+		std::vector<Entity> order;
+		for (Entity const child : ChildrenOf(parent)) {
+			if (std::find(moving.begin(), moving.end(), child) == moving.end()) { order.push_back(child); }
+		}
+		std::size_t at = 0;
+		if (zone != DropZone::FirstChild && anchor.IsValid()) {
+			auto const it = std::find(order.begin(), order.end(), anchor);
+			at = it == order.end() ? order.size() : static_cast<std::size_t>(it - order.begin()) + (zone == DropZone::After ? 1 : 0);
+		}
+		order.insert(order.begin() + static_cast<std::ptrdiff_t>(at), moving.begin(), moving.end());
+		ApplyChildOrder(parent, order, label, parts);
+	}
+	if (parts.empty()) { return; }
+
+	EditorManager::GetInstance().GetHistory().Push(GroupCommand::Make(std::move(parts), label));
+	m_scenes.MarkDirty();
+}
+
+void Crucible::Hierarchy::ReorderSelection(OrderMove move) {
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (!inspector || inspector->SelectionCount() == 0) { return; }
+	Reorder(TopLevel(inspector->GetSelection()), move);
+}
+
+void Crucible::Hierarchy::Reorder(std::vector<Entity> const& entities, OrderMove move) {
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR)) { inspector->CommitPendingEdit(); }
+
+	// Grouped by parent: each family is reordered on its own.
+	std::vector<Entity> parents;
+	bool skippedRoot = false;
+	for (Entity const e : entities) {
+		if (!m_world.IsAlive(e)) { continue; }
+		Entity const parent = m_world.GetParent(e);
+		if (!parent.IsValid()) { skippedRoot = true; continue; }
+		if (std::find(parents.begin(), parents.end(), parent) == parents.end()) { parents.push_back(parent); }
+	}
+	if (skippedRoot) {
+		CRU_USER_INFO("Root entities have no order to change - order canvases with UICanvas sortOrder");
+	}
+
+	std::string const label = OrderLabel(move);
+	std::vector<std::unique_ptr<EditorCommand>> parts;
+	auto const picked = [&entities](Entity e) { return std::find(entities.begin(), entities.end(), e) != entities.end(); };
+
+	for (Entity const parent : parents) {
+		std::vector<Entity> order = ChildrenOf(parent);
+		switch (move) {
+			case OrderMove::ToFront:   // the picked ones last (= on top), keeping their order
+				std::stable_partition(order.begin(), order.end(), [&](Entity e) { return !picked(e); });
+				break;
+			case OrderMove::ToBack:    // the picked ones first
+				std::stable_partition(order.begin(), order.end(), picked);
+				break;
+			case OrderMove::Forward:   // each picked one swaps with the unpicked one after it
+				for (std::size_t i = order.size(); i-- > 1;) {
+					if (picked(order[i - 1]) && !picked(order[i])) { std::swap(order[i - 1], order[i]); }
+				}
+				break;
+			case OrderMove::Backward:  // each picked one swaps with the unpicked one before it
+				for (std::size_t i = 1; i < order.size(); ++i) {
+					if (picked(order[i]) && !picked(order[i - 1])) { std::swap(order[i - 1], order[i]); }
+				}
+				break;
+		}
+		ApplyChildOrder(parent, order, label, parts);
+	}
+	if (parts.empty()) { return; }   // already at the front / back
+
+	EditorManager::GetInstance().GetHistory().Push(GroupCommand::Make(std::move(parts), label));
+	m_scenes.MarkDirty();
 }
 
 std::vector<Crucible::Hierarchy::ClipNode> Crucible::Hierarchy::CopySubtree(Entity root) const {

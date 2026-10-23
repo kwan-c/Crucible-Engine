@@ -8,6 +8,7 @@
 
 #include "ImGui/Panels/ImGuiPanel_UIView.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_Hierarchy.h"   // sibling order (Bring to Front, ...)
 #include "ImGui/EditorWidgets.h"
 #include "ECS/World.h"
 #include "Undo/EntityCommands.h"
@@ -190,6 +191,11 @@ void Crucible::UIView::DrawToolbar() {
 			Entity const selected = inspector ? inspector->GetSelectedEntity() : kNullEntity;
 			if (selected.IsValid()) { FrameEntity(selected); } else { m_fitPending = true; }
 		}
+		// Ctrl+] / Ctrl+[ (+Shift): draw order, the Hierarchy's keys (later sibling = on top).
+		Hierarchy::OrderMove move{};
+		if (Hierarchy::OrderShortcutPressed(move)) {
+			if (auto hierarchy = EditorManager::GetInstance().GetPanel<Hierarchy>(ImguiPanels::HIERARCHY)) { hierarchy->ReorderSelection(move); }
+		}
 	}
 
 	ImGui::SameLine();
@@ -295,6 +301,30 @@ void Crucible::UIView::HandleSelection(bool hovered, bool active) {
 			// A plain click on an element can also drag it by its body (free move, any tool).
 			if (hit.IsValid() && !io.KeyCtrl && !io.KeyShift) { beginDrag(hit, GizmoHandle::MoveFree); }
 		}
+	}
+
+	// Right-click (without dragging - a right drag pans): select the element under the mouse and
+	// open its menu - draw order for now, the same as the Hierarchy's Order menu.
+	if (hovered && ImGui::IsMouseReleased(ImGuiMouseButton_Right) && !m_dragEntity.IsValid()) {
+		bool const dragged = io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Right] > io.MouseDragThreshold * io.MouseDragThreshold;
+		if (!dragged) {
+			m_contextEntity = PickElement(ScreenToCanvas(io.MousePos));
+			if (m_contextEntity.IsValid() && inspector && !inspector->IsSelected(m_contextEntity)) { inspector->SetSelectedEntity(m_contextEntity); }
+			ImGui::OpenPopup("##UIElementMenu");
+		}
+	}
+	if (ImGui::BeginPopup("##UIElementMenu")) {
+		if (!m_contextEntity.IsValid() || !m_world.IsAlive(m_contextEntity)) {
+			ImGui::TextDisabled("No UI element here");
+		} else {
+			ImGui::TextDisabled("Draw order");
+			bool const orderable = m_world.GetParent(m_contextEntity).IsValid();
+			Hierarchy::OrderMove move{};
+			if (Hierarchy::DrawOrderMenuItems(move, orderable)) {
+				if (auto hierarchy = EditorManager::GetInstance().GetPanel<Hierarchy>(ImguiPanels::HIERARCHY)) { hierarchy->ReorderSelection(move); }
+			}
+		}
+		ImGui::EndPopup();
 	}
 
 	// Dragging. Snapshot before the first movement, so a click alone pushes no undo step.
