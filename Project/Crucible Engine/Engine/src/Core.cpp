@@ -164,11 +164,6 @@ namespace Crucible {
             m_window->PollEvents();
             m_events.engine.DeliverPending();   // window/input events queued by callbacks
 
-            // F11 / Alt+Enter: fullscreen on / off (saved for next launch).
-            if (Input::IsPressed(KeyCode::F11) ||
-                (Input::IsPressed(KeyCode::Enter) && (Input::IsDown(KeyCode::LeftAlt) || Input::IsDown(KeyCode::RightAlt))))
-                ToggleFullscreen();
-
             // The safe point: nothing is iterating the world yet this frame. Scene swaps
             // destroy every entity, and play-mode transitions snapshot, restore and start or
             // end the simulation. The scene request goes first, so Play captures the scene just loaded.
