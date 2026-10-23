@@ -127,19 +127,19 @@ namespace Crucible {
         t.msaaDepth        = VulkanImage{};
         t.msaaLineData     = VulkanImage{};
         if (t.samples > 1) {
-            const vk::SampleCountFlagBits samples     = static_cast<vk::SampleCountFlagBits>(t.samples);
+            const vk::SampleCountFlagBits sampleCount = static_cast<vk::SampleCountFlagBits>(t.samples);
             const vk::Format              depthFormat = m_depthFormat;
             t.msaaColor.Create(m_context, width, height, format, vk::ImageTiling::eOptimal,
                 vk::ImageUsageFlagBits::eColorAttachment,
-                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, samples);
+                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, sampleCount);
             t.msaaColorView = makeView(t.msaaColor);
             t.msaaLineData.Create(m_context, width, height, lineFormat, vk::ImageTiling::eOptimal,
                 vk::ImageUsageFlagBits::eColorAttachment,
-                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, samples);
+                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, sampleCount);
             t.msaaLineDataView = makeLineView(t.msaaLineData);
             t.msaaDepth.Create(m_context, width, height, depthFormat, vk::ImageTiling::eOptimal,
                 vk::ImageUsageFlagBits::eDepthStencilAttachment,
-                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, samples);
+                vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, 1, sampleCount);
             vk::ImageViewCreateInfo depthViewInfo{
                 .image = t.msaaDepth.GetImage(), .viewType = vk::ImageViewType::e2D, .format = depthFormat,
                 .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eDepth, .levelCount = 1, .layerCount = 1 } };
