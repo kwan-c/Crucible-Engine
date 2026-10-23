@@ -376,7 +376,7 @@ namespace Crucible {
 			settings.bestFit          = text->bestFit;
 			settings.minFontSize      = text->minFontSize;
 			settings.maxFontSize      = text->maxFontSize;
-			const bool bitmap         = font->data.outputType == FontOutputType::Bitmap;
+			const bool bitmap         = font->data.m_outputType == FontOutputType::Bitmap;
 			settings.pixelScale       = bitmap ? scale : 0.0f;   // bitmap: the baked size nearest the on-screen size, for whatever size is used
 			// Only part of the cache key (so the game and the UI Editor tab, at different scales, keep
 			// separate entries instead of taking turns); LayoutText picks the group from pixelScale.
@@ -396,7 +396,7 @@ namespace Crucible {
 			// ---- Effects (distance-field fonts), converted from reference pixels into field units:
 			// the stored distance goes 0 -> 1 across the atlas's pixel range, edge at 0.5, so
 			// everything outside the edge has to fit in 0.5 (kept a little under, at kMaxField).
-			const bool  field      = !bitmap && font->data.atlas.pixelRange > 0.0f;
+			const bool  field      = !bitmap && font->data.m_atlas.pixelRange > 0.0f;
 			const float toField    = field ? TextEffectFieldPerPixel(*font, layout.fontSize) : 0.0f;
 			const float boldDilate = field ? kBoldDilateEm * layout.fontSize * toField : 0.0f;   // bold widens each side by half its extra advance
 			bool anyBold = false;
@@ -458,7 +458,7 @@ namespace Crucible {
 							const float edge  = 0.5f - fx.dilate - fx.outlineWidth;   // the shape's outer edge
 							fx.shadowSoftness = std::clamp(text->shadowSoftness, 0.0f, 1.0f) * std::max(edge - (0.5f - kMaxField), 0.0f);
 						}
-						quad(item, local, colour, font->texture, glyph.uv, font->drawMode, &box, font->data.atlas.pixelRange, fx);
+						quad(item, local, colour, font->texture, glyph.uv, font->drawMode, &box, font->data.m_atlas.pixelRange, fx);
 					} else {
 						quad(item, local, colour, font->texture, glyph.uv, font->drawMode, &box);
 						// Bitmap bold: the glyph again, in steps of at most one pixel up to boldWidth to the right.
@@ -502,10 +502,10 @@ namespace Crucible {
 	}
 
 	float UI::TextEffectFieldPerPixel(const FontAsset& font, float fontSize) {
-		const float range = font.data.atlas.pixelRange;
-		if (font.data.outputType == FontOutputType::Bitmap || range <= 0.0f || fontSize <= 0.0f || font.data.groups.empty()) { return 0.0f; }
+		const float range = font.data.m_atlas.pixelRange;
+		if (font.data.m_outputType == FontOutputType::Bitmap || range <= 0.0f || fontSize <= 0.0f || font.data.m_groups.empty()) { return 0.0f; }
 		// One reference pixel = (glyphSize / fontSize) atlas texels; one field unit = `range` texels.
-		return font.data.groups.front().pixelSize / (fontSize * range);
+		return font.data.m_groups.front().pixelSize / (fontSize * range);
 	}
 
 	float UI::MaxTextEffectWidth(const FontAsset& font, float fontSize) {

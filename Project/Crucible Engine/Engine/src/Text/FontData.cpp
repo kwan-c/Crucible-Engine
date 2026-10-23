@@ -161,17 +161,17 @@ namespace Crucible {
 
     void FontData::BuildLookup() {
 
-        std::sort(kerning.begin(), kerning.end(), [](const FontKernPair& a, const FontKernPair& b) {
+        std::sort(m_kerning.begin(), m_kerning.end(), [](const FontKernPair& a, const FontKernPair& b) {
             return a.left != b.left ? a.left < b.left : a.right < b.right;
         });
 
         m_lookup.clear();
-        m_lookup.reserve(glyphs.size());
-        for (std::size_t g = 0; g < groups.size(); ++g) {
-            const FontSizeGroup& group = groups[g];
-            const std::size_t end = std::min<std::size_t>(std::size_t{ group.firstGlyph } + group.glyphCount, glyphs.size());
+        m_lookup.reserve(m_glyphs.size());
+        for (std::size_t g = 0; g < m_groups.size(); ++g) {
+            const FontSizeGroup& group = m_groups[g];
+            const std::size_t end = std::min<std::size_t>(std::size_t{ group.firstGlyph } + group.glyphCount, m_glyphs.size());
             for (std::size_t i = group.firstGlyph; i < end; ++i) {
-                const std::uint64_t key = (static_cast<std::uint64_t>(g) << 32) | glyphs[i].codepoint;
+                const std::uint64_t key = (static_cast<std::uint64_t>(g) << 32) | m_glyphs[i].codepoint;
                 m_lookup.emplace(key, static_cast<std::uint32_t>(i));   // first one wins on a duplicate
             }
         }
@@ -182,17 +182,17 @@ namespace Crucible {
 
         const std::uint64_t key = (static_cast<std::uint64_t>(group) << 32) | codepoint;
         const auto it = m_lookup.find(key);
-        return it != m_lookup.end() ? &glyphs[it->second] : nullptr;
+        return it != m_lookup.end() ? &m_glyphs[it->second] : nullptr;
 
     }   // FontData::FindGlyph()
 
     float FontData::GetKerning(std::uint32_t left, std::uint32_t right) const {
 
-        const auto it = std::lower_bound(kerning.begin(), kerning.end(), FontKernPair{ left, right, 0.0f },
+        const auto it = std::lower_bound(m_kerning.begin(), m_kerning.end(), FontKernPair{ left, right, 0.0f },
             [](const FontKernPair& a, const FontKernPair& b) {
                 return a.left != b.left ? a.left < b.left : a.right < b.right;
             });
-        return (it != kerning.end() && it->left == left && it->right == right) ? it->adjust : 0.0f;
+        return (it != m_kerning.end() && it->left == left && it->right == right) ? it->adjust : 0.0f;
 
     }   // FontData::GetKerning()
 
@@ -200,8 +200,8 @@ namespace Crucible {
 
         std::size_t best = 0;
         float bestDistance = 1.0e30f;
-        for (std::size_t i = 0; i < groups.size(); ++i) {
-            const float distance = std::fabs(groups[i].pixelSize - pixelSize);
+        for (std::size_t i = 0; i < m_groups.size(); ++i) {
+            const float distance = std::fabs(m_groups[i].pixelSize - pixelSize);
             if (distance < bestDistance) { bestDistance = distance; best = i; }
         }
         return best;
@@ -213,49 +213,49 @@ namespace Crucible {
         error.clear();
         const auto fail = [&](std::string message) { error = std::move(message); return false; };
 
-        if (static_cast<std::uint8_t>(outputType) > static_cast<std::uint8_t>(FontOutputType::Mtsdf)) {
-            return fail("unknown output type " + std::to_string(static_cast<int>(outputType)));
+        if (static_cast<std::uint8_t>(m_outputType) > static_cast<std::uint8_t>(FontOutputType::Mtsdf)) {
+            return fail("unknown output type " + std::to_string(static_cast<int>(m_outputType)));
         }
 
-        const std::uint32_t wantChannels = outputType == FontOutputType::Mtsdf ? 4u : 1u;
-        if (atlas.channels != wantChannels) {
-            return fail(std::string(ToString(outputType)) + " needs a " + std::to_string(wantChannels)
-                        + "-channel atlas, not " + std::to_string(atlas.channels));
+        const std::uint32_t wantChannels = m_outputType == FontOutputType::Mtsdf ? 4u : 1u;
+        if (m_atlas.channels != wantChannels) {
+            return fail(std::string(ToString(m_outputType)) + " needs a " + std::to_string(wantChannels)
+                        + "-channel atlas, not " + std::to_string(m_atlas.channels));
         }
-        if (atlas.width == 0 || atlas.height == 0 || atlas.width > kMaxAtlasSide || atlas.height > kMaxAtlasSide) {
-            return fail("bad atlas size " + std::to_string(atlas.width) + "x" + std::to_string(atlas.height));
+        if (m_atlas.width == 0 || m_atlas.height == 0 || m_atlas.width > kMaxAtlasSide || m_atlas.height > kMaxAtlasSide) {
+            return fail("bad atlas size " + std::to_string(m_atlas.width) + "x" + std::to_string(m_atlas.height));
         }
-        if (atlas.pixels.size() != std::size_t{ atlas.width } * atlas.height * atlas.channels) {
-            return fail("atlas has " + std::to_string(atlas.pixels.size()) + " bytes, expected "
-                        + std::to_string(std::size_t{ atlas.width } * atlas.height * atlas.channels));
+        if (m_atlas.pixels.size() != std::size_t{ m_atlas.width } * m_atlas.height * m_atlas.channels) {
+            return fail("atlas has " + std::to_string(m_atlas.pixels.size()) + " bytes, expected "
+                        + std::to_string(std::size_t{ m_atlas.width } * m_atlas.height * m_atlas.channels));
         }
-        if (outputType != FontOutputType::Bitmap && !(atlas.pixelRange > 0.0f)) {
+        if (m_outputType != FontOutputType::Bitmap && !(m_atlas.pixelRange > 0.0f)) {
             return fail("a distance-field atlas needs a pixel range above 0");
         }
 
-        if (groups.empty() || groups.size() > kMaxGroups) {
-            return fail("bad size group count " + std::to_string(groups.size()));
+        if (m_groups.empty() || m_groups.size() > kMaxGroups) {
+            return fail("bad size group count " + std::to_string(m_groups.size()));
         }
-        if (outputType != FontOutputType::Bitmap && groups.size() != 1) {
+        if (m_outputType != FontOutputType::Bitmap && m_groups.size() != 1) {
             return fail("SDF/MTSDF fonts have exactly one size group");
         }
-        if (glyphs.size() > kMaxGlyphs) { return fail("too many glyphs"); }
-        if (kerning.size() > kMaxKerns) { return fail("too many kerning pairs"); }
+        if (m_glyphs.size() > kMaxGlyphs) { return fail("too many glyphs"); }
+        if (m_kerning.size() > kMaxKerns) { return fail("too many kerning pairs"); }
 
-        for (const FontSizeGroup& group : groups) {
+        for (const FontSizeGroup& group : m_groups) {
             if (!(group.pixelSize > 0.0f) || !Finite(group.pixelSize)) { return fail("a size group has no pixel size"); }
-            if (std::size_t{ group.firstGlyph } + group.glyphCount > glyphs.size()) {
+            if (std::size_t{ group.firstGlyph } + group.glyphCount > m_glyphs.size()) {
                 return fail("a size group runs past the glyph list");
             }
         }
 
-        const FontMetrics& m = metrics;
+        const FontMetrics& m = m_metrics;
         if (!Finite(m.lineHeight) || !Finite(m.ascender) || !Finite(m.descender)
             || !Finite(m.underlineY) || !Finite(m.underlineThickness) || !(m.lineHeight > 0.0f)) {
             return fail("bad font metrics");
         }
 
-        for (const FontGlyph& glyph : glyphs) {
+        for (const FontGlyph& glyph : m_glyphs) {
             if (!Finite(glyph.advance) || !Finite(glyph.plane) || !Finite(glyph.uv)) {
                 return fail("glyph U+" + std::to_string(glyph.codepoint) + " has a non-finite value");
             }
@@ -266,7 +266,7 @@ namespace Crucible {
                 }
             }
         }
-        for (const FontKernPair& pair : kerning) {
+        for (const FontKernPair& pair : m_kerning) {
             if (!Finite(pair.adjust)) { return fail("a kerning pair has a non-finite value"); }
         }
         return true;
@@ -284,53 +284,53 @@ namespace Crucible {
 
         std::vector<std::uint8_t> atlasBytes;
         if (encoding == FontAtlasEncoding::Png) {
-            const int stride = static_cast<int>(font.atlas.width * font.atlas.channels);
+            const int stride = static_cast<int>(font.m_atlas.width * font.m_atlas.channels);
             const int ok = stbi_write_png_to_func(&AppendPng, &atlasBytes,
-                static_cast<int>(font.atlas.width), static_cast<int>(font.atlas.height),
-                static_cast<int>(font.atlas.channels), font.atlas.pixels.data(), stride);
+                static_cast<int>(font.m_atlas.width), static_cast<int>(font.m_atlas.height),
+                static_cast<int>(font.m_atlas.channels), font.m_atlas.pixels.data(), stride);
             if (!ok || atlasBytes.empty()) { error = "Can't write font: PNG encoding failed"; return false; }
         } else {
-            atlasBytes = font.atlas.pixels;
+            atlasBytes = font.m_atlas.pixels;
         }
 
-        out.reserve(kHeaderSize + font.groups.size() * kGroupSize + font.glyphs.size() * kGlyphSize
-                    + font.kerning.size() * kKernSize + atlasBytes.size());
+        out.reserve(kHeaderSize + font.m_groups.size() * kGroupSize + font.m_glyphs.size() * kGlyphSize
+                    + font.m_kerning.size() * kKernSize + atlasBytes.size());
         Writer w(out);
 
         w.Bytes(kMagic, sizeof(kMagic));
         w.U32(kVersion);
-        w.U8(static_cast<std::uint8_t>(font.outputType));
-        w.U8(static_cast<std::uint8_t>(font.atlas.channels));
+        w.U8(static_cast<std::uint8_t>(font.m_outputType));
+        w.U8(static_cast<std::uint8_t>(font.m_atlas.channels));
         w.U8(static_cast<std::uint8_t>(encoding));
         w.U8(0);
-        w.U32(font.atlas.width);
-        w.U32(font.atlas.height);
-        w.F32(font.atlas.pixelRange);
-        w.F32(font.metrics.lineHeight);
-        w.F32(font.metrics.ascender);
-        w.F32(font.metrics.descender);
-        w.F32(font.metrics.underlineY);
-        w.F32(font.metrics.underlineThickness);
-        w.U64(font.sourceHash);
-        w.U64(font.settingsHash);
-        w.U32(static_cast<std::uint32_t>(font.groups.size()));
-        w.U32(static_cast<std::uint32_t>(font.glyphs.size()));
-        w.U32(static_cast<std::uint32_t>(font.kerning.size()));
+        w.U32(font.m_atlas.width);
+        w.U32(font.m_atlas.height);
+        w.F32(font.m_atlas.pixelRange);
+        w.F32(font.m_metrics.lineHeight);
+        w.F32(font.m_metrics.ascender);
+        w.F32(font.m_metrics.descender);
+        w.F32(font.m_metrics.underlineY);
+        w.F32(font.m_metrics.underlineThickness);
+        w.U64(font.m_sourceHash);
+        w.U64(font.m_settingsHash);
+        w.U32(static_cast<std::uint32_t>(font.m_groups.size()));
+        w.U32(static_cast<std::uint32_t>(font.m_glyphs.size()));
+        w.U32(static_cast<std::uint32_t>(font.m_kerning.size()));
         w.U32(static_cast<std::uint32_t>(atlasBytes.size()));
         for (int i = 0; i < 4; ++i) { w.U32(0); }
 
-        for (const FontSizeGroup& group : font.groups) {
+        for (const FontSizeGroup& group : font.m_groups) {
             w.F32(group.pixelSize);
             w.U32(group.firstGlyph);
             w.U32(group.glyphCount);
         }
-        for (const FontGlyph& glyph : font.glyphs) {
+        for (const FontGlyph& glyph : font.m_glyphs) {
             w.U32(glyph.codepoint);
             w.F32(glyph.advance);
             for (int i = 0; i < 4; ++i) { w.F32(glyph.plane[i]); }
             for (int i = 0; i < 4; ++i) { w.F32(glyph.uv[i]); }
         }
-        for (const FontKernPair& pair : font.kerning) {
+        for (const FontKernPair& pair : font.m_kerning) {
             w.U32(pair.left);
             w.U32(pair.right);
             w.F32(pair.adjust);
@@ -395,18 +395,18 @@ namespace Crucible {
         const std::uint8_t encoding   = r.U8();
         r.U8();   // reserved
 
-        font.outputType          = static_cast<FontOutputType>(outputType);
-        font.atlas.channels      = channels;
-        font.atlas.width         = r.U32();
-        font.atlas.height        = r.U32();
-        font.atlas.pixelRange    = r.F32();
-        font.metrics.lineHeight  = r.F32();
-        font.metrics.ascender    = r.F32();
-        font.metrics.descender   = r.F32();
-        font.metrics.underlineY  = r.F32();
-        font.metrics.underlineThickness = r.F32();
-        font.sourceHash          = r.U64();
-        font.settingsHash        = r.U64();
+        font.m_outputType          = static_cast<FontOutputType>(outputType);
+        font.m_atlas.channels      = channels;
+        font.m_atlas.width         = r.U32();
+        font.m_atlas.height        = r.U32();
+        font.m_atlas.pixelRange    = r.F32();
+        font.m_metrics.lineHeight  = r.F32();
+        font.m_metrics.ascender    = r.F32();
+        font.m_metrics.descender   = r.F32();
+        font.m_metrics.underlineY  = r.F32();
+        font.m_metrics.underlineThickness = r.F32();
+        font.m_sourceHash          = r.U64();
+        font.m_settingsHash        = r.U64();
         const std::uint32_t groupCount = r.U32();
         const std::uint32_t glyphCount = r.U32();
         const std::uint32_t kernCount  = r.U32();
@@ -421,7 +421,7 @@ namespace Crucible {
             return fail("unknown atlas encoding " + std::to_string(encoding));
         }
         if (channels != 1 && channels != 4) { return fail("corrupt header (atlas channels)"); }
-        if (font.atlas.width == 0 || font.atlas.height == 0 || font.atlas.width > kMaxAtlasSide || font.atlas.height > kMaxAtlasSide) {
+        if (font.m_atlas.width == 0 || font.m_atlas.height == 0 || font.m_atlas.width > kMaxAtlasSide || font.m_atlas.height > kMaxAtlasSide) {
             return fail("corrupt header (atlas size)");
         }
         // Check the tables fit before allocating anything for them.
@@ -429,21 +429,21 @@ namespace Crucible {
                                  + std::size_t{ kernCount } * kKernSize;
         if (tables + atlasBytes > r.Remaining()) { return fail("file is truncated"); }
 
-        font.groups.resize(groupCount);
-        for (FontSizeGroup& group : font.groups) {
+        font.m_groups.resize(groupCount);
+        for (FontSizeGroup& group : font.m_groups) {
             group.pixelSize  = r.F32();
             group.firstGlyph = r.U32();
             group.glyphCount = r.U32();
         }
-        font.glyphs.resize(glyphCount);
-        for (FontGlyph& glyph : font.glyphs) {
+        font.m_glyphs.resize(glyphCount);
+        for (FontGlyph& glyph : font.m_glyphs) {
             glyph.codepoint = r.U32();
             glyph.advance   = r.F32();
             for (int i = 0; i < 4; ++i) { glyph.plane[i] = r.F32(); }
             for (int i = 0; i < 4; ++i) { glyph.uv[i]    = r.F32(); }
         }
-        font.kerning.resize(kernCount);
-        for (FontKernPair& pair : font.kerning) {
+        font.m_kerning.resize(kernCount);
+        for (FontKernPair& pair : font.m_kerning) {
             pair.left   = r.U32();
             pair.right  = r.U32();
             pair.adjust = r.F32();
@@ -453,21 +453,21 @@ namespace Crucible {
         r.Skip(atlasBytes);
         if (r.Failed()) { return fail("file is truncated (atlas)"); }
 
-        const std::size_t texels = std::size_t{ font.atlas.width } * font.atlas.height * channels;
+        const std::size_t texels = std::size_t{ font.m_atlas.width } * font.m_atlas.height * channels;
         if (encoding == static_cast<std::uint8_t>(FontAtlasEncoding::Raw)) {
             if (atlasBytes != texels) { return fail("atlas is the wrong size"); }
-            font.atlas.pixels.assign(atlasData, atlasData + atlasBytes);
+            font.m_atlas.pixels.assign(atlasData, atlasData + atlasBytes);
         } else {
             int w = 0, h = 0, fileChannels = 0;
             std::unique_ptr<stbi_uc, void (*)(void*)> decoded(
                 stbi_load_from_memory(atlasData, static_cast<int>(atlasBytes), &w, &h, &fileChannels, channels),
                 &stbi_image_free);
             if (!decoded) { return fail(std::string("atlas PNG decode failed: ") + stbi_failure_reason()); }
-            if (static_cast<std::uint32_t>(w) != font.atlas.width || static_cast<std::uint32_t>(h) != font.atlas.height) {
+            if (static_cast<std::uint32_t>(w) != font.m_atlas.width || static_cast<std::uint32_t>(h) != font.m_atlas.height) {
                 return fail("atlas PNG is " + std::to_string(w) + "x" + std::to_string(h) + ", header says "
-                            + std::to_string(font.atlas.width) + "x" + std::to_string(font.atlas.height));
+                            + std::to_string(font.m_atlas.width) + "x" + std::to_string(font.m_atlas.height));
             }
-            font.atlas.pixels.assign(decoded.get(), decoded.get() + texels);
+            font.m_atlas.pixels.assign(decoded.get(), decoded.get() + texels);
         }
 
         if (r.Remaining() != 0) { return fail("unexpected bytes after the atlas"); }

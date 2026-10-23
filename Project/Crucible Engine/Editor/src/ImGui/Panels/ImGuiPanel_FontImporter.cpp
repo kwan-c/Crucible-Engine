@@ -595,9 +595,9 @@ void Crucible::FontImporter::AcquirePreview() {
 		FontAsset const* font = resources->GetFont(compiled->guid.m_Value);
 		if (font == nullptr || !font->texture.IsValid()) { return; }
 		m_previewTexture       = font->texture;
-		m_previewWidth         = font->data.atlas.width;
-		m_previewHeight        = font->data.atlas.height;
-		m_previewType          = font->data.outputType;
+		m_previewWidth         = font->data.m_atlas.width;
+		m_previewHeight        = font->data.m_atlas.height;
+		m_previewType          = font->data.m_outputType;
 		m_previewDrawableFrame = ImGui::GetFrameCount() + kPreviewDelay;
 	}
 

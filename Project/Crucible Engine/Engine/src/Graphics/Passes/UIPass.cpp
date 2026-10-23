@@ -70,10 +70,10 @@ namespace Crucible {
         };
         m_sampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
 
-        vk::DescriptorPoolSize poolSize{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = kMaxTextureSets };
+        vk::DescriptorPoolSize poolSize{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = m_maxTextureSets };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,   // vk::raii::DescriptorSet frees itself
-            .maxSets = kMaxTextureSets, .poolSizeCount = 1, .pPoolSizes = &poolSize };
+            .maxSets = m_maxTextureSets, .poolSizeCount = 1, .pPoolSizes = &poolSize };
         m_texturePool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
 
         // ---- Pipeline ----
@@ -186,9 +186,9 @@ namespace Crucible {
         if (list.commands.empty() || list.indices.empty() || list.vertices.empty()) { return; }
 
         // A frame's worth of UI is a few thousand vertices; past these caps something is looping.
-        if (m_vertices.size() + list.vertices.size() > kMaxVertices || m_indices.size() + list.indices.size() > kMaxIndices) {
+        if (m_vertices.size() + list.vertices.size() > m_maxVertices || m_indices.size() + list.indices.size() > m_maxIndices) {
             if (!m_warnedOverflow) {
-                CRU_WARN("[Renderer] More than {} UI vertices or {} UI indices in one frame; the rest of the UI is dropped.", kMaxVertices, kMaxIndices);
+                CRU_WARN("[Renderer] More than {} UI vertices or {} UI indices in one frame; the rest of the UI is dropped.", m_maxVertices, m_maxIndices);
                 m_warnedOverflow = true;
             }
             return;
@@ -284,9 +284,9 @@ namespace Crucible {
         if (auto it = m_textureSets.find(texture.id); it != m_textureSets.end()) { return *it->second; }
 
         // Pool full: fall back to the white texture's set (made first, below, so it always fits).
-        if (m_textureSets.size() >= kMaxTextureSets - 1 && texture.id != m_resources.DefaultWhiteTexture().id) {
+        if (m_textureSets.size() >= m_maxTextureSets - 1 && texture.id != m_resources.DefaultWhiteTexture().id) {
             if (!m_warnedTextureSets) {
-                CRU_WARN("[Renderer] The UI used more than {} different textures; the rest are drawn white.", kMaxTextureSets - 1);
+                CRU_WARN("[Renderer] The UI used more than {} different textures; the rest are drawn white.", m_maxTextureSets - 1);
                 m_warnedTextureSets = true;
             }
             return EnsureTextureSet(m_resources.DefaultWhiteTexture());

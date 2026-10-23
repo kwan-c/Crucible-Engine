@@ -1254,20 +1254,20 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		}
 		if (font == nullptr) { font = rm->GetDefaultFont(); }
 		if (font == nullptr) {
-			ImGui::TextColored(EditorTheme::GetPalette().error, "No font: compile %s in the Font Importer", ResourceManager::kDefaultFontPath);
-		} else if (font->data.outputType == FontOutputType::Bitmap) {
+			ImGui::TextColored(EditorTheme::GetPalette().error, "No font: compile %s in the Font Importer", ResourceManager::m_defaultFontPath);
+		} else if (font->data.m_outputType == FontOutputType::Bitmap) {
 			std::string sizes;
-			for (FontSizeGroup const& group : font->data.groups) {
+			for (FontSizeGroup const& group : font->data.m_groups) {
 				sizes += (sizes.empty() ? "" : ", ") + std::to_string(static_cast<int>(group.pixelSize));
 			}
 			ImGui::TextDisabled("Bitmap font: sharp at %s px on screen", sizes.c_str());
 		} else {
-			ImGui::TextDisabled("%s font: sharp at any size", ToString(font->data.outputType));
+			ImGui::TextDisabled("%s font: sharp at any size", ToString(font->data.m_outputType));
 		}
 
 		// ---- Effects: each with its checkbox; its settings greyed out while it is off.
 		ImGui::SeparatorText("Effects");
-		bool const bitmap = font == nullptr || font->data.outputType == FontOutputType::Bitmap;
+		bool const bitmap = font == nullptr || font->data.m_outputType == FontOutputType::Bitmap;
 		float const maxWidth = font ? UI::MaxTextEffectWidth(*font, text.bestFit ? text.maxFontSize : text.fontSize) : 0.0f;
 		if (bitmap) {
 			ImGui::TextColored(EditorTheme::GetPalette().warning, "Bitmap font: outline and glow need an SDF / MTSDF font.");

@@ -174,21 +174,21 @@ namespace Crucible {
 			}
 
 			FontData& font = out.font;
-			font.outputType = settings.outputType;
-			if (multiChannel) { GenerateAtlas<4, msdf_atlas::mtsdfGenerator>(glyphs, width, height, font.atlas); }
-			else              { GenerateAtlas<1, msdf_atlas::sdfGenerator>(glyphs, width, height, font.atlas); }
-			font.atlas.pixelRange = settings.pixelRange;
+			font.m_outputType = settings.outputType;
+			if (multiChannel) { GenerateAtlas<4, msdf_atlas::mtsdfGenerator>(glyphs, width, height, font.m_atlas); }
+			else              { GenerateAtlas<1, msdf_atlas::sdfGenerator>(glyphs, width, height, font.m_atlas); }
+			font.m_atlas.pixelRange = settings.pixelRange;
 
 			msdfgen::FontMetrics const& m = geometry.getMetrics();
-			font.metrics.lineHeight         = static_cast<float>(m.lineHeight);
-			font.metrics.ascender           = static_cast<float>(m.ascenderY);
-			font.metrics.descender          = static_cast<float>(-m.descenderY);    // msdfgen: negative below the baseline
-			font.metrics.underlineY         = static_cast<float>(-m.underlineY);    // y up -> y down
-			font.metrics.underlineThickness = static_cast<float>(m.underlineThickness);
+			font.m_metrics.lineHeight         = static_cast<float>(m.lineHeight);
+			font.m_metrics.ascender           = static_cast<float>(m.ascenderY);
+			font.m_metrics.descender          = static_cast<float>(-m.descenderY);    // msdfgen: negative below the baseline
+			font.m_metrics.underlineY         = static_cast<float>(-m.underlineY);    // y up -> y down
+			font.m_metrics.underlineThickness = static_cast<float>(m.underlineThickness);
 
 			const double w = width, h = height;
 			std::unordered_map<int, std::uint32_t> codepointOf;   // font glyph index -> codepoint (for kerning)
-			font.glyphs.reserve(glyphs.size());
+			font.m_glyphs.reserve(glyphs.size());
 			for (auto const& glyph : glyphs) {
 				FontGlyph g;
 				g.codepoint = glyph.getCodepoint();
@@ -201,16 +201,16 @@ namespace Crucible {
 					g.uv = { static_cast<float>(l / w), static_cast<float>((h - t) / h),
 					         static_cast<float>(r / w), static_cast<float>((h - b) / h) };
 				}
-				font.glyphs.push_back(g);
+				font.m_glyphs.push_back(g);
 				codepointOf[glyph.getIndex()] = g.codepoint;
 			}
-			std::sort(font.glyphs.begin(), font.glyphs.end(), [](FontGlyph const& a, FontGlyph const& b) { return a.codepoint < b.codepoint; });
-			font.groups.push_back({ static_cast<float>(settings.glyphSize), 0, static_cast<std::uint32_t>(font.glyphs.size()) });
+			std::sort(font.m_glyphs.begin(), font.m_glyphs.end(), [](FontGlyph const& a, FontGlyph const& b) { return a.codepoint < b.codepoint; });
+			font.m_groups.push_back({ static_cast<float>(settings.glyphSize), 0, static_cast<std::uint32_t>(font.m_glyphs.size()) });
 
 			for (auto const& [pair, adjust] : geometry.getKerning()) {
 				auto const left = codepointOf.find(pair.first), right = codepointOf.find(pair.second);
 				if (left != codepointOf.end() && right != codepointOf.end() && adjust != 0.0) {
-					font.kerning.push_back({ left->second, right->second, static_cast<float>(adjust) });
+					font.m_kerning.push_back({ left->second, right->second, static_cast<float>(adjust) });
 				}
 			}
 			return true;
@@ -327,19 +327,19 @@ namespace Crucible {
 			if (inked.empty()) { width = 4; height = 4; }   // only whitespace: a tiny empty atlas keeps FontData valid
 
 			FontData& font = out.font;
-			font.outputType       = FontOutputType::Bitmap;
-			font.atlas.width      = static_cast<std::uint32_t>(width);
-			font.atlas.height     = static_cast<std::uint32_t>(height);
-			font.atlas.channels   = 1;
-			font.atlas.pixelRange = 0.0f;
-			font.atlas.pixels.assign(std::size_t{ font.atlas.width } * font.atlas.height, 0);
+			font.m_outputType       = FontOutputType::Bitmap;
+			font.m_atlas.width      = static_cast<std::uint32_t>(width);
+			font.m_atlas.height     = static_cast<std::uint32_t>(height);
+			font.m_atlas.channels   = 1;
+			font.m_atlas.pixelRange = 0.0f;
+			font.m_atlas.pixels.assign(std::size_t{ font.m_atlas.width } * font.m_atlas.height, 0);
 
 			for (std::size_t k = 0; k < inked.size(); ++k) {
 				RenderedGlyph& r = rendered[inked[k]];
 				const int x0 = boxes[k].x + pad, y0 = boxes[k].y + pad;
 				for (int y = 0; y < r.height; ++y) {
 					std::copy_n(r.coverage.begin() + static_cast<std::ptrdiff_t>(y) * r.width, r.width,
-					            font.atlas.pixels.begin() + static_cast<std::ptrdiff_t>(y0 + y) * width + x0);
+					            font.m_atlas.pixels.begin() + static_cast<std::ptrdiff_t>(y0 + y) * width + x0);
 				}
 				const float size = static_cast<float>(settings.bitmapSizes[r.group]);
 				const float left = static_cast<float>(r.left) / size, top = -static_cast<float>(r.top) / size;
@@ -350,19 +350,19 @@ namespace Crucible {
 
 			// Glyphs grouped by size (already in that order), codepoint order inside each group.
 			for (std::size_t group = 0; group < settings.bitmapSizes.size(); ++group) {
-				FontSizeGroup g{ static_cast<float>(settings.bitmapSizes[group]), static_cast<std::uint32_t>(font.glyphs.size()), 0 };
+				FontSizeGroup g{ static_cast<float>(settings.bitmapSizes[group]), static_cast<std::uint32_t>(font.m_glyphs.size()), 0 };
 				for (RenderedGlyph const& r : rendered) {
-					if (r.group == group) { font.glyphs.push_back(r.glyph); ++g.glyphCount; }
+					if (r.group == group) { font.m_glyphs.push_back(r.glyph); ++g.glyphCount; }
 				}
-				font.groups.push_back(g);
+				font.m_groups.push_back(g);
 			}
 
-			font.metrics.ascender           = static_cast<float>(face->ascender / em);
-			font.metrics.descender          = static_cast<float>(-face->descender / em);   // FreeType: negative below
-			font.metrics.lineHeight         = static_cast<float>(face->height / em);
-			if (!(font.metrics.lineHeight > 0.0f)) { font.metrics.lineHeight = font.metrics.ascender + font.metrics.descender; }
-			font.metrics.underlineY         = static_cast<float>(-face->underline_position / em);
-			font.metrics.underlineThickness = static_cast<float>(face->underline_thickness / em);
+			font.m_metrics.ascender           = static_cast<float>(face->ascender / em);
+			font.m_metrics.descender          = static_cast<float>(-face->descender / em);   // FreeType: negative below
+			font.m_metrics.lineHeight         = static_cast<float>(face->height / em);
+			if (!(font.m_metrics.lineHeight > 0.0f)) { font.m_metrics.lineHeight = font.m_metrics.ascender + font.m_metrics.descender; }
+			font.m_metrics.underlineY         = static_cast<float>(-face->underline_position / em);
+			font.m_metrics.underlineThickness = static_cast<float>(face->underline_thickness / em);
 
 			// Kerning (the 'kern' table), in ems, shared by every size.
 			if (FT_HAS_KERNING(face)) {
@@ -371,7 +371,7 @@ namespace Crucible {
 						for (auto const& [rightCp, rightIndex] : present) {
 							FT_Vector delta{};
 							if (FT_Get_Kerning(face, leftIndex, rightIndex, FT_KERNING_UNSCALED, &delta) == 0 && delta.x != 0) {
-								font.kerning.push_back({ leftCp, rightCp, static_cast<float>(delta.x / em) });
+								font.m_kerning.push_back({ leftCp, rightCp, static_cast<float>(delta.x / em) });
 							}
 						}
 					}
@@ -447,7 +447,7 @@ namespace Crucible {
 			: CompileDistanceField(fontBytes, settings, codepoints, out, error);
 		if (!ok) { out.font = FontData{}; return false; }
 
-		out.font.settingsHash = ComputeFontSettingsHash(settings, sampleTexts);
+		out.font.m_settingsHash = ComputeFontSettingsHash(settings, sampleTexts);
 		out.font.BuildLookup();
 		std::string invalid;
 		if (!out.font.Validate(invalid)) {   // a compiler bug, not a user mistake
@@ -455,7 +455,7 @@ namespace Crucible {
 			out.font = FontData{};
 			return false;
 		}
-		if (out.font.kerning.empty() && out.font.glyphs.size() > 1) {
+		if (out.font.m_kerning.empty() && out.font.m_glyphs.size() > 1) {
 			out.warnings.push_back("no kerning: the font has no 'kern' table (GPOS kerning isn't read)");
 		}
 

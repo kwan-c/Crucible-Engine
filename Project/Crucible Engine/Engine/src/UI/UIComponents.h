@@ -153,7 +153,7 @@ namespace Crucible {
 	 \details
 		- fontAsset: a .cfont, or a .ttf/.otf (its compiled .cfont is used).
 		  0, or a font that isn't compiled: the default font,
-		  ResourceManager::kDefaultFontPath.
+		  ResourceManager::m_defaultFontPath.
 		- fontSize: the em size in reference pixels (it scales with the
 		  canvas like everything else). Bitmap fonts are crisp only at their
 		  baked sizes - see the Font Importer.

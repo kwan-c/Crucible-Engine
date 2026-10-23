@@ -32,7 +32,7 @@ namespace Crucible {
     public:
         /// Target id of the game's UI (SubmitUI): drawn in Game views and the game window.
         /// Any other target id is a ViewportHandle::id (SubmitViewportUI).
-        static constexpr uint32_t kScreenTarget = 0xFFFFFFFEu;
+        static constexpr uint32_t m_screenTarget = 0xFFFFFFFEu;
 
         /*********************************************************************
          \param[in] context    Used to create buffers and sets. Must outlive this object.
@@ -60,7 +60,7 @@ namespace Crucible {
         /*********************************************************************
          \brief  Copies one UI list for this frame. Bad commands (indices out
                  of range) are dropped with a warning.
-         \param[in] target  kScreenTarget, or a ViewportHandle::id.
+         \param[in] target  m_screenTarget, or a ViewportHandle::id.
          \param[in] list    The vertices, indices and commands (copied).
          *********************************************************************/
         void Submit(uint32_t target, const UIDrawList& list);
@@ -86,7 +86,7 @@ namespace Crucible {
          \param[in] frameIndex  The frame in flight being recorded (Upload() ran for it).
          \param[in] extent      Size of the image being drawn into.
          \param[in] transform   Canvas pixels -> image pixels: xy = scale, zw = offset.
-         \param[in] target      kScreenTarget, or a ViewportHandle::id.
+         \param[in] target      m_screenTarget, or a ViewportHandle::id.
          *********************************************************************/
         void Record(vk::CommandBuffer cmd, uint32_t frameIndex, vk::Extent2D extent, const glm::vec4& transform, uint32_t target) const;
 
@@ -108,14 +108,14 @@ namespace Crucible {
         };
         // One Submit() call: a run of m_commands, for one target.
         struct Submission {
-            uint32_t target = kScreenTarget;
+            uint32_t target = m_screenTarget;
             uint32_t firstCommand = 0;
             uint32_t commandCount = 0;
         };
 
-        static constexpr uint32_t kMaxVertices    = 1'000'000;   // per frame, all lists together
-        static constexpr uint32_t kMaxIndices     = 3'000'000;
-        static constexpr uint32_t kMaxTextureSets = 512;         // different textures the UI can use
+        static constexpr uint32_t m_maxVertices    = 1'000'000;   // per frame, all lists together
+        static constexpr uint32_t m_maxIndices     = 3'000'000;
+        static constexpr uint32_t m_maxTextureSets = 512;         // different textures the UI can use
 
         VulkanContext&         m_context;
         const RenderResources& m_resources;

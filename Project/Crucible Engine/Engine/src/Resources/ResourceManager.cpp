@@ -335,13 +335,13 @@ namespace Crucible {
 
     const FontAsset* ResourceManager::GetDefaultFont() {
 
-        const AssetId id = GetIdForPath(kDefaultFontPath);
+        const AssetId id = GetIdForPath(m_defaultFontPath);
         if (id == 0) {
             static bool s_warned = false;
             if (!s_warned) {
                 s_warned = true;
                 CRU_USER_WARN("[Resources] The default font '{}' is missing from the Assets folder - text without a font won't draw",
-                              kDefaultFontPath);
+                              m_defaultFontPath);
             }
             return nullptr;
         }
@@ -378,7 +378,7 @@ namespace Crucible {
             return nullptr;
         }
 
-        const FontAtlas& atlas = font->data.atlas;
+        const FontAtlas& atlas = font->data.m_atlas;
         const TexturePixelFormat format = atlas.channels == 4 ? TexturePixelFormat::RGBA8   // MTSDF: data, not colour
                                                               : TexturePixelFormat::Alpha8; // SDF / Bitmap
         try {
@@ -388,14 +388,14 @@ namespace Crucible {
             WarnOnce(fontId, std::string("Font atlas upload failed: ") + e.what());
             return nullptr;
         }
-        font->drawMode = DrawModeFor(font->data.outputType);
+        font->drawMode = DrawModeFor(font->data.m_outputType);
 
         // The pixels now live on the GPU (copied before CreateTextureFromPixels returned).
-        font->data.atlas.pixels.clear();
-        font->data.atlas.pixels.shrink_to_fit();
+        font->data.m_atlas.pixels.clear();
+        font->data.m_atlas.pixels.shrink_to_fit();
 
         CRU_INFO("[Resources] Font {} loaded: {}, {} glyphs, {}x{} atlas", entry->virtualPath,
-                 ToString(font->data.outputType), font->data.glyphs.size(), atlas.width, atlas.height);
+                 ToString(font->data.m_outputType), font->data.m_glyphs.size(), atlas.width, atlas.height);
         return font;
 
     }   // ResourceManager::LoadFont()

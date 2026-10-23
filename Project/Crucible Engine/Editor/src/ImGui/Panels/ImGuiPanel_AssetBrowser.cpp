@@ -69,14 +69,14 @@ namespace {
 			&& path[folder.size()] == '/';
 	}
 
-	// Short label drawn on a file tile: the extension ("PNG"), or the type name if there is none.
+	// Label drawn on a file tile: the whole extension ("PNG", "CFONT"), or the type name if there
+	// is none. Drawn smaller when it is too wide for the tile (see DrawTile), never cut short.
 	std::string MakeBadge(std::string const& extension, Crucible::AssetType type)
 	{
 		std::string badge;
 		for (char c : extension) {
 			if (c == '.') continue;
 			badge.push_back(static_cast<char>(std::toupper(static_cast<unsigned char>(c))));
-			if (badge.size() == 4) break;
 		}
 		return badge.empty() ? std::string{ Crucible::ToString(type) } : badge;
 	}
@@ -111,17 +111,81 @@ namespace {
 		return buf;
 	}
 
-	// Shortens 'text' with "..." so it fits in maxWidth pixels.
-	std::string Ellipsize(std::string const& text, float maxWidth)
+	// Files that belong to another asset and are edited through it, not on their own: hidden from
+	// the browser like .meta files. A font's import settings ("Arial.ttf.fontsettings") are edited
+	// in the Font Importer.
+	bool IsHiddenCompanionFile(std::string const& name)
 	{
-		if (ImGui::CalcTextSize(text.c_str()).x <= maxWidth) return text;
-		std::string s = text;
-		while (!s.empty()) {
-			s.pop_back();
-			std::string const candidate = s + "...";
-			if (ImGui::CalcTextSize(candidate.c_str()).x <= maxWidth) return candidate;
+		static constexpr std::string_view kSuffixes[] = { ".fontsettings" };
+		std::string const lower = ToLowerCopy(name);
+		for (std::string_view suffix : kSuffixes) {
+			if (lower.size() >= suffix.size() && lower.compare(lower.size() - suffix.size(), suffix.size(), suffix) == 0) return true;
 		}
-		return "...";
+		return false;
+	}
+
+	// Number of bytes in the UTF-8 character starting with lead byte c.
+	std::size_t Utf8Length(unsigned char c)
+	{
+		if (c < 0x80) return 1;
+		if ((c & 0xE0) == 0xC0) return 2;
+		if ((c & 0xF0) == 0xE0) return 3;
+		if ((c & 0xF8) == 0xF0) return 4;
+		return 1;
+	}
+
+	// Byte offsets where a character starts (so a line is never cut inside a UTF-8 sequence).
+	std::vector<std::size_t> CharacterStarts(std::string const& text)
+	{
+		std::vector<std::size_t> starts;
+		for (std::size_t i = 0; i < text.size(); i += Utf8Length(static_cast<unsigned char>(text[i]))) starts.push_back(i);
+		starts.push_back(text.size());
+		return starts;
+	}
+
+	float TextWidth(std::string_view text)
+	{
+		return ImGui::CalcTextSize(text.data(), text.data() + text.size()).x;
+	}
+
+	/*
+	 * A tile's name in up to two lines of maxWidth pixels:
+	 *   - fits on one line: as it is;
+	 *   - fits on two: split, preferring just after a '_', '-', ' ' or '.' near the end of line one;
+	 *   - longer: line one is the start, line two is "..." plus the END of the name - so the part
+	 *     that tells similar files apart ("...Bold.ttf" / "...Italic.ttf") and the extension stay
+	 *     visible. The full name is in the tooltip.
+	 */
+	std::vector<std::string> TileLabel(std::string const& name, float maxWidth)
+	{
+		if (TextWidth(name) <= maxWidth) return { name };
+		std::vector<std::size_t> const starts = CharacterStarts(name);
+
+		// Line one: the longest start that fits...
+		std::size_t cut = 0;   // index into starts
+		for (std::size_t i = 1; i < starts.size(); ++i) {
+			if (TextWidth(std::string_view(name).substr(0, starts[i])) > maxWidth) break;
+			cut = i;
+		}
+		if (cut == 0) cut = 1;   // even one character is too wide: show it anyway
+		// ...pulled back to just after a separator, if one is in its last 40%.
+		for (std::size_t i = cut; i > cut * 3 / 5 && i > 1; --i) {
+			char const c = name[starts[i] - 1];
+			if (c == '_' || c == '-' || c == ' ' || c == '.') { cut = i; break; }
+		}
+		std::string const first = name.substr(0, starts[cut]);
+		std::string const rest = name.substr(starts[cut]);
+		if (TextWidth(rest) <= maxWidth) return { first, rest };
+
+		// Line two: "..." + the longest end of the name that fits.
+		std::vector<std::size_t> const restStarts = CharacterStarts(rest);
+		std::string tail = "...";
+		for (std::size_t i = restStarts.size() - 1; i-- > 0;) {
+			std::string const candidate = "..." + rest.substr(restStarts[i]);
+			if (TextWidth(candidate) > maxWidth) break;
+			tail = candidate;
+		}
+		return { first, tail };
 	}
 
 	// Opens Explorer on a folder, or with a file selected.
@@ -461,6 +525,7 @@ void Crucible::AssetBrowser::RebuildListing() {
 			std::size_t const slash = entry.virtualPath.find_last_of('/');
 			std::string name = (slash == std::string::npos) ? entry.virtualPath : entry.virtualPath.substr(slash + 1);
 			if (ToLowerCopy(name).find(needle) == std::string::npos) continue;
+			if (IsHiddenCompanionFile(name)) continue;
 
 			Item item;
 			item.name = std::move(name);
@@ -494,6 +559,7 @@ void Crucible::AssetBrowser::RebuildListing() {
 			}
 			else {
 				if (AssetRegistry::IsMetaFile(it->path())) continue;   // .meta files are an implementation detail
+				if (IsHiddenCompanionFile(name)) continue;             // edited through their asset (e.g. the Font Importer)
 
 				std::string const ext = ToLowerCopy(it->path().extension().string());
 				if (AssetEntry const* entry = m_assets.Find(item.virtualPath)) {
@@ -682,7 +748,7 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 
 	float const size = m_tileSize;
 	float const labelHeight = ImGui::GetTextLineHeight();
-	ImVec2 const tileSize(size, size + labelHeight + 6.0f);
+	ImVec2 const tileSize(size, size + labelHeight * m_labelLines + 6.0f);   // room for a two-line name
 	ImVec2 const p0 = ImGui::GetCursorScreenPos();
 	ImVec2 const p1(p0.x + tileSize.x, p0.y + tileSize.y);
 
@@ -750,18 +816,35 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 		// TODO: textures could show a real thumbnail here once the renderer can hand ImGui a texture
 		// (ImGui_ImplVulkan_AddTexture) - draw it with dl->AddImage(i0, i1) instead of the badge.
 		dl->AddRectFilled(i0, i1, TypeColor(item.type), 4.0f);
-		ImVec2 const badgeSize = ImGui::CalcTextSize(item.badge.c_str());
-		dl->AddText(ImVec2(i0.x + (w - badgeSize.x) * 0.5f, i0.y + (h - badgeSize.y) * 0.5f),
-			IM_COL32(255, 255, 255, 235), item.badge.c_str());
+		// The whole extension, scaled down to fit the box if it is long ("CFONT", "WAV" stays full
+		// size), and clipped to the box as a last resort at very small tile sizes.
+		ImVec2 const fullSize = ImGui::CalcTextSize(item.badge.c_str());
+		float const room = w - 6.0f;
+		float const fit = (fullSize.x > room && fullSize.x > 0.0f) ? std::max(room / fullSize.x, 0.55f) : 1.0f;
+		float const fontSize = ImGui::GetFontSize() * fit;
+		ImVec2 const badgeSize(fullSize.x * fit, fullSize.y * fit);
+		ImVec4 const clip(i0.x, i0.y, i1.x, i1.y);
+		dl->AddText(ImGui::GetFont(), fontSize, ImVec2(i0.x + (w - badgeSize.x) * 0.5f, i0.y + (h - badgeSize.y) * 0.5f),
+			IM_COL32(255, 255, 255, 235), item.badge.c_str(), nullptr, 0.0f, &clip);
 	}
 
 	if (renamingThis) {
 		DrawRenameField(ImVec2(p0.x, p0.y + size), size);
 	}
 	else {
-		std::string const label = Ellipsize(item.name, size - 4.0f);
-		float const labelWidth = ImGui::CalcTextSize(label.c_str()).x;
-		dl->AddText(ImVec2(p0.x + (size - labelWidth) * 0.5f, p0.y + size + 2.0f), ImGui::GetColorU32(ImGuiCol_Text), label.c_str());
+		// Files show their name without the extension - the badge on the tile already says "TTF",
+		// "PNG"... - so the room goes to the part that tells files apart. Tooltip / footer: full name.
+		std::string labelText = item.name;
+		if (!item.isFolder) {
+			std::size_t const dot = labelText.find_last_of('.');
+			if (dot != std::string::npos && dot > 0) labelText.erase(dot);
+		}
+		std::vector<std::string> const lines = TileLabel(labelText, size - 4.0f);
+		for (std::size_t line = 0; line < lines.size(); ++line) {
+			float const lineWidth = ImGui::CalcTextSize(lines[line].c_str()).x;
+			dl->AddText(ImVec2(p0.x + (size - lineWidth) * 0.5f, p0.y + size + 2.0f + labelHeight * static_cast<float>(line)),
+				ImGui::GetColorU32(ImGuiCol_Text), lines[line].c_str());
+		}
 	}
 
 	ImGui::EndGroup();

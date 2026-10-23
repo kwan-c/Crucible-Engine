@@ -13,7 +13,11 @@
 *        showing the selection.
 *
 * Folders come from the disk (so empty folders still show up); files come from
-* AssetManager's index, so .meta files are hidden and every file has a type.
+* AssetManager's index, so .meta files are hidden and every file has a type. Companion files
+* edited through another asset (a font's .fontsettings - the Font Importer) are hidden too.
+* Files are labelled without their extension (the tile's badge shows it), over up to two lines;
+* a longer name keeps its start and its END ("...BoldItalic"), so similar names stay apart.
+* The full name is in the tooltip and the footer.
 *
 * Interaction:
 *	click          select
@@ -159,7 +163,8 @@ namespace Crucible {
 		std::optional<std::string> m_pendingDelete;             // confirmed; applied after drawing
 
 		char  m_search[128] = {};
-		float m_tileSize = 72.0f;
+		float m_tileSize = 72.0f;   // wide enough for ~12 characters a line
+		static constexpr float m_labelLines = 2.0f;   // a tile's name gets up to two lines (see TileLabel in the .cpp)
 		float m_treeWidth = 190.0f;
 	};
 

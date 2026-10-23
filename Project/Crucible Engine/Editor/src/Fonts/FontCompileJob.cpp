@@ -167,11 +167,11 @@ namespace Crucible {
 				out.ok = CompileFont(std::span<const std::uint8_t>(bytes.data(), bytes.size()), settings, texts, out.result, out.error);
 				out.result.warnings.insert(out.result.warnings.begin(), readWarnings.begin(), readWarnings.end());
 				if (out.ok) {
-					out.result.font.sourceHash = sourceHash;
+					out.result.font.m_sourceHash = sourceHash;
 					out.ok = WriteFont(out.result.font, out.file, out.error);   // PNG-encodes the atlas: keep it off the main thread too
 				}
-				out.result.font.atlas.pixels.clear();   // written; the report doesn't need them
-				out.result.font.atlas.pixels.shrink_to_fit();
+				out.result.font.m_atlas.pixels.clear();   // written; the report doesn't need them
+				out.result.font.m_atlas.pixels.shrink_to_fit();
 				return out;
 			});
 		return true;
@@ -193,12 +193,12 @@ namespace Crucible {
 
 		if (out.ok) {
 			FontData const& font = out.result.font;
-			report.outputType  = font.outputType;
-			report.glyphCount  = font.glyphs.size();
-			report.groupCount  = font.groups.size();
-			report.kernCount   = font.kerning.size();
-			report.atlasWidth  = font.atlas.width;
-			report.atlasHeight = font.atlas.height;
+			report.outputType  = font.m_outputType;
+			report.glyphCount  = font.m_glyphs.size();
+			report.groupCount  = font.m_groups.size();
+			report.kernCount   = font.m_kerning.size();
+			report.atlasWidth  = font.m_atlas.width;
+			report.atlasHeight = font.m_atlas.height;
 			report.fileBytes   = out.file.size();
 
 			// WriteText writes the bytes as they are (binary), whatever is in them.

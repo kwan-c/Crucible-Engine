@@ -261,9 +261,9 @@ namespace Crucible {
 			}
 
 			// ---- Which lines fit ----
-			const float ascender  = font.metrics.ascender * size;
-			const float descender = font.metrics.descender * size;
-			const float lineStep  = font.metrics.lineHeight * size * settings.lineSpacing;
+			const float ascender  = font.m_metrics.ascender * size;
+			const float descender = font.m_metrics.descender * size;
+			const float lineStep  = font.m_metrics.lineHeight * size * settings.lineSpacing;
 			const float allHeight = static_cast<float>(lines.size() - 1) * lineStep + ascender + descender;
 			if (allHeight > boxH + kFitSlack) { fit.fits = false; }
 
@@ -333,8 +333,8 @@ namespace Crucible {
 				case TextAlignV::Bottom: top = boxH - blockHeight; break;
 			}
 
-			const float underlineY         = font.metrics.underlineY * size;
-			const float underlineThickness = std::max(font.metrics.underlineThickness * size, 0.0f);
+			const float underlineY         = font.m_metrics.underlineY * size;
+			const float underlineThickness = std::max(font.m_metrics.underlineThickness * size, 0.0f);
 
 			float minX = 1.0e30f, maxX = -1.0e30f;
 			std::vector<Char> lineChars;
@@ -421,9 +421,9 @@ namespace Crucible {
 		}
 
 		std::size_t GroupFor(const FontData& font, const TextLayoutSettings& settings, float size) {
-			if (font.outputType != FontOutputType::Bitmap) { return 0; }
+			if (font.m_outputType != FontOutputType::Bitmap) { return 0; }
 			if (settings.pixelScale > 0.0f) { return font.ClosestGroup(size * settings.pixelScale); }
-			return std::min(settings.sizeGroup, font.groups.size() - 1);
+			return std::min(settings.sizeGroup, font.m_groups.size() - 1);
 		}
 
 	}   // anonymous namespace
@@ -486,7 +486,7 @@ namespace Crucible {
 		out.shownLines = 0;
 		out.clipped    = false;
 
-		if (utf8.empty() || font.groups.empty()) { return; }
+		if (utf8.empty() || font.m_groups.empty()) { return; }
 
 		std::vector<std::uint32_t> codepoints;
 		DecodeUtf8(utf8, codepoints);

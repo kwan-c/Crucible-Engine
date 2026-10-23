@@ -401,7 +401,7 @@ namespace Crucible {
                 if (vp.debugDraw) { m_debugLinePass.Record(*fc.frame.commandBuffer, vp.extent, frameSet, m_frameManager.GetFrameIndex()); }
             }
             // UI last, over everything: the game's UI in Game views, then this viewport's own.
-            if (vp.role == ViewportRole::Game) { m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, vp.extent, vp.uiTransform, UIPass::kScreenTarget); }
+            if (vp.role == ViewportRole::Game) { m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, vp.extent, vp.uiTransform, UIPass::m_screenTarget); }
             m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, vp.extent, vp.uiTransform, id);
             fc.frame.commandBuffer.endRendering();
 
@@ -502,7 +502,7 @@ namespace Crucible {
         // The standalone game's UI, camera or not. (In the editor the window holds only ImGui;
         // the game's UI is in the Game view.)
         if (m_viewportSet.All().empty()) {
-            m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, m_swapchain.GetExtent(), glm::vec4(1.0f, 1.0f, 0.0f, 0.0f), UIPass::kScreenTarget);
+            m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, m_swapchain.GetExtent(), glm::vec4(1.0f, 1.0f, 0.0f, 0.0f), UIPass::m_screenTarget);
         }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
@@ -605,7 +605,7 @@ namespace Crucible {
     //  SCREEN-SPACE UI (UIPass)
     // ------------------------------------------------------------------------------------------------------------- //
 
-    void Renderer::SubmitUI(const UIDrawList& list) { m_uiPass.Submit(UIPass::kScreenTarget, list); }
+    void Renderer::SubmitUI(const UIDrawList& list) { m_uiPass.Submit(UIPass::m_screenTarget, list); }
 
     void Renderer::SubmitViewportUI(ViewportHandle viewport, const UIDrawList& list) {
 

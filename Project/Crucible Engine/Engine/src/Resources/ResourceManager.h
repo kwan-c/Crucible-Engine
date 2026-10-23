@@ -227,11 +227,11 @@ namespace Crucible {
         const FontAsset* GetFont(AssetId id);
 
         /// The font UIText uses when it names none (or its own can't be loaded).
-        /// Whatever kDefaultFontPath is compiled to in the Font Importer is what you get.
-        static constexpr const char* kDefaultFontPath = "Fonts/LiberationSans-Regular.ttf";
+        /// Whatever m_defaultFontPath is compiled to in the Font Importer is what you get.
+        static constexpr const char* m_defaultFontPath = "Fonts/LiberationSans-Regular.ttf";
 
         /*********************************************************************
-         \brief  GetFont() for kDefaultFontPath.
+         \brief  GetFont() for m_defaultFontPath.
          \return Null if that font is missing or not compiled (warned once).
          *********************************************************************/
         const FontAsset* GetDefaultFont();

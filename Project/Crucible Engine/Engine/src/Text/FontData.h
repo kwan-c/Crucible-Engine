@@ -90,7 +90,7 @@ namespace Crucible {
     /// A run of glyphs baked at one pixel size. SDF/MTSDF fonts have one; Bitmap fonts one per baked size.
     struct FontSizeGroup {
         float         pixelSize  = 0.0f;   ///< Pixels per em this group was rasterized at.
-        std::uint32_t firstGlyph = 0;      ///< Into FontData::glyphs.
+        std::uint32_t firstGlyph = 0;      ///< Into FontData::m_glyphs.
         std::uint32_t glyphCount = 0;
     };
 
@@ -119,17 +119,17 @@ namespace Crucible {
      *************************************************************************/
     class ENGINE_API FontData {
     public:
-        FontOutputType             outputType = FontOutputType::Mtsdf;
-        FontMetrics                metrics;
-        std::vector<FontSizeGroup> groups;     ///< At least one.
-        std::vector<FontGlyph>     glyphs;     ///< Grouped by FontSizeGroup.
-        std::vector<FontKernPair>  kerning;    ///< Sorted by (left, right); BuildLookup() sorts it.
-        FontAtlas                  atlas;
+        FontOutputType             m_outputType = FontOutputType::Mtsdf;
+        FontMetrics                m_metrics;
+        std::vector<FontSizeGroup> m_groups;     ///< At least one.
+        std::vector<FontGlyph>     m_glyphs;     ///< Grouped by FontSizeGroup.
+        std::vector<FontKernPair>  m_kerning;    ///< Sorted by (left, right); BuildLookup() sorts it.
+        FontAtlas                  m_atlas;
 
         /// What it was compiled from, so the editor can tell when it is out of date.
         /// Not used at runtime. 0 = unknown.
-        std::uint64_t sourceHash   = 0;   ///< The source font's contentHash (its .meta "hash").
-        std::uint64_t settingsHash = 0;   ///< Hash of the import settings it was compiled with.
+        std::uint64_t m_sourceHash   = 0;   ///< The source font's contentHash (its .meta "hash").
+        std::uint64_t m_settingsHash = 0;   ///< Hash of the import settings it was compiled with.
 
         /// Sorts the kerning and builds the codepoint lookup. Call after filling the fields.
         void BuildLookup();
@@ -214,7 +214,7 @@ namespace Crucible {
     struct FontAsset {
         FontData      data;
         TextureHandle texture{};                      ///< The atlas, uploaded.
-        UIDrawMode    drawMode = UIDrawMode::Mtsdf;   ///< DrawModeFor(data.outputType).
+        UIDrawMode    drawMode = UIDrawMode::Mtsdf;   ///< DrawModeFor(data.m_outputType).
     };
 
 #ifdef _MSC_VER
