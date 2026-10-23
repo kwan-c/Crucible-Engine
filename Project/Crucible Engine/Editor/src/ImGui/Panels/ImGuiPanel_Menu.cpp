@@ -162,6 +162,15 @@ void Crucible::Menu::Update(float) {
 			}
 			if (ImGui::MenuItem("Reset Layout"))
 				ImGuiManager::ResetLayout();
+			ImGui::Separator();
+			// Window mode. Remembered for next launch in UserSettings.json (Core::SetFullscreen).
+			if (Core* core = EditorManager::GetInstance().GetCore()) {
+				if (ImGui::MenuItem("Fullscreen", "F11", core->IsFullscreen()))
+					core->ToggleFullscreen();
+				if (ImGui::MenuItem("Maximize Window", nullptr, core->IsWindowMaximized(), !core->IsFullscreen())) {
+					if (core->IsWindowMaximized()) core->RestoreWindow(); else core->MaximizeWindow();
+				}
+			}
 			ImGui::EndMenu();
 		}
 
@@ -555,6 +564,11 @@ void Crucible::Menu::DrawProjectSettingsPopup()
 			ImGui::SetNextItemWidth(260.0f);
 			ImGui::InputText("Title", m_projectWindowTitle, sizeof(m_projectWindowTitle));
 			WindowSizeInput("Size", graphics.windowWidth, graphics.windowHeight);
+			ImGui::Checkbox("Start Fullscreen", &graphics.fullScreen);
+			ImGui::SameLine();
+			ImGui::Checkbox("Start Maximized", &graphics.maximized);
+			ImGui::TextDisabled("Defaults only: once someone toggles F11 or maximizes, their own choice is\n"
+			                    "remembered in UserSettings.json next to the .exe (delete it to reset).");
 
 			ImGui::EndTabItem();
 		}
@@ -618,13 +632,34 @@ void Crucible::Menu::DrawProjectSettingsPopup()
 				ImGui::EndDisabled();
 			}
 
+			// Fullscreen / maximized: one tick box overrides both, like the size.
+			bool const modeOn = OverrideToggle("##OverrideMode", game.fullScreen.has_value() || game.maximized.has_value());
+			if (modeOn) {
+				if (!game.fullScreen) game.fullScreen = graphics.fullScreen;
+				if (!game.maximized)  game.maximized  = graphics.maximized;
+				ImGui::Checkbox("Start Fullscreen##Game", &*game.fullScreen);
+				ImGui::SameLine();
+				ImGui::Checkbox("Start Maximized##Game", &*game.maximized);
+			}
+			else {
+				game.fullScreen.reset();
+				game.maximized.reset();
+				bool fs = graphics.fullScreen, mx = graphics.maximized;
+				ImGui::BeginDisabled();
+				ImGui::Checkbox("Start Fullscreen##Game", &fs);
+				ImGui::SameLine();
+				ImGui::Checkbox("Start Maximized##Game", &mx);
+				ImGui::EndDisabled();
+			}
+
 			// What the game will actually start with, all overrides applied.
 			EngineConfig shared = m_projectSettings;
 			shared.graphics.windowTitle = m_projectWindowTitle;
 			EngineConfig const result = game.ApplyTo(shared);
 			ImGui::Spacing();
-			ImGui::TextDisabled("The Game will start as \"%s\", %u x %u, opening %s.",
+			ImGui::TextDisabled("The Game will start as \"%s\", %u x %u%s, opening %s.",
 				result.graphics.windowTitle.c_str(), result.graphics.windowWidth, result.graphics.windowHeight,
+				result.graphics.fullScreen ? " (fullscreen)" : (result.graphics.maximized ? " (maximized)" : ""),
 				result.project.startupScene.empty() ? "no scene" : result.project.startupScene.c_str());
 
 			ImGui::EndTabItem();

@@ -57,6 +57,16 @@ namespace Crucible
         void  UnlockWindowAspectRatio();
         // Width / height of the locked shape, or 0 when the window is free.
         float GetWindowAspectRatioLock() const;
+
+        // Window mode. F11 or Alt+Enter toggle fullscreen in both apps. Every change is saved to
+        // UserSettings.json next to the .exe (also at shutdown, which catches the title bar's
+        // maximize button), so the next launch opens the same way. See WindowManager.
+        void SetFullscreen(bool fullscreen);
+        void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
+        bool IsFullscreen() const { return m_window->IsFullscreen(); }
+        void MaximizeWindow();
+        void RestoreWindow();      // un-maximize
+        bool IsWindowMaximized() const { return m_window->IsMaximized(); }
         // Both valid only after Init(). The engine's shared asset index (AssetManager) and the
         // GUID -> Renderer-handle cache built on top of it (ResourceManager).
         AssetManager&    GetAssets() const { return *m_assets; }
@@ -136,6 +146,9 @@ namespace Crucible
     private:
         EngineConfig m_config;
         void RegisterEngineSystems();
+
+        // Writes the window's current mode to UserSettings.json (for m_config.app).
+        void SaveWindowState() const;
 
         void CleanUp();
 

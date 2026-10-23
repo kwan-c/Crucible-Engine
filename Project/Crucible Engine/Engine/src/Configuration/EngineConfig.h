@@ -20,7 +20,12 @@ namespace Crucible
 		std::string windowTitle  = "Crucible Engine";
 		uint32_t    windowWidth  = 1200;
 		uint32_t    windowHeight = 800;
+		// Window mode at startup. windowWidth x windowHeight stays the windowed size: the size
+		// the window returns to when it leaves fullscreen or is un-maximized. A player's own last
+		// choice (F11 / Alt+Enter, the maximize button) is remembered in UserSettings.json next to
+		// the .exe and wins over these - see EngineConfigLoader::SaveWindowState.
 		bool        fullScreen   = false;
+		bool        maximized    = false;
 		uint32_t    targetFPS = 60;
 	};
 
@@ -74,6 +79,10 @@ namespace Crucible
 		NetworkConfig  network;
 		AudioConfig    audio;
 		ProjectConfig  project;
+
+		// Which app this config was loaded for (set by LoadForApp, never read from the file).
+		// Core uses it to save the window state into the right section of UserSettings.json.
+		AppKind        app = AppKind::Editor;
 	};
 
 	// The values one app's section ("editor" / "game") in EngineConfig.json changes, for the
@@ -84,6 +93,8 @@ namespace Crucible
 		std::optional<std::string>   windowTitle;
 		std::optional<std::uint32_t> windowWidth;
 		std::optional<std::uint32_t> windowHeight;
+		std::optional<bool>          fullScreen;
+		std::optional<bool>          maximized;
 		std::optional<std::string>   startupScene;
 
 		// `shared` with these overrides on top - what that app will start with.
@@ -92,6 +103,8 @@ namespace Crucible
 			if (windowTitle)  shared.graphics.windowTitle  = *windowTitle;
 			if (windowWidth)  shared.graphics.windowWidth  = *windowWidth;
 			if (windowHeight) shared.graphics.windowHeight = *windowHeight;
+			if (fullScreen)   shared.graphics.fullScreen   = *fullScreen;
+			if (maximized)    shared.graphics.maximized    = *maximized;
 			if (startupScene) shared.project.startupScene  = *startupScene;
 			return shared;
 		}

@@ -4,6 +4,7 @@
         "windowWidth": 1200,
         "windowHeight": 800,
         "fullScreen": false,
+        "maximized": false,
         "targetFPS": 60
     },
     "network": {
@@ -25,7 +26,9 @@
     "editor": {},
     "game": {
         "graphics": {
-            "windowTitle": "Mekanomachia"
+            "windowTitle": "Mekanomachia",
+            "fullScreen": true,
+            "maximized": false
         }
     }
 }

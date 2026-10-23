@@ -35,7 +35,8 @@ namespace Crucible {
 
     Core::Core(const EngineConfig& config) :
         m_config{ config },
-        m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
+        m_window{ new WindowManager(static_cast<int>(m_config.graphics.windowWidth), static_cast<int>(m_config.graphics.windowHeight),
+                                    m_config.graphics.windowTitle, m_config.graphics.fullScreen, m_config.graphics.maximized) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() },
         m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
@@ -59,6 +60,19 @@ namespace Crucible {
     void  Core::UnlockWindowAspectRatio()                    { m_window->UnlockAspectRatio(); }
     float Core::GetWindowAspectRatioLock() const             { return m_window->GetLockedAspectRatio(); }
 
+    void Core::SetFullscreen(bool fullscreen) {
+        if (fullscreen == m_window->IsFullscreen()) { return; }
+        m_window->SetFullscreen(fullscreen);
+        SaveWindowState();
+    }
+
+    void Core::MaximizeWindow() { m_window->Maximize(); SaveWindowState(); }
+    void Core::RestoreWindow()  { m_window->Restore();  SaveWindowState(); }
+
+    void Core::SaveWindowState() const {
+        EngineConfigLoader::SaveWindowState(m_config.app, m_window->IsFullscreen(), m_window->IsMaximized());
+    }
+
     bool Core::Init()
     {
         std::cout << "The Hearth smoulders...\n";
@@ -81,13 +95,13 @@ namespace Crucible {
         // ======== asset debugging (Removable) ==========
         // On the shared index. A second AssetManager here used to run its own reconcile -
         // writing .meta files a second time on every launch - before m_assets even existed.
-        {
-            std::cout << "\n\n";
-            m_assets->PrintIndex();
+        //{
+        //    std::cout << "\n\n";
+        //    m_assets->PrintIndex();
 
-            auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
-            m_assets->PrintLoaded();
-        }
+        //    auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
+        //    m_assets->PrintLoaded();
+        //}
         // ===========================================
 
         // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
@@ -138,6 +152,11 @@ namespace Crucible {
             m_input.BeginFrame();
             m_window->PollEvents();
             m_events.engine.DeliverPending();   // window/input events queued by callbacks
+
+            // F11 / Alt+Enter: fullscreen on / off (saved for next launch).
+            if (Input::IsPressed(KeyCode::F11) ||
+                (Input::IsPressed(KeyCode::Enter) && (Input::IsDown(KeyCode::LeftAlt) || Input::IsDown(KeyCode::RightAlt))))
+                ToggleFullscreen();
 
             // The safe point: nothing is iterating the world yet this frame. Scene swaps
             // destroy every entity, and play-mode transitions snapshot, restore and start or
@@ -193,6 +212,9 @@ namespace Crucible {
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
+
+        // Remember how the window was left (fullscreen / maximized) for the next launch.
+        SaveWindowState();
 
         m_input.Shutdown();
         m_window->ShutDown();
