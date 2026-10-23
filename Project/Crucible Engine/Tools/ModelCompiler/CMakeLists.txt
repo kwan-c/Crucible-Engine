@@ -6,6 +6,12 @@ add_executable(CrucibleModelCompiler
     ../../Engine/src/AssetPipe/Assetmanager.cpp
     ../../Engine/src/AssetPipe/AssetRegistry.cpp
     ../../Engine/src/Resources/CompiledModel.cpp
+    ../../Engine/src/Systems/ExecutablePath.cpp
+    ../../Engine/src/AssetPipe/AssetPaths.cpp
+    ../../Engine/src/Diagnostics/FatalError.cpp
+    ../../Engine/src/Diagnostics/Logger.cpp
+    ../../Engine/src/Diagnostics/LogSink.cpp
+    ../../Engine/src/Diagnostics/LogTime.cpp
 )
 target_include_directories(CrucibleModelCompiler PRIVATE ../../Engine/src)
 target_include_directories(CrucibleModelCompiler SYSTEM PRIVATE

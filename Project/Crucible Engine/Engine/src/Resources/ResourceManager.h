@@ -100,7 +100,7 @@ namespace Crucible {
         Material,
         Texture,
         Audio,     // audio files; listed for the Inspector's picker only - the renderer never loads them
-        Font       // compiled fonts (.cfont) - see GetFont()
+        Font,       // compiled fonts (.cfont) - see GetFont()
         Model,     // complete CPU model definition; GetModel does not upload GPU resources
         AnimatorController
     };
