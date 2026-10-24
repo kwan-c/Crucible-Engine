@@ -17,6 +17,12 @@
 * clicked row, Ctrl+A selects everything (Hierarchy focused). Copy, Paste, Duplicate, Delete and
 * drag-to-parent then act on the whole selection as ONE undo step. When both a parent and its
 * child are selected, only the parent is acted on (the child comes along with it).
+* Right-click > Create Prefab saves each selected top-level entity, with its children, as a
+* .cprefab in Assets/Prefabs (see Prefabs/PrefabAuthoring.h). Dragging rows onto the Asset
+* Browser does the same into a folder of your choice.
+* Dropping a .cprefab from the Asset Browser on a row places a copy as that entity's child
+* (sitting exactly on it); on the empty space below the tree, as a root at the origin
+* (see PrefabAuthoring::PlacePrefab). Each placement is one undo step.
 *
 * Sibling order (Unity's): children are listed - and screen-space UI is drawn - first to last, so
 * a later sibling draws on top of an earlier one and gets clicks first. Change it by:
@@ -84,8 +90,9 @@ namespace Crucible {
 		std::optional<Query<const HierarchyNode>> m_query;
 		// Actions requested by the right-click menu or a shortcut. They change the World, which is not
 		// allowed while m_query is iterating, so they are stored and run after the loop.
-		enum class PendingAction { None, Copy, Paste, Duplicate, Delete, Reparent, Place, Reorder };
+		enum class PendingAction { None, Copy, Paste, Duplicate, Delete, Reparent, Place, Reorder, CreatePrefab, PlacePrefab };
 		PendingAction m_pendingAction = PendingAction::None;
+		std::string   m_pendingPrefab;                 // PlacePrefab: virtual path of the dropped .cprefab
 		Entity        m_pendingTarget = kNullEntity;   // the row acted on; if it is selected, the whole selection is
 		Entity        m_pendingParent = kNullEntity;   // Reparent / Place: the new parent (kNullEntity = root)
 

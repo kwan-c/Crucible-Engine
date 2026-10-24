@@ -21,6 +21,7 @@
 #include "Graphics/DebugDrawSystem.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Undo/EntityCommands.h"
+#include "Prefabs/PrefabAuthoring.h"
 #include "Resources/ResourceManager.h"
 #include "Spatial/Bounds.h"
 
@@ -131,7 +132,12 @@ void Crucible::SceneView::Update(float dt) {
 	if (ImGui::BeginDragDropTarget()) {
 		if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) {
 			char const* virtualPath = static_cast<char const*>(payload->Data);
-			CRU_INFO("[Scene] Asset dropped into scene: {} (spawning not implemented yet)", virtualPath);
+			if (PrefabAuthoring::IsPrefabFile(virtualPath)) {
+				// Lands where the cursor points; one undo step, and the copy is selected.
+				PrefabAuthoring::PlacePrefab(m_world, virtualPath, kNullEntity, DropPoint(min, avail));
+			} else {
+				CRU_INFO("[Scene] Asset dropped into scene: {} (only prefabs can be placed so far)", virtualPath);
+			}
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -483,9 +489,21 @@ void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
 	}
 	if (best) { Select(best->entity); return; }
 
-	// No icon: cast a ray from the cursor through the scene. The image is drawn with a flipped
-	// (negative-height) viewport, so screen top = NDC +1.
-	if (viewSize.x <= 0.0f || viewSize.y <= 0.0f) { return; }
+	// No icon: cast a ray from the cursor through the scene.
+	glm::vec3 origin{}, toFar{};
+	if (!MouseRay(viewMin, viewSize, origin, toFar)) { return; }
+	RenderRaycastHit hit;
+	if (m_renderer.Raycast(origin, toFar, glm::length(toFar), hit)) {
+		const Entity entity = UserDataToEntity(hit.userData);
+		if (m_world.IsAlive(entity)) { Select(entity); return; }
+	}
+	Select(kNullEntity);   // clicked empty space
+}
+
+bool Crucible::SceneView::MouseRay(ImVec2 viewMin, ImVec2 viewSize, glm::vec3& origin, glm::vec3& toFar) {
+	if (viewSize.x <= 0.0f || viewSize.y <= 0.0f) { return false; }
+	// The image is drawn with a flipped (negative-height) viewport, so screen top = NDC +1.
+	const ImVec2 mouse = ImGui::GetMousePos();
 	Camera& camera = m_viewport.GetCamera();
 	const float ndcX = (mouse.x - viewMin.x) / viewSize.x * 2.0f - 1.0f;
 	const float ndcY = 1.0f - (mouse.y - viewMin.y) / viewSize.y * 2.0f;
@@ -494,15 +512,31 @@ void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
 	glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
 	nearPoint /= nearPoint.w;
 	farPoint  /= farPoint.w;
+	origin = glm::vec3(nearPoint);
+	toFar  = glm::vec3(farPoint) - origin;
+	return true;
+}
 
-	const glm::vec3 origin(nearPoint);
-	const glm::vec3 toFar = glm::vec3(farPoint) - origin;
+glm::vec3 Crucible::SceneView::DropPoint(ImVec2 viewMin, ImVec2 viewSize) {
+	glm::vec3 origin{}, toFar{};
+	if (!MouseRay(viewMin, viewSize, origin, toFar)) { return glm::vec3(0.0f); }
+	const float length = glm::length(toFar);
+	if (length <= 0.0f) { return origin; }
+	const glm::vec3 dir = toFar / length;
+
+	// 1. On whatever mesh is under the cursor (the same exact pick as click selection).
 	RenderRaycastHit hit;
-	if (m_renderer.Raycast(origin, toFar, glm::length(toFar), hit)) {
-		const Entity entity = UserDataToEntity(hit.userData);
-		if (m_world.IsAlive(entity)) { Select(entity); return; }
+	if (m_renderer.Raycast(origin, toFar, length, hit)) { return hit.point; }
+
+	// 2. On the y = 0 ground plane, when the cursor points down at it within the far plane.
+	if (dir.y < -1e-4f) {
+		const float t = -origin.y / dir.y;
+		if (t > 0.0f && t < length) { return origin + dir * t; }
 	}
-	Select(kNullEntity);   // clicked empty space
+
+	// 3. Floating in front of the camera (looking at the sky, or from below the ground).
+	constexpr float kDropDistance = 10.0f;
+	return origin + dir * kDropDistance;
 }
 
 void Crucible::SceneView::DrawGizmoMenu() {

@@ -46,6 +46,15 @@ namespace Crucible {
 		// the body's local frame (Jolt's RotatedTranslatedShape). Sizes are scaled by Transform::scale
 		// through ScaledCollider (PhysicsComponents.h), the same call physics builds bodies with, so
 		// the wireframe is always the shape that actually collides.
+		// Where an entity really is, as a Transform: its WorldTransform decomposed. A child's
+		// Transform is relative to its parent, so drawing at it put children's shapes in the wrong
+		// place. Falls back to the Transform until the world pose has been computed.
+		Transform WorldPoseOf(const Transform& local, const WorldTransform& wt) {
+			Transform world;
+			if (wt.valid && Detail::DecomposeTRS(wt.matrix, world.positions, world.rotation, world.scale)) { return world; }
+			return local;
+		}
+
 		void DrawCollider(const Transform& t, const Collider& typed, const DebugStyle& style) {
 
 			const Collider c = ScaledCollider(typed, t.scale);
@@ -128,18 +137,19 @@ namespace Crucible {
 
 		// Static: a Collider with no RigidBody (and not a character - the CharacterController wins).
 		style.color = kStaticCollider;
-		world.BuildQuery<const Transform, const Collider>().Exclude<RigidBody, CharacterController>().Build()
-			.ForEach([&](Entity, const Transform& t, const Collider& c) { DrawCollider(t, c, style); });
+		world.BuildQuery<const Transform, const WorldTransform, const Collider>().Exclude<RigidBody, CharacterController>().Build()
+			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const Collider& c) { DrawCollider(WorldPoseOf(t, wt), c, style); });
 
 		// Dynamic: Collider + RigidBody.
 		style.color = kDynamicCollider;
-		world.BuildQuery<const Transform, const Collider, const RigidBody>().Exclude<CharacterController>().Build()
-			.ForEach([&](Entity, const Transform& t, const Collider& c, const RigidBody&) { DrawCollider(t, c, style); });
+		world.BuildQuery<const Transform, const WorldTransform, const Collider, const RigidBody>().Exclude<CharacterController>().Build()
+			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const Collider& c, const RigidBody&) { DrawCollider(WorldPoseOf(t, wt), c, style); });
 
 		// Characters: an upright capsule at position + m_center (CharacterVirtual doesn't rotate).
 		style.color = kCharacter;
-		world.CreateQuery<const Transform, const CharacterController>()
-			.ForEach([&](Entity, const Transform& t, const CharacterController& cc) {
+		world.CreateQuery<const Transform, const WorldTransform, const CharacterController>()
+			.ForEach([&](Entity, const Transform& local, const WorldTransform& wt, const CharacterController& cc) {
+				const Transform t = WorldPoseOf(local, wt);
 				DebugDraw::Capsule(t.positions + cc.m_center, cc.m_radius,
 					std::max(cc.m_height * 0.5f - cc.m_radius, 0.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), style);
 			});
@@ -148,11 +158,11 @@ namespace Crucible {
 
 	void DebugDrawSystem::DrawVelocities(World& world) {
 
-		world.CreateQuery<const Transform, const RigidBody>()
-			.ForEach([&](Entity, const Transform& t, const RigidBody& rb) { DrawVelocity(t.positions, rb.velocity); });
+		world.CreateQuery<const Transform, const WorldTransform, const RigidBody>()
+			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const RigidBody& rb) { DrawVelocity(WorldPoseOf(t, wt).positions, rb.velocity); });
 
-		world.CreateQuery<const Transform, const CharacterController>()
-			.ForEach([&](Entity, const Transform& t, const CharacterController& cc) { DrawVelocity(t.positions + cc.m_center, cc.m_velocity); });
+		world.CreateQuery<const Transform, const WorldTransform, const CharacterController>()
+			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const CharacterController& cc) { DrawVelocity(WorldPoseOf(t, wt).positions + cc.m_center, cc.m_velocity); });
 
 	}   // DebugDrawSystem::DrawVelocities()
 
