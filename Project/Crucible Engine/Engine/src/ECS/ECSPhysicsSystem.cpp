@@ -29,6 +29,9 @@
 *                parent, so bodies and characters are placed at the world
 *                pose (parent frame * Transform) and their results are
 *                written back in the parent's frame. Roots are unchanged.
+*    -v2.3       a switched-off RigidBody is a static body; it stops being
+*                dynamic even on frames where the pose can't be worked out
+*                (StopIfNotDynamic), and its data isn't written back
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -230,6 +233,7 @@ namespace Crucible {
         void ResetClock();
         void Sync(World& ecs);
         void SyncBody(Record& record, const Transform& transform, const Math::mat4& parentFrame, const Collider& collider, const RigidBody* rigidbody);
+        void StopIfNotDynamic(Record& record, const RigidBody* rigidbody);
         void SyncCharacter(CharacterRecord& record, const Transform& transform, const Math::mat4& parentFrame, CharacterController& controller);
         void Step(World& ecs);
         void StepCharacter(World& ecs, CharacterRecord& record);
@@ -419,9 +423,10 @@ namespace Crucible {
         // it is - still marked seen, so its body isn't removed - and tried again next frame.
         colliders->ForEach([&](Entity entity, const Transform& transform, const Collider& collider) {
             Record& record = Touch(entity);
+            const RigidBody* rigidbody = ecs.IsComponentActive<RigidBody>(entity) ? ecs.Read<RigidBody>(entity) : nullptr;
             Math::mat4 parentFrame(1.0f);
-            if (!ecs.TryGetParentFrame(entity, parentFrame)) return;
-            SyncBody(record, transform, parentFrame, collider,ecs.IsComponentActive<RigidBody>(entity)? ecs.Read<RigidBody>(entity): nullptr);
+            if (!ecs.TryGetParentFrame(entity, parentFrame)) { StopIfNotDynamic(record, rigidbody); return; }
+            SyncBody(record, transform, parentFrame, collider, rigidbody);
         });
 
         characters->ForEach([&](Entity entity, const Transform& transform, CharacterController& controller) {
@@ -465,6 +470,7 @@ namespace Crucible {
 
         if (!Finite(transform.positions) || !Finite(transform.rotation)) {
             WarnOnce(record.warned, kWarnNaN, record.entity, "has NaN or infinity in its Transform - physics is leaving it alone until that is fixed");
+            StopIfNotDynamic(record, rigidbody);
             return;
         }
 
@@ -473,6 +479,7 @@ namespace Crucible {
         Math::quat rotation;
         if (!ToWorld(parentFrame, transform, position, rotation, scale)) {
             WarnOnce(record.warned, kWarnNaN, record.entity, "has a parent transform that cannot be decomposed (a zero scale?) - physics is leaving it alone until that is fixed");
+            StopIfNotDynamic(record, rigidbody);
             return;
         }
 
@@ -551,6 +558,30 @@ namespace Crucible {
         }
 
     }   // ECSPhysicsSystem::State::SyncBody()
+
+    /*!
+        \brief
+        For a frame where SyncBody can't place the body (no parent frame, a
+        Transform it can't use): a body whose RigidBody is switched off or gone
+        must still stop being dynamic. It is rebuilt static where Jolt has it
+        now, so it stops falling; the next good frame moves it to its Transform.
+    */
+    void ECSPhysicsSystem::State::StopIfNotDynamic(Record& record, const RigidBody* rigidbody) {
+
+        if (rigidbody != nullptr || !record.body.IsValid() || record.recipe.m_motion != BodyMotion::Dynamic) return;
+
+        BodyDesc desc = record.recipe;
+        physics.GetTransform(record.body, desc.m_position, desc.m_rotation);
+        desc.m_motion = BodyMotion::Static;
+
+        Remove(record);
+        record.body     = physics.CreateBody(desc);
+        record.recipe   = desc;
+        record.failed   = !record.body.IsValid();
+        record.velocity = Math::vec3(0.0f, 0.0f, 0.0f);
+        if (record.body.IsValid()) staticBodyMade = true;
+
+    }   // ECSPhysicsSystem::State::StopIfNotDynamic()
 
     /*!
         \brief
@@ -711,7 +742,8 @@ namespace Crucible {
             record.position = position;
             record.rotation = rotation;
 
-            if (RigidBody* rigidbody = ecs.GetComponent<RigidBody>(record.entity)) {
+            // A switched-off RigidBody keeps the velocity it had (it comes back with it).
+            if (RigidBody* rigidbody = ecs.IsComponentActive<RigidBody>(record.entity) ? ecs.GetComponent<RigidBody>(record.entity) : nullptr) {
                 rigidbody->velocity = physics.GetLinearVelocity(record.body);
                 record.velocity     = rigidbody->velocity;
             }
