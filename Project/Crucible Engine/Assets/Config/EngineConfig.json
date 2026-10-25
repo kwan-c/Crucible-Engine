@@ -16,7 +16,7 @@
         "sfxVolume": 1.0
     },
     "project": {
-        "startupScene": "Scenes/Fog_Lighting_Effects.scene",
+        "startupScene": "Scenes/Physics demo scene.scene",
         "aspectRatio": [
             16,
             9

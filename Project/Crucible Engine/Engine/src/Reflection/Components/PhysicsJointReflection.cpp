@@ -73,6 +73,7 @@ RTTR_REGISTRATION
         .property("breakForce",      &PhysicsJoint::m_breakForce)
         .property("breakTorque",     &PhysicsJoint::m_breakTorque)
         .property("solverIterations", &PhysicsJoint::m_solverIterations)
+        .property("solverVelocityIterations", &PhysicsJoint::m_solverVelocityIterations)
         .property("isBroken",        &PhysicsJoint::m_isBroken)
             (rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
              rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))

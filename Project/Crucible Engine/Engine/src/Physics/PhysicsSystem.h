@@ -253,6 +253,8 @@ namespace Crucible {
         bool          m_collideConnected = false;   // Unity's enableCollision. Off: the two bodies pass through each other
 
         // Hinge, in degrees. Min must be 0 or less and max 0 or more: the rest pose is always allowed.
+        // Positive = body A turning the right-hand-rule way around m_axis (thumb along the axis,
+        // fingers curl the positive way), relative to body B. Character twist limits read the same way.
         bool          m_useLimits = false;
         float         m_minAngle  = -90.0f;
         float         m_maxAngle  =  90.0f;
@@ -276,12 +278,16 @@ namespace Crucible {
         float         m_breakForce  = 0.0f;    // newtons
         float         m_breakTorque = 0.0f;    // newton-metres
 
-        // Unity's solverIterations, per joint. Jolt solves joints by repeating
-        // a small fix-up this many times per step; too few and a limit gives
-        // a little when something slams into it (a knee bending a few degrees
-        // backwards for a moment). 0 = Jolt's default, 10. More is stiffer and
-        // slower; every joint touching the same bodies pays for the highest.
-        std::uint32_t m_solverIterations = 0;
+        // Unity's two solver knobs, per joint. 0 = Jolt's default for each. More is
+        // stiffer and slower, and every joint touching the same bodies pays for the
+        // highest count among them.
+        //   m_solverIterations (position passes, default 2): raise it when a joint
+        //     RESTS slightly wrong under weight - a ragdoll's limbs a few cm apart,
+        //     a knee lying a little past its limit. 8 suits a ragdoll.
+        //   m_solverVelocityIterations (velocity passes, default 10): raise it when
+        //     a light body on a long lever pushes visibly past a limit as it swings.
+        std::uint32_t m_solverIterations         = 0;
+        std::uint32_t m_solverVelocityIterations = 0;
 
         std::uint64_t m_userData = 0;          // yours, handed back when it breaks. The ECS puts the Entity in here
 

@@ -130,7 +130,7 @@ namespace {
             && Same(a.m_connectedAnchor, b.m_connectedAnchor) && a.m_spring == b.m_spring && a.m_damper == b.m_damper
             && a.m_minDistance == b.m_minDistance && a.m_maxDistance == b.m_maxDistance
             && a.m_breakForce == b.m_breakForce && a.m_breakTorque == b.m_breakTorque
-            && a.m_solverIterations == b.m_solverIterations;
+            && a.m_solverIterations == b.m_solverIterations && a.m_solverVelocityIterations == b.m_solverVelocityIterations;
     }   // SameRecipe()
 
     // A point given in an entity's local space - Unity's joint anchors are -
@@ -640,7 +640,8 @@ namespace Crucible {
         desc.m_damper           = joint.m_damper;
         desc.m_breakForce       = joint.m_breakForce;
         desc.m_breakTorque      = joint.m_breakTorque;
-        desc.m_solverIterations = joint.m_solverIterations;
+        desc.m_solverIterations         = joint.m_solverIterations;
+        desc.m_solverVelocityIterations = joint.m_solverVelocityIterations;
         desc.m_userData         = EntityToUserData(record.entity);   // how a broken joint finds its way back here
 
         // The spring's far end: on the other entity, in its local space - or a

@@ -316,6 +316,9 @@ namespace Crucible {
         bool          m_enableCollision = false;    // Unity's enableCollision: let the two bodies collide with each other
 
         // Hinge, in degrees. Min 0 or below, max 0 or above (the starting pose must be allowed).
+        // Positive = THIS entity turning the right-hand-rule way around m_axis (point your right
+        // thumb along the axis: your fingers curl the positive way), relative to the connected
+        // body. A knee whose axis points to the body's right bends backwards with positive angles.
         bool          m_useLimits       = false;
         float         m_minAngle        = -90.0f;
         float         m_maxAngle        =  90.0f;
@@ -340,9 +343,12 @@ namespace Crucible {
         float         m_breakForce      = 0.0f;     // newtons
         float         m_breakTorque     = 0.0f;     // newton-metres
 
-        // Unity's solverIterations: raise it when a limit visibly gives under a
-        // hard hit (a knee bending backwards for a moment). 0 = engine default (10).
-        std::uint32_t m_solverIterations = 0;
+        // Unity's solver knobs. 0 = engine default. Raise solverIterations (default 2)
+        // when the joint rests slightly wrong under weight - limbs apart, a knee lying
+        // past its limit; 8 suits a ragdoll. Raise solverVelocityIterations (default 10)
+        // when a light body on a long lever swings visibly past a limit.
+        std::uint32_t m_solverIterations         = 0;
+        std::uint32_t m_solverVelocityIterations = 0;
 
         // Runtime: set when the joint broke during Play, so it is not rebuilt.
         // Read it the way Unity code waits for OnJointBreak. Not saved, so Stop

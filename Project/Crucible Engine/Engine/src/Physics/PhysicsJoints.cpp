@@ -159,8 +159,8 @@ namespace {
 
             case JointType::Spring: {
                 JPH::Ref<JPH::DistanceConstraintSettings> settings = new JPH::DistanceConstraintSettings();
-                settings->mPoint1 = anchor;
-                settings->mPoint2 = ToJolt(desc.m_anchorB);
+                settings->mPoint1 = ToJolt(desc.m_anchorB);     // Jolt's body 1 is the connected one (see CreateJoint)
+                settings->mPoint2 = anchor;
 
                 // Jolt's -1 means "the distance they are apart now", which is
                 // what 0 means to us: a spring at rest when the joint is made.
@@ -239,22 +239,36 @@ namespace Crucible {
 
         // CREATE, ADD, WAKE ---------------------------------------------------- //
         // CreateConstraint locks both bodies while it reads their poses. An
-        // invalid BodyID for B is Jolt's own spelling of "the world".
+        // invalid BodyID is Jolt's own spelling of "the world".
+        //
+        // The ORDER matters. Jolt measures a hinge's angle (and a character
+        // joint's twist) as body 2 turning relative to body 1. With the joint's
+        // own body as body 2, a positive angle means "this body turns the
+        // right-hand-rule way around the axis" - the way a designer reads a
+        // knee's 0 to 140. The other way round every limit came out mirrored
+        // (found by a probe: [0, 90] let a bar fall clockwise, i.e. negatively).
         JPH::TwoBodyConstraint* constraint =
-            impl.Bodies().CreateConstraint(settings.GetPtr(), Impl::ToId(desc.m_bodyA), toWorld ? JPH::BodyID() : Impl::ToId(desc.m_bodyB));
+            impl.Bodies().CreateConstraint(settings.GetPtr(), toWorld ? JPH::BodyID() : Impl::ToId(desc.m_bodyB), Impl::ToId(desc.m_bodyA));
         if (constraint == nullptr) {
             CRU_ERROR("Physics::CreateJoint: Jolt could not build the joint");
             return JointHandle{};
         }
 
-        // Unity's solverIterations. Jolt solves velocity in repeated passes and
-        // a limit only gets as stiff as those passes make it: a light body on
-        // a long lever (a hand on a long arm) can push several degrees past a
-        // limit before the passes catch up. Velocity passes are the ones that
-        // matter - position passes made no difference in testing. Jolt keeps
-        // the count in a byte, hence the 255.
+        // Unity's two solver knobs, per joint. Jolt runs two kinds of repeated
+        // fix-up pass each step, and each cures a different symptom (both
+        // measured in testing):
+        //   position passes (Unity's solverIterations, Jolt's default 2): pull
+        //     joints back to where they belong. Too few and a joint RESTS
+        //     slightly wrong under load - a ragdoll's knee lying 2 degrees past
+        //     its limit and its limbs 3 cm apart; 8 brought that to 0.17 and 1.7.
+        //   velocity passes (Unity's solverVelocityIterations, Jolt's default 10):
+        //     stop movement into a limit. Too few and a light body on a long
+        //     lever pushes several degrees past it; 40 cut 10.5 to 5.7.
+        // Jolt keeps each count in a byte, hence the 255.
         if (desc.m_solverIterations > 0)
-            constraint->SetNumVelocityStepsOverride(std::min(desc.m_solverIterations, 255u));
+            constraint->SetNumPositionStepsOverride(std::min(desc.m_solverIterations, 255u));
+        if (desc.m_solverVelocityIterations > 0)
+            constraint->SetNumVelocityStepsOverride(std::min(desc.m_solverVelocityIterations, 255u));
 
         // Added like a body: creating is not enough, the world must be told.
         // Then woken, or two sleeping bodies would ignore their new joint

@@ -1,4 +1,5 @@
 #include "GameApp.h"
+#include "../Tests/RagdollTestLayer.h"    // RAGDOLL TEST - remove with Tests/RagdollTestLayer.h
 
 bool GameApp::Init()
 {
