@@ -24,6 +24,7 @@
 #include "ECS/ECSAudioSystem.h"
 #include "Input/InputSystem.h"   // the game's cursor lock, see the end of ImGuiManager::Update
 #include "UI/UISystem.h"         // UI::IsMenuOpen: the game's in-game menu owns the cursor while open
+#include "UI/UIEvents.h"         // QuitRequested / CustomAction from UI buttons
 
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
@@ -35,6 +36,8 @@
 #include "ImGui/Panels/ImGuiPanel_UIView.h"
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/Panels/ImGuiPanel_Console.h"
+#include "ImGui/Panels/ImGuiPanel_FontImporter.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
 
 
@@ -393,6 +396,8 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(core.GetAssets(), core.GetScenes(), audio);   // audio may be null: previews just do nothing
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>(core);   // queues Play/Pause/Resume/Stop on Core
+	m_panels[ImguiPanels::FONTIMPORTER] = std::make_shared<FontImporter>(core.GetAssets(), core.GetRenderer(), core);   // .ttf -> .cfont (Editor/src/Fonts)
+	m_panels[ImguiPanels::ANIMATOR] = std::make_shared<AnimatorPanel>(core);
 
 	for (auto& panel : m_panels)
 		panel.second->Init();
@@ -401,11 +406,26 @@ void Crucible::EditorManager::Init(Core& core)
 	m_core = &core;
 	m_playStateChanged = core.Events().engine.Subscribe<EngineEvents::PlayStateChanged>(
 		[this](const EngineEvents::PlayStateChanged& change) { OnPlayStateChanged(change); });
+
+	// UI buttons. Quitting the editor from a game menu would lose work, so a "Quit" button stops
+	// Play mode instead - Unity's Application.Quit does nothing in the editor either.
+	m_uiQuit = core.Events().engine.Subscribe<UIEvents::QuitRequested>([this](const UIEvents::QuitRequested& click) {
+		CRU_USER_INFO("[UI] Quit button (entity {}) pressed: stopping Play mode. In the built game this closes the window.", click.button.index);
+		if (m_core && m_core->IsInPlaySession()) { m_core->RequestStop(); }
+	});
+	// Custom actions are the game's to run (GameApp::RegisterAction, later scripts); here they are
+	// only logged, so a menu can be tested in the editor.
+	m_uiCustom = core.Events().engine.Subscribe<UIEvents::CustomAction>([](const UIEvents::CustomAction& click) {
+		CRU_USER_INFO("[UI] Button (entity {}) action '{}' - run by the game (GameApp::RegisterAction), not in the editor",
+		              click.button.index, click.actionId);
+	});
 }
 
 void Crucible::EditorManager::Shutdown()
 {
 	m_playStateChanged.Reset();
+	m_uiQuit.Reset();
+	m_uiCustom.Reset();
 	m_core = nullptr;
 	m_history.Clear();
 	m_panels.clear();

@@ -22,7 +22,7 @@ namespace Crucible {
         // ---- Meshes ----
         {
             // Programmable stages (Vertex and Fragment shaders) ----------------------------------- //
-            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/DefaultShader.spv");
+            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "DefaultShader.spv");
 
             vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
                 .stage = vk::ShaderStageFlagBits::eVertex,
@@ -49,7 +49,8 @@ namespace Crucible {
 
             // Set viewport to entire swapchain extent, make them dynamic for more flexibility in future.
             // Cull mode too (core in Vulkan 1.3): double-sided materials switch it off per draw.
-            std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor, vk::DynamicState::eCullMode };
+            std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+                vk::DynamicState::eCullMode, vk::DynamicState::eFrontFace };
             vk::PipelineDynamicStateCreateInfo dynamicState = {
                 .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
                 .pDynamicStates = dynamicStates.data()
@@ -152,7 +153,7 @@ namespace Crucible {
 
         // ---- Sky ----
         {
-            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/Skybox.spv");
+            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "Skybox.spv");
 
             vk::PipelineShaderStageCreateInfo shaderStages[] = {
                 { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "skyVert" },
@@ -488,6 +489,8 @@ namespace Crucible {
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
         cmd.setCullMode(vk::CullModeFlagBits::eBack);
+        cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
+        bool mirroredBound = false;
         bool cutoutBound = false;
         bool cullBack    = true;
 
@@ -500,6 +503,11 @@ namespace Crucible {
         MaterialHandle boundMaterial;   // starts Invalid
         uint32_t       indexCount = 0;  // of boundMesh
         for (const DrawBatch& batch : batches) {
+
+            if (batch.mirrored != mirroredBound) {
+                cmd.setFrontFace(batch.mirrored ? vk::FrontFace::eClockwise : vk::FrontFace::eCounterClockwise);
+                mirroredBound = batch.mirrored;
+            }
 
             const GpuMaterial& mat  = m_resources.Materials()[batch.material.id];   // default-substituted when batched
 

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                owns and registers per-type ComponentInfo used to
 *                build each Archetype's ComponentColumns
@@ -25,6 +25,8 @@
 *    -v1.2       Get()/RegisterAll() validate in all builds,
 *                RegisteredSignature()/ValidateSignature(); registration is
 *                private to World
+*    -v1.3       FinalizeRequirements (requirement closure, dependents,
+*                cycle check); Detail::CloseRequirements
 *
 *
 **************************************************************************/
@@ -40,8 +42,39 @@
 #include "ComponentSignature.h"
 
 
-namespace Crucible 
+namespace Crucible
 {
+    namespace Detail
+    {
+        /*********************************************************************
+         \brief  Transitive closure of component requirements.
+         \param[in]  direct  direct[i] = what component i requires itself.
+         \param[out] closure closure[i] = everything i requires, directly or
+                             through its requirements' requirements.
+         \return kInvalidComponentId when there is no cycle; otherwise a
+                 component that (indirectly) requires itself.
+         *********************************************************************/
+        inline ComponentId CloseRequirements(const std::vector<ComponentSignature>& direct,
+                                             std::vector<ComponentSignature>& closure)
+        {
+            const std::size_t count = direct.size();
+            closure = direct;
+            // Warshall: anything k needs, everything needing k needs too.
+            for (std::size_t k = 0; k < count; ++k)
+            {
+                for (std::size_t i = 0; i < count; ++i)
+                {
+                    if (closure[i].test(k)) closure[i] |= closure[k];
+                }
+            }
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                if (closure[i].test(i)) return static_cast<ComponentId>(i);
+            }
+            return kInvalidComponentId;
+        }
+    }
+
 #ifdef _MSC_VER
 #pragma warning(push)
 #pragma warning(disable : 4251)
@@ -152,6 +185,14 @@ namespace Crucible
             than an overwrite or an error.
          *********************************************************************/
         ComponentId RegisterInfo(ComponentInfo info);
+
+        /*********************************************************************
+         \brief  Fills every ComponentInfo's requiredClosure and dependents
+                 from the direct requirements (RequiresComponents<T>).
+         \note   Throws std::logic_error (all builds), naming the component,
+                 if a component requires itself directly or indirectly.
+         *********************************************************************/
+        void FinalizeRequirements();
         std::vector<ComponentInfo> m_components;
     };
 #ifdef _MSC_VER

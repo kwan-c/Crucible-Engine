@@ -17,10 +17,7 @@ struct FrameUniforms {
     float4x4 shadowViewProj[4];
 };
 
-struct InstanceData {
-    float4x4 model;
-    float4   params;   // unused here; keeps the 80-byte stride of Crucible::InstanceData
-};
+#include "ModelVertex.slang"
 
 // Must match ShadowPass's push constant: the cascade, then Crucible::CutoutPush.
 struct ShadowPush {
@@ -30,13 +27,13 @@ struct ShadowPush {
 };
 
 [[vk::binding(0, 0)]] ConstantBuffer<FrameUniforms>  frame;
-[[vk::binding(2, 0)]] StructuredBuffer<InstanceData> instances;
+
 [[vk::binding(0, 1)]] Sampler2D                      albedoTex;   // the material's (set 1), cut-out only
 [[vk::push_constant]] ConstantBuffer<ShadowPush>     pc;
 
 [shader("vertex")]
-float4 shadowVert(float3 position : POSITION, uint instanceID : SV_VulkanInstanceID) : SV_Position {
-    float4 world = mul(instances[instanceID].model, float4(position, 1.0));
+float4 shadowVert([[vk::location(0)]] float3 position : POSITION, [[vk::location(5)]] uint4 joints : BLENDINDICES, [[vk::location(6)]] float4 weights : BLENDWEIGHT, uint instanceID : SV_VulkanInstanceID) : SV_Position {
+    float4 world = mul(ModelVertexTransform(instanceID, joints, weights), float4(position, 1.0));
     return mul(frame.shadowViewProj[pc.cascade], world);
 }
 
@@ -47,9 +44,9 @@ struct CutoutVSOutput {
 
 [shader("vertex")]
 // uv is Vertex::uv, vertex input location 2 (ShadowPass binds locations 0 and 2 only).
-CutoutVSOutput shadowCutoutVert([[vk::location(0)]] float3 position : POSITION, [[vk::location(2)]] float2 uv : TEXCOORD0, uint instanceID : SV_VulkanInstanceID) {
+CutoutVSOutput shadowCutoutVert([[vk::location(0)]] float3 position : POSITION, [[vk::location(2)]] float2 uv : TEXCOORD0, [[vk::location(5)]] uint4 joints : BLENDINDICES, [[vk::location(6)]] float4 weights : BLENDWEIGHT, uint instanceID : SV_VulkanInstanceID) {
     CutoutVSOutput output;
-    float4 world = mul(instances[instanceID].model, float4(position, 1.0));
+    float4 world = mul(ModelVertexTransform(instanceID, joints, weights), float4(position, 1.0));
     output.pos = mul(frame.shadowViewProj[pc.cascade], world);
     output.uv  = uv;
     return output;

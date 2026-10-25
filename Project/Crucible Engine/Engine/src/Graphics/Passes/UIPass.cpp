@@ -24,9 +24,18 @@ namespace Crucible {
             glm::vec4 transform;       // xy = scale, zw = offset: canvas pixels -> target pixels
             glm::vec2 invTargetSize;   // 1 / target size in pixels
             uint32_t  mode;            // UIDrawMode
-            uint32_t  pad;
+            float     pixelRange;      // UIDrawCommand::pixelRange (distance-field text)
+            // UITextEffects - every field 4 bytes, so the C++ and Slang layouts can't disagree.
+            uint32_t  outlineColour;
+            uint32_t  glowColour;
+            float     outlineWidth;
+            float     glowWidth;
+            float     glowSoftness;
+            float     dilate;
+            float     shadowSoftness;
+            uint32_t  flags;           // bit 0: shadow pass
         };
-        static_assert(sizeof(UIPush) == 32, "UIPush must match UI.slang.");
+        static_assert(sizeof(UIPush) == 64, "UIPush must match UI.slang.");
 
     }   // namespace
 
@@ -61,14 +70,14 @@ namespace Crucible {
         };
         m_sampler = vk::raii::Sampler(m_context.GetDevice(), samplerInfo);
 
-        vk::DescriptorPoolSize poolSize{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = kMaxTextureSets };
+        vk::DescriptorPoolSize poolSize{ .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = m_maxTextureSets };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,   // vk::raii::DescriptorSet frees itself
-            .maxSets = kMaxTextureSets, .poolSizeCount = 1, .pPoolSizes = &poolSize };
+            .maxSets = m_maxTextureSets, .poolSizeCount = 1, .pPoolSizes = &poolSize };
         m_texturePool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
 
         // ---- Pipeline ----
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(m_context, "../../../Assets/Shaders/UI.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(m_context, "UI.spv");
 
         vk::PipelineShaderStageCreateInfo shaderStages[] = {
             { .stage = vk::ShaderStageFlagBits::eVertex,   .module = *shaderModule, .pName = "uiVert" },
@@ -177,9 +186,9 @@ namespace Crucible {
         if (list.commands.empty() || list.indices.empty() || list.vertices.empty()) { return; }
 
         // A frame's worth of UI is a few thousand vertices; past these caps something is looping.
-        if (m_vertices.size() + list.vertices.size() > kMaxVertices || m_indices.size() + list.indices.size() > kMaxIndices) {
+        if (m_vertices.size() + list.vertices.size() > m_maxVertices || m_indices.size() + list.indices.size() > m_maxIndices) {
             if (!m_warnedOverflow) {
-                CRU_WARN("[Renderer] More than {} UI vertices or {} UI indices in one frame; the rest of the UI is dropped.", kMaxVertices, kMaxIndices);
+                CRU_WARN("[Renderer] More than {} UI vertices or {} UI indices in one frame; the rest of the UI is dropped.", m_maxVertices, m_maxIndices);
                 m_warnedOverflow = true;
             }
             return;
@@ -208,7 +217,8 @@ namespace Crucible {
             }
             m_commands.push_back({ .texture = in.texture, .mode = in.mode, .clipRect = in.clipRect,
                                    .firstIndex = baseIndex + in.firstIndex, .indexCount = count,
-                                   .vertexOffset = static_cast<int32_t>(baseVertex) + in.vertexOffset });
+                                   .vertexOffset = static_cast<int32_t>(baseVertex) + in.vertexOffset,
+                                   .pixelRange = in.pixelRange, .effects = in.effects });
             ++submission.commandCount;
         }
         if (submission.commandCount == 0) { return; }
@@ -274,9 +284,9 @@ namespace Crucible {
         if (auto it = m_textureSets.find(texture.id); it != m_textureSets.end()) { return *it->second; }
 
         // Pool full: fall back to the white texture's set (made first, below, so it always fits).
-        if (m_textureSets.size() >= kMaxTextureSets - 1 && texture.id != m_resources.DefaultWhiteTexture().id) {
+        if (m_textureSets.size() >= m_maxTextureSets - 1 && texture.id != m_resources.DefaultWhiteTexture().id) {
             if (!m_warnedTextureSets) {
-                CRU_WARN("[Renderer] The UI used more than {} different textures; the rest are drawn white.", kMaxTextureSets - 1);
+                CRU_WARN("[Renderer] The UI used more than {} different textures; the rest are drawn white.", m_maxTextureSets - 1);
                 m_warnedTextureSets = true;
             }
             return EnsureTextureSet(m_resources.DefaultWhiteTexture());
@@ -316,7 +326,9 @@ namespace Crucible {
         cmd.bindVertexBuffers(0, *m_vertexBuffers[frameIndex].GetBuffer(), { vk::DeviceSize{ 0 } });
         cmd.bindIndexBuffer(*m_indexBuffers[frameIndex].GetBuffer(), 0, vk::IndexType::eUint32);
 
-        UIPush push{ .transform = transform, .invTargetSize = glm::vec2(1.0f / width, 1.0f / height), .mode = 0, .pad = 0 };
+        UIPush push{};
+        push.transform     = transform;
+        push.invTargetSize = glm::vec2(1.0f / width, 1.0f / height);
         vk::DescriptorSet boundSet{};
 
         for (const Submission& submission : m_submissions) {
@@ -339,6 +351,16 @@ namespace Crucible {
                     boundSet = command.set;
                 }
                 push.mode = static_cast<uint32_t>(command.mode);
+                push.pixelRange = command.pixelRange;
+                const UITextEffects& fx = command.effects;
+                push.outlineColour  = fx.outlineColour;
+                push.glowColour     = fx.glowColour;
+                push.outlineWidth   = fx.outlineWidth;
+                push.glowWidth      = fx.glowWidth;
+                push.glowSoftness   = fx.glowSoftness;
+                push.dilate         = fx.dilate;
+                push.shadowSoftness = fx.shadowSoftness;
+                push.flags          = fx.shadowPass ? 1u : 0u;
                 cmd.pushConstants<UIPush>(*m_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, push);
 
                 cmd.drawIndexed(command.indexCount, 1, command.firstIndex, command.vertexOffset, 0);

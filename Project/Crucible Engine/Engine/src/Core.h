@@ -25,6 +25,7 @@
 
 namespace Crucible
 {
+    class ScriptRuntime;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -49,6 +50,7 @@ namespace Crucible
 
         // The settings this Core was started with (see EngineConfigLoader::LoadForApp).
         const EngineConfig& GetConfig() const noexcept { return m_config; }
+        ScriptRuntime& GetScriptRuntime() const noexcept { return *m_scriptRuntime; }
 
         // Fixes the window's shape to `width`:`height` (e.g. 16, 9) so the game is framed the
         // same on every machine, or frees it again. Meant for the standalone game and its
@@ -57,6 +59,16 @@ namespace Crucible
         void  UnlockWindowAspectRatio();
         // Width / height of the locked shape, or 0 when the window is free.
         float GetWindowAspectRatioLock() const;
+
+        // Window mode. F11 or Alt+Enter toggle fullscreen in both apps. Every change is saved to
+        // UserSettings.json next to the .exe (also at shutdown, which catches the title bar's
+        // maximize button), so the next launch opens the same way. See WindowManager.
+        void SetFullscreen(bool fullscreen);
+        void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
+        bool IsFullscreen() const { return m_window->IsFullscreen(); }
+        void MaximizeWindow();
+        void RestoreWindow();      // un-maximize
+        bool IsWindowMaximized() const { return m_window->IsMaximized(); }
         // Both valid only after Init(). The engine's shared asset index (AssetManager) and the
         // GUID -> Renderer-handle cache built on top of it (ResourceManager).
         AssetManager&    GetAssets() const { return *m_assets; }
@@ -128,9 +140,17 @@ namespace Crucible
         // The play-mode controller itself.
         PlayMode& GetPlayMode() noexcept { return *m_playMode; }
 
+        // Quits: the main loop ends after the current frame and the engine shuts down normally,
+        // as if the window's X was clicked. For the standalone game (a UI "Quit" button); the
+        // editor intercepts window closes (unsaved-changes prompt) and doesn't use this.
+        void RequestQuit();
+
     private:
         EngineConfig m_config;
         void RegisterEngineSystems();
+
+        // Writes the window's current mode to UserSettings.json (for m_config.app).
+        void SaveWindowState() const;
 
         void CleanUp();
 
@@ -157,6 +177,7 @@ namespace Crucible
         // Play mode: state, requests and the simulation switch. Declared after (so destroyed
         // before) the World, the buses and the systems.
         std::unique_ptr<PlayMode> m_playMode;
+        std::unique_ptr<ScriptRuntime> m_scriptRuntime;
 
         // Core systems
         //std::vector<BaseSystem*> m_systems;

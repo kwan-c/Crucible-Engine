@@ -2,7 +2,7 @@
   \file       UISystem.h
   \brief
     Screen-space UI: layout (UIRect -> a rectangle on the screen) and
-    drawing (UIImage -> quads for the renderer), shared by the game and the
+    drawing (UIImage / UISlider / UIText -> quads for the renderer), shared by the game and the
     editor's UI Editor tab, plus UIRenderSystem, which draws the game's UI.
   \details
     Layout, per screen-space UICanvas (lowest sortOrder first):
@@ -58,6 +58,7 @@ namespace Crucible {
 	class World;
 	class Renderer;
 	class ResourceManager;
+	struct FontAsset;
 	class SceneManager;
 	class AssetManager;
 
@@ -113,16 +114,39 @@ namespace Crucible {
 		ENGINE_API void LayoutScreenCanvases(World& world, Math::vec2 screenSize, std::vector<LayoutItem>& out, bool writeComputed);
 
 		/*********************************************************************
-		 \brief  Appends one quad per laid-out element with a UIImage: its
-				 colour, times the UIButton state's tint if it has one, and its
-				 texture. Consecutive quads with the same texture share a draw.
+		 \brief  Appends what every laid-out element draws, in this order:
+				 - UIImage: one quad, its colour times the UIButton state's
+				   tint if it has one, with its texture.
+				 - UISlider: track, fill, handle.
+				 - UIText: one quad per glyph (Text/TextLayout.h), with the
+				   font's atlas and draw mode. Truncate / Ellipsis cut at the
+				   rect (clip rect when upright, whole glyphs when turned);
+				   bitmap fonts are snapped to whole screen pixels.
+				 Consecutive quads with the same texture, mode and clip share a
+				 draw, so a label is one draw. Text layouts are cached between
+				 calls and redone only when the text or its settings change.
 		 \param[in] resources  Resolves UIImage::textureAsset into
-							   UIImage::texture (as MeshRenderer does). Null:
-							   use whatever UIImage::texture already holds.
+							   UIImage::texture (as MeshRenderer does) and
+							   UIText::fontAsset into a font. Null: images use
+							   whatever UIImage::texture holds; no text is drawn.
 		 *********************************************************************/
 		ENGINE_API void AppendDrawList(World& world, const std::vector<LayoutItem>& items, ResourceManager* resources,
 		                               std::vector<UIVertex>& vertices, std::vector<std::uint32_t>& indices,
 		                               std::vector<UIDrawCommand>& commands);
+
+		/*********************************************************************
+		 \brief  Field units (see UITextEffects) per reference pixel, for text of
+				 `fontSize` in this font. 0 for bitmap fonts (no field).
+		 *********************************************************************/
+		ENGINE_API float TextEffectFieldPerPixel(const FontAsset& font, float fontSize);
+
+		/*********************************************************************
+		 \brief  The widest outline + glow (+ bold) a font allows at `fontSize`,
+				 in reference pixels: the distance field only reaches half its
+				 pixel range past each edge. 0 for bitmap fonts. Raise the
+				 font's Pixel Range in the Font Importer for more.
+		 *********************************************************************/
+		ENGINE_API float MaxTextEffectWidth(const FontAsset& font, float fontSize);
 
 		/// Is the in-game menu open (UIMenuSystem)? Gameplay can use it to ignore input or pause.
 		ENGINE_API bool IsMenuOpen();
@@ -213,11 +237,17 @@ namespace Crucible {
 		  - Hovered: the mouse is over this button (and not pressing it).
 		  - Click: released over the same button it went down on.
 		  - Disabled: interactable is off. Never hovered, pressed or clicked.
+		  - Switched off (World::SetComponentEnabled on the UIButton / UISlider
+			or a component it requires): its press or drag is cancelled, so
+			switching it back on before release neither clicks nor drags.
 		Sliders: pressing one jumps its value to the mouse, dragging follows
 		it until release (even outside), each change sends
 		UIEvents::SliderChanged; Pressed while dragged, Hovered under the mouse.
 		A click sends UIEvents::ButtonClicked, then runs the button's own
-		onClick action (load a scene, close the menu).
+		onClick action (load a scene, close the menu). Quit and Custom are
+		only reported - UIEvents::QuitRequested / CustomAction - because what
+		they mean is the app's call (GameApp quits / runs its action table;
+		the editor stops Play / logs).
 		While the cursor is locked (mouse-look) the UI ignores the mouse and
 		every button shows Normal.
 	 \note  SimulationOnly, so the editor's clicks in Edit mode never press
@@ -236,6 +266,8 @@ namespace Crucible {
 
 	private:
 		void RunClickAction(World& world, Entity button);   // UIButton::onClick, after the event is sent
+		// ReactiveTo<UIButton, UISlider> (Core.cpp): a control switched off drops its press / drag.
+		void OnComponentDeactivated(World& world, Entity entity, ComponentId component) override;
 
 		Renderer&                   m_renderer;
 		SceneManager*               m_scenes = nullptr;

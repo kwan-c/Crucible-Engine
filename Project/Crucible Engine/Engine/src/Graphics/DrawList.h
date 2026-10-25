@@ -33,6 +33,7 @@ namespace Crucible {
         MaterialHandle material;
         uint32_t       firstInstance = 0;
         uint32_t       instanceCount = 0;
+        bool           mirrored = false; // all instances share front-face winding
     };
 
     // One particle draw: `count` particles from `first` on in this frame's particle buffer,

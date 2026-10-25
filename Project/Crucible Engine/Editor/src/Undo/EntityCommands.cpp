@@ -100,7 +100,18 @@ namespace {
                     component = *current;
                 }
                 doc.GetObject(path, component);
-                world.AddComponent<T>(entity, std::move(component));
+                // With the snapshot's on/off state ("$enabled", absent = on): an existing component
+                // is switched through SetComponentEnabled, so undo/redo notify once per real change;
+                // a re-created one (paste, duplicate, undo delete) simply starts in it.
+                if constexpr (Crucible::ToggleableComponent<T>)
+                {
+                    const bool enabled = doc.Get<bool>(path + "/" + Crucible::kComponentEnabledKey, true);
+                    world.AddComponent<T>(entity, std::move(component), enabled);
+                }
+                else
+                {
+                    world.AddComponent<T>(entity, std::move(component));
+                }
             }
         }
     }

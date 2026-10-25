@@ -59,6 +59,40 @@ namespace {
     inline constexpr bool kSkipInSceneFile =
         Crucible::WorldManaged<T>::value
         || std::is_same_v<T, Crucible::WorldTransform>;
+
+    // A component switched off (World::SetComponentEnabled) gets "$enabled": false inside its own
+    // object; nothing is written while it is on, so files of entities that never used it are
+    // unchanged. Separate from any "enabled"/"visible" field the component has itself.
+    template <typename T>
+    void WriteEnabledState(Crucible::World& world, Crucible::Entity entity,
+                           Crucible::JsonWrapper& doc, const std::string& path)
+    {
+        if constexpr (Crucible::ToggleableComponent<T>)
+        {
+            if (!world.IsComponentEnabled<T>(entity))
+            {
+                doc.Set<bool>(path + "/" + Crucible::kComponentEnabledKey, false);
+            }
+        }
+    }
+
+    // Adds a loaded component with its saved on/off state (missing = on, for older files). One the
+    // entity gains here starts in that state with no change notification; one it already had is
+    // switched through SetComponentEnabled (see World::AddComponent(entity, value, enabled)).
+    template <typename T>
+    void AddLoadedComponent(Crucible::World& world, Crucible::Entity entity,
+                            const Crucible::JsonWrapper& doc, const std::string& path, T&& component)
+    {
+        if constexpr (Crucible::ToggleableComponent<T>)
+        {
+            const bool enabled = doc.Get<bool>(path + "/" + Crucible::kComponentEnabledKey, true);
+            world.AddComponent<T>(entity, std::move(component), enabled);
+        }
+        else
+        {
+            world.AddComponent<T>(entity, std::move(component));
+        }
+    }
 }
 
 namespace Crucible::EntityIO {
@@ -82,9 +116,10 @@ namespace Crucible::EntityIO {
                 {                                                           \
                     if (const T* component = world.Read<T>(entity))         \
                     {                                                       \
-                        doc.SetObject(componentsPath + "/"                   \
-                                      + std::string(ComponentTraits<T>::name),\
-                                      *component);                           \
+                        const std::string path = componentsPath + "/"       \
+                                      + std::string(ComponentTraits<T>::name);\
+                        doc.SetObject(path, *component);                     \
+                        WriteEnabledState<T>(world, entity, doc, path);      \
                     }                                                        \
                 }                                                            \
             }
@@ -122,7 +157,8 @@ namespace Crucible::EntityIO {
                     {                                                       \
                         T component{};                                      \
                         doc.GetObject(path, component);                     \
-                        world.AddComponent<T>(entity, std::move(component));\
+                        AddLoadedComponent<T>(world, entity, doc, path,     \
+                                              std::move(component));        \
                         ++applied;                                          \
                     }                                                       \
                 }
@@ -141,6 +177,22 @@ namespace Crucible::EntityIO {
             }
         }
 
+        // Upgrade the early preview format at the common scene/prefab/snapshot boundary.
+        // Renderer ownership is authoritative in new files; never overwrite its settings.
+        const std::string animationPath = componentsPath + "/AnimatedModel";
+        if (world.HasComponent<AnimatedModel>(entity)) {
+            if (!doc.Has(animationPath + "/playOnStart") && doc.Has(animationPath + "/playing"))
+                world.Write<AnimatedModel>(entity)->playOnStart = doc.Get<bool>(animationPath + "/playing", true);
+            if (doc.Has(animationPath + "/modelAsset")) {
+                const auto* existing = world.Read<MeshRenderer>(entity);
+                MeshRenderer renderer = existing ? *existing : MeshRenderer{};
+                if (renderer.modelAsset == 0) renderer.modelAsset = doc.Get<uint64_t>(animationPath + "/modelAsset", 0);
+                if (!doc.Has(componentsPath + "/MeshRenderer/visible"))
+                    renderer.visible = doc.Get<bool>(animationPath + "/visible", true);
+                if (existing) *world.Write<MeshRenderer>(entity) = std::move(renderer);
+                else { world.AddComponent<MeshRenderer>(entity, std::move(renderer)); ++applied; }
+            }
+        }
         return applied;
     }
 

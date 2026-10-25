@@ -65,6 +65,11 @@ namespace Crucible {
         // instead of one frame late.
         SystemStage Stage() const override { return SystemStage::Update; }
 
+        // Registered .ReactiveTo<PlayerController>() (Core): a PlayerController that stops
+        // running (switched off, or its CharacterController is) drops out of the query below,
+        // and SimpleMove keeps walking until told otherwise - so stop the mech here.
+        void OnComponentDeactivated(World& world, Entity entity, ComponentId component) override;
+
     private:
 
         // The World's tick from the last time Update ran. The tick goes up by

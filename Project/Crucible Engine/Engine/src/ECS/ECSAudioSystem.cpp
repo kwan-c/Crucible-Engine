@@ -145,6 +145,8 @@ namespace Crucible {
 
         std::optional<SourceQuery>   sources;
         std::optional<ListenerQuery> listeners;
+        std::optional<Query<const AudioSource>> offSources;     // switched-off sources (WhereDisabled)
+        std::vector<Entity>                     offWrites;      // reused every frame
 
         std::unordered_map<std::uint64_t, Record> records;      // keyed by EntityToUserData(entity)
         std::vector<WriteBack>                    writeBacks;   // reused every frame
@@ -199,6 +201,7 @@ namespace Crucible {
         // outlive it, so a restart builds fresh ones.
         s.sources.reset();
         s.listeners.reset();
+        s.offSources.reset();
         s.world = nullptr;
 
         // Audio::Shutdown releases every clip - the cached ones and the
@@ -302,6 +305,22 @@ namespace Crucible {
             }
         }
 
+        // Switched off: its voices stop below with its record (the query no longer finds it).
+        // Unity ignores Play() on a disabled AudioSource; here a request is only a field, so drop
+        // what is asked for while off - otherwise it would fire the moment it is switched on.
+        s.offWrites.clear();
+        s.offSources->ForEach([&](Entity entity, const AudioSource& source) {
+            if (source.m_request != AudioRequest::None || source.m_pendingOneShots != 0 || source.m_isPlaying)
+                s.offWrites.push_back(entity);
+        });
+        for (const Entity entity : s.offWrites) {
+            if (AudioSource* source = world.GetComponent<AudioSource>(entity)) {
+                source->m_isPlaying       = false;
+                source->m_request         = AudioRequest::None;
+                source->m_pendingOneShots = 0;
+            }
+        }
+
         // Not seen this frame: the entity was destroyed, or lost its
         // AudioSource. Unity stops the sound with it, and so do we.
         for (auto it = s.records.begin(); it != s.records.end();) {
@@ -328,6 +347,7 @@ namespace Crucible {
         world = &ecs;
         sources.emplace(ecs.CreateQuery<const AudioSource, const WorldTransform>());
         listeners.emplace(ecs.CreateQuery<const AudioListener, const WorldTransform>());
+        offSources.emplace(ecs.BuildQuery<const AudioSource>().WhereDisabled().Build());
         warnedNoListener    = false;
         warnedManyListeners = false;
 

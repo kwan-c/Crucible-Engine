@@ -4,35 +4,27 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          30 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Hand-rolled .glb (binary glTF) parser: reads a GLB's JSON
-*                + binary chunks with the already-vendored rapidjson
-*                (Extern/rapidjson) and produces a Crucible::MeshData plus
-*                an optional material description, with no new third-party
-*                dependency (no cgltf/tinygltf).
+*                + binary chunks with the already-vendored RapidJSON.
+*                LoadModelGLB produces a complete CPU ModelResource.
+*                LoadGLB remains the first-primitive compatibility API.
+*                No new third-party importer dependency.
 *
 * \details
-*                DELIBERATE SCOPE LIMIT: only the first mesh's first
-*                primitive is imported, and only that primitive's material
-*                (if it has one). A full glTF importer would walk the whole
-*                node graph, every mesh's every primitive, skinning,
-*                animation, cameras and lights - none of that exists in
-*                Crucible's ECS/renderer yet (one MeshHandle + one
-*                MaterialHandle per MeshRenderer - see
-*                ECS/Components/Components.h), so parsing more than this
-*                pass uses would be untested, unused code. This is enough
-*                to load a real single-mesh model (Khronos's small sample
-*                assets, most simple props) and prove the format
-*                end-to-end.
+*                Imports all model nodes/scenes, triangle primitives,
+*                core PBR materials/textures, skins, and LINEAR/STEP TRS
+*                animation. ModelResource owns the data independently of
+*                the input bytes or RapidJSON document. No playback or
+*                GPU skinning is performed by this importer.
 *
-*                Also out of scope: sparse accessors, non-indexed
-*                primitives, external (.bin/.uri) buffers and images
-*                (GLB-embedded only - external-file glTF should go through
-*                AssetManager's own file-reading path instead), morph
-*                targets, and any texture other than a GLB-embedded image
-*                blob (still-encoded bytes; decoding is the caller's job -
-*                see GLTFImage).
+*                Unsupported features fail explicitly: sparse/bufferless
+*                accessors, external/data URIs, morph targets, additional
+*                UV/influence sets, cameras, required extensions and
+*                CUBICSPLINE. Optional extensions use the core fallback
+*                with a warning. Images remain encoded PNG/JPEG blobs.
+*                Non-indexed triangle primitives receive generated indices.
 *
 *                This header depends on RenderTypes.h for MeshData/Vertex
 *                (same dependency Primitives.h already has - see that
@@ -45,16 +37,20 @@
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       generic complete-model import; validated shared accessors;
+*                first-primitive API retained for existing static callers
 *
 **************************************************************************/
 
 #include <cstdint>
 #include <filesystem>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
 #include "Graphics/RenderTypes.h"   // MeshData / Vertex
+#include "Resources/ModelResource.h"
 
 namespace Crucible {
 
@@ -129,6 +125,15 @@ namespace Crucible {
      *************************************************************************/
     class GLTFLoader {
     public:
+        // Complete, CPU-only import of one self-contained GLB. Counts, names and
+        // array ordering are data, never model-specific policy. See ModelResource.h.
+        static ModelImportResult LoadModelGLB(std::span<const unsigned char> fileBytes);
+        static ModelImportResult LoadModelGLBFile(const std::filesystem::path& path);
+
+        // Compatibility projection for the existing single-primitive renderer.
+        // Does not evaluate node transforms, animation or skinning.
+        static GLTFAsset FirstPrimitive(const ModelResource& model);
+
         /*********************************************************************
          \brief
             Parses a .glb file already loaded into memory (the whole file,

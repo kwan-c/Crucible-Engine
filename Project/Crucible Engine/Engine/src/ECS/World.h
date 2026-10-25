@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.10
+* \version       1.11
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -76,6 +76,14 @@
 *                WorldValidated: no mutable access outside World (const
 *                AddComponent/EmplaceComponent/hook references);
 *                SetEntityName refused inside declared systems
+*    -v1.11      per-component on/off state: SetComponentEnabled /
+*                TrySetComponentEnabled, IsComponentEnabled (own choice),
+*                IsComponentActive (own + requirements),
+*                FirstDisabledRequirement, AddComponent(entity, value,
+*                enabled), OnComponentActiveChanged (typed and by id),
+*                OnComponentRemoved by id; kComponentEnabledKey. A switched-off SocketAttachment
+*                doesn't mount (ReadNodeRow, and World.cpp's socket checks).
+*                Component fields untouched.
 *
 **************************************************************************/
 #pragma once
@@ -119,7 +127,8 @@ namespace Crucible
 		DeadParent,    // parent is non-null but dead/stale
 		SelfParent,    // child == parent
 		WouldCycle,    // parent is one of child's descendants
-		UnsupportedTransform   // worldPositionStays: a parent's world transform has a zero/non-finite scale (not invertible), or keeping the world pose would need a mirrored (negative) scale
+		UnsupportedTransform,  // keep-world requires an invertible representable parent frame
+		InvalidSocketBinding
 	};
 
 	/*************************************************************************
@@ -142,6 +151,17 @@ namespace Crucible
 	 *************************************************************************/
 	inline constexpr ComponentSignature kMandatoryComponents =
 		MakeSignature<Transform, WorldTransform, HierarchyNode, EntityName>();
+
+	/*************************************************************************
+	 \brief  JSON member a scene/prefab/snapshot writer stores a switched-off
+			 component's own on/off state under, inside that component's
+			 object: "$enabled": false (absent = on, so older files load
+			 everything switched on).
+	 \details "$" keeps it apart from every reflected field name, including
+			  the components' own flags called "enabled" (Light,
+			  CameraComponent...), which are a separate setting.
+	 *************************************************************************/
+	inline constexpr const char* kComponentEnabledKey = "$enabled";
 
 	/// What AddComponent/EmplaceComponent return and typed hooks receive: T&, or
 	/// const T& for a WorldValidated component (EntityName), which only World may write.
@@ -747,6 +767,9 @@ namespace Crucible
 		 \return The parent, or kNullEntity for a root or a dead entity.
 		 *********************************************************************/
 		Entity GetParent(Entity entity) const;
+		// Fresh local transforms plus the current CPU animation pose, including sockets.
+		bool TryGetWorldMatrix(Entity entity, Math::mat4& matrix) const;
+		bool TryGetParentFrame(Entity entity, Math::mat4& matrix) const;
 
 		/*********************************************************************
 		 \brief  Unity's Transform.childCount (0 for a dead entity).
@@ -858,6 +881,147 @@ namespace Crucible
 		template <typename T>
 		void MarkChanged(Entity entity);
 
+		// ---------------------------------------------------------------------
+		// Per-component on/off state (Unity's Behaviour.enabled)
+		//
+		// Every component except the mandatory base ones (Transform,
+		// WorldTransform, HierarchyNode, EntityName) can be switched off
+		// without being removed (ToggleableComponent, ComponentKind.h). Its
+		// data stays: HasComponent, Read and GetComponent see it as before.
+		//
+		// Two states:
+		//   - enabled: the component's OWN on/off choice (the Inspector
+		//     checkbox, what a scene saves). New components start on.
+		//   - active: enabled AND every component it requires on this entity
+		//     (RequiresComponents, followed through) is enabled. Switching a
+		//     Collider off makes its entity's RigidBody inactive while the
+		//     RigidBody's own choice stays on; it is active again as soon as
+		//     the Collider is.
+		// Queries visit only ACTIVE components unless told otherwise (see
+		// QueryBuilder::WhereDisabled / IncludeDisabled), so a system built
+		// on queries stops running a switched-off component with no change.
+		//
+		// Independent of any flag a component has of its own
+		// (MeshRenderer::visible, Light::enabled, UICanvas::enabled,
+		// ParticleEmitter::playing, UIButton::interactable...): those are
+		// never read or written here and keep their meaning. A component does
+		// its work only when it is active AND its own flags say so; switched
+		// back on, it carries on with whatever its fields hold.
+		//
+		// Not a structural change: no archetype move, no add/remove hooks.
+		// Allowed while a Query iterates (a toggle is seen by every later
+		// ForEach; whether the one running now still visits a row it hasn't
+		// reached is unspecified). Changing it is a write of T, reading it a
+		// read of T - declared systems must declare that access.
+		// ---------------------------------------------------------------------
+
+		/*********************************************************************
+		 \brief  Switches entity's T on or off (its own choice).
+		 \note   Throws std::invalid_argument for a dead/stale entity,
+				 std::logic_error if the entity has no T or when called from
+				 an OnComponentActiveChanged hook. Marks T changed only when
+				 the state changes. Fires OnComponentActiveChanged for T and
+				 for every component on the entity whose active state this
+				 changes (T first, then its dependents).
+		 *********************************************************************/
+		template <ToggleableComponent T>
+		void SetComponentEnabled(Entity entity, bool enabled);
+
+		/*********************************************************************
+		 \brief  SetComponentEnabled by ComponentId, for code that only knows
+				 the component at run time (scripting, editor tools).
+		 \return false (and nothing changes) if entity is dead, has no such
+				 component, or it can't be switched off; true otherwise.
+		 \note   Same hook/access rules as the typed version.
+		 *********************************************************************/
+		bool TrySetComponentEnabled(Entity entity, ComponentId id, bool enabled);
+
+		/*********************************************************************
+		 \brief  The component's own on/off choice (ignores requirements).
+		 \return false if entity is dead or has no T; true for a present
+				 component that can't be switched off.
+		 *********************************************************************/
+		template <typename T>
+		bool IsComponentEnabled(Entity entity) const;
+		bool IsComponentEnabled(Entity entity, ComponentId id) const;
+
+		/*********************************************************************
+		 \brief  Whether the component actually runs: enabled, and every
+				 component it requires on this entity enabled too. This is
+				 what queries filter on.
+		 \return false if entity is dead or has no T.
+		 *********************************************************************/
+		template <typename T>
+		bool IsComponentActive(Entity entity) const;
+		bool IsComponentActive(Entity entity, ComponentId id) const;
+
+		/*********************************************************************
+		 \brief  Why an enabled component is not active: the first component
+				 it requires (directly or not) that is switched off on this
+				 entity, or kInvalidComponentId if none is.
+		 *********************************************************************/
+		ComponentId FirstDisabledRequirement(Entity entity, ComponentId id) const;
+
+		/*********************************************************************
+		 \brief
+			AddComponent with the component's own on/off state given - for
+			scene/prefab loading, snapshots and undo, which restore a saved
+			state.
+		 \details
+			- entity gains T here: T starts in that state, set before
+			  OnComponentAdded runs, with no OnComponentActiveChanged (being
+			  created switched off is not a change).
+			- entity already has T: the value is overwritten, its state kept,
+			  then SetComponentEnabled applies `enabled` (hooks fire only if
+			  that changes something).
+		 \note   Same structural rules and exceptions as AddComponent.
+		 *********************************************************************/
+		template <ToggleableComponent T>
+		T& AddComponent(Entity entity, T value, bool enabled);
+
+		/*********************************************************************
+		 \brief
+			Registers a callback fired when entity's T starts or stops being
+			ACTIVE - its own switch, or a component it requires being
+			switched - right after the change is stored.
+		 \param callback Receives the entity, its T and the new active state
+				(the old one is always !active).
+		 \details
+			Only SetComponentEnabled / TrySetComponentEnabled (directly or
+			replayed from a CommandBuffer, and the existing-component path of
+			AddComponent(entity, value, enabled)) fire it. Adding, removing
+			or destroying components, archetype moves and spawns made
+			WithDisabled never do.
+		 \note
+			Runs synchronously in the caller's context, under the iteration
+			guard (hooks may read and write component values, never
+			restructure) and under the caller's declared system access.
+			SetComponentEnabled inside a hook throws std::logic_error (no
+			recursive notifications) - defer it with a CommandBuffer. Same
+			failure policy as OnComponentAdded().
+		 *********************************************************************/
+		template <ToggleableComponent T>
+		void OnComponentActiveChanged(std::function<void(World&, Entity, T&, bool active)> callback);
+
+		/*********************************************************************
+		 \brief  OnComponentActiveChanged by ComponentId, for code that
+				 learns the component at run time (ECSSystemManager routing
+				 systems registered with ReactiveTo<...>()). Same rules.
+		 \note   Throws std::invalid_argument if id is not a registered
+				 component that can be switched off.
+		 *********************************************************************/
+		void OnComponentActiveChanged(ComponentId id, std::function<void(World&, Entity, bool active)> callback);
+
+		/*********************************************************************
+		 \brief  OnComponentRemoved by ComponentId, for code that learns the
+				 component at run time (ECSSystemManager forgetting on/off
+				 changes queued for a component that is gone). Same rules;
+				 the callback doesn't see the component's value.
+		 \note   Throws std::invalid_argument if id is not a registered
+				 component.
+		 *********************************************************************/
+		void OnComponentRemoved(ComponentId id, std::function<void(World&, Entity)> callback);
+
 	private:
 		friend class CommandBuffer;
 		friend class HierarchyTransformSystem;   // reads NodeRow: one lookup per node per frame
@@ -868,6 +1032,7 @@ namespace Crucible
 		{
 			const Transform* local = nullptr;
 			const HierarchyNode* links = nullptr;
+			const SocketAttachment* socket = nullptr;
 			WorldTransform* world = nullptr;
 			std::uint64_t localTick = 0;          // LastChanged<Transform>
 			std::uint64_t linksTick = 0;          // LastChanged<HierarchyNode>
@@ -921,7 +1086,18 @@ namespace Crucible
 			ComponentId addedId = kInvalidComponentId, void* addedValue = nullptr);
 
 		template <typename T> T& OverwriteComponent(EntityRecord& record, ComponentId id, T&& value);
-		template <typename T> T& InsertComponent(EntityRecord& record, Entity entity, ComponentId id, T&& value);
+		// startEnabled = false: a toggleable T is switched off before its add hooks run (no change event).
+		template <typename T> T& InsertComponent(EntityRecord& record, Entity entity, ComponentId id, T&& value, bool startEnabled = true);
+
+		// On/off internals (World.cpp). ApplyEnabled stores the switch, stamps T, and fires the
+		// active-state hooks of T and its dependents whose active state changed.
+		void ApplyEnabled(const EntityRecord& record, Entity entity, ComponentId id, bool enabled);
+		bool RowActive(const Archetype& archetype, std::uint32_t row, ComponentId id) const noexcept;
+		void RequireNotInActiveHook(const char* operation) const;
+		void FireActiveHooks(ComponentId id, Entity entity, void* component, bool active) noexcept;
+		// CommandBuffer spawns made WithDisabled: switches those components off before the
+		// spawn's add hooks run. Silent - born switched off is not a change.
+		void ApplySpawnDisabled(Entity entity, const ComponentSignature& disabled) noexcept;
 
 		// Hook dispatch: every hook is isolated (see the failure policy on OnComponentAdded).
 		void FireAddHooks(ComponentId id, Entity entity, void* component) noexcept;
@@ -980,6 +1156,10 @@ namespace Crucible
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onAddHooks;
 		std::array<std::vector<ComponentHookFn>, kMaxComponents> m_onRemoveHooks;
 		std::vector<std::function<void(World&, Entity)>> m_onDestroyHooks;
+
+		using ActiveHookFn = std::function<void(World&, Entity, void*, bool)>;
+		std::array<std::vector<ActiveHookFn>, kMaxComponents> m_onActiveHooks;
+		std::uint32_t m_activeHookDepth = 0;   // > 0 while active-state hooks run: switching is refused
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)
@@ -1023,6 +1203,9 @@ namespace Crucible
 		out.local = static_cast<const Transform*>(local.At(row));
 		out.links = static_cast<const HierarchyNode*>(links.At(row));
 		out.world = static_cast<WorldTransform*>(world.At(row));
+		// A switched-off SocketAttachment (SetComponentEnabled) doesn't mount: plain parenting.
+		out.socket = a.Contains(ComponentTypeId<SocketAttachment>()) && a.GetColumn(ComponentTypeId<SocketAttachment>()).IsEnabled(row)
+			? static_cast<const SocketAttachment*>(a.GetColumn(ComponentTypeId<SocketAttachment>()).At(row)) : nullptr;
 		out.localTick = local.ChangedTicksData()[row];
 		out.linksTick = links.ChangedTicksData()[row];
 		out.worldTick = world.ChangedTicksData() + row;
@@ -1158,15 +1341,75 @@ namespace Crucible
 	}
 
 	template <typename T>
-	T& World::InsertComponent(EntityRecord& record, Entity entity, ComponentId id, T&& value)
+	T& World::InsertComponent(EntityRecord& record, Entity entity, ComponentId id, T&& value, bool startEnabled)
 	{
 		Archetype* destination = m_archetypes.GetAddDestination(*record.archetype, id);
 		MoveEntity(record, entity, *destination, id, &value);   // value is relocated straight into its slot
 
 		T& slot = *static_cast<T*>(destination->GetComponentPtr(id, record.row));
-		destination->GetColumn(id).Touch(record.row, m_currentTick);
+		ComponentColumn& column = destination->GetColumn(id);
+		column.Touch(record.row, m_currentTick);
+		if (!startEnabled && column.IsToggleable()) column.SetEnabled(record.row, false);   // born off: no change event
 		FireAddHooks(id, entity, &slot);
 		return slot;
+	}
+
+	template <ToggleableComponent T>
+	void World::SetComponentEnabled(Entity entity, bool enabled)
+	{
+		CheckDeclaredAccess(ComponentSignature{}, MakeSignature<T>(), "switches a component on/off via World::SetComponentEnabled and");
+		RequireNotInActiveHook("SetComponentEnabled");
+
+		if (!m_entities.IsAlive(entity))
+			throw std::invalid_argument("World::SetComponentEnabled called with a dead/stale Entity");
+
+		const EntityRecord& record = m_entities.Record(entity);
+		if (!record.archetype->Contains(ComponentTypeId<T>()))
+			throw std::logic_error("World::SetComponentEnabled: the entity does not have this component");
+
+		ApplyEnabled(record, entity, ComponentTypeId<T>(), enabled);
+	}
+
+	template <typename T>
+	bool World::IsComponentEnabled(Entity entity) const
+	{
+		CheckDeclaredAccess(MakeSignature<T>(), ComponentSignature{}, "reads on/off state via World::IsComponentEnabled and");
+		return IsComponentEnabled(entity, ComponentTypeId<T>());
+	}
+
+	template <typename T>
+	bool World::IsComponentActive(Entity entity) const
+	{
+		CheckDeclaredAccess(MakeSignature<T>(), ComponentSignature{}, "reads on/off state via World::IsComponentActive and");
+		return IsComponentActive(entity, ComponentTypeId<T>());
+	}
+
+	template <ToggleableComponent T>
+	T& World::AddComponent(Entity entity, T value, bool enabled)
+	{
+		EntityRecord& record = RequireMutableEntity(entity, "AddComponent");
+		constexpr ComponentId id = ComponentTypeId<T>();
+
+		if (!record.archetype->Contains(id))
+			return InsertComponent<T>(record, entity, id, std::move(value), enabled);
+
+		// Overwrite the data, keep the state, then change it through the one setter.
+		T& slot = OverwriteComponent<T>(record, id, std::move(value));
+		SetComponentEnabled<T>(entity, enabled);
+		return slot;
+	}
+
+	template <ToggleableComponent T>
+	void World::OnComponentActiveChanged(std::function<void(World&, Entity, T&, bool active)> callback)
+	{
+		if (m_archetypes.IsIterating())
+			throw std::logic_error("World::OnComponentActiveChanged: register hooks outside queries and hook dispatch");
+
+		m_onActiveHooks[ComponentTypeId<T>()].push_back(
+			[cb = std::move(callback)](World& world, Entity entity, void* component, bool active)
+			{
+				cb(world, entity, *static_cast<T*>(component), active);
+			});
 	}
 
 	template<typename... T>

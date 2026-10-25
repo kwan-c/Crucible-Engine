@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares ComponentInfo: the type-erased description of
 *                a single component type (size, alignment, and
@@ -25,6 +25,8 @@
 *    -v1.0       initial type-erased component metadata + MakeComponentInfo<T>
 *    -v1.1       components must be nothrow move-constructible and nothrow
 *                destructible (compile-time check)
+*    -v1.2       toggleable flag and requirements (direct, closure,
+*                dependents) for per-component on/off state
 *
 *
 **************************************************************************/
@@ -38,12 +40,21 @@
 #include <vector>
 
 #include "ComponentTypeId.h"
+#include "ComponentSignature.h"
 
 namespace Crucible
 {
 	// helper functions
 	namespace Detail
 	{
+		// ComponentTypeList<A, B...> -> the signature with A, B... set (RequiresComponents<T>::type).
+		template <typename List> struct ListSignature;
+		template <typename... Components>
+		struct ListSignature<ComponentTypeList<Components...>>
+		{
+			static constexpr ComponentSignature value = MakeSignature<Components...>();
+		};
+
 		/*********************************************************************
 		 \brief  Default-constructs a T in already-allocated storage.
 		 \param[out] dst Pointer to (aligned, sized) storage for one T.
@@ -132,6 +143,15 @@ namespace Crucible
 		//true when destruction requires no clean up
 		//lets the column skip per object destructor calls
 		bool isTriviallyDestructible = false;
+		//true when the ECS can switch this component off (ToggleableComponent, see ComponentKind.h):
+		//its columns keep one enabled byte per row
+		bool toggleable = false;
+		//components on the same entity this one needs (RequiresComponents<T>, direct only)
+		ComponentSignature requirements;
+		//filled in by ComponentRegistry once every type is registered: everything required,
+		//directly or through other requirements, and every component that requires this one
+		ComponentSignature requiredClosure;
+		ComponentSignature dependents;
 
 		//comments to written
 		void(*defaultConstruct)(void* dst) = nullptr;
@@ -193,6 +213,8 @@ namespace Crucible
 		info.isTriviallyRelocatable = std::is_trivially_copyable_v<T> && std::is_trivially_destructible_v<T>;
 
 		info.isTriviallyDestructible = std::is_trivially_destructible_v<T>;
+		info.toggleable = ToggleableComponent<T>;
+		info.requirements = Detail::ListSignature<typename RequiresComponents<T>::type>::value;
 
 		info.defaultConstruct = &Detail::DefaultConstructImpl<T>;
 		info.destroy = &Detail::DestroyImpl<T>;

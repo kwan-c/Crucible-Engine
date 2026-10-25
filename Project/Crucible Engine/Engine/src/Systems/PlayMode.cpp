@@ -233,6 +233,7 @@ namespace Crucible
 		const PlayState from = m_state;
 		m_state = PlayState::Playing;
 		CRU_USER_INFO("Play mode: started ('{}')", m_scenes.CurrentName());
+		++m_sessionRevision;
 		Notify(from, PlayRequest::Play, false);
 		return true;
 	}
@@ -301,6 +302,7 @@ namespace Crucible
 		const PlayState from = m_state;
 		m_state = PlayState::Edit;
 		if (restored) CRU_USER_INFO("Play mode: stopped, '{}' restored", m_scenes.CurrentName());
+		++m_sessionRevision;
 		Notify(from, PlayRequest::Stop, restored);
 
 		// The session did end; the failure is reported after the state change.

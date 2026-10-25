@@ -262,6 +262,7 @@ namespace Crucible {
                  mesh hasn't finished uploading.
          *********************************************************************/
         ENGINE_API bool GetMeshBounds(MeshHandle handle, glm::vec3& outMin, glm::vec3& outMax) const;
+        ENGINE_API bool GetObjectBounds(std::uint64_t userData, glm::vec3& outMin, glm::vec3& outMax) const;
 
         /*********************************************************************
          \brief
@@ -788,6 +789,19 @@ namespace Crucible {
         ENGINE_API vk::ImageView  GetViewportColorView(ViewportHandle handle) const;
 
         /*********************************************************************
+         \brief  A texture's image view, so the editor can show it with
+                 ImGui_ImplVulkan_AddTexture(GetViewportSampler(), view,
+                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) - e.g. a font
+                 atlas preview.
+         \param[in] handle A texture this Renderer made.
+         \return The view.
+         \throws std::runtime_error for an unknown handle.
+         \note   A texture is uploaded at the start of the frame after it was
+                 created; don't draw it in an ImGui frame before that.
+         *********************************************************************/
+        ENGINE_API vk::ImageView  GetTextureView(TextureHandle handle) const;
+
+        /*********************************************************************
          \brief
             Queues one draw for this frame.
 
@@ -803,6 +817,11 @@ namespace Crucible {
             Invalid MaterialHandle; the scene pass always binds a
             material descriptor set per draw.
          *********************************************************************/
+        // Current mesh-local bounds apply to rigid animated nodes as well as skins.
+        // An empty palette means rigid; invalid bounds revert to the mesh's rest bounds.
+        ENGINE_API void SetRenderProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
+                                               const glm::vec3& boundsMin, const glm::vec3& boundsMax);
+
         ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model,
                                const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
 

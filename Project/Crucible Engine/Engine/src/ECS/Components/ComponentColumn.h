@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares ComponentColumn: a type-erased, contiguous
 *                dynamic array holding one component type's data for
@@ -33,10 +33,13 @@
 *                PushBackMoved/PopBack replace PushBackUninitialized,
 *                noexcept remove/move/clear, mutation restricted to the ECS
 *                (friends)
+*    -v1.2       per-row on/off bytes for toggleable components (IsEnabled,
+*                EnabledData, DisabledCount), carried like change ticks
 *
 **************************************************************************/
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cassert>
@@ -161,6 +164,49 @@ namespace Crucible
 		 *********************************************************************/
 		const std::uint64_t* ChangedTicksData() const noexcept { return m_changedTicks.data(); }
 
+		/*********************************************************************
+		 \brief  Whether this column keeps per-row on/off state (its type is
+				 a ToggleableComponent - see ComponentKind.h).
+		 *********************************************************************/
+		bool IsToggleable() const noexcept { return m_info && m_info->toggleable; }
+
+		/*********************************************************************
+		 \brief  The component's own on/off state in `row` (ignores
+				 requirements - see World::IsComponentActive). Always true
+				 for a column that is not toggleable.
+		 *********************************************************************/
+		bool IsEnabled(std::size_t row) const
+		{
+			assert(row < m_size);
+			return m_enabled.empty() || m_enabled[row] != 0;
+		}
+
+		/*********************************************************************
+		 \brief  Per-row on/off bytes (1 = on, 0 = off), or nullptr when the
+				 column is not toggleable or empty.
+		 \note   Valid until the next structural change to the archetype.
+		 *********************************************************************/
+		const std::uint8_t* EnabledData() const noexcept { return m_enabled.empty() ? nullptr : m_enabled.data(); }
+
+		/*********************************************************************
+		 \brief  How many rows are switched off. 0 means a query can walk the
+				 column without looking at any row's state.
+		 *********************************************************************/
+		std::size_t DisabledCount() const noexcept { return m_disabledCount; }
+
+		/*********************************************************************
+		 \brief  Full check of the on/off bytes: one per row for a toggleable
+				 column (none otherwise), DisabledCount() equal to the zero
+				 bytes. O(rows) - for tests and debugging, not hot asserts.
+		 *********************************************************************/
+		bool ValidateEnabled() const
+		{
+			if (!IsToggleable()) return m_enabled.empty() && m_disabledCount == 0;
+			if (m_enabled.size() != m_size) return false;
+			const auto zeros = std::count(m_enabled.begin(), m_enabled.end(), std::uint8_t{ 0 });
+			return static_cast<std::size_t>(zeros) == m_disabledCount;
+		}
+
 	private:
 		friend class Archetype;
 		friend class World;
@@ -180,6 +226,21 @@ namespace Crucible
 		{
 			assert(row < m_size);
 			m_changedTicks[row] = tick;
+		}
+
+		/*********************************************************************
+		 \brief  Sets one row's own on/off state (toggleable columns only).
+		 \return true if it changed.
+		 *********************************************************************/
+		bool SetEnabled(std::size_t row, bool enabled) noexcept
+		{
+			assert(row < m_size && IsToggleable());
+			const std::uint8_t value = enabled ? 1 : 0;
+			if (m_enabled[row] == value) return false;
+			m_enabled[row] = value;
+			if (enabled) --m_disabledCount;
+			else ++m_disabledCount;
+			return true;
 		}
 
 		/*********************************************************************
@@ -225,7 +286,7 @@ namespace Crucible
 
 		/*********************************************************************
 		 \brief  Appends a relocated copy of element `row` to dst (same
-				 component type), carrying its change tick.
+				 component type), carrying its change tick and on/off state.
 		 \note  Does not remove the source element; only growth of dst can
 				throw, before anything changes.
 		 *********************************************************************/
@@ -247,5 +308,9 @@ namespace Crucible
 		std::size_t m_size = 0;
 		std::size_t m_capacity = 0;
 		std::vector<std::uint64_t> m_changedTicks;   // capacity kept >= m_capacity, so appends never throw here
+		// Toggleable columns only (empty otherwise): one on/off byte per row, travelling with the
+		// row exactly like its change tick. Capacity kept >= m_capacity, like m_changedTicks.
+		std::vector<std::uint8_t> m_enabled;
+		std::size_t m_disabledCount = 0;   // zero bytes in m_enabled
 	};
 }

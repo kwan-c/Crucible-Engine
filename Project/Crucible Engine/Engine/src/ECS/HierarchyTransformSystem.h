@@ -10,13 +10,13 @@
 *                subtrees where something changed.
 *
 * \details
-*                Runs FIRST in PreRender: after every Update and PostUpdate
+*                Runs in PreRender, after CPU pose/socket preparation and every Update and PostUpdate
 *                system (physics included) AND after those stages' command
 *                replays and event deliveries, so spawns, reparents and
 *                listener edits made anywhere before rendering are in this
 *                frame's matrices. PreRender systems that read WorldTransform
 *                should declare RunAfter<HierarchyTransformSystem>() (its
-*                lowest-possible Priority() already puts it first). Changes
+*                explicit dependencies order pose/socket work before propagation). Changes
 *                made later - by PreRender systems' own commands - show up
 *                next frame (a spawn has valid == false until then), so
 *                PreRender is for reading/extracting only. Every entity has a
@@ -126,6 +126,7 @@ namespace Crucible
 			// restructures during Update, so the pointer stays valid). nullptr = root.
 			const Math::mat4* parentWorld;
 			bool parentRecomputed;
+			bool parentValid = true;
 		};
 
 		std::optional<NodeQuery> m_nodes;

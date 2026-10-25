@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                Implementation of World: entity creation/destruction
 *                and the archetype-move logic used by
@@ -60,10 +60,16 @@
 *                (blank -> default, default-shaped -> reserved);
 *                ReissueDefaultName, DeferredNaming; SetEntityName refused
 *                inside declared systems (allowed while a Query iterates)
+*    -v1.8       per-component on/off state: ApplyEnabled, RowActive
+*                (requirements), Try/IsComponentEnabled/Active by id,
+*                FirstDisabledRequirement, active-state hook dispatch,
+*                ApplySpawnDisabled, OnComponentActiveChanged by id,
+*                OnComponentRemoved by id
 *
 **************************************************************************/
 
 #include "World.h"
+#include "Animation/ModelSockets.h"
 
 #include <algorithm>
 #include <array>
@@ -437,6 +443,171 @@ namespace Crucible
 		}
 	}
 
+	// =====================================================================
+	// Per-component on/off state (see World.h). A component's own choice is
+	// one byte in its column; "active" also needs every component it
+	// requires on the same entity (ComponentInfo::requiredClosure) on.
+	// =====================================================================
+
+	namespace
+	{
+		ComponentSignature Only(ComponentId id)
+		{
+			ComponentSignature signature;
+			signature.set(id);
+			return signature;
+		}
+	}
+
+	void World::RequireNotInActiveHook(const char* operation) const
+	{
+		if (m_activeHookDepth > 0)
+		{
+			throw std::logic_error(std::string("World::") + operation +
+				" called from inside an OnComponentActiveChanged hook - defer it (CommandBuffer::SetComponentEnabled)");
+		}
+	}
+
+	bool World::TrySetComponentEnabled(Entity entity, ComponentId id, bool enabled)
+	{
+		if (!m_components.IsRegistered(id)) return false;
+		CheckDeclaredAccess(ComponentSignature{}, Only(id), "switches a component on/off via World::TrySetComponentEnabled and");
+		RequireNotInActiveHook("TrySetComponentEnabled");
+
+		if (!m_entities.IsAlive(entity)) return false;
+		const EntityRecord& record = m_entities.Record(entity);
+		if (!record.archetype->Contains(id) || !record.archetype->GetColumn(id).IsToggleable()) return false;
+
+		ApplyEnabled(record, entity, id, enabled);
+		return true;
+	}
+
+	bool World::IsComponentEnabled(Entity entity, ComponentId id) const
+	{
+		if (!m_components.IsRegistered(id)) return false;
+		CheckDeclaredAccess(Only(id), ComponentSignature{}, "reads on/off state via World::IsComponentEnabled and");
+		if (!m_entities.IsAlive(entity)) return false;
+		const EntityRecord& record = m_entities.Record(entity);
+		const Archetype& archetype = *record.archetype;
+		return archetype.Contains(id) && archetype.GetColumn(id).IsEnabled(record.row);
+	}
+
+	bool World::IsComponentActive(Entity entity, ComponentId id) const
+	{
+		if (!m_components.IsRegistered(id)) return false;
+		CheckDeclaredAccess(Only(id), ComponentSignature{}, "reads on/off state via World::IsComponentActive and");
+		if (!m_entities.IsAlive(entity)) return false;
+		const EntityRecord& record = m_entities.Record(entity);
+		const Archetype& archetype = *record.archetype;
+		return archetype.Contains(id) && RowActive(archetype, record.row, id);
+	}
+
+	ComponentId World::FirstDisabledRequirement(Entity entity, ComponentId id) const
+	{
+		if (!m_components.IsRegistered(id) || !m_entities.IsAlive(entity)) return kInvalidComponentId;
+		const EntityRecord& record = m_entities.Record(entity);
+		const Archetype& archetype = *record.archetype;
+		const ComponentSignature required = m_components.Get(id).requiredClosure & archetype.Signature();
+		for (ComponentId r = 0; r < kMaxComponents; ++r)
+		{
+			if (required.test(r) && !archetype.GetColumn(r).IsEnabled(record.row)) return r;
+		}
+		return kInvalidComponentId;
+	}
+
+	bool World::RowActive(const Archetype& archetype, std::uint32_t row, ComponentId id) const noexcept
+	{
+		if (!archetype.GetColumn(id).IsEnabled(row)) return false;
+		// A requirement the entity doesn't have blocks nothing.
+		const ComponentSignature required = m_components.Get(id).requiredClosure & archetype.Signature();
+		for (ComponentId r = 0; r < kMaxComponents; ++r)
+		{
+			if (required.test(r) && !archetype.GetColumn(r).IsEnabled(row)) return false;
+		}
+		return true;
+	}
+
+	void World::ApplyEnabled(const EntityRecord& record, Entity entity, ComponentId id, bool enabled)
+	{
+		Archetype& archetype = *record.archetype;
+		const std::uint32_t row = record.row;
+
+		// Whose active state this switch can change: the component and its dependents on this entity.
+		const ComponentSignature affected = (m_components.Get(id).dependents | Only(id)) & archetype.Signature();
+		bool anyHook = false;
+		for (ComponentId c = 0; c < kMaxComponents && !anyHook; ++c)
+			anyHook = affected.test(c) && !m_onActiveHooks[c].empty();
+
+		std::array<bool, kMaxComponents> wasActive{};
+		if (anyHook)
+		{
+			for (ComponentId c = 0; c < kMaxComponents; ++c)
+				if (affected.test(c)) wasActive[c] = RowActive(archetype, row, c);
+		}
+
+		ComponentColumn& column = archetype.GetColumn(id);
+		if (!column.SetEnabled(row, enabled)) return;   // already in that state: nothing happened
+		column.Touch(row, m_currentTick);
+		if (!anyHook) return;
+
+		// The switched component first, then its dependents in id order.
+		const auto notify = [&](ComponentId c)
+			{
+				const bool active = RowActive(archetype, row, c);
+				if (active != wasActive[c] && !m_onActiveHooks[c].empty())
+					FireActiveHooks(c, entity, archetype.GetComponentPtr(c, row), active);
+			};
+		notify(id);
+		for (ComponentId c = 0; c < kMaxComponents; ++c)
+			if (c != id && affected.test(c)) notify(c);
+	}
+
+	void World::OnComponentActiveChanged(ComponentId id, std::function<void(World&, Entity, bool active)> callback)
+	{
+		if (!m_components.IsRegistered(id) || !m_components.Get(id).toggleable)
+			throw std::invalid_argument("World::OnComponentActiveChanged: component id " + std::to_string(id) + " can't be switched off");
+		if (m_archetypes.IsIterating())
+			throw std::logic_error("World::OnComponentActiveChanged: register hooks outside queries and hook dispatch");
+
+		m_onActiveHooks[id].push_back(
+			[cb = std::move(callback)](World& world, Entity entity, void*, bool active) { cb(world, entity, active); });
+	}
+
+	void World::OnComponentRemoved(ComponentId id, std::function<void(World&, Entity)> callback)
+	{
+		if (!m_components.IsRegistered(id))
+			throw std::invalid_argument("World::OnComponentRemoved: component id " + std::to_string(id) + " is not registered");
+		if (m_archetypes.IsIterating())
+			throw std::logic_error("World::OnComponentRemoved: register hooks outside queries and hook dispatch");
+
+		m_onRemoveHooks[id].push_back(
+			[cb = std::move(callback)](World& world, Entity entity, void*) { cb(world, entity); });
+	}
+
+	void World::FireActiveHooks(ComponentId id, Entity entity, void* component, bool active) noexcept
+	{
+		ArchetypeRegistry::IterationGuard guard(m_archetypes);   // hooks may read/write values, never restructure
+		++m_activeHookDepth;                                      // and never switch anything (no recursion)
+		for (auto& hook : m_onActiveHooks[id])
+		{
+			try { hook(*this, entity, component, active); }
+			catch (const std::exception& e) { ReportHookFailure("OnComponentActiveChanged", id, entity, e.what()); }
+			catch (...) { ReportHookFailure("OnComponentActiveChanged", id, entity, "non-std exception"); }
+		}
+		--m_activeHookDepth;
+	}
+
+	void World::ApplySpawnDisabled(Entity entity, const ComponentSignature& disabled) noexcept
+	{
+		if (disabled.none() || !m_entities.IsAlive(entity)) return;
+		const EntityRecord& record = m_entities.Record(entity);
+		for (ComponentId id : record.archetype->ComponentIds())
+		{
+			ComponentColumn& column = record.archetype->GetColumn(id);
+			if (disabled.test(id) && column.IsToggleable()) column.SetEnabled(record.row, false);
+		}
+	}
+
 	void World::FireAddHooksForRow(Archetype& archetype, uint32_t row, Entity entity) noexcept
 	{
 		for (ComponentId id : archetype.ComponentIds())
@@ -680,6 +851,7 @@ namespace Crucible
 		case ParentResult::DeadParent: return "parent is dead";
 		case ParentResult::SelfParent: return "an entity can't be its own parent";
 		case ParentResult::WouldCycle: return "parent is a descendant of child (would create a cycle)";
+		case ParentResult::InvalidSocketBinding: return "socket binding is unresolved or incompatible; use DetachModelSocket to unmount";
 		case ParentResult::UnsupportedTransform:
 			return "can't keep the world transform: a parent's world transform has a zero or non-finite scale, or the parents differ in handedness (would need a negative scale; use worldPositionStays = false)";
 		default:                       return "unknown";
@@ -777,7 +949,14 @@ namespace Crucible
 			if (e == target) return true;
 			const HierarchyNode* node = NodeOf(e);
 			if (!node) break;   // dead: contributes nothing
-			if (worldOut) world = LocalMatrix(LocalOf(e)) * world;
+			if (worldOut) {
+				Math::mat4 mount(1);
+				if (const auto* socket = Read<SocketAttachment>(e); socket && socket->enabled && IsComponentActive<SocketAttachment>(e)) {
+					if (ModelSocketFrame(*this, node->parent, *socket, mount) != SocketResult::Ready)
+						mount = Math::mat4(std::numeric_limits<float>::quiet_NaN());
+				}
+				world = mount * LocalMatrix(LocalOf(e)) * world;
+			}
 			if (++depth > kMaxHierarchySize) throw std::logic_error("World: parent chain too long - hierarchy links are corrupted");
 			e = node->parent;
 		}
@@ -961,6 +1140,34 @@ namespace Crucible
 	}
 
 	// ---------------------------------------------------------------- mutations
+	bool World::TryGetWorldMatrix(Entity entity, Math::mat4& matrix) const {
+		CheckDeclaredAccess(MakeSignature<Transform, HierarchyNode, SocketAttachment, MeshRenderer, AnimatedModel>(), {},
+			"World::TryGetWorldMatrix reads");
+		matrix = Math::mat4(1);
+		if (!IsAlive(entity)) return false;
+		const auto result = ComputeWorldMatrix(entity);
+		for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r)
+			if (!std::isfinite(result[c][r])) return false;
+		matrix = result;
+		return true;
+	}
+
+	bool World::TryGetParentFrame(Entity entity, Math::mat4& matrix) const {
+		CheckDeclaredAccess(MakeSignature<Transform, HierarchyNode, SocketAttachment, MeshRenderer, AnimatedModel>(), {},
+			"World::TryGetParentFrame reads");
+		matrix = Math::mat4(1);
+		if (!IsAlive(entity)) return false;
+		const Entity parent = GetParent(entity);
+		if (parent.IsValid() && !TryGetWorldMatrix(parent, matrix)) return false;
+		if (const auto* socket = Read<SocketAttachment>(entity); socket && socket->enabled && IsComponentActive<SocketAttachment>(entity)) {
+			Math::mat4 mount;
+			if (ModelSocketFrame(*this, parent, *socket, mount) != SocketResult::Ready) return false;
+			matrix *= mount;
+		}
+		for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r)
+			if (!std::isfinite(matrix[c][r])) { matrix = Math::mat4(1); return false; }
+		return true;
+	}
 
 	ParentResult World::SolveKeepWorld(const Transform& local, const Math::mat4& oldParentWorld,
 		const Math::mat4* newParentInverse, Transform& out) const
@@ -1002,11 +1209,20 @@ namespace Crucible
 		Transform solved{};
 		if (worldPositionStays)
 		{
+			Math::mat4 oldParentWorld = ComputeWorldMatrix(oldParent);
+			if (const auto* socket = Read<SocketAttachment>(child); socket && socket->enabled && IsComponentActive<SocketAttachment>(child)) {
+				Math::mat4 oldMount, newMount;
+				if (ModelSocketFrame(*this, oldParent, *socket, oldMount) != SocketResult::Ready ||
+					ModelSocketFrame(*this, parent, *socket, newMount) != SocketResult::Ready)
+					return ParentResult::InvalidSocketBinding;
+				oldParentWorld *= oldMount;
+				newParentWorld *= newMount;
+			}
 			// The new parent must be invertible, or no local Transform reaches the old world
 			// spot. A root needs no inverse (identity).
 			Math::mat4 newParentInverse;
 			if (parent.IsValid() && !TryAffineInverse(newParentWorld, newParentInverse)) return ParentResult::UnsupportedTransform;
-			const ParentResult solve = SolveKeepWorld(*LocalOf(child), ComputeWorldMatrix(oldParent),
+			const ParentResult solve = SolveKeepWorld(*LocalOf(child), oldParentWorld,
 				parent.IsValid() ? &newParentInverse : nullptr, solved);
 			if (solve != ParentResult::Ok) return solve;
 		}
@@ -1044,6 +1260,8 @@ namespace Crucible
 		std::vector<Transform> solved(children.size());
 		for (std::size_t i = 0; i < children.size(); ++i)
 		{
+			if (const auto* socket = Read<SocketAttachment>(children[i]); socket && socket->enabled && IsComponentActive<SocketAttachment>(children[i]))
+				throw std::invalid_argument("World::DetachChildren: use DetachModelSocket for mounted children");
 			if (SolveKeepWorld(*LocalOf(children[i]), parentWorld, nullptr, solved[i]) != ParentResult::Ok)
 				throw std::invalid_argument(std::string("World::DetachChildren: ") + ToString(ParentResult::UnsupportedTransform));
 		}

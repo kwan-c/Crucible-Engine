@@ -18,6 +18,9 @@
 
 #include "ECSPhysicsSystem.h"
 #include "World.h"
+#include "Animation/SocketAttachmentSystem.h"
+#include "Animation/ModelSockets.h"
+#include <cmath>
 
 namespace Crucible
 {
@@ -34,9 +37,10 @@ namespace Crucible
 	void HierarchyTransformSystem::Describe(SystemDesc& desc) const
 	{
 		desc.Uses<NodeQuery>()
-			.Reads<Transform, HierarchyNode>()
+			.Reads<Transform, HierarchyNode, SocketAttachment, MeshRenderer, AnimatedModel>()
 			.Writes<WorldTransform>()
 			.RunAfterIfPresent<ECSPhysicsSystem>()   // physics (if registered) moves Transforms first
+			.RunAfterIfPresent<SocketAttachmentSystem>()
 			.Affinity(SystemAffinity::Worker);
 	}
 
@@ -46,7 +50,7 @@ namespace Crucible
 
 		// The per-node reads below go through World::ReadNodeRow, so check the
 		// declared access once here instead of on every read.
-		CheckDeclaredAccess(MakeSignature<Transform, HierarchyNode>(), MakeSignature<WorldTransform>(),
+		CheckDeclaredAccess(MakeSignature<Transform, HierarchyNode, SocketAttachment, MeshRenderer, AnimatedModel>(), MakeSignature<WorldTransform>(),
 			"HierarchyTransformSystem reads/writes");
 
 		const std::uint64_t since = m_lastRunTick;
@@ -69,7 +73,8 @@ namespace Crucible
 					World::NodeRow node;
 					if (!world.ReadNodeRow(frame.entity, node)) MissingBaseComponent();
 
-					const bool dirty = frame.parentRecomputed
+					const bool mounted = node.socket && node.socket->enabled;
+					const bool dirty = mounted || node.world->socketApplied != mounted || frame.parentRecomputed
 						|| !node.world->valid
 						|| changed(node.localTick)
 						|| changed(node.linksTick);
@@ -78,15 +83,25 @@ namespace Crucible
 					{
 						const Math::mat4 local = Detail::ComposeTRS(node.local->positions, node.local->rotation, node.local->scale);
 						node.world->matrix = frame.parentWorld ? *frame.parentWorld * local : local;
-						node.world->valid = true;
+						node.world->valid = frame.parentValid;
+						if (mounted) {
+							Math::mat4 mount;
+							node.world->valid = node.world->valid &&
+								ModelSocketFrame(world, node.links->parent, *node.socket, mount) == SocketResult::Ready;
+							if (node.world->valid) node.world->matrix = *frame.parentWorld * mount * local;
+						}
+						for (int c = 0; c < 4; ++c) for (int r = 0; r < 4; ++r)
+							if (!std::isfinite(node.world->matrix[c][r])) node.world->valid = false;
+						if (!node.world->valid) node.world->matrix = Math::mat4(1);
+						node.world->socketApplied = mounted;
 						*node.worldTick = now;   // same stamp World::Write would give
 						++m_lastRecomputed;
 					}
 
 					if (frame.entity != e && node.links->nextSibling.IsValid())
-						m_stack.push_back({ node.links->nextSibling, frame.parentWorld, frame.parentRecomputed });
+						m_stack.push_back({ node.links->nextSibling, frame.parentWorld, frame.parentRecomputed, frame.parentValid });
 					if (node.links->firstChild.IsValid())
-						m_stack.push_back({ node.links->firstChild, &node.world->matrix, dirty });   // clean or fresh: children read it in place
+						m_stack.push_back({ node.links->firstChild, &node.world->matrix, dirty, node.world->valid });
 
 					if (m_stack.empty()) break;
 					if (m_stack.size() > kMaxStack) throw std::logic_error("HierarchyTransformSystem: hierarchy links are corrupted (cycle?)");

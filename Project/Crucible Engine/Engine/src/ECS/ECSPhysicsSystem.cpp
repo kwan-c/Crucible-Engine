@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.3
+* \version       2.5
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -31,10 +31,20 @@
 *    -v2.0       the real binding
 *    -v2.1       BeginSession/EndSession: Jolt and every per-session field
 *                start fresh each Play; the object and its queries stay
-*    -v2.2       forces: RigidBody's AddForce/AddTorque/ApplyImpulse and
+*    -v2.2       hierarchy-aware: a child's Transform is relative to its
+*                parent, so bodies and characters are placed at the world
+*                pose (parent frame * Transform) and their results are
+*                written back in the parent's frame. Roots are unchanged.
+*                (Abhishek)
+*    -v2.3       a switched-off RigidBody is a static body; it stops being
+*                dynamic even on frames where the pose can't be worked out
+*                (StopIfNotDynamic), and its data isn't written back
+*                (Abhishek)
+*    -v2.4       forces: RigidBody's AddForce/AddTorque/ApplyImpulse and
 *                the ConstantForce component, handed to every fixed step
-*    -v2.3       PhysicsJoint: joints built, rebuilt and removed with the
-*                component; broken joints flagged in m_isBroken
+*    -v2.5       PhysicsJoint: joints built, rebuilt and removed with the
+*                component; broken joints flagged in m_isBroken. Both
+*                respect switched-off components and world scale
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -141,6 +151,49 @@ namespace {
         return position + rotation * (point * scale);
     }
 
+    // --- hierarchy: Transform is LOCAL, Jolt is WORLD --------------------- //
+    // A child's Transform is relative to its parent's frame (World::TryGetParentFrame);
+    // a root's frame is the identity. For a root both helpers pass the values through
+    // untouched, bit for bit, so the exact Same() bookkeeping works as it always has.
+
+    // Local pose -> world pose (and world scale, which sizes the collider).
+    bool ToWorld(const Math::mat4& parentFrame, const Transform& local,
+                 Math::vec3& position, Math::quat& rotation, Math::vec3& scale) {
+        if (parentFrame == Math::mat4(1.0f)) {
+            position = local.positions;
+            rotation = local.rotation;
+            scale    = local.scale;
+            return true;
+        }
+        return Detail::DecomposeTRS(parentFrame * Detail::ComposeTRS(local.positions, local.rotation, local.scale),
+                                    position, rotation, scale);
+    }
+
+    // World pose (what Jolt reports) -> the pose the Transform needs inside parentFrame.
+    void ToLocal(const Math::mat4& parentFrame, Math::vec3& position, Math::quat& rotation) {
+        if (parentFrame == Math::mat4(1.0f)) return;
+        position = Math::vec3(glm::inverse(parentFrame) * Math::vec4(position, 1.0f));
+        Math::vec3 parentPosition, parentScale;
+        Math::quat parentRotation;
+        if (Detail::DecomposeTRS(parentFrame, parentPosition, parentRotation, parentScale))
+            rotation = glm::normalize(glm::inverse(parentRotation) * rotation);
+    }
+
+    // An entity's scale in the world: its own times its parents'. A joint's anchor is
+    // placed with it, the way SyncBody sizes the collider with it, so an anchor at a
+    // capsule's tip stays at the tip on a child whose parent is scaled too.
+    Math::vec3 WorldScaleOf(const World& ecs, const Entity& entity) {
+        const Transform* transform = ecs.Read<Transform>(entity);
+        if (transform == nullptr) return Math::vec3(1.0f, 1.0f, 1.0f);
+
+        Math::mat4 parentFrame(1.0f);
+        Math::vec3 position, scale;
+        Math::quat rotation;
+        if (!ecs.TryGetParentFrame(entity, parentFrame) || !ToWorld(parentFrame, *transform, position, rotation, scale))
+            return transform->scale;     // no usable parent frame this frame: the local scale is the best guess
+        return scale;
+    }
+
     // One bit per message. An entity can have both a Collider and a
     // CharacterController AND sit on the wrong layer, and hearing about only
     // the first one is how the second gets missed.
@@ -176,6 +229,7 @@ namespace {
         Math::vec3    position  = Math::vec3(0.0f, 0.0f, 0.0f);   // the Transform as physics last left it
         Math::quat    rotation  = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);
         Math::vec3    velocity  = Math::vec3(0.0f, 0.0f, 0.0f);
+        Math::mat4    parentFrame = Math::mat4(1.0f);   // what position/rotation are relative to (identity for a root)
 
         // This frame's pushes, collected once in Sync and handed to Jolt before
         // EVERY step this frame, because Jolt forgets a force after each step.
@@ -202,7 +256,8 @@ namespace {
         CharacterDesc   recipe    {};
         bool            failed    = false;
 
-        Math::vec3      position  = Math::vec3(0.0f, 0.0f, 0.0f);   // where physics last put it
+        Math::vec3      position  = Math::vec3(0.0f, 0.0f, 0.0f);   // where physics last put it (in parentFrame)
+        Math::mat4      parentFrame = Math::mat4(1.0f);              // identity for a root
         std::uint64_t   seenFrame = 0;
         std::uint32_t   warned    = 0;
 
@@ -275,8 +330,9 @@ namespace Crucible {
         void BindWorld(World& ecs);
         void ResetClock();
         void Sync(World& ecs);
-        void SyncBody(Record& record, const Transform& transform, const Collider& collider, const RigidBody* rigidbody);
-        void SyncCharacter(CharacterRecord& record, const Transform& transform, CharacterController& controller);
+        void SyncBody(Record& record, const Transform& transform, const Math::mat4& parentFrame, const Collider& collider, const RigidBody* rigidbody);
+        void StopIfNotDynamic(Record& record, const RigidBody* rigidbody);
+        void SyncCharacter(CharacterRecord& record, const Transform& transform, const Math::mat4& parentFrame, CharacterController& controller);
         void TakeForces(World& ecs, Record& record, const RigidBody* rigidbody);
         void PushForces(Record& record);
         void SyncJoints(World& ecs);
@@ -325,6 +381,17 @@ namespace Crucible {
 
     void ECSPhysicsSystem::Describe(SystemDesc& desc) const {
         desc.SimulationOnly();      // Edit and Pause do not step; access stays undeclared, as before
+    }
+
+    // Switched back on (itself, or by its requirements): no fall or speed carried over from
+    // before - also when the off/on happened between two physics updates, so the character was
+    // never removed. A jump asked for since is kept.
+    void ECSPhysicsSystem::OnComponentActivated(World& world, Entity entity, ComponentId component) {
+        if (component != ComponentTypeId<CharacterController>()) return;
+        if (CharacterController* controller = world.GetComponent<CharacterController>(entity)) {
+            controller->m_verticalSpeed = 0.0f;
+            controller->m_velocity      = Math::vec3(0.0f, 0.0f, 0.0f);
+        }
     }
 
     /*!
@@ -459,18 +526,29 @@ namespace Crucible {
 
         ++frame;
 
+        // Each Transform is in its parent's frame (identity for a root). If that frame can't be
+        // worked out this frame (a socket whose model isn't loaded yet), the entity is left as
+        // it is - still marked seen, so its body isn't removed - and tried again next frame.
         colliders->ForEach([&](Entity entity, const Transform& transform, const Collider& collider) {
             Record& record = Touch(entity);
-            const RigidBody* rigidbody = ecs.Read<RigidBody>(entity);
-            SyncBody(record, transform, collider, rigidbody);
-            TakeForces(ecs, record, rigidbody);     // after SyncBody, which may have just (re)built the body
+            const RigidBody* rigidbody = ecs.IsComponentActive<RigidBody>(entity) ? ecs.Read<RigidBody>(entity) : nullptr;
+            Math::mat4 parentFrame(1.0f);
+            if (ecs.TryGetParentFrame(entity, parentFrame)) SyncBody(record, transform, parentFrame, collider, rigidbody);
+            else                                            StopIfNotDynamic(record, rigidbody);
+
+            // On BOTH paths, not only when SyncBody ran: it is what clears last frame's
+            // pushes from the record, and skipping it would push again with stale ones.
+            // After SyncBody, which may have just (re)built the body.
+            TakeForces(ecs, record, rigidbody);
         });
 
         characters->ForEach([&](Entity entity, const Transform& transform, CharacterController& controller) {
             CharacterRecord& record = TouchCharacter(entity);
             if (ecs.Read<Collider>(entity) != nullptr)
                 WarnOnce(record.warned, kWarnTwoColliders, entity, "has a Collider and a CharacterController - only the CharacterController is used");
-            SyncCharacter(record, transform, controller);
+            Math::mat4 parentFrame(1.0f);
+            if (!ecs.TryGetParentFrame(entity, parentFrame)) return;
+            SyncCharacter(record, transform, parentFrame, controller);
         });
 
         // Not seen this frame: the entity was destroyed, or lost its collider.
@@ -616,8 +694,7 @@ namespace Crucible {
         Math::vec3 positionA;
         Math::quat rotationA;
         physics.GetTransform(bodyA, positionA, rotationA);
-        const Transform* transformA = ecs.Read<Transform>(record.entity);
-        const Math::vec3 scaleA     = transformA != nullptr ? transformA->scale : Math::vec3(1.0f, 1.0f, 1.0f);
+        const Math::vec3 scaleA = WorldScaleOf(ecs, record.entity);   // world, not local: the entity may be a child
 
         JointDesc desc;
         desc.m_type             = joint.m_type;
@@ -650,9 +727,7 @@ namespace Crucible {
             Math::vec3 positionB;
             Math::quat rotationB;
             physics.GetTransform(bodyB, positionB, rotationB);
-            const Transform* transformB = ecs.Read<Transform>(other);
-            const Math::vec3 scaleB     = transformB != nullptr ? transformB->scale : Math::vec3(1.0f, 1.0f, 1.0f);
-            desc.m_anchorB = LocalToWorld(joint.m_connectedAnchor, positionB, rotationB, scaleB);
+            desc.m_anchorB = LocalToWorld(joint.m_connectedAnchor, positionB, rotationB, WorldScaleOf(ecs, other));
         }
         else {
             desc.m_anchorB = joint.m_connectedAnchor;
@@ -705,10 +780,20 @@ namespace Crucible {
         \brief
         Makes one entity's body match its Collider, RigidBody and Transform.
     */
-    void ECSPhysicsSystem::State::SyncBody(Record& record, const Transform& transform, const Collider& collider, const RigidBody* rigidbody) {
+    void ECSPhysicsSystem::State::SyncBody(Record& record, const Transform& transform, const Math::mat4& parentFrame, const Collider& collider, const RigidBody* rigidbody) {
 
         if (!Finite(transform.positions) || !Finite(transform.rotation)) {
             WarnOnce(record.warned, kWarnNaN, record.entity, "has NaN or infinity in its Transform - physics is leaving it alone until that is fixed");
+            StopIfNotDynamic(record, rigidbody);
+            return;
+        }
+
+        // Where it is in the world: a child's Transform is relative to its parent.
+        Math::vec3 position, scale;
+        Math::quat rotation;
+        if (!ToWorld(parentFrame, transform, position, rotation, scale)) {
+            WarnOnce(record.warned, kWarnNaN, record.entity, "has a parent transform that cannot be decomposed (a zero scale?) - physics is leaving it alone until that is fixed");
+            StopIfNotDynamic(record, rigidbody);
             return;
         }
 
@@ -716,10 +801,11 @@ namespace Crucible {
         BodyDesc desc;
         // Scaled first, Unity-style: the floor cube at scale (15, 0.1, 15) gets a
         // 15 x 0.1 x 15 collider. A scale edit changes the shape, SameRecipe sees
-        // that below, and the body is rebuilt - nothing extra needed for it.
-        desc.m_shape       = ToShapeDesc(ScaledCollider(collider, transform.scale));
-        desc.m_position    = transform.positions;
-        desc.m_rotation    = transform.rotation;
+        // that below, and the body is rebuilt - nothing extra needed for it. World scale, so a
+        // scaled parent scales its children's colliders too.
+        desc.m_shape       = ToShapeDesc(ScaledCollider(collider, scale));
+        desc.m_position    = position;
+        desc.m_rotation    = rotation;
         desc.m_motion      = rigidbody != nullptr ? BodyMotion::Dynamic : BodyMotion::Static;
         desc.m_layer       = collider.m_layer;
         desc.m_friction    = collider.m_friction;
@@ -757,8 +843,9 @@ namespace Crucible {
             record.body     = physics.CreateBody(desc);
             record.recipe   = desc;
             record.failed   = !record.body.IsValid();
-            record.position = transform.positions;
-            record.rotation = transform.rotation;
+            record.position    = transform.positions;
+            record.rotation    = transform.rotation;
+            record.parentFrame = parentFrame;
             record.velocity = rigidbody != nullptr ? rigidbody->velocity : Math::vec3(0.0f, 0.0f, 0.0f);
 
             // Carry the velocity across, so a falling crate keeps falling when a
@@ -769,11 +856,13 @@ namespace Crucible {
             return;
         }
 
-        // GAMEPLAY WROTE THE TRANSFORM: TELEPORT --------------------------------- //
-        if (!Same(transform.positions, record.position) || !Same(transform.rotation, record.rotation)) {
-            physics.SetTransform(record.body, transform.positions, transform.rotation);
-            record.position = transform.positions;
-            record.rotation = transform.rotation;
+        // GAMEPLAY WROTE THE TRANSFORM, OR A PARENT MOVED: TELEPORT --------------- //
+        if (!Same(transform.positions, record.position) || !Same(transform.rotation, record.rotation)
+            || parentFrame != record.parentFrame) {
+            physics.SetTransform(record.body, position, rotation);
+            record.position    = transform.positions;
+            record.rotation    = transform.rotation;
+            record.parentFrame = parentFrame;
         }
 
         // GAMEPLAY WROTE THE VELOCITY: PASS IT ON -------------------------------- //
@@ -786,18 +875,47 @@ namespace Crucible {
 
     /*!
         \brief
+        For a frame where SyncBody can't place the body (no parent frame, a
+        Transform it can't use): a body whose RigidBody is switched off or gone
+        must still stop being dynamic. It is rebuilt static where Jolt has it
+        now, so it stops falling; the next good frame moves it to its Transform.
+    */
+    void ECSPhysicsSystem::State::StopIfNotDynamic(Record& record, const RigidBody* rigidbody) {
+
+        if (rigidbody != nullptr || !record.body.IsValid() || record.recipe.m_motion != BodyMotion::Dynamic) return;
+
+        BodyDesc desc = record.recipe;
+        physics.GetTransform(record.body, desc.m_position, desc.m_rotation);
+        desc.m_motion = BodyMotion::Static;
+
+        Remove(record);
+        record.body     = physics.CreateBody(desc);
+        record.recipe   = desc;
+        record.failed   = !record.body.IsValid();
+        record.velocity = Math::vec3(0.0f, 0.0f, 0.0f);
+        if (record.body.IsValid()) staticBodyMade = true;
+
+    }   // ECSPhysicsSystem::State::StopIfNotDynamic()
+
+    /*!
+        \brief
         Makes one entity's character match its CharacterController and Transform.
         Simpler than a body: a character has no velocity of its own to argue with.
     */
-    void ECSPhysicsSystem::State::SyncCharacter(CharacterRecord& record, const Transform& transform, CharacterController& controller) {
+    void ECSPhysicsSystem::State::SyncCharacter(CharacterRecord& record, const Transform& transform, const Math::mat4& parentFrame, CharacterController& controller) {
 
         if (!Finite(transform.positions)) {
             WarnOnce(record.warned, kWarnNaN, record.entity, "has NaN or infinity in its Transform - physics is leaving it alone until that is fixed");
             return;
         }
 
+        // Where it is in the world: a child's Transform is relative to its parent.
+        const Math::vec3 position = parentFrame == Math::mat4(1.0f)
+            ? transform.positions
+            : Math::vec3(parentFrame * Math::vec4(transform.positions, 1.0f));
+
         CharacterDesc desc;
-        desc.m_position     = transform.positions;
+        desc.m_position     = position;
         desc.m_height       = controller.m_height;
         desc.m_radius       = controller.m_radius;
         desc.m_center       = controller.m_center;
@@ -817,6 +935,7 @@ namespace Crucible {
             record.recipe    = desc;
             record.failed    = !record.character.IsValid();
             record.position  = transform.positions;
+            record.parentFrame = parentFrame;
 
             // Answer "am I standing on something" correctly on the very first
             // frame, so a jump on frame one is not silently swallowed.
@@ -824,11 +943,13 @@ namespace Crucible {
             return;
         }
 
-        // GAMEPLAY WROTE THE TRANSFORM: A RESPAWN --------------------------------- //
-        if (!Same(transform.positions, record.position)) {
-            physics.SetCharacterPosition(record.character, transform.positions);
-            record.position            = transform.positions;
-            controller.m_verticalSpeed = 0.0f;      // do not arrive carrying the last fall
+        // GAMEPLAY WROTE THE TRANSFORM (A RESPAWN), OR A PARENT MOVED ------------- //
+        const bool respawned = !Same(transform.positions, record.position);
+        if (respawned || parentFrame != record.parentFrame) {
+            physics.SetCharacterPosition(record.character, position);
+            record.position    = transform.positions;
+            record.parentFrame = parentFrame;
+            if (respawned) controller.m_verticalSpeed = 0.0f;   // do not arrive carrying the last fall
         }
 
     }   // ECSPhysicsSystem::State::SyncCharacter()
@@ -870,7 +991,8 @@ namespace Crucible {
 
         // CONSTANTFORCE: re-read every frame, never written -------------------- //
         // Overwriting (not adding to) the record is what clears last frame's push.
-        const ConstantForce* constant = ecs.Read<ConstantForce>(record.entity);
+        // A switched-off ConstantForce pushes nothing, like a disabled one in Unity.
+        const ConstantForce* constant = ecs.IsComponentActive<ConstantForce>(record.entity) ? ecs.Read<ConstantForce>(record.entity) : nullptr;
         record.force          = constant != nullptr ? constant->m_force          : zero;
         record.torque         = constant != nullptr ? constant->m_torque         : zero;
         record.relativeForce  = constant != nullptr ? constant->m_relativeForce  : zero;
@@ -879,7 +1001,8 @@ namespace Crucible {
 
         if (rigidbody == nullptr) {
             // A static body ignores forces, so without this the designer just sees nothing happen.
-            if (constant != nullptr)
+            // Only when there is no RigidBody at all: a switched-off one is deliberate.
+            if (constant != nullptr && ecs.Read<RigidBody>(record.entity) == nullptr)
                 WarnOnce(record.warned, kWarnLoneForce, record.entity, "has a ConstantForce but no RigidBody - only a RigidBody can be pushed, so it does nothing");
             return;
         }
@@ -994,7 +1117,10 @@ namespace Crucible {
         // Only touch the Transform when it really moved. A mutable GetComponent
         // stamps the component as changed, and an idle mech standing still would
         // otherwise mark itself changed every single step.
-        const Math::vec3 position = physics.GetCharacterPosition(record.character);
+        // Jolt reports world space; the Transform is in the parent's frame.
+        Math::vec3 position = physics.GetCharacterPosition(record.character);
+        Math::quat unusedRotation(1.0f, 0.0f, 0.0f, 0.0f);
+        ToLocal(record.parentFrame, position, unusedRotation);
         if (!Same(position, record.position)) {
             if (Transform* transform = ecs.GetComponent<Transform>(record.entity)) transform->positions = position;
             record.position = position;
@@ -1019,6 +1145,9 @@ namespace Crucible {
 
             Record& record = found->second;
 
+            // Jolt reports world space; the Transform is in the parent's frame.
+            ToLocal(record.parentFrame, position, rotation);
+
             if (Transform* transform = ecs.GetComponent<Transform>(record.entity)) {
                 transform->positions = position;
                 transform->rotation  = rotation;
@@ -1026,7 +1155,8 @@ namespace Crucible {
             record.position = position;
             record.rotation = rotation;
 
-            if (RigidBody* rigidbody = ecs.GetComponent<RigidBody>(record.entity)) {
+            // A switched-off RigidBody keeps the velocity it had (it comes back with it).
+            if (RigidBody* rigidbody = ecs.IsComponentActive<RigidBody>(record.entity) ? ecs.GetComponent<RigidBody>(record.entity) : nullptr) {
                 rigidbody->velocity = physics.GetLinearVelocity(record.body);
                 record.velocity     = rigidbody->velocity;
             }

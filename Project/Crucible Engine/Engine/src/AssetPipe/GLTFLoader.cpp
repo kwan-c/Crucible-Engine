@@ -1,441 +1,860 @@
 /*************************************************************************
-* \file:         GLTFLoader.cpp
-* \author:       Chewn Thing Kwan
-* \par:          Email: kwan.c@digipen.edu
-* \date          30 September 2026
-* \version       1.0
-* \brief
-*                See GLTFLoader.h for the format/scope this parser covers.
-*
-* \history
-*    -v1.0       initial implementation
-*
-**************************************************************************/
-
+ * GLTFLoader.cpp — extends the original RapidJSON importer by Chewn Thing Kwan.
+ * Complete CPU model import plus a compatibility first-primitive projection.
+ * Pose evaluation, GPU skinning and gameplay policy are later milestones.
+ **************************************************************************/
 #include "GLTFLoader.h"
+#include "GLTFDocument.h"
 
+#include <algorithm>
+#include <array>
 #include <cmath>
-#include <cstring>
 #include <fstream>
-
-#include <rapidjson/document.h>
+#include <limits>
+#include <numeric>
+#include <set>
+#include <stdexcept>
+#include <string_view>
+#include <utility>
 
 namespace Crucible {
-namespace {
+    namespace {
+        using Value = rapidjson::Value;
+        using GLTFDetail::Accessor;
+        using GLTFDetail::Component;
+        using GLTFDetail::Shape;
 
-    // ---- glTF enum values this parser understands (see the glTF 2.0 spec, "Accessor") --------
-
-    constexpr int kComponentByte          = 5120;
-    constexpr int kComponentUnsignedByte  = 5121;
-    constexpr int kComponentShort         = 5122;
-    constexpr int kComponentUnsignedShort = 5123;
-    constexpr int kComponentUnsignedInt   = 5125;
-    constexpr int kComponentFloat         = 5126;
-
-    constexpr uint32_t kGLBMagic     = 0x46546C67u;   // "glTF", little-endian bytes
-    constexpr uint32_t kJSONChunkTag = 0x4E4F534Au;   // "JSON"
-    constexpr uint32_t kBINChunkTag  = 0x004E4942u;   // "BIN\0"
-
-    std::size_t ComponentsPerElement(std::string const& type) {
-        if (type == "SCALAR") return 1;
-        if (type == "VEC2")   return 2;
-        if (type == "VEC3")   return 3;
-        if (type == "VEC4")   return 4;
-        return 0;   // MAT2/3/4: not needed by anything this loader reads (positions/normals/
-                    // uvs/tangents/indices are all SCALAR or VECn) - treated as unsupported.
-    }
-
-    std::size_t ComponentByteSize(int componentType) {
-        switch (componentType) {
-            case kComponentByte:
-            case kComponentUnsignedByte:  return 1;
-            case kComponentShort:
-            case kComponentUnsignedShort: return 2;
-            case kComponentUnsignedInt:
-            case kComponentFloat:         return 4;
-            default:                      return 0;
+        struct ImportFailure : std::runtime_error {
+            using std::runtime_error::runtime_error;
+        };
+        [[noreturn]] void Error(const std::string &path, const std::string &message) {
+            throw ImportFailure(path + ": " + message);
         }
-    }
-
-    // Reads one accessor's data as floats, normalizing/widening integer component types the way
-    // glTF's "normalized" flag requires. componentsPerElement/count describe the result's shape:
-    // out.size() == count * componentsPerElement, element i's components at
-    // out[i*componentsPerElement .. i*componentsPerElement+componentsPerElement).
-    bool ReadAccessorFloats(rapidjson::Document const& doc, int accessorIndex,
-                            std::vector<unsigned char> const& binChunk,
-                            std::vector<float>& out, std::size_t& componentsPerElement, std::size_t& count,
-                            std::string& error)
-    {
-        rapidjson::Value const& accessors = doc["accessors"];
-        if (accessorIndex < 0 || static_cast<rapidjson::SizeType>(accessorIndex) >= accessors.Size()) {
-            error = "accessor index out of range"; return false;
+        void Check(bool condition, const std::string &path, const std::string &message) {
+            if (!condition)
+                Error(path, message);
         }
-        rapidjson::Value const& acc = accessors[static_cast<rapidjson::SizeType>(accessorIndex)];
+        std::string At(const std::string &name, size_t index) {
+            return name + "[" + std::to_string(index) + "]";
+        }
+        std::string Text(const Value &value) {
+            return {value.GetString(), value.GetStringLength()};
+        }
+        const Value *Field(const Value &object, const char *name) {
+            auto member = object.FindMember(name);
+            return member == object.MemberEnd() ? nullptr : &member->value;
+        }
+        const Value &Array(const Value &object, const char *name, const std::string &path,
+                           bool required = false) {
+            static const Value empty(rapidjson::kArrayType);
+            const auto *value = Field(object, name);
+            if (!value) {
+                Check(!required, path, "Missing array");
+                return empty;
+            }
+            Check(value->IsArray(), path, "Expected array");
+            return *value;
+        }
+        std::string Name(const Value &object, const std::string &path) {
+            const auto *name = Field(object, "name");
+            if (!name)
+                return {};
+            Check(name->IsString(), path + ".name", "Expected string");
+            return Text(*name);
+        }
+        uint32_t Index(const Value &value, size_t count, const std::string &path) {
+            Check(value.IsUint(), path, "Expected unsigned integer index");
+            const uint32_t index = value.GetUint();
+            Check(index < count, path, "Index out of range");
+            return index;
+        }
+        uint32_t Reference(const Value &object, const char *name, size_t count, const std::string &path,
+                           bool required = false) {
+            const auto *value = Field(object, name);
+            if (!value) {
+                Check(!required, path + "." + name, "Missing reference");
+                return InvalidModelIndex;
+            }
+            return Index(*value, count, path + "." + name);
+        }
+        float Number(const Value &value, const std::string &path) {
+            Check(value.IsNumber(), path, "Expected number");
+            const double number = value.GetDouble();
+            Check(std::isfinite(number) && std::abs(number) <= std::numeric_limits<float>::max(), path,
+                  "Expected finite float");
+            return static_cast<float>(number);
+        }
+        float Factor(const Value &object, const char *name, float fallback, const std::string &path,
+                     float minimum = 0.0f, float maximum = 1.0f) {
+            const auto *field = Field(object, name);
+            if (!field)
+                return fallback;
+            const float value = Number(*field, path + "." + name);
+            Check(value >= minimum && value <= maximum, path + "." + name, "Value outside supported range");
+            return value;
+        }
+        template <size_t N> std::array<float, N> Numbers(const Value &value, const std::string &path) {
+            Check(value.IsArray() && value.Size() == N, path, "Incorrect numeric array length");
+            std::array<float, N> out{};
+            for (size_t i = 0; i < N; ++i)
+                out[i] = Number(value[static_cast<rapidjson::SizeType>(i)], At(path, i));
+            return out;
+        }
+        void Quaternion(const glm::vec4 &value, const std::string &path) {
+            const float length = glm::dot(value, value);
+            Check(std::isfinite(length) && std::abs(length - 1.0f) <= 0.002f, path,
+                  "Quaternion must have unit length");
+        }
 
-        if (!acc.HasMember("bufferView")) { error = "sparse/bufferView-less accessors are not supported"; return false; }
+        class ModelReader {
+          public:
+            ModelReader(const GLTFDetail::Document &document, ModelResource &model)
+                : m_document(document), m_json(document.Json()), m_model(model) {}
 
-        int const componentType = acc["componentType"].GetInt();
-        std::string const type  = acc["type"].GetString();
-        count = acc["count"].GetUint64();
-        std::size_t const byteOffsetAcc = acc.HasMember("byteOffset") ? acc["byteOffset"].GetUint64() : 0;
-        bool const normalized = acc.HasMember("normalized") && acc["normalized"].GetBool();
-
-        componentsPerElement = ComponentsPerElement(type);
-        std::size_t const componentByteSize = ComponentByteSize(componentType);
-        if (componentsPerElement == 0 || componentByteSize == 0) { error = "unsupported accessor type/componentType"; return false; }
-
-        int const bufferViewIndex = acc["bufferView"].GetInt();
-        rapidjson::Value const& bv = doc["bufferViews"][static_cast<rapidjson::SizeType>(bufferViewIndex)];
-        std::size_t const byteOffsetView = bv.HasMember("byteOffset") ? bv["byteOffset"].GetUint64() : 0;
-        std::size_t const elementByteSize = componentsPerElement * componentByteSize;
-        std::size_t const stride = bv.HasMember("byteStride") ? bv["byteStride"].GetUint64() : elementByteSize;
-
-        std::size_t const base = byteOffsetView + byteOffsetAcc;
-        out.resize(count * componentsPerElement);
-
-        for (std::size_t i = 0; i < count; ++i) {
-            std::size_t const elementOffset = base + i * stride;
-            for (std::size_t c = 0; c < componentsPerElement; ++c) {
-                std::size_t const byteOffset = elementOffset + c * componentByteSize;
-                if (byteOffset + componentByteSize > binChunk.size()) { error = "accessor reads past end of buffer"; return false; }
-
-                float value = 0.0f;
-                switch (componentType) {
-                    case kComponentFloat: {
-                        float f; std::memcpy(&f, &binChunk[byteOffset], 4); value = f;
-                        break;
-                    }
-                    case kComponentUnsignedByte: {
-                        unsigned char v = binChunk[byteOffset];
-                        value = normalized ? static_cast<float>(v) / 255.0f : static_cast<float>(v);
-                        break;
-                    }
-                    case kComponentUnsignedShort: {
-                        uint16_t v; std::memcpy(&v, &binChunk[byteOffset], 2);
-                        value = normalized ? static_cast<float>(v) / 65535.0f : static_cast<float>(v);
-                        break;
-                    }
-                    default:
-                        error = "unsupported componentType for a float attribute";
-                        return false;
+            void Read() {
+                for (const char *name : {"nodes", "meshes", "materials", "images", "textures", "samplers",
+                                         "skins", "animations", "scenes", "bufferViews", "accessors"}) {
+                    const auto &entries = Array(m_json, name, name);
+                    for (rapidjson::SizeType i = 0; i < entries.Size(); ++i)
+                        Check(entries[i].IsObject(), At(name, i), "Expected object");
                 }
-                out[i * componentsPerElement + c] = value;
+                const auto &extensions = Array(m_json, "extensionsUsed", "extensionsUsed");
+                for (const auto &extension : extensions.GetArray()) {
+                    Check(extension.IsString(), "extensionsUsed", "Expected extension names");
+                    m_model.warnings.push_back("Optional extension not implemented; core fallback used: " +
+                                               Text(extension));
+                }
+                // Resolve all declared dense accessors/views, including unused entries.
+                // Unsupported format features are never silently hidden in the asset.
+                const auto &views = Array(m_json, "bufferViews", "bufferViews");
+                for (size_t i = 0; i < views.Size(); ++i) {
+                    std::span<const unsigned char> bytes;
+                    std::string error;
+                    Check(m_document.BufferView(i, bytes, error), At("bufferViews", i), error);
+                }
+                const auto &accessors = Array(m_json, "accessors", "accessors");
+                for (size_t i = 0; i < accessors.Size(); ++i) {
+                    (void)ReadAccessor(static_cast<uint32_t>(i), At("accessors", i));
+                }
+                ReadImagesAndTextures();
+                ReadMaterials();
+                ReadMeshes();
+                ReadNodes();
+                ReadSkins();
+                ReadAnimations();
+                ValidateBindings();
             }
-        }
-        return true;
-    }
 
-    // Reads an indices accessor (always unsigned, always tightly packed per the glTF spec - an
-    // ELEMENT_ARRAY_BUFFER bufferView never has a byteStride), widened to uint32_t.
-    bool ReadAccessorIndices(rapidjson::Document const& doc, int accessorIndex,
-                             std::vector<unsigned char> const& binChunk,
-                             std::vector<uint32_t>& out, std::string& error)
-    {
-        rapidjson::Value const& accessors = doc["accessors"];
-        if (accessorIndex < 0 || static_cast<rapidjson::SizeType>(accessorIndex) >= accessors.Size()) {
-            error = "accessor index out of range"; return false;
-        }
-        rapidjson::Value const& acc = accessors[static_cast<rapidjson::SizeType>(accessorIndex)];
-        if (!acc.HasMember("bufferView")) { error = "sparse index accessors are not supported"; return false; }
-
-        int const componentType = acc["componentType"].GetInt();
-        std::size_t const count = acc["count"].GetUint64();
-        std::size_t const byteOffsetAcc = acc.HasMember("byteOffset") ? acc["byteOffset"].GetUint64() : 0;
-
-        int const bufferViewIndex = acc["bufferView"].GetInt();
-        rapidjson::Value const& bv = doc["bufferViews"][static_cast<rapidjson::SizeType>(bufferViewIndex)];
-        std::size_t const byteOffsetView = bv.HasMember("byteOffset") ? bv["byteOffset"].GetUint64() : 0;
-
-        std::size_t const componentByteSize = ComponentByteSize(componentType);
-        if (componentByteSize == 0) { error = "unsupported index componentType"; return false; }
-
-        std::size_t const base = byteOffsetView + byteOffsetAcc;
-        out.resize(count);
-
-        for (std::size_t i = 0; i < count; ++i) {
-            std::size_t const byteOffset = base + i * componentByteSize;
-            if (byteOffset + componentByteSize > binChunk.size()) { error = "index accessor reads past end of buffer"; return false; }
-
-            switch (componentType) {
-                case kComponentUnsignedByte:  out[i] = binChunk[byteOffset]; break;
-                case kComponentUnsignedShort: { uint16_t v; std::memcpy(&v, &binChunk[byteOffset], 2); out[i] = v; break; }
-                case kComponentUnsignedInt:   { uint32_t v; std::memcpy(&v, &binChunk[byteOffset], 4); out[i] = v; break; }
-                default: error = "index componentType must be unsigned byte/short/int"; return false;
+          private:
+            Accessor ReadAccessor(uint32_t index, const std::string &path) const {
+                Accessor accessor;
+                std::string error;
+                Check(m_document.GetAccessor(index, accessor, error), path, error);
+                return accessor;
             }
-        }
-        return true;
-    }
-
-    // texture[textureIndex].source -> images[sourceIndex]'s bufferView, copied out as an opaque
-    // still-encoded blob. Appends to `images` and returns the new entry's index. External (uri)
-    // images are not supported (see GLTFLoader.h's scope-limit note) - on that path this still
-    // appends an empty GLTFImage so index bookkeeping stays consistent, and reports the problem
-    // through `error` for the caller to decide whether to treat it as fatal.
-    std::size_t ResolveEmbeddedImage(rapidjson::Document const& doc, int textureIndex,
-                                      std::vector<unsigned char> const& binChunk,
-                                      std::vector<GLTFImage>& images, std::string& error)
-    {
-        rapidjson::Value const& textures = doc["textures"];
-        rapidjson::Value const& tex = textures[static_cast<rapidjson::SizeType>(textureIndex)];
-        int const sourceIndex = tex["source"].GetInt();
-        rapidjson::Value const& img = doc["images"][static_cast<rapidjson::SizeType>(sourceIndex)];
-
-        images.emplace_back();
-        std::size_t const newIndex = images.size() - 1;
-
-        if (!img.HasMember("bufferView")) {
-            error = "external (uri) images are not supported - GLB-embedded images only";
-            return newIndex;
-        }
-
-        int const bvIndex = img["bufferView"].GetInt();
-        rapidjson::Value const& bv = doc["bufferViews"][static_cast<rapidjson::SizeType>(bvIndex)];
-        std::size_t const offset = bv.HasMember("byteOffset") ? bv["byteOffset"].GetUint64() : 0;
-        std::size_t const length = bv["byteLength"].GetUint64();
-
-        if (offset + length > binChunk.size()) { error = "image bufferView reads past end of buffer"; return newIndex; }
-
-        images[newIndex].bytes.assign(binChunk.begin() + static_cast<long>(offset),
-                                       binChunk.begin() + static_cast<long>(offset + length));
-        return newIndex;
-    }
-
-    // Parses primitives[0]'s "material" (if present) into a GLTFMaterial. Never fails the whole
-    // asset: a malformed/unsupported material just means asset.material stays unset (geometry
-    // is still usable on its own - Renderer::GetDefaultMaterial() covers "no material").
-    std::optional<GLTFMaterial> ReadMaterial(rapidjson::Document const& doc, int materialIndex,
-                                              std::vector<unsigned char> const& binChunk,
-                                              std::vector<GLTFImage>& images)
-    {
-        rapidjson::Value const& materials = doc["materials"];
-        if (materialIndex < 0 || static_cast<rapidjson::SizeType>(materialIndex) >= materials.Size()) { return std::nullopt; }
-        rapidjson::Value const& mat = materials[static_cast<rapidjson::SizeType>(materialIndex)];
-
-        GLTFMaterial gm;
-        std::string unused;   // per-texture resolve errors are non-fatal here; see the file
-                               // header's scope-limit note (external images just get skipped).
-
-        if (mat.HasMember("pbrMetallicRoughness")) {
-            rapidjson::Value const& pbr = mat["pbrMetallicRoughness"];
-
-            if (pbr.HasMember("baseColorFactor")) {
-                rapidjson::Value const& f = pbr["baseColorFactor"];
-                gm.baseColorFactor = glm::vec4(f[0].GetFloat(), f[1].GetFloat(), f[2].GetFloat(), f[3].GetFloat());
+            Accessor Attribute(const Value &attributes, const char *name, size_t count,
+                               const std::string &path) const {
+                const uint32_t index =
+                    Reference(attributes, name, Array(m_json, "accessors", "accessors").Size(), path, true);
+                auto accessor = ReadAccessor(index, path + "." + name);
+                Check(!count || accessor.Count() == count, path + "." + name,
+                      "Attribute count differs from POSITION");
+                Check(accessor.Offset() % 4 == 0 && accessor.RelativeOffset() % 4 == 0 &&
+                          accessor.Stride() % 4 == 0,
+                      path + "." + name, "Vertex attributes must be four-byte aligned");
+                return accessor;
             }
-            if (pbr.HasMember("metallicFactor"))  { gm.metallicFactor  = pbr["metallicFactor"].GetFloat(); }
-            if (pbr.HasMember("roughnessFactor")) { gm.roughnessFactor = pbr["roughnessFactor"].GetFloat(); }
-
-            if (pbr.HasMember("baseColorTexture")) {
-                int const texIndex = pbr["baseColorTexture"]["index"].GetInt();
-                gm.baseColorImage = ResolveEmbeddedImage(doc, texIndex, binChunk, images, unused);
-                gm.hasBaseColor = unused.empty();
+            std::vector<float> Floats(const Accessor &accessor, const std::string &path) const {
+                std::vector<float> values;
+                std::string error;
+                Check(accessor.Floats(values, error), path, error);
+                return values;
             }
-            if (pbr.HasMember("metallicRoughnessTexture")) {
-                int const texIndex = pbr["metallicRoughnessTexture"]["index"].GetInt();
-                gm.metallicRoughnessImage = ResolveEmbeddedImage(doc, texIndex, binChunk, images, unused);
-                gm.hasMetallicRoughness = unused.empty();
+            std::vector<uint32_t> Integers(const Accessor &accessor, const std::string &path) const {
+                std::vector<uint32_t> values;
+                std::string error;
+                Check(accessor.Unsigned(values, error), path, error);
+                return values;
             }
+            static bool FloatOrNormalizedUnsigned(const Accessor &accessor) {
+                return accessor.Format() == Component::Float ||
+                       (accessor.Normalized() &&
+                        (accessor.Format() == Component::UByte || accessor.Format() == Component::UShort));
+            }
+
+            void ReadImagesAndTextures() {
+                const auto &images = Array(m_json, "images", "images");
+                for (size_t i = 0; i < images.Size(); ++i) {
+                    const auto path = At("images", i);
+                    const auto &image = images[static_cast<rapidjson::SizeType>(i)];
+                    Check(!image.HasMember("uri"), path,
+                          "External/data-URI images are unsupported; embed PNG/JPEG in a bufferView");
+                    const auto *mime = Field(image, "mimeType");
+                    if (!mime || !mime->IsString())
+                        Error(path, "Embedded images require mimeType");
+                    ModelImage out;
+                    out.name = Name(image, path);
+                    out.mimeType = Text(*mime);
+                    Check(out.mimeType == "image/png" || out.mimeType == "image/jpeg", path,
+                          "Unsupported image MIME type: " + out.mimeType);
+                    uint32_t view = Reference(image, "bufferView",
+                                              Array(m_json, "bufferViews", "bufferViews").Size(), path, true);
+                    const auto &viewJSON = m_json["bufferViews"][view];
+                    Check(!viewJSON.HasMember("byteStride"), path,
+                          "Image bufferView cannot declare byteStride");
+                    std::span<const unsigned char> bytes;
+                    std::string error;
+                    Check(m_document.BufferView(view, bytes, error), path, error);
+                    out.bytes.assign(bytes.begin(), bytes.end());
+                    m_model.images.push_back(std::move(out));
+                }
+                const auto &samplers = Array(m_json, "samplers", "samplers");
+                for (size_t i = 0; i < samplers.Size(); ++i) {
+                    const auto path = At("samplers", i);
+                    const auto &sampler = samplers[static_cast<rapidjson::SizeType>(i)];
+                    ModelSampler out;
+                    auto read = [&](const char *name, int fallback, std::initializer_list<int> allowed) {
+                        const auto *value = Field(sampler, name);
+                        if (!value)
+                            return fallback;
+                        Check(value->IsInt(), path + "." + name, "Expected sampler enum");
+                        int integer = value->GetInt();
+                        Check(std::find(allowed.begin(), allowed.end(), integer) != allowed.end(),
+                              path + "." + name, "Unsupported sampler enum");
+                        return integer;
+                    };
+                    auto filter = [](int value) {
+                        switch (value) {
+                        case 9728: return ModelFilter::Nearest;
+                        case 9729: return ModelFilter::Linear;
+                        case 9984: return ModelFilter::NearestMipNearest;
+                        case 9985: return ModelFilter::LinearMipNearest;
+                        case 9986: return ModelFilter::NearestMipLinear;
+                        case 9987: return ModelFilter::LinearMipLinear;
+                        default: return ModelFilter::Default;
+                        }
+                    };
+                    auto wrap = [](int value) {
+                        return value == 33071 ? ModelWrap::ClampToEdge :
+                            value == 33648 ? ModelWrap::MirroredRepeat : ModelWrap::Repeat;
+                    };
+                    out.minFilter = filter(read("minFilter", -1, {9728, 9729, 9984, 9985, 9986, 9987}));
+                    out.magFilter = filter(read("magFilter", -1, {9728, 9729}));
+                    out.wrapS = wrap(read("wrapS", 10497, {33071, 33648, 10497}));
+                    out.wrapT = wrap(read("wrapT", 10497, {33071, 33648, 10497}));
+                    m_model.samplers.push_back(out);
+                }
+                const auto &textures = Array(m_json, "textures", "textures");
+                for (size_t i = 0; i < textures.Size(); ++i) {
+                    const auto path = At("textures", i);
+                    const auto &texture = textures[static_cast<rapidjson::SizeType>(i)];
+                    ModelTexture out;
+                    out.name = Name(texture, path);
+                    out.image = Reference(texture, "source", m_model.images.size(), path, true);
+                    out.sampler = Reference(texture, "sampler", m_model.samplers.size(), path);
+                    m_model.textures.push_back(std::move(out));
+                }
+            }
+
+            ModelTextureInfo TextureInfo(const Value &object, const char *field,
+                                         const std::string &path) const {
+                ModelTextureInfo out;
+                const auto *slot = Field(object, field);
+                if (!slot)
+                    return out;
+                const auto where = path + "." + field;
+                Check(slot->IsObject(), where, "Expected texture info object");
+                out.texture = Reference(*slot, "index", m_model.textures.size(), where, true);
+                if (const auto *texCoord = Field(*slot, "texCoord")) {
+                    Check(texCoord->IsUint(), where, "texCoord must be an unsigned integer");
+                    out.texCoord = texCoord->GetUint();
+                    Check(out.texCoord == 0, where, "Only TEXCOORD_0 is supported");
+                }
+                return out;
+            }
+
+            void ReadMaterials() {
+                const auto &materials = Array(m_json, "materials", "materials");
+                for (size_t i = 0; i < materials.Size(); ++i) {
+                    const auto path = At("materials", i);
+                    const auto &material = materials[static_cast<rapidjson::SizeType>(i)];
+                    ModelMaterial out;
+                    out.name = Name(material, path);
+                    if (const auto *pbr = Field(material, "pbrMetallicRoughness")) {
+                        Check(pbr->IsObject(), path, "pbrMetallicRoughness must be an object");
+                        if (const auto *color = Field(*pbr, "baseColorFactor")) {
+                            const auto values = Numbers<4>(*color, path + ".baseColorFactor");
+                            for (float value : values)
+                                Check(value >= 0 && value <= 1, path, "baseColorFactor must be within [0,1]");
+                            out.baseColorFactor = {values[0], values[1], values[2], values[3]};
+                        }
+                        out.metallicFactor = Factor(*pbr, "metallicFactor", 1, path);
+                        out.roughnessFactor = Factor(*pbr, "roughnessFactor", 1, path);
+                        out.baseColor = TextureInfo(*pbr, "baseColorTexture", path);
+                        out.metallicRoughness = TextureInfo(*pbr, "metallicRoughnessTexture", path);
+                    }
+                    out.normal = TextureInfo(material, "normalTexture", path);
+                    out.occlusion = TextureInfo(material, "occlusionTexture", path);
+                    out.emissive = TextureInfo(material, "emissiveTexture", path);
+                    if (const auto *slot = Field(material, "normalTexture"))
+                        out.normalScale =
+                            Factor(*slot, "scale", 1, path + ".normalTexture",
+                                   -std::numeric_limits<float>::max(), std::numeric_limits<float>::max());
+                    if (const auto *slot = Field(material, "occlusionTexture"))
+                        out.occlusionStrength = Factor(*slot, "strength", 1, path + ".occlusionTexture");
+                    if (const auto *emissive = Field(material, "emissiveFactor")) {
+                        const auto values = Numbers<3>(*emissive, path + ".emissiveFactor");
+                        for (float value : values)
+                            Check(value >= 0 && value <= 1, path, "emissiveFactor must be within [0,1]");
+                        out.emissiveFactor = {values[0], values[1], values[2]};
+                    }
+                    if (const auto *mode = Field(material, "alphaMode")) {
+                        Check(mode->IsString(), path, "alphaMode must be a string");
+                        const auto name = Text(*mode);
+                        if (name == "MASK")
+                            out.alphaMode = ModelAlphaMode::Mask;
+                        else if (name == "BLEND")
+                            out.alphaMode = ModelAlphaMode::Blend;
+                        else
+                            Check(name == "OPAQUE", path, "Unknown alphaMode");
+                    }
+                    out.alphaCutoff =
+                        Factor(material, "alphaCutoff", 0.5f, path, 0, std::numeric_limits<float>::max());
+                    if (const auto *sided = Field(material, "doubleSided")) {
+                        Check(sided->IsBool(), path, "doubleSided must be boolean");
+                        out.doubleSided = sided->GetBool();
+                    }
+                    m_model.materials.push_back(std::move(out));
+                }
+            }
+
+            ModelPrimitive ReadPrimitive(const Value &primitive, const std::string &path) {
+                Check(primitive.IsObject(), path, "Expected primitive object");
+                Check(!primitive.HasMember("targets"), path, "Morph targets are unsupported");
+                if (const auto *mode = Field(primitive, "mode"))
+                    Check(mode->IsUint() && mode->GetUint() == 4, path,
+                          "Only TRIANGLES primitives are supported");
+                const auto *attributes = Field(primitive, "attributes");
+                if (!attributes || !attributes->IsObject())
+                    Error(path, "Missing attributes object");
+                for (auto member = attributes->MemberBegin(); member != attributes->MemberEnd(); ++member) {
+                    const auto name = Text(member->name);
+                    Check(name == "POSITION" || name == "NORMAL" || name == "TEXCOORD_0" ||
+                              name == "COLOR_0" || name == "TANGENT" || name == "JOINTS_0" ||
+                              name == "WEIGHTS_0",
+                          path, "Unsupported vertex attribute: " + name);
+                }
+                const auto attributePath = path + ".attributes";
+                const auto positions = Attribute(*attributes, "POSITION", 0, attributePath);
+                Check(positions.Type() == Shape::Vec3 && positions.Format() == Component::Float,
+                      attributePath, "POSITION must be FLOAT VEC3");
+                const auto count = positions.Count();
+                const auto p = Floats(positions, attributePath + ".POSITION");
+                ModelPrimitive out;
+                out.material = Reference(primitive, "material", m_model.materials.size(), path);
+                out.vertices.resize(count);
+                for (size_t i = 0; i < count; ++i)
+                    out.vertices[i].position = {p[i * 3], p[i * 3 + 1], p[i * 3 + 2]};
+                for (const char *name : {"NORMAL", "TEXCOORD_0", "COLOR_0", "TANGENT", "WEIGHTS_0"}) {
+                    if (!attributes->HasMember(name))
+                        continue;
+                    const auto accessor = Attribute(*attributes, name, count, attributePath);
+                    const std::string_view semantic(name);
+                    const auto where = attributePath + "." + name;
+                    const auto components = accessor.Components();
+                    const bool vector = semantic == "NORMAL"       ? accessor.Type() == Shape::Vec3
+                                        : semantic == "TEXCOORD_0" ? accessor.Type() == Shape::Vec2
+                                        : semantic == "COLOR_0"    ? (accessor.Type() == Shape::Vec3 ||
+                                                                      accessor.Type() == Shape::Vec4)
+                                                                   : accessor.Type() == Shape::Vec4;
+                    Check(vector, where, "Incorrect attribute shape");
+                    if (semantic == "NORMAL" || semantic == "TANGENT")
+                        Check(accessor.Format() == Component::Float, where, "Expected FLOAT attribute");
+                    else
+                        Check(FloatOrNormalizedUnsigned(accessor), where,
+                              "Expected FLOAT or normalized UNSIGNED_BYTE/SHORT");
+                    const auto values = Floats(accessor, where);
+                    for (size_t i = 0; i < count; ++i) {
+                        auto &vertex = out.vertices[i];
+                        const auto offset = i * components;
+                        if (semantic == "NORMAL") {
+                            vertex.normal = {values[offset], values[offset + 1], values[offset + 2]};
+                            Check(std::abs(glm::dot(vertex.normal, vertex.normal) - 1.0f) <= 0.002f, where,
+                                  "Normals must have unit length");
+                        } else if (semantic == "TEXCOORD_0")
+                            vertex.uv = {values[offset], values[offset + 1]};
+                        else if (semantic == "COLOR_0") {
+                            vertex.color = {values[offset], values[offset + 1], values[offset + 2],
+                                            components == 4 ? values[offset + 3] : 1.0f};
+                            for (int c = 0; c < 4; ++c)
+                                Check(vertex.color[c] >= 0 && vertex.color[c] <= 1, where,
+                                      "Colors must be within [0,1]");
+                        } else if (semantic == "TANGENT") {
+                            vertex.tangent = {values[offset], values[offset + 1], values[offset + 2],
+                                              values[offset + 3]};
+                            Check(std::abs(glm::dot(glm::vec3(vertex.tangent), glm::vec3(vertex.tangent)) -
+                                           1.0f) <= 0.002f &&
+                                      std::abs(vertex.tangent.w) == 1.0f,
+                                  where, "Tangent must have unit xyz and w = +/-1");
+                        } else {
+                            vertex.weights = {values[offset], values[offset + 1], values[offset + 2],
+                                              values[offset + 3]};
+                            float sum = 0;
+                            for (int c = 0; c < 4; ++c) {
+                                Check(vertex.weights[c] >= 0 && vertex.weights[c] <= 1, where,
+                                      "Weights must be within [0,1]");
+                                sum += vertex.weights[c];
+                            }
+                            Check(sum > 0 && std::abs(sum - 1.0f) <= 0.01f, where,
+                                  "Weights must sum to one (allowing quantization)");
+                            vertex.weights /= sum;
+                        }
+                    }
+                }
+                out.hasNormals = attributes->HasMember("NORMAL");
+                out.hasUVs = attributes->HasMember("TEXCOORD_0");
+                out.hasColors = attributes->HasMember("COLOR_0");
+                out.hasTangents = attributes->HasMember("TANGENT");
+                const bool joints = attributes->HasMember("JOINTS_0"),
+                           weights = attributes->HasMember("WEIGHTS_0");
+                Check(joints == weights, path, "JOINTS_0 and WEIGHTS_0 must be supplied together");
+                out.hasSkinning = joints;
+                if (joints) {
+                    const auto accessor = Attribute(*attributes, "JOINTS_0", count, attributePath);
+                    Check(
+                        accessor.Type() == Shape::Vec4 && !accessor.Normalized() &&
+                            (accessor.Format() == Component::UByte || accessor.Format() == Component::UShort),
+                        path, "JOINTS_0 must be non-normalized UNSIGNED_BYTE/SHORT VEC4");
+                    const auto values = Integers(accessor, attributePath + ".JOINTS_0");
+                    for (size_t i = 0; i < count; ++i)
+                        out.vertices[i].joints = {values[i * 4], values[i * 4 + 1], values[i * 4 + 2],
+                                                  values[i * 4 + 3]};
+                }
+                if (!out.hasTangents)
+                    for (auto &vertex : out.vertices) {
+                        const auto seed =
+                            std::abs(vertex.normal.y) < 0.999f ? glm::vec3(0, 1, 0) : glm::vec3(1, 0, 0);
+                        vertex.tangent = glm::vec4(glm::normalize(glm::cross(seed, vertex.normal)), 1.0f);
+                    }
+                if (const auto *indices = Field(primitive, "indices")) {
+                    const auto index =
+                        Index(*indices, Array(m_json, "accessors", "accessors").Size(), path + ".indices");
+                    const auto accessor = ReadAccessor(index, path + ".indices");
+                    Check(accessor.Type() == Shape::Scalar && !accessor.ExplicitStride(), path,
+                          "Indices must be tightly packed unsigned SCALAR");
+                    out.indices = Integers(accessor, path + ".indices");
+                    const uint32_t restart = accessor.Format() == Component::UByte    ? 255u
+                                             : accessor.Format() == Component::UShort ? 65535u
+                                                                                      : 0xffffffffu;
+                    for (uint32_t value : out.indices)
+                        Check(value != restart, path, "Primitive-restart index values are forbidden in glTF");
+                } else {
+                    Check(count <= std::numeric_limits<uint32_t>::max(), path,
+                          "Too many vertices for generated indices");
+                    out.indices.resize(count);
+                    std::iota(out.indices.begin(), out.indices.end(), 0u);
+                }
+                Check(out.indices.size() % 3 == 0, path,
+                      "Triangle index/vertex count must be a multiple of three");
+                for (uint32_t index : out.indices)
+                    Check(index < count, path, "Index exceeds vertex count");
+                return out;
+            }
+
+            void ReadMeshes() {
+                const auto &meshes = Array(m_json, "meshes", "meshes");
+                for (size_t i = 0; i < meshes.Size(); ++i) {
+                    const auto path = At("meshes", i);
+                    const auto &mesh = meshes[static_cast<rapidjson::SizeType>(i)];
+                    Check(!mesh.HasMember("weights"), path, "Morph weights are unsupported");
+                    ModelMesh out;
+                    out.name = Name(mesh, path);
+                    const auto &primitives = Array(mesh, "primitives", path + ".primitives", true);
+                    Check(!primitives.Empty(), path, "Mesh must have at least one primitive");
+                    for (size_t j = 0; j < primitives.Size(); ++j)
+                        out.primitives.push_back(ReadPrimitive(
+                            primitives[static_cast<rapidjson::SizeType>(j)], At(path + ".primitives", j)));
+                    m_model.meshes.push_back(std::move(out));
+                }
+            }
+
+            void ReadNodes() {
+                const auto &nodes = Array(m_json, "nodes", "nodes");
+                m_model.nodes.resize(nodes.Size());
+                const auto skinCount = Array(m_json, "skins", "skins").Size();
+                for (uint32_t i = 0; i < nodes.Size(); ++i) {
+                    const auto path = At("nodes", i);
+                    const auto &node = nodes[i];
+                    auto &out = m_model.nodes[i];
+                    out.name = Name(node, path);
+                    out.mesh = Reference(node, "mesh", m_model.meshes.size(), path);
+                    out.skin = Reference(node, "skin", skinCount, path);
+                    Check(out.skin == InvalidModelIndex || out.mesh != InvalidModelIndex, path,
+                          "A skinned node must reference a mesh");
+                    Check(!node.HasMember("weights"), path, "Morph weights are unsupported");
+                    Check(!node.HasMember("camera"), path,
+                          "Camera objects are outside model import's supported subset");
+                    auto &local = out.local;
+                    if (const auto *matrix = Field(node, "matrix")) {
+                        Check(!node.HasMember("translation") && !node.HasMember("rotation") &&
+                                  !node.HasMember("scale"),
+                              path, "matrix and TRS cannot coexist");
+                        const auto values = Numbers<16>(*matrix, path + ".matrix");
+                        for (int c = 0; c < 4; ++c)
+                            for (int r = 0; r < 4; ++r)
+                                local.matrix[c][r] = values[c * 4 + r];
+                        Check(local.matrix[0][3] == 0 && local.matrix[1][3] == 0 && local.matrix[2][3] == 0 &&
+                                  local.matrix[3][3] == 1,
+                              path, "Node matrix must be affine");
+                        local.hasMatrix = true;
+                    } else {
+                        if (const auto *value = Field(node, "translation")) {
+                            const auto v = Numbers<3>(*value, path + ".translation");
+                            local.translation = {v[0], v[1], v[2]};
+                        }
+                        if (const auto *value = Field(node, "scale")) {
+                            const auto v = Numbers<3>(*value, path + ".scale");
+                            local.scale = {v[0], v[1], v[2]};
+                        }
+                        if (const auto *value = Field(node, "rotation")) {
+                            const auto v = Numbers<4>(*value, path + ".rotation");
+                            Quaternion({v[0], v[1], v[2], v[3]}, path + ".rotation");
+                            local.rotation = glm::normalize(glm::quat(v[3], v[0], v[1], v[2]));
+                        }
+                    }
+                    const auto &children = Array(node, "children", path + ".children");
+                    for (const auto &value : children.GetArray()) {
+                        uint32_t child = Index(value, nodes.Size(), path + ".children");
+                        Check(child != i && m_model.nodes[child].parent == InvalidModelIndex, path,
+                              "Self-parent, duplicate child or multiple parents");
+                        m_model.nodes[child].parent = i;
+                        out.children.push_back(child);
+                    }
+                }
+                // Iterative parent-first traversal also detects cycles without recursive stack growth.
+                m_model.nodeOrder.reserve(nodes.Size());
+                for (uint32_t i = 0; i < nodes.Size(); ++i)
+                    if (m_model.nodes[i].parent == InvalidModelIndex)
+                        m_model.nodeOrder.push_back(i);
+                for (size_t i = 0; i < m_model.nodeOrder.size(); ++i) {
+                    const auto &children = m_model.nodes[m_model.nodeOrder[i]].children;
+                    m_model.nodeOrder.insert(m_model.nodeOrder.end(), children.begin(), children.end());
+                }
+                Check(m_model.nodeOrder.size() == nodes.Size(), "nodes", "Hierarchy contains a cycle");
+                const auto &scenes = Array(m_json, "scenes", "scenes");
+                for (size_t i = 0; i < scenes.Size(); ++i) {
+                    const auto path = At("scenes", i);
+                    const auto &scene = scenes[static_cast<rapidjson::SizeType>(i)];
+                    ModelScene out;
+                    out.name = Name(scene, path);
+                    std::set<uint32_t> unique;
+                    for (const auto &root : Array(scene, "nodes", path + ".nodes").GetArray()) {
+                        const auto index = Index(root, nodes.Size(), path + ".nodes");
+                        Check(m_model.nodes[index].parent == InvalidModelIndex && unique.insert(index).second,
+                              path, "Scene nodes must be distinct hierarchy roots");
+                        out.roots.push_back(index);
+                    }
+                    m_model.scenes.push_back(std::move(out));
+                }
+                m_model.defaultScene = Reference(m_json, "scene", scenes.Size(), "root");
+                if (!m_model.scenes.empty())
+                    m_model.sceneRoots =
+                        m_model.scenes[m_model.defaultScene == InvalidModelIndex ? 0 : m_model.defaultScene]
+                            .roots;
+                else
+                    for (uint32_t i = 0; i < nodes.Size(); ++i)
+                        if (m_model.nodes[i].parent == InvalidModelIndex)
+                            m_model.sceneRoots.push_back(i);
+            }
+
+            void ReadSkins() {
+                const auto &skins = Array(m_json, "skins", "skins");
+                for (size_t i = 0; i < skins.Size(); ++i) {
+                    const auto path = At("skins", i);
+                    const auto &skin = skins[static_cast<rapidjson::SizeType>(i)];
+                    ModelSkin out;
+                    out.name = Name(skin, path);
+                    out.skeletonRoot = Reference(skin, "skeleton", m_model.nodes.size(), path);
+                    const auto &joints = Array(skin, "joints", path + ".joints", true);
+                    Check(!joints.Empty(), path, "Skin requires joints");
+                    std::set<uint32_t> unique;
+                    uint32_t hierarchyRoot = InvalidModelIndex;
+                    for (const auto &joint : joints.GetArray()) {
+                        const auto node = Index(joint, m_model.nodes.size(), path + ".joints");
+                        Check(unique.insert(node).second, path, "Duplicate skin joint");
+                        out.jointNodes.push_back(node);
+                        uint32_t root = node;
+                        bool skeletonFound = out.skeletonRoot == InvalidModelIndex;
+                        for (uint32_t ancestor = node; ancestor != InvalidModelIndex;
+                             ancestor = m_model.nodes[ancestor].parent) {
+                            root = ancestor;
+                            skeletonFound |= ancestor == out.skeletonRoot;
+                        }
+                        Check(skeletonFound, path, "skeleton must be an ancestor of every joint");
+                        Check(hierarchyRoot == InvalidModelIndex || hierarchyRoot == root, path,
+                              "Skin joints must share a hierarchy root");
+                        hierarchyRoot = root;
+                    }
+                    out.inverseBindMatrices.assign(out.jointNodes.size(), glm::mat4(1.0f));
+                    if (const auto *inverse = Field(skin, "inverseBindMatrices")) {
+                        const auto accessor =
+                            ReadAccessor(Index(*inverse, Array(m_json, "accessors", "accessors").Size(),
+                                               path + ".inverseBindMatrices"),
+                                         path);
+                        Check(accessor.Type() == Shape::Mat4 && accessor.Format() == Component::Float &&
+                                  accessor.Count() >= out.jointNodes.size() && !accessor.ExplicitStride(),
+                              path, "Inverse binds require tightly packed FLOAT MAT4, one per joint");
+                        const auto values = Floats(accessor, path + ".inverseBindMatrices");
+                        for (size_t j = 0; j < out.jointNodes.size(); ++j)
+                            for (int c = 0; c < 4; ++c)
+                                for (int r = 0; r < 4; ++r)
+                                    out.inverseBindMatrices[j][c][r] = values[j * 16 + c * 4 + r];
+                    }
+                    m_model.skins.push_back(std::move(out));
+                }
+            }
+
+            void ReadAnimations() {
+                const auto &animations = Array(m_json, "animations", "animations");
+                const auto accessorCount = Array(m_json, "accessors", "accessors").Size();
+                for (size_t i = 0; i < animations.Size(); ++i) {
+                    const auto path = At("animations", i);
+                    const auto &animation = animations[static_cast<rapidjson::SizeType>(i)];
+                    ModelAnimationClip out;
+                    out.name = Name(animation, path);
+                    out.startTime = std::numeric_limits<float>::max();
+                    const auto &samplers = Array(animation, "samplers", path + ".samplers", true);
+                    const auto &channels = Array(animation, "channels", path + ".channels", true);
+                    Check(!samplers.Empty() && !channels.Empty(), path,
+                          "Animation requires samplers and channels");
+                    for (size_t j = 0; j < samplers.Size(); ++j) {
+                        const auto where = At(path + ".samplers", j);
+                        const auto &sampler = samplers[static_cast<rapidjson::SizeType>(j)];
+                        Check(sampler.IsObject(), where, "Expected sampler object");
+                        ModelAnimationSampler values;
+                        if (const auto *interpolation = Field(sampler, "interpolation")) {
+                            Check(interpolation->IsString(), where, "interpolation must be a string");
+                            const auto mode = Text(*interpolation);
+                            if (mode == "STEP")
+                                values.interpolation = AnimationInterpolation::Step;
+                            else
+                                Check(mode == "LINEAR", where, "Unsupported interpolation: " + mode);
+                        }
+                        const auto input = ReadAccessor(
+                            Reference(sampler, "input", accessorCount, where, true), where + ".input");
+                        const auto output = ReadAccessor(
+                            Reference(sampler, "output", accessorCount, where, true), where + ".output");
+                        Check(input.Type() == Shape::Scalar && input.Format() == Component::Float &&
+                                  !input.ExplicitStride(),
+                              where, "Animation input must be tightly packed FLOAT SCALAR");
+                        Check(output.Format() == Component::Float &&
+                                  (output.Type() == Shape::Vec3 || output.Type() == Shape::Vec4) &&
+                                  !output.ExplicitStride(),
+                              where, "TRS animation output must be tightly packed FLOAT VEC3/VEC4");
+                        Check(input.Count() == output.Count(), where, "Animation input/output counts differ");
+                        values.times = Floats(input, where + ".input");
+                        for (size_t k = 0; k < values.times.size(); ++k)
+                            Check(values.times[k] >= 0 && (k == 0 || values.times[k] > values.times[k - 1]),
+                                  where, "Key times must be nonnegative and strictly increasing");
+                        const auto flat = Floats(output, where + ".output");
+                        values.components = static_cast<uint32_t>(output.Components());
+                        values.values.resize(output.Count(), glm::vec4(0));
+                        for (size_t k = 0; k < output.Count(); ++k)
+                            for (uint32_t c = 0; c < values.components; ++c)
+                                values.values[k][c] = flat[k * values.components + c];
+                        out.samplers.push_back(std::move(values));
+                    }
+                    std::set<std::pair<uint32_t, AnimationTarget>> destinations;
+                    for (size_t j = 0; j < channels.Size(); ++j) {
+                        const auto where = At(path + ".channels", j);
+                        const auto &channel = channels[static_cast<rapidjson::SizeType>(j)];
+                        Check(channel.IsObject(), where, "Expected channel object");
+                        ModelAnimationChannel value;
+                        value.sampler = Reference(channel, "sampler", out.samplers.size(), where, true);
+                        const auto *target = Field(channel, "target");
+                        if (!target || !target->IsObject())
+                            Error(where, "Missing target object");
+                        value.node =
+                            Reference(*target, "node", m_model.nodes.size(), where + ".target", true);
+                        const auto *property = Field(*target, "path");
+                        if (!property || !property->IsString())
+                            Error(where, "Missing target path");
+                        const auto propertyName = Text(*property);
+                        if (propertyName == "translation")
+                            value.target = AnimationTarget::Translation;
+                        else if (propertyName == "rotation")
+                            value.target = AnimationTarget::Rotation;
+                        else if (propertyName == "scale")
+                            value.target = AnimationTarget::Scale;
+                        else
+                            Error(where, "Unsupported animation target: " + propertyName);
+                        Check(!m_model.nodes[value.node].local.hasMatrix, where,
+                              "TRS animation cannot target a matrix node");
+                        Check(destinations.emplace(value.node, value.target).second, where,
+                              "Duplicate node/property animation channel");
+                        const auto &sampler = out.samplers[value.sampler];
+                        out.startTime = std::min(out.startTime, sampler.times.front());
+                        out.endTime = std::max(out.endTime, sampler.times.back());
+                        Check(sampler.components == (value.target == AnimationTarget::Rotation ? 4u : 3u),
+                              where, "Animation output shape differs from target property");
+                        if (value.target == AnimationTarget::Rotation)
+                            for (const auto &q : sampler.values)
+                                Quaternion(q, where);
+                        out.channels.push_back(value);
+                    }
+                    out.duration = out.endTime - out.startTime;
+                    m_model.animations.push_back(std::move(out));
+                }
+            }
+
+            void ValidateBindings() const {
+                for (size_t i = 0; i < m_model.nodes.size(); ++i) {
+                    const auto &node = m_model.nodes[i];
+                    if (node.skin == InvalidModelIndex)
+                        continue;
+                    const auto &skin = m_model.skins[node.skin];
+                    for (const auto &primitive : m_model.meshes[node.mesh].primitives) {
+                        Check(primitive.hasSkinning, At("nodes", i),
+                              "Skinned mesh requires JOINTS_0 and WEIGHTS_0 on every primitive");
+                        for (const auto &vertex : primitive.vertices)
+                            for (int c = 0; c < 4; ++c)
+                                Check(vertex.joints[c] < skin.jointNodes.size(), At("nodes", i),
+                                      "JOINTS_0 index exceeds this node's skin joint count");
+                    }
+                }
+            }
+
+            const GLTFDetail::Document &m_document;
+            const rapidjson::Document &m_json;
+            ModelResource &m_model;
+        };
+
+        bool ReadFile(const std::filesystem::path &path, std::vector<unsigned char> &bytes,
+                      std::string &error) {
+            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            if (!file) {
+                error = "Could not open GLB: " + path.string();
+                return false;
+            }
+            const auto size = file.tellg();
+            if (size < 0 || static_cast<uint64_t>(size) > std::numeric_limits<uint32_t>::max()) {
+                error = "Invalid GLB file size";
+                return false;
+            }
+            bytes.resize(static_cast<size_t>(size));
+            file.seekg(0, std::ios::beg);
+            if (!file || (size > 0 && !file.read(reinterpret_cast<char *>(bytes.data()),
+                                                 static_cast<std::streamsize>(size)))) {
+                error = "Could not read GLB: " + path.string();
+                bytes.clear();
+                return false;
+            }
+            return true;
         }
+    } // namespace
 
-        if (mat.HasMember("normalTexture")) {
-            int const texIndex = mat["normalTexture"]["index"].GetInt();
-            gm.normalImage = ResolveEmbeddedImage(doc, texIndex, binChunk, images, unused);
-            gm.hasNormal = unused.empty();
+    ModelImportResult GLTFLoader::LoadModelGLB(std::span<const unsigned char> bytes) {
+        ModelImportResult result;
+        try {
+            GLTFDetail::Document document;
+            if (!document.Parse(bytes, result.error))
+                return result;
+            ModelResource model;
+            ModelReader(document, model).Read();
+            result.model = std::move(model);
+            result.ok = true;
+        } catch (const ImportFailure &failure) {
+            result.error = failure.what();
+        } catch (const std::bad_alloc &) {
+            result.error = "Insufficient memory importing GLB";
+        } catch (const std::length_error &) {
+            result.error = "GLB data exceeds container capacity";
         }
-        if (mat.HasMember("occlusionTexture")) {
-            int const texIndex = mat["occlusionTexture"]["index"].GetInt();
-            gm.occlusionImage = ResolveEmbeddedImage(doc, texIndex, binChunk, images, unused);
-            gm.hasOcclusion = unused.empty();
+        return result;
+    }
+
+    ModelImportResult GLTFLoader::LoadModelGLBFile(const std::filesystem::path &path) {
+        ModelImportResult result;
+        std::vector<unsigned char> bytes;
+        if (!ReadFile(path, bytes, result.error))
+            return result;
+        return LoadModelGLB(bytes);
+    }
+
+    GLTFAsset GLTFLoader::FirstPrimitive(const ModelResource &model) {
+        GLTFAsset out;
+        if (model.meshes.empty() || model.meshes[0].primitives.empty()) {
+            out.error = "Model has no first mesh primitive";
+            return out;
         }
-        if (mat.HasMember("emissiveTexture")) {
-            int const texIndex = mat["emissiveTexture"]["index"].GetInt();
-            gm.emissiveImage = ResolveEmbeddedImage(doc, texIndex, binChunk, images, unused);
-            gm.hasEmissive = unused.empty();
+        const auto &primitive = model.meshes[0].primitives[0];
+        out.meshName = model.meshes[0].name;
+        out.mesh.indices = primitive.indices;
+        out.mesh.vertices.reserve(primitive.vertices.size());
+        for (const auto &source : primitive.vertices) {
+            Vertex vertex{};
+            vertex.pos = source.position;
+            vertex.normal = source.normal;
+            vertex.uv = source.uv;
+            vertex.color = glm::vec3(source.color);
+            vertex.tangent = source.tangent;
+            out.mesh.vertices.push_back(vertex);
         }
-        if (mat.HasMember("emissiveFactor")) {
-            rapidjson::Value const& f = mat["emissiveFactor"];
-            gm.emissiveFactor = glm::vec3(f[0].GetFloat(), f[1].GetFloat(), f[2].GetFloat());
+        if (primitive.material != InvalidModelIndex) {
+            if (primitive.material >= model.materials.size()) {
+                out.error = "First primitive has invalid material reference";
+                return out;
+            }
+            const auto &source = model.materials[primitive.material];
+            GLTFMaterial material;
+            material.baseColorFactor = source.baseColorFactor;
+            material.emissiveFactor = source.emissiveFactor;
+            material.metallicFactor = source.metallicFactor;
+            material.roughnessFactor = source.roughnessFactor;
+            material.alphaMode = source.alphaMode == ModelAlphaMode::Mask    ? GLTFAlphaMode::Mask
+                                 : source.alphaMode == ModelAlphaMode::Blend ? GLTFAlphaMode::Blend
+                                                                             : GLTFAlphaMode::Opaque;
+            material.alphaCutoff = source.alphaCutoff;
+            material.doubleSided = source.doubleSided;
+            auto image = [&](ModelTextureInfo info, bool &has, size_t &index) {
+                if (info.texture == InvalidModelIndex || info.texture >= model.textures.size())
+                    return;
+                const auto imageIndex = model.textures[info.texture].image;
+                if (imageIndex >= model.images.size())
+                    return;
+                index = out.images.size();
+                out.images.push_back({model.images[imageIndex].bytes});
+                has = true;
+            };
+            // Keep the original texture-resolution order for legacy callers.
+            image(source.baseColor, material.hasBaseColor, material.baseColorImage);
+            image(source.metallicRoughness, material.hasMetallicRoughness, material.metallicRoughnessImage);
+            image(source.normal, material.hasNormal, material.normalImage);
+            image(source.occlusion, material.hasOcclusion, material.occlusionImage);
+            image(source.emissive, material.hasEmissive, material.emissiveImage);
+            out.material = material;
         }
+        out.ok = true;
+        return out;
+    }
 
-        // Cut-out and double-sided (both optional; defaults OPAQUE, 0.5, false).
-        if (mat.HasMember("alphaMode") && mat["alphaMode"].IsString()) {
-            const std::string mode = mat["alphaMode"].GetString();
-            if      (mode == "MASK")  { gm.alphaMode = GLTFAlphaMode::Mask; }
-            else if (mode == "BLEND") { gm.alphaMode = GLTFAlphaMode::Blend; }
+    GLTFAsset GLTFLoader::LoadGLB(const std::vector<unsigned char> &bytes) {
+        auto model = LoadModelGLB(bytes);
+        if (!model.ok) {
+            GLTFAsset asset;
+            asset.error = std::move(model.error);
+            return asset;
         }
-        if (mat.HasMember("alphaCutoff") && mat["alphaCutoff"].IsNumber()) { gm.alphaCutoff = mat["alphaCutoff"].GetFloat(); }
-        if (mat.HasMember("doubleSided") && mat["doubleSided"].IsBool())   { gm.doubleSided = mat["doubleSided"].GetBool(); }
-
-        return gm;
+        return FirstPrimitive(model.model);
     }
 
-}   // anonymous namespace
-
-GLTFAsset GLTFLoader::LoadGLB(const std::vector<unsigned char>& fileBytes) {
-    GLTFAsset asset;
-
-    // ---- GLB container: 12-byte header + a sequence of length-prefixed chunks ----------------
-    if (fileBytes.size() < 12) { asset.error = "file too small to be a GLB"; return asset; }
-
-    uint32_t magic = 0;
-    std::memcpy(&magic, &fileBytes[0], 4);
-    if (magic != kGLBMagic) { asset.error = "not a GLB file (bad magic)"; return asset; }
-    // version (offset 4) and total length (offset 8) are read implicitly by the chunk loop
-    // below running off the actual buffer size - neither is otherwise needed here.
-
-    std::string jsonText;
-    std::vector<unsigned char> binChunk;
-
-    std::size_t cursor = 12;
-    while (cursor + 8 <= fileBytes.size()) {
-        uint32_t chunkLength = 0, chunkType = 0;
-        std::memcpy(&chunkLength, &fileBytes[cursor], 4);
-        std::memcpy(&chunkType, &fileBytes[cursor + 4], 4);
-        cursor += 8;
-
-        if (cursor + chunkLength > fileBytes.size()) { asset.error = "GLB chunk runs past end of file"; return asset; }
-
-        if (chunkType == kJSONChunkTag) {
-            jsonText.assign(reinterpret_cast<const char*>(&fileBytes[cursor]), chunkLength);
-        } else if (chunkType == kBINChunkTag) {
-            binChunk.assign(fileBytes.begin() + static_cast<long>(cursor),
-                             fileBytes.begin() + static_cast<long>(cursor + chunkLength));
+    GLTFAsset GLTFLoader::LoadGLBFile(const std::filesystem::path &path) {
+        auto model = LoadModelGLBFile(path);
+        if (!model.ok) {
+            GLTFAsset asset;
+            asset.error = std::move(model.error);
+            return asset;
         }
-        // Any other chunk type is, per the GLB spec, ignored by readers that don't recognise it.
-
-        cursor += chunkLength;
+        return FirstPrimitive(model.model);
     }
-
-    if (jsonText.empty()) { asset.error = "GLB has no JSON chunk"; return asset; }
-
-    // ---- JSON chunk ----------------------------------------------------------------------------
-    rapidjson::Document doc;
-    doc.Parse(jsonText.c_str(), jsonText.size());
-    if (doc.HasParseError()) { asset.error = "malformed JSON chunk"; return asset; }
-
-    if (!doc.HasMember("meshes") || doc["meshes"].Empty()) { asset.error = "glTF has no meshes"; return asset; }
-    rapidjson::Value const& mesh0 = doc["meshes"][0];
-    if (mesh0.HasMember("name") && mesh0["name"].IsString()) { asset.meshName = mesh0["name"].GetString(); }
-    if (!mesh0.HasMember("primitives") || mesh0["primitives"].Empty()) { asset.error = "first mesh has no primitives"; return asset; }
-    rapidjson::Value const& prim0 = mesh0["primitives"][0];
-
-    // glTF "mode" defaults to 4 (TRIANGLES) when absent; a primitive using strips/fans/points/
-    // lines (1,2,3,5,6) would silently render as garbage if read as a plain triangle list, so
-    // reject anything else outright rather than guessing.
-    if (prim0.HasMember("mode") && prim0["mode"].GetInt() != 4) {
-        asset.error = "only triangle-list primitives (mode 4, or omitted) are supported";
-        return asset;
-    }
-
-    if (!prim0.HasMember("attributes") || !prim0["attributes"].HasMember("POSITION")) {
-        asset.error = "primitive has no POSITION attribute"; return asset;
-    }
-    rapidjson::Value const& attrs = prim0["attributes"];
-
-    std::string err;
-    std::vector<float> positions, normals, uvs, tangents;
-    std::size_t comp = 0, vertexCount = 0;
-
-    if (!ReadAccessorFloats(doc, attrs["POSITION"].GetInt(), binChunk, positions, comp, vertexCount, err) || comp != 3) {
-        asset.error = "POSITION: " + err; return asset;
-    }
-
-    bool const hasNormal = attrs.HasMember("NORMAL");
-    if (hasNormal) {
-        std::size_t c2 = 0, n2 = 0;
-        if (!ReadAccessorFloats(doc, attrs["NORMAL"].GetInt(), binChunk, normals, c2, n2, err) || c2 != 3) {
-            asset.error = "NORMAL: " + err; return asset;
-        }
-    }
-
-    bool const hasUV = attrs.HasMember("TEXCOORD_0");
-    if (hasUV) {
-        std::size_t c2 = 0, n2 = 0;
-        if (!ReadAccessorFloats(doc, attrs["TEXCOORD_0"].GetInt(), binChunk, uvs, c2, n2, err) || c2 != 2) {
-            asset.error = "TEXCOORD_0: " + err; return asset;
-        }
-    }
-
-    bool const hasTangent = attrs.HasMember("TANGENT");
-    if (hasTangent) {
-        std::size_t c2 = 0, n2 = 0;
-        if (!ReadAccessorFloats(doc, attrs["TANGENT"].GetInt(), binChunk, tangents, c2, n2, err) || c2 != 4) {
-            asset.error = "TANGENT: " + err; return asset;
-        }
-    }
-
-    asset.mesh.vertices.resize(vertexCount);
-    for (std::size_t i = 0; i < vertexCount; ++i) {
-        Vertex v{};
-        v.pos = glm::vec3(positions[i * 3 + 0], positions[i * 3 + 1], positions[i * 3 + 2]);
-
-        // Missing NORMAL/TEXCOORD_0: fall back to neutral placeholders rather than failing the
-        // whole asset. +Y isn't geometrically correct for an arbitrary mesh, but every Khronos
-        // sample asset this loader targets provides NORMAL anyway.
-        v.normal = hasNormal ? glm::vec3(normals[i * 3 + 0], normals[i * 3 + 1], normals[i * 3 + 2])
-                              : glm::vec3(0.0f, 1.0f, 0.0f);
-        v.uv     = hasUV     ? glm::vec2(uvs[i * 2 + 0], uvs[i * 2 + 1])
-                              : glm::vec2(0.0f, 0.0f);
-        v.color  = glm::vec3(1.0f, 1.0f, 1.0f);   // COLOR_0 is not imported (see file header)
-
-        // Missing TANGENT (common for an asset with no normal map - BoxTextured, for one, has
-        // none): FIXES A REAL BUG here that shipped in an earlier version of this loader. That
-        // version used a single fixed placeholder tangent (1,0,0,1) for every vertex regardless
-        // of its normal - exactly Primitives.h's Detail::kFlatCapTangent convention, but that
-        // convention is only safe there because each flat cap's normal is known in advance to be
-        // perpendicular to it. Applied blindly to an arbitrary imported normal, a fixed (1,0,0)
-        // tangent is exactly PARALLEL to a normal of (+-1,0,0) - two of a cube's six faces - and
-        // the shader's Gram-Schmidt re-orthogonalization (T - N*dot(N,T)) collapses to a
-        // near-zero vector there; normalizing that produces NaN, and NaN propagates through the
-        // whole BRDF even where the math should have zeroed it out (IEEE754: NaN * 0 = NaN, not
-        // 0), which is what showed up as glitching/garbage on two of BoxTextured's faces.
-        // Fixed by deriving a tangent from each vertex's own normal instead: pick any seed axis
-        // not parallel to it (+Y unless the normal is itself near +-Y, then +X), and take
-        // cross(seed, normal) - guaranteed non-degenerate for every possible normal direction.
-        // The resulting tangent's exact direction is otherwise arbitrary and inconsistent across
-        // a smooth surface, which only matters for actual normal mapping - moot here, since a
-        // material with no TANGENT also has no normal map to be wrong about (Renderer substitutes
-        // its flat-normal placeholder texture, whose tangent-space normal is (0,0,1): the TBN
-        // matrix's T/B columns are multiplied by that normal map sample's x/y = 0 either way).
-        if (hasTangent) {
-            v.tangent = glm::vec4(tangents[i * 4 + 0], tangents[i * 4 + 1], tangents[i * 4 + 2], tangents[i * 4 + 3]);
-        } else {
-            glm::vec3 const seed = (std::abs(v.normal.y) < 0.999f) ? glm::vec3(0.0f, 1.0f, 0.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
-            v.tangent = glm::vec4(glm::normalize(glm::cross(seed, v.normal)), 1.0f);
-        }
-
-        asset.mesh.vertices[i] = v;
-    }
-
-    if (!prim0.HasMember("indices")) { asset.error = "non-indexed primitives are not supported"; return asset; }
-    if (!ReadAccessorIndices(doc, prim0["indices"].GetInt(), binChunk, asset.mesh.indices, err)) {
-        asset.error = "indices: " + err; return asset;
-    }
-
-    if (prim0.HasMember("material")) {
-        asset.material = ReadMaterial(doc, prim0["material"].GetInt(), binChunk, asset.images);
-    }
-
-    asset.ok = true;
-    return asset;
-}
-
-GLTFAsset GLTFLoader::LoadGLBFile(const std::filesystem::path& path) {
-    GLTFAsset asset;
-
-    std::ifstream file(path, std::ios::binary | std::ios::ate);
-    if (!file) { asset.error = "could not open file: " + path.string(); return asset; }
-
-    std::streamsize const size = file.tellg();
-    file.seekg(0, std::ios::beg);
-
-    std::vector<unsigned char> bytes(static_cast<std::size_t>(size));
-    if (size > 0 && !file.read(reinterpret_cast<char*>(bytes.data()), size)) {
-        asset.error = "could not read file: " + path.string();
-        return asset;
-    }
-
-    return LoadGLB(bytes);
-}
-
-}   // NAMESPACE CRUCIBLE
+} // namespace Crucible

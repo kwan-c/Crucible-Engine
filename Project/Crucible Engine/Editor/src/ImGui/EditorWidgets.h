@@ -29,9 +29,10 @@ namespace Crucible::EditorWidgets {
 	//		}
 	inline constexpr char const* kAssetPayload = "CRUCIBLE_ASSET";
 
-	// Drag-and-drop payload type used when an entity is dragged out of the Hierarchy.
-	// The payload data is the Crucible::Entity itself (sizeof(Entity) bytes). The
-	// Hierarchy accepts it to re-parent; the Inspector's entity fields accept it too.
+	// Drag-and-drop payload type used when an entity row is dragged out of the Hierarchy.
+	// The payload data is the dragged Entity, by value (copy it out with std::memcpy). When the
+	// dragged row is part of a multi-selection, the drag stands for the whole selection.
+	// The Asset Browser accepts it to create prefabs (Prefabs/PrefabAuthoring.h).
 	inline constexpr char const* kEntityPayload = "CRUCIBLE_ENTITY";
 
 	// A small toolbar button that stays highlighted while 'active' is true.

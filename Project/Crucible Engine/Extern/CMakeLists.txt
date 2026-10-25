@@ -193,6 +193,129 @@ target_include_directories(rapidjson SYSTEM INTERFACE rapidjson/include)
 # ----------------------------------- #
 
 
+# ----------------------------------- #
+# FREETYPE (static)
+# ----------------------------------- #
+# Loads TTF/OTF outlines, kerning and metrics. Used by msdfgen-ext to read fonts.
+# Every optional codec is disabled, otherwise FreeType's CMake picks up whatever
+# zlib/libpng/harfbuzz/brotli it happens to find on the machine and the build
+# differs between team members' PCs.
+
+set(FT_DISABLE_ZLIB     ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BZIP2    ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_PNG      ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+set(FT_DISABLE_BROTLI   ON CACHE BOOL "" FORCE)
+set(SKIP_INSTALL_ALL    ON CACHE BOOL "" FORCE)
+
+# FreeType reads BUILD_SHARED_LIBS. Force static for this subdirectory only.
+set(_CRU_SAVED_SHARED ${BUILD_SHARED_LIBS})
+set(BUILD_SHARED_LIBS OFF)
+
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/freetype"
+    "${CMAKE_CURRENT_BINARY_DIR}/freetype"
+    EXCLUDE_FROM_ALL
+)
+
+set(BUILD_SHARED_LIBS ${_CRU_SAVED_SHARED})
+
+set_property(TARGET freetype PROPERTY
+    MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>DLL"
+)
+set_target_properties(freetype PROPERTIES FOLDER "ThirdParty/Fonts")
+
+# FreeType only exports the name Freetype::Freetype at install time. msdfgen looks
+# for that exact target, and falls back to find_package (system FreeType) if it is
+# missing, so give it an alias to our in-tree build.
+if(NOT TARGET Freetype::Freetype)
+    add_library(Freetype::Freetype ALIAS freetype)
+endif()
+
+# Same treatment as Jolt: treat FreeType headers as external (/external:I).
+get_target_property(FREETYPE_INCLUDE_DIRS freetype INTERFACE_INCLUDE_DIRECTORIES)
+if(FREETYPE_INCLUDE_DIRS)
+    set_target_properties(freetype PROPERTIES
+        INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${FREETYPE_INCLUDE_DIRS}"
+    )
+endif()
+
+# ----------------------------------- #
+# MSDFGEN (static: msdfgen-core + msdfgen-ext)
+# ----------------------------------- #
+# Generates the (multi-channel) signed distance field for each glyph outline.
+# - No vcpkg / Skia: everything comes from Extern.
+# - No SVG (tinyxml2) / PNG (libpng): we don't load SVG shapes, and image saving
+#   goes through stb_image_write instead.
+# - Dynamic CRT (/MD, /MDd) to match the rest of the engine. msdfgen defaults to /MT.
+
+set(MSDFGEN_CORE_ONLY        OFF CACHE BOOL "" FORCE)
+set(MSDFGEN_BUILD_STANDALONE OFF CACHE BOOL "" FORCE)
+set(MSDFGEN_USE_VCPKG        OFF CACHE BOOL "" FORCE)
+set(MSDFGEN_USE_SKIA         OFF CACHE BOOL "" FORCE)
+set(MSDFGEN_USE_OPENMP       OFF CACHE BOOL "" FORCE)
+set(MSDFGEN_USE_CPP11        ON  CACHE BOOL "" FORCE)
+set(MSDFGEN_DISABLE_SVG      ON  CACHE BOOL "" FORCE)
+set(MSDFGEN_DISABLE_PNG      ON  CACHE BOOL "" FORCE)
+set(MSDFGEN_INSTALL          OFF CACHE BOOL "" FORCE)
+set(MSDFGEN_DYNAMIC_RUNTIME  ON  CACHE BOOL "" FORCE)
+
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/msdfgen"
+    "${CMAKE_CURRENT_BINARY_DIR}/msdfgen"
+    EXCLUDE_FROM_ALL
+)
+
+set_target_properties(msdfgen-core msdfgen-ext PROPERTIES FOLDER "ThirdParty/Fonts")
+
+# ----------------------------------- #
+# MSDF-ATLAS-GEN (static)
+# ----------------------------------- #
+# Packs the glyphs into one atlas texture and runs msdfgen on each of them.
+# MSDF_ATLAS_MSDFGEN_EXTERNAL: use the Extern/msdfgen target above instead of the
+# msdfgen git submodule inside msdf-atlas-gen.
+# MSDF_ATLAS_NO_ARTERY_FONT: we write our own font file format, so the
+# artery-font-format submodule isn't needed.
+
+set(MSDF_ATLAS_BUILD_STANDALONE OFF CACHE BOOL "" FORCE)
+set(MSDF_ATLAS_USE_VCPKG        OFF CACHE BOOL "" FORCE)
+set(MSDF_ATLAS_USE_SKIA         OFF CACHE BOOL "" FORCE)
+set(MSDF_ATLAS_NO_ARTERY_FONT   ON  CACHE BOOL "" FORCE)
+set(MSDF_ATLAS_MSDFGEN_EXTERNAL ON  CACHE BOOL "" FORCE)
+set(MSDF_ATLAS_INSTALL          OFF CACHE BOOL "" FORCE)
+set(MSDF_ATLAS_DYNAMIC_RUNTIME  ON  CACHE BOOL "" FORCE)
+
+add_subdirectory(
+    "${CMAKE_CURRENT_SOURCE_DIR}/msdf-atlas-gen"
+    "${CMAKE_CURRENT_BINARY_DIR}/msdf-atlas-gen"
+    EXCLUDE_FROM_ALL
+)
+
+set_target_properties(msdf-atlas-gen PROPERTIES FOLDER "ThirdParty/Fonts")
+
+# Engine compiles with /W4 + code analysis; mark the msdfgen / msdf-atlas-gen headers
+# as external so their warnings don't show up as ours (same as FreeType and Jolt).
+foreach(_font_target msdfgen-core msdfgen-ext msdf-atlas-gen)
+    get_target_property(_font_includes ${_font_target} INTERFACE_INCLUDE_DIRECTORIES)
+    if(_font_includes)
+        set_target_properties(${_font_target} PROPERTIES
+            INTERFACE_SYSTEM_INCLUDE_DIRECTORIES "${_font_includes}"
+        )
+    endif()
+endforeach()
+
+# One target for the engine to link: msdf-atlas-gen pulls in msdfgen-core,
+# msdfgen-ext and FreeType through its own PUBLIC links.
+add_library(CrucibleFonts INTERFACE)
+target_link_libraries(CrucibleFonts INTERFACE
+    msdf-atlas-gen::msdf-atlas-gen
+    msdfgen::msdfgen
+    Freetype::Freetype
+)
+
+
+# ----------------------------------- #
+
 # Create an interface library that bundles all common dependencies
 add_library(EngineThirdParty INTERFACE)
 
@@ -222,4 +345,5 @@ target_link_libraries(EditorThirdParty INTERFACE
     imgui
     imgui_backends
     imguizmo
+    CrucibleFonts   # FreeType + msdfgen + msdf-atlas-gen: the font compiler (Editor/src/Fonts). The engine only reads .cfont files.
 )

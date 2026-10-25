@@ -14,8 +14,10 @@
 #include "Scene/SceneManager.h"
 #include "Diagnostics/Logger.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
+#include "ImGui/Panels/ImGuiPanel_FontImporter.h"
 #include "Configuration/EngineConfigLoader.h"
 
 #include <GLFW/glfw3.h>
@@ -62,7 +64,8 @@ void Crucible::Menu::Update(float) {
 	// Keyboard shortcuts. Checked here every frame, NOT inside BeginMenu("File"),
 	// which only runs while the File menu is open. Skipped while any popup is up,
 	// so pressing Ctrl+S while typing a name in "Save Scene As" doesn't save behind it.
-	if (!ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+	auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR);
+	if ((!animator || !animator->HasKeyboardFocus()) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 	{
 		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
 			SaveScene();
@@ -145,9 +148,15 @@ void Crucible::Menu::Update(float) {
 		// ---------------- View ----------------
 		if (ImGui::BeginMenu("View"))
 		{
+			if (ImGui::MenuItem("Animator")) { if (animator) animator->Show(); }
 			// The third argument is a bool* that MenuItem toggles for us (shows a tick).
 			ImGui::MenuItem("ImGui Demo Window", nullptr, &m_showDemoWindow);
 			ImGui::MenuItem("FPS Counter", nullptr, &m_showFps);
+			if (auto fonts = EditorManager::GetInstance().GetPanel<FontImporter>(ImguiPanels::FONTIMPORTER)) {
+				if (ImGui::MenuItem("Font Importer", nullptr, fonts->IsOpen())) {
+					if (fonts->IsOpen()) { fonts->SetOpen(false); } else { fonts->Open(""); }
+				}
+			}
 			ImGui::Separator();
 			if (ImGui::BeginMenu("Theme"))
 			{
@@ -156,6 +165,15 @@ void Crucible::Menu::Update(float) {
 			}
 			if (ImGui::MenuItem("Reset Layout"))
 				ImGuiManager::ResetLayout();
+			ImGui::Separator();
+			// Window mode. Remembered for next launch in UserSettings.json (Core::SetFullscreen).
+			if (Core* core = EditorManager::GetInstance().GetCore()) {
+				if (ImGui::MenuItem("Fullscreen", "F11", core->IsFullscreen()))
+					core->ToggleFullscreen();
+				if (ImGui::MenuItem("Maximize Window", nullptr, core->IsWindowMaximized(), !core->IsFullscreen())) {
+					if (core->IsWindowMaximized()) core->RestoreWindow(); else core->MaximizeWindow();
+				}
+			}
 			ImGui::EndMenu();
 		}
 
@@ -271,7 +289,12 @@ void Crucible::Menu::RunAction(GuardedAction action, const std::filesystem::path
 	{
 	case GuardedAction::New:  m_scenes.RequestNew();      break;
 	case GuardedAction::Open: m_scenes.RequestLoad(path); break;
-	case GuardedAction::Exit: m_quitConfirmed = true; if (GLFWwindow* window = MainWindow()) glfwSetWindowShouldClose(window, GLFW_TRUE);    break;
+	case GuardedAction::Exit: {
+		auto finish = [this] { m_quitConfirmed = true; if (GLFWwindow* window = MainWindow()) glfwSetWindowShouldClose(window, GLFW_TRUE); };
+		auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR);
+		if (!animator || animator->GuardExit(finish)) finish();
+		break;
+	}
 	case GuardedAction::None: break;
 	}
 }
@@ -549,6 +572,11 @@ void Crucible::Menu::DrawProjectSettingsPopup()
 			ImGui::SetNextItemWidth(260.0f);
 			ImGui::InputText("Title", m_projectWindowTitle, sizeof(m_projectWindowTitle));
 			WindowSizeInput("Size", graphics.windowWidth, graphics.windowHeight);
+			ImGui::Checkbox("Start Fullscreen", &graphics.fullScreen);
+			ImGui::SameLine();
+			ImGui::Checkbox("Start Maximized", &graphics.maximized);
+			ImGui::TextDisabled("Defaults only: once someone toggles F11 or maximizes, their own choice is\n"
+			                    "remembered in UserSettings.json next to the .exe (delete it to reset).");
 
 			ImGui::EndTabItem();
 		}
@@ -612,13 +640,34 @@ void Crucible::Menu::DrawProjectSettingsPopup()
 				ImGui::EndDisabled();
 			}
 
+			// Fullscreen / maximized: one tick box overrides both, like the size.
+			bool const modeOn = OverrideToggle("##OverrideMode", game.fullScreen.has_value() || game.maximized.has_value());
+			if (modeOn) {
+				if (!game.fullScreen) game.fullScreen = graphics.fullScreen;
+				if (!game.maximized)  game.maximized  = graphics.maximized;
+				ImGui::Checkbox("Start Fullscreen##Game", &*game.fullScreen);
+				ImGui::SameLine();
+				ImGui::Checkbox("Start Maximized##Game", &*game.maximized);
+			}
+			else {
+				game.fullScreen.reset();
+				game.maximized.reset();
+				bool fs = graphics.fullScreen, mx = graphics.maximized;
+				ImGui::BeginDisabled();
+				ImGui::Checkbox("Start Fullscreen##Game", &fs);
+				ImGui::SameLine();
+				ImGui::Checkbox("Start Maximized##Game", &mx);
+				ImGui::EndDisabled();
+			}
+
 			// What the game will actually start with, all overrides applied.
 			EngineConfig shared = m_projectSettings;
 			shared.graphics.windowTitle = m_projectWindowTitle;
 			EngineConfig const result = game.ApplyTo(shared);
 			ImGui::Spacing();
-			ImGui::TextDisabled("The Game will start as \"%s\", %u x %u, opening %s.",
+			ImGui::TextDisabled("The Game will start as \"%s\", %u x %u%s, opening %s.",
 				result.graphics.windowTitle.c_str(), result.graphics.windowWidth, result.graphics.windowHeight,
+				result.graphics.fullScreen ? " (fullscreen)" : (result.graphics.maximized ? " (maximized)" : ""),
 				result.project.startupScene.empty() ? "no scene" : result.project.startupScene.c_str());
 
 			ImGui::EndTabItem();

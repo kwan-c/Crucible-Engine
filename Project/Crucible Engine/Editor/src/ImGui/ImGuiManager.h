@@ -36,7 +36,8 @@ enum class ImguiPanels
 	ASSETBROWSER,
 	PLAYPAUSE,
 	CONSOLE,
-	ANIMATOR
+	ANIMATOR,
+	FONTIMPORTER	// floating window, opened from the Asset Browser or View > Font Importer
 };
 
 namespace Crucible {
@@ -169,6 +170,8 @@ namespace Crucible {
 
 		Core*         m_core = nullptr;
 		Subscription  m_playStateChanged;            // EngineEvents::PlayStateChanged on the engine bus
+		Subscription  m_uiQuit;                      // UIEvents::QuitRequested: a "Quit" button stops Play here
+		Subscription  m_uiCustom;                    // UIEvents::CustomAction: logged (the game / scripts run them)
 		std::vector<std::uint64_t> m_selectionBeforePlay;   // scene guids of the entities selected at Play; active one last
 	};
 

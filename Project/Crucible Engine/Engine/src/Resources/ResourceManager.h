@@ -6,8 +6,8 @@
 * \date          30 September 2026
 * \version       1.0
 * \brief
-*                Turns asset GUIDs into loaded engine resources (Renderer
-*                handles), and remembers which GUID every handle came from.
+*                Turns asset GUIDs into shared CPU model definitions or
+*                loaded Renderer handles, remembering each handle's GUID.
 *
 * \details
 *                Sits between AssetManager (files, GUIDs, bytes - owned by
@@ -31,22 +31,26 @@
 *                and material pickers):
 *                  - Built-in resources with fixed ids: the primitive meshes
 *                    ("Cube", "Sphere", ...) and "Default Material".
-*                  - Meshes: Model assets (.glb) - the model's own GUID is
+*                  - Meshes: Model assets (.cmodel) - the model's own GUID is
 *                    its mesh.
+*                  - Models: GetModel returns the complete immutable CPU
+*                    definition. GetMesh keeps the first-primitive view.
 *                  - Materials: .mat assets (JSON, see SaveMaterial), and
-*                    each .glb's embedded material as a derived sub-asset
+*                    each .cmodel's embedded material as a derived sub-asset
 *                    (id = DeriveSubAssetId(modelId, "material")).
 *                  - Textures: Texture assets (.png/.jpg/...), sRGB or linear.
 *                  - Cubemaps: Texture assets loaded as an equirectangular
 *                    panorama (.hdr or LDR) for Skybox.
+*                  - Fonts: compiled .cfont files (see Text/FontData.h),
+*                    with their atlas uploaded. A .ttf/.otf id resolves to
+*                    the .cfont next to it, once it has been compiled.
 *                Loads are synchronous and on demand (first Get). Nothing is
 *                unloaded yet - the Renderer has no Destroy* API - so
 *                resources live until shutdown.
 *
-*                Source formats (PNG, GLB) are read here TEMPORARILY: once
-*                the importer produces engine formats, only the per-type
-*                Load* functions in the .cpp change; the public API and
-*                every caller stay as they are.
+*                Models load only compiled .cmodel resources. Source GLB parsing
+*                belongs to CrucibleModelCompiler; callers retain their GUIDs.
+*                Image and material loading retain their existing formats.
 *
 * \history
 *    -v1.0       initial implementation
@@ -54,6 +58,7 @@
 **************************************************************************/
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -63,6 +68,7 @@
 #include "Graphics/MaterialHandle.h"
 #include "Graphics/TextureHandle.h"
 #include "Graphics/CubemapHandle.h"
+#include "Text/FontData.h"
 
 namespace Crucible {
 
@@ -70,6 +76,10 @@ namespace Crucible {
     class Renderer;
     struct MeshRenderer;
     struct MaterialData;
+    struct ModelResource;
+    struct ModelPose;
+    struct RenderedModel;
+    struct AnimatorController;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -89,14 +99,17 @@ namespace Crucible {
         Mesh,
         Material,
         Texture,
-        Audio      // audio files; listed for the Inspector's picker only - the renderer never loads them
+        Audio,     // audio files; listed for the Inspector's picker only - the renderer never loads them
+        Font,       // compiled fonts (.cfont) - see GetFont()
+        Model,     // complete CPU model definition; GetModel does not upload GPU resources
+        AnimatorController
     };
 
     /*************************************************************************
      \brief  One pickable entry, as returned by ResourceManager::List().
      \details
         - id:      what to store in a component (MeshRenderer::meshAsset...).
-        - name:    display label ("Cube", "Models/Cannon.glb", ...).
+        - name:    display label ("Cube", "Models/Cannon.cmodel", ...).
         - builtin: true for engine-provided resources with no file.
         - loaded:  true if already resident (picking it costs nothing).
      *************************************************************************/
@@ -170,6 +183,21 @@ namespace Crucible {
          *********************************************************************/
         MeshHandle     GetMesh(AssetId id);
 
+        // Complete, shared CPU definition from this one asset. Null on failure;
+        // failed loads are cached like GetMesh. Own a shared_ptr while using it.
+        // No node poses, GPU uploads or animation playback are created here.
+        // Existing GetMesh/GetMaterial still expose the first primitive only.
+        std::shared_ptr<const ModelResource> GetModel(AssetId id);
+        std::shared_ptr<const ModelPose> GetModelRestPose(AssetId id);
+        std::shared_ptr<const AnimatorController> GetAnimatorController(AssetId id);
+        // Editor asset saves preserve GUIDs and publish a new immutable definition.
+        // Existing instances retain the previous definition until their next reset.
+        bool SaveAnimatorController(AssetId id, const std::string& json, std::string* error = nullptr);
+        AssetId CreateAnimatorControllerAsset(const std::string& virtualPath, const std::string& json,
+                                             std::string* error = nullptr);
+        std::shared_ptr<const RenderedModel> GetRenderedModel(AssetId id);
+        TextureHandle GetModelTexture(AssetId model, uint32_t texture, bool isSRGB);
+
         /*********************************************************************
          \brief  The material for "Default Material", a .mat asset, or a
                  model's embedded material (DeriveSubAssetId(model,
@@ -210,8 +238,39 @@ namespace Crucible {
         TextureHandle  GetTextureByPath(const std::string& virtualPath, bool isSRGB = true);
 
         /*********************************************************************
+         \brief  A compiled font with its atlas uploaded, for drawing text.
+         \param[in] id A .cfont asset id, or a .ttf/.otf id (which resolves
+                       to the .cfont with the same name next to it, e.g.
+                       "Fonts/Arial.ttf" -> "Fonts/Arial.cfont").
+         \return The font, or null if id is 0, unknown, not compiled yet,
+                 or failed to load (logged once). Owned here: valid until
+                 ReloadFont() for that font or this manager is destroyed.
+         *********************************************************************/
+        const FontAsset* GetFont(AssetId id);
+
+        /// The font UIText uses when it names none (or its own can't be loaded).
+        /// Whatever m_defaultFontPath is compiled to in the Font Importer is what you get.
+        static constexpr const char* m_defaultFontPath = "Fonts/LiberationSans-Regular.ttf";
+
+        /*********************************************************************
+         \brief  GetFont() for m_defaultFontPath.
+         \return Null if that font is missing or not compiled (warned once).
+         *********************************************************************/
+        const FontAsset* GetDefaultFont();
+
+        /*********************************************************************
+         \brief  Forgets a loaded (or failed) font so the next GetFont()
+                 reads its .cfont again - call after the editor recompiles
+                 it. Pointers from earlier GetFont() calls become invalid.
+         \param[in] id Same ids as GetFont().
+         \note   The old atlas stays on the GPU until shutdown (the Renderer
+                 has no DestroyTexture yet).
+         *********************************************************************/
+        void ReloadFont(AssetId id);
+
+        /*********************************************************************
          \brief  The asset id for a virtual path (0 if not indexed).
-         \param[in] virtualPath e.g. "Models/Cannon.glb".
+         \param[in] virtualPath e.g. "Models/Cannon.cmodel".
          \return The id.
          *********************************************************************/
         AssetId        GetIdForPath(const std::string& virtualPath) const;
@@ -304,7 +363,7 @@ namespace Crucible {
 
         /*********************************************************************
          \brief  Deterministic id for a resource embedded in another asset
-                 (e.g. a .glb's material), stable across runs and machines.
+                 (e.g. a .cmodel's material), stable across runs and machines.
          \param[in] parent The containing asset's id.
          \param[in] tag    Which sub-resource ("material").
          \return The derived id (LSB set, like every instance GUID).
@@ -321,6 +380,8 @@ namespace Crucible {
         static AssetId BuiltinId(const char* name);
 
     private:
+        AssetId WriteAnimatorControllerFile(const std::string& path, const std::string& json,
+                                           bool createNew, std::string* error);
         struct SubAsset { AssetId parent = 0; ResourceKind kind = ResourceKind::Material; };
         struct TextureSlots { TextureHandle srgb{}; TextureHandle linear{}; bool triedSrgb = false; bool triedLinear = false; };
 
@@ -328,6 +389,8 @@ namespace Crucible {
         bool LoadModel(AssetId modelId);                         // fills m_meshes[modelId] + embedded material
         MaterialHandle LoadMaterialFile(AssetId id);             // .mat (JSON)
         std::string SerializeMaterial(const MaterialData& data) const;
+        AssetId ResolveFontId(AssetId id) const;                 // .ttf/.otf -> its .cfont; .cfont -> itself; else 0
+        std::unique_ptr<FontAsset> LoadFont(AssetId fontId);    // .cfont -> FontData + uploaded atlas
 
         void RegisterBuiltins();
         void WarnOnce(AssetId id, const std::string& message);
@@ -339,13 +402,20 @@ namespace Crucible {
         std::unordered_map<AssetId, SubAsset>       m_subAssets;
 
         std::unordered_map<AssetId, MeshHandle>     m_meshes;      // Invalid value = failed load
+        std::unordered_map<AssetId, std::shared_ptr<const ModelResource>> m_models; // null = failed CPU import
+        std::unordered_map<AssetId, std::shared_ptr<const ModelPose>> m_modelRestPoses;
+        std::unordered_map<AssetId, std::shared_ptr<const AnimatorController>> m_controllers;
+        std::unordered_map<AssetId, std::shared_ptr<const RenderedModel>> m_renderedModels;
         std::unordered_map<AssetId, MaterialHandle> m_materials;   // Invalid value = failed load
         std::unordered_map<AssetId, TextureSlots>   m_textures;
         std::unordered_map<AssetId, CubemapHandle>  m_cubemaps;    // Invalid value = failed load
+        std::unordered_map<AssetId, std::unique_ptr<FontAsset>> m_fonts;   // keyed by .cfont id; null = failed load
 
         std::unordered_map<std::uint32_t, AssetId>  m_meshIds;      // handle.id -> asset
         std::unordered_map<std::uint32_t, AssetId>  m_materialIds;
         std::unordered_map<std::uint32_t, AssetId>  m_textureIds;
+        struct ModelTextureSource { AssetId model; uint32_t texture; };
+        std::unordered_map<uint32_t, ModelTextureSource> m_modelTextureSources;
 
         std::unordered_map<AssetId, bool>           m_warned;
     };

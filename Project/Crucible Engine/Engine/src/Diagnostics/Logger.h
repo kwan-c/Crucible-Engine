@@ -63,7 +63,10 @@ namespace Crucible::Debug
     {
         bool consoleSink     = true;                 // stdout
         bool debugOutputSink = true;                 // VS Output window
-        std::filesystem::path logFile = "crucible.log";   // empty = no file
+        // Empty = no file. A relative path (like the default) is placed next to the running
+        // .exe, not in the working directory, so the log is always beside the program it is
+        // from - Build/Game/Debug/crucible.log, or the packaged game's folder.
+        std::filesystem::path logFile = "crucible.log";
         Level minLevel = Level::Trace;
         bool  showSourceLocation = true;             // the [Core.cpp:87] part
     };
@@ -83,6 +86,10 @@ namespace Crucible::Debug
 
     // Seconds since Init().
     ENGINE_API double ElapsedSeconds();
+
+    // The full path of the log file being written, or empty if there is none (logFile was
+    // empty, or the file could not be opened). Starts the logger if nothing has yet.
+    ENGINE_API std::filesystem::path LogFilePath();
 
     // The single real entry point. Use the CRU_* macros instead of calling
     // this directly - they fill in the file and line for you.

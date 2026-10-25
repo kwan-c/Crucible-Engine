@@ -76,6 +76,12 @@ namespace Crucible {
 		// the cursor picks the nearest mesh (Renderer::Raycast); empty space clears the selection.
 		// Ctrl+click adds/removes the picked entity, Shift+click adds it (multi-selection).
 		void HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize);
+		// The ray from the camera through the mouse cursor, in world space (toFar spans the near
+		// plane to the far plane). False if the view has no size yet.
+		bool MouseRay(ImVec2 viewMin, ImVec2 viewSize, glm::vec3& origin, glm::vec3& toFar);
+		// Where a prefab dropped at the cursor lands: on the surface under it, else on the y = 0
+		// ground plane, else 10 units in front of the camera.
+		glm::vec3 DropPoint(ImVec2 viewMin, ImVec2 viewSize);
 		void Select(Entity entity);
 
 		// ---- Move / Rotate / Scale gizmo (ImGuizmo) ----

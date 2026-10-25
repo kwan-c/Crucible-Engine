@@ -77,6 +77,7 @@ namespace Crucible {
         Material,
         Script,
         Text,
+        AnimatorController,
  
         Count
     };
@@ -679,8 +680,9 @@ namespace Crucible {
             environment variable, then an upward walk from the executable's
             folder and from the working directory.
 
-            Public so code that runs before the AssetManager exists (the
-            engine config loader) can find files with the same rules.
+            Public so AssetRoot() (AssetPaths.h) can run the same search
+            before any AssetManager exists. Other code should call
+            AssetRoot() instead: it searches once and caches the answer.
          *********************************************************************/
         static std::filesystem::path FindAssetRoot(const std::string& explicitRoot);
 

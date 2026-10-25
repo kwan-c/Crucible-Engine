@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          2 October 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Implementation of ECSPlayerControllerSystem. See the
 *                header for what happens each frame.
@@ -13,6 +13,9 @@
 *    -v1.1       reads the CameraComponent entity; SimulationOnly
 *    -v1.2       third-person camera: CameraOrbit and the cursor lock
 *    -v1.3       the mech turns to face the camera (m_faceCamera)
+*    -v1.4       hierarchy-aware camera orbit: the mech no longer has to be
+*                a root - its world rotation (and the frame its own
+*                Transform is in) come from its parents
 *
 **************************************************************************/
 #include "ECSPlayerControllerSystem.h"
@@ -31,8 +34,32 @@
 
 namespace Crucible {
 
+    namespace {
+
+        // The rotation of the frame an entity's Transform is relative to: its parent's world
+        // rotation (sockets included, via World::TryGetParentFrame). Exactly the identity for
+        // a root, so a root mech's maths below is bit-for-bit what it was before hierarchies.
+        Math::quat FrameRotation(const World& world, Entity entity) {
+            const Math::quat identity(1.0f, 0.0f, 0.0f, 0.0f);
+            Math::mat4 frame(1.0f);
+            if (!world.TryGetParentFrame(entity, frame) || frame == Math::mat4(1.0f)) return identity;
+            Math::vec3 translation, scale;
+            Math::quat rotation;
+            return Detail::DecomposeTRS(frame, translation, rotation, scale) ? rotation : identity;
+        }
+    }
+
     void ECSPlayerControllerSystem::Describe(SystemDesc& desc) const {
         desc.SimulationOnly();      // Playing only; Edit and Paused leave the keyboard to the editor
+    }
+
+    // No longer driven by the keyboard: stand still, and drop a jump asked for this frame.
+    // Switched back on, the query below drives it again from the next Update.
+    void ECSPlayerControllerSystem::OnComponentDeactivated(World& world, Entity entity, [[maybe_unused]] ComponentId component) {
+        if (CharacterController* controller = world.GetComponent<CharacterController>(entity)) {
+            controller->SimpleMove(Math::vec3(0.0f, 0.0f, 0.0f));
+            controller->m_jumpHeight = 0.0f;
+        }
     }
 
     /*!
@@ -96,19 +123,28 @@ namespace Crucible {
                 // camera twice - and every frame the mech chases it, it runs away
                 // further. So the mech's rotation is cancelled out below, whatever it
                 // is: toggle on or off, flipped mid-Play or not, the view never jumps.
-                // Assumes the mech is at the top of the hierarchy, so its Transform
-                // rotation IS its world rotation - the Mech -> Pivot -> Camera setup.
+                // The mech's WORLD rotation is what has to be cancelled: its own
+                // Transform rotation on top of whatever it hangs under (a rotated
+                // group, a moving platform). For the usual root mech that frame is
+                // the identity, so it is just its Transform rotation.
                 Math::quat parentRotation = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);   // no parent: nothing to cancel
                 const Entity mech = world.GetParent(pivot);
                 if (const Transform* mechTransform = world.Read<Transform>(mech)) {
-                    parentRotation = mechTransform->rotation;
+                    const Math::quat mechFrame = FrameRotation(world, mech);   // what the mech's Transform is relative to
+                    parentRotation = mechFrame * mechTransform->rotation;
 
                     // Toggle on: the mech turns to the camera's yaw. Yaw only - a
                     // mech that pitched with the camera would lie down to look at the
                     // floor. Written only when it changed, same reason as the pivot.
                     const PlayerController* player = world.Read<PlayerController>(mech);
+                    // yawRotation is a world rotation; the mech's Transform is in
+                    // mechFrame, so local = inverse(frame) x world (just yawRotation
+                    // for a root mech).
                     if (player != nullptr && player->m_faceCamera && yawRotation != parentRotation) {
-                        if (Transform* writable = world.GetComponent<Transform>(mech)) writable->rotation = yawRotation;
+                        const Math::quat localYaw = glm::inverse(mechFrame) * yawRotation;
+                        if (localYaw != mechTransform->rotation) {
+                            if (Transform* writable = world.GetComponent<Transform>(mech)) writable->rotation = localYaw;
+                        }
                         parentRotation = yawRotation;
                     }
                 }

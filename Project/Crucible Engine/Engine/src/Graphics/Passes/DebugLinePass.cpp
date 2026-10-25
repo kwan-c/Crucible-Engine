@@ -19,7 +19,7 @@ namespace Crucible {
     void DebugLinePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::Format colourFormat, vk::Format depthFormat) {
 
 
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/DebugLine.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "DebugLine.spv");
 
         vk::PipelineShaderStageCreateInfo shaderStages[] = {
             { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "lineVert" },

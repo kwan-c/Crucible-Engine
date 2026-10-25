@@ -16,7 +16,7 @@ namespace Crucible {
 
     void BloomPass::Create(VulkanContext& context, vk::DescriptorSetLayout textureSetLayout, vk::Format colourFormat) {
 
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/Post.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "Post.spv");
         vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(PostPush) };
         {
             vk::DescriptorSetLayout setLayout = textureSetLayout;

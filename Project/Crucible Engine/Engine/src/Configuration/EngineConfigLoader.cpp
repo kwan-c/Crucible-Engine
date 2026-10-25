@@ -9,9 +9,10 @@
 
 #include "EngineConfigLoader.h"
 #include "Json/JsonReader.h"
-#include "AssetPipe/Assetmanager.h"
+#include "AssetPipe/AssetPaths.h"
 #include "Json/JsonWrapper.h"
 #include <Diagnostics/Logger.h>
+#include "Systems/ExecutablePath.h"
 
 
 namespace Crucible
@@ -138,6 +139,26 @@ namespace Crucible
 			output = member->value.GetString();
 		}
 
+		void ReadScriptInstances(const JsonValue& scripting, std::vector<ScriptInstanceConfig>& output)
+		{
+			const auto member = scripting.FindMember("instances");
+			if (member == scripting.MemberEnd()) return;
+			if (!member->value.IsArray()) throw std::runtime_error("EngineConfigLoader: scripting.instances must be an array.");
+			std::vector<ScriptInstanceConfig> instances;
+			for (const auto& value : member->value.GetArray()) {
+				if (!value.IsObject()) throw std::runtime_error("EngineConfigLoader: each scripting instance must be an object.");
+				ScriptInstanceConfig instance;
+				ReadString(value, "assembly", instance.assembly);
+				ReadString(value, "namespace", instance.nameSpace);
+				ReadString(value, "class", instance.className);
+				ReadBool(value, "enabled", instance.enabled);
+				if (instance.assembly.empty() || instance.className.empty())
+					throw std::runtime_error("EngineConfigLoader: scripting instances require assembly and class (namespace may be empty).");
+				instances.push_back(std::move(instance));
+			}
+			output = std::move(instances); // per-app arrays replace the shared list, including []
+		}
+
 		// "aspectRatio": [16, 9]  ->  width / height. [0, 0] means free aspect.
 		void ReadAspect(const JsonValue& object, const char* key, std::uint32_t& width, std::uint32_t& height)
 		{
@@ -169,6 +190,7 @@ namespace Crucible
 				ReadUInt(*graphics, "windowWidth", config.graphics.windowWidth);
 				ReadUInt(*graphics, "windowHeight", config.graphics.windowHeight);
 				ReadBool(*graphics, "fullScreen", config.graphics.fullScreen);
+				ReadBool(*graphics, "maximized", config.graphics.maximized);
 				ReadUInt(*graphics, "targetFPS", config.graphics.targetFPS);
 			}
 
@@ -192,6 +214,17 @@ namespace Crucible
 			{
 				ReadString(*project, "startupScene", config.project.startupScene);
 				ReadAspect(*project, "aspectRatio", config.project.aspectWidth, config.project.aspectHeight);
+			}
+			if (const JsonValue* scripting = FindSection(root, "scripting")) {
+				ReadBool(*scripting, "enabled", config.scripting.enabled);
+				ReadString(*scripting, "runtimeDirectory", config.scripting.runtimeDirectory);
+				ReadBool(*scripting, "verifyManagedExecution", config.scripting.verifyManagedExecution);
+				ReadString(*scripting, "startupAssembly", config.scripting.startupAssembly);
+				ReadString(*scripting, "startupNamespace", config.scripting.startupNamespace);
+				ReadString(*scripting, "startupClass", config.scripting.startupClass);
+				ReadString(*scripting, "startupMethod", config.scripting.startupMethod);
+				ReadBool(*scripting, "startupStatic", config.scripting.startupStatic);
+				ReadScriptInstances(*scripting, config.scripting.instances);
 			}
 		}
 
@@ -238,6 +271,35 @@ namespace Crucible
 
 		// Inside the Assets folder.
 		constexpr const char* CONFIG_RELATIVE_PATH = "Config/EngineConfig.json";
+
+		// Next to the .exe.
+		constexpr const char* USER_SETTINGS_FILE = "UserSettings.json";
+
+		// Layers `app`'s section of UserSettings.json onto `config`. Only the window mode is
+		// taken from it - it is machine-written and must not quietly override project settings
+		// such as the startup scene. A missing file is normal; a broken one is ignored.
+		void ApplyUserSettings(AppKind app, EngineConfig& config)
+		{
+			const std::filesystem::path path = EngineConfigLoader::UserSettingsFile();
+			std::error_code ec;
+			if (path.empty() || !std::filesystem::exists(path, ec)) return;
+
+			try
+			{
+				rapidjson::Document document = ReadRoot(path);
+				const JsonValue* section = FindSection(document, AppSectionName(app));
+				if (section == nullptr) return;
+				if (const JsonValue* graphics = FindSection(*section, "graphics"))
+				{
+					ReadBool(*graphics, "fullScreen", config.graphics.fullScreen);
+					ReadBool(*graphics, "maximized",  config.graphics.maximized);
+				}
+			}
+			catch (const std::exception& e)
+			{
+				CRU_WARN("EngineConfigLoader: ignoring '{}' - {}", path.string(), e.what());
+			}
+		}
 	}
 
 	EngineConfig EngineConfigLoader::Load(const std::filesystem::path& path)
@@ -252,9 +314,8 @@ namespace Crucible
 
 	std::filesystem::path EngineConfigLoader::FindConfigFile()
 	{
-		const std::filesystem::path assetRoot = AssetManager::FindAssetRoot({});
-		if (assetRoot.empty()) return {};
-		return assetRoot / CONFIG_RELATIVE_PATH;
+		if (AssetRoot().empty()) return {};
+		return AssetPath(CONFIG_RELATIVE_PATH);
 	}
 
 	bool EngineConfigLoader::Save(const EngineConfig& config, const std::filesystem::path& path)
@@ -280,6 +341,7 @@ namespace Crucible
 		doc.Set("graphics/windowWidth",  config.graphics.windowWidth);
 		doc.Set("graphics/windowHeight", config.graphics.windowHeight);
 		doc.Set("graphics/fullScreen",   config.graphics.fullScreen);
+		doc.Set("graphics/maximized",    config.graphics.maximized);
 		doc.Set("graphics/targetFPS",    config.graphics.targetFPS);
 
 		doc.Set("network/port",       config.network.port);
@@ -291,6 +353,23 @@ namespace Crucible
 
 		doc.Set("project/startupScene", config.project.startupScene);
 		doc.SetList("project/aspectRatio", std::vector<std::uint32_t>{ config.project.aspectWidth, config.project.aspectHeight });
+		doc.Set("scripting/enabled", config.scripting.enabled);
+		doc.Set("scripting/runtimeDirectory", config.scripting.runtimeDirectory);
+		doc.Set("scripting/verifyManagedExecution", config.scripting.verifyManagedExecution);
+		doc.Set("scripting/startupAssembly", config.scripting.startupAssembly);
+		doc.Set("scripting/startupNamespace", config.scripting.startupNamespace);
+		doc.Set("scripting/startupClass", config.scripting.startupClass);
+		doc.Set("scripting/startupMethod", config.scripting.startupMethod);
+		doc.Set("scripting/startupStatic", config.scripting.startupStatic);
+		doc.SetList("scripting/instances", std::vector<std::string>{});
+		for (std::size_t i = 0; i < config.scripting.instances.size(); ++i) {
+			const auto pathPrefix = "scripting/instances/" + std::to_string(i) + "/";
+			const auto& instance = config.scripting.instances[i];
+			doc.Set(pathPrefix + "assembly", instance.assembly);
+			doc.Set(pathPrefix + "namespace", instance.nameSpace);
+			doc.Set(pathPrefix + "class", instance.className);
+			doc.Set(pathPrefix + "enabled", instance.enabled);
+		}
 
 		if (!doc.SaveToFile(path))
 		{
@@ -313,6 +392,8 @@ namespace Crucible
 			ReadOptional(*graphics, "windowTitle",  overrides.windowTitle,  ReadString);
 			ReadOptional(*graphics, "windowWidth",  overrides.windowWidth,  ReadUInt);
 			ReadOptional(*graphics, "windowHeight", overrides.windowHeight, ReadUInt);
+			ReadOptional(*graphics, "fullScreen",   overrides.fullScreen,   ReadBool);
+			ReadOptional(*graphics, "maximized",    overrides.maximized,    ReadBool);
 		}
 		if (const JsonValue* project = FindSection(*section, "project"))
 		{
@@ -341,7 +422,46 @@ namespace Crucible
 		SetOrRemove(doc, section + "/graphics/windowTitle",  overrides.windowTitle);
 		SetOrRemove(doc, section + "/graphics/windowWidth",  overrides.windowWidth);
 		SetOrRemove(doc, section + "/graphics/windowHeight", overrides.windowHeight);
+		SetOrRemove(doc, section + "/graphics/fullScreen",   overrides.fullScreen);
+		SetOrRemove(doc, section + "/graphics/maximized",    overrides.maximized);
 		SetOrRemove(doc, section + "/project/startupScene",  overrides.startupScene);
+
+		if (!doc.SaveToFile(path))
+		{
+			CRU_WARN("EngineConfigLoader: could not write '{}'", path.string());
+			return false;
+		}
+		return true;
+	}
+
+	std::filesystem::path EngineConfigLoader::UserSettingsFile()
+	{
+		const std::filesystem::path& dir = ExecutableDirectory();
+		if (dir.empty()) return {};
+		return dir / USER_SETTINGS_FILE;
+	}
+
+	bool EngineConfigLoader::SaveWindowState(AppKind app, bool fullScreen, bool maximized)
+	{
+		const std::filesystem::path path = UserSettingsFile();
+		if (path.empty())
+		{
+			CRU_WARN("EngineConfigLoader: no folder to save UserSettings.json in");
+			return false;
+		}
+
+		// Keep the other app's section. A broken file is machine-written, so start it over.
+		JsonWrapper doc;
+		std::error_code ec;
+		if (std::filesystem::exists(path, ec) && !doc.ReadFromFile(path))
+		{
+			CRU_WARN("EngineConfigLoader: '{}' could not be parsed - rewriting it", path.string());
+			doc.CreateEmpty();
+		}
+
+		const std::string section = AppSectionName(app);
+		doc.Set(section + "/graphics/fullScreen", fullScreen);
+		doc.Set(section + "/graphics/maximized",  maximized);
 
 		if (!doc.SaveToFile(path))
 		{
@@ -357,7 +477,10 @@ namespace Crucible
 		if (path.empty())
 		{
 			CRU_WARN("EngineConfigLoader: no Assets folder found - using default config");
-			return EngineConfig{};
+			EngineConfig config{};
+			config.app = app;
+			ApplyUserSettings(app, config);
+			return config;
 		}
 
 		try
@@ -370,13 +493,20 @@ namespace Crucible
 			if (const JsonValue* overrides = FindSection(document, AppSectionName(app)))
 				ApplySections(*overrides, config);
 
+			// This user's last window mode on this machine, on top of the project's.
+			ApplyUserSettings(app, config);
+			config.app = app;
+
 			CRU_INFO("EngineConfigLoader: loaded '{}' ({})", path.string(), AppSectionName(app));
 			return config;
 		}
 		catch (const std::exception& e)
 		{
 			CRU_WARN("EngineConfigLoader: could not load '{}' - using default config. {}", path.string(), e.what());
-			return EngineConfig{};
+			EngineConfig config{};
+			config.app = app;
+			ApplyUserSettings(app, config);
+			return config;
 		}
 	}
 }

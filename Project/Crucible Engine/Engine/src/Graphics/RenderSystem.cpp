@@ -255,6 +255,14 @@ namespace Crucible {
 
     }   // Renderer::DrawFrame()
 
+    bool Renderer::GetObjectBounds(std::uint64_t userData, glm::vec3& outMin, glm::vec3& outMax) const {
+        return m_scene.GetObjectBounds(userData, outMin, outMax);
+    }
+
+    void Renderer::SetRenderProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
+                                           const glm::vec3& boundsMin, const glm::vec3& boundsMax) {
+        m_scene.SetProxyAnimation(handle, palette, boundsMin, boundsMax);
+    }
     void Renderer::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) { m_scene.Submit(mesh, material, model, params); }
 
     void Renderer::CreatePrimitiveMeshes() {
@@ -401,7 +409,7 @@ namespace Crucible {
                 if (vp.debugDraw) { m_debugLinePass.Record(*fc.frame.commandBuffer, vp.extent, frameSet, m_frameManager.GetFrameIndex()); }
             }
             // UI last, over everything: the game's UI in Game views, then this viewport's own.
-            if (vp.role == ViewportRole::Game) { m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, vp.extent, vp.uiTransform, UIPass::kScreenTarget); }
+            if (vp.role == ViewportRole::Game) { m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, vp.extent, vp.uiTransform, UIPass::m_screenTarget); }
             m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, vp.extent, vp.uiTransform, id);
             fc.frame.commandBuffer.endRendering();
 
@@ -502,7 +510,7 @@ namespace Crucible {
         // The standalone game's UI, camera or not. (In the editor the window holds only ImGui;
         // the game's UI is in the Game view.)
         if (m_viewportSet.All().empty()) {
-            m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, m_swapchain.GetExtent(), glm::vec4(1.0f, 1.0f, 0.0f, 0.0f), UIPass::kScreenTarget);
+            m_uiPass.Record(*fc.frame.commandBuffer, frameIndex, m_swapchain.GetExtent(), glm::vec4(1.0f, 1.0f, 0.0f, 0.0f), UIPass::m_screenTarget);
         }
 
         // Overlay layers (Editor ImGui, etc.) draw here, inside the open render pass.
@@ -605,7 +613,7 @@ namespace Crucible {
     //  SCREEN-SPACE UI (UIPass)
     // ------------------------------------------------------------------------------------------------------------- //
 
-    void Renderer::SubmitUI(const UIDrawList& list) { m_uiPass.Submit(UIPass::kScreenTarget, list); }
+    void Renderer::SubmitUI(const UIDrawList& list) { m_uiPass.Submit(UIPass::m_screenTarget, list); }
 
     void Renderer::SubmitViewportUI(ViewportHandle viewport, const UIDrawList& list) {
 
@@ -714,6 +722,12 @@ namespace Crucible {
         return *m_viewportSet.Get(handle).colorView;
 
     }   // Renderer::GetViewportColorView()
+
+    vk::ImageView Renderer::GetTextureView(TextureHandle handle) const {
+
+        return *m_resources.GetTextureOrThrow(handle).view;
+
+    }   // Renderer::GetTextureView()
 
     void Renderer::CreateUniformBuffers() {
 

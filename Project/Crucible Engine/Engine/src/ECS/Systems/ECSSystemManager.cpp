@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                Implementation of ECSSystemManager: drives every
 *                registered system's Init/Update/Shutdown, in order.
@@ -41,6 +41,12 @@
 *                only to systems that declared EmitsGameplayEvents()
 *    -v1.7       SimulationOnly() systems skipped (Update and replay) while
 *                the simulation is off; ResetSimulationSystems()
+*    -v1.8       on/off routing for ReactiveTo<...>() systems: AttachWorld installs
+*                weak-linked World hooks, QueueActivation keeps every change
+*                in the order it happened, DeliverActivations runs before Update
+*                in the system's access scope; inboxes cleared on Shutdown /
+*                ResetSimulationSystems; activation shown in LogSchedule;
+*                a removed component's queued changes are forgotten
 *
 **************************************************************************/
 
@@ -125,6 +131,7 @@ namespace Crucible
 			desc.stage = system.Stage();
 			desc.priority = system.Priority();
 			system.Describe(desc);
+			desc.reactiveComponents = system.ReactiveComponents();   // ReactiveTo<...>() at registration
 
 			nodes.push_back(SystemNode{ std::move(desc), m_registry.TypeAt(index), SystemName(system) });
 		}
@@ -191,6 +198,8 @@ namespace Crucible
 
 	void ECSSystemManager::Update(World& world)
 	{
+		AttachWorld(world);   // cheap when nothing new to route (systems registered since are picked up here)
+
 		ScopedFlag running(m_iterating);
 
 		for (const StageSchedule& stage : m_schedule.stages)
@@ -202,6 +211,85 @@ namespace Crucible
 
 			// Flush structural ECS changes after the stage finishes, so later stages see them.
 			FlushStage(stage, world);
+		}
+	}
+
+	void ECSSystemManager::AttachWorld(World& world)
+	{
+		// Every component some reactive system declared, minus those already routed in this World.
+		ComponentSignature wanted;
+		// Read from the systems, not the schedule, so ReactiveTo after Init is picked up too.
+		for (std::size_t index = 0; index < m_registry.Size(); ++index) wanted |= m_registry.GetSystem(index).ReactiveComponents();
+		ComponentSignature& hooked = m_activationHooked[&world];
+		const ComponentSignature missing = wanted & ~hooked;
+		if (missing.none()) return;
+
+		if (!m_activationRouter) m_activationRouter = std::make_shared<ActivationRouter>(ActivationRouter{ this });
+		const std::weak_ptr<ActivationRouter> router = m_activationRouter;
+		for (ComponentId id = 0; id < kMaxComponents; ++id)
+		{
+			if (!missing.test(id)) continue;
+			// One hook per component per World, never removed: it only queues, and does nothing
+			// once this manager is gone.
+			world.OnComponentActiveChanged(id, [router, id](World&, Entity entity, bool active)
+				{
+					if (const std::shared_ptr<ActivationRouter> live = router.lock()) live->manager->QueueActivation(entity, id, active);
+				});
+			// Removed (or destroyed): what was queued for it must not reach a component added later.
+			world.OnComponentRemoved(id, [router, id](World&, Entity entity)
+				{
+					if (const std::shared_ptr<ActivationRouter> live = router.lock()) live->manager->ForgetActivation(entity, id);
+				});
+			hooked.set(id);
+		}
+	}
+
+	void ECSSystemManager::QueueActivation(Entity entity, ComponentId component, bool active)
+	{
+		for (std::size_t index = 0; index < m_slots.size(); ++index)
+		{
+			if (!m_registry.GetSystem(index).ReactiveComponents().test(component)) continue;
+			SystemSlot& slot = m_slots[index];
+			if (slot.disabled) continue;   // won't run; a re-enabled system starts from the current state
+
+			// Every change, in the order it happened, so the callbacks replay them exactly. The
+			// count per (entity, component) lets a removal skip the scan when nothing is queued.
+			slot.activations.push_back({ entity, component, active });
+			++slot.activationCount[SystemSlot::ActivationKey{ entity.index, entity.generation, component }];
+		}
+	}
+
+	void ECSSystemManager::ForgetActivation(Entity entity, ComponentId component)
+	{
+		const SystemSlot::ActivationKey key{ entity.index, entity.generation, component };
+		for (SystemSlot& slot : m_slots)
+		{
+			const auto it = slot.activationCount.find(key);
+			if (it == slot.activationCount.end()) continue;
+			// Marked, not erased; changes queued after this belong to the component added next.
+			for (SystemSlot::PendingActivation& change : slot.activations)
+				if (change.entity == entity && change.component == component) change.removed = true;
+			slot.activationCount.erase(it);
+		}
+	}
+
+	void ECSSystemManager::DeliverActivations(std::size_t index, World& world)
+	{
+		SystemSlot& slot = m_slots[index];
+		if (slot.activations.empty()) return;
+
+		// Taken out first: a callback that switches something again queues for the next run.
+		std::vector<SystemSlot::PendingActivation> pending = std::move(slot.activations);
+		slot.ClearActivations();
+
+		IECSSystem& system = m_registry.GetSystem(index);
+		for (const SystemSlot::PendingActivation& change : pending)
+		{
+			// Destroyed, or the component removed since: that isn't an on/off change - the
+			// system's usual removal handling covers it.
+			if (change.removed || !world.IsAlive(change.entity) || !world.GetSignature(change.entity).test(change.component)) continue;
+			if (change.active) system.OnComponentActivated(world, change.entity, change.component);
+			else               system.OnComponentDeactivated(world, change.entity, change.component);
 		}
 	}
 
@@ -251,6 +339,10 @@ namespace Crucible
 				: EventRoute::Engine | EventRoute::Network;
 			EventWriter events(slot.engineOut, slot.gameplayOut, slot.networkOut, routes, m_schedule.names[index].c_str());
 			SystemContext ctx{ slot.commands, events };
+
+			// On/off changes first (ReactiveTo systems), in the same access scope, so the
+			// system has reacted before it uses its state this frame.
+			DeliverActivations(index, world);
 			m_registry.GetSystem(index).Update(world, ctx);
 		}
 		catch (const std::exception& e)
@@ -395,6 +487,7 @@ namespace Crucible
 		{
 			slot.commands.Clear();
 			slot.ClearOutboxes();
+			slot.ClearActivations();
 		}
 
 		m_initialized = false;
@@ -409,6 +502,7 @@ namespace Crucible
 			SystemSlot& slot = m_slots[index];
 			slot.commands.Clear();
 			slot.ClearOutboxes();
+			slot.ClearActivations();   // a new session starts from the components as they are now
 			slot.consecutiveFailures = 0;
 			slot.failedThisFrame = false;
 			if (slot.initialised) slot.disabled = false;   // disabled by failures, not by a failed Init()
@@ -430,8 +524,13 @@ namespace Crucible
 						: desc.access.exclusive ? std::string("exclusive")
 						: "reads " + ComponentList(desc.access.reads) + " writes " + ComponentList(desc.access.writes);
 
-					CRU_INFO("  {} batch {}: {} [priority {}, {}, {}{}{}]", StageName(stage.stage), batchIndex,
-						m_schedule.names[index], desc.priority, AffinityName(desc.affinity), access,
+					const ComponentSignature& reactive = m_registry.GetSystem(index).ReactiveComponents();
+					const std::string activation = reactive.any()
+						? "activation reactive to " + ComponentList(reactive)
+						: std::string("activation filtered");
+
+					CRU_INFO("  {} batch {}: {} [priority {}, {}, {}, {}{}{}]", StageName(stage.stage), batchIndex,
+						m_schedule.names[index], desc.priority, AffinityName(desc.affinity), access, activation,
 						desc.emitsGameplayEvents ? ", emits gameplay events" : "",
 						desc.simulationOnly ? ", simulation only" : "");
 				}

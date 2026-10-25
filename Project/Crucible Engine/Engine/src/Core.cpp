@@ -14,11 +14,15 @@
 #include "Scene/Scene.h"
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/RenderExtractSystem.h"
+#include "Animation/AnimatedModelSystem.h"
+#include "Animation/SocketAttachmentSystem.h"
 #include "Graphics/DebugDrawSystem.h"
 #include "Graphics/ParticleSystem.h"
 #include "Graphics/StressMoverSystem.h"   // TEMPORARY: load testing
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"
+#include "Scripting/ScriptRuntime.h"
+#include "Scripting/EntityScriptSystem.h"
 
 // STL
 #include <algorithm>
@@ -35,7 +39,8 @@ namespace Crucible {
 
     Core::Core(const EngineConfig& config) :
         m_config{ config },
-        m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
+        m_window{ new WindowManager(static_cast<int>(m_config.graphics.windowWidth), static_cast<int>(m_config.graphics.windowHeight),
+                                    m_config.graphics.windowTitle, m_config.graphics.fullScreen, m_config.graphics.maximized) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() },
         m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
@@ -59,9 +64,25 @@ namespace Crucible {
     void  Core::UnlockWindowAspectRatio()                    { m_window->UnlockAspectRatio(); }
     float Core::GetWindowAspectRatioLock() const             { return m_window->GetLockedAspectRatio(); }
 
+    void Core::SetFullscreen(bool fullscreen) {
+        if (fullscreen == m_window->IsFullscreen()) { return; }
+        m_window->SetFullscreen(fullscreen);
+        SaveWindowState();
+    }
+
+    void Core::MaximizeWindow() { m_window->Maximize(); SaveWindowState(); }
+    void Core::RestoreWindow()  { m_window->Restore();  SaveWindowState(); }
+
+    void Core::SaveWindowState() const {
+        EngineConfigLoader::SaveWindowState(m_config.app, m_window->IsFullscreen(), m_window->IsMaximized());
+    }
+
     bool Core::Init()
     {
         std::cout << "The Hearth smoulders...\n";
+        m_scriptRuntime = std::make_unique<ScriptRuntime>();
+        if (!m_scriptRuntime->Initialize(m_config.scripting)) return false;
+        if (!m_scriptRuntime->RunStartupEntry(m_config.scripting)) return false;
 
         // Input attaches before anything else installs GLFW callbacks. ImGui's backend
         // chains to callbacks that are already registered, but anything installed after it
@@ -72,20 +93,22 @@ namespace Crucible {
         // Shared asset index + resource cache. Before RegisterEngineSystems(): the render
         // extraction system resolves MeshRenderer/Skybox asset ids through the ResourceManager.
         m_assets = std::make_unique<AssetManager>();
-        if (!m_assets->Init()) { CRU_WARN("[Core] AssetManager found no asset root; asset ids will not resolve"); }
+        // Without an asset index nothing resolves (scenes, meshes, materials): stop rather than run
+        // a half-working engine. The mains' RequireAssetRoot() check normally catches this first.
+        if (!m_assets->Init()) { CRU_ERROR("[Core] AssetManager found no asset root - cannot start"); return false; }
         m_resources = std::make_unique<ResourceManager>(*m_assets, *m_renderer);
         m_resources->Init();
 
         // ======== asset debugging (Removable) ==========
         // On the shared index. A second AssetManager here used to run its own reconcile -
         // writing .meta files a second time on every launch - before m_assets even existed.
-        {
-            std::cout << "\n\n";
-            m_assets->PrintIndex();
+        //{
+        //    std::cout << "\n\n";
+        //    m_assets->PrintIndex();
 
-            auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
-            m_assets->PrintLoaded();
-        }
+        //    auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
+        //    m_assets->PrintLoaded();
+        //}
         // ===========================================
 
         // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
@@ -109,7 +132,15 @@ namespace Crucible {
         // The engine starts in Edit: AudioSources stay silent until Play (PlayMode switches it).
         if (ECSAudioSystem* audio = m_systems.FindSystem<ECSAudioSystem>()) audio->SetEditMode(true);
 
+        // Standalone instances retain Core lifetime alongside the separate
+        // Play-scoped ScriptComponent instances owned by EntityScriptSystem.
+        if (!m_scriptRuntime->CreateConfiguredInstances(m_config.scripting)) return false;
+
         return true;
+    }
+
+    void Core::RequestQuit() {
+        if (m_window) { m_window->RequestClose(); }
     }
 
     void Core::Run() {
@@ -139,6 +170,10 @@ namespace Crucible {
             m_scenes->ApplyPending();
             m_playMode->ApplyRequests();
 
+            // S3 instances follow Core lifetime. This tick excludes entity-owned
+            // instances, which EntityScriptSystem schedules through PlayMode.
+            if (m_scriptRuntime->IsRunning()) m_scriptRuntime->UpdateInstances(dt);
+
             m_world->SetDeltaTime(dt);
             m_world->AdvanceTick();
             m_playMode->UpdateSystems();        // every system (SimulationOnly ones only while Playing); each stage delivers its own events
@@ -148,6 +183,8 @@ namespace Crucible {
             for (auto& layer : m_layers) layer->OnUpdate(dt);
             m_renderer->Update(dt);
         }
+        // Entity teardown precedes GPU shutdown as well as world destruction.
+        if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
         m_renderer->ShutDown();
     }
 
@@ -160,13 +197,20 @@ namespace Crucible {
 
     void Core::RegisterEngineSystems()
     {
+        m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
-        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get());                            // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
-        m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
-        m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get());   // the scene turns a PhysicsJoint's saved connected body back into an entity
+        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
+            .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
+        m_systems.RegisterSystem<ECSPlayerControllerSystem>()                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
+            .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
+        m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get())                      // the scene turns a PhysicsJoint's saved connected body back into an entity
+            .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
-        m_systems.RegisterSystem<HierarchyTransformSystem>();   // first in PreRender: fills WorldTransform
+        m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
+        auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
+        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(&animator);
+        m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
@@ -175,6 +219,10 @@ namespace Crucible {
     }
 
     void Core::CleanUp() {
+        if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
+        // Run managed teardown while Core's resources/systems are still alive.
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(nullptr);
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }
@@ -187,6 +235,12 @@ namespace Crucible {
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
+        // Managed instances/bindings added later must be released before final cleanup.
+        // Play/Stop never destroys or restarts the process-wide Mono runtime.
+        if (m_scriptRuntime) m_scriptRuntime->Shutdown();
+
+        // Remember how the window was left (fullscreen / maximized) for the next launch.
+        SaveWindowState();
 
         m_input.Shutdown();
         m_window->ShutDown();

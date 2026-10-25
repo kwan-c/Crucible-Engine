@@ -27,6 +27,8 @@
 *************************************************************************/
 #include "AssetManager.h"
 #include "AssetRegistry.h"
+#include "AssetPaths.h"
+#include "Systems/ExecutablePath.h"
  
 #include <algorithm>
 #include <array>
@@ -36,7 +38,9 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <string>
 #include <xresource_guid.h>
+
 
 namespace fs = std::filesystem;
  
@@ -113,6 +117,7 @@ namespace Crucible {
         case AssetType::Material: return "Material";
         case AssetType::Script:   return "Script";
         case AssetType::Text:     return "Text";
+        case AssetType::AnimatorController: return "AnimatorController";
         case AssetType::Unknown:  return "Unknown";
         case AssetType::Count:    break;
         }
@@ -163,7 +168,7 @@ namespace Crucible {
             e == ".bmp" || e == ".dds" || e == ".hdr")
             return AssetType::Texture;
  
-        if (e == ".gltf" || e == ".glb" || e == ".fbx" || e == ".obj" || e == ".dae")
+        if (e == ".cmodel" || e == ".gltf" || e == ".glb" || e == ".fbx" || e == ".obj" || e == ".dae")
             return AssetType::Model;
  
         if (e == ".vert" || e == ".frag" || e == ".geom" || e == ".comp" ||
@@ -180,16 +185,19 @@ namespace Crucible {
         if (e == ".scene")  
             return AssetType::Scene;
 
-        if (e == ".prefab") 
+        if (e == ".cprefab") 
             return AssetType::Prefab;
 
         if (e == ".mat")    
             return AssetType::Material;
+
+        if (e == ".animcontroller")
+            return AssetType::AnimatorController;
  
-        if (e == ".ttf" || e == ".otf")
+        if (e == ".ttf" || e == ".otf" || e == ".cfont")   // .cfont = compiled by the editor (Text/FontData.h)
             return AssetType::Font;
  
-        if (e == ".lua" || e == ".cs")
+        if (e == ".cs")
             return AssetType::Script;
  
         if (e == ".json" || e == ".txt" || e == ".xml" ||
@@ -205,9 +213,8 @@ namespace Crucible {
  
     fs::path AssetManager::GetExecutableDirectory()
     {
-        std::error_code ec;
-        const fs::path cwd = fs::current_path(ec);
-        return ec ? fs::path{} : cwd;
+        // Shared with the logger (crucible.log goes next to the .exe) - see Systems/ExecutablePath.h.
+        return ExecutableDirectory();
     }
  
     fs::path AssetManager::FindAssetRoot(const std::string& explicitRoot)
@@ -281,7 +288,9 @@ namespace Crucible {
  
     bool AssetManager::Init(const std::string& explicitRoot)
     {
-        m_assetRoot = FindAssetRoot(explicitRoot);
+        // No explicit root: use the engine-wide one (AssetPaths.h), so the index, the shaders and
+        // the config file can never disagree about which Assets folder they are using.
+        m_assetRoot = explicitRoot.empty() ? AssetRoot() : FindAssetRoot(explicitRoot);
  
         if (m_assetRoot.empty())
         {
