@@ -73,6 +73,10 @@ namespace Crucible {
 		// Rescan the Assets folder (picks up files added / renamed / removed on disk).
 		void Refresh();
 
+		// Show an asset: clears the search, opens its folder, selects it and brings the browser
+		// to the front. Used by the Inspector's prefab bar (Select).
+		void Reveal(std::string const& virtualPath);
+
 	private:
 		bool IsRefreshAllowed() const;
 

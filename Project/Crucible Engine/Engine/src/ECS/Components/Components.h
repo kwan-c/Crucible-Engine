@@ -632,6 +632,33 @@ namespace Crucible
 		std::string name;
 	};
 
+	/*************************************************************************
+	 \brief  Links an entity to the prefab (.cprefab) it was placed from.
+	 \details
+		Prefab::Instantiate puts one on every entity it creates; the editor's
+		Create Prefab puts them on the entities a prefab was made from.
+		prefabAsset is the .cprefab's asset guid (from its .meta), fileId the
+		entry the entity came from - stable when the file is re-saved, unlike
+		the entry's position - and isRoot marks the instance's top entity.
+		Saved in scenes, so the link survives a reload, undo and copy/paste;
+		Prefab::SaveFrom never writes it into a .cprefab. The Inspector does
+		not list it: it shows a prefab bar instead (Prefabs/PrefabAuthoring.h).
+	 *************************************************************************/
+	struct PrefabInstance
+	{
+		std::uint64_t prefabAsset = 0;      // asset guid of the .cprefab
+		std::uint64_t fileId      = 0;      // the entry's id inside that file
+		bool          isRoot      = false;  // the instance's top entity
+		// Root only: content hash of the .cprefab this instance was last brought up to date with
+		// (0 = not known yet). When the file's hash differs - changed in another scene, or by a
+		// git pull - the editor updates the instance on scene open / Asset Browser Refresh.
+		std::uint64_t prefabHash  = 0;
+		// What this entity changed from its prefab entry, as of the last scene save (the editor
+		// refreshes it before every save): "Collider/m_size", "Collider/$enabled", "+Light"
+		// (added), "-Collider" (removed). Propagation uses it to know what to keep.
+		std::vector<std::string> overrides;
+	};
+
 	// Bind each component above to its ComponentKind (see ComponentKind.h)
 	// and give ComponentRegistry a compile-time name for it.
 	CRUCIBLE_COMPONENT(Transform, Transform);
@@ -649,6 +676,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(StressMover, StressMover);
 	CRUCIBLE_COMPONENT(EntityName, EntityName);
 	CRUCIBLE_COMPONENT(Water, Water);
+	CRUCIBLE_COMPONENT(PrefabInstance, PrefabInstance);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
 	template<>

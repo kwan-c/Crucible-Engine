@@ -200,6 +200,15 @@ namespace Crucible {
 		 *********************************************************************/
 		void OnSceneChanged(std::function<void()> callback);
 
+		/*********************************************************************
+		 \brief  Register a callback run at the start of every Save / SaveAs,
+				 just before the file is written (after the play-mode check).
+		 \details
+			For editor tools that keep data on entities which must be up to
+			date in the file - the prefab override lists, for one.
+		 *********************************************************************/
+		void OnBeforeSave(std::function<void()> callback);
+
 	private:
 		enum class Pending { None, New, Load };
 
@@ -224,6 +233,7 @@ namespace Crucible {
 		std::filesystem::path				 m_pendingPath;
 
 		std::vector<std::function<void()>>	 m_listeners;
+		std::vector<std::function<void()>>	 m_beforeSave;   // OnBeforeSave
 	};
 
 #ifdef _MSC_VER

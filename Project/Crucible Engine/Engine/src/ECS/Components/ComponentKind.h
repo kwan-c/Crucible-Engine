@@ -87,9 +87,10 @@ namespace Crucible
 		AnimatedModel = 25,
 		SocketAttachment = 26,
 		ScriptComponent = 27,
+		PrefabInstance = 28,     // Editor/Scene: links an entity to the .cprefab it was placed from (Scene/Prefab.h)
 
 
-		MAXCOMPONENT = 28
+		MAXCOMPONENT = 29
 	};
 
 
@@ -262,5 +263,6 @@ namespace Crucible
  X(AnimatedModel)                                                              \
  X(SocketAttachment)                                                           \
  X(ScriptComponent)                                                            \
+ X(PrefabInstance)                                                             \
 
 }

@@ -3,7 +3,7 @@
   \author     Tok Duan Jie Nelson, Tan Chun Kwang Xavier
   \par        Email: t.duanjienelson@digipen.edu, chunkwangxavier.tan@digipen.edu
   \date       29 September 2026
-  \version    2.0
+  \version    3.0
   \brief
     A saved entity template - one entity and all its children - that can be
     stamped into a world repeatedly.
@@ -50,6 +50,10 @@
       or exactly on their parent. Instantiate takes an optional parent.
       Version 1 files still load. Prefab files use the .cprefab
       extension (kPrefabExtension).
+    - 3.0 (25 October 2026): Every entry carries a stable "id". Instantiate
+      links each new entity to the file (PrefabInstance, when the file was
+      loaded from a registered asset); SaveFrom never writes that link into
+      a file. Version 1 and 2 files still load, with positions as ids.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -59,6 +63,8 @@
 #include <filesystem>
 #include <string>
 #include <vector>
+#include <cstdint>
+#include <utility>
 
 #include "ECS/Core/ECSCore.h"     // Entity, kNullEntity
 #include "Json/JsonWrapper.h"
@@ -73,8 +79,11 @@ namespace Crucible {
      \details
         1 - one entity under "entity/components".
         2 - an "entities" array with parent indices (see the file header).
+        3 - each entry also has a stable "id" (16 hex digits) that instances
+            link to (PrefabInstance::fileId). Version 1 and 2 files load with
+            their positions as ids.
      *************************************************************************/
-    inline constexpr int kPrefabVersion = 2;
+    inline constexpr int kPrefabVersion = 3;
 
     /*************************************************************************
      \brief  File extension of a prefab, including the dot.
@@ -129,6 +138,8 @@ namespace Crucible {
          \param[in] file   Destination, e.g. "Prefabs/Crate.cprefab".
          \param[in] name   Name stored in the file. Defaults to the
                            filename without its extension.
+         \param[out] outIds Optional: receives every saved entity with the
+                           id its entry got, parents first.
          \return true if the file was written.
 
          \details
@@ -143,7 +154,8 @@ namespace Crucible {
         static bool SaveFrom(World& world,
                              Entity root,
                              const std::filesystem::path& file,
-                             const std::string& name = std::string{});
+                             const std::string& name = std::string{},
+                             std::vector<std::pair<Entity, std::uint64_t>>* outIds = nullptr);
 
         /*********************************************************************
          \brief  Read a prefab file into memory, ready to instantiate.
@@ -175,6 +187,11 @@ namespace Crucible {
          \return
             The new root entity, or kNullEntity if this Prefab is not valid.
 
+         \details
+            When the file was Load()ed from a registered asset (it has a
+            .meta), every new entity gets a PrefabInstance linking it back to
+            this file and entry - that is what makes it an instance.
+
          \note
             Each component added is a structural change, so every new entity
             moves archetype once per component. Do not call this from inside
@@ -198,6 +215,46 @@ namespace Crucible {
          *********************************************************************/
         std::size_t EntityCount() const { return m_valid ? m_parents.size() : 0; }
 
+        /*********************************************************************
+         \brief  The loaded file's asset guid, read from its .meta - what
+                 instances link to. 0 after LoadFromString, or for a file
+                 with no .meta (Instantiate then makes unlinked entities).
+         *********************************************************************/
+        std::uint64_t AssetGuid() const { return m_asset; }
+
+        /*********************************************************************
+         \brief  Content hash of the loaded file (AssetRegistry::HashFileContents,
+                 the same hash .meta files hold); 0 after LoadFromString.
+                 Instantiate records it on the new root, so the editor can tell
+                 when the file has changed since.
+         *********************************************************************/
+        std::uint64_t ContentHash() const { return m_hash; }
+
+        /*********************************************************************
+         \brief  Where the entry with this id is in the file: its index, or -1
+                 (also -1 when nothing is loaded).
+         *********************************************************************/
+        int IndexOf(std::uint64_t fileId) const;
+
+        /*********************************************************************
+         \brief  The document path holding entry `index`'s components, e.g.
+                 "entities/2/components" - what an instance is compared with.
+         *********************************************************************/
+        std::string ComponentsPath(std::size_t index) const;
+
+        /*********************************************************************
+         \brief  The parsed file, read-only.
+         *********************************************************************/
+        const JsonWrapper& Document() const { return m_doc; }
+
+        /*********************************************************************
+         \brief  Entry `index`'s stable id / parent index (-1 for the root),
+                 and the loaded file's format version.
+         *********************************************************************/
+        std::uint64_t IdAt(std::size_t index) const { return index < m_ids.size() ? m_ids[index] : 0; }
+        int ParentAt(std::size_t index) const { return index < m_parents.size() ? m_parents[index] : -1; }
+        int Version() const { return m_version; }
+
     private:
         /*********************************************************************
          \brief  Shared tail of Load / LoadFromString: version check and
@@ -211,6 +268,9 @@ namespace Crucible {
         std::string      m_name;
         int              m_version = 0;   //!< version of the loaded file (1 or 2)
         std::vector<int> m_parents;       //!< m_parents[i] = parent index of entity i, -1 for the root
+        std::vector<std::uint64_t> m_ids; //!< m_ids[i] = entry i's stable id (PrefabInstance::fileId)
+        std::uint64_t    m_asset = 0;     //!< the file's asset guid, from its .meta (0 = none)
+        std::uint64_t    m_hash = 0;      //!< content hash of the loaded file (0 = from text)
         bool             m_valid = false;
     };
 

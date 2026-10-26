@@ -3,7 +3,7 @@
   \author     Tok Duan Jie Nelson
   \par        Email: t.duanjienelson@digipen.edu
   \date       29 September 2026
-  \version    2.0
+  \version    3.0
   \brief
     Prefab save and instantiate implementation.
   \details
@@ -23,11 +23,14 @@
     - 2.0 (23 October 2026): Multi-entity prefabs ("entities" array with
       parent indices), root position zeroed on save, optional parent on
       Instantiate, tree validated at load. Version 1 files still load.
+    - 3.0 (25 October 2026): Stable per-entry ids; instances are linked to
+      their file (PrefabInstance); the link is stripped when saving.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
 #include "Scene/Prefab.h"
 
+#include "AssetPipe/AssetRegistry.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/Components/Components.h"
 #include "ECS/World.h"
@@ -61,7 +64,8 @@ namespace Crucible {
     bool Prefab::SaveFrom(World& world,
                           Entity root,
                           const fs::path& file,
-                          const std::string& name)
+                          const std::string& name,
+                          std::vector<std::pair<Entity, std::uint64_t>>* outIds)
     {
         if (!world.IsAlive(root))
         {
@@ -84,8 +88,15 @@ namespace Crucible {
             const std::size_t index = doc.PushObject(PREFAB_ENTITIES);
             const std::string base  = EntityBase(index);
 
+            // A fresh random id per entry: what instances link to (PrefabInstance::fileId).
+            const std::uint64_t id = xresource::instance_guid::GenerateGUIDCopy().m_Value;
+            doc.Set(base + "/id", AssetRegistry::GuidToString(xresource::instance_guid{ id }));
+            if (outIds != nullptr) outIds->emplace_back(entity, id);
+
             doc.Set(base + "/parent", parentIndex);
             EntityIO::WriteComponents(world, entity, doc, base + "/components");
+            // The link belongs to the scene the entity is in, never to the template.
+            doc.Remove(base + "/components/" + std::string(ComponentTraits<PrefabInstance>::name));
 
             const int self_index = static_cast<int>(index);
             world.ForEachChild(entity, [&](Entity child) { self(self, child, self_index); });
@@ -128,6 +139,15 @@ namespace Crucible {
             return false;   // already logged
         }
 
+        // The file's asset guid, so copies can link back to it. A file outside the asset
+        // index (no .meta yet) still loads; its copies are just not linked.
+        m_asset = 0;
+        std::error_code ec;
+        const fs::path meta = AssetRegistry::MetaPathFor(file);
+        AssetMeta info;
+        if (fs::exists(meta, ec) && AssetRegistry::ReadMeta(meta, info)) m_asset = info.guid.m_Value;
+        m_hash = AssetRegistry::HashFileContents(file);   // which version of the file this is
+
         return Validate(file.string(), file.stem().string());
     }
 
@@ -140,6 +160,8 @@ namespace Crucible {
             return false;
         }
 
+        m_asset = 0;   // text has no .meta: its copies are not linked
+        m_hash  = 0;
         return Validate("text", "Prefab");
     }
 
@@ -147,6 +169,7 @@ namespace Crucible {
     {
         m_valid = false;
         m_parents.clear();
+        m_ids.clear();
 
         m_version = m_doc.Get<int>("version", 0);
         if (m_version > kPrefabVersion)
@@ -163,6 +186,7 @@ namespace Crucible {
             // treated the same, as the only format that predates the field
             // being checked.)
             m_parents.push_back(-1);
+            m_ids.push_back(1);
         }
         else
         {
@@ -191,15 +215,37 @@ namespace Crucible {
                               "must come before it",
                               source, i, parent);
                     m_parents.clear();
+                    m_ids.clear();
                     return false;
                 }
                 m_parents.push_back(parent);
+
+                // Version 3 entries carry a stable id; older ones use their position.
+                const std::string idText = m_doc.Get<std::string>(EntityBase(i) + "/id", std::string{});
+                std::uint64_t id = idText.empty() ? 0 : AssetRegistry::GuidFromString(idText).m_Value;
+                if (id == 0) id = static_cast<std::uint64_t>(i) + 1;
+                m_ids.push_back(id);
             }
         }
 
         m_name  = m_doc.Get<std::string>("name", fallbackName);
         m_valid = true;
         return true;
+    }
+
+    int Prefab::IndexOf(std::uint64_t fileId) const
+    {
+        if (!m_valid) return -1;
+        for (std::size_t i = 0; i < m_ids.size(); ++i)
+        {
+            if (m_ids[i] == fileId) return static_cast<int>(i);
+        }
+        return -1;
+    }
+
+    std::string Prefab::ComponentsPath(std::size_t index) const
+    {
+        return (m_version <= 1) ? std::string(PREFAB_V1_COMPONENTS) : EntityBase(index) + "/components";
     }
 
     // =======================================================================
@@ -226,6 +272,15 @@ namespace Crucible {
                 : EntityBase(i) + "/components";
             EntityIO::ReadComponents(world, entity, m_doc, components);
             world.ReissueDefaultName(entity);   // "Entity 3" was the source's default, not this instance's; custom names stay
+
+            // The link back to the file: which prefab, which entry of it, and whether this is
+            // the instance's root. Only for a file loaded from a registered asset.
+            if (m_asset != 0)
+            {
+                PrefabInstance link{ m_asset, m_ids[i], i == 0 };
+                if (i == 0) link.prefabHash = m_hash;   // the version of the file this instance matches
+                world.AddComponent<PrefabInstance>(entity, std::move(link));
+            }
 
             // The root goes under the caller's parent (if any); everyone else
             // under an entity created earlier in this loop. false keeps the

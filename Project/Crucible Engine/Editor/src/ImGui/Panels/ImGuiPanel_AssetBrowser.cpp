@@ -413,6 +413,18 @@ void Crucible::AssetBrowser::Refresh() {
 	m_assets.Refresh();
 	RebuildFolderTree();
 	m_listingDirty = true;
+
+	// A .cprefab changed on disk (a git pull, another scene's Apply): bring the open scene's
+	// instances of it up to date, keeping their overrides. One undo step; nothing if none changed.
+	if (Core* core = EditorManager::GetInstance().GetCore()) { PrefabAuthoring::UpdateChangedInstances(core->GetWorld()); }
+}
+
+void Crucible::AssetBrowser::Reveal(std::string const& virtualPath) {
+	if (virtualPath.empty()) return;
+	NavigateTo(ParentOf(virtualPath));   // applied after drawing; also clears the search
+	m_selected = virtualPath;
+	m_syncTree = true;
+	ImGui::SetWindowFocus(m_panelName.c_str());
 }
 
 void Crucible::AssetBrowser::Update(float) {

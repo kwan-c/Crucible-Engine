@@ -27,6 +27,7 @@
 #include "Scripting/ScriptAuthoring.h"
 #include "Core.h"
 #include "Undo/EntityCommands.h"
+#include "Prefabs/PrefabAuthoring.h"
 #include "../EditorWidgets.h"
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
@@ -638,6 +639,8 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 		ImGui::PopID();
 		if (left) { ApplyPendingName(); }   // before this frame's commit captures the "after" state
 	}
+	// Prefab instances: "Prefab: Crate  [Select] [Unpack]" (PrefabInstance itself is never listed).
+	PrefabAuthoring::DrawInspectorBar(m_world, entity);
 	ImGui::Separator();
 
 	bool changed = false;
@@ -652,7 +655,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName>) \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, PrefabInstance>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \
@@ -666,12 +669,14 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 					: ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);                \
 				if (!running) { ImGui::PopStyleColor(); }                                                    \
 				ImVec2 const headerMin = ImGui::GetItemRectMin();                                            \
+				PrefabAuthoring::MarkComponentHeader(m_world, entity, ComponentTraits<T>::name);   /* prefab override bar */ \
 				if constexpr (RemovableComponent<T>) {                                                       \
 					if (ImGui::BeginPopupContextItem("##ComponentMenu")) {                                   \
 						char const* const removeBlocked = RemoveBlockedReason<T>(m_world, entity);           \
 						if (ImGui::MenuItem("Remove Component", nullptr, false, removeBlocked == nullptr))   \
 							{ deferredRemove = MakeComponentRemover<T>(m_world, entity); removeLabel = "Remove " + header; }  \
 						if (removeBlocked) ImGui::SetItemTooltip("%s", removeBlocked);                       \
+						PrefabAuthoring::ComponentMenuItems(m_world, entity, ComponentTraits<T>::name);  /* Revert to Prefab */ \
 						ImGui::EndPopup();                                                                   \
 					}                                                                                        \
 				}                                                                                            \
@@ -680,7 +685,9 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 					{ changed = true; NoteEdit((nowEnabled ? "Enable " : "Disable ") + header); }            \
 				if (open)                                                                                    \
 				{                                                                                            \
+					PrefabAuthoring::BeginDrawComponent(m_world, entity, ComponentTraits<T>::name);  /* override marks */ \
 					bool const fieldEdited  = DrawInstance(*component);  \
+					PrefabAuthoring::EndDrawComponent();  \
 					bool const extrasEdited = DrawComponentExtras(*component);  \
 					if (fieldEdited || extrasEdited) { changed = true; NoteEdit("Edit " + header); }  \
 				}                                                                                            \
@@ -716,7 +723,7 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 		// Same X-macro as the inspector loop. Skips mandatory components (Transform,
 		// WorldTransform, HierarchyNode), World-managed ones, and ones already present.
 #define CRU_ADD_COMPONENT_ITEM(T)																			    \
-		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !std::is_same_v<T, ScriptComponent>) { \
+		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !std::is_same_v<T, ScriptComponent> && !std::is_same_v<T, PrefabInstance>) { \
 			std::string_view const name = ComponentTraits<T>::name;											        \
 			if (!m_world.HasComponent<T>(entity) &&															        \
 				m_addComponentFilter.PassFilter(name.data(), name.data() + name.size())) {					        \
@@ -1041,6 +1048,12 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool impor
 bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 	bool changed = false;
 
+	// Prefab override marks go on a component's own properties, not on the fields of a struct
+	// inside one (DrawInstance recurses for those): only depth 1 is marked.
+	struct DepthGuard { int& depth; explicit DepthGuard(int& d) : depth(d) { ++depth; } ~DepthGuard() { --depth; } };
+	static int s_depth = 0;
+	DepthGuard const depthGuard(s_depth);
+
 	auto const props = obj.get_derived_type().get_properties();
 	if (props.empty()) {
 		// Catches a component someone forgot to register.
@@ -1180,6 +1193,7 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			}
 		}
 		ImGui::EndDisabled();
+		if (s_depth == 1) { PrefabAuthoring::MarkProperty(label); }   // overridden on a prefab instance: bar + Revert
 
 		changed |= DrawPropertyExtras(obj, label);
 	}

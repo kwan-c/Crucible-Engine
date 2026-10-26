@@ -65,6 +65,10 @@ namespace {
 void Crucible::Hierarchy::Init() {
 	m_panelName = "Hierarchy";
 
+	// Prefab override lists are refreshed before every scene save, and instances are brought up
+	// to date with changed prefabs whenever a scene is opened (PrefabAuthoring.h).
+	PrefabAuthoring::InstallSceneHooks(m_world, m_scenes);
+
 	// Left column above the bottom area (Unity default layout).
 	m_docked = true;
 	m_dockArea = DockArea::Left;
@@ -75,6 +79,9 @@ void Crucible::Hierarchy::Init() {
 }
 
 void Crucible::Hierarchy::Update(float dt) {
+	// The scene open at startup was loaded before the prefab hooks existed: check it once.
+	PrefabAuthoring::RunStartupCheck(m_world);
+
 	if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
 		if (ImGui::BeginMenuBar()) {
 			if (ImGui::BeginMenu("+")) {
@@ -270,7 +277,12 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 
 	// The ID stays the entity index (PushID above); only the visible label is the name.
 	std::string const label = LabelOf(m_world, entity);
+	// Prefab instances in the prefab colour (red if their .cprefab is gone), like Unity.
+	ImVec4 prefabColour;
+	bool const tinted = PrefabAuthoring::RowColour(m_world, entity, prefabColour);
+	if (tinted) { ImGui::PushStyleColor(ImGuiCol_Text, prefabColour); }
 	bool const open = ImGui::TreeNodeEx("##node", flags, "%s", label.c_str());
+	if (tinted) { ImGui::PopStyleColor(); }
 	// A UI element was just created somewhere under this row: open it once, so the new entity shows.
 	if (childCount > 0 && m_revealEntity.IsValid()) {
 		for (Entity p = m_world.GetParent(m_revealEntity); p.IsValid(); p = m_world.GetParent(p)) {
@@ -392,7 +404,9 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 		if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_clipboard.empty())) { RequestAction(PendingAction::Paste, entity); }
 		if (ImGui::MenuItem("Duplicate", "Ctrl+D"))                         { RequestAction(PendingAction::Duplicate, entity); }
 		// Greyed out in Play Mode (PrefabAuthoring::CanCreate).
-		if (ImGui::MenuItem("Create Prefab", nullptr, false, PrefabAuthoring::CanCreate())) { RequestAction(PendingAction::CreatePrefab, entity); }
+		// Not on a part of an instance: re-linking it would tear it out of that instance.
+		if (ImGui::MenuItem("Create Prefab", nullptr, false, PrefabAuthoring::CanCreate() && !PrefabAuthoring::IsLockedPart(m_world, entity))) { RequestAction(PendingAction::CreatePrefab, entity); }
+		if (PrefabAuthoring::IsInstanceRoot(m_world, entity) && ImGui::MenuItem("Unpack Prefab")) { RequestAction(PendingAction::UnpackPrefab, entity); }
 		ImGui::Separator();
 		// Sibling order: what draws on top in the UI. Roots have none (canvases use sortOrder).
 		bool const orderable = m_world.GetParent(entity).IsValid();
@@ -559,6 +573,7 @@ void Crucible::Hierarchy::RunPendingAction() {
 		Entity const parent = targetAlive ? m_world.GetParent(target) : kNullEntity;
 		std::vector<Entity> roots;
 		for (auto const& subtree : m_clipboard) { roots.push_back(PasteSubtree(subtree, parent)); }
+		for (Entity const r : roots) { PrefabAuthoring::DetachCopiedPart(m_world, r); }   // a copied piece of an instance is not an instance
 		RecordCreated(roots, "Paste");
 		break;
 	}
@@ -579,6 +594,7 @@ void Crucible::Hierarchy::RunPendingAction() {
 			if (m_world.IsAlive(copy)) { m_world.SetEntityName(copy, CopyName(LabelOf(m_world, t), taken)); }
 			roots.push_back(copy);
 		}
+		for (Entity const r : roots) { PrefabAuthoring::DetachCopiedPart(m_world, r); }   // a copied piece of an instance is not an instance
 		RecordCreated(roots, "Duplicate");   // after the rename, so redo brings the copy back named
 		break;
 	}
@@ -595,6 +611,10 @@ void Crucible::Hierarchy::RunPendingAction() {
 		break;
 	}
 
+	case PendingAction::UnpackPrefab:
+		for (Entity const t : targets) { PrefabAuthoring::Unpack(m_world, t); }   // skips anything that isn't an instance root
+		break;
+
 	case PendingAction::CreatePrefab:
 		// One .cprefab per top-level target (children included), in Assets/Prefabs. To pick the
 		// folder, drag the rows onto the Asset Browser instead. Saving reads the World only.
@@ -602,18 +622,25 @@ void Crucible::Hierarchy::RunPendingAction() {
 		break;
 
 	case PendingAction::Delete:
-		DeleteEntities(targets);
+		// Parts of a prefab instance stay (unpack first); the rest is deleted as before.
+		DeleteEntities(PrefabAuthoring::WithoutLockedParts(m_world, targets, "delete"));
 		break;
 
-	case PendingAction::Reparent:
-		ReparentAll(targets, m_pendingParent);
+	case PendingAction::Reparent: {
+		// Parts of a prefab instance can't change parent (unpack first).
+		std::vector<Entity> const movable = PrefabAuthoring::WithoutLockedParts(m_world, targets, "move", m_pendingParent);
+		if (!movable.empty()) { ReparentAll(movable, m_pendingParent); }
 		m_pendingParent = kNullEntity;
 		break;
-	case PendingAction::Place:
-		PlaceAll(targets, m_pendingParent, m_pendingAnchor, m_pendingZone);
+	}
+	case PendingAction::Place: {
+		// Same rule, but a part may still be reordered among its own siblings.
+		std::vector<Entity> const movable = PrefabAuthoring::WithoutLockedParts(m_world, targets, "move", m_pendingParent);
+		if (!movable.empty()) { PlaceAll(movable, m_pendingParent, m_pendingAnchor, m_pendingZone); }
 		m_pendingParent = kNullEntity;
 		m_pendingAnchor = kNullEntity;
 		break;
+	}
 	case PendingAction::Reorder:
 		Reorder(targets, m_pendingMove);
 		break;
@@ -955,7 +982,7 @@ void Crucible::Hierarchy::CreateAnimatedModel() {
 }
 
 void Crucible::Hierarchy::CreateEmptyObject() {
-	auto e = m_world.CreateEntity();
+	auto e = m_world.CreateNamedEntity("Empty");   // "Empty"
 
 	// Select first: that commits any Inspector edit still open on the previous entity, so it
 	// lands in the history BEFORE this create - the order they actually happened in.
@@ -1054,7 +1081,7 @@ void Crucible::Hierarchy::CreateCanvasObject() {
 
 	// Screen space, 1920 x 1080 reference (UICanvas's defaults): what the UI Editor tab edits.
 	// Its Transform is ignored for screen-space UI, so it stays at the origin.
-	auto e = m_world.CreateEntity();
+	auto e = m_world.CreateNamedEntity("Canvas");
 	m_world.AddComponent<UICanvas>(e, UICanvas{});
 
 	// Select first, for the same history-ordering reason as CreateLightObject.
@@ -1119,7 +1146,7 @@ void Crucible::Hierarchy::CreateUIElement(const std::string& kind) {
 
 	// The element itself. Centred on its parent (UIRect's default anchors and pivot).
 	// A slider draws its own track / fill / handle, and text its glyphs, so neither has a UIImage.
-	Entity const element = m_world.CreateEntity();
+	Entity const element = m_world.CreateNamedEntity(kind);
 	UIRect rect{};
 	if (kind == "Button") { rect.size = { 160.0f, 40.0f }; }
 	if (kind == "Slider") { rect.size = { 240.0f, 24.0f }; }
@@ -1193,7 +1220,7 @@ void Crucible::Hierarchy::CreateParticleObject(const std::string& effect) {
 
 void Crucible::Hierarchy::CreateWaterObject() {
 
-	auto e = m_world.CreateEntity();
+	auto e = m_world.CreateNamedEntity("Water");
 	m_world.AddComponent<Water>(e, Water{});
 
 	// A 10 x 10 m pond at the origin: the surface is the built-in 1 x 1 m plane, scaled.

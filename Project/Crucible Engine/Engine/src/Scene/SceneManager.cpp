@@ -31,6 +31,8 @@ namespace Crucible {
 			return false;
 		}
 
+		for (const auto& callback : m_beforeSave) callback();   // OnBeforeSave
+
 		const std::string oldName = m_scene.Name();
 		m_scene.SetName(file.stem().string());
 
@@ -217,6 +219,13 @@ namespace Crucible {
 		m_path  = snapshot.path;
 		m_dirty = snapshot.dirty;
 		return true;
+	}
+
+	void SceneManager::OnBeforeSave(std::function<void()> callback) {
+		if (callback)
+		{
+			m_beforeSave.push_back(std::move(callback));
+		}
 	}
 
 	void SceneManager::OnSceneChanged(std::function<void()> callback) {
