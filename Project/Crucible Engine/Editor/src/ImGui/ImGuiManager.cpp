@@ -290,21 +290,23 @@ void Crucible::ImGuiManager::Update(float dt) {
 	}
 
 	// Whether the cursor was locked at the end of last frame's editor update, i.e. before this
-	// frame's systems ran (see the Esc rule below).
+	// frame's systems ran (see the release-key rule below).
 	static bool s_cursorLockedLastFrame = false;
 
 	// The game's mouse look, with Unity's Game-view cursor rules. The game locks the cursor
 	// when Play or Resume starts (ECSPlayerControllerSystem); getting it back is the editor's
-	// job: Esc frees it, a left click on the Game view takes it again, and Pause / Stop always
-	// free it. After the panel loop on purpose, so the Game view's hover state is this frame's.
+	// job: the release key (Shift+F1 by default, Project Settings > Editor) frees it, a left
+	// click on the Game view takes it again, and Pause / Stop always free it. Escape is the
+	// game's (UIMenuSystem's pause menu), exactly as in the built game. After the panel loop on
+	// purpose, so the Game view's hover state is this frame's.
 	if (Core* core = EditorManager::GetInstance().GetCore()) {
 		ImGuiIO& io = ImGui::GetIO();
 		if (core->GetPlayState() == PlayState::Playing) {
 			auto gameView = EditorManager::GetInstance().GetPanel<GameView>(ImguiPanels::GAMESCENE);
-			// Esc frees the cursor only if it was already locked before this frame's systems ran:
-			// the game's UIMenuSystem also answers Esc, and closing its menu re-locks the cursor this
-			// same frame - the editor must not undo that.
-			if (Input::IsMouseLocked() && s_cursorLockedLastFrame && Input::IsPressed(KeyCode::Escape))
+			// Only if the cursor was already locked before this frame's systems ran: should the key
+			// be set to one the game also answers (Escape for its menu), a press that re-locked the
+			// cursor this same frame is the game's - the editor must not undo it.
+			if (Input::IsMouseLocked() && s_cursorLockedLastFrame && IsChordPressed(EditorManager::GetInstance().GetReleaseCursorKey()))
 				Input::SetMouseLocked(false);
 			// ...but not when the click is on the game's UI (that click is for a button), nor while the
 			// game wants a free cursor (its menu is open, or a title-screen canvas is shown).
@@ -401,6 +403,20 @@ void Crucible::EditorManager::Init(Core& core)
 
 	for (auto& panel : m_panels)
 		panel.second->Init();
+
+	// The mouse-release key. A bad value in the file falls back to the default (and says so).
+	{
+		std::string const& text = core.GetConfig().editor.releaseCursorKey;
+		KeyChord chord;
+		if (ParseKeyChord(text, chord)) {
+			m_releaseCursorKey = chord;
+		}
+		else {
+			ParseKeyChord(EditorSettings{}.releaseCursorKey, m_releaseCursorKey);
+			CRU_USER_WARN("[Editor] releaseCursorKey '{}' in EngineConfig.json is not a key (e.g. \"Shift+F1\") - using {}",
+				text, KeyChordToString(m_releaseCursorKey));
+		}
+	}
 
 	// Selection and undo history across Play / Stop (see OnPlayStateChanged).
 	m_core = &core;

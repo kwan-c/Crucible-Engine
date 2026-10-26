@@ -24,6 +24,7 @@
 #include "ECS/Systems/EventBus/Subscription.h"
 #include "Systems/PlayState.h"
 #include "Undo/UndoHistory.h"
+#include "Input/KeyChord.h"
 
 enum class ImguiPanels
 {
@@ -142,6 +143,12 @@ namespace Crucible {
 		void Undo();
 		void Redo();
 
+		// ---- Editor shortcuts ----
+		// Frees the mouse while the game has it captured in Play mode. Project Settings > Editor
+		// ("releaseCursorKey" in EngineConfig.json), Shift+F1 by default. Escape is left to the game.
+		KeyChord const& GetReleaseCursorKey() const { return m_releaseCursorKey; }
+		void SetReleaseCursorKey(KeyChord const& chord) { m_releaseCursorKey = chord; }
+
 		std::map<ImguiPanels, std::shared_ptr<EditorPanel>> m_panels;
 
 		// This function assumes the caller gives the correct type.
@@ -172,6 +179,7 @@ namespace Crucible {
 		Subscription  m_playStateChanged;            // EngineEvents::PlayStateChanged on the engine bus
 		Subscription  m_uiQuit;                      // UIEvents::QuitRequested: a "Quit" button stops Play here
 		Subscription  m_uiCustom;                    // UIEvents::CustomAction: logged (the game / scripts run them)
+		KeyChord      m_releaseCursorKey{ KeyCode::F1, false, true, false };   // Shift+F1 until Init reads the config
 		std::vector<std::uint64_t> m_selectionBeforePlay;   // scene guids of the entities selected at Play; active one last
 	};
 

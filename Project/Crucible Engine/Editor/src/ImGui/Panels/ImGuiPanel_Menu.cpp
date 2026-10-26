@@ -511,6 +511,24 @@ namespace {
 		return true;
 	}
 
+	// Why a release key might be a poor choice, or nullptr. The key still works; this is advice.
+	char const* ReleaseKeyWarning(Crucible::KeyChord const& chord)
+	{
+		using Crucible::KeyCode;
+		bool const bare = !chord.ctrl && !chord.shift && !chord.alt;
+		if (chord.key == KeyCode::Escape)
+			return "Escape is the game's pause-menu key: in Play both the menu and this would answer it.";
+		if ((bare && chord.key == KeyCode::F11) || (chord.alt && !chord.ctrl && !chord.shift && chord.key == KeyCode::Enter))
+			return "F11 and Alt+Enter toggle fullscreen.";
+		std::uint16_t const k = static_cast<std::uint16_t>(chord.key);
+		bool const typingKey = k < static_cast<std::uint16_t>(KeyCode::F1)                 // letters, number row
+			|| (k >= static_cast<std::uint16_t>(KeyCode::Left) && k <= static_cast<std::uint16_t>(KeyCode::GraveAccent))   // arrows ... punctuation
+			|| (k >= static_cast<std::uint16_t>(KeyCode::KP0) && k <= static_cast<std::uint16_t>(KeyCode::KPEqual));
+		if (bare && typingKey)
+			return "The game may use this key too (both would react). Add Shift, Ctrl or Alt.";
+		return nullptr;
+	}
+
 	// The tick box in front of a Game-tab field. Ticking it starts the override from the shared
 	// value; the field after it is greyed out (showing the shared value) while it is unticked.
 	bool OverrideToggle(char const* id, bool overridden)
@@ -672,6 +690,60 @@ void Crucible::Menu::DrawProjectSettingsPopup()
 
 			ImGui::EndTabItem();
 		}
+
+		// ================= Editor: the editor's own settings ====================================
+		if (ImGui::BeginTabItem("Editor"))
+		{
+			EditorSettings& editor = m_projectSettings.editor;
+
+			ImGui::TextDisabled("Only the Editor uses these. They apply as soon as you save.");
+
+			ImGui::SeparatorText("Play Mode");
+			KeyChord chord;
+			bool const valid = ParseKeyChord(editor.releaseCursorKey, chord);
+			if (!valid) {
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "'%s' in the file is not a key - the editor uses %s.",
+					editor.releaseCursorKey.c_str(), EditorSettings{}.releaseCursorKey.c_str());
+				ParseKeyChord(EditorSettings{}.releaseCursorKey, chord);
+			}
+
+			KeyChord edited = chord;
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextUnformatted("Release Mouse");
+			if (ImGui::IsItemHovered())
+				ImGui::SetTooltip("Frees the mouse while the game has it captured in Play.\nClick the Game view to give it back.");
+			ImGui::SameLine(130.0f);
+			ImGui::Checkbox("Ctrl##ReleaseKey", &edited.ctrl);
+			ImGui::SameLine();
+			ImGui::Checkbox("Shift##ReleaseKey", &edited.shift);
+			ImGui::SameLine();
+			ImGui::Checkbox("Alt##ReleaseKey", &edited.alt);
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth(120.0f);
+			if (ImGui::BeginCombo("##ReleaseKeyKey", KeyCodeToString(edited.key), ImGuiComboFlags_HeightLarge)) {
+				for (std::uint16_t i = 1; i < static_cast<std::uint16_t>(KeyCode::Count); ++i) {
+					KeyCode const key = static_cast<KeyCode>(i);
+					if (!IsChordKey(key)) continue;
+					bool const selected = (key == edited.key);
+					if (ImGui::Selectable(KeyCodeToString(key), selected))
+						edited.key = key;
+					if (selected) ImGui::SetItemDefaultFocus();
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Default##ReleaseKey"))
+				ParseKeyChord(EditorSettings{}.releaseCursorKey, edited);
+
+			if (edited != chord)
+				editor.releaseCursorKey = KeyChordToString(edited);
+
+			if (char const* warning = ReleaseKeyWarning(edited))
+				ImGui::TextColored(ImVec4(1.0f, 0.6f, 0.2f, 1.0f), "%s", warning);
+			ImGui::TextDisabled("Escape stays the game's, as in the built game. Pause and Stop always free the mouse.");
+
+			ImGui::EndTabItem();
+		}
 		ImGui::EndTabBar();
 	}
 
@@ -686,6 +758,10 @@ void Crucible::Menu::DrawProjectSettingsPopup()
 			// The aspect ratio is the one setting the open editor can show straight away.
 			if (auto gameView = EditorManager::GetInstance().GetPanel<GameView>(ImguiPanels::GAMESCENE))
 				gameView->SetProjectAspect(project.aspectWidth, project.aspectHeight);
+			// ...and the Editor tab, all of which is live.
+			KeyChord releaseKey;
+			if (ParseKeyChord(m_projectSettings.editor.releaseCursorKey, releaseKey))
+				EditorManager::GetInstance().SetReleaseCursorKey(releaseKey);
 			CRU_USER_INFO("[Menu] Project settings saved - startup scene and window changes apply on next launch");
 			ImGui::CloseCurrentPopup();
 		}

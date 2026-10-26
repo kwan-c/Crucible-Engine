@@ -1667,6 +1667,14 @@ namespace Crucible::PrefabAuthoring {
 			if (all.empty()) { ImGui::TextDisabled("This instance matches its prefab."); }
 			if (!reverted) {
 				ImGui::Separator();
+				ImGui::BeginDisabled(all.empty());
+				if (ImGui::Button("Revert All")) {   // added children are detached, not deleted
+					Revert(world, all, "Revert All (" + PrefabNameOf(path) + ")");
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::EndDisabled();
+				ImGui::SameLine();
+
 				ImGui::BeginDisabled(all.empty() || !CanCreate());
 				if (ImGui::Button("Apply All")) {
 					ApplyToPrefab(world, entity, all, "Apply All (" + PrefabNameOf(path) + ")");
@@ -1675,13 +1683,7 @@ namespace Crucible::PrefabAuthoring {
 				ImGui::EndDisabled();
 				ImGui::SetItemTooltip("Write every override into the prefab and update its other instances in this scene (Ctrl+Z undoes it all)");
 				ImGui::SameLine();
-				ImGui::BeginDisabled(all.empty());
-				if (ImGui::Button("Revert All")) {   // added children are detached, not deleted
-					Revert(world, all, "Revert All (" + PrefabNameOf(path) + ")");
-					ImGui::CloseCurrentPopup();
-				}
-				ImGui::EndDisabled();
-				ImGui::SameLine();
+
 				ImGui::BeginDisabled(!CanCreate());
 				if (ImGui::Button("Apply to All Scenes...")) {
 					openAllScenes = true;   // the confirm box is opened below, outside this menu

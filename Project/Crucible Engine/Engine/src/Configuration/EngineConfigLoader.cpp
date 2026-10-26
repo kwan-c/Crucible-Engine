@@ -228,6 +228,16 @@ namespace Crucible
 			}
 		}
 
+		// The editor's own settings: plain keys in the root's "editor" section (that section's
+		// "graphics" / "project" objects are the editor's overrides - ApplySections reads those).
+		void ApplyEditorSettings(const JsonValue& root, EngineConfig& config)
+		{
+			if (const JsonValue* editor = FindSection(root, "editor"))
+			{
+				ReadString(*editor, "releaseCursorKey", config.editor.releaseCursorKey);
+			}
+		}
+
 		rapidjson::Document ReadRoot(const std::filesystem::path& path)
 		{
 			rapidjson::Document document = JsonReader::Read(path);
@@ -309,6 +319,7 @@ namespace Crucible
 
 		rapidjson::Document document = ReadRoot(path);
 		ApplySections(document, config);
+		ApplyEditorSettings(document, config);
 		return config;
 	}
 
@@ -370,6 +381,8 @@ namespace Crucible
 			doc.Set(pathPrefix + "class", instance.className);
 			doc.Set(pathPrefix + "enabled", instance.enabled);
 		}
+
+		doc.Set("editor/releaseCursorKey", config.editor.releaseCursorKey);
 
 		if (!doc.SaveToFile(path))
 		{
@@ -492,6 +505,7 @@ namespace Crucible
 
 			if (const JsonValue* overrides = FindSection(document, AppSectionName(app)))
 				ApplySections(*overrides, config);
+			ApplyEditorSettings(document, config);
 
 			// This user's last window mode on this machine, on top of the project's.
 			ApplyUserSettings(app, config);

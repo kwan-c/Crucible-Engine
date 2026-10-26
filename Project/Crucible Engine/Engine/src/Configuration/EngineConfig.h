@@ -65,6 +65,16 @@ namespace Crucible
 		}
 	};
 
+	// Editor-only settings, stored in the "editor" section of EngineConfig.json next to the
+	// editor's overrides ("editor": { "releaseCursorKey": "Shift+F1", ... }). The Game reads
+	// them too but never uses them.
+	struct EditorSettings
+	{
+		// Frees the mouse while the game has it captured in Play mode (a KeyChord, see
+		// Input/KeyChord.h). Not Escape: that key belongs to the game (its pause menu).
+		std::string releaseCursorKey = "Shift+F1";
+	};
+
 	// Which executable is starting the engine. Picks the per-app override section
 	// ("editor" / "game") in EngineConfig.json.
 	enum class AppKind
@@ -85,6 +95,7 @@ namespace Crucible
 		// Core uses it to save the window state into the right section of UserSettings.json.
 		AppKind        app = AppKind::Editor;
 		ScriptingConfig scripting;
+		EditorSettings  editor;
 	};
 
 	// The values one app's section ("editor" / "game") in EngineConfig.json changes, for the

@@ -3,6 +3,8 @@
 // STL
 #include <cstdint>
 
+#include "EngineExport.h"
+
 namespace Crucible {
 
     /*!
@@ -71,7 +73,7 @@ namespace Crucible {
         \return
         The matching KeyCode, or KeyCode::Unknown for keys we do not track.
     */
-    KeyCode KeyCodeFromGlfw(const int& glfwKey);
+    ENGINE_API KeyCode KeyCodeFromGlfw(const int& glfwKey);
 
     /*!
         \brief
@@ -83,7 +85,7 @@ namespace Crucible {
         NOTE: separate from KeyCodeFromGlfw because GLFW numbers buttons from zero in
         their own space - a button value and a key value are not comparable.
     */
-    KeyCode KeyCodeFromGlfwMouseButton(const int& glfwButton);
+    ENGINE_API KeyCode KeyCodeFromGlfwMouseButton(const int& glfwButton);
 
     /*!
         \brief
@@ -91,6 +93,8 @@ namespace Crucible {
         \return
         A static string such as "Space". Never null.
     */
-    const char* KeyCodeToString(const KeyCode& key);
+    ENGINE_API const char* KeyCodeToString(const KeyCode& key);
+
+    // Key + modifier shortcuts ("Shift+F1") and KeyCodeFromString: Input/KeyChord.h.
 
 }   // NAMESPACE CRUCIBLE
