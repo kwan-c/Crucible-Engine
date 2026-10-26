@@ -3,7 +3,7 @@
   \author     Hugo Low Ren Hao
   \par        Email: low.h@digipen.edu
   \date       2 October 2026
-  \version    1.0
+  \version    1.1
   \brief
     RTTR registration for CameraOrbit.
   \details
@@ -22,17 +22,19 @@
     breaks every scene saved with the old name, so treat them as a file
     format, not as code.
   \dependencies
-    Reflection/ReflectionRegistration.h, Physics/PhysicsComponents.h
+    Reflection/ReflectionRegistration.h, Player/PlayerComponents.h
   \see
     PlayerControllerReflection.cpp, ECS/ECSPlayerControllerSystem.h
   \history
     - 1.0 (2 October 2026): First version.
+    - 1.1 (26 October 2026): stickSpeed, the gamepad right stick's turn rate.
+      A scene saved before it loads with the default.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
 
 #include "Reflection/ReflectionRegistration.h"
-#include "Physics/PhysicsComponents.h"
+#include "Player/PlayerComponents.h"
 
 RTTR_REGISTRATION
 {
@@ -41,6 +43,7 @@ RTTR_REGISTRATION
     rttr::registration::class_<CameraOrbit>("CameraOrbit")
         .constructor<>()
         .property("sensitivity", &CameraOrbit::m_sensitivity)
+        .property("stickSpeed",  &CameraOrbit::m_stickSpeed)
         .property("minPitch",    &CameraOrbit::m_minPitch)
         .property("maxPitch",    &CameraOrbit::m_maxPitch)
         .property("yaw",         &CameraOrbit::m_yaw)

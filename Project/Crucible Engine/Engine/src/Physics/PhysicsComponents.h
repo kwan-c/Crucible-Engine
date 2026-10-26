@@ -3,11 +3,12 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                The physics components the designer and gameplay touch:
-*                Collider, CharacterController, PlayerController,
-*                CameraOrbit, ConstantForce and PhysicsJoint.
+*                Collider, CharacterController, ConstantForce and
+*                PhysicsJoint. (The player's controls are in
+*                Player/PlayerComponents.h.)
 *
 * \details
 *                Sizes are full sizes, the way Unity states them;
@@ -23,6 +24,8 @@
 *    -v1.3       CameraOrbit and face-the-camera
 *    -v1.4       ConstantForce
 *    -v1.5       PhysicsJoint
+*    -v1.6       PlayerController and CameraOrbit moved out to
+*                Player/PlayerComponents.h: controls, not physics
 *
 **************************************************************************/
 #pragma once
@@ -184,74 +187,6 @@ namespace Crucible {
     };  // CHARACTERCONTROLLER STRUCT
 
     CRUCIBLE_COMPONENT(CharacterController, CharacterController)
-
-    /*
-        Marks the mech THIS machine controls: ECSPlayerControllerSystem reads
-        the keyboard and drives the CharacterController on the same entity.
-        Unity's equivalent is a PlayerMovement script calling SimpleMove.
-
-            world.AddComponent(mech, CharacterController{});
-            world.AddComponent(mech, PlayerController{});     // ...and WASD walks it
-
-        A separate component, not a flag on CharacterController, because in
-        multiplayer every mech has a CharacterController but only the local
-        one reads the keyboard. The other mechs are moved by network packets,
-        so they simply never get this component.
-
-        Does nothing without a CharacterController next to it.
-    */
-    struct PlayerController {
-
-        float m_moveSpeed  = 6.0f;      // m/s on the ground. Diagonals are no faster
-        float m_jumpHeight = 1.5f;      // metres, measured from the feet. 0 disables jumping
-
-        // Turn the whole mech to face where the camera looks (yaw only - it stays
-        // upright). Needs the CameraOrbit pivot to be a child of this entity. Off:
-        // the mech keeps its rotation and the camera orbits freely round it.
-        // Safe to flip mid-Play: the pivot cancels the mech's turn, so the view
-        // never jumps either way.
-        bool  m_faceCamera = true;
-
-    };  // PLAYERCONTROLLER STRUCT
-
-    CRUCIBLE_COMPONENT(PlayerController, PlayerController)
-
-    /*
-        The third-person camera. The mouse turns the entity this sits on, and
-        that entity is a PIVOT - an empty point the camera hangs off - not the
-        camera itself:
-
-            Mech            CharacterController, PlayerController
-            '- Pivot        CameraOrbit, local position about (0, 1.5, 0): shoulder height
-               '- Camera    CameraComponent, local position about (0, 0, 5): 5m behind
-
-        Turning the pivot swings "5m behind me" around, so the camera circles
-        the mech and the hierarchy does all the maths; nothing ever touches the
-        camera entity. Unity's Starter Assets do the same with PlayerCameraRoot.
-        Putting this on the camera instead would only spin it in place - it
-        would look away from the mech rather than go round it.
-
-        ECSPlayerControllerSystem writes the pivot's Transform.rotation from
-        m_yaw and m_pitch every frame while Playing, so rotate the pivot with
-        these two fields, not with the gizmo. They are saved: what they hold
-        in the editor is the view the game starts with.
-    */
-    struct CameraOrbit {
-
-        // SETTINGS ---------------------------------------------------------- //
-
-        float m_sensitivity = 0.1f;     // degrees turned per pixel of mouse movement
-        float m_minPitch    = -30.0f;   // degrees. Below 0 the camera dips under the pivot and looks up
-        float m_maxPitch    =  70.0f;   // degrees. Short of 90, or at the top the view flips over
-
-        // STATE: the current view, in degrees -------------------------------- //
-
-        float m_yaw         = 0.0f;     // round the mech. + turns the view left, as the mouse moving left does
-        float m_pitch       = 0.0f;     // + raises the camera to look down on the mech, as the mouse moving down does
-
-    };  // CAMERAORBIT STRUCT
-
-    CRUCIBLE_COMPONENT(CameraOrbit, CameraOrbit)
 
     /*
         Unity's ConstantForce: a steady push a designer sets in the Inspector -

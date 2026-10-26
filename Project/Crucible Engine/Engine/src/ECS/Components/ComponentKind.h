@@ -71,8 +71,8 @@ namespace Crucible
 		Skybox = 9,           // Graphics: scene sky + ambient + exposure
 		AudioListener = 10,   // Audio: where the ears are (Audio/AudioComponents.h)
 		Camera = 11,          // Graphics: the game camera (struct CameraComponent)
-		PlayerController = 12,   // Physics: keyboard -> CharacterController, local player only (Physics/PhysicsComponents.h)
-		CameraOrbit = 13,        // Physics: mouse -> third-person camera pivot (Physics/PhysicsComponents.h)
+		PlayerController = 12,   // Player: keyboard / gamepad -> CharacterController, local player only (Player/PlayerComponents.h)
+		CameraOrbit = 13,        // Player: mouse / right stick -> third-person camera pivot (Player/PlayerComponents.h)
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h

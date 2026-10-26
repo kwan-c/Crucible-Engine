@@ -17,7 +17,7 @@
         "sfxVolume": 1.0
     },
     "project": {
-        "startupScene": "Scenes/Physics demo scene.scene",
+        "startupScene": "Scenes/Fog_Lighting_Effects.scene",
         "aspectRatio": [
             16,
             9
@@ -30,5 +30,16 @@
             "fullScreen": true,
             "maximized": false
         }
+    },
+    "scripting": {
+        "enabled": true,
+        "runtimeDirectory": "Mono",
+        "verifyManagedExecution": true,
+        "startupAssembly": "",
+        "startupNamespace": "",
+        "startupClass": "",
+        "startupMethod": "",
+        "startupStatic": false,
+        "instances": []
     }
 }

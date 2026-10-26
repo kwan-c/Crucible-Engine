@@ -22,7 +22,7 @@
     breaks every scene saved with the old name, so treat them as a file
     format, not as code.
   \dependencies
-    Reflection/ReflectionRegistration.h, Physics/PhysicsComponents.h
+    Reflection/ReflectionRegistration.h, Player/PlayerComponents.h
   \see
     CharacterControllerReflection.cpp, ECS/ECSPlayerControllerSystem.h
   \history
@@ -32,7 +32,7 @@
 *************************************************************************/
 
 #include "Reflection/ReflectionRegistration.h"
-#include "Physics/PhysicsComponents.h"
+#include "Player/PlayerComponents.h"
 
 RTTR_REGISTRATION
 {

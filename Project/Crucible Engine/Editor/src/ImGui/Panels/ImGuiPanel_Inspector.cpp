@@ -1182,18 +1182,19 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 				ImGui::EndCombo();
 			}
 		}
+		// Vectors: one box per axis, each led by its letter in the Scene gizmo's colour, so X is
+		// the red handle, Y the green and Z the blue (EditorWidgets::AxisDragFloats, which also
+		// does the infinite drag). Colour fields keep the colour picker.
 		else if (type == rttr::type::get<Math::vec2>()) {
 			Math::vec2 v = value.get_value<Math::vec2>();
-			if (ImGui::DragFloat2(name, &v.x, 0.05f)) { newValue = v; edited = true; }
-			EditorWidgets::InfiniteDrag();
+			if (EditorWidgets::AxisDragFloats(name, &v.x, 2, 0.05f)) { newValue = v; edited = true; }
 		}
 		else if (type == rttr::type::get<Math::vec3>()) {
 			Math::vec3 v = value.get_value<Math::vec3>();
 			bool const isColour = prop.get_metadata(MetaDataTypes::COLOUR).to_bool();
 			edited = isColour
 				? ImGui::ColorEdit3(name, &v.x)
-				: ImGui::DragFloat3(name, &v.x, 0.05f);
-			if (!isColour) EditorWidgets::InfiniteDrag();   // colour pickers keep a normal cursor
+				: EditorWidgets::AxisDragFloats(name, &v.x, 3, 0.05f);
 			if (edited) newValue = v;
 		}
 		else if (type == rttr::type::get<Math::vec4>()) {
@@ -1201,15 +1202,14 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			bool const isColour = prop.get_metadata(MetaDataTypes::COLOUR).to_bool();
 			edited = isColour
 				? ImGui::ColorEdit4(name, &v.x)
-				: ImGui::DragFloat4(name, &v.x, 0.05f);
-			if (!isColour) EditorWidgets::InfiniteDrag();   // colour pickers keep a normal cursor
+				: EditorWidgets::AxisDragFloats(name, &v.x, 4, 0.05f);
 			if (edited) newValue = v;
 		}
 		else if (type == rttr::type::get<Math::quat>()) {
-			// Edited as Euler degrees, stored as a quaternion (same trade-off as before).
+			// Edited as Euler degrees, stored as a quaternion (same trade-off as before). X, Y, Z
+			// here are the turns around the gizmo's red, green and blue axes - the rotate rings.
 			Math::vec3 euler = glm::degrees(glm::eulerAngles(value.get_value<Math::quat>()));
-			if (ImGui::DragFloat3(name, &euler.x, 0.5f)) { newValue = Math::quat(glm::radians(euler)); edited = true; }
-			EditorWidgets::InfiniteDrag();
+			if (EditorWidgets::AxisDragFloats(name, &euler.x, 3, 0.5f)) { newValue = Math::quat(glm::radians(euler)); edited = true; }
 		}
 		else if (type == rttr::type::get<RigidBodyConstraints>()) {
 			// Two rows like Unity's Rigidbody "Constraints", instead of a tree of six

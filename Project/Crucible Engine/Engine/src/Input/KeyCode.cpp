@@ -3,10 +3,10 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          13 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
-*                Translates GLFW key and mouse button codes into KeyCode
-*                and MouseButton.
+*                Translates GLFW key, mouse button and gamepad button codes
+*                into KeyCode.
 *
 * \details
 *                The only file in the engine allowed to mention
@@ -16,6 +16,7 @@
 * \history
 *    -v1.0       keyboard keys
 *    -v1.1       mouse buttons
+*    -v1.2       gamepad buttons
 *
 **************************************************************************/
 #include "Input/KeyCode.h"
@@ -170,6 +171,25 @@ namespace Crucible {
 
     }   // KeyCodeFromGlfwMouseButton()
 
+    // The gamepad KeyCodes were laid out in GLFW's button order, so one addition translates
+    // them. These asserts are what makes that safe: reorder either list and the build stops
+    // here, instead of A quietly reading as B.
+    static_assert(GLFW_GAMEPAD_BUTTON_A == 0 && GLFW_GAMEPAD_BUTTON_LAST == GLFW_GAMEPAD_BUTTON_DPAD_LEFT,
+                  "GLFW's gamepad buttons are no longer 0..DPAD_LEFT");
+    static_assert(static_cast<int>(KeyCode::GamepadDpadLeft) - static_cast<int>(KeyCode::GamepadA) == GLFW_GAMEPAD_BUTTON_DPAD_LEFT,
+                  "KeyCode's gamepad buttons must stay in GLFW's order, GamepadA .. GamepadDpadLeft");
+    static_assert(static_cast<int>(KeyCode::GamepadY) - static_cast<int>(KeyCode::GamepadA) == GLFW_GAMEPAD_BUTTON_Y &&
+                  static_cast<int>(KeyCode::GamepadStart) - static_cast<int>(KeyCode::GamepadA) == GLFW_GAMEPAD_BUTTON_START &&
+                  static_cast<int>(KeyCode::GamepadRightStick) - static_cast<int>(KeyCode::GamepadA) == GLFW_GAMEPAD_BUTTON_RIGHT_THUMB,
+                  "KeyCode's gamepad buttons must stay in GLFW's order");
+
+    KeyCode KeyCodeFromGlfwGamepadButton(const int& glfwButton) {
+
+        if (glfwButton < GLFW_GAMEPAD_BUTTON_A || glfwButton > GLFW_GAMEPAD_BUTTON_LAST) return KeyCode::Unknown;
+        return static_cast<KeyCode>(static_cast<int>(KeyCode::GamepadA) + glfwButton);
+
+    }   // KeyCodeFromGlfwGamepadButton()
+
     const char* KeyCodeToString(const KeyCode& key) {
 
         switch (key) {
@@ -287,6 +307,24 @@ namespace Crucible {
         case KeyCode::MouseButton6:              return "MouseButton6";
         case KeyCode::MouseButton7:              return "MouseButton7";
         case KeyCode::MouseButton8:              return "MouseButton8";
+
+        case KeyCode::GamepadA:                  return "GamepadA";
+        case KeyCode::GamepadB:                  return "GamepadB";
+        case KeyCode::GamepadX:                  return "GamepadX";
+        case KeyCode::GamepadY:                  return "GamepadY";
+        case KeyCode::GamepadLB:                 return "GamepadLB";
+        case KeyCode::GamepadRB:                 return "GamepadRB";
+        case KeyCode::GamepadBack:               return "GamepadBack";
+        case KeyCode::GamepadStart:              return "GamepadStart";
+        case KeyCode::GamepadGuide:              return "GamepadGuide";
+        case KeyCode::GamepadLeftStick:          return "GamepadLeftStick";
+        case KeyCode::GamepadRightStick:         return "GamepadRightStick";
+        case KeyCode::GamepadDpadUp:             return "GamepadDpadUp";
+        case KeyCode::GamepadDpadRight:          return "GamepadDpadRight";
+        case KeyCode::GamepadDpadDown:           return "GamepadDpadDown";
+        case KeyCode::GamepadDpadLeft:           return "GamepadDpadLeft";
+        case KeyCode::GamepadLT:                 return "GamepadLT";
+        case KeyCode::GamepadRT:                 return "GamepadRT";
 
         case KeyCode::Unknown:
         case KeyCode::Count:
