@@ -23,12 +23,25 @@
             9
         ]
     },
-    "editor": {},
+    "editor": {
+        "releaseCursorKey": "Shift+F1"
+    },
     "game": {
         "graphics": {
             "windowTitle": "Mekanomachia",
             "fullScreen": true,
             "maximized": false
         }
+    },
+    "scripting": {
+        "enabled": true,
+        "runtimeDirectory": "Mono",
+        "verifyManagedExecution": true,
+        "startupAssembly": "",
+        "startupNamespace": "",
+        "startupClass": "",
+        "startupMethod": "",
+        "startupStatic": false,
+        "instances": []
     }
 }
