@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          2 October 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Keyboard, mouse and gamepad in: walks and jumps the mech
 *                that carries a PlayerController, and turns the
@@ -40,6 +40,7 @@
 *    -v1.3       the mech turns to face the camera (m_faceCamera)
 *    -v1.4       gamepad: left stick walks, right stick turns the camera,
 *                A jumps
+*    -v1.5       takes the player's InputSettings (sensitivity, invert Y)
 *
 **************************************************************************/
 #pragma once
@@ -52,9 +53,15 @@
 
 namespace Crucible {
 
+    struct InputSettings;
+
     class ECSPlayerControllerSystem final : public IECSSystem {
 
     public:
+
+        // The player's look sensitivity and invert Y (Core's UserSettings), read
+        // every frame. Core owns them and they outlive this system.
+        explicit ECSPlayerControllerSystem(const InputSettings& settings);
 
         // --- IECSSystem ---------------------------------------------------- //
 
@@ -75,6 +82,8 @@ namespace Crucible {
         void OnComponentDeactivated(World& world, Entity entity, ComponentId component) override;
 
     private:
+
+        const InputSettings& m_settings;
 
         // The World's tick from the last time Update ran. The tick goes up by
         // one every frame whether or not this system runs, so a jump of more
