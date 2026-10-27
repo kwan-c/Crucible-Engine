@@ -52,7 +52,15 @@ add_custom_command(TARGET Editor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/Extern/fmod/bin/fmod.dll" "$<TARGET_FILE_DIR:Editor>"
 
-    COMMENT "Copying Engine.dll, glfw3.dll, rttr_core.dll and fmod.dll to Editor output directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/GameNetworkingSockets/bin/GameNetworkingSockets.dll" 
+        "$<TARGET_FILE_DIR:Editor>"
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/GameNetworkingSockets/bin/libprotobuf.dll" 
+        "$<TARGET_FILE_DIR:Editor>"
+
+    COMMENT "Copying Engine.dll, glfw3.dll, rttr_core.dll, GameNetworkingSockets.dll, libprotobuf.dll and fmod.dll to Editor output directory..."
 )
 
 # Debugger working directory (Visual Studio)

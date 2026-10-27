@@ -55,6 +55,14 @@ add_custom_command(TARGET Game POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/Extern/fmod/bin/fmodstudio.dll"
         "${GAME_OUTPUT_DIR}"
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/GameNetworkingSockets/bin/GameNetworkingSockets.dll"
+        "${GAME_OUTPUT_DIR}"
+    
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/GameNetworkingSockets/bin/libprotobuf.dll"
+        "${GAME_OUTPUT_DIR}"
 )
 
 # Ensure proper build order
