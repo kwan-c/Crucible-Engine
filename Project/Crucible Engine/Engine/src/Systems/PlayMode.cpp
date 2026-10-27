@@ -273,10 +273,14 @@ namespace Crucible
 		m_events.gameplay.Clear();
 		m_events.network.Clear();
 
+		// Silence first, THEN clear the pause. The other way round, Stop pressed while paused
+		// unpaused every voice for a moment before stopping it - FMOD mixes on its own thread,
+		// so that moment can be heard as a click. Silencing drops the voice handles, so the
+		// unpause afterwards only resets the flag for the next Play.
 		if (ECSAudioSystem* audio = FindAudio())
 		{
-			audio->SetPaused(false);
 			audio->SetEditMode(true);    // everything a source started stops
+			audio->SetPaused(false);
 		}
 
 		// 2. Put the scene back as it was at Play. The snapshot is checked before the world

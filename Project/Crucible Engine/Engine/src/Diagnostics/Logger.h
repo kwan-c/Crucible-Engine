@@ -1,3 +1,32 @@
+/*************************************************************************
+* \file:         Logger.h
+* \author:       Hugo Low Ren Hao (main author),
+*                Tan Chun Kwang Xavier (v1.1: listeners, user-facing messages)
+* \par:          Email: low.h@digipen.edu,
+*                Email: chunkwangxavier.tan@digipen.edu
+* \date          12 September 2026
+* \version       1.1
+* \brief
+*                The engine's logger: the CRU_TRACE to CRU_FATAL macros,
+*                LogSession, and the functions behind them.
+*
+* \details
+*                Messages use std::format syntax. Every line gets the date
+*                and time, the time since startup, the level, and the
+*                source file and line, and goes to every sink in
+*                LogSink.h. A LogSession in main() starts and ends the
+*                log.
+*
+*                Listeners let other code, such as the editor's console,
+*                receive each line. The CRU_USER_* macros mark messages
+*                meant for the person using the editor rather than for
+*                programmers.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       listeners and the CRU_USER_* messages (Xavier)
+*
+**************************************************************************/
 #pragma once
 
 #include <cstdint>

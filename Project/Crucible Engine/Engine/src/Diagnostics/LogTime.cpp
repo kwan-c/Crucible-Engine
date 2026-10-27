@@ -1,3 +1,24 @@
+/*************************************************************************
+* \file:         LogTime.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.1
+* \brief
+*                LocalTimestamp and SecondsSince.
+*
+* \details
+*                The date comes from the C runtime's localtime, not
+*                std::chrono::current_zone. On MSVC current_zone loads the
+*                whole timezone database into a cache that is never freed,
+*                and the CRT leak check reports it as thousands of leaks.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       localtime instead of current_zone, to stop the false leak
+*                reports
+*
+**************************************************************************/
 #include "LogTime.h"
 
 #include <array>

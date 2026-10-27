@@ -1,3 +1,29 @@
+/*************************************************************************
+* \file:         PhysicsSystem.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          22 September 2026
+* \version       1.2
+* \brief
+*                Physics::Init, Shutdown and Step: starting the Jolt
+*                world, stopping it in reverse order, and running one
+*                tick (which also breaks overloaded joints).
+*
+* \details
+*                Jolt's trace and assert messages are routed into the
+*                engine logger. Running out of bodies, pairs or contacts
+*                is logged from Step, because Jolt drops contacts instead
+*                of growing and the symptom is things sinking through the
+*                floor.
+*
+* \history
+*    -v1.0       Jolt world setup
+*    -v1.1       layer tables, job system, Jolt messages in the log; clean
+*                at /W4
+*    -v1.2       joints: the contact filter, joints removed first at
+*                Shutdown, and breaking checked after each Step
+*
+**************************************************************************/
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header
@@ -154,12 +180,24 @@ namespace Crucible {
                            *impl.m_layerToTree, *impl.m_layerVsTree, *impl.m_layerPairs);
         impl.m_world->SetGravity(ToJolt(settings.m_gravity));
 
+        // Lets jointed bodies pass through each other (JointContactFilter). It
+        // must outlive the world, which holds a pointer to it: Shutdown resets
+        // the world first, and the member is declared before m_world.
+        impl.m_contactFilter = std::make_unique<JointContactFilter>();
+        impl.m_world->SetContactListener(impl.m_contactFilter.get());
+
         // Characters live beside the bodies. Slot 0 stays empty so that index 0
         // can mean "no character", the same trick BodyHandle plays with 0xFFFFFFFF.
         impl.m_characterVsCharacter = std::make_unique<JPH::CharacterVsCharacterCollisionSimple>();
         impl.m_characters.clear();
         impl.m_characters.emplace_back();
         impl.m_freeCharacterSlots.clear();
+
+        // Joints use the same trick: slot 0 is never handed out.
+        impl.m_joints.clear();
+        impl.m_joints.emplace_back();
+        impl.m_freeJointSlots.clear();
+        impl.m_brokenJoints.clear();
 
         impl.m_settings    = settings;
         impl.m_initialised = true;
@@ -179,7 +217,15 @@ namespace Crucible {
         Impl& impl = *m_impl;
         if (!impl.m_initialised) return;
 
-        // Characters first: releasing one also removes the hidden body it carries,
+        // Joints before anything else: each one points at its bodies, so it
+        // has to go while they still exist.
+        for (std::uint32_t index = 1; index < impl.m_joints.size(); ++index) impl.RemoveJoint(index);
+        impl.m_joints.clear();
+        impl.m_freeJointSlots.clear();
+        impl.m_brokenJoints.clear();
+        impl.m_contactFilter->Clear();
+
+        // Characters next: releasing one also removes the hidden body it carries,
         // and that body has to go while the world still exists.
         for (Impl::Character& slot : impl.m_characters) {
             if (!slot.inUse) continue;
@@ -202,6 +248,7 @@ namespace Crucible {
         // Reverse of Init. The layer tables go last because the world holds
         // references to them.
         impl.m_world.reset();
+        impl.m_contactFilter.reset();   // after the world: the world held a pointer to it
         impl.m_jobSystem.reset();       // joins the worker threads
         impl.m_tempAllocator.reset();
         impl.m_layerVsTree.reset();
@@ -232,6 +279,7 @@ namespace Crucible {
 
         Impl& impl = *m_impl;
         impl.m_movedBodies.clear();
+        impl.m_brokenJoints.clear();
         if (!impl.m_initialised || !(fixedDt > 0.0f)) return;
 
         const JPH::EPhysicsUpdateError errors =
@@ -239,6 +287,11 @@ namespace Crucible {
 
         if (errors != JPH::EPhysicsUpdateError::None)
             CRU_ERROR("Physics::Step: a buffer filled up and contacts were dropped - raise the limits in PhysicsSettings");
+
+        // Right after the solve, while each joint's "how hard did I push" is
+        // still this step's number. Breaking wakes the bodies, so a crate that
+        // just came loose is in the moved list below from the next step on.
+        impl.BreakJoints(fixedDt);
 
         // WHAT MOVED -------------------------------------------------------------- //
         // Only awake bodies can have moved. Jolt puts a body to sleep once it has

@@ -58,8 +58,10 @@ namespace Crucible {
 
 		// Any panel's own UI, drawn in the Inspector instead of an entity - e.g. the Asset
 		// Browser's audio clip preview (Unity shows a selected asset here too). Replaced by the
-		// next SetSelectedEntity/SetTarget/ClearTarget, like the rttr path above.
-		void SetCustomTarget(std::function<void()> draw) { m_draw = std::move(draw); m_selected = kNullEntity; m_selection.clear(); }
+		// next SetSelectedEntity/SetTarget/ClearTarget, like the rttr path above. Commits the
+		// edit in progress first, like they do, so its undo step lands before the switch.
+		void SetCustomTarget(std::function<void()> draw) { CommitPendingEdit(); m_draw = std::move(draw); m_selected = kNullEntity; m_selection.clear(); }
+		
 		bool HasCustomTarget() const { return m_draw != nullptr; }
 
 		// ---- Selection: one or more entities ----

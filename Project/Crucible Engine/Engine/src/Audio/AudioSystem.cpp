@@ -1,3 +1,25 @@
+/*************************************************************************
+* \file:         AudioSystem.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          1 October 2026
+* \version       1.0
+* \brief
+*                Audio::Init, Shutdown and Update: starting FMOD and its
+*                buses, stopping it in reverse order, and the
+*                once-per-frame update.
+*
+* \details
+*                COM is started before the first FMOD call and stopped
+*                after the last, as FMOD requires on Windows. Everything
+*                is released in reverse order: sounds, then the bus
+*                ChannelGroups, then the FMOD system. Every FMOD result
+*                goes through one check that logs FMOD's own error text.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #include "AudioSystem.h"
 
 // Windows - only for CoInitializeEx / CoUninitialize. The two defines keep

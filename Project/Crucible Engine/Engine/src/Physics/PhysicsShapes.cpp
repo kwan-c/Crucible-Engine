@@ -1,3 +1,22 @@
+/*************************************************************************
+* \file:         PhysicsShapes.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 September 2026
+* \version       1.0
+* \brief
+*                Turns a ShapeDesc (box, sphere, capsule) into a Jolt
+*                shape.
+*
+* \details
+*                Sizes below a millimetre are raised to one, because Jolt
+*                refuses zero-sized shapes and a zero is usually a typo. A
+*                shape Jolt cannot build is logged here and returns null.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header

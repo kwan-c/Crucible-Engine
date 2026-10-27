@@ -204,6 +204,18 @@ namespace Crucible {
         xresource::instance_guid IdOf(Entity entity) const;
 
         /*********************************************************************
+         \brief  The guid an entity will be saved under, issuing one now if
+                 it has none yet.
+         \return The guid - never zero for a valid entity.
+         \details
+            For anything that stores a link to another entity before the
+            scene has been saved (the Inspector's entity picker, e.g. a
+            PhysicsJoint's connected body). Save keeps every guid it already
+            knows, so the one issued here is the one written to the file.
+         *********************************************************************/
+        xresource::instance_guid EnsureId(Entity entity);
+
+        /*********************************************************************
          \brief  The entity saved under a guid - the reverse of IdOf.
          \return The entity, or kNullEntity if this scene has no entity with
                  that guid (or the guid is zero).

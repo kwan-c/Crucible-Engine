@@ -14,6 +14,13 @@ int main()
     // Enable memory leak checking at program exit
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
 
+    // Starts the log, and ends it when main returns: the closing banner, a final flush
+    // and the file closed properly. First, and outside the try below, so it is open for
+    // the asset check's messages and destroyed AFTER the game - the engine's own shutdown
+    // messages still reach the file. Without it the logger starts itself on the first
+    // message and is never shut down.
+    Crucible::Debug::LogSession logSession{};
+
     // Before anything else: without the Assets folder there is no config, no shaders and no
     // scenes. This tells the player what was searched, instead of failing somewhere inside.
     if (!Crucible::RequireAssetRoot())

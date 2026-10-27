@@ -540,6 +540,22 @@ namespace Crucible {
         return (found == m_ids.end()) ? xresource::instance_guid{} : found->second;
     }
 
+    xresource::instance_guid Scene::EnsureId(Entity entity)
+    {
+        if (!entity.IsValid())
+        {
+            return xresource::instance_guid{};
+        }
+        // try_emplace only generates when the entity is new to the map, so an
+        // entity that already has a guid keeps it.
+        const auto [it, inserted] = m_ids.try_emplace(entity, xresource::instance_guid{});
+        if (inserted)
+        {
+            it->second = xresource::instance_guid::GenerateGUIDCopy();
+        }
+        return it->second;
+    }
+
     Entity Scene::EntityOf(const xresource::instance_guid& id) const
     {
         if (id.m_Value == 0)

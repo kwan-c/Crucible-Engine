@@ -7,11 +7,19 @@
 #include "Configuration/EngineConfigLoader.h"
 #include "AssetPipe/AssetPaths.h"
 #include "Diagnostics/FatalError.h"
+#include "Diagnostics/Logger.h"
 #include "ImGui/ImGuiLayer.h"
 
 int main(int argc, char** argv)
 {
-// Before anything else: without the Assets folder there is no config, no shaders and no
+    // Starts the log, and ends it when main returns: the closing banner, a final flush
+    // and the file closed properly. First, and outside the try below, so it is open for
+    // the asset check's messages and destroyed AFTER Core - the engine's own shutdown
+    // messages still reach the file. Without it the logger starts itself on the first
+    // message and is never shut down.
+    Crucible::Debug::LogSession logSession{};
+
+    // Before anything else: without the Assets folder there is no config, no shaders and no
     // scenes. This says what was searched, instead of failing somewhere inside the engine.
     if (!Crucible::RequireAssetRoot())
     {

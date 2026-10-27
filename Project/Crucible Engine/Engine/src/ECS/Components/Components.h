@@ -47,6 +47,7 @@
 #include"ComponentKind.h"
 #include"Math/Math.h"
 #include"Physics/PhysicsComponents.h"
+#include"Player/PlayerComponents.h"   // PlayerController, CameraOrbit (moved out of PhysicsComponents.h)
 #include"Audio/AudioComponents.h"
 #include"../Core/ECSCore.h"   // Entity (HierarchyNode links)
 #include"Graphics/MeshHandle.h"   // MeshHandle - deliberately NOT RenderTypes.h, which pulls in Vulkan
@@ -614,6 +615,22 @@ namespace Crucible
 		float angularDrag = 0.05f;   // rotational damping, 1/s. Stops a knocked-over crate spinning forever
 
 		RigidBodyConstraints constraints{};   // frozen axes; e.g. freeze rotation X+Z so a player body never tips over
+
+		// Runtime only: not saved, not in the Inspector. Gameplay adds to these
+		// any time during the frame; ECSPhysicsSystem hands the totals to every
+		// fixed step this frame, then zeroes them. Unlike Unity, calling this
+		// from a normal Update is correct - the push does not depend on frame rate.
+		Math::vec3 force { 0.f, 0.f, 0.f };   // newtons, world space, at the centre of mass
+		Math::vec3 torque{ 0.f, 0.f, 0.f };   // newton-metres, world space
+
+		// An instant kick (a jump, a knockback). Unlike force it is kept until a
+		// physics step actually runs, so a kick from a frame with no step is
+		// not lost - it lands one frame later instead.
+		Math::vec3 impulse{ 0.f, 0.f, 0.f };  // kg*m/s, world space, at the centre of mass
+
+		void AddForce    (const Math::vec3& f) { force   += f; }   // Unity's Rigidbody.AddForce
+		void AddTorque   (const Math::vec3& t) { torque  += t; }   // Unity's Rigidbody.AddTorque
+		void ApplyImpulse(const Math::vec3& i) { impulse += i; }   // Unity's AddForce(..., ForceMode.Impulse)
 	};
     
 	/*************************************************************************

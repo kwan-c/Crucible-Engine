@@ -125,5 +125,22 @@ enum class MetaDataTypes {
 					rttr::metadata(MetaDataTypes::ASSET_REF, Crucible::ResourceKind::Mesh)
 				)
 	*/
-	ASSET_REF
+	ASSET_REF,
+
+	/*!
+	* @brief    This uint64 is another entity's scene id (Scene::IdOf). The
+	*			Inspector draws it as "Entity N" with a drop target for an
+	*			entity dragged from the Hierarchy, and a button to clear it,
+	*			instead of a raw hex field. Serialization is unchanged: the
+	*			id is saved as a plain number, and stays valid across reloads
+	*			because scene ids do.
+	*
+	* @values	true
+	*
+	* @usage	.property("connectedBody", &PhysicsJoint::m_connectedBody)
+				(
+					rttr::metadata(MetaDataTypes::ENTITY_REF, true)
+				)
+	*/
+	ENTITY_REF
 };

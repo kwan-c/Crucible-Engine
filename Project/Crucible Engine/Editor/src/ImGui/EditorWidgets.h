@@ -94,4 +94,11 @@ namespace Crucible::EditorWidgets {
 
 	// Call once per frame, after all panels have drawn (ImGuiManager::Render does this).
 	void EndFrameMouseLock();
+
+	// A row of 2, 3 or 4 number boxes, each led by a small coloured axis letter: X, Y and Z
+	// in the Scene view gizmo's own red, green and blue (read from ImGuizmo's style, so the
+	// two can never drift apart), brightened to read on the dark theme. W, a 4th, has no
+	// gizmo colour and stays plain. Ends with the label, like ImGui's DragFloat3, and does
+	// the infinite drag for every box. True when any value changed this frame.
+	bool AxisDragFloats(char const* label, float* values, int count, float speed, char const* format = "%.3f");
 }

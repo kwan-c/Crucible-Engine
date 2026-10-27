@@ -1,3 +1,29 @@
+/*************************************************************************
+* \file:         PhysicsBodies.cpp
+* \author:       Hugo Low Ren Hao (main author),
+*                Tan Chun Kwang Xavier (v1.2: gravity, damping, axis locks)
+* \par:          Email: low.h@digipen.edu,
+*                Email: chunkwangxavier.tan@digipen.edu
+* \date          27 September 2026
+* \version       1.4
+* \brief
+*                Bodies: create, destroy, teleport, move, set velocity,
+*                and push with impulses and forces.
+*
+* \details
+*                Every function starts by checking the handle, so a handle
+*                to a destroyed body does nothing instead of reaching into
+*                freed memory.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       maths types moved to glm
+*    -v1.2       per-body gravity, damping, axis locks and mass (Xavier)
+*    -v1.3       forces: AddForce, AddForceAtPosition, AddTorque,
+*                ApplyImpulseAtPosition
+*    -v1.4       DestroyBody removes the body's joints first
+*
+**************************************************************************/
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header
@@ -136,6 +162,10 @@ namespace Crucible {
         Impl& impl = *m_impl;
         if (!impl.Has(body)) return;
 
+        // Its joints first: each holds a raw pointer to this body, and would be
+        // pointing at freed memory the moment the body is destroyed.
+        impl.RemoveJointsOn(body.m_id);
+
         impl.Bodies().RemoveBody(Impl::ToId(body));     // out of the simulation...
         impl.Bodies().DestroyBody(Impl::ToId(body));    // ...then gone
         impl.m_bodies.erase(body.m_id);
@@ -220,5 +250,50 @@ namespace Crucible {
         impl.Bodies().AddImpulse(Impl::ToId(body), ToJolt(impulse));
 
     }   // Physics::ApplyImpulse()
+
+    // Jolt adds this to the body's running total, uses the total in the next
+    // Step, then zeroes it - a force nobody re-applies simply stops. Jolt skips
+    // static and kinematic bodies itself, so no motion check here (unlike
+    // MoveKinematic, which Jolt does not guard).
+    void Physics::AddForce(const BodyHandle& body, const Math::vec3& force) {
+
+        Impl& impl = *m_impl;
+        if (!impl.Has(body) || !IsFinite(force)) return;
+
+        impl.Bodies().AddForce(Impl::ToId(body), ToJolt(force));   // wakes it, like ApplyImpulse
+
+    }   // Physics::AddForce()
+
+    // Off-centre, so Jolt also turns part of the push into spin around the
+    // centre of mass - the further from it, the more spin.
+    void Physics::AddForceAtPosition(const BodyHandle& body, const Math::vec3& force, const Math::vec3& worldPoint) {
+
+        Impl& impl = *m_impl;
+        if (!impl.Has(body) || !IsFinite(force) || !IsFinite(worldPoint)) return;
+
+        impl.Bodies().AddForce(Impl::ToId(body), ToJolt(force), ToJolt(worldPoint));
+
+    }   // Physics::AddForceAtPosition()
+
+    // Cleared after every Step, exactly like AddForce.
+    void Physics::AddTorque(const BodyHandle& body, const Math::vec3& torque) {
+
+        Impl& impl = *m_impl;
+        if (!impl.Has(body) || !IsFinite(torque)) return;
+
+        impl.Bodies().AddTorque(Impl::ToId(body), ToJolt(torque));
+
+    }   // Physics::AddTorque()
+
+    // Instant, like ApplyImpulse, so it needs no repeating and is safe to call
+    // once from a frame update (on Fire). Dynamic bodies only; wakes them.
+    void Physics::ApplyImpulseAtPosition(const BodyHandle& body, const Math::vec3& impulse, const Math::vec3& worldPoint) {
+
+        Impl& impl = *m_impl;
+        if (!impl.Has(body) || !IsFinite(impulse) || !IsFinite(worldPoint)) return;
+
+        impl.Bodies().AddImpulse(Impl::ToId(body), ToJolt(impulse), ToJolt(worldPoint));
+
+    }   // Physics::ApplyImpulseAtPosition()
 
 }   // NAMESPACE CRUCIBLE

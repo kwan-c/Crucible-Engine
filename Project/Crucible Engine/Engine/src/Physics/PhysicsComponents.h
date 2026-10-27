@@ -1,3 +1,33 @@
+/*************************************************************************
+* \file:         PhysicsComponents.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 September 2026
+* \version       1.6
+* \brief
+*                The physics components the designer and gameplay touch:
+*                Collider, CharacterController, ConstantForce and
+*                PhysicsJoint. (The player's controls are in
+*                Player/PlayerComponents.h.)
+*
+* \details
+*                Sizes are full sizes, the way Unity states them;
+*                ECSPhysicsSystem halves them for Jolt in one place.
+*                ScaledCollider applies the Transform's scale, so what you
+*                see is what you hit. Also holds the Entity to user-data
+*                packing.
+*
+* \history
+*    -v1.0       Collider and CharacterController
+*    -v1.1       maths types moved to glm
+*    -v1.2       PlayerController; Collider scales with the Transform
+*    -v1.3       CameraOrbit and face-the-camera
+*    -v1.4       ConstantForce
+*    -v1.5       PhysicsJoint
+*    -v1.6       PlayerController and CameraOrbit moved out to
+*                Player/PlayerComponents.h: controls, not physics
+*
+**************************************************************************/
 #pragma once
 
 // STL
@@ -159,72 +189,110 @@ namespace Crucible {
     CRUCIBLE_COMPONENT(CharacterController, CharacterController)
 
     /*
-        Marks the mech THIS machine controls: ECSPlayerControllerSystem reads
-        the keyboard and drives the CharacterController on the same entity.
-        Unity's equivalent is a PlayerMovement script calling SimpleMove.
+        Unity's ConstantForce: a steady push a designer sets in the Inspector -
+        wind on a crate, a thruster, an updraft - with no script at all.
 
-            world.AddComponent(mech, CharacterController{});
-            world.AddComponent(mech, PlayerController{});     // ...and WASD walks it
+            world.AddComponent(crate, RigidBody{});
+            world.AddComponent(crate, ConstantForce{ .m_force = { 0, 20, 0 } });   // ...and it drifts upward
 
-        A separate component, not a flag on CharacterController, because in
-        multiplayer every mech has a CharacterController but only the local
-        one reads the keyboard. The other mechs are moved by network packets,
-        so they simply never get this component.
+        The world-space pair pushes along the world's axes, whichever way the
+        body faces. The relative pair pushes along the body's OWN axes and turns
+        with it, so a rocket with relative force (0, 0, -100) always thrusts
+        out of its own front (-Z is forward in a right-handed, Y-up engine).
 
-        Does nothing without a CharacterController next to it.
+        Handed to every physics step, so it pushes the same at any frame rate.
+        Like Unity's, it needs a RigidBody on the same entity (only a dynamic
+        body can be pushed), and it keeps that body awake for as long as it pushes.
     */
-    struct PlayerController {
+    struct ConstantForce {
 
-        float m_moveSpeed  = 6.0f;      // m/s on the ground. Diagonals are no faster
-        float m_jumpHeight = 1.5f;      // metres, measured from the feet. 0 disables jumping
+        Math::vec3 m_force          = Math::vec3(0.0f, 0.0f, 0.0f);   // newtons, world axes
+        Math::vec3 m_relativeForce  = Math::vec3(0.0f, 0.0f, 0.0f);   // newtons, the body's own axes
+        Math::vec3 m_torque         = Math::vec3(0.0f, 0.0f, 0.0f);   // newton-metres, world axes
+        Math::vec3 m_relativeTorque = Math::vec3(0.0f, 0.0f, 0.0f);   // newton-metres, the body's own axes
 
-        // Turn the whole mech to face where the camera looks (yaw only - it stays
-        // upright). Needs the CameraOrbit pivot to be a child of this entity. Off:
-        // the mech keeps its rotation and the camera orbits freely round it.
-        // Safe to flip mid-Play: the pivot cancels the mech's turn, so the view
-        // never jumps either way.
-        bool  m_faceCamera = true;
+    };  // CONSTANTFORCE STRUCT
 
-    };  // PLAYERCONTROLLER STRUCT
-
-    CRUCIBLE_COMPONENT(PlayerController, PlayerController)
+    CRUCIBLE_COMPONENT(ConstantForce, ConstantForce)
 
     /*
-        The third-person camera. The mouse turns the entity this sits on, and
-        that entity is a PIVOT - an empty point the camera hangs off - not the
-        camera itself:
+        Unity's joints - FixedJoint, HingeJoint, CharacterJoint, SpringJoint -
+        folded into one component with a type field, the way Collider folds
+        the three collider shapes. It goes on one of the two entities and names
+        the other; both need a Collider, and at least one a RigidBody.
 
-            Mech            CharacterController, PlayerController
-            '- Pivot        CameraOrbit, local position about (0, 1.5, 0): shoulder height
-               '- Camera    CameraComponent, local position about (0, 0, 5): 5m behind
+            Forearm   Collider, RigidBody, PhysicsJoint{ Hinge, connected = UpperArm }
+            Door      Collider, RigidBody, PhysicsJoint{ Hinge, connected = none }   // hinged to the world
 
-        Turning the pivot swings "5m behind me" around, so the camera circles
-        the mech and the hierarchy does all the maths; nothing ever touches the
-        camera entity. Unity's Starter Assets do the same with PlayerCameraRoot.
-        Putting this on the camera instead would only spin it in place - it
-        would look away from the mech rather than go round it.
+        CONNECTED BODY. Two ways to name it, because two kinds of code make joints:
+          - m_connectedBody: the other entity's scene id. What the Inspector's
+            picker writes and the scene file saves. 0 = the world.
+          - m_connectedEntity: the other entity itself, for code. An entity
+            spawned during Play has no scene id, so a ragdoll built in code sets
+            this instead. Not saved. Wins when both are set.
 
-        ECSPlayerControllerSystem writes the pivot's Transform.rotation from
-        m_yaw and m_pitch every frame while Playing, so rotate the pivot with
-        these two fields, not with the gizmo. They are saved: what they hold
-        in the editor is the view the game starts with.
+        Anchor and axes are in THIS entity's local space, like Unity's, and
+        follow its Transform. The joint is built from the pose both entities
+        are in when Play starts (or when it is added), and every limit is
+        measured from that pose.
+
+        Changing a setting during Play rebuilds the joint from the pose things
+        are in at that moment, the same as Collider rebuilding its body.
     */
-    struct CameraOrbit {
+    struct PhysicsJoint {
 
-        // SETTINGS ---------------------------------------------------------- //
+        JointType     m_type            = JointType::Hinge;
+        std::uint64_t m_connectedBody   = 0;        // scene id of the other entity (Scene::IdOf). 0 = the world
+        Entity        m_connectedEntity {};         // runtime: set from code. Not saved, not in the Inspector
 
-        float m_sensitivity = 0.1f;     // degrees turned per pixel of mouse movement
-        float m_minPitch    = -30.0f;   // degrees. Below 0 the camera dips under the pivot and looks up
-        float m_maxPitch    =  70.0f;   // degrees. Short of 90, or at the top the view flips over
+        Math::vec3    m_anchor          = Math::vec3(0.0f, 0.0f, 0.0f);   // the joint point, this entity's local space
+        Math::vec3    m_axis            = Math::vec3(1.0f, 0.0f, 0.0f);   // Hinge: turns around it. Character: the twist axis, along the limb
+        Math::vec3    m_swingAxis       = Math::vec3(0.0f, 1.0f, 0.0f);   // Character: swing1 turns around it
+        bool          m_enableCollision = false;    // Unity's enableCollision: let the two bodies collide with each other
 
-        // STATE: the current view, in degrees -------------------------------- //
+        // Hinge, in degrees. Min 0 or below, max 0 or above (the starting pose must be allowed).
+        // Positive = THIS entity turning the right-hand-rule way around m_axis (point your right
+        // thumb along the axis: your fingers curl the positive way), relative to the connected
+        // body. A knee whose axis points to the body's right bends backwards with positive angles.
+        bool          m_useLimits       = false;
+        float         m_minAngle        = -90.0f;
+        float         m_maxAngle        =  90.0f;
 
-        float m_yaw         = 0.0f;     // round the mech. + turns the view left, as the mouse moving left does
-        float m_pitch       = 0.0f;     // + raises the camera to look down on the mech, as the mouse moving down does
+        // Character, in degrees: twist around m_axis, swing1 around m_swingAxis,
+        // swing2 around the axis at right angles to both.
+        float         m_lowTwistLimit   = -20.0f;
+        float         m_highTwistLimit  =  20.0f;
+        float         m_swing1Limit     =  40.0f;
+        float         m_swing2Limit     =  40.0f;
 
-    };  // CAMERAORBIT STRUCT
+        // Spring. m_connectedAnchor is the far end of the spring, in the OTHER
+        // entity's local space (world space when connected to the world).
+        // Distances 0 = as far apart as they start.
+        Math::vec3    m_connectedAnchor = Math::vec3(0.0f, 0.0f, 0.0f);
+        float         m_spring          = 10.0f;    // stiffness, N/m. 0 = a rigid rod
+        float         m_damper          = 0.2f;     // N*s/m
+        float         m_minDistance     = 0.0f;
+        float         m_maxDistance     = 0.0f;
 
-    CRUCIBLE_COMPONENT(CameraOrbit, CameraOrbit)
+        // Breaking. 0 = never (Unity uses Infinity, which a JSON scene file cannot store).
+        float         m_breakForce      = 0.0f;     // newtons
+        float         m_breakTorque     = 0.0f;     // newton-metres
+
+        // Unity's solver knobs. 0 = engine default. Raise solverIterations (default 2)
+        // when the joint rests slightly wrong under weight - limbs apart, a knee lying
+        // past its limit; 8 suits a ragdoll. Raise solverVelocityIterations (default 10)
+        // when a light body on a long lever swings visibly past a limit.
+        std::uint32_t m_solverIterations         = 0;
+        std::uint32_t m_solverVelocityIterations = 0;
+
+        // Runtime: set when the joint broke during Play, so it is not rebuilt.
+        // Read it the way Unity code waits for OnJointBreak. Not saved, so Stop
+        // brings every joint back.
+        bool          m_isBroken        = false;
+
+    };  // PHYSICSJOINT STRUCT
+
+    CRUCIBLE_COMPONENT(PhysicsJoint, PhysicsJoint)
 
     // ------------------------------------------------------------------- //
     // ENTITY <-> USER DATA

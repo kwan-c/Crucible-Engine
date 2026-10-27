@@ -1,3 +1,21 @@
+/*************************************************************************
+* \file:         Logger.tpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.0
+* \brief
+*                The template part of Logger.h: LogSetting for any value
+*                std::format can print.
+*
+* \details
+*                Included at the bottom of Logger.h. Never include it
+*                directly.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #pragma once
 
 // Included at the bottom of Logger.h. Do not include this file directly.

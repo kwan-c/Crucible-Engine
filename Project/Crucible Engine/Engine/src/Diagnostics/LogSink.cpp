@@ -1,3 +1,23 @@
+/*************************************************************************
+* \file:         LogSink.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.0
+* \brief
+*                The console, Visual Studio Output window and log file
+*                sinks.
+*
+* \details
+*                The console writes a plain newline rather than std::endl,
+*                so it does not flush on every line; the logger flushes
+*                when it matters. The Output window sink only does
+*                anything on Windows.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #include "LogSink.h"
 
 #include <iostream>

@@ -71,16 +71,16 @@ namespace Crucible
 		Skybox = 9,           // Graphics: scene sky + ambient + exposure
 		AudioListener = 10,   // Audio: where the ears are (Audio/AudioComponents.h)
 		Camera = 11,          // Graphics: the game camera (struct CameraComponent)
-		PlayerController = 12,   // Physics: keyboard -> CharacterController, local player only (Physics/PhysicsComponents.h)
-		CameraOrbit = 13,        // Physics: mouse -> third-person camera pivot (Physics/PhysicsComponents.h)
+		PlayerController = 12,   // Player: keyboard / gamepad -> CharacterController, local player only (Player/PlayerComponents.h)
+		CameraOrbit = 13,        // Player: mouse / right stick -> third-person camera pivot (Player/PlayerComponents.h)
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
 		EntityName = 17,         // every entity's display name (mandatory) - Components.h
-		UICanvas = 18, 
-		UIRect = 19, 
-		UIImage = 20, 
-		UIButton = 21, 
+		UICanvas = 18,
+		UIRect = 19,
+		UIImage = 20,
+		UIButton = 21,
 		UIText = 22,
 		UISlider = 23,           // UI: a draggable value (UI/UIComponents.h)
 		Water = 24,
@@ -88,9 +88,11 @@ namespace Crucible
 		SocketAttachment = 26,
 		ScriptComponent = 27,
 		PrefabInstance = 28,     // Editor/Scene: links an entity to the .cprefab it was placed from (Scene/Prefab.h)
+		ConstantForce = 29,      // Physics: a steady push set in the Inspector (Physics/PhysicsComponents.h)
+		PhysicsJoint = 30,       // Physics: hinge, fixed, ball, character or spring joint between two bodies (Physics/PhysicsComponents.h)
 
 
-		MAXCOMPONENT = 29
+		MAXCOMPONENT = 31
 	};
 
 
@@ -264,5 +266,7 @@ namespace Crucible
  X(SocketAttachment)                                                           \
  X(ScriptComponent)                                                            \
  X(PrefabInstance)                                                             \
+ X(ConstantForce)                                                              \
+ X(PhysicsJoint)                                                               \
 
 }

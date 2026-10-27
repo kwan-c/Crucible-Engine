@@ -1,8 +1,9 @@
 /*************************************************************************
 * \file:         ECSPlayerControllerSystem.cpp
-* \author:       Hugo
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
 * \date          2 October 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Implementation of ECSPlayerControllerSystem. See the
 *                header for what happens each frame.
@@ -15,6 +16,8 @@
 *    -v1.4       hierarchy-aware camera orbit: the mech no longer has to be
 *                a root - its world rotation (and the frame its own
 *                Transform is in) come from its parents
+*    -v1.5       gamepad: left stick walks (analog), right stick turns the
+*                camera (CameraOrbit::m_stickSpeed), A jumps
 *
 **************************************************************************/
 #include "ECSPlayerControllerSystem.h"
@@ -27,7 +30,8 @@
 #include "Components/Components.h"
 #include "Input/InputSystem.h"
 #include "Math/Math.h"
-#include "Physics/PhysicsComponents.h"
+#include "Physics/PhysicsComponents.h"   // CharacterController
+#include "Player/PlayerComponents.h"     // PlayerController, CameraOrbit
 #include "Systems/Query.h"
 #include "World.h"
 
@@ -87,6 +91,12 @@ namespace Crucible {
         // GetMouseDelta is a distance in pixels, so it is NOT multiplied by dt.
         const Math::vec2 mouse = Input::IsMouseLocked() ? Input::GetMouseDelta() : Math::vec2(0.0f, 0.0f);
 
+        // The right stick turns it too, and not only while the cursor is captured: a pad
+        // cannot wander off to the Inspector the way a free mouse does. A stick is a
+        // POSITION, not a distance, so unlike the mouse it is a speed - times dt.
+        const Math::vec2 stick = Input::GetGamepadRightStick();
+        const float      dt    = world.DeltaTime();
+
         world.CreateQuery<CameraOrbit, const Transform>()
             .ForEach([&](Entity pivot, CameraOrbit& orbit, const Transform& transform) {
 
@@ -95,6 +105,12 @@ namespace Crucible {
                 // is + pitch. Neither axis is inverted - the common default.
                 orbit.m_yaw   -= mouse.x * orbit.m_sensitivity;
                 orbit.m_pitch += mouse.y * orbit.m_sensitivity;
+
+                // Stick right turns the view right (- yaw), like the mouse. Stick UP looks
+                // up, which lowers the camera: - pitch. (The mouse's y counts downward in
+                // pixels; the stick's y is up-positive - Input flipped GLFW's for us.)
+                orbit.m_yaw   -= stick.x * orbit.m_stickSpeed * dt;
+                orbit.m_pitch -= stick.y * orbit.m_stickSpeed * dt;
 
                 // Yaw goes round and round; wrapping it stops a long session
                 // growing it into the millions, where a float has no precision left.
@@ -172,9 +188,16 @@ namespace Crucible {
         if (Input::IsDown(KeyCode::W)) forward += 1.0f;
         if (Input::IsDown(KeyCode::S)) forward -= 1.0f;
 
+        // The left stick adds to the keys rather than replacing them, so either works
+        // and neither has to be "switched to". It is analog: half tilt walks at half
+        // speed (the length clamp below only shrinks values OVER 1).
+        const Math::vec2 walkStick = Input::GetGamepadLeftStick();
+        right   += walkStick.x;
+        forward += walkStick.y;
+
         // IsPressed, not IsDown: one jump per press. Holding Space would
         // otherwise jump again the moment the mech lands - a pogo stick.
-        const bool jump = Input::IsPressed(KeyCode::Space);
+        const bool jump = Input::IsPressed(KeyCode::Space) || Input::IsPressed(KeyCode::GamepadA);
 
         // THE CAMERA -------------------------------------------------------------- //
         // Unity's Camera.main: the enabled camera with the highest priority, the

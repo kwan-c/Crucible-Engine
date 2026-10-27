@@ -1,3 +1,24 @@
+/*************************************************************************
+* \file:         PhysicsCharacters.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 September 2026
+* \version       1.1
+* \brief
+*                Characters, Unity's CharacterController: a capsule that
+*                walks, slides along walls and climbs steps.
+*
+* \details
+*                Built on Jolt's CharacterVirtual, which is not a body and
+*                only moves when MoveCharacter is called. Each one carries
+*                an inner body of the same shape so raycasts and crates
+*                can see it.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       maths types moved to glm
+*
+**************************************************************************/
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header

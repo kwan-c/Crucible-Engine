@@ -1,3 +1,21 @@
+/*************************************************************************
+* \file:         PhysicsLayers.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          22 September 2026
+* \version       1.0
+* \brief
+*                The collision matrix: which layers may touch which.
+*
+* \details
+*                Everything collides with everything except the listed
+*                pairs, so a new layer behaves sensibly the day it is
+*                added.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #include "PhysicsLayers.h"
 
 namespace Crucible {

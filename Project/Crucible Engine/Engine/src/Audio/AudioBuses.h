@@ -1,3 +1,24 @@
+/*************************************************************************
+* \file:         AudioBuses.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          29 September 2026
+* \version       1.0
+* \brief
+*                AudioBus: the volume groups (Master, Music, SFX), Unity's
+*                AudioMixerGroup.
+*
+* \details
+*                Every sound plays through one bus, and turning a bus down
+*                turns down everything in it, which is what the options
+*                menu's sliders use. AudioSystem.cpp gives each bus an
+*                FMOD ChannelGroup at startup, so adding a bus is one line
+*                here.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #pragma once
 
 // STL

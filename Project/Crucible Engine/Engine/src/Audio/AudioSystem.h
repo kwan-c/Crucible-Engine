@@ -1,3 +1,26 @@
+/*************************************************************************
+* \file:         AudioSystem.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          30 September 2026
+* \version       1.3
+* \brief
+*                Crucible::Audio: the FMOD Core wrapper. Clips, voices,
+*                buses and the listener, all through handles.
+*
+* \details
+*                Knows nothing about the ECS: ECSAudioSystem turns
+*                AudioSource components into calls on this class, the same
+*                split as Physics. No FMOD header is included; everything
+*                FMOD lives behind the Impl pointer (AudioInternal.h).
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       clips, voices, buses and the listener
+*    -v1.2       clip length for the editor preview; SetPaused (Abhishek)
+*    -v1.3       linear rolloff
+*
+**************************************************************************/
 #pragma once
 
 // STL
