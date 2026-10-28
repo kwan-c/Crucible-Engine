@@ -1571,10 +1571,33 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
     return changed;
 }
 
-bool Crucible::Inspector::DrawComponentExtras(UIRect&) {
+bool Crucible::Inspector::DrawComponentExtras(UIRect& rect) {
+	bool changed = false;
+
+	// ---- position: stored +y down (screen pixels). Shown +y up unless turned off with the checkbox -
+	// purely visual: what is stored never changes, and the choice resets to +Y up each start.
+	EditorManager& editor = EditorManager::GetInstance();
+	bool const yUp = editor.GetUIPositionYUp();
+	float shown[2] = { rect.position.x, yUp ? -rect.position.y : rect.position.y };
+	if (ImGui::DragFloat2("position", shown, 1.0f, 0.0f, 0.0f, "%.1f")) {
+		rect.position = { shown[0], yUp ? -shown[1] : shown[1] };
+		changed = true;
+	}
+	ImGui::SameLine();
+	bool up = yUp;
+	if (ImGui::Checkbox("+Y up", &up)) { editor.SetUIPositionYUp(up); }
+	ImGui::SetItemTooltip(up ? "Position Y shown with positive = up (like Unity). Display only: the scene stores the same value either way."
+	                         : "Position Y shown as stored: positive = down (screen pixels). Display only.");
+
+	changed |= ImGui::DragFloat2("size", &rect.size.x, 1.0f, 0.0f, 0.0f, "%.1f");
+	changed |= ImGui::DragFloat("rotation", &rect.rotation, 0.5f, 0.0f, 0.0f, "%.1f deg");
+	ImGui::SetItemTooltip("Counter-clockwise, around the pivot.");
+	changed |= ImGui::Checkbox("raycastTarget", &rect.raycastTarget);
+	ImGui::TextDisabled("computed (screen box): %.0f, %.0f  to  %.0f, %.0f", rect.computed.x, rect.computed.y, rect.computed.z, rect.computed.w);
+
 	// Where this element is drawn - or that it isn't (dragged out of its canvas in the Hierarchy).
 	Entity const entity = GetSelectedEntity();
-	if (!entity.IsValid() || !m_world.IsAlive(entity) || m_world.HasComponent<UICanvas>(entity)) { return false; }
+	if (!entity.IsValid() || !m_world.IsAlive(entity) || m_world.HasComponent<UICanvas>(entity)) { return changed; }
 	Entity canvas = kNullEntity;
 	for (Entity p = m_world.GetParent(entity); p.IsValid(); p = m_world.GetParent(p)) {
 		if (m_world.HasComponent<UICanvas>(p)) { canvas = p; }   // the topmost canvas owns the tree
@@ -1585,7 +1608,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIRect&) {
 	} else if (UICanvas const* settings = m_world.Read<UICanvas>(canvas); settings && settings->renderMode == UICanvas::RenderMode::WorldSpace) {
 		ImGui::TextDisabled("On a world-space canvas: page pixels (%.0f px = 1 m). Display only.", std::max(settings->pixelsPerUnit, 1.0f));
 	}
-	return false;
+	return changed;
 }
 
 bool Crucible::Inspector::DrawComponentExtras(UICanvas& canvas) {

@@ -103,6 +103,10 @@ namespace Crucible {
 		// rotates / scales all of them by the same amount. One whole drag = one undo step
 		// (EndGizmoDrag pushes it).
 		void DrawGizmo(ImVec2 viewMin, ImVec2 viewSize);
+		// The gizmo on an element of a world-space canvas: in its page, along its own (turned) axes.
+		// Move changes UIRect::position, Rotate UIRect::rotation (around the page's normal), Scale
+		// UIRect::size (on an axis whose anchors are together). One drag = one undo step, as usual.
+		void DrawWorldUIGizmo(Entity entity, ImVec2 viewMin, ImVec2 viewSize);
 		void EndGizmoDrag();
 		// Mirrors the Inspector's selection into DebugDrawSystem (the active entity's selection
 		// box and light gizmos) and the renderer's outline (every selected entity).
@@ -143,6 +147,7 @@ namespace Crucible {
 		// Only top-level ones: a selected child already moves with its selected parent.
 		std::vector<std::pair<Entity, std::string>> m_gizmoBefore;
 		std::string m_gizmoVerb;                  // "Move" / "Rotate" / "Scale", the Edit menu label
+		glm::vec2   m_uiGizmoStartSize{ 0.0f };    // a world UI element's UIRect::size as a Scale drag began (ImGuizmo scales from the start)
 	};
 
 }

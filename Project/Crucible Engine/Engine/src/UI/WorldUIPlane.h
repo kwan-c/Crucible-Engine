@@ -82,6 +82,16 @@ namespace Crucible {
 		         WorldUIPlanePoint(plane, { box.z, box.y }), WorldUIPlanePoint(plane, { box.x, box.y }) };
 	}
 
+	/// Where a world point (assumed in the plane) is in the plane's own (possibly skewed) axes, +y up.
+	inline glm::vec2 WorldUIPlaneLocal(const WorldUIPlane& plane, const glm::vec3& point) {
+		const glm::vec3 d = point - plane.origin;
+		const float rr = glm::dot(plane.right, plane.right), ru = glm::dot(plane.right, plane.up), uu = glm::dot(plane.up, plane.up);
+		const float det = rr * uu - ru * ru;
+		if (std::fabs(det) < 1.0e-12f) { return glm::vec2(0.0f); }
+		const float dr = glm::dot(d, plane.right), du = glm::dot(d, plane.up);
+		return glm::vec2((dr * uu - du * ru) / det, (du * rr - dr * ru) / det);
+	}
+
 	/*************************************************************************
 	 \brief  Does the ray (origin + direction * t, t >= 0) hit the box in the
 	         plane? Either side counts (a single-sided panel can still be

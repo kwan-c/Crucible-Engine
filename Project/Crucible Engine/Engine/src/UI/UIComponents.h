@@ -106,7 +106,8 @@ namespace Crucible {
 		Math::vec2 anchorMin{ 0.5f };              // 0..1 of the parent rect. anchorMin == anchorMax: fixed size;
 		Math::vec2 anchorMax{ 0.5f };              //   apart: stretches with the parent
 		Math::vec2 pivot{ 0.5f };                  // 0..1 of this rect: the point that `position` places
-		Math::vec2 position{ 0.0f };               // pivot's offset from the anchors, in reference pixels
+		Math::vec2 position{ 0.0f };               // pivot's offset from the anchors, in reference pixels. +y is DOWN
+		                                           //   (screen pixels); the Inspector shows it +y up by default (display only)
 		Math::vec2 size{ 100.0f, 100.0f };         // in reference pixels (extra size when the anchors stretch)
 		float      rotation = 0.0f;                // degrees, counter-clockwise (like Unity), around the pivot.
 		                                           //   Children turn with their parent.
@@ -319,13 +320,15 @@ RTTR_REGISTRATION
 		.property("anchorMin",     &UIRect::anchorMin)
 		.property("anchorMax",     &UIRect::anchorMax)
 		.property("pivot",         &UIRect::pivot)
-		.property("position",      &UIRect::position)
-		.property("size",          &UIRect::size)
-		.property("rotation",      &UIRect::rotation)
-		.property("raycastTarget", &UIRect::raycastTarget)
+		// position .. computed: drawn by the Inspector (DrawComponentExtras(UIRect&)) in this order,
+		// so position's y can be shown +y up (display only) without changing what is saved.
+		.property("position",      &UIRect::position)      (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("size",          &UIRect::size)          (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("rotation",      &UIRect::rotation)      (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("raycastTarget", &UIRect::raycastTarget) (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
 		.property("computed",      &UIRect::computed)
 			(rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
-			 rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
+			 rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
 	;
 
 	rttr::registration::class_<UIImage>("UIImage")

@@ -888,13 +888,22 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 	Entity const entity = inspector ? inspector->GetSelectedEntity() : kNullEntity;
 
 	// Nothing to manipulate. Also finishes a drag whose entity went away mid-drag.
-	// A UI element (it has a UIRect) gets none: it is placed by its UIRect (Inspector), and its
-	// Transform does nothing. Its canvas has one, like any entity.
 	if (!m_viewport.IsValid() || viewSize.x <= 0.0f || viewSize.y <= 0.0f || m_flying
-		|| !entity.IsValid() || !m_world.IsAlive(entity) || !m_world.HasComponent<Transform>(entity)
-		|| m_world.HasComponent<UIRect>(entity)) {
+		|| !entity.IsValid() || !m_world.IsAlive(entity) || !m_world.HasComponent<Transform>(entity)) {
 		m_gizmoDrawn = false;
 		EndGizmoDrag();
+		return;
+	}
+	// A UI element (it has a UIRect) is placed by its UIRect, not its Transform: on a world-space
+	// canvas it gets a gizmo in the page that edits the UIRect; screen-space UI is edited in the UI
+	// tab. Its canvas has an ordinary gizmo, like any entity.
+	if (m_world.HasComponent<UIRect>(entity)) {
+		if (WorldCanvasOf(m_world, entity).IsValid() && !m_world.HasComponent<UICanvas>(entity)) {
+			DrawWorldUIGizmo(entity, viewMin, viewSize);
+		} else {
+			m_gizmoDrawn = false;
+			EndGizmoDrag();
+		}
 		return;
 	}
 	if (m_gizmoWasUsing && !(entity == m_gizmoEntity)) { EndGizmoDrag(); }   // selection changed mid-drag
@@ -1007,6 +1016,118 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 			if (!Detail::DecomposeTRS(glm::inverse(otherParent) * (delta * otherWorld), otherT, otherR, otherS)) { continue; }
 			t->positions = otherT;                                                   // Move and Rotate both move it
 			if (m_gizmoMode == GizmoMode::Rotate) { t->rotation = otherR; }          // only Rotate turns it
+			m_scenes.MarkDirty();
+		}
+	}
+
+	if (!usingGizmo && m_gizmoWasUsing) { EndGizmoDrag(); }
+	m_gizmoWasUsing = usingGizmo;
+}
+
+void Crucible::SceneView::DrawWorldUIGizmo(Entity entity, ImVec2 viewMin, ImVec2 viewSize) {
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	auto stop = [&] { m_gizmoDrawn = false; EndGizmoDrag(); };
+
+	const Entity canvasEntity = WorldCanvasOf(m_world, entity);
+	UICanvas const* canvasSettings = m_world.Read<UICanvas>(canvasEntity);
+	WorldTransform const* canvasTransform = m_world.Read<WorldTransform>(canvasEntity);
+	if (!canvasSettings || !canvasTransform || !canvasTransform->valid || !m_world.HasComponent<UIRect>(entity)) { stop(); return; }
+	if (m_gizmoWasUsing && !(entity == m_gizmoEntity)) { EndGizmoDrag(); }   // selection changed mid-drag
+	const UICanvas canvas = *canvasSettings;
+
+	Camera& camera = m_viewport.GetCamera();
+	glm::mat4 const view = camera.GetView();
+	glm::mat4 const projection = camera.GetProjection();
+
+	// Where the element is this frame: its rect on the page, then the page in the world (as this
+	// view sees it - a billboarded canvas turns toward the camera).
+	UI::LayoutWorldCanvas(m_world, canvasEntity, canvas, m_canvasLayout);
+	auto found = std::find_if(m_canvasLayout.begin(), m_canvasLayout.end(), [&](UI::LayoutItem const& i) { return i.entity == entity; });
+	if (found == m_canvasLayout.end()) { stop(); return; }   // under a switched-off rect: not laid out
+	const UI::LayoutItem item = *found;
+	const WorldUIPlane plane = WorldCanvasPlaneFor(canvas, canvasTransform->matrix, camera.position, view);
+	auto pageToWorld = [&](glm::vec2 p) { return WorldUIPlanePoint(plane, WorldCanvasToPlane(canvas, p)); };
+
+	// The gizmo's frame: at the element's pivot, along its own axes (rotation included). +y is the
+	// element's up (page -y), z its front.
+	const glm::vec2 pivotPage = item.ToScreen(item.pivot);
+	const glm::vec3 origin = pageToWorld(pivotPage);
+	glm::vec3 xAxis = pageToWorld(item.ToScreen(item.pivot + glm::vec2(1.0f, 0.0f))) - origin;
+	glm::vec3 yAxis = pageToWorld(item.ToScreen(item.pivot - glm::vec2(0.0f, 1.0f))) - origin;
+	const float pixel = glm::length(xAxis);   // one page pixel, in metres
+	if (!(pixel > 0.0f) || !(glm::length(yAxis) > 0.0f)) { stop(); return; }
+	xAxis = glm::normalize(xAxis);
+	yAxis = glm::normalize(yAxis);
+	const glm::vec3 zAxis = glm::normalize(glm::cross(xAxis, yAxis));
+	glm::mat4 world(1.0f);
+	world[0] = glm::vec4(xAxis, 0.0f);
+	world[1] = glm::vec4(yAxis, 0.0f);
+	world[2] = glm::vec4(zAxis, 0.0f);
+	world[3] = glm::vec4(origin, 1.0f);
+
+	// Only the page's two axes: nothing moves off the page.
+	int operation = ImGuizmo::TRANSLATE_X | ImGuizmo::TRANSLATE_Y;
+	float snapStep = 10.0f * pixel;   // Ctrl-snap: 10 page pixels...
+	char const* verb = "Move";
+	if (m_gizmoMode == GizmoMode::Rotate) { operation = ImGuizmo::ROTATE_Z; snapStep = 15.0f; verb = "Rotate"; }                 // ...15 degrees...
+	if (m_gizmoMode == GizmoMode::Scale)  { operation = ImGuizmo::SCALE_X | ImGuizmo::SCALE_Y; snapStep = 0.1f; verb = "Scale"; } // ...0.1
+	float const snap[3] = { snapStep, snapStep, snapStep };
+	bool const snapping = ImGui::GetIO().KeyCtrl;
+
+	ImGuizmo::SetOrthographic(false);
+	ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+	ImGuizmo::SetRect(viewMin.x, viewMin.y, viewSize.x, viewSize.y);
+	ImGuizmo::SetGizmoSizeClipSpace(0.25f);
+
+	bool const changed = ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection),
+		static_cast<ImGuizmo::OPERATION>(operation), ImGuizmo::LOCAL, glm::value_ptr(world), nullptr, snapping ? snap : nullptr);
+	bool const usingGizmo = ImGuizmo::IsUsing();
+	m_gizmoDrawn = true;
+
+	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && (usingGizmo || ImGuizmo::IsOver())) {
+		m_gizmoClaimedClick = true;   // a drag, not a pick of whatever is behind it
+	}
+
+	if (usingGizmo && !m_gizmoWasUsing) {
+		// The drag starts: one undo step for the whole of it (EndGizmoDrag), this element only.
+		if (inspector) { inspector->CommitPendingEdit(); }
+		m_gizmoEntity = entity;
+		m_gizmoBefore.clear();
+		m_gizmoBefore.emplace_back(entity, EntityState::Capture(m_world, entity));
+		m_gizmoVerb = verb;
+		m_uiGizmoStartSize = m_world.Read<UIRect>(entity)->size;
+	}
+
+	if (changed) {
+		if (UIRect* rect = m_world.GetComponent<UIRect>(entity)) {
+			switch (m_gizmoMode) {
+			case GizmoMode::Translate: {
+				// The pivot's new place on the page, as a change in the parent's own space (which may
+				// be turned): position is the pivot's offset from the anchors there.
+				const glm::vec2 newPage = WorldCanvasToPage(canvas, WorldUIPlaneLocal(plane, glm::vec3(world[3])));
+				const glm::mat2 parentLinear(glm::vec2(item.parentToScreen[0]), glm::vec2(item.parentToScreen[1]));
+				if (std::abs(glm::determinant(parentLinear)) > 1.0e-9f && item.scale > 0.0f) {
+					rect->position += (glm::inverse(parentLinear) * (newPage - pivotPage)) / item.scale;
+				}
+				break;
+			}
+			case GizmoMode::Rotate: {
+				// This frame's turn around the page's front normal: counter-clockwise seen from the
+				// front, the same way UIRect::rotation counts.
+				const glm::vec3 newX = glm::normalize(glm::vec3(world[0]));
+				const float radians = std::atan2(glm::dot(glm::cross(xAxis, newX), zAxis), glm::dot(xAxis, newX));
+				rect->rotation += glm::degrees(radians);
+				break;
+			}
+			case GizmoMode::Scale: {
+				// ImGuizmo scales from the drag's start: size = start size times the total factor, on
+				// each axis whose anchors are together (a stretched axis follows its parent instead).
+				const glm::vec2 factor(glm::length(glm::vec3(world[0])), glm::length(glm::vec3(world[1])));
+				if (rect->anchorMin.x == rect->anchorMax.x) { rect->size.x = std::max(m_uiGizmoStartSize.x * factor.x, 0.0f); }
+				if (rect->anchorMin.y == rect->anchorMax.y) { rect->size.y = std::max(m_uiGizmoStartSize.y * factor.y, 0.0f); }
+				break;
+			}
+			}
 			m_scenes.MarkDirty();
 		}
 	}
