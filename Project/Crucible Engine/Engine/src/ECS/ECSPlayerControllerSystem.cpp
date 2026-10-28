@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          2 October 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                Implementation of ECSPlayerControllerSystem. See the
 *                header for what happens each frame.
@@ -18,6 +18,7 @@
 *                Transform is in) come from its parents
 *    -v1.5       gamepad: left stick walks (analog), right stick turns the
 *                camera (CameraOrbit::m_stickSpeed), A jumps
+*    -v1.6       the player's look sensitivity and invert Y (UserSettings)
 *
 **************************************************************************/
 #include "ECSPlayerControllerSystem.h"
@@ -28,6 +29,7 @@
 
 // Crucible engine
 #include "Components/Components.h"
+#include "Configuration/UserSettings.h"  // InputSettings
 #include "Input/InputSystem.h"
 #include "Math/Math.h"
 #include "Physics/PhysicsComponents.h"   // CharacterController
@@ -51,6 +53,8 @@ namespace Crucible {
             return Detail::DecomposeTRS(frame, translation, rotation, scale) ? rotation : identity;
         }
     }
+
+    ECSPlayerControllerSystem::ECSPlayerControllerSystem(const InputSettings& settings) : m_settings(settings) {}
 
     void ECSPlayerControllerSystem::Describe(SystemDesc& desc) const {
         desc.SimulationOnly();      // Playing only; Edit and Paused leave the keyboard to the editor
@@ -89,13 +93,21 @@ namespace Crucible {
         // cursor is on its way to the editor's Pause button or the Inspector, and
         // the view spinning as it travels there would be maddening.
         // GetMouseDelta is a distance in pixels, so it is NOT multiplied by dt.
-        const Math::vec2 mouse = Input::IsMouseLocked() ? Input::GetMouseDelta() : Math::vec2(0.0f, 0.0f);
+        Math::vec2 mouse = Input::IsMouseLocked() ? Input::GetMouseDelta() : Math::vec2(0.0f, 0.0f);
 
         // The right stick turns it too, and not only while the cursor is captured: a pad
         // cannot wander off to the Inspector the way a free mouse does. A stick is a
         // POSITION, not a distance, so unlike the mouse it is a speed - times dt.
-        const Math::vec2 stick = Input::GetGamepadRightStick();
-        const float      dt    = world.DeltaTime();
+        Math::vec2  stick = Input::GetGamepadRightStick();
+        const float dt    = world.DeltaTime();
+
+        // The PLAYER's settings on top of the designer's feel (CameraOrbit's m_sensitivity
+        // and m_stickSpeed): multipliers, so 1 is "as designed". Applied to the input here,
+        // once, rather than to the component, so a saved setting never overwrites what the
+        // designer tuned. Read every frame, so an options menu takes effect at once.
+        const float flipY = m_settings.invertY ? -1.0f : 1.0f;
+        mouse = Math::vec2(mouse.x, mouse.y * flipY) * m_settings.mouseSensitivity;
+        stick = Math::vec2(stick.x, stick.y * flipY) * m_settings.stickSensitivity;
 
         world.CreateQuery<CameraOrbit, const Transform>()
             .ForEach([&](Entity pivot, CameraOrbit& orbit, const Transform& transform) {

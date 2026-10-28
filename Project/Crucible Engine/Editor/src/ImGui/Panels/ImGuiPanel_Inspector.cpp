@@ -482,7 +482,7 @@ namespace {
 	}
 
 	// Picker for a uint64 property tagged MetaDataTypes::ENTITY_REF: another entity's scene id
-	// (Scene::IdOf), e.g. a PhysicsJoint's connected body. Drawn as "Entity N" - drop an entity
+	// (Scene::IdOf), e.g. a PhysicsJoint's connected body. Drawn as the entity's name - drop an entity
 	// from the Hierarchy onto it to set it, X clears it. Only the scene id is stored, never the
 	// Entity handle, so the link survives saving, reloading and play-mode Stop (all of which
 	// hand out new handles but keep scene ids).
@@ -499,10 +499,15 @@ namespace {
 		// since it only runs while this entity is selected in the Inspector.
 		Crucible::Entity const target = (id == 0) ? Crucible::kNullEntity
 		                                          : scenes.Current().EntityOf(xresource::instance_guid{ id });
+		// Shown by its EntityName, the same label the Hierarchy uses, so a renamed entity reads
+		// as "LeftThigh" rather than "Entity 12". Read every frame, so a rename shows straight away.
 		std::string text;
 		if (id == 0)                                          text = "None";
 		else if (!target.IsValid() || !world.IsAlive(target)) text = "Missing entity";   // deleted, or from another scene
-		else                                                  text = "Entity " + std::to_string(target.index);
+		else {
+			Crucible::EntityName const* name = world.Read<Crucible::EntityName>(target);
+			text = (name && !name->name.empty()) ? name->name : "Entity " + std::to_string(target.index);
+		}
 
 		bool changed = false;
 		ImGui::PushID(label);

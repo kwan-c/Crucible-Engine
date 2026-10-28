@@ -40,13 +40,18 @@ namespace Crucible {
 
     Core::Core(const EngineConfig& config) :
         m_config{ config },
+        m_userSettings{ UserSettingsLoader::Load() },
         m_window{ new WindowManager(static_cast<int>(m_config.graphics.windowWidth), static_cast<int>(m_config.graphics.windowHeight),
                                     m_config.graphics.windowTitle, m_config.graphics.fullScreen, m_config.graphics.maximized) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() },
         m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
         m_scenes{ std::make_unique<SceneManager>(*m_world) }
-    {   
+    {
+        // Written straight back, so a first run (or a file from an older build) gets every
+        // setting with its default: the file then shows the whole format, ready to edit.
+        UserSettingsLoader::Save(m_userSettings);
+
         // Play mode drives the always-on systems too, so it is built once every member exists.
         m_playMode = std::make_unique<PlayMode>(*m_world, *m_scenes, m_events, m_systems);
 
@@ -203,7 +208,7 @@ namespace Crucible {
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
             .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
-        m_systems.RegisterSystem<ECSPlayerControllerSystem>()                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
+        m_systems.RegisterSystem<ECSPlayerControllerSystem>(m_userSettings.input)                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
         m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get())                      // the scene turns a PhysicsJoint's saved connected body back into an entity
             .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
@@ -218,7 +223,7 @@ namespace Crucible {
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
         m_systems.RegisterSystem<UIRenderSystem>(*m_renderer, m_resources.get());        // PreRender, Edit mode too: lays out screen-space UICanvases against the game screen and SubmitUI()s them
         m_systems.RegisterSystem<WorldCanvasSystem>(*m_renderer, m_resources.get());     // PreRender, Edit mode too: lays out world-space UICanvases and submits each as a world UI panel
-        m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_renderer);                 // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
+        m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_userSettings.audio, m_renderer);                // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
     }
 
     void Core::CleanUp() {

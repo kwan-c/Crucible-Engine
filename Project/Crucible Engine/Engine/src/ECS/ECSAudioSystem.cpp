@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          1 October 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Implementation of ECSAudioSystem. See the header for
 *                what happens each frame.
@@ -28,6 +28,7 @@
 *    -v1.3       SetPaused: voices freeze, requests wait for Resume
 *    -v1.4       fix: file paths reach FMOD as UTF-8, so an accented
 *                folder name no longer hides every sound under it
+*    -v1.5       the player's bus volumes (UserSettings) reach the buses
 *
 **************************************************************************/
 #include "ECSAudioSystem.h"
@@ -43,6 +44,7 @@
 // Crucible engine
 #include "AssetPipe/Assetmanager.h"
 #include "Components/Components.h"
+#include "Configuration/UserSettings.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/RenderSystem.h"
@@ -134,10 +136,12 @@ namespace Crucible {
 
     struct ECSAudioSystem::State {
 
-        State(AssetManager& assetManager, const Renderer* rendererToFollow) : assets(assetManager), renderer(rendererToFollow) {}
+        State(AssetManager& assetManager, const AudioSettings& playerVolumes, const Renderer* rendererToFollow)
+            : assets(assetManager), volumes(playerVolumes), renderer(rendererToFollow) {}
 
-        AssetManager&   assets;
-        const Renderer* renderer = nullptr;     // only for its camera, the listener when no entity has one
+        AssetManager&        assets;
+        const AudioSettings& volumes;           // Core's UserSettings: the player's bus sliders
+        const Renderer*      renderer = nullptr;     // only for its camera, the listener when no entity has one
         Audio           audio;
         World*        world    = nullptr;
         bool          editMode = false;
@@ -156,6 +160,10 @@ namespace Crucible {
         // is reported once rather than on every Play.
         std::map<std::pair<std::uint64_t, AudioClipLoadType>, AudioClip> clips;
 
+        // The volumes last sent to the buses. -1 is never a real volume, so the
+        // first frame after Init always sends all three.
+        AudioSettings sentVolumes{ -1.0f, -1.0f, -1.0f };
+
         std::uint64_t frame               = 0;
         bool          warnedNoListener    = false;
         bool          warnedManyListeners = false;
@@ -167,6 +175,7 @@ namespace Crucible {
         std::string   previewPath;     // which asset previewClip is, so selecting it again keeps it
 
         void      BindWorld(World& ecs);
+        void      SyncBuses();
         void      SyncListener();
         void      SyncSource(Record& record, const AudioSource& source, const WorldTransform& transform);
         AudioClip ClipFor(const AudioSource& source);
@@ -179,7 +188,8 @@ namespace Crucible {
     // LIFECYCLE
     // ------------------------------------------------------------------- //
 
-    ECSAudioSystem::ECSAudioSystem(AssetManager& assets, const Renderer* renderer) : m_state{ std::make_unique<State>(assets, renderer) } {}
+    ECSAudioSystem::ECSAudioSystem(AssetManager& assets, const AudioSettings& volumes, const Renderer* renderer)
+        : m_state{ std::make_unique<State>(assets, volumes, renderer) } {}
 
     ECSAudioSystem::~ECSAudioSystem() { Shutdown(); }
 
@@ -210,6 +220,7 @@ namespace Crucible {
         s.previewClip  = AudioClip{};
         s.previewVoice = AudioVoice{};
         s.previewPath.clear();
+        s.sentVolumes = AudioSettings{ -1.0f, -1.0f, -1.0f };   // a restarted FMOD has fresh buses at 1
         s.audio.Shutdown();
 
     }   // ECSAudioSystem::Shutdown()
@@ -282,6 +293,7 @@ namespace Crucible {
         s.BindWorld(world);
         ++s.frame;
 
+        s.SyncBuses();
         s.SyncListener();
 
         s.writeBacks.clear();
@@ -336,6 +348,24 @@ namespace Crucible {
         s.audio.Update();       // once, after every change above
 
     }   // ECSAudioSystem::Update()
+
+    /*!
+        \brief
+        Sends the player's Master / Music / SFX volumes to the buses, but only
+        the ones that changed since last frame.
+        \details
+        Read every frame rather than pushed by a "volume changed" call, so an
+        options menu only has to write Core::GetUserSettings().audio and the
+        slider is heard at once - there is no second call to forget.
+    */
+    void ECSAudioSystem::State::SyncBuses() {
+
+        if (volumes.masterVolume != sentVolumes.masterVolume) audio.SetBusVolume(AudioBus::Master, volumes.masterVolume);
+        if (volumes.musicVolume  != sentVolumes.musicVolume)  audio.SetBusVolume(AudioBus::Music,  volumes.musicVolume);
+        if (volumes.sfxVolume    != sentVolumes.sfxVolume)    audio.SetBusVolume(AudioBus::SFX,    volumes.sfxVolume);
+        sentVolumes = volumes;
+
+    }   // ECSAudioSystem::State::SyncBuses()
 
     // A different world means a different scene: every voice belongs to
     // entities that are gone, so they all stop.

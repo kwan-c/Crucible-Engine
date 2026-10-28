@@ -37,13 +37,8 @@ namespace Crucible
 		uint32_t maxPlayers = 4;
 	};
 
-	//audio config
-	struct AudioConfig
-	{
-		float masterVolume = 1.0f;
-		float musicVolume  = 1.0f;
-		float sfxVolume    = 1.0f;
-	};
+	// No audio section: volumes are the PLAYER's choice, so they live in UserSettings.json
+	// next to the .exe (Configuration/UserSettings.h), not in this shared team file.
 
 	//project config - settings about the game itself, shared by the Editor and the Game
 	struct ProjectConfig
@@ -88,7 +83,6 @@ namespace Crucible
 	{
 		GrahpicsConfig graphics;
 		NetworkConfig  network;
-		AudioConfig    audio;
 		ProjectConfig  project;
 
 		// Which app this config was loaded for (set by LoadForApp, never read from the file).

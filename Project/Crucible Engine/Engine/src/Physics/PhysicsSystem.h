@@ -5,7 +5,7 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          22 September 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                Crucible::Physics: the public face of the Jolt physics
 *                world. Bodies, characters, joints, raycasts and forces,
@@ -27,6 +27,7 @@
 *                ApplyImpulseAtPosition
 *    -v1.5       joints: Fixed, Hinge, Ball, Character and Spring, with
 *                limits and breaking
+*    -v1.6       GetGroundVelocity, so a character rides what it stands on
 *
 **************************************************************************/
 #pragma once
@@ -431,6 +432,15 @@ namespace Crucible {
         // What the last MoveCharacter actually achieved, after walls and steps
         // had their say. Ask for this rather than assuming the velocity you gave.
         Math::vec3 GetCharacterVelocity(const CharacterHandle& character) const;
+
+        // How fast the ground is moving right under the character's feet: a lift's
+        // speed, or the edge of a spinning platform's. Zero in the air and on static
+        // ground. Add it to the walk, and the character rides what it stands on.
+        // It needs the ground to HAVE a velocity - a kinematic body moved with
+        // MoveKinematic, not a static one moved with SetTransform.
+        // Not const: Jolt re-reads the ground body's velocity as it is now, since
+        // the character's last move may be a step out of date.
+        Math::vec3 GetGroundVelocity(const CharacterHandle& character);
 
         // The hidden body that makes a character visible to raycasts. Pass this
         // as Raycast's `ignore`, or the mech shoots itself: a ray starting inside

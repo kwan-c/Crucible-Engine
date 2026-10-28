@@ -56,6 +56,7 @@ RTTR_REGISTRATION
         .property("useGravity",  &RigidBody::useGravity)
         .property("drag",        &RigidBody::drag)
         .property("angularDrag", &RigidBody::angularDrag)
+        .property("isKinematic", &RigidBody::isKinematic)   // scenes saved before it load as false
         .property("constraints", &RigidBody::constraints)
     ;
 }
