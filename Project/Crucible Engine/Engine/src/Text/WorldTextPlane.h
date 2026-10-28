@@ -5,7 +5,7 @@
   \date       28 October 2026
   \brief
     Where a WorldText's box is in the world for one camera - the same sums
-    WorldText.slang's TextAxes does on the GPU - for the editor: the
+    WorldUI.slang's TextAxes does on the GPU - for the editor: the
     selected text's outline, clicking text in the Scene view, framing it.
   \details
     Header-only, no ECS or GPU. The box is WorldText::size placed by its

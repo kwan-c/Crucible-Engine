@@ -6,7 +6,7 @@
   \brief
     WorldTextSystem: lays out every WorldText (Text/WorldText.h), builds its
     glyph quads and submits them to the Renderer, which draws them inside
-    the 3D scene (WorldTextPass).
+    the 3D scene (WorldUIPass).
   \details
     Runs in PreRender after HierarchyTransformSystem, in Edit mode too, so
     text shows in the Scene view while you place it. Layout is cached
@@ -24,7 +24,7 @@
 #include "ECS/Core/ECSCore.h"
 #include "ECS/Components/Components.h"
 #include "ECS/Systems/Query.h"
-#include "Graphics/WorldTextTypes.h"
+#include "Graphics/WorldUITypes.h"
 #include "Text/TextBuilder.h"
 #include "EngineExport.h"
 
@@ -43,7 +43,7 @@ namespace Crucible {
 
     /*************************************************************************
      \brief  Turns one laid-out WorldText into the vertices and runs the
-             Renderer takes (WorldTextTypes.h): six corners per quad in the
+             Renderer takes (WorldUITypes.h): six corners per quad in the
              text's plane (world units from the entity's position, +y up),
              the box placed by text.pivot, cut to the box unless overflow
              is Overflow.
@@ -54,7 +54,7 @@ namespace Crucible {
              the plane's units (before the Transform's scale). 0 = nothing.
      *************************************************************************/
     ENGINE_API float BuildWorldTextGeometry(const FontAsset& font, const TextLayoutResult& layout, const WorldText& text,
-                                            TextQuads& scratch, std::vector<WorldTextVertex>& vertices, std::vector<WorldTextRun>& runs);
+                                            TextQuads& scratch, std::vector<WorldUIVertex>& vertices, std::vector<WorldUIRun>& runs);
 
     class ENGINE_API WorldTextSystem final : public IECSSystem {
     public:
@@ -83,8 +83,8 @@ namespace Crucible {
 
         // Reused every frame, so steady-state frames don't allocate.
         TextQuads                    m_quads;
-        std::vector<WorldTextVertex> m_vertices;
-        std::vector<WorldTextRun>    m_runs;
+        std::vector<WorldUIVertex> m_vertices;
+        std::vector<WorldUIRun>    m_runs;
     };
 
 #ifdef _MSC_VER

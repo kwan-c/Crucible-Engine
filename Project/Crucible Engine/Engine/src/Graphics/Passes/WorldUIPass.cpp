@@ -1,12 +1,12 @@
 /*************************************************************************
-  \file       WorldTextPass.cpp
+  \file       WorldUIPass.cpp
   \author     Tan Chun Kwang Xavier
   \par        chunkwangxavier.tan@digipen.edu
   \date       28 October 2026
   \brief
-    See WorldTextPass.h.
+    See WorldUIPass.h.
 *************************************************************************/
-#include "Graphics/Passes/WorldTextPass.h"
+#include "Graphics/Passes/WorldUIPass.h"
 
 #include "Graphics/Camera.h"
 #include "Graphics/RenderResources.h"
@@ -22,9 +22,9 @@
 
 namespace Crucible {
 
-    static_assert(RenderLayouts::kMsaaLevels == 3, "WorldTextPass keeps one pipeline per MSAA level");
+    static_assert(RenderLayouts::kMsaaLevels == 3, "WorldUIPass keeps one pipeline per MSAA level");
 
-    void WorldTextPass::Create(vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout textureSetLayout,
+    void WorldUIPass::Create(vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout textureSetLayout,
                                vk::Format colourFormat, vk::Format depthFormat, uint32_t framesInFlight) {
 
         m_textureSetLayout = textureSetLayout;
@@ -59,19 +59,19 @@ namespace Crucible {
         m_texturePool = vk::raii::DescriptorPool(m_context.GetDevice(), poolInfo);
 
         // ---- Pipelines ----
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(m_context, "WorldText.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(m_context, "WorldUI.spv");
         vk::PipelineShaderStageCreateInfo stages[] = {
-            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = *shaderModule, .pName = "worldTextVert" },
-            { .stage = vk::ShaderStageFlagBits::eFragment, .module = *shaderModule, .pName = "worldTextFrag" }
+            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = *shaderModule, .pName = "worldUIVert" },
+            { .stage = vk::ShaderStageFlagBits::eFragment, .module = *shaderModule, .pName = "worldUIFrag" }
         };
 
-        // WorldTextVertex: vec2 local, vec2 uv, RGBA8 colour - 20 bytes. The colour is read as
+        // WorldUIVertex: vec2 local, vec2 uv, RGBA8 colour - 20 bytes. The colour is read as
         // UNORM, so the shader gets 0..1 sRGB values and converts them itself.
-        vk::VertexInputBindingDescription binding{ .binding = 0, .stride = sizeof(WorldTextVertex), .inputRate = vk::VertexInputRate::eVertex };
+        vk::VertexInputBindingDescription binding{ .binding = 0, .stride = sizeof(WorldUIVertex), .inputRate = vk::VertexInputRate::eVertex };
         std::array<vk::VertexInputAttributeDescription, 3> attributes{ {
-            { .location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat,  .offset = offsetof(WorldTextVertex, local) },
-            { .location = 1, .binding = 0, .format = vk::Format::eR32G32Sfloat,  .offset = offsetof(WorldTextVertex, uv) },
-            { .location = 2, .binding = 0, .format = vk::Format::eR8G8B8A8Unorm, .offset = offsetof(WorldTextVertex, colour) }
+            { .location = 0, .binding = 0, .format = vk::Format::eR32G32Sfloat,  .offset = offsetof(WorldUIVertex, local) },
+            { .location = 1, .binding = 0, .format = vk::Format::eR32G32Sfloat,  .offset = offsetof(WorldUIVertex, uv) },
+            { .location = 2, .binding = 0, .format = vk::Format::eR8G8B8A8Unorm, .offset = offsetof(WorldUIVertex, colour) }
         } };
         vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
             .vertexBindingDescriptionCount   = 1,
@@ -91,7 +91,7 @@ namespace Crucible {
         };
         vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
 
-        // Quads are wound counter-clockwise seen from the text's front (+z of its plane), like the
+        // Quads are wound counter-clockwise seen from the panel's front (+z of its plane), like the
         // meshes' front faces.
         vk::PipelineRasterizationStateCreateInfo rasterizer{
             .depthClampEnable        = vk::False,
@@ -130,7 +130,7 @@ namespace Crucible {
 
         vk::PushConstantRange push{
             .stageFlags = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment,
-            .offset = 0, .size = sizeof(WorldTextPush) };
+            .offset = 0, .size = sizeof(WorldUIPush) };
         std::array<vk::DescriptorSetLayout, 2> setLayouts{ frameSetLayout, textureSetLayout };
         vk::PipelineLayoutCreateInfo layoutInfo{
             .setLayoutCount = static_cast<uint32_t>(setLayouts.size()), .pSetLayouts = setLayouts.data(),
@@ -161,58 +161,58 @@ namespace Crucible {
             m_pipelines[i] = vk::raii::Pipeline(m_context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
         }
 
-    }   // WorldTextPass::Create()
+    }   // WorldUIPass::Create()
 
     // ------------------------------------------------------------------------------------------------------------- //
-    //  THIS FRAME'S TEXT: SUBMIT, SORT PER VIEW, UPLOAD
+    //  THIS FRAME'S PANELS: SUBMIT, SORT PER VIEW, UPLOAD
     // ------------------------------------------------------------------------------------------------------------- //
 
-    void WorldTextPass::Submit(const WorldTextDesc& desc, std::span<const WorldTextVertex> vertices, std::span<const WorldTextRun> runs) {
+    void WorldUIPass::Submit(const WorldUIDesc& desc, std::span<const WorldUIVertex> vertices, std::span<const WorldUIRun> runs) {
 
         if (vertices.empty() || runs.empty()) { return; }
         if (m_vertices.size() + vertices.size() > m_maxVertices) {
             if (!m_warnedOverflow) {
-                CRU_WARN("[Renderer] More than {} world text vertices in one frame; the rest of the text is dropped.", m_maxVertices);
+                CRU_WARN("[Renderer] More than {} world UI vertices in one frame; the rest of the world UI is dropped.", m_maxVertices);
                 m_warnedOverflow = true;
             }
             return;
         }
 
         const uint32_t base = static_cast<uint32_t>(m_vertices.size());
-        Text text{ .desc = desc, .firstRun = static_cast<uint32_t>(m_runs.size()), .runCount = 0 };
-        for (const WorldTextRun& run : runs) {
+        Panel panel{ .desc = desc, .firstRun = static_cast<uint32_t>(m_runs.size()), .runCount = 0 };
+        for (const WorldUIRun& run : runs) {
             const uint32_t count = run.vertexCount - run.vertexCount % 3;   // whole triangles only
             if (count == 0 || static_cast<uint64_t>(run.firstVertex) + count > vertices.size()) { continue; }   // out of range: dropped
-            WorldTextRun moved = run;
+            WorldUIRun moved = run;
             moved.firstVertex = base + run.firstVertex;
             moved.vertexCount = count;
             m_runs.push_back(moved);
-            ++text.runCount;
+            ++panel.runCount;
         }
-        if (text.runCount == 0) { return; }
+        if (panel.runCount == 0) { return; }
         m_vertices.insert(m_vertices.end(), vertices.begin(), vertices.end());
-        m_texts.push_back(text);
+        m_panels.push_back(panel);
 
-    }   // WorldTextPass::Submit()
+    }   // WorldUIPass::Submit()
 
-    void WorldTextPass::ClearSubmitted() {
+    void WorldUIPass::ClearSubmitted() {
 
         m_vertices.clear();
         m_runs.clear();
-        m_texts.clear();
+        m_panels.clear();
 
-    }   // WorldTextPass::ClearSubmitted()
+    }   // WorldUIPass::ClearSubmitted()
 
-    void WorldTextPass::Prepare(const Camera& camera, std::vector<WorldTextDraw>& out) {
+    void WorldUIPass::Prepare(const Camera& camera, std::vector<WorldUIDraw>& out) {
 
-        if (m_texts.empty()) { return; }
+        if (m_panels.empty()) { return; }
 
         const Frustum   frustum = Frustum::FromViewProjection(camera.GetProjection() * camera.GetView());
         const glm::vec3 eye     = camera.position;
 
         m_order.clear();
-        for (uint32_t i = 0; i < m_texts.size(); ++i) {
-            const WorldTextDesc& desc = m_texts[i].desc;
+        for (uint32_t i = 0; i < m_panels.size(); ++i) {
+            const WorldUIDesc& desc = m_panels[i].desc;
             const glm::vec3 reach(desc.radius);
             if (!frustum.Intersects(AABB(desc.anchor - reach, desc.anchor + reach))) { continue; }
 
@@ -222,22 +222,23 @@ namespace Crucible {
                 opacity = std::clamp((desc.fadeEnd - distance) / (desc.fadeEnd - desc.fadeStart), 0.0f, 1.0f);
                 if (opacity <= 0.0f) { continue; }
             }
-            m_order.push_back(Order{ .onTop = desc.alwaysOnTop, .distance = distance, .opacity = opacity, .text = i });
+            m_order.push_back(Order{ .onTop = desc.alwaysOnTop, .distance = distance, .opacity = opacity, .panel = i });
         }
 
-        // Far to near (blending is only right when what is behind is drawn first); text that is
-        // always on top after all the rest, so depth-tested text never covers it.
+        // Far to near (blending is only right when what is behind is drawn first); panels that are
+        // always on top after all the rest, so depth-tested ones never cover them. A panel's runs
+        // stay in the order they were given: its own layering.
         std::sort(m_order.begin(), m_order.end(), [](const Order& a, const Order& b) {
             if (a.onTop != b.onTop) { return !a.onTop; }
             return a.distance > b.distance;
         });
 
         for (const Order& order : m_order) {
-            const Text& text = m_texts[order.text];
-            const WorldTextDesc& desc = text.desc;
-            for (uint32_t r = 0; r < text.runCount; ++r) {
-                const WorldTextRun& run = m_runs[text.firstRun + r];
-                WorldTextDraw draw;
+            const Panel& panel = m_panels[order.panel];
+            const WorldUIDesc& desc = panel.desc;
+            for (uint32_t r = 0; r < panel.runCount; ++r) {
+                const WorldUIRun& run = m_runs[panel.firstRun + r];
+                WorldUIDraw draw;
                 draw.texture     = run.texture;
                 draw.firstVertex = run.firstVertex;
                 draw.vertexCount = run.vertexCount;
@@ -255,9 +256,9 @@ namespace Crucible {
             }
         }
 
-    }   // WorldTextPass::Prepare()
+    }   // WorldUIPass::Prepare()
 
-    void WorldTextPass::Upload(uint32_t frameIndex) {
+    void WorldUIPass::Upload(uint32_t frameIndex) {
 
         m_uploadedFrame = UINT32_MAX;
         m_uploadedCount = 0;
@@ -269,22 +270,22 @@ namespace Crucible {
         if (capacity < m_vertices.size()) {
             uint32_t newCapacity = 6 * 1024;
             while (newCapacity < m_vertices.size()) { newCapacity *= 2; }
-            m_vertexBuffers[frameIndex].Create(m_context, vk::DeviceSize{ newCapacity } * sizeof(WorldTextVertex),
+            m_vertexBuffers[frameIndex].Create(m_context, vk::DeviceSize{ newCapacity } * sizeof(WorldUIVertex),
                 vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
             m_vertexMapped[frameIndex] = m_vertexBuffers[frameIndex].Map();
             capacity = newCapacity;
         }
-        memcpy(m_vertexMapped[frameIndex], m_vertices.data(), m_vertices.size() * sizeof(WorldTextVertex));
+        memcpy(m_vertexMapped[frameIndex], m_vertices.data(), m_vertices.size() * sizeof(WorldUIVertex));
         m_uploadedFrame = frameIndex;
         m_uploadedCount = static_cast<uint32_t>(m_vertices.size());
 
         // Made here rather than in Record(), so recording never allocates.
         EnsureTextureSet(TextureHandle{});   // the white fallback first, so it always fits
-        for (const WorldTextRun& run : m_runs) { EnsureTextureSet(run.texture); }
+        for (const WorldUIRun& run : m_runs) { EnsureTextureSet(run.texture); }
 
-    }   // WorldTextPass::Upload()
+    }   // WorldUIPass::Upload()
 
-    vk::DescriptorSet WorldTextPass::EnsureTextureSet(TextureHandle texture) {
+    vk::DescriptorSet WorldUIPass::EnsureTextureSet(TextureHandle texture) {
 
         if (!texture.IsValid() || texture.id >= m_resources.Textures().size()) { texture = m_resources.DefaultWhiteTexture(); }
 
@@ -293,7 +294,7 @@ namespace Crucible {
         // Pool full: fall back to the white texture's set (made first, so it always exists).
         if (m_textureSets.size() >= m_maxTextureSets - 1 && texture.id != m_resources.DefaultWhiteTexture().id) {
             if (!m_warnedTextureSets) {
-                CRU_WARN("[Renderer] World text used more than {} different font atlases; the rest are drawn white.", m_maxTextureSets - 1);
+                CRU_WARN("[Renderer] World UI used more than {} different textures; the rest are drawn white.", m_maxTextureSets - 1);
                 m_warnedTextureSets = true;
             }
             return EnsureTextureSet(m_resources.DefaultWhiteTexture());
@@ -313,13 +314,13 @@ namespace Crucible {
 
         return *m_textureSets.emplace(texture.id, std::move(set)).first->second;
 
-    }   // WorldTextPass::EnsureTextureSet()
+    }   // WorldUIPass::EnsureTextureSet()
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  DRAWING
     // ------------------------------------------------------------------------------------------------------------- //
 
-    void WorldTextPass::Record(vk::CommandBuffer cmd, uint32_t samples, vk::DescriptorSet frameSet, const std::vector<WorldTextDraw>& draws) const {
+    void WorldUIPass::Record(vk::CommandBuffer cmd, uint32_t samples, vk::DescriptorSet frameSet, const std::vector<WorldUIDraw>& draws) const {
 
         if (draws.empty() || m_uploadedFrame >= m_vertexBuffers.size()) { return; }   // nothing, or Upload() didn't run
 
@@ -333,7 +334,7 @@ namespace Crucible {
         uint32_t boundTexture = UINT32_MAX;
         int      boundCull    = -1;
         int      boundDepth   = -1;
-        for (const WorldTextDraw& draw : draws) {
+        for (const WorldUIDraw& draw : draws) {
             if (draw.firstVertex + draw.vertexCount > m_uploadedCount) { continue; }
 
             // Upload() made every set; an invalid texture (underlines) or a full pool gets white.
@@ -357,10 +358,10 @@ namespace Crucible {
                 boundDepth = depth;
             }
 
-            cmd.pushConstants<WorldTextPush>(*m_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, draw.push);
+            cmd.pushConstants<WorldUIPush>(*m_layout, vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment, 0, draw.push);
             cmd.draw(draw.vertexCount, 1, draw.firstVertex, 0);
         }
 
-    }   // WorldTextPass::Record()
+    }   // WorldUIPass::Record()
 
 }   // NAMESPACE CRUCIBLE

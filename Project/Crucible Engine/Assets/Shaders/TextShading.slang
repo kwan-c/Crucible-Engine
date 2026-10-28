@@ -1,4 +1,4 @@
-// Text and image shading shared by the screen UI (UI.slang) and world-space text (WorldText.slang):
+// Text and image shading shared by the screen UI (UI.slang) and world-space text (WorldUI.slang):
 // one function that turns an atlas sample into a colour, with the distance-field text effects -
 // outline, glow, shadow pass and synthetic bold. Nothing here knows about push constants,
 // bindings or where the quad is, so both passes give it their own parameters.

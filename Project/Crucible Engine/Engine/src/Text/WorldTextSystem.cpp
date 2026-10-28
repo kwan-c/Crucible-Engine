@@ -20,14 +20,14 @@ namespace Crucible {
 
     namespace {
 
-        bool SameRun(const WorldTextRun& run, TextureHandle texture, UIDrawMode mode, float pixelRange, const UITextEffects& effects) {
+        bool SameRun(const WorldUIRun& run, TextureHandle texture, UIDrawMode mode, float pixelRange, const UITextEffects& effects) {
             return run.texture == texture && run.mode == mode && run.pixelRange == pixelRange && run.effects == effects;
         }
 
     }   // namespace
 
     float BuildWorldTextGeometry(const FontAsset& font, const TextLayoutResult& layout, const WorldText& text,
-                                 TextQuads& scratch, std::vector<WorldTextVertex>& vertices, std::vector<WorldTextRun>& runs) {
+                                 TextQuads& scratch, std::vector<WorldUIVertex>& vertices, std::vector<WorldUIRun>& runs) {
 
         vertices.clear();
         runs.clear();
@@ -72,20 +72,20 @@ namespace Crucible {
             const uint32_t first = static_cast<uint32_t>(vertices.size());
             if (solid) { uv = glm::vec4(0.0f, 0.0f, 1.0f, 1.0f); }
             // Counter-clockwise seen from the front (+z of the plane): bottom-left, bottom-right, top-right; bottom-left, top-right, top-left.
-            const WorldTextVertex bl{ { x0, yBottom }, { uv.x, uv.w }, colour };
-            const WorldTextVertex br{ { x1, yBottom }, { uv.z, uv.w }, colour };
-            const WorldTextVertex tr{ { x1, yTop },    { uv.z, uv.y }, colour };
-            const WorldTextVertex tl{ { x0, yTop },    { uv.x, uv.y }, colour };
+            const WorldUIVertex bl{ { x0, yBottom }, { uv.x, uv.w }, colour };
+            const WorldUIVertex br{ { x1, yBottom }, { uv.z, uv.w }, colour };
+            const WorldUIVertex tr{ { x1, yTop },    { uv.z, uv.y }, colour };
+            const WorldUIVertex tl{ { x0, yTop },    { uv.x, uv.y }, colour };
             vertices.insert(vertices.end(), { bl, br, tr, bl, tr, tl });
 
             if (!runs.empty() && SameRun(runs.back(), texture, mode, pixelRange, effects) && runs.back().firstVertex + runs.back().vertexCount == first) {
                 runs.back().vertexCount += 6;
             } else {
-                runs.push_back(WorldTextRun{ .texture = texture, .mode = mode, .pixelRange = pixelRange, .effects = effects,
+                runs.push_back(WorldUIRun{ .texture = texture, .mode = mode, .pixelRange = pixelRange, .effects = effects,
                                              .firstVertex = first, .vertexCount = 6 });
             }
 
-            for (const WorldTextVertex& v : { bl, br, tr, tl }) { reach = std::max(reach, glm::length(v.local)); }
+            for (const WorldUIVertex& v : { bl, br, tr, tl }) { reach = std::max(reach, glm::length(v.local)); }
         }
         return reach;
 
@@ -129,14 +129,14 @@ namespace Crucible {
             const float reach = BuildWorldTextGeometry(*font, layout, text, m_quads, m_vertices, m_runs);
             if (m_runs.empty()) { return; }
 
-            WorldTextDesc desc;
+            WorldUIDesc desc;
             desc.anchor      = glm::vec3(m[3]);
             desc.right       = right;
             desc.up          = up;
             desc.radius      = reach * scale;
-            desc.facing      = text.billboard == WorldText::Billboard::FaceCamera ? WorldTextFacing::FaceCamera
-                             : text.billboard == WorldText::Billboard::Upright    ? WorldTextFacing::Upright
-                             :                                                      WorldTextFacing::Transform;
+            desc.facing      = text.billboard == WorldText::Billboard::FaceCamera ? WorldUIFacing::FaceCamera
+                             : text.billboard == WorldText::Billboard::Upright    ? WorldUIFacing::Upright
+                             :                                                      WorldUIFacing::Transform;
             desc.alwaysOnTop = text.alwaysOnTop;
             desc.doubleSided = text.doubleSided;
             desc.intensity   = std::max(text.intensity, 0.0f);
@@ -144,7 +144,7 @@ namespace Crucible {
                 desc.fadeStart = std::max(text.fadeStart, 0.0f);
                 desc.fadeEnd   = std::max(text.fadeEnd, desc.fadeStart + 0.001f);
             }
-            m_renderer.SubmitWorldText(desc, m_vertices, m_runs);
+            m_renderer.SubmitWorldUI(desc, m_vertices, m_runs);
         });
 
     }   // WorldTextSystem::Update()

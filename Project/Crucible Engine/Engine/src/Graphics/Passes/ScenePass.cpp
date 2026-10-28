@@ -7,7 +7,7 @@
 
 #include "Graphics/Passes/ParticlePass.h"
 #include "Graphics/Passes/WaterPass.h"
-#include "Graphics/Passes/WorldTextPass.h"
+#include "Graphics/Passes/WorldUIPass.h"
 #include "Graphics/RenderResources.h"
 #include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
@@ -257,7 +257,7 @@ namespace Crucible {
     void ScenePass::Record(vk::CommandBuffer cmd, PostTargets& t, vk::Image depthImage, vk::ImageView depthView, vk::Extent2D extent,
                            vk::DescriptorSet frameSet, const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet,
                            const std::vector<ParticleBatch>& particles, const std::vector<WaterDraw>& water,
-                           const std::vector<WorldTextDraw>& worldText) const {
+                           const std::vector<WorldUIDraw>& worldUI) const {
 
         // Last sampled by the previous frame's bloom/tonemap; its contents are re-cleared.
         TransitionImageLayout(cmd, t.hdrImage.GetImage(), vk::ImageAspectFlagBits::eColor,
@@ -357,9 +357,9 @@ namespace Crucible {
                 .pDepthAttachment     = &depth
             };
             static const std::vector<ParticleBatch> kNoParticles;
-            static const std::vector<WorldTextDraw> kNoWorldText;
+            static const std::vector<WorldUIDraw> kNoWorldUI;
             cmd.beginRendering(renderingInfo);
-            DrawQueue(cmd, samples, extent, frameSet, meshes, skySet, withWater ? kNoParticles : particles, withWater ? kNoWorldText : worldText);
+            DrawQueue(cmd, samples, extent, frameSet, meshes, skySet, withWater ? kNoParticles : particles, withWater ? kNoWorldUI : worldUI);
             cmd.endRendering();
         }
 
@@ -388,7 +388,7 @@ namespace Crucible {
             cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
             m_water.Record(cmd, samples, frameSet, *t.waterSet, water);
             m_particles.Record(cmd, samples, frameSet, particles);   // over the water: splashes, smoke
-            m_worldText.Record(cmd, samples, frameSet, worldText);   // over both: signs above the water stay readable
+            m_worldUI.Record(cmd, samples, frameSet, worldUI);   // over both: signs above the water stay readable
             cmd.endRendering();
         }
 
@@ -485,7 +485,7 @@ namespace Crucible {
 
     void ScenePass::DrawQueue(vk::CommandBuffer cmd, uint32_t samples, vk::Extent2D extent, vk::DescriptorSet cameraSet,
                               const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet, const std::vector<ParticleBatch>& particles,
-                              const std::vector<WorldTextDraw>& worldText) const {
+                              const std::vector<WorldUIDraw>& worldUI) const {
 
         const std::vector<DrawBatch>& batches = meshes;
 
@@ -560,8 +560,8 @@ namespace Crucible {
         // Particles after everything opaque and the sky: they blend over what is behind them.
         m_particles.Record(cmd, samples, cameraSet, particles);
 
-        // World text last (WorldTextPass): over the particles, under nothing.
-        m_worldText.Record(cmd, samples, cameraSet, worldText);
+        // World-space UI last (WorldUIPass): over the particles, under nothing.
+        m_worldUI.Record(cmd, samples, cameraSet, worldUI);
 
     }   // ScenePass::DrawQueue()
 
