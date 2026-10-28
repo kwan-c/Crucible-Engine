@@ -76,6 +76,11 @@ namespace Crucible {
 		// the cursor picks the nearest mesh (Renderer::Raycast); empty space clears the selection.
 		// Ctrl+click adds/removes the picked entity, Shift+click adds it (multi-selection).
 		void HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize);
+		// World text: the selected texts' boxes, outlined over the image (they have no mesh for
+		// the renderer's selection outline), and the nearest text box a ray hits (click picking;
+		// returns kNullEntity and leaves `distance` alone when none is nearer than it).
+		void DrawWorldTextBoxes(ImVec2 viewMin, ImVec2 viewSize);
+		Entity PickWorldText(const glm::vec3& origin, const glm::vec3& direction, float& distance);
 		// The ray from the camera through the mouse cursor, in world space (toFar spans the near
 		// plane to the far plane). False if the view has no size yet.
 		bool MouseRay(ImVec2 viewMin, ImVec2 viewSize, glm::vec3& origin, glm::vec3& toFar);

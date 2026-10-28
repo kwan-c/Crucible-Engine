@@ -157,6 +157,13 @@ void Crucible::Hierarchy::Update(float dt) {
 					}
 					ImGui::EndMenu();
 				}
+				// UI that lives in the 3D world (placed by its Transform, drawn with the scene).
+				if (ImGui::BeginMenu("UI (World)")) {
+					if (ImGui::MenuItem("World Text")) {
+						CreateWorldTextObject();
+					}
+					ImGui::EndMenu();
+				}
 				if (ImGui::MenuItem("Create Camera")) {
 					CreateCameraObject();
 				}
@@ -1213,6 +1220,28 @@ void Crucible::Hierarchy::CreateParticleObject(const std::string& effect) {
 	UndoHistory& history = EditorManager::GetInstance().GetHistory();
 	history.Push(std::make_unique<CreateEntityCommand>(
 		history.KeyOf(e), EntityState::Capture(m_world, e), "Create " + effect));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+
+}
+
+void Crucible::Hierarchy::CreateWorldTextObject() {
+
+	// A root entity (not under a canvas: it is placed by its own Transform), a little above the
+	// origin and facing +Z - toward where a new Camera is created - so it is in sight straight away.
+	auto e = m_world.CreateNamedEntity("World Text");
+	WorldText text;
+	text.text = "New Text";
+	m_world.AddComponent<WorldText>(e, text);
+	if (Transform* t = m_world.Write<Transform>(e)) { t->positions = { 0.f, 1.f, 0.f }; }
+
+	// Select first, for the same history-ordering reason as CreateLightObject.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(e);
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create World Text"));
 
 	m_scenes.MarkDirty();   // records that there are unsaved changes
 

@@ -32,11 +32,12 @@ namespace Crucible {
     class RenderResources;
     class ParticlePass;
     class WaterPass;
+    class WorldTextPass;
 
     class ScenePass {
     public:
-        ScenePass(const RenderResources& resources, const ParticlePass& particles, const WaterPass& water)
-            : m_resources(resources), m_particles(particles), m_water(water) {}
+        ScenePass(const RenderResources& resources, const ParticlePass& particles, const WaterPass& water, const WorldTextPass& worldText)
+            : m_resources(resources), m_particles(particles), m_water(water), m_worldText(worldText) {}
 
         /*********************************************************************
          \brief  Creates the mesh and sky pipelines (one of each per MSAA
@@ -69,15 +70,19 @@ namespace Crucible {
          \param[in] particles    Far to near.
          \param[in] water        Water surfaces in view (WaterPass::Prepare).
                                 Empty = one half only, no copies.
+         \param[in] worldText    WorldText draws (WorldTextPass::Prepare), drawn
+                                last: over the particles and the water.
          *********************************************************************/
         void Record(vk::CommandBuffer cmd, PostTargets& targets, vk::Image depthImage, vk::ImageView depthView, vk::Extent2D extent,
                     vk::DescriptorSet frameSet, const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet,
-                    const std::vector<ParticleBatch>& particles, const std::vector<WaterDraw>& water) const;
+                    const std::vector<ParticleBatch>& particles, const std::vector<WaterDraw>& water,
+                    const std::vector<WorldTextDraw>& worldText) const;
 
     private:
-        // Meshes, then the sky, then particles, into the rendering pass Record() has open.
+        // Meshes, then the sky, then particles, then world text, into the rendering pass Record() has open.
         void DrawQueue(vk::CommandBuffer cmd, uint32_t samples, vk::Extent2D extent, vk::DescriptorSet cameraSet,
-                       const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet, const std::vector<ParticleBatch>& particles) const;
+                       const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet, const std::vector<ParticleBatch>& particles,
+                       const std::vector<WorldTextDraw>& worldText) const;
         // Between the two halves (water in sight): copies the HDR image and depth as the first
         // half left them into targets.sceneCopy / depthCopy, and readies every attachment for the
         // second half to carry on drawing into.
@@ -86,6 +91,7 @@ namespace Crucible {
         const RenderResources& m_resources;   // the meshes and materials it draws
         const ParticlePass&    m_particles;   // drawn last, inside this pass
         const WaterPass&       m_water;       // drawn after the sky, before the particles
+        const WorldTextPass&   m_worldText;   // drawn after the particles, last in this pass
 
         std::array<vk::raii::Pipeline, 3> m_meshPipelines{ nullptr, nullptr, nullptr };   // 1, 2, 4 samples
         std::array<vk::raii::Pipeline, 3> m_cutoutPipelines{ nullptr, nullptr, nullptr }; // the same with kCutout on (cut-out materials)

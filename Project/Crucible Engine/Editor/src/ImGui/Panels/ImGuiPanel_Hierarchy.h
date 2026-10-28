@@ -193,6 +193,8 @@ namespace Crucible {
 		// Spawns a new entity with a Water component: a 10 x 10 m surface (the built-in plane,
 		// scaled) at the origin. It needs ground under it to show depth, shores and foam.
 		void CreateWaterObject();
+		// "UI (World) > World Text": an entity with a WorldText (Text/WorldText.h) a little above the origin.
+		void CreateWorldTextObject();
 	};
 
 }

@@ -104,6 +104,9 @@ namespace Crucible {
         // Screen-space UI: drawn into viewport images and the swapchain, which share one format.
         m_uiPass.Create(*m_layouts.GetSingleTextureSetLayout(), m_swapchain.GetSurfaceFormat().format,
                         m_swapchain.GetDepthFormat(), m_frameManager.MaxFramesInFlight());
+        // World-space text: drawn inside the scene pass, into the HDR image.
+        m_worldTextPass.Create(*m_layouts.GetDescriptorSetLayout(), *m_layouts.GetSingleTextureSetLayout(),
+                               RenderLayouts::kSceneColorFormat, m_swapchain.GetDepthFormat(), m_frameManager.MaxFramesInFlight());
 
         m_environmentMaps.Init(*m_layouts.GetSkyboxDescriptorSetLayout());   // samplers, pool, the built-in sky
         m_defaultEnvironment.skybox = m_environmentMaps.DefaultSkybox();
@@ -149,6 +152,7 @@ namespace Crucible {
         m_scene.ClearSubmitted();
         m_particlePass.ClearSubmitted();
         m_waterPass.ClearSubmitted();
+        m_worldTextPass.ClearSubmitted();
         m_lights.ClearSubmitted();
         m_uiPass.ClearSubmitted();
         m_environment = m_defaultEnvironment;
@@ -241,6 +245,7 @@ namespace Crucible {
 
         UploadInstances(frameIndex);
         UploadParticles(frameIndex);
+        m_worldTextPass.Upload(frameIndex);
         m_lights.UploadClusters(frameIndex);
         const double tRecord = now();
         smooth(m_frameStats.cpuUploadMs, tRecord - tUpload);
@@ -1034,6 +1039,7 @@ namespace Crucible {
         stats.clusteredLights = m_lights.BuildClusters(camera, extent, ubo);
         m_particlePass.Prepare(camera, out.particles, stats);
         m_waterPass.Prepare(camera, out.water);
+        m_worldTextPass.Prepare(camera, out.worldText);
         m_lights.EndView();
 
         // ---- Selection outline mask: just the selected objects ----
@@ -1054,6 +1060,10 @@ namespace Crucible {
     void Renderer::SubmitParticles(const ParticleDrawDesc& desc, const GpuParticle* particles, uint32_t count) { m_particlePass.Submit(desc, particles, count); }
 
     void Renderer::SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings) { m_waterPass.Submit(mesh, model, settings); }
+
+    void Renderer::SubmitWorldText(const WorldTextDesc& desc, std::span<const WorldTextVertex> vertices, std::span<const WorldTextRun> runs) {
+        m_worldTextPass.Submit(desc, vertices, runs);
+    }
 
     void Renderer::UploadParticles(uint32_t frameIndex) {
 
@@ -1178,7 +1188,7 @@ namespace Crucible {
             if (!sky.IsValid() || sky.id >= m_environmentMaps.Cubemaps().size()) { sky = m_environmentMaps.DefaultSkybox(); }
             if (sky.IsValid() && sky.id < m_environmentMaps.Cubemaps().size()) { skySet = *m_environmentMaps.Cubemaps()[sky.id].descriptorSet; }
         }
-        m_scenePass.Record(cmd, t, depthImage, depthView, extent, frameSet, draws.main, skySet, draws.particles, draws.water);
+        m_scenePass.Record(cmd, t, depthImage, depthView, extent, frameSet, draws.main, skySet, draws.particles, draws.water, draws.worldText);
 
         // Toon outlines go into the scene's image before bloom and tonemapping, so the tonemap
         // pass's anti-aliasing smooths them like any other edge.

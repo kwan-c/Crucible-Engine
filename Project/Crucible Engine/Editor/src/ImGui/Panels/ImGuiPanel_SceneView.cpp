@@ -24,6 +24,7 @@
 #include "Prefabs/PrefabAuthoring.h"
 #include "Resources/ResourceManager.h"
 #include "Spatial/Bounds.h"
+#include "Text/WorldTextPlane.h"   // a WorldText's box for this view: outline, picking, framing
 
 #include <ImGuizmo.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -124,6 +125,7 @@ void Crucible::SceneView::Update(float dt) {
 	SyncSelection();
 	m_iconHits.clear();
 	if (m_showIcons) { DrawIcons(min, avail); }
+	DrawWorldTextBoxes(min, avail);
 	if (m_showStats) { DrawStatsOverlay(min); }
 	DrawGizmo(min, avail);   // before picking, so a click on the gizmo is known to be the gizmo's
 	HandleClickPicking(min, avail);
@@ -226,6 +228,16 @@ void Crucible::SceneView::FrameSelected() {
 				add(AABB::Transform(AABB(mn, mx), wt->matrix));
 				usedMesh = true;
 			}
+		}
+		if (!usedMesh) if (WorldText const* text = m_world.Read<WorldText>(entity)) {
+			// Its box as this view sees it (a billboard turns toward the camera).
+			Camera& camera = m_viewport.GetCamera();
+			WorldTextPlane const plane = WorldTextPlaneFor(*text, wt->matrix, camera.position, camera.GetView());
+			auto const corners = WorldTextBoxCorners(*text, plane);
+			AABB b(corners[0], corners[0]);
+			for (glm::vec3 const& c : corners) { b = AABB::Union(b, AABB(c, c)); }
+			add(b);
+			usedMesh = true;
 		}
 		if (!usedMesh) {
 			glm::vec3 const p(wt->matrix[3]);
@@ -448,8 +460,15 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 		});
 
 	// Anything else with nothing to click on in the scene (empties, collider-only, characters...).
-	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent>().Build().ForEach(
+	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent, WorldText>().Build().ForEach(
 		[&](Entity e, const WorldTransform& wt) {
+			place(e, wt, [&](ImVec2 p) { GlyphDiamond(dl, p, IM_COL32(200, 200, 200, 255)); });
+		});
+	// World text is clicked on its box (PickWorldText); an empty one has nothing to see, so it
+	// keeps the diamond.
+	m_world.CreateQuery<const WorldTransform, const WorldText>().ForEach(
+		[&](Entity e, const WorldTransform& wt, const WorldText& text) {
+			if (!text.text.empty()) { return; }
 			place(e, wt, [&](ImVec2 p) { GlyphDiamond(dl, p, IM_COL32(200, 200, 200, 255)); });
 		});
 
@@ -492,12 +511,70 @@ void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
 	// No icon: cast a ray from the cursor through the scene.
 	glm::vec3 origin{}, toFar{};
 	if (!MouseRay(viewMin, viewSize, origin, toFar)) { return; }
+	// The nearest of: a mesh (Renderer::Raycast), a world text's box.
+	const float length = glm::length(toFar);
+	Entity picked = kNullEntity;
+	float  nearest = length;
 	RenderRaycastHit hit;
-	if (m_renderer.Raycast(origin, toFar, glm::length(toFar), hit)) {
+	if (m_renderer.Raycast(origin, toFar, length, hit)) {
 		const Entity entity = UserDataToEntity(hit.userData);
-		if (m_world.IsAlive(entity)) { Select(entity); return; }
+		if (m_world.IsAlive(entity)) { picked = entity; nearest = hit.distance; }
 	}
-	Select(kNullEntity);   // clicked empty space
+	if (length > 0.0f) {
+		const Entity text = PickWorldText(origin, toFar / length, nearest);
+		if (text.IsValid()) { picked = text; }
+	}
+	Select(picked);   // kNullEntity: clicked empty space
+}
+
+Crucible::Entity Crucible::SceneView::PickWorldText(const glm::vec3& origin, const glm::vec3& direction, float& distance) {
+	Camera& camera = m_viewport.GetCamera();
+	const glm::mat4 view = camera.GetView();
+	Entity picked = kNullEntity;
+	m_world.CreateQuery<const WorldTransform, const WorldText>().ForEach(
+		[&](Entity e, const WorldTransform& wt, const WorldText& text) {
+			if (!wt.valid || text.text.empty()) { return; }
+			const WorldTextPlane plane = WorldTextPlaneFor(text, wt.matrix, camera.position, view);
+			float t = 0.0f;
+			if (RayHitsWorldTextBox(text, plane, origin, direction, t) && t < distance) { distance = t; picked = e; }
+		});
+	return picked;
+}
+
+void Crucible::SceneView::DrawWorldTextBoxes(ImVec2 viewMin, ImVec2 viewSize) {
+	if (!m_viewport.IsValid() || viewSize.x <= 0.0f || viewSize.y <= 0.0f) { return; }
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (!inspector) { return; }
+
+	Camera& camera = m_viewport.GetCamera();
+	camera.SetAspect(viewSize.x, viewSize.y);   // match the image this frame (the Renderer does the same)
+	const glm::mat4 view = camera.GetView();
+	const glm::mat4 viewProj = camera.GetProjection() * view;
+	const Entity active = DebugDrawSystem::GetSelectedEntity();
+
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	dl->PushClipRect(viewMin, ImVec2(viewMin.x + viewSize.x, viewMin.y + viewSize.y), true);
+	for (Entity const e : inspector->GetSelection()) {
+		if (!m_world.IsAlive(e)) { continue; }
+		WorldTransform const* wt = m_world.Read<WorldTransform>(e);
+		WorldText const* text = m_world.Read<WorldText>(e);
+		if (!wt || !wt->valid || !text) { continue; }
+
+		// The box as this view sees it, in the selection colour (solid on the active entity).
+		const WorldTextPlane plane = WorldTextPlaneFor(*text, wt->matrix, camera.position, view);
+		ImVec2 points[4];
+		bool visible = true;
+		const auto corners = WorldTextBoxCorners(*text, plane);
+		for (int i = 0; i < 4 && visible; ++i) {
+			const glm::vec4 clip = viewProj * glm::vec4(corners[i], 1.0f);
+			if (clip.w <= 1.0e-4f) { visible = false; break; }   // a corner behind the camera: skip it this frame
+			const glm::vec2 ndc = glm::vec2(clip) / clip.w;
+			points[i] = ImVec2(viewMin.x + (ndc.x * 0.5f + 0.5f) * viewSize.x, viewMin.y + (0.5f - ndc.y * 0.5f) * viewSize.y);
+		}
+		if (!visible) { continue; }
+		dl->AddPolyline(points, 4, e == active ? IM_COL32(255, 140, 26, 255) : IM_COL32(255, 140, 26, 150), ImDrawFlags_Closed, 1.5f);
+	}
+	dl->PopClipRect();
 }
 
 bool Crucible::SceneView::MouseRay(ImVec2 viewMin, ImVec2 viewSize, glm::vec3& origin, glm::vec3& toFar) {

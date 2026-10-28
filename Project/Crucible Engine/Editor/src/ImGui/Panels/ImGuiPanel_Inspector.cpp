@@ -112,6 +112,28 @@ namespace {
 			: nullptr;
 	}
 
+	// Text: UIText for a UI element (it has a UIRect), WorldText for anything in the 3D world.
+	template <>
+	char const* AddBlockedReason<Crucible::WorldText>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::UIRect>(entity)
+			? "This entity is a UI element (it has a UIRect).\nUse UIText for text on a canvas."
+			: nullptr;
+	}
+
+	template <>
+	char const* AddBlockedReason<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::WorldText>(entity)
+			? "This entity has a WorldText, so it lives in the 3D world.\nUI elements go under a UICanvas."
+			: nullptr;
+	}
+
+	template <>
+	char const* AddBlockedReason<Crucible::UIText>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::WorldText>(entity)
+			? "This entity has a WorldText (text in the 3D world).\nAn entity uses one or the other."
+			: nullptr;
+	}
+
 	// 2. Defaults for the new component before it goes on the entity. The plain version does
 	//    nothing; add an overload for any component whose T{} isn't a useful starting point.
 	template <typename T>
@@ -1626,8 +1648,15 @@ bool Crucible::Inspector::DrawComponentExtras(UISlider& slider) {
 	return changed;
 }
 
-bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
+// The text, alignment, font and effects fields UIText and WorldText share (their field names
+// match). `world`: WorldText - sizes in metres instead of reference pixels, and a bitmap font is
+// a warning rather than a note (it is blocky up close in the world).
+template <typename T>
+bool Crucible::Inspector::DrawTextExtras(T& text, bool world) {
 	bool changed = false;
+	char const* const widthFormat = world ? "%.3f m" : "%.1f px";
+	float const widthSpeed = world ? 0.001f : 0.05f;
+	float const widthMax   = world ? 1.0f : 64.0f;
 
 	// ---- Text: a multi-line box (the generic string field is one line). Enter types a new line;
 	// the edit is one undo step from the first key to clicking away, like every Inspector field.
@@ -1677,7 +1706,12 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 			for (FontSizeGroup const& group : font->data.m_groups) {
 				sizes += (sizes.empty() ? "" : ", ") + std::to_string(static_cast<int>(group.pixelSize));
 			}
-			ImGui::TextDisabled("Bitmap font: sharp at %s px on screen", sizes.c_str());
+			if (world) {
+				ImGui::TextColored(EditorTheme::GetPalette().warning, "Bitmap font: blocky up close, shimmers far away.");
+				ImGui::TextDisabled("Use an SDF / MTSDF font for world text (Font Importer > Output Type).");
+			} else {
+				ImGui::TextDisabled("Bitmap font: sharp at %s px on screen", sizes.c_str());
+			}
 		} else {
 			ImGui::TextDisabled("%s font: sharp at any size", ToString(font->data.m_outputType));
 		}
@@ -1690,7 +1724,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 			ImGui::TextColored(EditorTheme::GetPalette().warning, "Bitmap font: outline and glow need an SDF / MTSDF font.");
 			ImGui::TextDisabled("Shadow still works (a flat copy, no softness).");
 		} else {
-			ImGui::TextDisabled("Outline + glow (+ bold) can reach %.1f px at this size.", maxWidth);
+			ImGui::TextDisabled(world ? "Outline + glow (+ bold) can reach %.3f m at this size." : "Outline + glow (+ bold) can reach %.1f px at this size.", maxWidth);
 			ImGui::SetItemTooltip("The font's distance field ends half its Pixel Range past each edge;\n"
 			                      "wider settings are clamped. Raise Pixel Range in the Font Importer for more.");
 		}
@@ -1698,7 +1732,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		auto widthWarning = [&](float width) {
 			if (!bitmap && width > maxWidth + 0.01f) {
 				ImGui::SameLine();
-				ImGui::TextColored(EditorTheme::GetPalette().warning, "(max %.1f)", maxWidth);
+				ImGui::TextColored(EditorTheme::GetPalette().warning, world ? "(max %.3f)" : "(max %.1f)", maxWidth);
 			}
 		};
 
@@ -1707,7 +1741,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		ImGui::BeginDisabled(!text.outline);
 		ImGui::Indent();
 		changed |= ImGui::ColorEdit4("outline colour", &text.outlineColour.x, ImGuiColorEditFlags_AlphaBar);
-		changed |= ImGui::DragFloat("outline width", &text.outlineWidth, 0.05f, 0.0f, 64.0f, "%.1f px", ImGuiSliderFlags_AlwaysClamp);
+		changed |= ImGui::DragFloat("outline width", &text.outlineWidth, widthSpeed, 0.0f, widthMax, widthFormat, ImGuiSliderFlags_AlwaysClamp);
 		widthWarning(text.outlineWidth);
 		ImGui::Unindent();
 		ImGui::EndDisabled();
@@ -1716,7 +1750,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		ImGui::BeginDisabled(!text.glow);
 		ImGui::Indent();
 		changed |= ImGui::ColorEdit4("glow colour", &text.glowColour.x, ImGuiColorEditFlags_AlphaBar);
-		changed |= ImGui::DragFloat("glow width", &text.glowWidth, 0.05f, 0.0f, 64.0f, "%.1f px", ImGuiSliderFlags_AlwaysClamp);
+		changed |= ImGui::DragFloat("glow width", &text.glowWidth, widthSpeed, 0.0f, widthMax, widthFormat, ImGuiSliderFlags_AlwaysClamp);
 		widthWarning((text.outline ? text.outlineWidth : 0.0f) + text.glowWidth);
 		changed |= ImGui::SliderFloat("glow softness", &text.glowSoftness, 0.0f, 1.0f, "%.2f");
 		ImGui::Unindent();
@@ -1727,13 +1761,36 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		ImGui::BeginDisabled(!text.shadow);
 		ImGui::Indent();
 		changed |= ImGui::ColorEdit4("shadow colour", &text.shadowColour.x, ImGuiColorEditFlags_AlphaBar);
-		changed |= ImGui::DragFloat2("shadow offset", &text.shadowOffset.x, 0.1f, -64.0f, 64.0f, "%.1f px");
+		changed |= ImGui::DragFloat2("shadow offset", &text.shadowOffset.x, widthSpeed * 2.0f, -widthMax, widthMax, widthFormat);
 		ImGui::BeginDisabled(bitmap);
 		changed |= ImGui::SliderFloat("shadow softness", &text.shadowSoftness, 0.0f, 1.0f, "%.2f");
 		ImGui::EndDisabled();
 		ImGui::Unindent();
 		ImGui::EndDisabled();
 	}
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
+	return DrawTextExtras(text, false);
+}
+
+bool Crucible::Inspector::DrawComponentExtras(WorldText& text) {
+	bool changed = DrawTextExtras(text, true);
+
+	// ---- Distance fade: the range greyed out while it is off.
+	ImGui::SeparatorText("Distance Fade");
+	changed |= ImGui::Checkbox("fade", &text.fade);
+	ImGui::SetItemTooltip("Fully visible up to fade start from the camera, gone by fade end.");
+	ImGui::BeginDisabled(!text.fade);
+	ImGui::Indent();
+	changed |= ImGui::DragFloat("fade start", &text.fadeStart, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	changed |= ImGui::DragFloat("fade end", &text.fadeEnd, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	if (text.fade && text.fadeEnd <= text.fadeStart) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Fade end should be past fade start (it vanishes at once).");
+	}
+	ImGui::Unindent();
+	ImGui::EndDisabled();
 	return changed;
 }
 

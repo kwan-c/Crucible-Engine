@@ -55,6 +55,7 @@
 #include"Graphics/CubemapHandle.h"    // CubemapHandle (Skybox) - same reasoning
 #include"Graphics/LightTypes.h"       // LightType (Light) - same reasoning
 #include"../../UI/UIComponents.h"
+#include"Text/WorldText.h"        // WorldText (text in the 3D world)
 #include "Scripting/ScriptTypes.h"
 
 namespace Crucible

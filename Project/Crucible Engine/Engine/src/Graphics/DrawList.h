@@ -18,6 +18,7 @@
 #include "MaterialHandle.h"
 #include "TextureHandle.h"
 #include "RenderTypes.h"
+#include "WorldTextTypes.h"
 
 #include <cstdint>
 #include <functional>
@@ -60,8 +61,9 @@ namespace Crucible {
         std::vector<DrawBatch>                                outline;            // selected object (mask pass)
         std::vector<ParticleBatch>                            particles;          // far to near
         std::vector<WaterDraw>                                water;              // water surfaces in view (drawn after the opaque scene)
+        std::vector<WorldTextDraw>                            worldText;          // WorldText runs, far to near (drawn last in the scene pass)
         glm::vec4                                             projInfo{ 1.0f };   // proj[0][0], [1][1], [2][2], [3][2] (ambient occlusion)
-        void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); water.clear(); }
+        void Clear() { main.clear(); for (auto& c : shadow) { c.clear(); } cascadeCount = 0; outline.clear(); particles.clear(); water.clear(); worldText.clear(); }
     };
 
 }   // NAMESPACE CRUCIBLE

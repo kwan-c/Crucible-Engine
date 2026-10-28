@@ -66,6 +66,7 @@
 #include "Passes/UIPass.h"
 #include "Passes/VolumetricFogPass.h"
 #include "Passes/WaterPass.h"
+#include "Passes/WorldTextPass.h"
 #include "DrawList.h"
 #include "RenderResources.h"
 #include "EnvironmentMaps.h"
@@ -672,6 +673,24 @@ namespace Crucible {
         ENGINE_API void SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings);
 
         /*********************************************************************
+         \brief
+            Queues one piece of world-space text for this frame (normally one
+            WorldText component - WorldTextSystem does this). Like Submit(),
+            forgotten after the frame.
+         \param[in] desc      Where it is, how it faces the camera, depth test,
+                              double-sided, intensity and distance fade.
+         \param[in] vertices  Glyph corners in the text's plane, six per quad
+                              (WorldTextTypes.h). Copied.
+         \param[in] runs      Runs of `vertices` with one texture, mode and
+                              effects each - one draw per run. Copied.
+         \details
+            Drawn inside the scene pass after particles, into the HDR image:
+            fogged, bloomed and tonemapped like the world. Per view: culled,
+            faded by distance, drawn far to near (alwaysOnTop text last).
+         *********************************************************************/
+        ENGINE_API void SubmitWorldText(const WorldTextDesc& desc, std::span<const WorldTextVertex> vertices, std::span<const WorldTextRun> runs);
+
+        /*********************************************************************
          \brief  Shows or hides DebugDraw lines when the scene is drawn
                  straight to the window (the Game build, where there are no
                  viewports). Off by default; turn on for gameplay debugging.
@@ -942,7 +961,8 @@ namespace Crucible {
         OutlinePass                 m_outlinePass{ m_resources };
         ParticlePass                m_particlePass{ m_context, m_resources };
         WaterPass                   m_waterPass{ m_resources };   // water surfaces, drawn inside the scene pass
-        ScenePass                   m_scenePass{ m_resources, m_particlePass, m_waterPass };
+        WorldTextPass               m_worldTextPass{ m_context, m_resources };   // WorldText, drawn inside the scene pass
+        ScenePass                   m_scenePass{ m_resources, m_particlePass, m_waterPass, m_worldTextPass };
         DebugLinePass               m_debugLinePass;
         UIPass                      m_uiPass{ m_context, m_resources };   // also holds m_resources (declared below; used once frames start)
         VolumetricFogPass           m_fogPass{ m_context };   // froxel fog (compute); its pool is BEFORE every view's FogVolumeTargets
