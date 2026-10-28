@@ -51,12 +51,16 @@
 
 namespace Crucible {
 
+	/// How a flat thing in the world turns toward the camera: WorldText::billboard, and a
+	/// world-space UICanvas's billboard.
+	enum class WorldBillboard : std::uint8_t {
+		Off,           // the Transform's rotation
+		FaceCamera,    // always square on to the camera
+		Upright,       // turns around Y only, toward the camera
+	};
+
 	struct WorldText {
-		enum class Billboard : std::uint8_t {
-			Off,           // the Transform's rotation
-			FaceCamera,    // always square on to the camera
-			Upright,       // turns around Y only, toward the camera
-		};
+		using Billboard = WorldBillboard;
 
 		Math::vec4    colour{ 1.0f };      // sRGB, 0-1
 		std::string   text;                // UTF-8; "\n" starts a new line

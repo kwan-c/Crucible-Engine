@@ -24,7 +24,8 @@
 #include "Prefabs/PrefabAuthoring.h"
 #include "Resources/ResourceManager.h"
 #include "Spatial/Bounds.h"
-#include "Text/WorldTextPlane.h"   // a WorldText's box for this view: outline, picking, framing
+#include "UI/WorldUIPlane.h"      // world UI boxes for this view (WorldText, world canvases): outline, picking, framing
+#include "UI/UISystem.h"          // UI::LayoutWorldCanvas: which element on a world canvas a click is on
 
 #include <ImGuizmo.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -229,10 +230,21 @@ void Crucible::SceneView::FrameSelected() {
 				usedMesh = true;
 			}
 		}
+		if (!usedMesh) {
+			// A world canvas's page, or an element's rect on one, as this view sees it.
+			Camera& camera = m_viewport.GetCamera();
+			std::array<glm::vec3, 4> corners;
+			if (WorldUICorners(entity, camera.position, camera.GetView(), corners)) {
+				AABB b(corners[0], corners[0]);
+				for (glm::vec3 const& c : corners) { b = AABB::Union(b, AABB(c, c)); }
+				add(b);
+				usedMesh = true;
+			}
+		}
 		if (!usedMesh) if (WorldText const* text = m_world.Read<WorldText>(entity)) {
 			// Its box as this view sees it (a billboard turns toward the camera).
 			Camera& camera = m_viewport.GetCamera();
-			WorldTextPlane const plane = WorldTextPlaneFor(*text, wt->matrix, camera.position, camera.GetView());
+			WorldUIPlane const plane = WorldTextPlaneFor(*text, wt->matrix, camera.position, camera.GetView());
 			auto const corners = WorldTextBoxCorners(*text, plane);
 			AABB b(corners[0], corners[0]);
 			for (glm::vec3 const& c : corners) { b = AABB::Union(b, AABB(c, c)); }
@@ -400,6 +412,11 @@ void Crucible::SceneView::SyncSelection() {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	const Entity active = inspector ? inspector->GetSelectedEntity() : kNullEntity;
 	DebugDrawSystem::SetSelectedEntity(active);
+	// Billboarded world canvases are outlined facing this view's camera (DebugDrawSystem::DrawWorldUI).
+	if (m_viewport.IsValid()) {
+		Camera& camera = m_viewport.GetCamera();
+		DebugDrawSystem::SetViewCamera(camera.position, camera.GetView());
+	}
 
 	// Every selected entity gets the outline. Picks up selections made elsewhere (Hierarchy,
 	// Inspector) too; the renderer ignores the call when the list hasn't changed.
@@ -460,7 +477,7 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 		});
 
 	// Anything else with nothing to click on in the scene (empties, collider-only, characters...).
-	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent, WorldText>().Build().ForEach(
+	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent, WorldText, UICanvas, UIRect>().Build().ForEach(
 		[&](Entity e, const WorldTransform& wt) {
 			place(e, wt, [&](ImVec2 p) { GlyphDiamond(dl, p, IM_COL32(200, 200, 200, 255)); });
 		});
@@ -523,6 +540,8 @@ void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
 	if (length > 0.0f) {
 		const Entity text = PickWorldText(origin, toFar / length, nearest);
 		if (text.IsValid()) { picked = text; }
+		const Entity ui = PickWorldCanvas(origin, toFar / length, nearest);
+		if (ui.IsValid()) { picked = ui; }
 	}
 	Select(picked);   // kNullEntity: clicked empty space
 }
@@ -534,10 +553,79 @@ Crucible::Entity Crucible::SceneView::PickWorldText(const glm::vec3& origin, con
 	m_world.CreateQuery<const WorldTransform, const WorldText>().ForEach(
 		[&](Entity e, const WorldTransform& wt, const WorldText& text) {
 			if (!wt.valid || text.text.empty()) { return; }
-			const WorldTextPlane plane = WorldTextPlaneFor(text, wt.matrix, camera.position, view);
+			const WorldUIPlane plane = WorldTextPlaneFor(text, wt.matrix, camera.position, view);
 			float t = 0.0f;
 			if (RayHitsWorldTextBox(text, plane, origin, direction, t) && t < distance) { distance = t; picked = e; }
 		});
+	return picked;
+}
+
+namespace {
+	// The world-space canvas whose tree `entity` is in (the canvas itself, or the topmost canvas above
+	// an element with a UIRect), or kNullEntity.
+	Crucible::Entity WorldCanvasOf(Crucible::World& world, Crucible::Entity entity) {
+		Crucible::Entity canvas = world.HasComponent<Crucible::UICanvas>(entity) ? entity : Crucible::kNullEntity;
+		if (canvas == Crucible::kNullEntity && !world.HasComponent<Crucible::UIRect>(entity)) { return Crucible::kNullEntity; }
+		for (Crucible::Entity p = world.GetParent(entity); p.IsValid(); p = world.GetParent(p)) {
+			if (world.HasComponent<Crucible::UICanvas>(p)) { canvas = p; }   // the topmost canvas owns the tree
+		}
+		if (canvas == Crucible::kNullEntity) { return Crucible::kNullEntity; }
+		Crucible::UICanvas const* settings = world.Read<Crucible::UICanvas>(canvas);
+		return settings && settings->renderMode == Crucible::UICanvas::RenderMode::WorldSpace ? canvas : Crucible::kNullEntity;
+	}
+}
+
+bool Crucible::SceneView::WorldUICorners(Entity entity, const glm::vec3& cameraPosition, const glm::mat4& view, std::array<glm::vec3, 4>& corners) {
+	const Entity canvasEntity = WorldCanvasOf(m_world, entity);
+	if (!canvasEntity.IsValid()) { return false; }
+	UICanvas const* canvas = m_world.Read<UICanvas>(canvasEntity);
+	WorldTransform const* wt = m_world.Read<WorldTransform>(canvasEntity);
+	if (!canvas || !wt || !wt->valid) { return false; }
+
+	const WorldUIPlane plane = WorldCanvasPlaneFor(*canvas, wt->matrix, cameraPosition, view);
+	if (entity == canvasEntity) {
+		corners = WorldUIBoxCorners(plane, WorldCanvasBoxInPlane(*canvas));
+		return true;
+	}
+	UI::LayoutWorldCanvas(m_world, canvasEntity, *canvas, m_canvasLayout);
+	for (const UI::LayoutItem& item : m_canvasLayout) {
+		if (!(item.entity == entity)) { continue; }
+		const auto page = item.Corners();   // page pixels, turned with the element
+		for (int i = 0; i < 4; ++i) { corners[i] = WorldUIPlanePoint(plane, WorldCanvasToPlane(*canvas, page[i])); }
+		return true;
+	}
+	return false;   // under a switched-off rect: not laid out
+}
+
+Crucible::Entity Crucible::SceneView::PickWorldCanvas(const glm::vec3& origin, const glm::vec3& direction, float& distance) {
+	Camera& camera = m_viewport.GetCamera();
+	const glm::mat4 view = camera.GetView();
+
+	// Every drawn world canvas (enabled, not under another canvas). Collected first: laying one out
+	// reads its tree, which mustn't happen while the query iterates.
+	std::vector<Entity> canvases;
+	m_world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity e, const WorldTransform& wt, const UICanvas& canvas) {
+		if (canvas.renderMode == UICanvas::RenderMode::WorldSpace && canvas.enabled && wt.valid) { canvases.push_back(e); }
+	});
+
+	Entity picked = kNullEntity;
+	for (const Entity canvasEntity : canvases) {
+		if (!(WorldCanvasOf(m_world, canvasEntity) == canvasEntity)) { continue; }   // nested: part of another canvas's page
+		const UICanvas canvas = *m_world.Read<UICanvas>(canvasEntity);
+		const WorldUIPlane plane = WorldCanvasPlaneFor(canvas, m_world.Read<WorldTransform>(canvasEntity)->matrix, camera.position, view);
+		float t = 0.0f;
+		glm::vec2 local{ 0.0f };
+		if (!RayHitsWorldUIBox(plane, WorldCanvasBoxInPlane(canvas), origin, direction, t, &local) || t >= distance) { continue; }
+
+		// The topmost element under that point of the page (drawn last = on top), else the canvas.
+		distance = t;
+		picked = canvasEntity;
+		const glm::vec2 point = WorldCanvasToPage(canvas, local);
+		UI::LayoutWorldCanvas(m_world, canvasEntity, canvas, m_canvasLayout);
+		for (auto it = m_canvasLayout.rbegin(); it != m_canvasLayout.rend(); ++it) {
+			if (it->Contains(point)) { picked = it->entity; break; }
+		}
+	}
 	return picked;
 }
 
@@ -561,7 +649,7 @@ void Crucible::SceneView::DrawWorldTextBoxes(ImVec2 viewMin, ImVec2 viewSize) {
 		if (!wt || !wt->valid || !text) { continue; }
 
 		// The box as this view sees it, in the selection colour (solid on the active entity).
-		const WorldTextPlane plane = WorldTextPlaneFor(*text, wt->matrix, camera.position, view);
+		const WorldUIPlane plane = WorldTextPlaneFor(*text, wt->matrix, camera.position, view);
 		ImVec2 points[4];
 		bool visible = true;
 		const auto corners = WorldTextBoxCorners(*text, plane);
@@ -632,6 +720,7 @@ void Crucible::SceneView::DrawGizmoMenu() {
 		//{ "Selection",      DebugCategory::Selection  },
 		{ "Gameplay lines", DebugCategory::Gameplay   },
 		{ "Culling bounds", DebugCategory::Bounds     },
+		{ "World UI bounds", DebugCategory::WorldUI   },
 	};
 	for (const Entry& e : entries) {
 		bool on = DebugDraw::IsCategoryEnabled(e.category);
@@ -799,8 +888,11 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 	Entity const entity = inspector ? inspector->GetSelectedEntity() : kNullEntity;
 
 	// Nothing to manipulate. Also finishes a drag whose entity went away mid-drag.
+	// A UI element (it has a UIRect) gets none: it is placed by its UIRect (Inspector), and its
+	// Transform does nothing. Its canvas has one, like any entity.
 	if (!m_viewport.IsValid() || viewSize.x <= 0.0f || viewSize.y <= 0.0f || m_flying
-		|| !entity.IsValid() || !m_world.IsAlive(entity) || !m_world.HasComponent<Transform>(entity)) {
+		|| !entity.IsValid() || !m_world.IsAlive(entity) || !m_world.HasComponent<Transform>(entity)
+		|| m_world.HasComponent<UIRect>(entity)) {
 		m_gizmoDrawn = false;
 		EndGizmoDrag();
 		return;

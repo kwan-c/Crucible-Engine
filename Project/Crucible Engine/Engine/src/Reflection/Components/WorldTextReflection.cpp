@@ -25,11 +25,13 @@ RTTR_REGISTRATION
 {
 	using namespace Crucible;
 
-	rttr::registration::enumeration<WorldText::Billboard>("WorldTextBillboard")
+	// Shared with UICanvas::billboard (world-space canvases), so registered once, here. By name,
+	// so a scene file says "FaceCamera" rather than 1 and reordering the enum is safe.
+	rttr::registration::enumeration<WorldBillboard>("WorldBillboard")
 	(
-		rttr::value("Off",         WorldText::Billboard::Off),
-		rttr::value("Face Camera", WorldText::Billboard::FaceCamera),
-		rttr::value("Upright",     WorldText::Billboard::Upright)
+		rttr::value("Off",        WorldBillboard::Off),
+		rttr::value("FaceCamera", WorldBillboard::FaceCamera),
+		rttr::value("Upright",    WorldBillboard::Upright)
 	);
 
 	rttr::registration::class_<WorldText>("WorldText")

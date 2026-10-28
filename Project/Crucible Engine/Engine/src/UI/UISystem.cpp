@@ -11,6 +11,7 @@
 #include "AssetPipe/Assetmanager.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/World.h"
+#include "ECS/HierarchyTransformSystem.h"   // WorldCanvasSystem runs after it (canvas world matrices)
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
 #include "Scene/SceneManager.h"
@@ -237,6 +238,101 @@ namespace Crucible {
 		}
 	}
 
+	void UI::LayoutWorldCanvas(World& world, Entity canvas, const UICanvas& settings, std::vector<LayoutItem>& out) {
+		out.clear();
+		const Math::vec2 page = glm::max(settings.referenceResolution, Math::vec2(0.0f));
+		if (page.x <= 0.0f || page.y <= 0.0f) { return; }
+
+		const Math::vec4 pageRect(0.0f, 0.0f, page.x, page.y);
+		world.ForEachChild(canvas, [&](Entity child) { LayoutNode(world, child, pageRect, glm::mat3(1.0f), 1.0f, out, false); });
+	}
+
+	float UI::BuildWorldCanvasPanel(const UICanvas& settings, std::span<const UIVertex> vertices, std::span<const std::uint32_t> indices,
+	                                std::span<const UIDrawCommand> commands,
+	                                std::vector<WorldUIVertex>& outVertices, std::vector<WorldUIRun>& outRuns) {
+		outVertices.clear();
+		outRuns.clear();
+
+		// Page pixels (origin top-left, +y down) -> the canvas's plane (metres from the entity, +y up).
+		const Math::vec2 page   = glm::max(settings.referenceResolution, Math::vec2(0.0f));
+		const float      ppu    = std::max(settings.pixelsPerUnit, 1.0e-3f);
+		const Math::vec2 origin = settings.pivot * page;
+		auto toPlane = [&](Math::vec2 p) { return Math::vec2((p.x - origin.x) / ppu, (origin.y - p.y) / ppu); };
+		auto emit = [&](Math::vec2 position, Math::vec2 uv, std::uint32_t colour) {
+			outVertices.push_back(WorldUIVertex{ toPlane(position), uv, colour });
+		};
+
+		const Math::vec4 noClip = UIDrawCommand{}.clipRect;
+		const int64_t vertexCount = static_cast<int64_t>(vertices.size());
+
+		for (const UIDrawCommand& command : commands) {
+			const uint32_t count = command.indexCount - command.indexCount % 3;
+			if (count == 0 || static_cast<uint64_t>(command.firstIndex) + count > indices.size()) { continue; }
+			// Every index must land inside the list (as UIPass::Submit checks).
+			bool ok = true;
+			for (uint32_t i = 0; ok && i < count; ++i) {
+				const int64_t v = static_cast<int64_t>(indices[command.firstIndex + i]) + command.vertexOffset;
+				ok = v >= 0 && v < vertexCount;
+			}
+			if (!ok) { continue; }
+			auto at = [&](uint32_t i) -> const UIVertex& { return vertices[static_cast<size_t>(static_cast<int64_t>(indices[command.firstIndex + i]) + command.vertexOffset)]; };
+
+			const uint32_t first = static_cast<uint32_t>(outVertices.size());
+			const bool clipped = command.clipRect != noClip && count % 6 == 0;
+			if (!clipped) {
+				// As drawn. The flip to +y up turns every triangle over, so each is emitted b <-> c
+				// swapped: counter-clockwise seen from the front again.
+				for (uint32_t i = 0; i < count; i += 3) {
+					const UIVertex& a = at(i); const UIVertex& b = at(i + 1); const UIVertex& c = at(i + 2);
+					emit(a.position, a.uv, a.colour);
+					emit(c.position, c.uv, c.colour);
+					emit(b.position, b.uv, b.colour);
+				}
+			} else {
+				// Clip rects are only set on upright quads (AppendDrawList: top-left, top-right,
+				// bottom-right, bottom-left; indices 0 1 2 0 2 3), so each quad is an axis-aligned
+				// box: cut it to the clip rect, and its atlas rect by the same share.
+				const Math::vec4& clip = command.clipRect;
+				for (uint32_t i = 0; i < count; i += 6) {
+					const UIVertex& tl = at(i);
+					const UIVertex& br = at(i + 2);
+					const Math::vec2 p0 = tl.position, p1 = br.position;
+					if (!(p1.x > p0.x) || !(p1.y > p0.y)) { continue; }
+					const Math::vec2 c0(std::max(p0.x, clip.x), std::max(p0.y, clip.y));
+					const Math::vec2 c1(std::min(p1.x, clip.z), std::min(p1.y, clip.w));
+					if (c1.x <= c0.x || c1.y <= c0.y) { continue; }
+					const Math::vec2 duv = (br.uv - tl.uv) / (p1 - p0);
+					const Math::vec2 uv0 = tl.uv + (c0 - p0) * duv;
+					const Math::vec2 uv1 = tl.uv + (c1 - p0) * duv;
+					// Top-left, bottom-right, top-right; top-left, bottom-left, bottom-right (the flipped order).
+					emit(c0, uv0, tl.colour);
+					emit(c1, uv1, tl.colour);
+					emit({ c1.x, c0.y }, { uv1.x, uv0.y }, tl.colour);
+					emit(c0, uv0, tl.colour);
+					emit({ c0.x, c1.y }, { uv0.x, uv1.y }, tl.colour);
+					emit(c1, uv1, tl.colour);
+				}
+			}
+
+			const uint32_t added = static_cast<uint32_t>(outVertices.size()) - first;
+			if (added == 0) { continue; }
+			if (!outRuns.empty()) {
+				WorldUIRun& last = outRuns.back();
+				if (last.texture == command.texture && last.mode == command.mode && last.pixelRange == command.pixelRange &&
+				    last.effects == command.effects && last.firstVertex + last.vertexCount == first) {
+					last.vertexCount += added;
+					continue;
+				}
+			}
+			outRuns.push_back(WorldUIRun{ .texture = command.texture, .mode = command.mode, .pixelRange = command.pixelRange,
+			                              .effects = command.effects, .firstVertex = first, .vertexCount = added });
+		}
+
+		float reach = 0.0f;
+		for (const WorldUIVertex& v : outVertices) { reach = std::max(reach, glm::length(v.local)); }
+		return reach;
+	}
+
 	void UI::AppendDrawList(World& world, const std::vector<LayoutItem>& items, ResourceManager* resources,
 	                        std::vector<UIVertex>& vertices, std::vector<std::uint32_t>& indices,
 	                        std::vector<UIDrawCommand>& commands) {
@@ -410,6 +506,70 @@ namespace Crucible {
 	}
 
 	// ------------------------------------------------------------------------------------------- //
+	//  WorldCanvasSystem
+	// ------------------------------------------------------------------------------------------- //
+
+	void WorldCanvasSystem::Describe(SystemDesc& desc) const {
+		desc.Reads<UICanvas, UIButton, UISlider, UIText, HierarchyNode, WorldTransform>()   // canvases, element states, text, the tree, placement
+			.Writes<UIImage>()                              // UIImage::texture (AppendDrawList resolves it)
+			.RunAfter<HierarchyTransformSystem>()           // the canvases' world matrices must be this frame's
+			.Affinity(SystemAffinity::MainThread);          // touches the Renderer
+	}
+
+	void WorldCanvasSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
+
+		// Collected first: laying out and drawing reads (and AppendDrawList writes) components, which
+		// isn't allowed while a query is iterating. A canvas under another canvas belongs to that
+		// canvas's tree, as on screen.
+		m_canvases.clear();
+		world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity entity, const WorldTransform& transform, const UICanvas& canvas) {
+			if (canvas.renderMode != UICanvas::RenderMode::WorldSpace || !canvas.enabled || !transform.valid) { return; }
+			m_canvases.push_back(entity);
+		});
+		std::erase_if(m_canvases, [&](Entity canvas) {
+			for (Entity p = world.GetParent(canvas); p.IsValid(); p = world.GetParent(p)) {
+				if (world.HasComponent<UICanvas>(p)) { return true; }
+			}
+			return false;
+		});
+
+		for (const Entity entity : m_canvases) {
+			const UICanvas canvas = *world.Read<UICanvas>(entity);   // a copy: AppendDrawList may write components
+			UI::LayoutWorldCanvas(world, entity, canvas, m_layout);
+			if (m_layout.empty()) { continue; }
+
+			m_vertices.clear();
+			m_indices.clear();
+			m_commands.clear();
+			UI::AppendDrawList(world, m_layout, m_resources, m_vertices, m_indices, m_commands);
+			const float reach = UI::BuildWorldCanvasPanel(canvas, m_vertices, m_indices, m_commands, m_panelVertices, m_panelRuns);
+			if (m_panelRuns.empty()) { continue; }
+
+			const glm::mat4& m = world.Read<WorldTransform>(entity)->matrix;
+			const glm::vec3 right(m[0]), up(m[1]);
+			const float scale = std::max(glm::length(right), glm::length(up));
+			if (!(scale > 0.0f)) { continue; }   // scaled to nothing
+
+			WorldUIDesc desc;
+			desc.anchor      = glm::vec3(m[3]);
+			desc.right       = right;
+			desc.up          = up;
+			desc.radius      = reach * scale;
+			desc.facing      = canvas.billboard == WorldBillboard::FaceCamera ? WorldUIFacing::FaceCamera
+			                 : canvas.billboard == WorldBillboard::Upright    ? WorldUIFacing::Upright
+			                 :                                                  WorldUIFacing::Transform;
+			desc.alwaysOnTop = canvas.alwaysOnTop;
+			desc.doubleSided = canvas.doubleSided;
+			desc.intensity   = std::max(canvas.intensity, 0.0f);
+			if (canvas.fade) {
+				desc.fadeStart = std::max(canvas.fadeStart, 0.0f);
+				desc.fadeEnd   = std::max(canvas.fadeEnd, desc.fadeStart + 0.001f);
+			}
+			m_renderer.SubmitWorldUI(desc, m_panelVertices, m_panelRuns);
+		}
+	}
+
+	// ------------------------------------------------------------------------------------------- //
 	//  UIMenuSystem
 	// ------------------------------------------------------------------------------------------- //
 
@@ -458,8 +618,10 @@ namespace Crucible {
 		bool showsCursor = false;
 		m_menus.clear();
 		world.CreateQuery<const UICanvas>().ForEach([&](Entity entity, const UICanvas& canvas) {
-			const bool shown = canvas.toggleWithEscape ? open : canvas.enabled;
-			if (canvas.toggleWithEscape && canvas.enabled != open) { m_menus.push_back(entity); }
+			// Menus are screen-space only: a world-space canvas ignores toggleWithEscape (greyed out in the Inspector).
+			const bool menu  = canvas.toggleWithEscape && canvas.renderMode == UICanvas::RenderMode::ScreenSpace;
+			const bool shown = menu ? open : canvas.enabled;
+			if (menu && canvas.enabled != open) { m_menus.push_back(entity); }
 			if (shown && canvas.showsCursor && canvas.renderMode == UICanvas::RenderMode::ScreenSpace) { showsCursor = true; }
 		});
 		for (Entity entity : m_menus) {

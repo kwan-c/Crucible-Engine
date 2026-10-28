@@ -113,6 +113,8 @@ namespace Crucible {
 		void RequestCreateScript(Entity entity, std::string name, std::string nameSpace);
 		void AssignScript(Entity entity, const std::string& assembly, const std::string& nameSpace,
 			const std::string& name);
+		bool DrawComponentExtras(UICanvas& canvas);         // Screen Space / World Space settings, the unused group greyed
+		bool DrawComponentExtras(UIRect& rect);             // a warning when it isn't under a canvas; the units on a world canvas
 		bool DrawComponentExtras(UIButton& button);         // scene dropdown for onClick = LoadScene
 		bool DrawComponentExtras(UISlider& slider);         // direction dropdown that also turns the UIRect
 		bool DrawComponentExtras(UIText& text);             // multi-line text box, 3 x 3 alignment grid, font status

@@ -63,6 +63,7 @@ namespace Crucible {
         Selection  = 1u << 4,   //!< selected entity's bounds + axes
         Gameplay   = 1u << 5,   //!< anything gameplay code draws (the default)
         Bounds     = 1u << 6,   //!< every render proxy's culling box (off by default - can be thousands)
+        WorldUI    = 1u << 7,   //!< world-space canvases' pages, and the selected element on one
         All        = 0xFFFFFFFFu
     };
 

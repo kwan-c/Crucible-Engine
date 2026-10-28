@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -51,6 +52,7 @@
 #include "ECS/Systems/IECSSystems.h"
 #include "EngineExport.h"
 #include "Graphics/UITypes.h"
+#include "Graphics/WorldUITypes.h"   // world-space canvases are drawn as world UI panels
 #include "UI/UIComponents.h"
 
 namespace Crucible {
@@ -112,6 +114,35 @@ namespace Crucible {
 								  editor previews don't.
 		 *********************************************************************/
 		ENGINE_API void LayoutScreenCanvases(World& world, Math::vec2 screenSize, std::vector<LayoutItem>& out, bool writeComputed);
+
+		/*********************************************************************
+		 \brief  Lays out one world-space canvas's tree on its own page:
+				 referenceResolution canvas pixels, origin top-left, +y down,
+				 scale 1 (never fitted to a screen). The same per-element
+				 layout as screen UI, so anchors, pivots, rotation and sibling
+				 order work the same. UIRect::computed is not written (it
+				 holds screen boxes).
+		 \param[out] out  Cleared, then every element, in draw order.
+		 *********************************************************************/
+		ENGINE_API void LayoutWorldCanvas(World& world, Entity canvas, const UICanvas& settings, std::vector<LayoutItem>& out);
+
+		/*********************************************************************
+		 \brief  Turns a world-space canvas's draw list (AppendDrawList, in page
+				 pixels) into a world UI panel (Graphics/WorldUITypes.h): six
+				 corners per triangle pair in the canvas's plane - metres from
+				 the canvas entity, +y up, the page placed by settings.pivot and
+				 sized by pixelsPerUnit.
+		 \details Clip rects (Truncate / Ellipsis text) become exact cuts, the
+				 atlas rect cut by the same share. Draw order is kept, so the
+				 canvas's layering holds. Triangles are wound counter-clockwise
+				 seen from the front (+z), like WorldText's.
+		 \param[out] vertices, runs  Cleared first.
+		 \return How far the farthest corner is from the canvas entity, in
+				 metres before the Transform's scale. 0 = nothing to draw.
+		 *********************************************************************/
+		ENGINE_API float BuildWorldCanvasPanel(const UICanvas& settings, std::span<const UIVertex> vertices, std::span<const std::uint32_t> indices,
+		                                       std::span<const UIDrawCommand> commands,
+		                                       std::vector<WorldUIVertex>& outVertices, std::vector<WorldUIRun>& outRuns);
 
 		/*********************************************************************
 		 \brief  Appends what every laid-out element draws, in this order:
@@ -191,6 +222,40 @@ namespace Crucible {
 		std::vector<UIVertex>       m_vertices;
 		std::vector<std::uint32_t>  m_indices;
 		std::vector<UIDrawCommand>  m_commands;
+	};
+
+	/*************************************************************************
+	 \brief  Draws every world-space UICanvas in the 3D scene, every frame, in
+			 Edit mode too (so the Scene view shows it while you build it).
+	 \details
+		Each enabled world canvas (not under another canvas) is laid out on
+		its page (UI::LayoutWorldCanvas), drawn into a UI draw list like
+		screen UI (UI::AppendDrawList - images, sliders, text, effects),
+		turned into a world UI panel (UI::BuildWorldCanvasPanel) and handed
+		to Renderer::SubmitWorldUI with the canvas's world settings:
+		billboard, always on top, double-sided, intensity, distance fade.
+		Display only: nothing reads the mouse here.
+	 *************************************************************************/
+	class WorldCanvasSystem final : public IECSSystem {
+	public:
+		WorldCanvasSystem(Renderer& renderer, ResourceManager* resources) : m_renderer(renderer), m_resources(resources) {}
+
+		void Update(World& world, CommandBuffer& commands) override;
+		void Describe(SystemDesc& desc) const override;
+		SystemStage Stage() const override { return SystemStage::PreRender; }
+
+	private:
+		Renderer&        m_renderer;
+		ResourceManager* m_resources = nullptr;
+
+		// Reused every frame, so steady-state frames don't allocate.
+		std::vector<Entity>         m_canvases;
+		std::vector<UI::LayoutItem> m_layout;
+		std::vector<UIVertex>       m_vertices;
+		std::vector<std::uint32_t>  m_indices;
+		std::vector<UIDrawCommand>  m_commands;
+		std::vector<WorldUIVertex>  m_panelVertices;
+		std::vector<WorldUIRun>     m_panelRuns;
 	};
 
 	/*************************************************************************

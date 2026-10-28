@@ -1571,6 +1571,82 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
     return changed;
 }
 
+bool Crucible::Inspector::DrawComponentExtras(UIRect&) {
+	// Where this element is drawn - or that it isn't (dragged out of its canvas in the Hierarchy).
+	Entity const entity = GetSelectedEntity();
+	if (!entity.IsValid() || !m_world.IsAlive(entity) || m_world.HasComponent<UICanvas>(entity)) { return false; }
+	Entity canvas = kNullEntity;
+	for (Entity p = m_world.GetParent(entity); p.IsValid(); p = m_world.GetParent(p)) {
+		if (m_world.HasComponent<UICanvas>(p)) { canvas = p; }   // the topmost canvas owns the tree
+	}
+	if (canvas == kNullEntity) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Not under a UICanvas: not drawn.");
+		ImGui::TextDisabled("Make it a child of a canvas (UI, or UI (World) for the 3D world).");
+	} else if (UICanvas const* settings = m_world.Read<UICanvas>(canvas); settings && settings->renderMode == UICanvas::RenderMode::WorldSpace) {
+		ImGui::TextDisabled("On a world-space canvas: page pixels (%.0f px = 1 m). Display only.", std::max(settings->pixelsPerUnit, 1.0f));
+	}
+	return false;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UICanvas& canvas) {
+	bool changed = false;
+	bool const world = canvas.renderMode == UICanvas::RenderMode::WorldSpace;
+
+	// ---- Screen Space: greyed out (kept, not lost) on a world-space canvas.
+	ImGui::SeparatorText("Screen Space");
+	ImGui::BeginDisabled(world);
+	changed |= ImGui::Checkbox("scaleWithScreenSize", &canvas.scaleWithScreenSize);
+	changed |= ImGui::InputInt("sortOrder", &canvas.sortOrder);
+	ImGui::SetItemTooltip("With several canvases, higher draws on top.");
+	changed |= ImGui::Checkbox("toggleWithEscape", &canvas.toggleWithEscape);
+	ImGui::SetItemTooltip("An in-game menu: hidden when Play starts, Escape shows / hides it and frees the cursor.");
+	changed |= ImGui::Checkbox("showsCursor", &canvas.showsCursor);
+	ImGui::SetItemTooltip("While shown, the cursor is free (a title screen, game over).");
+	ImGui::EndDisabled();
+
+	// ---- World Space: greyed out on a screen-space canvas.
+	ImGui::SeparatorText("World Space");
+	ImGui::BeginDisabled(!world);
+	changed |= ImGui::DragFloat("pixelsPerUnit", &canvas.pixelsPerUnit, 1.0f, 1.0f, 100000.0f, "%.0f px / m", ImGuiSliderFlags_AlwaysClamp);
+	float const ppu = std::max(canvas.pixelsPerUnit, 1.0f);
+	ImGui::TextDisabled("Page: %.0f x %.0f px = %.2f x %.2f m (referenceResolution / pixelsPerUnit)",
+		canvas.referenceResolution.x, canvas.referenceResolution.y, canvas.referenceResolution.x / ppu, canvas.referenceResolution.y / ppu);
+	changed |= ImGui::DragFloat2("pivot", &canvas.pivot.x, 0.01f, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+	ImGui::SetItemTooltip("The page's point on this entity: (0, 0) top-left, (0.5, 0.5) centre, (1, 1) bottom-right.");
+
+	static constexpr char const* kBillboards[] = { "Off", "Face Camera", "Upright" };
+	int billboard = static_cast<int>(canvas.billboard);
+	if (ImGui::Combo("billboard", &billboard, kBillboards, IM_ARRAYSIZE(kBillboards))) {
+		canvas.billboard = static_cast<WorldBillboard>(billboard);
+		changed = true;
+	}
+	ImGui::SetItemTooltip("Off: the Transform's rotation. Face Camera: always square on.\nUpright: turns around Y only (a nameplate that never tips back).");
+	changed |= ImGui::Checkbox("alwaysOnTop", &canvas.alwaysOnTop);
+	ImGui::SameLine();
+	changed |= ImGui::Checkbox("doubleSided", &canvas.doubleSided);
+	ImGui::SetItemTooltip("Off: not drawn when seen from behind.");
+	changed |= ImGui::DragFloat("intensity", &canvas.intensity, 0.05f, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+	ImGui::SetItemTooltip("Brightness in the scene: above 1 glows with bloom.");
+
+	changed |= ImGui::Checkbox("fade", &canvas.fade);
+	ImGui::SetItemTooltip("Fully visible up to fade start from the camera, gone by fade end.");
+	ImGui::BeginDisabled(!canvas.fade);
+	ImGui::Indent();
+	changed |= ImGui::DragFloat("fade start", &canvas.fadeStart, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	changed |= ImGui::DragFloat("fade end", &canvas.fadeEnd, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	if (canvas.fade && canvas.fadeEnd <= canvas.fadeStart) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Fade end should be past fade start (it vanishes at once).");
+	}
+	ImGui::Unindent();
+	ImGui::EndDisabled();
+	ImGui::EndDisabled();
+
+	if (world) {
+		ImGui::TextDisabled("Display only: nothing on a world-space canvas reacts to the mouse.");
+	}
+	return changed;
+}
+
 bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {
 	// Custom: the action's name (actionId is hidden from the generic fields so it only shows here).
 	if (button.onClick == UIButton::ClickAction::Custom) {

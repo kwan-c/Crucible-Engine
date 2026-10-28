@@ -21,7 +21,9 @@
 #include <Graphics/ViewportPanel.h>
 #include <Graphics/CameraController.h>
 #include <ECS/Core/ECSCore.h>   // Entity
+#include "UI/UISystem.h"        // UI::LayoutItem (world canvas picking)
 
+#include <array>
 #include <string>
 #include <utility>
 #include <vector>
@@ -81,6 +83,13 @@ namespace Crucible {
 		// returns kNullEntity and leaves `distance` alone when none is nearer than it).
 		void DrawWorldTextBoxes(ImVec2 viewMin, ImVec2 viewSize);
 		Entity PickWorldText(const glm::vec3& origin, const glm::vec3& direction, float& distance);
+		// World-space canvases: the nearest page a ray hits (nearer than `distance`, which it then
+		// becomes), and on it the topmost element under the hit point - or the canvas itself on bare
+		// page. Editor selection only: nothing in the game reacts.
+		Entity PickWorldCanvas(const glm::vec3& origin, const glm::vec3& direction, float& distance);
+		// The world corners (top-left, top-right, bottom-right, bottom-left) of a world canvas's page,
+		// or of an element's rect on one, for a camera. False for anything else.
+		bool WorldUICorners(Entity entity, const glm::vec3& cameraPosition, const glm::mat4& view, std::array<glm::vec3, 4>& corners);
 		// The ray from the camera through the mouse cursor, in world space (toFar spans the near
 		// plane to the far plane). False if the view has no size yet.
 		bool MouseRay(ImVec2 viewMin, ImVec2 viewSize, glm::vec3& origin, glm::vec3& toFar);
@@ -98,6 +107,8 @@ namespace Crucible {
 		// Mirrors the Inspector's selection into DebugDrawSystem (the active entity's selection
 		// box and light gizmos) and the renderer's outline (every selected entity).
 		void SyncSelection();
+
+		std::vector<UI::LayoutItem> m_canvasLayout;   // reused by PickWorldCanvas / WorldUICorners
 
 		struct IconHit { Entity entity; ImVec2 pos; float depth; };
 		std::vector<IconHit> m_iconHits;

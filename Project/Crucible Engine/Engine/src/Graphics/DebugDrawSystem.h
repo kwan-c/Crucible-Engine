@@ -134,12 +134,24 @@ namespace Crucible
 		 *********************************************************************/
 		static bool   GetCollidersThroughWalls();
 
+		/*********************************************************************
+		 \brief  The camera the editor's Scene view looks through, so the
+				 outline of a billboarded world canvas turns the way that
+				 view shows it. Set every frame by the Scene view. Without
+				 one, billboarded canvases are outlined as their Transform
+				 has them.
+		 \param[in] position The camera's position.
+		 \param[in] view     Its view matrix.
+		 *********************************************************************/
+		static void   SetViewCamera(const glm::vec3& position, const glm::mat4& view);
+
 	private:
 		void DrawColliders(World& world);
 		void DrawVelocities(World& world);
 		void DrawLights(World& world);
 		void DrawGrid();
 		void DrawSelection(World& world);
+		void DrawWorldUI(World& world);   // DebugCategory::WorldUI
 
 		Renderer&        m_renderer;
 		ResourceManager* m_resources = nullptr;

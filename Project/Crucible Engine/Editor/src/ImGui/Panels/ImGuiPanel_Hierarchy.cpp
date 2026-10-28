@@ -162,6 +162,22 @@ void Crucible::Hierarchy::Update(float dt) {
 					if (ImGui::MenuItem("World Text")) {
 						CreateWorldTextObject();
 					}
+					ImGui::SetItemTooltip("Text on its own, placed by its Transform (no canvas).");
+					ImGui::Separator();
+					if (ImGui::MenuItem("World Canvas")) {
+						CreateWorldCanvasObject();
+					}
+					ImGui::SetItemTooltip("A flat UI page in the world: images, sliders and text go under it.");
+					// Under the selected world canvas (or an element on one), else under a new world canvas.
+					if (ImGui::MenuItem("Image")) {
+						CreateUIElement("Image", true);
+					}
+					if (ImGui::MenuItem("Slider")) {
+						CreateUIElement("Slider", true);
+					}
+					if (ImGui::MenuItem("Text")) {
+						CreateUIElement("Text", true);
+					}
 					ImGui::EndMenu();
 				}
 				if (ImGui::MenuItem("Create Camera")) {
@@ -534,6 +550,33 @@ namespace {
 			}
 		}
 		return false;
+	}
+
+	// A world-space canvas, or an entity with a UIRect whose nearest canvas above it is a world-space
+	// one: UI drawn in the 3D world (the Scene view's, not the UI Editor tab's).
+	bool IsWorldSpaceUI(Crucible::World const& world, Crucible::Entity entity) {
+		if (Crucible::UICanvas const* canvas = world.Read<Crucible::UICanvas>(entity)) {
+			return canvas->renderMode == Crucible::UICanvas::RenderMode::WorldSpace;
+		}
+		if (!world.HasComponent<Crucible::UIRect>(entity)) { return false; }
+		for (Crucible::Entity p = world.GetParent(entity); p.IsValid(); p = world.GetParent(p)) {
+			if (Crucible::UICanvas const* canvas = world.Read<Crucible::UICanvas>(p)) {
+				return canvas->renderMode == Crucible::UICanvas::RenderMode::WorldSpace;
+			}
+		}
+		return false;
+	}
+
+	// A new world-space canvas: a 400 x 100 px page (4 x 1 m at 100 px / m), centred on its entity
+	// a little above the origin, facing +Z - toward where a new Camera is created.
+	Crucible::Entity MakeWorldCanvas(Crucible::World& world) {
+		Crucible::Entity const e = world.CreateNamedEntity("World Canvas");
+		Crucible::UICanvas canvas;
+		canvas.renderMode          = Crucible::UICanvas::RenderMode::WorldSpace;
+		canvas.referenceResolution = { 400.0f, 100.0f };
+		world.AddComponent<Crucible::UICanvas>(e, canvas);
+		if (Crucible::Transform* t = world.Write<Crucible::Transform>(e)) { t->positions = { 0.f, 1.5f, 0.f }; }
+		return e;
 	}
 
 	// A canvas, or an entity with a UIRect somewhere under a canvas: a place a new UI element can go.
@@ -1122,7 +1165,24 @@ void Crucible::Hierarchy::FocusSelection() {
 	}
 }
 
-void Crucible::Hierarchy::CreateUIElement(const std::string& kind) {
+void Crucible::Hierarchy::CreateWorldCanvasObject() {
+
+	Entity const e = MakeWorldCanvas(m_world);
+
+	// Select first, for the same history-ordering reason as CreateLightObject.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(e);
+	m_revealEntity = e;
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(e), EntityState::Capture(m_world, e), "Create World Canvas"));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
+
+}
+
+void Crucible::Hierarchy::CreateUIElement(const std::string& kind, bool worldSpace) {
 
 	if (kind != "Image" && kind != "Button" && kind != "Slider" && kind != "Text") {
 		CRU_USER_WARN("Unknown UI element: {}", kind);
@@ -1135,10 +1195,13 @@ void Crucible::Hierarchy::CreateUIElement(const std::string& kind) {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	Entity const selected = inspector ? inspector->GetSelectedEntity() : kNullEntity;
 	Entity parent = kNullEntity;
-	if (selected.IsValid() && m_world.IsAlive(selected) && IsInUITree(m_world, selected)) {
+	// UI (World): only under world-space UI; otherwise a new world canvas (not just any world canvas
+	// in the scene - which one would be a guess).
+	if (selected.IsValid() && m_world.IsAlive(selected) && IsInUITree(m_world, selected)
+	    && (!worldSpace || IsWorldSpaceUI(m_world, selected))) {
 		parent = selected;
 	}
-	if (parent == kNullEntity) {
+	if (parent == kNullEntity && !worldSpace) {
 		m_world.CreateQuery<const UICanvas>().ForEach([&](Entity e, const UICanvas& canvas) {
 			if (parent == kNullEntity && canvas.renderMode == UICanvas::RenderMode::ScreenSpace) { parent = e; }
 		});
@@ -1146,8 +1209,12 @@ void Crucible::Hierarchy::CreateUIElement(const std::string& kind) {
 
 	Entity createdRoot = kNullEntity;   // the top of what this step creates: a new canvas, or the element
 	if (parent == kNullEntity) {
-		parent = m_world.CreateEntity();
-		m_world.AddComponent<UICanvas>(parent, UICanvas{});
+		if (worldSpace) {
+			parent = MakeWorldCanvas(m_world);
+		} else {
+			parent = m_world.CreateEntity();
+			m_world.AddComponent<UICanvas>(parent, UICanvas{});
+		}
 		createdRoot = parent;
 	}
 
