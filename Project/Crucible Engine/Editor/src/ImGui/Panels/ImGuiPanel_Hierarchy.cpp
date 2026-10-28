@@ -138,7 +138,7 @@ void Crucible::Hierarchy::Update(float dt) {
 					}
 					ImGui::EndMenu();
 				}
-				if (ImGui::BeginMenu("UI")) {
+				if (ImGui::BeginMenu("UI (Screen)")) {
 					if (ImGui::MenuItem("Create Canvas")) {
 						CreateCanvasObject();
 					}
