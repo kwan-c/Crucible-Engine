@@ -614,6 +614,14 @@ namespace Crucible
 		float drag        = 0.f;     // linear damping, 1/s. 0 = keeps its speed; higher = slows down faster
 		float angularDrag = 0.05f;   // rotational damping, 1/s. Stops a knocked-over crate spinning forever
 
+		// Unity's Rigidbody.isKinematic. On: the Transform drives the body, physics doesn't -
+		// no gravity, no forces, nothing can push it, but it still has a velocity (worked out
+		// from how far its Transform moved), so it pushes crates smoothly and carries what
+		// stands on it. For lifts, doors and moving platforms moved by a script or animation.
+		// mass, drag, useGravity and the constraints are ignored while it is on. Can be
+		// switched during Play: off drops it from wherever it is (the ragdoll trick).
+		bool  isKinematic = false;
+
 		RigidBodyConstraints constraints{};   // frozen axes; e.g. freeze rotation X+Z so a player body never tips over
 
 		// Runtime only: not saved, not in the Inspector. Gameplay adds to these
