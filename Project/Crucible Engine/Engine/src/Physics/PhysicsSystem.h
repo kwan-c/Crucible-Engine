@@ -5,7 +5,7 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          22 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                Crucible::Physics: the public face of the Jolt physics
 *                world. Bodies, characters, joints, raycasts and forces,
@@ -30,6 +30,9 @@
 *    -v1.6       GetGroundVelocity, so a character rides what it stands on
 *    -v1.7       contacts: sensors (BodyDesc::m_isSensor), contact events
 *                after each Step, and ForEachContact
+*    -v1.8       queries: QueryFilter (layer mask, triggers, ignore) on
+*                Raycast, plus RaycastAll, SphereCast, CapsuleCast,
+*                OverlapSphere, OverlapBox and OverlapCapsule
 *
 **************************************************************************/
 #pragma once
@@ -38,6 +41,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>   // ForEachContact
+#include <vector>       // RaycastAll, Overlap*
 
 // Crucible engine
 #include "EngineExport.h"
@@ -224,6 +228,24 @@ namespace Crucible {
         float         m_distance = 0.0f;
 
     };  // RAYCASTHIT STRUCT
+
+    // What every query may hit: Unity's layerMask and QueryTriggerInteraction,
+    // plus the one body to see through (a shooter's own, or a mech's hidden body).
+    struct QueryFilter {
+
+        LayerMask  m_layers      = LayerMask::All();
+        bool       m_hitTriggers = false;   // false: sensors are invisible to it - a shot is never stopped by a pickup zone
+        BodyHandle m_ignore      {};
+
+    };  // QUERYFILTER STRUCT
+
+    // One body an Overlap query found.
+    struct OverlapHit {
+
+        BodyHandle    m_body     {};
+        std::uint64_t m_userData = 0;
+
+    };  // OVERLAPHIT STRUCT
 
     /*
         Unity's CharacterController, as a description. A capsule that walks: it
@@ -512,18 +534,45 @@ namespace Crucible {
         std::uint32_t GetBrokenJointCount() const;
         bool          GetBrokenJoint(std::uint32_t index, JointHandle& outJoint, std::uint64_t& outUserData) const;
 
-        // --- queries ---
+        // --- queries (Unity's Physics.Raycast, SphereCast, OverlapSphere...) ---
+        //
+        // Argument order matches Unity's on purpose, so this is the one place
+        // out-parameters are not last. Directions need not be normalised - that
+        // is done for you, the way Unity does it. Distances are in metres. Each
+        // takes a QueryFilter: which layers, whether triggers count, and one body
+        // to see through. A query that STARTS inside a shape hits it at distance
+        // 0 - pass the shooter's own body as m_ignore, or the mech shoots itself
+        // in the foot on frame one.
+        // Between steps, on the main thread (where all gameplay runs).
 
         // The weapon. True if the ray hit something, with the closest hit in
-        // outHit; false leaves outHit untouched. Argument order matches Unity's
-        // Physics.Raycast(origin, direction, out hit, maxDistance) on purpose,
-        // so this is the one place out-parameters are not last.
-        // Pass the shooter's own body as 'ignore' or the mech shoots itself in
-        // the foot on frame one.
-        // The direction need not be normalised - it is normalised for you, the
-        // way Unity does it. Distance is in metres.
+        // outHit; false leaves outHit untouched.
         bool Raycast(const Math::vec3& origin, const Math::vec3& direction, RaycastHit& outHit, float maxDistance,
-                     const BodyHandle& ignore = BodyHandle{}) const;
+                     const QueryFilter& filter = QueryFilter{}) const;
+
+        // Everything along the ray, nearest first - a piercing shot. Fills `out`
+        // (cleared first; reuse the vector and it never reallocates).
+        void RaycastAll(const Math::vec3& origin, const Math::vec3& direction, float maxDistance, std::vector<RaycastHit>& out,
+                        const QueryFilter& filter = QueryFilter{}) const;
+
+        // A ball of `radius` swept along a line: the first thing it would hit. A
+        // thick shot, a melee swing, a camera that must not poke into walls.
+        bool SphereCast(const Math::vec3& origin, float radius, const Math::vec3& direction, RaycastHit& outHit, float maxDistance,
+                        const QueryFilter& filter = QueryFilter{}) const;
+
+        // A capsule swept along a line. point1 and point2 are the centres of its
+        // two rounded ends, as in Unity - "would a mech this size get through?".
+        bool CapsuleCast(const Math::vec3& point1, const Math::vec3& point2, float radius, const Math::vec3& direction,
+                         RaycastHit& outHit, float maxDistance, const QueryFilter& filter = QueryFilter{}) const;
+
+        // Everything inside a shape right now, each body once. Explosions, area
+        // damage, "what is around me". Fill `out`, cleared first.
+        void OverlapSphere(const Math::vec3& center, float radius, std::vector<OverlapHit>& out,
+                           const QueryFilter& filter = QueryFilter{}) const;
+        void OverlapBox(const Math::vec3& center, const Math::vec3& halfExtents, const Math::quat& orientation, std::vector<OverlapHit>& out,
+                        const QueryFilter& filter = QueryFilter{}) const;
+        void OverlapCapsule(const Math::vec3& point0, const Math::vec3& point1, float radius, std::vector<OverlapHit>& out,
+                            const QueryFilter& filter = QueryFilter{}) const;
 
         // --- reading results back ---
 

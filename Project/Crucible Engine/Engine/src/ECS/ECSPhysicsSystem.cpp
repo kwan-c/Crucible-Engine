@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.7
+* \version       2.8
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -55,6 +55,8 @@
 *    -v2.7       Collider::m_isTrigger; collision and trigger events sent
 *                on the engine bus after each frame's steps;
 *                GetTriggerOccupants and GetContacts
+*    -v2.8       the queries in entities (Raycast ... OverlapCapsule), with
+*                EntityFilter turned into Physics' QueryFilter (ToQuery)
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -363,6 +365,11 @@ namespace Crucible {
         std::vector<PhysicsEvents::CollisionExit>  collisionExits;
         std::vector<PhysicsEvents::TriggerEnter>   triggerEnters;
         std::vector<PhysicsEvents::TriggerExit>    triggerExits;
+
+        // Reused by the entity queries, so asking every frame never allocates.
+        // Mutable: the queries are const, and this is scratch, not state.
+        mutable std::vector<RaycastHit> scratchHits;
+        mutable std::vector<OverlapHit> scratchOverlaps;
         bool          inSession      = false;                   // between BeginSession and EndSession
 
         void BindWorld(World& ecs);
@@ -376,6 +383,7 @@ namespace Crucible {
         void DriveKinematic(Record& record);
         void CollectContacts();
         BodyHandle BodyOf(const Entity& entity) const;
+        QueryFilter ToQuery(const EntityFilter& filter) const;
         void SyncJoints(World& ecs);
         void SyncJoint(World& ecs, JointRecord& record, const PhysicsJoint& joint);
         void DropJoint(JointRecord& record);
@@ -503,6 +511,87 @@ namespace Crucible {
         });
 
     }   // ECSPhysicsSystem::GetContacts()
+
+    // ------------------------------------------------------------------- //
+    // QUERIES, IN ENTITIES
+    // ------------------------------------------------------------------- //
+    // Each turns the EntityFilter into Physics' QueryFilter (the ignored entity
+    // becomes its body, a mech's hidden one included), asks Physics, and turns
+    // the bodies it found back into entities.
+
+    static EntityHit ToEntityHit(const RaycastHit& hit) {
+        EntityHit entry;
+        entry.entity   = UserDataToEntity(hit.m_userData);
+        entry.point    = hit.m_point;
+        entry.normal   = hit.m_normal;
+        entry.distance = hit.m_distance;
+        return entry;
+    }
+
+    QueryFilter ECSPhysicsSystem::State::ToQuery(const EntityFilter& filter) const {
+        QueryFilter query;
+        query.m_layers      = filter.layers;
+        query.m_hitTriggers = filter.hitTriggers;
+        // A default Entity (index 0) is "no entity", never looked up: it would
+        // otherwise ignore whichever body happened to be stored under it.
+        if (filter.ignore.IsValid()) query.m_ignore = BodyOf(filter.ignore);
+        return query;
+    }
+
+    bool ECSPhysicsSystem::Raycast(const Math::vec3& origin, const Math::vec3& direction, EntityHit& outHit, float maxDistance,
+                                   const EntityFilter& filter) const {
+        RaycastHit hit;
+        if (!m_state->physics.Raycast(origin, direction, hit, maxDistance, m_state->ToQuery(filter))) return false;
+        outHit = ToEntityHit(hit);
+        return true;
+    }
+
+    void ECSPhysicsSystem::RaycastAll(const Math::vec3& origin, const Math::vec3& direction, float maxDistance, std::vector<EntityHit>& out,
+                                      const EntityFilter& filter) const {
+        out.clear();
+        std::vector<RaycastHit>& hits = m_state->scratchHits;
+        m_state->physics.RaycastAll(origin, direction, maxDistance, hits, m_state->ToQuery(filter));
+        for (const RaycastHit& hit : hits) out.push_back(ToEntityHit(hit));
+    }
+
+    bool ECSPhysicsSystem::SphereCast(const Math::vec3& origin, float radius, const Math::vec3& direction, EntityHit& outHit, float maxDistance,
+                                      const EntityFilter& filter) const {
+        RaycastHit hit;
+        if (!m_state->physics.SphereCast(origin, radius, direction, hit, maxDistance, m_state->ToQuery(filter))) return false;
+        outHit = ToEntityHit(hit);
+        return true;
+    }
+
+    bool ECSPhysicsSystem::CapsuleCast(const Math::vec3& point1, const Math::vec3& point2, float radius, const Math::vec3& direction,
+                                       EntityHit& outHit, float maxDistance, const EntityFilter& filter) const {
+        RaycastHit hit;
+        if (!m_state->physics.CapsuleCast(point1, point2, radius, direction, hit, maxDistance, m_state->ToQuery(filter))) return false;
+        outHit = ToEntityHit(hit);
+        return true;
+    }
+
+    void ECSPhysicsSystem::OverlapSphere(const Math::vec3& center, float radius, std::vector<Entity>& out, const EntityFilter& filter) const {
+        out.clear();
+        std::vector<OverlapHit>& hits = m_state->scratchOverlaps;
+        m_state->physics.OverlapSphere(center, radius, hits, m_state->ToQuery(filter));
+        for (const OverlapHit& hit : hits) out.push_back(UserDataToEntity(hit.m_userData));
+    }
+
+    void ECSPhysicsSystem::OverlapBox(const Math::vec3& center, const Math::vec3& halfExtents, const Math::quat& orientation, std::vector<Entity>& out,
+                                      const EntityFilter& filter) const {
+        out.clear();
+        std::vector<OverlapHit>& hits = m_state->scratchOverlaps;
+        m_state->physics.OverlapBox(center, halfExtents, orientation, hits, m_state->ToQuery(filter));
+        for (const OverlapHit& hit : hits) out.push_back(UserDataToEntity(hit.m_userData));
+    }
+
+    void ECSPhysicsSystem::OverlapCapsule(const Math::vec3& point0, const Math::vec3& point1, float radius, std::vector<Entity>& out,
+                                          const EntityFilter& filter) const {
+        out.clear();
+        std::vector<OverlapHit>& hits = m_state->scratchOverlaps;
+        m_state->physics.OverlapCapsule(point0, point1, radius, hits, m_state->ToQuery(filter));
+        for (const OverlapHit& hit : hits) out.push_back(UserDataToEntity(hit.m_userData));
+    }
 
     // ------------------------------------------------------------------- //
     // THE FRAME

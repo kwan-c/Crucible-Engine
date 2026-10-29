@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.4
+* \version       2.5
 * \brief
 *                The ECS side of physics: keeps Crucible::Physics in step
 *                with the Transform, Collider, RigidBody, ConstantForce and
@@ -38,6 +38,8 @@
 *                saved connected body
 *    -v2.4       collision and trigger events, GetTriggerOccupants and
 *                GetContacts; Update takes the SystemContext to send them
+*    -v2.5       queries in entities: Raycast, RaycastAll, SphereCast,
+*                CapsuleCast, OverlapSphere, OverlapBox, OverlapCapsule
 *
 **************************************************************************/
 #pragma once
@@ -49,6 +51,7 @@
 
 // Crucible engine
 #include "EngineExport.h"
+#include "Physics/EntityQueries.h"
 #include "Physics/PhysicsEvents.h"
 #include "Physics/PhysicsSystem.h"
 #include "Systems/IECSSystems.h"
@@ -120,6 +123,28 @@ namespace Crucible {
         // mech too (what its character's hidden body touches). Fills `out`,
         // cleared first.
         ENGINE_API void GetContacts(const Entity& entity, std::vector<EntityContact>& out) const;
+
+        // --- queries, in entities (Unity's Physics.Raycast and friends) -------- //
+        // The same as Physics' own (see PhysicsSystem.h for what each does), but
+        // every hit names its Entity, and EntityFilter::ignore takes an Entity -
+        // a mech is turned into its hidden character body for you. Vectors are
+        // cleared first; reuse them and a horde of AI asking every frame never
+        // allocates. Empty / false outside Play (there is no physics world then).
+
+        ENGINE_API bool Raycast(const Math::vec3& origin, const Math::vec3& direction, EntityHit& outHit, float maxDistance,
+                                const EntityFilter& filter = EntityFilter{}) const;
+        ENGINE_API void RaycastAll(const Math::vec3& origin, const Math::vec3& direction, float maxDistance, std::vector<EntityHit>& out,
+                                   const EntityFilter& filter = EntityFilter{}) const;
+        ENGINE_API bool SphereCast(const Math::vec3& origin, float radius, const Math::vec3& direction, EntityHit& outHit, float maxDistance,
+                                   const EntityFilter& filter = EntityFilter{}) const;
+        ENGINE_API bool CapsuleCast(const Math::vec3& point1, const Math::vec3& point2, float radius, const Math::vec3& direction,
+                                    EntityHit& outHit, float maxDistance, const EntityFilter& filter = EntityFilter{}) const;
+        ENGINE_API void OverlapSphere(const Math::vec3& center, float radius, std::vector<Entity>& out,
+                                      const EntityFilter& filter = EntityFilter{}) const;
+        ENGINE_API void OverlapBox(const Math::vec3& center, const Math::vec3& halfExtents, const Math::quat& orientation, std::vector<Entity>& out,
+                                   const EntityFilter& filter = EntityFilter{}) const;
+        ENGINE_API void OverlapCapsule(const Math::vec3& point0, const Math::vec3& point1, float radius, std::vector<Entity>& out,
+                                       const EntityFilter& filter = EntityFilter{}) const;
 
         // Update with a frame time you choose, instead of World::DeltaTime().
         // This is what a test harness drives, and how you simulate 30 or 144 fps.
