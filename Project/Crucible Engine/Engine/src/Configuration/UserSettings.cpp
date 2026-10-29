@@ -1,0 +1,126 @@
+/*************************************************************************
+* \file:         UserSettings.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 October 2026
+* \version       1.0
+* \brief
+*                Reads and writes the player's settings in
+*                UserSettings.json (see UserSettings.h).
+*
+* \details
+*                Goes through JsonWrapper, whose Get returns the fallback
+*                for a missing key or a wrong type. That is the behaviour a
+*                player's file needs: a half-broken file loads with
+*                defaults for the broken parts instead of refusing to load.
+*
+**************************************************************************/
+#include "UserSettings.h"
+
+// STL
+#include <algorithm>
+#include <format>
+#include <string>
+#include <system_error>
+
+// Crucible engine
+#include "AssetPipe/AssetPaths.h"
+#include "Configuration/EngineConfigLoader.h"
+#include "Diagnostics/Logger.h"
+#include "Json/JsonWrapper.h"
+
+namespace Crucible {
+
+    namespace {
+
+        // How far a sensitivity multiplier may go. Not 0: a camera that cannot
+        // turn looks like a bug, not a setting. 10x is already unplayable, so
+        // anything beyond it is a typo in the file.
+        constexpr float kMinSensitivity = 0.1f;
+        constexpr float kMaxSensitivity = 10.0f;
+
+        // The float as the double a person would type: 0.3f goes in as 0.3, not as
+        // 0.30000001192092896 (the float's exact value, which is what a plain widening
+        // to double writes). std::format gives a float's shortest exact text.
+        double Tidy(float value) {
+            return std::stod(std::format("{}", value));
+        }
+
+    }   // ANONYMOUS NAMESPACE
+
+    std::filesystem::path UserSettingsLoader::File() {
+        // One place decides where the file is, so the window state and these
+        // settings can never end up in two different files.
+        return EngineConfigLoader::UserSettingsFile();
+    }   // UserSettingsLoader::File()
+
+    UserSettings UserSettingsLoader::Load() {
+
+        // Starts as the defaults in UserSettings.h; each Get below only
+        // replaces a value the file actually has.
+        UserSettings settings{};
+
+        const std::filesystem::path path = File();
+        std::error_code ec;
+        if (path.empty() || !std::filesystem::exists(path, ec)) {
+            // Normal on a first run: Core saves the defaults straight after.
+            CRU_INFO("[UserSettings] no file yet - using defaults");
+            return settings;
+        }
+
+        JsonWrapper doc;
+        if (!doc.ReadFromFile(path)) {
+            // Save would then rewrite it from scratch, so say so now.
+            CRU_WARN("[UserSettings] '{}' could not be read - using defaults", PathToUtf8(path));
+            return settings;
+        }
+
+        AudioSettings& audio = settings.audio;
+        audio.masterVolume = std::clamp(doc.Get("audio/masterVolume", audio.masterVolume), 0.0f, 1.0f);
+        audio.musicVolume  = std::clamp(doc.Get("audio/musicVolume",  audio.musicVolume),  0.0f, 1.0f);
+        audio.sfxVolume    = std::clamp(doc.Get("audio/sfxVolume",    audio.sfxVolume),    0.0f, 1.0f);
+
+        InputSettings& input = settings.input;
+        input.mouseSensitivity = std::clamp(doc.Get("input/mouseSensitivity", input.mouseSensitivity), kMinSensitivity, kMaxSensitivity);
+        input.stickSensitivity = std::clamp(doc.Get("input/stickSensitivity", input.stickSensitivity), kMinSensitivity, kMaxSensitivity);
+        input.invertY          = doc.Get("input/invertY", input.invertY);
+
+        CRU_INFO("[UserSettings] loaded '{}'", PathToUtf8(path));
+        return settings;
+    }   // UserSettingsLoader::Load()
+
+    bool UserSettingsLoader::Save(const UserSettings& settings) {
+
+        const std::filesystem::path path = File();
+        if (path.empty()) {
+            CRU_WARN("[UserSettings] no folder to save UserSettings.json in");
+            return false;
+        }
+
+        // Start from the file as it is, so the window-mode sections that
+        // EngineConfigLoader::SaveWindowState wrote survive. A broken file is
+        // machine-written, so starting it over loses nothing a person typed.
+        JsonWrapper doc;
+        std::error_code ec;
+        if (std::filesystem::exists(path, ec) && !doc.ReadFromFile(path)) {
+            CRU_WARN("[UserSettings] '{}' could not be parsed - rewriting it", PathToUtf8(path));
+            doc.CreateEmpty();
+        }
+
+        // Same keys and layout as Load reads.
+        doc.Set("audio/masterVolume", Tidy(settings.audio.masterVolume));
+        doc.Set("audio/musicVolume",  Tidy(settings.audio.musicVolume));
+        doc.Set("audio/sfxVolume",    Tidy(settings.audio.sfxVolume));
+
+        doc.Set("input/mouseSensitivity", Tidy(settings.input.mouseSensitivity));
+        doc.Set("input/stickSensitivity", Tidy(settings.input.stickSensitivity));
+        doc.Set("input/invertY",          settings.input.invertY);
+
+        if (!doc.SaveToFile(path)) {
+            CRU_WARN("[UserSettings] could not write '{}'", PathToUtf8(path));
+            return false;
+        }
+        return true;
+    }   // UserSettingsLoader::Save()
+
+}   // NAMESPACE CRUCIBLE

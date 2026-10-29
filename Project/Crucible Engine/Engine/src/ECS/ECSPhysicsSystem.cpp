@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.5
+* \version       2.6
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -17,6 +17,8 @@
 *                components are compared against that record:
 *                  - a setting changed     -> rebuild the body
 *                  - the Transform changed -> gameplay moved it: teleport
+*                    (a kinematic body is moved there over the frame's
+*                    steps instead, so it has a velocity)
 *                  - the velocity changed  -> gameplay set it: pass it on
 *                An entity that no longer has physics components, or no
 *                longer exists, is not found by the query, so its record
@@ -45,6 +47,11 @@
 *    -v2.5       PhysicsJoint: joints built, rebuilt and removed with the
 *                component; broken joints flagged in m_isBroken. Both
 *                respect switched-off components and world scale
+*    -v2.6       RigidBody::isKinematic: the Transform drives the body
+*                through MoveKinematic (DriveKinematic), spread over the
+*                frame's steps; a static collider moved frame after frame
+*                is reported (kWarnMovingStatic). Characters ride the
+*                ground's velocity and now move after the step, not before
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -207,7 +214,12 @@ namespace {
         kWarnJointSelf    = 1u << 6,
         kWarnJointNoOther = 1u << 7,
         kWarnJointStatic  = 1u << 8,
+        kWarnMovingStatic = 1u << 9,
     };
+
+    // How many frames in a row a static body may be moved before it is reported. Not 1: a
+    // respawn or a one-off teleport is fine. Moved this long, something is animating it.
+    constexpr std::uint32_t kMovingStaticFrames = 30;
 
     // Once per entity per message, ever. A warning that repeats every frame
     // buries the log.
@@ -239,6 +251,17 @@ namespace {
         Math::vec3    relativeForce  = Math::vec3(0.0f, 0.0f, 0.0f);
         Math::vec3    relativeTorque = Math::vec3(0.0f, 0.0f, 0.0f);
         Math::vec3    impulse        = Math::vec3(0.0f, 0.0f, 0.0f);   // instant: the first step only, then spent
+
+        // A kinematic body's Transform at the end of last frame and of this frame, in world
+        // space. Each step aims at the point between them that matches the step's moment in
+        // time (DriveKinematic), so the body moves at the Transform's real speed whatever
+        // the frame rate is.
+        Math::vec3    kinematicFrom    = Math::vec3(0.0f, 0.0f, 0.0f);
+        Math::quat    kinematicFromRot = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);
+        Math::vec3    kinematicTo      = Math::vec3(0.0f, 0.0f, 0.0f);
+        Math::quat    kinematicToRot   = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);
+
+        std::uint32_t movedFrames = 0;   // frames in a row a STATIC body was teleported (kWarnMovingStatic)
 
         std::uint64_t seenFrame  = 0;    // the last frame the query found this entity
         std::uint64_t pulledStep = 0;    // the last step this body turned up in the moved list
@@ -325,6 +348,9 @@ namespace Crucible {
         std::uint64_t step           = 0;
         std::uint32_t stepsLastFrame = 0;
         std::uint32_t stepsThisFrame = 0;                       // set before Sync, so Sync knows whether a kick can land now
+        std::uint32_t stepOfFrame    = 0;                       // which of this frame's steps is running (DriveKinematic)
+        float         frameTime      = 0.0f;                    // this frame's time, as the clock counted it
+        float         owedBefore     = 0.0f;                    // the accumulator before this frame's time was added
         bool          inSession      = false;                   // between BeginSession and EndSession
 
         void BindWorld(World& ecs);
@@ -335,6 +361,7 @@ namespace Crucible {
         void SyncCharacter(CharacterRecord& record, const Transform& transform, const Math::mat4& parentFrame, CharacterController& controller);
         void TakeForces(World& ecs, Record& record, const RigidBody* rigidbody);
         void PushForces(Record& record);
+        void DriveKinematic(Record& record);
         void SyncJoints(World& ecs);
         void SyncJoint(World& ecs, JointRecord& record, const PhysicsJoint& joint);
         void DropJoint(JointRecord& record);
@@ -469,6 +496,8 @@ namespace Crucible {
         const float whole = std::round(dt / kFixedDeltaTime);
         if (whole >= 1.0f && std::fabs(dt - whole * kFixedDeltaTime) < 0.02f * kFixedDeltaTime) dt = whole * kFixedDeltaTime;
 
+        s.owedBefore = s.accumulator;    // DriveKinematic places each step in time with these two
+        s.frameTime  = dt;
         s.accumulator += dt;
         const std::uint32_t steps = std::min(static_cast<std::uint32_t>(s.accumulator / kFixedDeltaTime + 1.0e-4f), kMaxStepsPerFrame);
         s.accumulator = std::max(s.accumulator - static_cast<float>(steps) * kFixedDeltaTime, 0.0f);
@@ -486,7 +515,10 @@ namespace Crucible {
             s.staticBodyMade = false;
         }
 
-        for (std::uint32_t i = 0; i < steps; ++i) s.Step(world);
+        for (std::uint32_t i = 0; i < steps; ++i) {
+            s.stepOfFrame = i;
+            s.Step(world);
+        }
         s.stepsLastFrame = steps;
 
     }   // ECSPhysicsSystem::Advance()
@@ -797,7 +829,9 @@ namespace Crucible {
             return;
         }
 
-        // A RigidBody makes it dynamic; a collider on its own is part of the arena.
+        // A RigidBody makes it dynamic (or kinematic, if ticked); a collider on its own is
+        // part of the arena.
+        const bool kinematic = rigidbody != nullptr && rigidbody->isKinematic;
         BodyDesc desc;
         // Scaled first, Unity-style: the floor cube at scale (15, 0.1, 15) gets a
         // 15 x 0.1 x 15 collider. A scale edit changes the shape, SameRecipe sees
@@ -806,12 +840,14 @@ namespace Crucible {
         desc.m_shape       = ToShapeDesc(ScaledCollider(collider, scale));
         desc.m_position    = position;
         desc.m_rotation    = rotation;
-        desc.m_motion      = rigidbody != nullptr ? BodyMotion::Dynamic : BodyMotion::Static;
+        desc.m_motion      = kinematic ? BodyMotion::Kinematic : rigidbody != nullptr ? BodyMotion::Dynamic : BodyMotion::Static;
         desc.m_layer       = collider.m_layer;
         desc.m_friction    = collider.m_friction;
         desc.m_restitution = collider.m_bounciness;
         desc.m_userData    = EntityToUserData(record.entity);
-        if (rigidbody != nullptr) {
+        // Only for dynamic bodies: a kinematic one ignores mass, drag and gravity anyway, and
+        // freezing axes on it would make no sense - its Transform decides every axis.
+        if (rigidbody != nullptr && !kinematic) {
             desc.m_mass           = rigidbody->mass;
             desc.m_gravityFactor  = rigidbody->useGravity ? 1.0f : 0.0f;
             desc.m_linearDamping  = rigidbody->drag;
@@ -831,7 +867,9 @@ namespace Crucible {
 
         // Two NonMoving bodies never collide, so a crate left on that layer falls
         // through the floor and through other crates. Easy mistake, hard symptom.
-        if (rigidbody != nullptr && collider.m_layer == PhysicsLayer::NonMoving)
+        // (Not for a kinematic body: it never needs to hit the floor, and NonMoving still
+        // collides with the crates and mechs it pushes.)
+        if (rigidbody != nullptr && !kinematic && collider.m_layer == PhysicsLayer::NonMoving)
             WarnOnce(record.warned, kWarnLayer, record.entity, "has a RigidBody but sits on the NonMoving layer, which collides with nothing that matters - set Collider::m_layer to Moving");
 
         // NEW, OR A SETTING CHANGED: (RE)BUILD ---------------------------------- //
@@ -847,23 +885,58 @@ namespace Crucible {
             record.rotation    = transform.rotation;
             record.parentFrame = parentFrame;
             record.velocity = rigidbody != nullptr ? rigidbody->velocity : Math::vec3(0.0f, 0.0f, 0.0f);
+            record.kinematicFrom    = record.kinematicTo    = position;
+            record.kinematicFromRot = record.kinematicToRot = rotation;
+            record.movedFrames = 0;
 
             // Carry the velocity across, so a falling crate keeps falling when a
             // setting is edited mid-flight rather than stopping dead in the air.
-            if (record.body.IsValid() && rigidbody != nullptr) physics.SetLinearVelocity(record.body, record.velocity);
+            // Also what makes unticking isKinematic mid-Play look right: the body
+            // leaves with the speed its Transform was moving it at (PullBodies kept
+            // RigidBody::velocity up to date while it was kinematic).
+            if (record.body.IsValid() && desc.m_motion == BodyMotion::Dynamic) physics.SetLinearVelocity(record.body, record.velocity);
 
             if (record.body.IsValid() && desc.m_motion == BodyMotion::Static) staticBodyMade = true;
             return;
         }
 
+        const bool moved = !Same(transform.positions, record.position) || !Same(transform.rotation, record.rotation)
+                        || parentFrame != record.parentFrame;
+
+        // KINEMATIC: THE TRANSFORM IS WHERE IT SHOULD BE BY THE END OF THIS FRAME -- //
+        // Not teleported: DriveKinematic moves it along the way from last frame's
+        // Transform to this one with MoveKinematic, which gives it the velocity that
+        // pushes and carries things. Every frame, steps or not, so the pair always
+        // spans exactly the last frame.
+        if (kinematic) {
+            record.kinematicFrom    = record.kinematicTo;
+            record.kinematicFromRot = record.kinematicToRot;
+            record.kinematicTo    = position;
+            record.kinematicToRot = rotation;
+            if (moved) {
+                record.position    = transform.positions;
+                record.rotation    = transform.rotation;
+                record.parentFrame = parentFrame;
+            }
+            return;     // gameplay's velocity is ignored too: the Transform decides it, as in Unity
+        }
+
         // GAMEPLAY WROTE THE TRANSFORM, OR A PARENT MOVED: TELEPORT --------------- //
-        if (!Same(transform.positions, record.position) || !Same(transform.rotation, record.rotation)
-            || parentFrame != record.parentFrame) {
+        if (moved) {
             physics.SetTransform(record.body, position, rotation);
             record.position    = transform.positions;
             record.rotation    = transform.rotation;
             record.parentFrame = parentFrame;
         }
+
+        // A STATIC BODY THAT KEEPS MOVING ----------------------------------------- //
+        // Teleported, it has no velocity: it jitters through crates instead of pushing
+        // them, things on it are not carried, and sleeping ones are not woken. One
+        // teleport (a respawn) is fine; being moved frame after frame means it is
+        // animated, and should be kinematic.
+        record.movedFrames = (moved && desc.m_motion == BodyMotion::Static) ? record.movedFrames + 1 : 0;
+        if (record.movedFrames >= kMovingStaticFrames)
+            WarnOnce(record.warned, kWarnMovingStatic, record.entity, "is a static collider that is moved every frame - give it a RigidBody with isKinematic ticked, so it pushes and carries what it touches instead of teleporting through it");
 
         // GAMEPLAY WROTE THE VELOCITY: PASS IT ON -------------------------------- //
         if (rigidbody != nullptr && !Same(rigidbody->velocity, record.velocity)) {
@@ -962,17 +1035,36 @@ namespace Crucible {
 
         ++step;
 
-        // Characters move BEFORE the world steps, so a crate the mech just shoved
-        // reacts in this same step instead of looking a frame late.
-        for (auto& [key, record] : characterRecords)
-            if (record.seenFrame == frame) StepCharacter(ecs, record);
+        // Kinematic bodies first: setting their velocity for this step is what the
+        // characters read as "the ground is moving" after the step, so a mech on a
+        // lift moves with the lift's speed for THIS step, not last step's.
+        // Every step, even when the Transform did not move: Jolt keeps a kinematic
+        // body's velocity after the step, so without a fresh MoveKinematic (to where
+        // it already is, which gives zero) a lift that stopped would carry on moving.
+        for (auto& [key, record] : records)
+            if (record.seenFrame == frame && record.body.IsValid() && record.recipe.m_motion == BodyMotion::Kinematic)
+                DriveKinematic(record);
 
         // Forces go in last, right before the step that uses them. Jolt zeroes
         // every force when the step ends, so this runs again for the next one.
+        // Dynamic bodies only: forces do nothing to a kinematic or static body, and
+        // TakeForces has still emptied the RigidBody, so pushes don't pile up there.
         for (auto& [key, record] : records)
-            if (record.seenFrame == frame && record.body.IsValid()) PushForces(record);
+            if (record.seenFrame == frame && record.body.IsValid() && record.recipe.m_motion == BodyMotion::Dynamic)
+                PushForces(record);
 
         physics.Step(kFixedDeltaTime);
+
+        // Characters move AFTER the world steps, so everything they stand on is already
+        // where this step put it. A mech on a lift then ends every step exactly on it:
+        // going down it follows the lift onto its new top, going up it climbs out of the
+        // lift that just rose into it. Moved before the step instead (as it was until
+        // v2.6), it landed on the lift's OLD top going down and trailed a step behind -
+        // 3 cm at 2 m/s, measured. The cost: a crate the mech shoves gets the push on
+        // the next step, 1/60 s later, which nobody can see.
+        for (auto& [key, record] : characterRecords)
+            if (record.seenFrame == frame) StepCharacter(ecs, record);
+
         PullBodies(ecs);
         PullBrokenJoints(ecs);      // every step: Physics refills its broken list each Step
 
@@ -1073,6 +1165,34 @@ namespace Crucible {
 
     /*!
         \brief
+        Moves one kinematic body to where its Transform was at the moment this
+        step ends, ahead of the step.
+        \details
+        Frames and steps don't line up: at 70 fps one step covers one frame's
+        move and the next covers two. Aiming each step at the end of the frame's
+        move would make the lift speed up and slow down every few frames, and a
+        crate riding it would slide. So each step is placed in time instead.
+        Physics runs behind the frame by what the accumulator still owes, so this
+        step ends (step + 1) * fixed dt - owedBefore after last frame ended.
+        That is always inside the last frame (owedBefore is under one step, and
+        the last step never passes the frame's end), so the share is 0..1 of the
+        way from last frame's Transform to this one. The lift then moves at the
+        Transform's real speed - the speed a mech on it rides at.
+        MoveKinematic works out the velocity that reaches the aim in one step.
+    */
+    void ECSPhysicsSystem::State::DriveKinematic(Record& record) {
+
+        const float stepEnd = static_cast<float>(stepOfFrame + 1) * kFixedDeltaTime - owedBefore;
+        const float share   = frameTime > 0.0f ? std::clamp(stepEnd / frameTime, 0.0f, 1.0f) : 1.0f;
+
+        const Math::vec3 position = glm::mix(record.kinematicFrom, record.kinematicTo, share);
+        const Math::quat rotation = glm::slerp(record.kinematicFromRot, record.kinematicToRot, share);
+        physics.MoveKinematic(record.body, position, rotation, kFixedDeltaTime);
+
+    }   // ECSPhysicsSystem::State::DriveKinematic()
+
+    /*!
+        \brief
         One step of walking: SimpleMove's velocity sideways, gravity and jumping
         up and down. This is the only place either of those is applied, because
         a character Jolt pulled down on its own could never be made to jump.
@@ -1085,14 +1205,27 @@ namespace Crucible {
         const float gravity  = settings.m_gravity.y;      // -9.81
         const bool  grounded = physics.IsGrounded(record.character);
 
+        // THE GROUND ------------------------------------------------------------- //
+        // What the mech stands on may be moving: a kinematic lift or platform. Every
+        // speed below is then RELATIVE TO IT, the way you walk on a moving train -
+        // which is what carries the mech along. Zero on static ground and in the air,
+        // so nothing changes there. (Jolt's own recipe for CharacterVirtual.)
+        const Math::vec3 ground = grounded ? physics.GetGroundVelocity(record.character)
+                                           : Math::vec3(0.0f, 0.0f, 0.0f);
+
         // UP AND DOWN ------------------------------------------------------------ //
+        // Landed: stop falling - which on a moving floor means moving up or down WITH
+        // it, at its speed. Only when not already moving away from it, so a jump that
+        // just left a rising lift is not pulled back down onto it.
         float vertical = controller->m_verticalSpeed;
-        if (grounded && vertical < 0.0f) vertical = 0.0f;   // landed: stop falling
+        if (grounded && vertical < ground.y) vertical = ground.y;
 
         // The launch speed that reaches exactly the requested height, from
-        // v = sqrt(2 * g * h). A jump request lasts one step, then it is spent.
+        // v = sqrt(2 * g * h), on top of the floor's: a jump from a rising lift
+        // goes higher, the same jump from a falling one less high.
+        // A jump request lasts one step, then it is spent.
         if (grounded && controller->m_jumpHeight > 0.0f)
-            vertical = std::sqrt(2.0f * std::fabs(gravity) * controller->m_jumpHeight);
+            vertical = ground.y + std::sqrt(2.0f * std::fabs(gravity) * controller->m_jumpHeight);
         controller->m_jumpHeight = 0.0f;
 
         // Gravity applies even while standing: a little downward speed is what
@@ -1100,14 +1233,18 @@ namespace Crucible {
         vertical += gravity * kFixedDeltaTime;
 
         // MOVE -------------------------------------------------------------------- //
-        const Math::vec3 sideways = controller->m_moveVelocity;
+        // The walk plus the floor's own sideways speed. Only while standing on it:
+        // stepping or jumping off a sideways-moving platform keeps just the walk, so
+        // the mech does not keep the platform's speed in the air (yet).
+        const Math::vec3 sideways = controller->m_moveVelocity + Math::vec3(ground.x, 0.0f, ground.z);
         physics.MoveCharacter(record.character, Math::vec3(sideways.x, vertical, sideways.z), kFixedDeltaTime);
 
         // Rising, but not as fast as asked: something is overhead, so stop
         // rising. Without this the mech keeps "climbing" on paper after a head
-        // bump and hangs in the air before falling.
+        // bump and hangs in the air before falling. "Rising" means faster than the
+        // floor: riding a lift up is not a head bump.
         const Math::vec3 achieved = physics.GetCharacterVelocity(record.character);
-        if (vertical > 0.0f && achieved.y < vertical) vertical = std::max(achieved.y, 0.0f);
+        if (vertical > ground.y && vertical > 0.0f && achieved.y < vertical) vertical = std::max(achieved.y, 0.0f);
 
         // RESULTS ------------------------------------------------------------------ //
         controller->m_verticalSpeed = vertical;
@@ -1145,17 +1282,24 @@ namespace Crucible {
 
             Record& record = found->second;
 
-            // Jolt reports world space; the Transform is in the parent's frame.
-            ToLocal(record.parentFrame, position, rotation);
+            // A kinematic body went where its Transform sent it, so the Transform is not
+            // written back: it is the source here, and Jolt's version of it (integrated
+            // from a velocity) would slowly drift from what the script or animation set.
+            if (record.recipe.m_motion != BodyMotion::Kinematic) {
 
-            if (Transform* transform = ecs.GetComponent<Transform>(record.entity)) {
-                transform->positions = position;
-                transform->rotation  = rotation;
+                // Jolt reports world space; the Transform is in the parent's frame.
+                ToLocal(record.parentFrame, position, rotation);
+
+                if (Transform* transform = ecs.GetComponent<Transform>(record.entity)) {
+                    transform->positions = position;
+                    transform->rotation  = rotation;
+                }
+                record.position = position;
+                record.rotation = rotation;
             }
-            record.position = position;
-            record.rotation = rotation;
 
             // A switched-off RigidBody keeps the velocity it had (it comes back with it).
+            // Written for a kinematic body too: gameplay can read how fast the lift is going.
             if (RigidBody* rigidbody = ecs.IsComponentActive<RigidBody>(record.entity) ? ecs.GetComponent<RigidBody>(record.entity) : nullptr) {
                 rigidbody->velocity = physics.GetLinearVelocity(record.body);
                 record.velocity     = rigidbody->velocity;

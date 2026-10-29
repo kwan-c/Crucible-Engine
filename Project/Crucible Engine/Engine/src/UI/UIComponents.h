@@ -48,17 +48,26 @@
 #include "Graphics/TextureHandle.h"   // no Vulkan in it, like MeshHandle.h
 #include "Math/Math.h"
 #include "Text/TextLayout.h"       // TextAlignH / TextAlignV / TextOverflow (no ECS or GPU in it)
+#include "Text/WorldText.h"        // WorldBillboard (a world-space canvas turns like a WorldText)
 
 namespace Crucible {
 
 	/*************************************************************************
 	 \brief  Root of a UI tree. Its child entities (with UIRect) lay out
 			 inside it.
+	 \details
+		ScreenSpace: over the game screen, scaled to it, clickable.
+		WorldSpace: a flat page in the 3D world - a sign, a nameplate, a
+		health bar over an enemy. Its Transform places it, pixelsPerUnit
+		sizes it, and it is drawn with the scene (fogged, depth-tested,
+		optionally turned to the camera), like a WorldText. Display only:
+		buttons and sliders on it don't react to the mouse; code sets a
+		slider's value (a progress or health bar).
 	 *************************************************************************/
 	struct UICanvas {
 		enum class RenderMode : std::uint8_t {
 			ScreenSpace,   // over the game screen, always on top (Unity: Screen Space - Overlay)
-			WorldSpace,    // a panel in the 3D world, placed by this entity's Transform (not drawn yet)
+			WorldSpace,    // a panel in the 3D world, placed by this entity's Transform (Unity: World Space)
 		};
 
 		bool       enabled             = true;                           // false: not drawn and ignores the mouse (Unity: Canvas.enabled)
@@ -70,6 +79,19 @@ namespace Crucible {
 		Math::vec2 referenceResolution = Math::vec2(1920.0f, 1080.0f);   // the page you lay out on (the UI tab's page)
 		bool       scaleWithScreenSize = true;                           // scale the canvas to fit the screen
 		int        sortOrder           = 0;                              // with several canvases, higher draws on top
+
+		// ---- WorldSpace only. The page is referenceResolution canvas pixels, laid out as on screen
+		// (anchors, pivots, sibling order) but never scaled to a screen; this entity's Transform puts
+		// it in the world, the same way as a WorldText's box. Nothing on it reacts to the mouse.
+		float          pixelsPerUnit = 100.0f;                           // canvas pixels per metre: a 400 x 100 page is 4 x 1 m
+		Math::vec2     pivot{ 0.5f, 0.5f };                              // the page's point on this entity; (0, 0) = top-left, as UIRect
+		WorldBillboard billboard     = WorldBillboard::Off;              // Off: the Transform's rotation; or turn to face the camera
+		bool           alwaysOnTop   = false;                            // drawn over everything, not hidden behind walls
+		bool           doubleSided   = true;                             // also drawn (mirrored) when seen from behind
+		float          intensity     = 1.0f;                             // brightness in the scene: > 1 glows with bloom
+		bool           fade          = false;                            // fade out with distance from the camera
+		float          fadeStart     = 20.0f;                            // world units: fully visible up to here
+		float          fadeEnd       = 30.0f;                            // gone from here
 	};
 	CRUCIBLE_COMPONENT(UICanvas, UICanvas)
 
@@ -84,7 +106,8 @@ namespace Crucible {
 		Math::vec2 anchorMin{ 0.5f };              // 0..1 of the parent rect. anchorMin == anchorMax: fixed size;
 		Math::vec2 anchorMax{ 0.5f };              //   apart: stretches with the parent
 		Math::vec2 pivot{ 0.5f };                  // 0..1 of this rect: the point that `position` places
-		Math::vec2 position{ 0.0f };               // pivot's offset from the anchors, in reference pixels
+		Math::vec2 position{ 0.0f };               // pivot's offset from the anchors, in reference pixels. +y is DOWN
+		                                           //   (screen pixels); the Inspector shows it +y up by default (display only)
 		Math::vec2 size{ 100.0f, 100.0f };         // in reference pixels (extra size when the anchors stretch)
 		float      rotation = 0.0f;                // degrees, counter-clockwise (like Unity), around the pivot.
 		                                           //   Children turn with their parent.
@@ -273,12 +296,23 @@ RTTR_REGISTRATION
 	rttr::registration::class_<UICanvas>("UICanvas")
 		.constructor<>()
 		.property("enabled",             &UICanvas::enabled)
-		.property("toggleWithEscape",    &UICanvas::toggleWithEscape)
-		.property("showsCursor",         &UICanvas::showsCursor)
 		.property("renderMode",          &UICanvas::renderMode)
 		.property("referenceResolution", &UICanvas::referenceResolution)
-		.property("scaleWithScreenSize", &UICanvas::scaleWithScreenSize)
-		.property("sortOrder",           &UICanvas::sortOrder)
+		// Screen Space and World Space settings: drawn by the Inspector (DrawComponentExtras(UICanvas&))
+		// in two groups, the one the render mode doesn't use greyed out.
+		.property("toggleWithEscape",    &UICanvas::toggleWithEscape)    (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("showsCursor",         &UICanvas::showsCursor)         (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("scaleWithScreenSize", &UICanvas::scaleWithScreenSize) (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("sortOrder",           &UICanvas::sortOrder)           (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("pixelsPerUnit",       &UICanvas::pixelsPerUnit)       (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("pivot",               &UICanvas::pivot)               (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("billboard",           &UICanvas::billboard)           (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))   // WorldBillboard: registered in WorldTextReflection.cpp
+		.property("alwaysOnTop",         &UICanvas::alwaysOnTop)         (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("doubleSided",         &UICanvas::doubleSided)         (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("intensity",           &UICanvas::intensity)           (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("fade",                &UICanvas::fade)                (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("fadeStart",           &UICanvas::fadeStart)           (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("fadeEnd",             &UICanvas::fadeEnd)             (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
 	;
 
 	rttr::registration::class_<UIRect>("UIRect")
@@ -286,13 +320,15 @@ RTTR_REGISTRATION
 		.property("anchorMin",     &UIRect::anchorMin)
 		.property("anchorMax",     &UIRect::anchorMax)
 		.property("pivot",         &UIRect::pivot)
-		.property("position",      &UIRect::position)
-		.property("size",          &UIRect::size)
-		.property("rotation",      &UIRect::rotation)
-		.property("raycastTarget", &UIRect::raycastTarget)
+		// position .. computed: drawn by the Inspector (DrawComponentExtras(UIRect&)) in this order,
+		// so position's y can be shown +y up (display only) without changing what is saved.
+		.property("position",      &UIRect::position)      (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("size",          &UIRect::size)          (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("rotation",      &UIRect::rotation)      (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+		.property("raycastTarget", &UIRect::raycastTarget) (rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
 		.property("computed",      &UIRect::computed)
 			(rttr::metadata(MetaDataTypes::DO_NOT_SERIALIZE, true),
-			 rttr::metadata(MetaDataTypes::DISABLED_ON_IMGUI, true))
+			 rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
 	;
 
 	rttr::registration::class_<UIImage>("UIImage")

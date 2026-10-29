@@ -201,13 +201,7 @@ namespace Crucible
 				ReadUInt(*network, "maxPlayers", config.network.maxPlayers);
 			}
 
-			//audio
-			if (const JsonValue* audio = FindSection(root, "audio"))
-			{
-				ReadFloat(*audio, "masterVolume", config.audio.masterVolume);
-				ReadFloat(*audio, "musicVolume", config.audio.musicVolume);
-				ReadFloat(*audio, "sfxVolume", config.audio.sfxVolume);
-			}
+			// (no "audio": the volumes are the player's - see Configuration/UserSettings.h)
 
 			//project
 			if (const JsonValue* project = FindSection(root, "project"))
@@ -357,10 +351,6 @@ namespace Crucible
 
 		doc.Set("network/port",       config.network.port);
 		doc.Set("network/maxPlayers", config.network.maxPlayers);
-
-		doc.Set("audio/masterVolume", config.audio.masterVolume);
-		doc.Set("audio/musicVolume",  config.audio.musicVolume);
-		doc.Set("audio/sfxVolume",    config.audio.sfxVolume);
 
 		doc.Set("project/startupScene", config.project.startupScene);
 		doc.SetList("project/aspectRatio", std::vector<std::uint32_t>{ config.project.aspectWidth, config.project.aspectHeight });

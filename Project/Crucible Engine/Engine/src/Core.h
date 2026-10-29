@@ -20,6 +20,7 @@
 #include <ECS/Systems/EventBus/EventBuses.h>
 #include <ECS/Systems/EventBus/EcsEvents.h>
 #include <Configuration/EngineConfig.h>
+#include <Configuration/UserSettings.h>
 #include "AssetPipe/Assetmanager.h"
 #include "Resources/ResourceManager.h"
 
@@ -50,6 +51,16 @@ namespace Crucible
 
         // The settings this Core was started with (see EngineConfigLoader::LoadForApp).
         const EngineConfig& GetConfig() const noexcept { return m_config; }
+
+        // The PLAYER's settings (volumes, look sensitivity, invert Y), from UserSettings.json
+        // next to the .exe - see Configuration/UserSettings.h. An options menu edits them here:
+        // the audio and player-controller systems read them every frame, so a slider is heard
+        // and felt straight away. SaveUserSettings writes them to disk (when the player
+        // confirms, so dragging a slider doesn't write the file every frame).
+        UserSettings& GetUserSettings() noexcept { return m_userSettings; }
+        const UserSettings& GetUserSettings() const noexcept { return m_userSettings; }
+        bool SaveUserSettings() const { return UserSettingsLoader::Save(m_userSettings); }
+
         ScriptRuntime& GetScriptRuntime() const noexcept { return *m_scriptRuntime; }
 
         // Fixes the window's shape to `width`:`height` (e.g. 16, 9) so the game is framed the
@@ -147,6 +158,8 @@ namespace Crucible
 
     private:
         EngineConfig m_config;
+        // Declared before the systems that hold a pointer into it, so it outlives them.
+        UserSettings m_userSettings;
         void RegisterEngineSystems();
 
         // Writes the window's current mode to UserSettings.json (for m_config.app).

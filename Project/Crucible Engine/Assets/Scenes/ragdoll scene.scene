@@ -4,6 +4,8 @@
     "entities": [
         {
             "id": "10CFA0DAA2BC401B",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
@@ -15,11 +17,11 @@
                         "x": 0.0,
                         "y": 0.0,
                         "z": 0.7074272632598877,
-                        "w": 0.7067862153053284
+                        "w": 0.7067861557006836
                     },
                     "scale": {
-                        "x": 0.5,
-                        "y": 0.5,
+                        "x": 0.5000000596046448,
+                        "y": 0.5000000596046448,
                         "z": 0.5
                     }
                 },
@@ -33,6 +35,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -121,6 +124,8 @@
         },
         {
             "id": "18CFA0DAA2BC4017",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 1,
             "components": {
                 "Transform": {
                     "positions": {
@@ -135,8 +140,8 @@
                         "w": 0.7070922255516052
                     },
                     "scale": {
-                        "x": 0.5,
-                        "y": 0.5,
+                        "x": 0.4999999701976776,
+                        "y": 0.4999999701976776,
                         "z": 0.5
                     }
                 },
@@ -150,6 +155,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -267,6 +273,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -338,6 +345,7 @@
                 },
                 "CameraOrbit": {
                     "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
                     "minPitch": -30.0,
                     "maxPitch": 70.0,
                     "yaw": 0.0,
@@ -350,6 +358,8 @@
         },
         {
             "id": "30CFA0DAA1EEC011",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 2,
             "components": {
                 "Transform": {
                     "positions": {
@@ -379,6 +389,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -466,7 +477,87 @@
             }
         },
         {
+            "id": "338880DB4DF80003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -6.554200649261475,
+                        "y": 0.7551048994064331,
+                        "z": 4.492411136627197
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 5.847965240478516,
+                        "y": 0.5395734906196594,
+                        "z": 4.936492443084717
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Platform"
+                }
+            }
+        },
+        {
             "id": "38CFA0DAA2BC4019",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 3,
             "components": {
                 "Transform": {
                     "positions": {
@@ -496,6 +587,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -641,7 +733,35 @@
             }
         },
         {
+            "id": "538880DB4DD58001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Guy"
+                }
+            }
+        },
+        {
             "id": "58CFA0DAA1EEC00F",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 4,
             "components": {
                 "Transform": {
                     "positions": {
@@ -671,6 +791,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -759,6 +880,8 @@
         },
         {
             "id": "60CFA0DAA2BC4015",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 5,
             "components": {
                 "Transform": {
                     "positions": {
@@ -773,8 +896,8 @@
                         "w": 0.7070916891098022
                     },
                     "scale": {
-                        "x": 0.5,
-                        "y": 0.5,
+                        "x": 0.4999999701976776,
+                        "y": 0.4999999701976776,
                         "z": 0.5
                     }
                 },
@@ -788,6 +911,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -910,6 +1034,162 @@
             }
         },
         {
+            "id": "838880DB4DF80007",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.185455322265625,
+                        "y": 1.8067007064819336,
+                        "z": 5.040842056274414
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Cube"
+                }
+            }
+        },
+        {
+            "id": "B38880DB4DF80005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -6.199671745300293,
+                        "y": 1.8067007064819336,
+                        "z": 5.828759670257568
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Cube"
+                }
+            }
+        },
+        {
             "id": "C8CFA0DAA0FEC003",
             "components": {
                 "Transform": {
@@ -951,6 +1231,8 @@
         },
         {
             "id": "D0CFA0DAA1EEC00D",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 6,
             "components": {
                 "Transform": {
                     "positions": {
@@ -980,6 +1262,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -1067,7 +1350,67 @@
             }
         },
         {
+            "id": "D38880DB4DF80009",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -6.199671745300293,
+                        "y": 1.8067007064819336,
+                        "z": 4.232025146484375
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
+                },
+                "EntityName": {
+                    "name": "Cube"
+                }
+            }
+        },
+        {
             "id": "D8CFA0DAA1D7400B",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 7,
             "components": {
                 "Transform": {
                     "positions": {
@@ -1097,6 +1440,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -1185,6 +1529,8 @@
         },
         {
             "id": "D8CFA0DAA302801D",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 8,
             "components": {
                 "Transform": {
                     "positions": {
@@ -1214,6 +1560,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
@@ -1302,6 +1649,8 @@
         },
         {
             "id": "F8CFA0DAA295C013",
+            "parent": "538880DB4DD58001",
+            "siblingIndex": 9,
             "components": {
                 "Transform": {
                     "positions": {
@@ -1331,6 +1680,7 @@
                     "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,

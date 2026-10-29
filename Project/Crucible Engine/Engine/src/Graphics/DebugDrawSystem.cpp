@@ -22,6 +22,8 @@
 #include "Graphics/DebugDraw.h"
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
+#include "UI/UISystem.h"      // UI::LayoutWorldCanvas: the selected element's rect on its page
+#include "UI/WorldUIPlane.h"  // where a world canvas's page is for the Scene view's camera
 
 namespace Crucible {
 
@@ -39,6 +41,14 @@ namespace Crucible {
 		const glm::vec4 kSlow            { 1.00f, 0.90f, 0.20f, 1.0f };
 		const glm::vec4 kFast            { 1.00f, 0.20f, 0.20f, 1.0f };
 		const glm::vec4 kGrid            { 0.32f, 0.32f, 0.34f, 1.0f };
+		const glm::vec4 kWorldCanvas     { 0.35f, 0.75f, 1.00f, 1.0f };   // a world canvas's page
+		const glm::vec4 kWorldCanvasOff  { 0.45f, 0.45f, 0.50f, 1.0f };   // ...switched off (not drawn)
+		const glm::vec4 kWorldUISelected { 1.00f, 0.55f, 0.10f, 1.0f };   // the selected element on one (the selection orange)
+
+		// The Scene view's camera (SetViewCamera). Main thread only, like the rest of the system.
+		bool      g_hasViewCamera = false;
+		glm::vec3 g_viewCameraPosition{ 0.0f };
+		glm::mat4 g_viewCameraView{ 1.0f };
 
 		constexpr float kFastSpeed = 20.0f;   // m/s at which the arrow is fully red
 
@@ -103,13 +113,20 @@ namespace Crucible {
 	void DebugDrawSystem::SetCollidersThroughWalls(bool enabled) { g_collidersThroughWalls.store(enabled); }
 	bool DebugDrawSystem::GetCollidersThroughWalls() { return g_collidersThroughWalls.load(); }
 
+	void DebugDrawSystem::SetViewCamera(const glm::vec3& position, const glm::mat4& view) {
+		g_hasViewCamera      = true;
+		g_viewCameraPosition = position;
+		g_viewCameraView     = view;
+	}
+
 	// ------------------------------------------------------------------------------------------------------------- //
 	//  SYSTEM
 	// ------------------------------------------------------------------------------------------------------------- //
 
 	void DebugDrawSystem::Describe(SystemDesc& desc) const {
 
-		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent>()
+		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent,
+		           UICanvas, UIRect, HierarchyNode>()   // world canvases' pages and the selected element's rect
 			.RunAfter<HierarchyTransformSystem>()        // WorldTransform must be this frame's
 			.Affinity(SystemAffinity::MainThread);       // Renderer/ResourceManager aren't thread-safe
 
@@ -124,8 +141,59 @@ namespace Crucible {
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Lights))     { DrawLights(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Grid))       { DrawGrid(); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Selection))  { DrawSelection(world); }
+		if (DebugDraw::IsCategoryEnabled(DebugCategory::WorldUI))    { DrawWorldUI(world); }
 
 	}   // DebugDrawSystem::Update()
+
+	void DebugDrawSystem::DrawWorldUI(World& world) {
+
+		// Drawn on top of everything: the page is often in front of or inside other objects, and
+		// these lines are for finding it.
+		DebugStyle style;
+		style.category  = DebugCategory::WorldUI;
+		style.depthTest = false;
+
+		auto outline = [&](const std::array<glm::vec3, 4>& c, const glm::vec4& colour) {
+			style.color = colour;
+			for (int i = 0; i < 4; ++i) { DebugDraw::Line(c[i], c[(i + 1) % 4], style); }
+		};
+		auto planeFor = [&](const UICanvas& canvas, const glm::mat4& matrix) {
+			return g_hasViewCamera ? WorldCanvasPlaneFor(canvas, matrix, g_viewCameraPosition, g_viewCameraView)
+			                       : WorldUIPlaneFor(WorldBillboard::Off, matrix, glm::vec3(0.0f), glm::mat4(1.0f));
+		};
+
+		// Every world canvas's page; a switched-off one in grey (it isn't drawn, but is still there),
+		// the selected one in the selection colour.
+		const Entity selected = GetSelectedEntity();
+		world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity entity, const WorldTransform& wt, const UICanvas& canvas) {
+			if (canvas.renderMode != UICanvas::RenderMode::WorldSpace || !wt.valid) { return; }
+			const glm::vec4& colour = entity == selected ? kWorldUISelected : canvas.enabled ? kWorldCanvas : kWorldCanvasOff;
+			outline(WorldUIBoxCorners(planeFor(canvas, wt.matrix), WorldCanvasBoxInPlane(canvas)), colour);
+		});
+
+		// The selected element on a world canvas: its rect (turned, if it is), in the selection colour.
+		if (selected == kNullEntity || !world.IsAlive(selected) || !world.HasComponent<UIRect>(selected)) { return; }
+		Entity canvasEntity = kNullEntity;
+		for (Entity p = world.GetParent(selected); p.IsValid(); p = world.GetParent(p)) {
+			if (world.HasComponent<UICanvas>(p)) { canvasEntity = p; }   // the topmost canvas owns the tree
+		}
+		if (canvasEntity == kNullEntity) { return; }
+		const UICanvas* canvas = world.Read<UICanvas>(canvasEntity);
+		const WorldTransform* wt = world.Read<WorldTransform>(canvasEntity);
+		if (!canvas || !wt || !wt->valid || canvas->renderMode != UICanvas::RenderMode::WorldSpace) { return; }
+
+		static std::vector<UI::LayoutItem> s_layout;   // reused: no allocation per frame
+		UI::LayoutWorldCanvas(world, canvasEntity, *canvas, s_layout);
+		const WorldUIPlane plane = planeFor(*canvas, wt->matrix);
+		for (const UI::LayoutItem& item : s_layout) {
+			if (item.entity != selected) { continue; }
+			const auto page = item.Corners();   // page pixels, turned with the element
+			std::array<glm::vec3, 4> corners;
+			for (int i = 0; i < 4; ++i) { corners[i] = WorldUIPlanePoint(plane, WorldCanvasToPlane(*canvas, page[i])); }
+			outline(corners, kWorldUISelected);
+			break;
+		}
+	}   // DebugDrawSystem::DrawWorldUI()
 
 	void DebugDrawSystem::DrawColliders(World& world) {
 

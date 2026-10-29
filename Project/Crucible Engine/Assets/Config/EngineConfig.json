@@ -11,11 +11,6 @@
         "port": 9999,
         "maxPlayers": 4
     },
-    "audio": {
-        "masterVolume": 1.0,
-        "musicVolume": 1.0,
-        "sfxVolume": 1.0
-    },
     "project": {
         "startupScene": "Scenes/Fog_Lighting_Effects.scene",
         "aspectRatio": [
