@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.6
+* \version       2.7
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -52,6 +52,9 @@
 *                frame's steps; a static collider moved frame after frame
 *                is reported (kWarnMovingStatic). Characters ride the
 *                ground's velocity and now move after the step, not before
+*    -v2.7       Collider::m_isTrigger; collision and trigger events sent
+*                on the engine bus after each frame's steps;
+*                GetTriggerOccupants and GetContacts
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -67,7 +70,9 @@
 #include "Diagnostics/Logger.h"
 #include "Physics/PhysicsComponents.h"
 #include "Scene/SceneManager.h"
+#include "ECS/Systems/EventBus/EventWriter.h"   // ctx.events.EmitEngine (SystemContext only forward-declares it)
 #include "Systems/Query.h"
+#include "Systems/SystemContext.h"
 #include "World.h"
 
 namespace {
@@ -124,7 +129,7 @@ namespace {
             && a.m_friction == b.m_friction && a.m_restitution == b.m_restitution
             && a.m_gravityFactor == b.m_gravityFactor
             && a.m_linearDamping == b.m_linearDamping && a.m_angularDamping == b.m_angularDamping
-            && a.m_lockedAxes == b.m_lockedAxes;
+            && a.m_lockedAxes == b.m_lockedAxes && a.m_isSensor == b.m_isSensor;
 
     }   // SameRecipe()
 
@@ -351,6 +356,13 @@ namespace Crucible {
         std::uint32_t stepOfFrame    = 0;                       // which of this frame's steps is running (DriveKinematic)
         float         frameTime      = 0.0f;                    // this frame's time, as the clock counted it
         float         owedBefore     = 0.0f;                    // the accumulator before this frame's time was added
+
+        // This frame's collision and trigger events, gathered after every step and
+        // sent at the end of Update (the event writer only exists during Update).
+        std::vector<PhysicsEvents::CollisionEnter> collisionEnters;
+        std::vector<PhysicsEvents::CollisionExit>  collisionExits;
+        std::vector<PhysicsEvents::TriggerEnter>   triggerEnters;
+        std::vector<PhysicsEvents::TriggerExit>    triggerExits;
         bool          inSession      = false;                   // between BeginSession and EndSession
 
         void BindWorld(World& ecs);
@@ -362,6 +374,8 @@ namespace Crucible {
         void TakeForces(World& ecs, Record& record, const RigidBody* rigidbody);
         void PushForces(Record& record);
         void DriveKinematic(Record& record);
+        void CollectContacts();
+        BodyHandle BodyOf(const Entity& entity) const;
         void SyncJoints(World& ecs);
         void SyncJoint(World& ecs, JointRecord& record, const PhysicsJoint& joint);
         void DropJoint(JointRecord& record);
@@ -461,13 +475,56 @@ namespace Crucible {
     Physics&      ECSPhysicsSystem::GetPhysics()              { return m_state->physics; }
     std::uint32_t ECSPhysicsSystem::GetStepsLastFrame() const { return m_state->stepsLastFrame; }
 
+    // Only the pairs where the entity's own body is the sensor: a crate inside
+    // a trigger is not "occupying" the crate.
+    void ECSPhysicsSystem::GetTriggerOccupants(const Entity& trigger, std::vector<Entity>& out) const {
+
+        out.clear();
+        const State& s = *m_state;
+        s.physics.ForEachContact(s.BodyOf(trigger), [&](const BodyContact& contact) {
+            if (contact.m_selfIsSensor) out.push_back(UserDataToEntity(contact.m_otherUserData));
+        });
+
+    }   // ECSPhysicsSystem::GetTriggerOccupants()
+
+    void ECSPhysicsSystem::GetContacts(const Entity& entity, std::vector<EntityContact>& out) const {
+
+        out.clear();
+        const State& s = *m_state;
+        s.physics.ForEachContact(s.BodyOf(entity), [&](const BodyContact& contact) {
+            EntityContact entry;
+            entry.other      = UserDataToEntity(contact.m_otherUserData);
+            entry.isTrigger  = contact.m_selfIsSensor || contact.m_otherIsSensor;
+            entry.normal     = contact.m_normal;
+            entry.pointCount = std::min(contact.m_pointCount, EntityContact::kMaxPoints);
+            for (std::uint32_t i = 0; i < entry.pointCount; ++i) entry.points[i] = contact.m_points[i];
+            entry.resting    = contact.m_resting;
+            out.push_back(entry);
+        });
+
+    }   // ECSPhysicsSystem::GetContacts()
+
     // ------------------------------------------------------------------- //
     // THE FRAME
     // ------------------------------------------------------------------- //
 
-    void ECSPhysicsSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
+    /*!
+        \brief
+        One frame of physics, then this frame's collision and trigger events out
+        onto the engine bus. They are delivered after the PostUpdate stage, so
+        gameplay hears about a hit in the same frame it happened.
+    */
+    void ECSPhysicsSystem::Update(World& world, SystemContext& ctx) {
+
         Advance(world, world.DeltaTime());
-    }
+
+        State& s = *m_state;
+        for (const PhysicsEvents::CollisionEnter& e : s.collisionEnters) ctx.events.EmitEngine(e);
+        for (const PhysicsEvents::CollisionExit&  e : s.collisionExits)  ctx.events.EmitEngine(e);
+        for (const PhysicsEvents::TriggerEnter&   e : s.triggerEnters)   ctx.events.EmitEngine(e);
+        for (const PhysicsEvents::TriggerExit&    e : s.triggerExits)    ctx.events.EmitEngine(e);
+
+    }   // ECSPhysicsSystem::Update()
 
     /*!
         \brief
@@ -478,6 +535,10 @@ namespace Crucible {
 
         State& s = *m_state;
         s.stepsLastFrame = 0;
+        s.collisionEnters.clear();      // last frame's were sent (or, from a test harness, dropped)
+        s.collisionExits.clear();
+        s.triggerEnters.clear();
+        s.triggerExits.clear();
         if (!s.physics.IsInitialised()) return;
 
         s.BindWorld(world);
@@ -844,6 +905,7 @@ namespace Crucible {
         desc.m_layer       = collider.m_layer;
         desc.m_friction    = collider.m_friction;
         desc.m_restitution = collider.m_bounciness;
+        desc.m_isSensor    = collider.m_isTrigger;
         desc.m_userData    = EntityToUserData(record.entity);
         // Only for dynamic bodies: a kinematic one ignores mass, drag and gravity anyway, and
         // freezing axes on it would make no sense - its Transform decides every axis.
@@ -1067,6 +1129,7 @@ namespace Crucible {
 
         PullBodies(ecs);
         PullBrokenJoints(ecs);      // every step: Physics refills its broken list each Step
+        CollectContacts();          // likewise its contact events
 
     }   // ECSPhysicsSystem::State::Step()
 
@@ -1190,6 +1253,55 @@ namespace Crucible {
         physics.MoveKinematic(record.body, position, rotation, kFixedDeltaTime);
 
     }   // ECSPhysicsSystem::State::DriveKinematic()
+
+    /*!
+        \brief
+        This step's contact events, turned into PhysicsEvents for Update to send.
+        \details
+        Either side a sensor (Collider::m_isTrigger) makes it a trigger event,
+        and the sensor is the `trigger`. Entities come straight out of the
+        bodies' user values, so an Exit for a destroyed entity still names it -
+        the listener checks IsAlive.
+    */
+    void ECSPhysicsSystem::State::CollectContacts() {
+
+        const std::uint32_t count = physics.GetContactEventCount();
+        for (std::uint32_t i = 0; i < count; ++i) {
+
+            ContactEvent event;
+            if (!physics.GetContactEvent(i, event)) continue;
+
+            const Entity one = UserDataToEntity(event.m_userData1);
+            const Entity two = UserDataToEntity(event.m_userData2);
+            const bool   began = event.m_type == ContactEventType::Began;
+
+            if (event.m_isSensor1 || event.m_isSensor2) {
+                const Entity trigger = event.m_isSensor1 ? one : two;
+                const Entity other   = event.m_isSensor1 ? two : one;
+                if (began) triggerEnters.push_back(PhysicsEvents::TriggerEnter{ trigger, other });
+                else       triggerExits.push_back(PhysicsEvents::TriggerExit{ trigger, other });
+            }
+            else if (began) {
+                collisionEnters.push_back(PhysicsEvents::CollisionEnter{ one, two, event.m_point, event.m_normal, event.m_impactSpeed });
+            }
+            else {
+                collisionExits.push_back(PhysicsEvents::CollisionExit{ one, two });
+            }
+        }
+
+    }   // ECSPhysicsSystem::State::CollectContacts()
+
+    // The body that stands for an entity: its Collider's body, or the hidden
+    // body of its CharacterController. Invalid if it has neither (yet).
+    BodyHandle ECSPhysicsSystem::State::BodyOf(const Entity& entity) const {
+
+        const std::uint64_t key = EntityToUserData(entity);
+        if (const auto found = records.find(key); found != records.end()) return found->second.body;
+        if (const auto found = characterRecords.find(key); found != characterRecords.end())
+            return physics.GetCharacterBody(found->second.character);
+        return BodyHandle{};
+
+    }   // ECSPhysicsSystem::State::BodyOf()
 
     /*!
         \brief

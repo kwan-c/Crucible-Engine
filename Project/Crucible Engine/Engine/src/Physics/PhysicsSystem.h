@@ -5,7 +5,7 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          22 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Crucible::Physics: the public face of the Jolt physics
 *                world. Bodies, characters, joints, raycasts and forces,
@@ -28,6 +28,8 @@
 *    -v1.5       joints: Fixed, Hinge, Ball, Character and Spring, with
 *                limits and breaking
 *    -v1.6       GetGroundVelocity, so a character rides what it stands on
+*    -v1.7       contacts: sensors (BodyDesc::m_isSensor), contact events
+*                after each Step, and ForEachContact
 *
 **************************************************************************/
 #pragma once
@@ -35,6 +37,7 @@
 // STL
 #include <cstdint>
 #include <cstddef>
+#include <functional>   // ForEachContact
 
 // Crucible engine
 #include "EngineExport.h"
@@ -170,9 +173,46 @@ namespace Crucible {
         float         m_linearDamping  = 0.0f; // Unity's drag: speed lost per second. 0 matches Unity's default
         float         m_angularDamping = 0.05f;// Unity's angularDrag: spin lost per second (Unity and Jolt both default to 0.05)
         std::uint8_t  m_lockedAxes     = AxisLock::None; // AxisLock bits. Dynamic bodies only; locking ALL of them is refused (make it Static)
+        bool          m_isSensor    = false;   // Unity's isTrigger: reports what enters and leaves, blocks nothing
         std::uint64_t m_userData    = 0;       // yours. The ECS binding puts the Entity in here
 
     };  // BODYDESC STRUCT
+
+    // Two bodies started or stopped touching during the last Step.
+    // Unity's OnCollisionEnter/Exit and OnTriggerEnter/Exit, as a list (GetContactEvent).
+    enum class ContactEventType : std::uint8_t { Began, Ended };
+
+    struct ContactEvent {
+
+        ContactEventType m_type        = ContactEventType::Began;
+        BodyHandle       m_body1       {};
+        BodyHandle       m_body2       {};
+        std::uint64_t    m_userData1   = 0;
+        std::uint64_t    m_userData2   = 0;
+        bool             m_isSensor1   = false;     // either one a sensor: a trigger event, not a collision
+        bool             m_isSensor2   = false;
+        Math::vec3       m_point       = Math::vec3(0.0f, 0.0f, 0.0f);   // Began only: where they touched first
+        Math::vec3       m_normal      = Math::vec3(0.0f, 1.0f, 0.0f);   // Began only: from body 1 toward body 2
+        float            m_impactSpeed = 0.0f;      // Began only: how fast they closed in along the normal, m/s
+
+    };  // CONTACTEVENT STRUCT
+
+    // One body that a given body is touching right now (ForEachContact), with
+    // the latest contact points - what Unity's Collision.contacts holds.
+    struct BodyContact {
+
+        static constexpr std::uint32_t kMaxPoints = 4;
+
+        BodyHandle    m_other         {};
+        std::uint64_t m_otherUserData = 0;
+        bool          m_otherIsSensor = false;
+        bool          m_selfIsSensor  = false;
+        Math::vec3    m_normal        = Math::vec3(0.0f, 1.0f, 0.0f);   // from the body asked about toward the other
+        Math::vec3    m_points[kMaxPoints] {};
+        std::uint32_t m_pointCount    = 0;
+        bool          m_resting       = false;   // asleep: still touching, the points are from before it slept
+
+    };  // BODYCONTACT STRUCT
 
     // Unity's RaycastHit. Only filled in when Raycast returns true.
     struct RaycastHit {
@@ -493,6 +533,21 @@ namespace Crucible {
         // binding with GetTransform per body, and switch when the profiler says to.
         std::uint32_t GetMovedBodyCount() const;
         bool          GetMovedBody(std::uint32_t index, std::uint64_t& outUserData, Math::vec3& outPosition, Math::quat& outRotation) const;
+
+        // --- contacts (Unity's collision and trigger messages) ---
+
+        // After Step: the pairs that started or stopped touching in it, the same
+        // list pattern as GetMovedBody. A body going to SLEEP is not an Ended:
+        // a settled crate is still lying on the floor. Ended does come for a
+        // destroyed body, one step after it is destroyed.
+        std::uint32_t GetContactEventCount() const;
+        bool          GetContactEvent(std::uint32_t index, ContactEvent& outEvent) const;
+
+        // Everything a body is touching right now, sleepers included - for
+        // "who is inside this trigger" and Unity's OnCollisionStay contacts.
+        // Visits nothing for a stale handle. Costs one pass over the touching
+        // pairs, and only when called.
+        void ForEachContact(const BodyHandle& body, const std::function<void(const BodyContact&)>& visit) const;
 
     private:
 

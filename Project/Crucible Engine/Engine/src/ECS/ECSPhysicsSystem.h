@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.3
+* \version       2.4
 * \brief
 *                The ECS side of physics: keeps Crucible::Physics in step
 *                with the Transform, Collider, RigidBody, ConstantForce and
@@ -19,10 +19,13 @@
 *                     on anything gameplay changed
 *                  3. runs those steps and writes the results back into
 *                     the Transforms (and PhysicsJoint::m_isBroken)
+*                  4. sends what started and stopped touching as
+*                     PhysicsEvents on the engine bus
 *
-*                Gameplay never talks to this class. It edits components,
-*                and reaches the world itself through GetPhysics() for
-*                raycasts.
+*                Gameplay mostly edits components, listens for
+*                PhysicsEvents, and asks this class who is touching what
+*                (GetTriggerOccupants, GetContacts). It reaches the world
+*                itself through GetPhysics() for raycasts.
 *
 * \history
 *    -v1.0       skeleton / placeholder system, no physics logic yet
@@ -33,6 +36,8 @@
 *                the ConstantForce component
 *    -v2.3       PhysicsJoint; takes the SceneManager to resolve a joint's
 *                saved connected body
+*    -v2.4       collision and trigger events, GetTriggerOccupants and
+*                GetContacts; Update takes the SystemContext to send them
 *
 **************************************************************************/
 #pragma once
@@ -40,9 +45,11 @@
 // STL
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 // Crucible engine
 #include "EngineExport.h"
+#include "Physics/PhysicsEvents.h"
 #include "Physics/PhysicsSystem.h"
 #include "Systems/IECSSystems.h"
 
@@ -66,7 +73,9 @@ namespace Crucible {
         // --- IECSSystem ---------------------------------------------------- //
 
         void Init() override;       // starts nothing: the physics world starts with BeginSession
-        void Update(World& world, CommandBuffer& commands) override;
+        // The SystemContext version: it carries the event writer the collision and
+        // trigger events go out through.
+        void Update(World& world, SystemContext& ctx) override;
         void Shutdown() noexcept override;
         void Describe(SystemDesc& desc) const override;   // SimulationOnly: steps only while Playing
 
@@ -98,6 +107,19 @@ namespace Crucible {
         // The world itself, for raycasts. Gameplay gets here through Core.
         ENGINE_API Physics&      GetPhysics();
         ENGINE_API std::uint32_t GetStepsLastFrame() const;    // 0, 1 or more after a hitch
+
+        // Everything inside a trigger collider right now - what Unity's
+        // OnTriggerStay is called for. Call it from your own Update, where you
+        // have a dt: a damage zone does Damage(victim, dps * dt) for each.
+        // Fills `out` (cleared first; pass the same vector every frame and it
+        // never reallocates). Empty if `trigger` has no trigger body.
+        ENGINE_API void GetTriggerOccupants(const Entity& trigger, std::vector<Entity>& out) const;
+
+        // Everything an entity is touching right now, triggers included, with the
+        // latest contact points - what Unity hands OnCollisionStay. Works for a
+        // mech too (what its character's hidden body touches). Fills `out`,
+        // cleared first.
+        ENGINE_API void GetContacts(const Entity& entity, std::vector<EntityContact>& out) const;
 
         // Update with a frame time you choose, instead of World::DeltaTime().
         // This is what a test harness drives, and how you simulate 30 or 144 fps.
