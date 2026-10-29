@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Implementation of ComponentRegistry: bulk registration
 *                of every known component type and lookup/validation of
@@ -14,6 +14,7 @@
 *    -v1.0       initial RegisterAll/Get/IsRegistered/RegisterInfo
 *    -v1.1       validation throws in every build configuration;
 *                RegisteredSignature/ValidateSignature
+*    -v1.2       RegisterAll finishes with FinalizeRequirements
 *
 **************************************************************************/
 #include <stdexcept>
@@ -43,6 +44,36 @@ namespace Crucible
 			{
 				throw std::logic_error("ComponentRegistry::RegisterAll: ComponentKind " + std::to_string(id) +
 					" has no registered type - check CRUCIBLE_COMPONENT_LIST and the CRUCIBLE_COMPONENT bindings");
+			}
+		}
+
+		FinalizeRequirements();
+	}
+
+	void ComponentRegistry::FinalizeRequirements()
+	{
+		std::vector<ComponentSignature> direct(kMaxComponents);
+		for (ComponentId id = 0; id < kMaxComponents; ++id) direct[id] = m_components[id].requirements;
+
+		std::vector<ComponentSignature> closure;
+		const ComponentId cyclic = Detail::CloseRequirements(direct, closure);
+		if (cyclic != kInvalidComponentId)
+		{
+			throw std::logic_error("ComponentRegistry: component '" + std::string(m_components[cyclic].name) +
+				"' requires itself through RequiresComponents (a requirement cycle) - fix the RequiresComponents specialisations in Components.h");
+		}
+
+		// Reverse edges: who is switched off with this one.
+		for (ComponentId id = 0; id < kMaxComponents; ++id)
+		{
+			m_components[id].requiredClosure = closure[id];
+			m_components[id].dependents.reset();
+		}
+		for (ComponentId dependent = 0; dependent < kMaxComponents; ++dependent)
+		{
+			for (ComponentId required = 0; required < kMaxComponents; ++required)
+			{
+				if (closure[dependent].test(required)) m_components[required].dependents.set(dependent);
 			}
 		}
 	}

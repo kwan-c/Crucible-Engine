@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.5
+* \version       1.6
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -31,6 +31,8 @@
 	* -v1.3       Audio renamed to AudioSource (clashed with class Crucible::Audio)
 	* -v1.4       AudioSource moved to Audio/AudioComponents.h
 	* -v1.5       EntityName (mandatory display name, WorldValidated)
+	* -v1.6       RequiresComponents pairs (what switching a component off
+	*             also stops); component fields unchanged
 	*
 	*
 	**************************************************************************/
@@ -45,6 +47,7 @@
 #include"ComponentKind.h"
 #include"Math/Math.h"
 #include"Physics/PhysicsComponents.h"
+#include"Player/PlayerComponents.h"   // PlayerController, CameraOrbit (moved out of PhysicsComponents.h)
 #include"Audio/AudioComponents.h"
 #include"../Core/ECSCore.h"   // Entity (HierarchyNode links)
 #include"Graphics/MeshHandle.h"   // MeshHandle - deliberately NOT RenderTypes.h, which pulls in Vulkan
@@ -52,6 +55,7 @@
 #include"Graphics/CubemapHandle.h"    // CubemapHandle (Skybox) - same reasoning
 #include"Graphics/LightTypes.h"       // LightType (Light) - same reasoning
 #include"../../UI/UIComponents.h"
+#include"Text/WorldText.h"        // WorldText (text in the 3D world)
 #include "Scripting/ScriptTypes.h"
 
 namespace Crucible
@@ -715,7 +719,31 @@ namespace Crucible
 		float drag        = 0.f;     // linear damping, 1/s. 0 = keeps its speed; higher = slows down faster
 		float angularDrag = 0.05f;   // rotational damping, 1/s. Stops a knocked-over crate spinning forever
 
+		// Unity's Rigidbody.isKinematic. On: the Transform drives the body, physics doesn't -
+		// no gravity, no forces, nothing can push it, but it still has a velocity (worked out
+		// from how far its Transform moved), so it pushes crates smoothly and carries what
+		// stands on it. For lifts, doors and moving platforms moved by a script or animation.
+		// mass, drag, useGravity and the constraints are ignored while it is on. Can be
+		// switched during Play: off drops it from wherever it is (the ragdoll trick).
+		bool  isKinematic = false;
+
 		RigidBodyConstraints constraints{};   // frozen axes; e.g. freeze rotation X+Z so a player body never tips over
+
+		// Runtime only: not saved, not in the Inspector. Gameplay adds to these
+		// any time during the frame; ECSPhysicsSystem hands the totals to every
+		// fixed step this frame, then zeroes them. Unlike Unity, calling this
+		// from a normal Update is correct - the push does not depend on frame rate.
+		Math::vec3 force { 0.f, 0.f, 0.f };   // newtons, world space, at the centre of mass
+		Math::vec3 torque{ 0.f, 0.f, 0.f };   // newton-metres, world space
+
+		// An instant kick (a jump, a knockback). Unlike force it is kept until a
+		// physics step actually runs, so a kick from a frame with no step is
+		// not lost - it lands one frame later instead.
+		Math::vec3 impulse{ 0.f, 0.f, 0.f };  // kg*m/s, world space, at the centre of mass
+
+		void AddForce    (const Math::vec3& f) { force   += f; }   // Unity's Rigidbody.AddForce
+		void AddTorque   (const Math::vec3& t) { torque  += t; }   // Unity's Rigidbody.AddTorque
+		void ApplyImpulse(const Math::vec3& i) { impulse += i; }   // Unity's AddForce(..., ForceMode.Impulse)
 	};
     
 	/*************************************************************************
@@ -732,6 +760,33 @@ namespace Crucible
 	struct EntityName
 	{
 		std::string name;
+	};
+
+	/*************************************************************************
+	 \brief  Links an entity to the prefab (.cprefab) it was placed from.
+	 \details
+		Prefab::Instantiate puts one on every entity it creates; the editor's
+		Create Prefab puts them on the entities a prefab was made from.
+		prefabAsset is the .cprefab's asset guid (from its .meta), fileId the
+		entry the entity came from - stable when the file is re-saved, unlike
+		the entry's position - and isRoot marks the instance's top entity.
+		Saved in scenes, so the link survives a reload, undo and copy/paste;
+		Prefab::SaveFrom never writes it into a .cprefab. The Inspector does
+		not list it: it shows a prefab bar instead (Prefabs/PrefabAuthoring.h).
+	 *************************************************************************/
+	struct PrefabInstance
+	{
+		std::uint64_t prefabAsset = 0;      // asset guid of the .cprefab
+		std::uint64_t fileId      = 0;      // the entry's id inside that file
+		bool          isRoot      = false;  // the instance's top entity
+		// Root only: content hash of the .cprefab this instance was last brought up to date with
+		// (0 = not known yet). When the file's hash differs - changed in another scene, or by a
+		// git pull - the editor updates the instance on scene open / Asset Browser Refresh.
+		std::uint64_t prefabHash  = 0;
+		// What this entity changed from its prefab entry, as of the last scene save (the editor
+		// refreshes it before every save): "Collider/m_size", "Collider/$enabled", "+Light"
+		// (added), "-Collider" (removed). Propagation uses it to know what to keep.
+		std::vector<std::string> overrides;
 	};
 
 	// Bind each component above to its ComponentKind (see ComponentKind.h)
@@ -752,6 +807,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(Vine, Vine);
 	CRUCIBLE_COMPONENT(EntityName, EntityName);
 	CRUCIBLE_COMPONENT(Water, Water);
+	CRUCIBLE_COMPONENT(PrefabInstance, PrefabInstance);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
 	template<>
@@ -773,6 +829,20 @@ namespace Crucible
 
 	// Read anywhere; written only through World (SetEntityName, AddComponent), which applies the naming rules.
 	template <> struct WorldValidated<EntityName> : std::true_type {};
+
+	// What each component needs on the SAME entity to run (RequiresComponents in
+	// ComponentKind.h): while a requirement is switched off, the component counts as
+	// off too and its systems skip it; it comes back on by itself. The same pairs the
+	// Inspector's Add Component rules create. Requirements follow through: switching
+	// UIRect off also stops UIButton (UIButton -> UIImage -> UIRect).
+	template <> struct RequiresComponents<RigidBody>        { using type = ComponentTypeList<Collider>; };
+	template <> struct RequiresComponents<PlayerController> { using type = ComponentTypeList<CharacterController>; };
+	template <> struct RequiresComponents<AnimatedModel>    { using type = ComponentTypeList<MeshRenderer>; };
+	template <> struct RequiresComponents<MaterialParams>   { using type = ComponentTypeList<MeshRenderer>; };
+	template <> struct RequiresComponents<UIImage>          { using type = ComponentTypeList<UIRect>; };
+	template <> struct RequiresComponents<UIText>           { using type = ComponentTypeList<UIRect>; };
+	template <> struct RequiresComponents<UISlider>         { using type = ComponentTypeList<UIRect>; };
+	template <> struct RequiresComponents<UIButton>         { using type = ComponentTypeList<UIImage>; };
 
 
 }

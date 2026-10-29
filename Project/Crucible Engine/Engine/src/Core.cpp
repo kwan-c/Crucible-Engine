@@ -18,6 +18,7 @@
 #include "Animation/SocketAttachmentSystem.h"
 #include "Graphics/DebugDrawSystem.h"
 #include "Graphics/ParticleSystem.h"
+#include "Text/WorldTextSystem.h"
 #include "Graphics/StressMoverSystem.h"   // TEMPORARY: load testing
 #include "Graphics/VineSystem.h"
 #include "Resources/ResourceManager.h"
@@ -40,12 +41,18 @@ namespace Crucible {
 
     Core::Core(const EngineConfig& config) :
         m_config{ config },
-        m_window{ new WindowManager(m_config.graphics.windowWidth,m_config.graphics.windowHeight, m_config.graphics.windowTitle) },
+        m_userSettings{ UserSettingsLoader::Load() },
+        m_window{ new WindowManager(static_cast<int>(m_config.graphics.windowWidth), static_cast<int>(m_config.graphics.windowHeight),
+                                    m_config.graphics.windowTitle, m_config.graphics.fullScreen, m_config.graphics.maximized) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() },
         m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
         m_scenes{ std::make_unique<SceneManager>(*m_world) }
-    {   
+    {
+        // Written straight back, so a first run (or a file from an older build) gets every
+        // setting with its default: the file then shows the whole format, ready to edit.
+        UserSettingsLoader::Save(m_userSettings);
+
         // Play mode drives the always-on systems too, so it is built once every member exists.
         m_playMode = std::make_unique<PlayMode>(*m_world, *m_scenes, m_events, m_systems);
 
@@ -64,6 +71,19 @@ namespace Crucible {
     void  Core::UnlockWindowAspectRatio()                    { m_window->UnlockAspectRatio(); }
     float Core::GetWindowAspectRatioLock() const             { return m_window->GetLockedAspectRatio(); }
 
+    void Core::SetFullscreen(bool fullscreen) {
+        if (fullscreen == m_window->IsFullscreen()) { return; }
+        m_window->SetFullscreen(fullscreen);
+        SaveWindowState();
+    }
+
+    void Core::MaximizeWindow() { m_window->Maximize(); SaveWindowState(); }
+    void Core::RestoreWindow()  { m_window->Restore();  SaveWindowState(); }
+
+    void Core::SaveWindowState() const {
+        EngineConfigLoader::SaveWindowState(m_config.app, m_window->IsFullscreen(), m_window->IsMaximized());
+    }
+
     bool Core::Init()
     {
         std::cout << "The Hearth smoulders...\n";
@@ -80,20 +100,22 @@ namespace Crucible {
         // Shared asset index + resource cache. Before RegisterEngineSystems(): the render
         // extraction system resolves MeshRenderer/Skybox asset ids through the ResourceManager.
         m_assets = std::make_unique<AssetManager>();
-        if (!m_assets->Init()) { CRU_WARN("[Core] AssetManager found no asset root; asset ids will not resolve"); }
+        // Without an asset index nothing resolves (scenes, meshes, materials): stop rather than run
+        // a half-working engine. The mains' RequireAssetRoot() check normally catches this first.
+        if (!m_assets->Init()) { CRU_ERROR("[Core] AssetManager found no asset root - cannot start"); return false; }
         m_resources = std::make_unique<ResourceManager>(*m_assets, *m_renderer);
         m_resources->Init();
 
         // ======== asset debugging (Removable) ==========
         // On the shared index. A second AssetManager here used to run its own reconcile -
         // writing .meta files a second time on every launch - before m_assets even existed.
-        {
-            std::cout << "\n\n";
-            m_assets->PrintIndex();
+        //{
+        //    std::cout << "\n\n";
+        //    m_assets->PrintIndex();
 
-            auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
-            m_assets->PrintLoaded();
-        }
+        //    auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
+        //    m_assets->PrintLoaded();
+        //}
         // ===========================================
 
         // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
@@ -122,6 +144,10 @@ namespace Crucible {
         if (!m_scriptRuntime->CreateConfiguredInstances(m_config.scripting)) return false;
 
         return true;
+    }
+
+    void Core::RequestQuit() {
+        if (m_window) { m_window->RequestClose(); }
     }
 
     void Core::Run() {
@@ -181,9 +207,12 @@ namespace Crucible {
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
-        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get());                            // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
-        m_systems.RegisterSystem<ECSPlayerControllerSystem>();                          // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
-        m_systems.RegisterSystem<ECSPhysicsSystem>();
+        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
+            .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
+        m_systems.RegisterSystem<ECSPlayerControllerSystem>(m_userSettings.input)                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
+            .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
+        m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get())                      // the scene turns a PhysicsJoint's saved connected body back into an entity
+            .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
@@ -192,9 +221,11 @@ namespace Crucible {
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
         m_systems.RegisterSystem<VineSystem>(*m_renderer, m_resources.get());            // PreRender: grows/simulates Vines (proof of concept), submits their meshes
+        m_systems.RegisterSystem<WorldTextSystem>(*m_renderer, m_resources.get());       // PreRender, Edit mode too: lays out WorldText components and submits their glyphs
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
         m_systems.RegisterSystem<UIRenderSystem>(*m_renderer, m_resources.get());        // PreRender, Edit mode too: lays out screen-space UICanvases against the game screen and SubmitUI()s them
-        m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_renderer);                 // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
+        m_systems.RegisterSystem<WorldCanvasSystem>(*m_renderer, m_resources.get());     // PreRender, Edit mode too: lays out world-space UICanvases and submits each as a world UI panel
+        m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_userSettings.audio, m_renderer);                // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
     }
 
     void Core::CleanUp() {
@@ -214,10 +245,12 @@ namespace Crucible {
         // The GPU must be idle before layers free GPU resources (e.g. ImGui's Vulkan objects).
         for (auto it = m_layers.rbegin(); it != m_layers.rend(); ++it) (*it)->OnDetach();
         m_layers.clear();
-
         // Managed instances/bindings added later must be released before final cleanup.
         // Play/Stop never destroys or restarts the process-wide Mono runtime.
         if (m_scriptRuntime) m_scriptRuntime->Shutdown();
+
+        // Remember how the window was left (fullscreen / maximized) for the next launch.
+        SaveWindowState();
 
         m_input.Shutdown();
         m_window->ShutDown();

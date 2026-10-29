@@ -37,5 +37,19 @@ namespace Crucible
 		// Writes `overrides` into `app`'s section: set values are written, unset ones removed so
 		// the shared value applies again. Keys in that section the struct doesn't cover are kept.
 		static bool SaveOverrides(AppKind app, const AppOverrides& overrides, const std::filesystem::path& path);
+
+		// ---- Per-user window state ------------------------------------------------------------ //
+		//
+		// UserSettings.json, next to the running .exe (not in Assets, so one person's fullscreen
+		// doesn't end up in everyone's EngineConfig.json through git). Same layout as an app
+		// section of EngineConfig.json:
+		//     { "editor": { "graphics": { "fullScreen": false, "maximized": true } }, "game": { ... } }
+		// LoadForApp layers `app`'s section on top of everything else. Delete the file to go back
+		// to the project defaults.
+		static std::filesystem::path UserSettingsFile();
+
+		// Writes `app`'s window mode into UserSettings.json (other apps' sections and unknown keys
+		// are kept). Core calls this when the mode is toggled and at shutdown.
+		static bool SaveWindowState(AppKind app, bool fullScreen, bool maximized);
 	};
 }

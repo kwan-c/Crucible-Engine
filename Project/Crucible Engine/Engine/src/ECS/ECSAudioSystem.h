@@ -1,8 +1,9 @@
 /*************************************************************************
 * \file:         ECSAudioSystem.h
-* \author:       Hugo
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
 * \date          1 October 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                The ECS side of audio: owns the engine's one
 *                Crucible::Audio and ticks it once per frame.
@@ -29,6 +30,7 @@
 *    -v1.1       AudioSource and AudioListener components; edit mode
 *    -v1.2       with no AudioListener entity, the ears follow the camera
 *    -v1.3       SetPaused for play-mode Pause; Core drives edit mode
+*    -v1.4       takes the player's bus volumes (UserSettings)
 *
 **************************************************************************/
 #pragma once
@@ -46,6 +48,7 @@ namespace Crucible {
 
     class AssetManager;
     class Renderer;
+    struct AudioSettings;
 
     /*
         Only the functions the Editor and Game call are exported (ENGINE_API on
@@ -67,7 +70,11 @@ namespace Crucible {
         // entity in the scene, the ears follow it - where Unity puts the
         // AudioListener by default. An AudioListener entity still wins. Once
         // the camera is an entity, give it the component and drop this.
-        explicit ECSAudioSystem(AssetManager& assets, const Renderer* renderer = nullptr);
+        //
+        // `volumes` is the player's Master / Music / SFX (Core's UserSettings),
+        // read every frame so an options-menu slider is heard at once. Like
+        // `assets`, it must outlive this system; Core owns it.
+        ECSAudioSystem(AssetManager& assets, const AudioSettings& volumes, const Renderer* renderer = nullptr);
         ~ECSAudioSystem() override;
 
         ECSAudioSystem(const ECSAudioSystem&)            = delete;

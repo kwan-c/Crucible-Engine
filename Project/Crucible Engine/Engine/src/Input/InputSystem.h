@@ -1,3 +1,31 @@
+/*************************************************************************
+* \file:         InputSystem.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          14 September 2026
+* \version       1.2
+* \brief
+*                Crucible::Input: turns GLFW events into one snapshot of
+*                the keyboard, mouse and gamepad per frame.
+*
+* \details
+*                Layers 1 and 2 of the input design: GLFW events become
+*                KeyCodes, then are frozen once per frame, so every system
+*                sees the same input and "pressed this frame" can be
+*                worked out. Queried statically: Input::IsDown, IsPressed,
+*                IsReleased, GetMouseDelta and so on.
+*
+*                Single instance by design: the static queries go through
+*                one pointer that AttachWindow sets.
+*
+* \history
+*    -v1.0       keyboard: down, pressed and released this frame
+*    -v1.1       mouse: buttons, position, movement, scroll and cursor
+*                lock; clean at /W4
+*    -v1.2       gamepad: buttons as KeyCodes, sticks with a dead zone,
+*                triggers, polled once per frame in BeginFrame
+*
+**************************************************************************/
 #pragma once
 
 // ------------------------------------------------------------------------------------------- //
@@ -21,6 +49,7 @@ struct GLFWwindow;   // forward declared on purpose - GLFW must not leak to our 
 // STL
 #include <bitset>
 #include <cstddef>
+#include <string>
 
 // Crucible engine
 #include "EngineExport.h"
@@ -166,6 +195,45 @@ namespace Crucible {
         /*!  \brief For UIInputSystem: what IsPointerOverUI() reports for the rest of this frame. */
         static void SetPointerOverUI(bool over);
 
+        // --- gamepad --------------------------------------------------------------------- //
+        //
+        // Buttons are KeyCodes (GamepadA, GamepadRT, ...), so IsDown / IsPressed / IsReleased
+        // already cover them:
+        //     if (Input::IsPressed(KeyCode::GamepadA)) Jump();
+        // What follows is what a bitset cannot hold. All of it reads the FIRST connected
+        // gamepad - one local player - and is zero when none is connected or the window is not
+        // focused. Any pad GLFW's built-in database knows (Xbox, PlayStation, Switch Pro and
+        // most others) reads through the same Xbox-style layout. Unlike the mouse, these are
+        // positions, not distances: a camera multiplies a stick by its speed AND by dt.
+
+        /*!  \brief Is a gamepad connected (and recognised) right now? Unity: Gamepad.current != null. */
+        static bool IsGamepadConnected();
+
+        /*!  \brief The connected pad's name, e.g. "Xbox Controller"; empty when none. For logs and menus. */
+        static std::string GetGamepadName();
+
+        /*!
+            \brief
+            The left stick, each axis -1..1 with right and UP positive (Unity's sign - GLFW
+            reports up as negative, so it is flipped here). A dead zone is already applied: a
+            stick resting slightly off-centre reads exactly zero, and full tilt reads exactly
+            1 in length. Unity: Gamepad.current.leftStick.ReadValue().
+        */
+        static Math::vec2 GetGamepadLeftStick();
+
+        /*!  \brief The right stick, the same way as the left. Usually the camera. */
+        static Math::vec2 GetGamepadRightStick();
+
+        /*!
+            \brief
+            How far the left trigger is pulled: 0 released, 1 fully. Past halfway it also
+            counts as KeyCode::GamepadLT being held. Unity: Gamepad.current.leftTrigger.
+        */
+        static float GetGamepadLeftTrigger();
+
+        /*!  \brief The right trigger, the same way as the left. */
+        static float GetGamepadRightTrigger();
+
     private:
 
         // --- GLFW plumbing --------------------------------------------------------------- //
@@ -213,6 +281,15 @@ namespace Crucible {
         */
         void OnScroll(const double& xOffset, const double& yOffset);
 
+        /*!
+            \brief
+            Reads the gamepad into this frame's snapshot: its buttons into m_current, its
+            sticks and triggers into the members below. Called by BeginFrame. A gamepad has
+            no events to wait for - GLFW asks the device directly - so polling it once per
+            frame, at the same moment as the copy, keeps it in step with the keys.
+        */
+        void PollGamepad();
+
         // --- state ----------------------------------------------------------------------- //
 
         static constexpr std::size_t KEY_COUNT = static_cast<std::size_t>(KeyCode::Count);
@@ -230,6 +307,15 @@ namespace Crucible {
         bool m_mouseLocked = false;     // cursor captured for mouse-look
         bool m_pointerOverUI = false;   // IsPointerOverUI(), written by UIInputSystem
         bool m_skipNextDelta = true;    // the next cursor event is a teleport, not a movement
+        bool m_hasFocus      = true;    // a gamepad is ignored while the window is in the background
+
+        // Gamepad state a bitset cannot hold, refilled by PollGamepad every frame.
+        int         m_gamepadId    = -1;               // GLFW joystick slot, -1 = none
+        std::string m_gamepadName;                     // for the connect / disconnect log lines
+        Math::vec2  m_leftStick{ 0.f, 0.f };           // -1..1, up positive, dead zone applied
+        Math::vec2  m_rightStick{ 0.f, 0.f };
+        float       m_leftTrigger  = 0.0f;             // 0..1
+        float       m_rightTrigger = 0.0f;
 
         GLFWwindow* m_window = nullptr;
     };  // INPUT CLASS

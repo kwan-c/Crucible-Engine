@@ -24,7 +24,7 @@ namespace Crucible {
                               vk::Format colourFormat, vk::Format depthFormat) {
 
 
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/Particle.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "Particle.spv");
         vk::PipelineShaderStageCreateInfo stages[] = {
             { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "particleVert" },
             { .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "particleFrag" }

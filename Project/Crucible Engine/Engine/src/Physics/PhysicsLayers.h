@@ -1,3 +1,23 @@
+/*************************************************************************
+* \file:         PhysicsLayers.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          22 September 2026
+* \version       1.0
+* \brief
+*                PhysicsLayer: the collision layers, Unity's Layer
+*                Collision Matrix.
+*
+* \details
+*                Kept in its own file because it is the designer's list.
+*                The rules are written once in PhysicsLayers.cpp, and
+*                PhysicsSystem.cpp builds Jolt's lookup tables from them
+*                at startup.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #pragma once
 
 // STL

@@ -21,7 +21,12 @@ namespace Crucible
 		std::string windowTitle  = "Crucible Engine";
 		uint32_t    windowWidth  = 1200;
 		uint32_t    windowHeight = 800;
+		// Window mode at startup. windowWidth x windowHeight stays the windowed size: the size
+		// the window returns to when it leaves fullscreen or is un-maximized. A player's own last
+		// choice (F11 / Alt+Enter, the maximize button) is remembered in UserSettings.json next to
+		// the .exe and wins over these - see EngineConfigLoader::SaveWindowState.
 		bool        fullScreen   = false;
+		bool        maximized    = false;
 		uint32_t    targetFPS = 60;
 	};
 
@@ -32,13 +37,8 @@ namespace Crucible
 		uint32_t maxPlayers = 4;
 	};
 
-	//audio config
-	struct AudioConfig
-	{
-		float masterVolume = 1.0f;
-		float musicVolume  = 1.0f;
-		float sfxVolume    = 1.0f;
-	};
+	// No audio section: volumes are the PLAYER's choice, so they live in UserSettings.json
+	// next to the .exe (Configuration/UserSettings.h), not in this shared team file.
 
 	//project config - settings about the game itself, shared by the Editor and the Game
 	struct ProjectConfig
@@ -60,6 +60,16 @@ namespace Crucible
 		}
 	};
 
+	// Editor-only settings, stored in the "editor" section of EngineConfig.json next to the
+	// editor's overrides ("editor": { "releaseCursorKey": "Shift+F1", ... }). The Game reads
+	// them too but never uses them.
+	struct EditorSettings
+	{
+		// Frees the mouse while the game has it captured in Play mode (a KeyChord, see
+		// Input/KeyChord.h). Not Escape: that key belongs to the game (its pause menu).
+		std::string releaseCursorKey = "Shift+F1";
+	};
+
 	// Which executable is starting the engine. Picks the per-app override section
 	// ("editor" / "game") in EngineConfig.json.
 	enum class AppKind
@@ -73,9 +83,13 @@ namespace Crucible
 	{
 		GrahpicsConfig graphics;
 		NetworkConfig  network;
-		AudioConfig    audio;
 		ProjectConfig  project;
+
+		// Which app this config was loaded for (set by LoadForApp, never read from the file).
+		// Core uses it to save the window state into the right section of UserSettings.json.
+		AppKind        app = AppKind::Editor;
 		ScriptingConfig scripting;
+		EditorSettings  editor;
 	};
 
 	// The values one app's section ("editor" / "game") in EngineConfig.json changes, for the
@@ -86,6 +100,8 @@ namespace Crucible
 		std::optional<std::string>   windowTitle;
 		std::optional<std::uint32_t> windowWidth;
 		std::optional<std::uint32_t> windowHeight;
+		std::optional<bool>          fullScreen;
+		std::optional<bool>          maximized;
 		std::optional<std::string>   startupScene;
 
 		// `shared` with these overrides on top - what that app will start with.
@@ -94,6 +110,8 @@ namespace Crucible
 			if (windowTitle)  shared.graphics.windowTitle  = *windowTitle;
 			if (windowWidth)  shared.graphics.windowWidth  = *windowWidth;
 			if (windowHeight) shared.graphics.windowHeight = *windowHeight;
+			if (fullScreen)   shared.graphics.fullScreen   = *fullScreen;
+			if (maximized)    shared.graphics.maximized    = *maximized;
 			if (startupScene) shared.project.startupScene  = *startupScene;
 			return shared;
 		}

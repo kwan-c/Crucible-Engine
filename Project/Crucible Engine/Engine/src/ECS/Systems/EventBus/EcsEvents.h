@@ -3,10 +3,11 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 September 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Declares the ECS lifecycle event types (EntityDestroyed,
-*                ComponentAdded<T>, ComponentRemoved<T>) and EcsEventBridge,
+*                ComponentAdded<T>, ComponentRemoved<T>,
+*                ComponentActiveChanged<T>) and EcsEventBridge,
 *                which turns World hooks into queued events on a bus.
 *
 * \details
@@ -32,6 +33,9 @@
 * \history
 *    -v1.0       initial opt-in hook-to-event bridge
 *    -v1.1       hooks take const T& (World passes EntityName only as const)
+*    -v1.2       ComponentActiveChanged<T> (OnActiveChanged /
+*                EnableComponentActiveChanged): same gameplay bus and
+*                delivery timing as the other lifecycle events
 *
 **************************************************************************/
 #pragma once
@@ -84,6 +88,18 @@ namespace Crucible
 		 *********************************************************************/
 		template <typename T>
 		struct ComponentRemoved { Entity entity; T lastValue; };
+
+		/*********************************************************************
+		 \brief  An entity's T started (active = true) or stopped running:
+				 it, or a component it requires, was switched on or off
+				 (World::SetComponentEnabled). One event per change; the old
+				 state is !active.
+		 \note   Re-check world.IsComponentActive<T>(e.entity) if the current
+				 state matters: it may have changed again before delivery
+				 (every change is delivered, in order).
+		 *********************************************************************/
+		template <typename T>
+		struct ComponentActiveChanged { Entity entity; bool active; };
 	}
 
 	/*************************************************************************
@@ -151,6 +167,17 @@ namespace Crucible
 			return m_bus.Subscribe<EcsEvents::ComponentRemoved<T>>(std::move(fn), priority);
 		}
 
+		/*********************************************************************
+		 \brief  Listens for T starting or stopping running (switched on/off,
+				 directly or through a component it requires).
+		 *********************************************************************/
+		template <ToggleableComponent T>
+		Subscription OnActiveChanged(std::function<void(const EcsEvents::ComponentActiveChanged<T>&)> fn, int priority = 0)
+		{
+			EnableComponentActiveChanged<T>();
+			return m_bus.Subscribe<EcsEvents::ComponentActiveChanged<T>>(std::move(fn), priority);
+		}
+
 		// -- Enabling (idempotent: each hook is installed at most once) -------------
 
 		/*********************************************************************
@@ -203,11 +230,29 @@ namespace Crucible
 			m_removedEnabled.set(id);
 		}
 
+		/*********************************************************************
+		 \brief  Installs the OnComponentActiveChanged<T> hook (once).
+		 *********************************************************************/
+		template <ToggleableComponent T>
+		void EnableComponentActiveChanged()
+		{
+			const ComponentId id = ComponentTypeId<T>();
+			if (m_activeChangedEnabled.test(id)) return;
+			EventBus* bus = &m_bus;
+			// The hook fires once per change; it only queues.
+			m_world.OnComponentActiveChanged<T>([bus](World&, Entity e, T&, bool active)
+				{
+					bus->Enqueue(EcsEvents::ComponentActiveChanged<T>{ e, active });
+				});
+			m_activeChangedEnabled.set(id);
+		}
+
 	private:
 		World& m_world;
 		EventBus& m_bus;
 		std::bitset<kMaxComponents> m_addedEnabled;     // per component id: hook installed?
 		std::bitset<kMaxComponents> m_removedEnabled;
+		std::bitset<kMaxComponents> m_activeChangedEnabled;
 		bool m_destroyedEnabled = false;
 	};
 }

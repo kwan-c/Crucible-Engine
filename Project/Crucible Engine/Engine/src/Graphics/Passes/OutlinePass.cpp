@@ -38,7 +38,7 @@ namespace Crucible {
 
         // ---- Mask: the selected object's instances -> R8, no depth (shows through walls) ----
         {
-            vk::raii::ShaderModule module = LoadShaderModule(context, "../../../Assets/Shaders/OutlineMask.spv");
+            vk::raii::ShaderModule module = LoadShaderModule(context, "OutlineMask.spv");
             vk::PipelineShaderStageCreateInfo stages[] = {
                 { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "maskVert" },
                 { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "maskFrag" }
@@ -107,7 +107,7 @@ namespace Crucible {
             vk::DescriptorSetLayoutCreateInfo setInfo{ .bindingCount = 1, .pBindings = &maskBinding };
             m_outlineDescriptorSetLayout = vk::raii::DescriptorSetLayout(context.GetDevice(), setInfo);
 
-            vk::raii::ShaderModule module = LoadShaderModule(context, "../../../Assets/Shaders/OutlineComposite.spv");
+            vk::raii::ShaderModule module = LoadShaderModule(context, "OutlineComposite.spv");
             vk::PipelineShaderStageCreateInfo stages[] = {
                 { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "compositeVert" },
                 { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "compositeFrag" }

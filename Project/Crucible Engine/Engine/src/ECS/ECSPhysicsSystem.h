@@ -1,21 +1,24 @@
 /*************************************************************************
 * \file:         ECSPhysicsSystem.h
 * \author:       Abhishek Akilandeswari Patchamuthu (v1.0 skeleton),
-*                Hugo (v2.0 physics binding)
+*                Hugo Low Ren Hao (v2.0 physics binding)
+* \par:          Email: a.patchamuthu@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.1
+* \version       2.3
 * \brief
 *                The ECS side of physics: keeps Crucible::Physics in step
-*                with the Transform, Collider and RigidBody components.
+*                with the Transform, Collider, RigidBody, ConstantForce and
+*                PhysicsJoint components.
 *
 * \details
 *                Each Update():
 *                  1. works out how many fixed 1/60 s steps are due
 *                  2. syncs components into the physics world - creates,
-*                     rebuilds and removes bodies, and passes on anything
-*                     gameplay changed
+*                     rebuilds and removes bodies, then joints, and passes
+*                     on anything gameplay changed
 *                  3. runs those steps and writes the results back into
-*                     the Transforms
+*                     the Transforms (and PhysicsJoint::m_isBroken)
 *
 *                Gameplay never talks to this class. It edits components,
 *                and reaches the world itself through GetPhysics() for
@@ -26,6 +29,10 @@
 *    -v2.0       the real binding
 *    -v2.1       play-mode sessions: BeginSession/EndSession (Jolt per
 *                session, the system object kept), SimulationOnly
+*    -v2.2       forces: RigidBody's AddForce/AddTorque/ApplyImpulse and
+*                the ConstantForce component
+*    -v2.3       PhysicsJoint; takes the SceneManager to resolve a joint's
+*                saved connected body
 *
 **************************************************************************/
 #pragma once
@@ -41,11 +48,16 @@
 
 namespace Crucible {
 
+    class SceneManager;
+
     class ECSPhysicsSystem final : public IECSSystem {
 
     public:
 
-        explicit ECSPhysicsSystem(const PhysicsSettings& settings = PhysicsSettings{});
+        // scenes: how a PhysicsJoint's saved connected body (a scene id) is
+        // turned back into an entity. Null is allowed - joints then only
+        // connect through PhysicsJoint::m_connectedEntity, or to the world.
+        explicit ECSPhysicsSystem(SceneManager* scenes = nullptr, const PhysicsSettings& settings = PhysicsSettings{});
         ~ECSPhysicsSystem() override;
 
         ECSPhysicsSystem(const ECSPhysicsSystem&)            = delete;
@@ -57,6 +69,10 @@ namespace Crucible {
         void Update(World& world, CommandBuffer& commands) override;
         void Shutdown() noexcept override;
         void Describe(SystemDesc& desc) const override;   // SimulationOnly: steps only while Playing
+
+        // Registered .ReactiveTo<CharacterController>() (Core): a CharacterController that is
+        // switched back on starts without the fall it had when it was switched off.
+        void OnComponentActivated(World& world, Entity entity, ComponentId component) override;
 
         // Physics belongs after gameplay has had its say and before rendering
         // reads the results - which is exactly what PostUpdate is for.

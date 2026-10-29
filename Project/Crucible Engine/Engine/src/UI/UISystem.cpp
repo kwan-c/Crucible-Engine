@@ -11,17 +11,30 @@
 #include "AssetPipe/Assetmanager.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/World.h"
+#include "ECS/HierarchyTransformSystem.h"   // WorldCanvasSystem runs after it (canvas world matrices)
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
 #include "Scene/SceneManager.h"
+#include "Text/TextBuilder.h"   // the glyph quads, effects and layout cache shared with world text
+#include "Text/TextLayout.h"
 
 #include <algorithm>
 #include <cmath>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace Crucible {
 
 	namespace {
+
+		// A UI component switched off (World::SetComponentEnabled) - or one whose required
+		// component is - counts as missing: not laid out, drawn or clickable. Its data is kept.
+		template <typename T>
+		const T* ReadActive(World& world, Entity entity) {
+			return world.IsComponentActive<T>(entity) ? world.Read<T>(entity) : nullptr;
+		}
 
 		// 2D transforms as 3x3 matrices (column vectors, translation in the last column).
 		glm::mat3 Translate(Math::vec2 t) { glm::mat3 m(1.0f); m[2] = glm::vec3(t, 1.0f); return m; }
@@ -41,7 +54,7 @@ namespace Crucible {
 		// own space, and parentToScreen maps that space to the screen.
 		void LayoutNode(World& world, Entity entity, const Math::vec4& parentRect, const glm::mat3& parentToScreen, float scale,
 		                std::vector<UI::LayoutItem>& out, bool writeComputed) {
-			const UIRect* rect = world.Read<UIRect>(entity);
+			const UIRect* rect = ReadActive<UIRect>(world, entity);   // switched off: hidden, with its subtree
 			if (rect == nullptr) { return; }
 
 			const Math::vec2 parentMin(parentRect.x, parentRect.y);
@@ -170,6 +183,14 @@ namespace Crucible {
 		}
 
 		// The colour a button's current state multiplies its image by.
+		// ---- Text ------------------------------------------------------------------------------
+
+		// Laid-out text, kept between frames (Text/TextBuilder.h). Keyed by entity + bitmap size
+		// group: the game and the UI Editor tab can pick different baked sizes for the same label.
+		// Layout is in reference pixels, so both views share an entry otherwise.
+		TextLayoutCache g_textCache{ "UI" };
+		TextQuads       g_textQuads;   // reused for every label, so building them doesn't allocate each frame
+
 		Math::vec4 ButtonTint(const UIButton& button) {
 			if (!button.interactable || button.state == UIButton::State::Disabled) { return button.disabled; }
 			switch (button.state) {
@@ -217,30 +238,133 @@ namespace Crucible {
 		}
 	}
 
+	void UI::LayoutWorldCanvas(World& world, Entity canvas, const UICanvas& settings, std::vector<LayoutItem>& out) {
+		out.clear();
+		const Math::vec2 page = glm::max(settings.referenceResolution, Math::vec2(0.0f));
+		if (page.x <= 0.0f || page.y <= 0.0f) { return; }
+
+		const Math::vec4 pageRect(0.0f, 0.0f, page.x, page.y);
+		world.ForEachChild(canvas, [&](Entity child) { LayoutNode(world, child, pageRect, glm::mat3(1.0f), 1.0f, out, false); });
+	}
+
+	float UI::BuildWorldCanvasPanel(const UICanvas& settings, std::span<const UIVertex> vertices, std::span<const std::uint32_t> indices,
+	                                std::span<const UIDrawCommand> commands,
+	                                std::vector<WorldUIVertex>& outVertices, std::vector<WorldUIRun>& outRuns) {
+		outVertices.clear();
+		outRuns.clear();
+
+		// Page pixels (origin top-left, +y down) -> the canvas's plane (metres from the entity, +y up).
+		const Math::vec2 page   = glm::max(settings.referenceResolution, Math::vec2(0.0f));
+		const float      ppu    = std::max(settings.pixelsPerUnit, 1.0e-3f);
+		const Math::vec2 origin = settings.pivot * page;
+		auto toPlane = [&](Math::vec2 p) { return Math::vec2((p.x - origin.x) / ppu, (origin.y - p.y) / ppu); };
+		auto emit = [&](Math::vec2 position, Math::vec2 uv, std::uint32_t colour) {
+			outVertices.push_back(WorldUIVertex{ toPlane(position), uv, colour });
+		};
+
+		const Math::vec4 noClip = UIDrawCommand{}.clipRect;
+		const int64_t vertexCount = static_cast<int64_t>(vertices.size());
+
+		for (const UIDrawCommand& command : commands) {
+			const uint32_t count = command.indexCount - command.indexCount % 3;
+			if (count == 0 || static_cast<uint64_t>(command.firstIndex) + count > indices.size()) { continue; }
+			// Every index must land inside the list (as UIPass::Submit checks).
+			bool ok = true;
+			for (uint32_t i = 0; ok && i < count; ++i) {
+				const int64_t v = static_cast<int64_t>(indices[command.firstIndex + i]) + command.vertexOffset;
+				ok = v >= 0 && v < vertexCount;
+			}
+			if (!ok) { continue; }
+			auto at = [&](uint32_t i) -> const UIVertex& { return vertices[static_cast<size_t>(static_cast<int64_t>(indices[command.firstIndex + i]) + command.vertexOffset)]; };
+
+			const uint32_t first = static_cast<uint32_t>(outVertices.size());
+			const bool clipped = command.clipRect != noClip && count % 6 == 0;
+			if (!clipped) {
+				// As drawn. The flip to +y up turns every triangle over, so each is emitted b <-> c
+				// swapped: counter-clockwise seen from the front again.
+				for (uint32_t i = 0; i < count; i += 3) {
+					const UIVertex& a = at(i); const UIVertex& b = at(i + 1); const UIVertex& c = at(i + 2);
+					emit(a.position, a.uv, a.colour);
+					emit(c.position, c.uv, c.colour);
+					emit(b.position, b.uv, b.colour);
+				}
+			} else {
+				// Clip rects are only set on upright quads (AppendDrawList: top-left, top-right,
+				// bottom-right, bottom-left; indices 0 1 2 0 2 3), so each quad is an axis-aligned
+				// box: cut it to the clip rect, and its atlas rect by the same share.
+				const Math::vec4& clip = command.clipRect;
+				for (uint32_t i = 0; i < count; i += 6) {
+					const UIVertex& tl = at(i);
+					const UIVertex& br = at(i + 2);
+					const Math::vec2 p0 = tl.position, p1 = br.position;
+					if (!(p1.x > p0.x) || !(p1.y > p0.y)) { continue; }
+					const Math::vec2 c0(std::max(p0.x, clip.x), std::max(p0.y, clip.y));
+					const Math::vec2 c1(std::min(p1.x, clip.z), std::min(p1.y, clip.w));
+					if (c1.x <= c0.x || c1.y <= c0.y) { continue; }
+					const Math::vec2 duv = (br.uv - tl.uv) / (p1 - p0);
+					const Math::vec2 uv0 = tl.uv + (c0 - p0) * duv;
+					const Math::vec2 uv1 = tl.uv + (c1 - p0) * duv;
+					// Top-left, bottom-right, top-right; top-left, bottom-left, bottom-right (the flipped order).
+					emit(c0, uv0, tl.colour);
+					emit(c1, uv1, tl.colour);
+					emit({ c1.x, c0.y }, { uv1.x, uv0.y }, tl.colour);
+					emit(c0, uv0, tl.colour);
+					emit({ c0.x, c1.y }, { uv0.x, uv1.y }, tl.colour);
+					emit(c1, uv1, tl.colour);
+				}
+			}
+
+			const uint32_t added = static_cast<uint32_t>(outVertices.size()) - first;
+			if (added == 0) { continue; }
+			if (!outRuns.empty()) {
+				WorldUIRun& last = outRuns.back();
+				if (last.texture == command.texture && last.mode == command.mode && last.pixelRange == command.pixelRange &&
+				    last.effects == command.effects && last.firstVertex + last.vertexCount == first) {
+					last.vertexCount += added;
+					continue;
+				}
+			}
+			outRuns.push_back(WorldUIRun{ .texture = command.texture, .mode = command.mode, .pixelRange = command.pixelRange,
+			                              .effects = command.effects, .firstVertex = first, .vertexCount = added });
+		}
+
+		float reach = 0.0f;
+		for (const WorldUIVertex& v : outVertices) { reach = std::max(reach, glm::length(v.local)); }
+		return reach;
+	}
+
 	void UI::AppendDrawList(World& world, const std::vector<LayoutItem>& items, ResourceManager* resources,
 	                        std::vector<UIVertex>& vertices, std::vector<std::uint32_t>& indices,
 	                        std::vector<UIDrawCommand>& commands) {
 
+		g_textCache.Tick();
+
 		// One quad: `local` is a rect in the element's own (upright) space, so it goes through the
 		// element's transform and a turned element draws turned. Merged into the previous draw when
-		// the texture matches and it follows straight on.
-		auto quad = [&](const LayoutItem& item, const Math::vec4& local, const Math::vec4& colour, TextureHandle texture) {
+		// the texture, mode, clip and range match and it follows straight on - so a whole label is
+		// one draw. `uv` is the texture rect (0,0 = top-left); `clip` is in screen (canvas) pixels.
+		const Math::vec4 noClip = UIDrawCommand{}.clipRect;
+		auto quad = [&](const LayoutItem& item, const Math::vec4& local, const Math::vec4& colour, TextureHandle texture,
+		                const Math::vec4& uv = Math::vec4(0.0f, 0.0f, 1.0f, 1.0f), UIDrawMode mode = UIDrawMode::Image,
+		                const Math::vec4* clip = nullptr, float pixelRange = 0.0f, const UITextEffects& effects = UITextEffects{}) {
 			if (colour.a <= 0.0f || local.z <= local.x || local.w <= local.y) { return; }   // invisible / empty
 
 			const std::uint32_t packed = PackUIColour(colour);
 			const std::uint32_t base   = static_cast<std::uint32_t>(vertices.size());
-			vertices.push_back({ item.ToScreen({ local.x, local.y }), { 0.0f, 0.0f }, packed });
-			vertices.push_back({ item.ToScreen({ local.z, local.y }), { 1.0f, 0.0f }, packed });
-			vertices.push_back({ item.ToScreen({ local.z, local.w }), { 1.0f, 1.0f }, packed });
-			vertices.push_back({ item.ToScreen({ local.x, local.w }), { 0.0f, 1.0f }, packed });
+			vertices.push_back({ item.ToScreen({ local.x, local.y }), { uv.x, uv.y }, packed });
+			vertices.push_back({ item.ToScreen({ local.z, local.y }), { uv.z, uv.y }, packed });
+			vertices.push_back({ item.ToScreen({ local.z, local.w }), { uv.z, uv.w }, packed });
+			vertices.push_back({ item.ToScreen({ local.x, local.w }), { uv.x, uv.w }, packed });
 
 			const std::uint32_t first = static_cast<std::uint32_t>(indices.size());
 			for (std::uint32_t i : { 0u, 1u, 2u, 0u, 2u, 3u }) { indices.push_back(base + i); }
 
-			const UIDrawCommand fresh{ .texture = texture, .mode = UIDrawMode::Image, .firstIndex = first, .indexCount = 6 };
+			const UIDrawCommand fresh{ .texture = texture, .mode = mode, .clipRect = clip ? *clip : noClip,
+			                           .firstIndex = first, .indexCount = 6, .pixelRange = pixelRange, .effects = effects };
 			if (!commands.empty()) {
 				UIDrawCommand& last = commands.back();
 				if (last.texture == texture && last.mode == fresh.mode && last.clipRect == fresh.clipRect &&
+				    last.pixelRange == fresh.pixelRange && last.effects == fresh.effects &&
 				    last.vertexOffset == 0 && last.firstIndex + last.indexCount == first) {
 					last.indexCount += 6;
 					return;
@@ -251,9 +375,9 @@ namespace Crucible {
 
 		for (const LayoutItem& item : items) {
 			// The image (also a button's picture, or a background behind a slider).
-			if (const UIImage* image = world.Read<UIImage>(item.entity)) {
+			if (const UIImage* image = ReadActive<UIImage>(world, item.entity)) {
 				Math::vec4 colour = image->colour;
-				if (const UIButton* button = world.Read<UIButton>(item.entity)) { colour *= ButtonTint(*button); }
+				if (const UIButton* button = ReadActive<UIButton>(world, item.entity)) { colour *= ButtonTint(*button); }
 
 				// textureAsset is what's saved; the handle is resolved here every frame, like MeshRenderer.
 				TextureHandle texture = image->texture;
@@ -267,14 +391,92 @@ namespace Crucible {
 			}
 
 			// A slider draws its own parts on top: track, the filled part, then the handle.
-			if (const UISlider* slider = world.Read<UISlider>(item.entity)) {
+			if (const UISlider* slider = ReadActive<UISlider>(world, item.entity)) {
 				const SliderParts parts = LayoutSlider(item.rect, *slider, item.scale);
 				const Math::vec4 fade = SliderFade(*slider);   // whole slider, when disabled
 				quad(item, parts.track,  slider->trackColour * fade, TextureHandle{});
 				quad(item, parts.fill,   slider->fillColour * fade, TextureHandle{});
 				quad(item, parts.handle, slider->handleColour * fade * SliderHandleTint(*slider), TextureHandle{});
 			}
+
+			// Text last, so a button's label sits on its picture.
+			const UIText* text = ReadActive<UIText>(world, item.entity);
+			if (text == nullptr || resources == nullptr || text->text.empty() || text->colour.a <= 0.0f || !(item.scale > 0.0f)) { continue; }
+
+			const FontAsset* font = text->fontAsset != 0 ? resources->GetFont(text->fontAsset) : nullptr;
+			if (font == nullptr) { font = resources->GetDefaultFont(); }   // no font picked, or it can't be loaded
+			if (font == nullptr || !font->texture.IsValid()) { continue; }
+
+			// Laid out in reference pixels (the rect divided by the canvas scale), then scaled back up,
+			// so the layout is the same at any screen size.
+			const float scale = item.scale;
+			TextLayoutSettings settings = TextLayoutSettingsOf(*text, { (item.rect.z - item.rect.x) / scale, (item.rect.w - item.rect.y) / scale });
+			const bool bitmap         = font->data.m_outputType == FontOutputType::Bitmap;
+			settings.pixelScale       = bitmap ? scale : 0.0f;   // bitmap: the baked size nearest the on-screen size, for whatever size is used
+			// Only part of the cache key (so the game and the UI Editor tab, at different scales, keep
+			// separate entries instead of taking turns); LayoutText picks the group from pixelScale.
+			settings.sizeGroup        = bitmap ? font->data.ClosestGroup((text->bestFit ? text->maxFontSize : text->fontSize) * scale) : 0;
+
+			const TextLayoutResult& layout = g_textCache.Get(TextLayoutCache::KeyFor(item.entity.index, item.entity.generation, settings.sizeGroup),
+			                                                 item.entity.index, *font, text->text, settings);
+			if (layout.quads.empty() && layout.underlines.empty()) { continue; }
+
+			// Glyphs, underlines and the shadow, with the effects worked out - in reference pixels,
+			// box-local. Placing them in the element is what's left here.
+			BuildTextQuads(*font, layout, TextStyleOf(*text), scale, g_textQuads);
+
+			// Upright (not turned): the clip rect can cut glyphs at the rect's edges exactly, and bitmap
+			// glyphs can be put on whole screen pixels so they stay sharp.
+			const glm::mat3& m   = item.toScreen;
+			const bool upright   = std::fabs(m[0][1]) < 1.0e-5f && std::fabs(m[1][0]) < 1.0e-5f;
+			const bool cut       = text->overflow != TextOverflow::Overflow;
+			const Math::vec4 box = upright && cut ? item.Bounds() : noClip;
+			const Math::vec2 origin(item.rect.x, item.rect.y);
+			const Math::vec4 origin4(origin, origin);
+
+			// Turned: no clip rect can follow the rect, so a glyph that pokes out is left out whole.
+			auto pokesOut = [&](const Math::vec4& local) {
+				return cut && !upright && (local.x < item.rect.x - 0.5f || local.z > item.rect.z + 0.5f ||
+				                           local.y < item.rect.y - 0.5f || local.w > item.rect.w + 0.5f);
+			};
+
+			for (const TextQuad& q : g_textQuads.quads) {
+				Math::vec4 local = origin4 + q.rect * scale;
+
+				// Underlines: solid bars (no texture), at least one screen pixel thick, on whole pixels when upright.
+				if (q.kind == TextQuadKind::Underline) {
+					const float thickness = std::max(local.w - local.y, 1.0f);
+					if (upright && m[1][1] != 0.0f) {
+						const float top = item.ToScreen({ local.x, local.y }).y;
+						local.y += (std::round(top) - top) / m[1][1];
+					}
+					local.w = local.y + thickness;
+					if (pokesOut(local)) { continue; }
+					quad(item, local, q.colour, TextureHandle{}, Math::vec4(0.0f, 0.0f, 1.0f, 1.0f), UIDrawMode::Image, &box);
+					continue;
+				}
+
+				if (pokesOut(origin4 + q.glyphRect * scale)) { continue; }
+				if (g_textQuads.bitmap && upright && m[0][0] != 0.0f && m[1][1] != 0.0f) {
+					const Math::vec2 pen  = item.ToScreen(origin + q.pen * scale);
+					const Math::vec2 snap = (glm::round(pen) - pen) / Math::vec2(m[0][0], m[1][1]);
+					local += Math::vec4(snap, snap);
+				}
+				if (g_textQuads.field) {
+					quad(item, local, q.colour, font->texture, q.uv, font->drawMode, &box, font->data.m_atlas.pixelRange, q.effects);
+				} else {
+					quad(item, local, q.colour, font->texture, q.uv, font->drawMode, &box);
+				}
+			}
 		}
+	}
+
+	float UI::TextEffectFieldPerPixel(const FontAsset& font, float fontSize) {
+		return Crucible::TextEffectFieldPerUnit(font, fontSize);   // UIText's layout units are reference pixels
+	}
+
+	float UI::MaxTextEffectWidth(const FontAsset& font, float fontSize) {
+		return Crucible::MaxTextEffectWidth(font, fontSize);
 	}
 
 	// ------------------------------------------------------------------------------------------- //
@@ -282,7 +484,7 @@ namespace Crucible {
 	// ------------------------------------------------------------------------------------------- //
 
 	void UIRenderSystem::Describe(SystemDesc& desc) const {
-		desc.Reads<UICanvas, UIButton, UISlider, HierarchyNode>()   // canvases, button / slider states, the tree
+		desc.Reads<UICanvas, UIButton, UISlider, UIText, HierarchyNode>()   // canvases, button / slider states, text, the tree
 			.Writes<UIRect, UIImage>()                      // UIRect::computed, UIImage::texture
 			.Affinity(SystemAffinity::MainThread);          // touches the Renderer
 	}
@@ -300,6 +502,70 @@ namespace Crucible {
 
 		if (!m_commands.empty()) {
 			m_renderer.SubmitUI(UIDrawList{ .vertices = m_vertices, .indices = m_indices, .commands = m_commands });
+		}
+	}
+
+	// ------------------------------------------------------------------------------------------- //
+	//  WorldCanvasSystem
+	// ------------------------------------------------------------------------------------------- //
+
+	void WorldCanvasSystem::Describe(SystemDesc& desc) const {
+		desc.Reads<UICanvas, UIButton, UISlider, UIText, HierarchyNode, WorldTransform>()   // canvases, element states, text, the tree, placement
+			.Writes<UIImage>()                              // UIImage::texture (AppendDrawList resolves it)
+			.RunAfter<HierarchyTransformSystem>()           // the canvases' world matrices must be this frame's
+			.Affinity(SystemAffinity::MainThread);          // touches the Renderer
+	}
+
+	void WorldCanvasSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
+
+		// Collected first: laying out and drawing reads (and AppendDrawList writes) components, which
+		// isn't allowed while a query is iterating. A canvas under another canvas belongs to that
+		// canvas's tree, as on screen.
+		m_canvases.clear();
+		world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity entity, const WorldTransform& transform, const UICanvas& canvas) {
+			if (canvas.renderMode != UICanvas::RenderMode::WorldSpace || !canvas.enabled || !transform.valid) { return; }
+			m_canvases.push_back(entity);
+		});
+		std::erase_if(m_canvases, [&](Entity canvas) {
+			for (Entity p = world.GetParent(canvas); p.IsValid(); p = world.GetParent(p)) {
+				if (world.HasComponent<UICanvas>(p)) { return true; }
+			}
+			return false;
+		});
+
+		for (const Entity entity : m_canvases) {
+			const UICanvas canvas = *world.Read<UICanvas>(entity);   // a copy: AppendDrawList may write components
+			UI::LayoutWorldCanvas(world, entity, canvas, m_layout);
+			if (m_layout.empty()) { continue; }
+
+			m_vertices.clear();
+			m_indices.clear();
+			m_commands.clear();
+			UI::AppendDrawList(world, m_layout, m_resources, m_vertices, m_indices, m_commands);
+			const float reach = UI::BuildWorldCanvasPanel(canvas, m_vertices, m_indices, m_commands, m_panelVertices, m_panelRuns);
+			if (m_panelRuns.empty()) { continue; }
+
+			const glm::mat4& m = world.Read<WorldTransform>(entity)->matrix;
+			const glm::vec3 right(m[0]), up(m[1]);
+			const float scale = std::max(glm::length(right), glm::length(up));
+			if (!(scale > 0.0f)) { continue; }   // scaled to nothing
+
+			WorldUIDesc desc;
+			desc.anchor      = glm::vec3(m[3]);
+			desc.right       = right;
+			desc.up          = up;
+			desc.radius      = reach * scale;
+			desc.facing      = canvas.billboard == WorldBillboard::FaceCamera ? WorldUIFacing::FaceCamera
+			                 : canvas.billboard == WorldBillboard::Upright    ? WorldUIFacing::Upright
+			                 :                                                  WorldUIFacing::Transform;
+			desc.alwaysOnTop = canvas.alwaysOnTop;
+			desc.doubleSided = canvas.doubleSided;
+			desc.intensity   = std::max(canvas.intensity, 0.0f);
+			if (canvas.fade) {
+				desc.fadeStart = std::max(canvas.fadeStart, 0.0f);
+				desc.fadeEnd   = std::max(canvas.fadeEnd, desc.fadeStart + 0.001f);
+			}
+			m_renderer.SubmitWorldUI(desc, m_panelVertices, m_panelRuns);
 		}
 	}
 
@@ -352,8 +618,10 @@ namespace Crucible {
 		bool showsCursor = false;
 		m_menus.clear();
 		world.CreateQuery<const UICanvas>().ForEach([&](Entity entity, const UICanvas& canvas) {
-			const bool shown = canvas.toggleWithEscape ? open : canvas.enabled;
-			if (canvas.toggleWithEscape && canvas.enabled != open) { m_menus.push_back(entity); }
+			// Menus are screen-space only: a world-space canvas ignores toggleWithEscape (greyed out in the Inspector).
+			const bool menu  = canvas.toggleWithEscape && canvas.renderMode == UICanvas::RenderMode::ScreenSpace;
+			const bool shown = menu ? open : canvas.enabled;
+			if (menu && canvas.enabled != open) { m_menus.push_back(entity); }
 			if (shown && canvas.showsCursor && canvas.renderMode == UICanvas::RenderMode::ScreenSpace) { showsCursor = true; }
 		});
 		for (Entity entity : m_menus) {
@@ -380,6 +648,14 @@ namespace Crucible {
 			.Affinity(SystemAffinity::MainThread);        // reads the Renderer and Input
 	}
 
+	// Switched off (or a component it requires was) mid-gesture: the gesture ends here, so
+	// switching it back on before release doesn't resume the drag or click. Delivered before
+	// Update, so the pointer stops counting as over the UI this frame.
+	void UIInputSystem::OnComponentDeactivated([[maybe_unused]] World& world, Entity entity, ComponentId component) {
+		if (component == ComponentTypeId<UIButton>() && entity == m_pressed)    { m_pressed = kNullEntity; }
+		if (component == ComponentTypeId<UISlider>() && entity == m_dragSlider) { m_dragSlider = kNullEntity; }
+	}
+
 	void UIInputSystem::Update(World& world, SystemContext& ctx) {
 
 		// Where the mouse is on the game screen. Nowhere while the cursor is locked (mouse-look:
@@ -402,13 +678,13 @@ namespace Crucible {
 		// disabled button still blocks (target stays set for IsPointerOverUI), but presses nothing.
 		Entity hoveredButton = kNullEntity;
 		if (target.IsValid()) {
-			if (const UIButton* button = world.Read<UIButton>(target); button && button->interactable) { hoveredButton = target; }
+			if (const UIButton* button = ReadActive<UIButton>(world, target); button && button->interactable) { hoveredButton = target; }
 		}
 
 		// The slider under the mouse, if it can be used.
 		Entity hoveredSlider = kNullEntity;
 		if (target.IsValid()) {
-			if (const UISlider* slider = world.Read<UISlider>(target); slider && slider->interactable) { hoveredSlider = target; }
+			if (const UISlider* slider = ReadActive<UISlider>(world, target); slider && slider->interactable) { hoveredSlider = target; }
 		}
 
 		// Press and click. A press that started on nothing (or on a blocker) clicks nothing.
@@ -419,7 +695,7 @@ namespace Crucible {
 		// Slider drag: the value follows the mouse - from the press (a jump to where it landed) until
 		// release, even outside the slider. Off the game screen it just holds its value.
 		if (m_dragSlider.IsValid() && onScreen) {
-			const UISlider* slider = world.Read<UISlider>(m_dragSlider);
+			const UISlider* slider = ReadActive<UISlider>(world, m_dragSlider);   // switched off mid-drag: stops following
 			const UI::LayoutItem* item = nullptr;
 			for (const UI::LayoutItem& candidate : m_layout) { if (candidate.entity == m_dragSlider) { item = &candidate; break; } }
 			if (slider && item) {
@@ -435,6 +711,19 @@ namespace Crucible {
 		if (Input::IsReleased(KeyCode::MouseLeft)) {
 			if (m_pressed.IsValid() && m_pressed == hoveredButton) {
 				ctx.events.EmitEngine(UIEvents::ButtonClicked{ m_pressed });
+				// Quit and Custom mean something only the app knows (close the game window, or stop
+				// Play in the editor; run a named action), so they are reported, not carried out here.
+				if (const UIButton* button = world.Read<UIButton>(m_pressed)) {
+					if (button->onClick == UIButton::ClickAction::Quit) {
+						ctx.events.EmitEngine(UIEvents::QuitRequested{ m_pressed });
+					} else if (button->onClick == UIButton::ClickAction::Custom) {
+						if (button->actionId.empty()) {
+							CRU_USER_WARN("UI button (entity {}): onClick is Custom but actionId is empty", m_pressed.index);
+						} else {
+							ctx.events.EmitEngine(UIEvents::CustomAction{ m_pressed, button->actionId });
+						}
+					}
+				}
 				RunClickAction(world, m_pressed);
 			}
 			m_pressed = kNullEntity;
@@ -476,6 +765,8 @@ namespace Crucible {
 
 		switch (button->onClick) {
 			case UIButton::ClickAction::None:
+			case UIButton::ClickAction::Quit:     // reported as UIEvents::QuitRequested (see Update)
+			case UIButton::ClickAction::Custom:   // reported as UIEvents::CustomAction
 				break;
 
 			case UIButton::ClickAction::CloseMenu:

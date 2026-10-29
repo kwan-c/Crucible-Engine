@@ -18,6 +18,7 @@
 #include "Scene/SceneManager.h"
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
+#include "UI/UISystem.h"   // UI::MaxTextEffectWidth, for the text effects
 #include "Resources/ModelResource.h"
 #include "Resources/RenderedModel.h"
 #include "Animation/ModelSockets.h"
@@ -26,6 +27,7 @@
 #include "Scripting/ScriptAuthoring.h"
 #include "Core.h"
 #include "Undo/EntityCommands.h"
+#include "Prefabs/PrefabAuthoring.h"
 #include "../EditorWidgets.h"
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
@@ -34,6 +36,7 @@
 #include <utility>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>      // std::memcpy, EntityRefField
 #include <cmath>
 #include <string>
 #include <tuple>
@@ -106,6 +109,28 @@ namespace {
 	char const* AddBlockedReason<Crucible::CharacterController>(Crucible::World& world, Crucible::Entity entity) {
 		return world.HasComponent<Crucible::Collider>(entity)
 			? "This entity has a Collider. Remove it first:\nan entity uses a Collider or a CharacterController, never both."
+			: nullptr;
+	}
+
+	// Text: UIText for a UI element (it has a UIRect), WorldText for anything in the 3D world.
+	template <>
+	char const* AddBlockedReason<Crucible::WorldText>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::UIRect>(entity)
+			? "This entity is a UI element (it has a UIRect).\nUse UIText for text on a canvas."
+			: nullptr;
+	}
+
+	template <>
+	char const* AddBlockedReason<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::WorldText>(entity)
+			? "This entity has a WorldText, so it lives in the 3D world.\nUI elements go under a UICanvas."
+			: nullptr;
+	}
+
+	template <>
+	char const* AddBlockedReason<Crucible::UIText>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::WorldText>(entity)
+			? "This entity has a WorldText (text in the 3D world).\nAn entity uses one or the other."
 			: nullptr;
 	}
 
@@ -290,6 +315,57 @@ namespace {
 		}
 	}
 
+	// Header label with room on its left for the on/off checkbox (Unity style). "###" keeps the
+	// header's ID the component name, whatever text the header shows.
+	std::string HeaderLabelWithToggle(std::string const& header, std::string_view id) {
+		float const room  = ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x;
+		float const space = std::max(ImGui::CalcTextSize(" ").x, 1.0f);
+		return std::string(static_cast<std::size_t>(room / space) + 1, ' ') + header + "###" + std::string(id);
+	}
+
+	// The on/off checkbox for components the ECS can switch off (World::SetComponentEnabled), drawn
+	// over the left end of the header just submitted (headerMin = its top-left). Template for the
+	// same reason as MakeComponentRemover: SetComponentEnabled<Transform> must not even be checked.
+	// Returns true when clicked; nowEnabled is the component's own on/off choice afterwards.
+	template <typename T>
+	bool DrawEnabledToggle(Crucible::World& world, Crucible::Entity entity, ImVec2 headerMin, bool& nowEnabled) {
+		if constexpr (Crucible::ToggleableComponent<T>) {
+			ImVec2 const resume = ImGui::GetCursorScreenPos();
+			ImGui::SetCursorScreenPos(ImVec2(headerMin.x + ImGui::GetTreeNodeToLabelSpacing(), headerMin.y));
+			bool enabled = world.IsComponentEnabled<T>(entity);
+			bool const clicked = ImGui::Checkbox("##Enabled", &enabled);
+			if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+				// Ticked but not running: say which component it is waiting for.
+				Crucible::ComponentId const blocker = world.FirstDisabledRequirement(entity, Crucible::ComponentTypeId<T>());
+				if (enabled && blocker != Crucible::kInvalidComponentId) {
+					ImGui::SetTooltip("Enabled, but not running: %s is switched off", world.Components().Get(blocker).name.data());
+				} else {
+					ImGui::SetTooltip(enabled ? "Enabled - untick to switch this component off (its settings are kept)"
+					                          : "Disabled - tick to switch this component back on");
+				}
+			}
+			ImGui::SetCursorScreenPos(resume);   // the fields continue under the header
+			if (clicked) { world.SetComponentEnabled<T>(entity, enabled); }
+			nowEnabled = enabled;
+			return clicked;
+		} else {
+			(void)world; (void)entity; (void)headerMin; (void)nowEnabled;
+			return false;
+		}
+	}
+
+	// Whether T is running: switched on, with every component it requires switched on (true for
+	// components that can't be switched off). A component that isn't gets a greyed header.
+	template <typename T>
+	bool IsComponentRunning(Crucible::World& world, Crucible::Entity entity) {
+		if constexpr (Crucible::ToggleableComponent<T>) {
+			return world.IsComponentActive<T>(entity);
+		} else {
+			(void)world; (void)entity;
+			return true;
+		}
+	}
+
 	// One material texture slot's drag-drop target. Draws a small placeholder box (no GPU->ImGui
 	// texture preview for material slots yet - ViewportPanel is the one place that pattern already
 	// exists, for the Scene/Game render targets) plus the slot's label, and returns the accepted
@@ -316,6 +392,7 @@ namespace {
 			case Crucible::ResourceKind::Material: return "material";
 			case Crucible::ResourceKind::Texture:  return "texture";
 			case Crucible::ResourceKind::Audio:    return "audio";
+			case Crucible::ResourceKind::Font:     return "font";
 			case Crucible::ResourceKind::Model:    return "model";
 			case Crucible::ResourceKind::AnimatorController: return "animator controller";
 		}
@@ -401,6 +478,67 @@ namespace {
 		if (changed) {
 			CRU_INFO("[Inspector] {}: {} -> {} ({:016X})", label, rm->GetName(before), rm->GetName(id), id);
 		}
+		return changed;
+	}
+
+	// Picker for a uint64 property tagged MetaDataTypes::ENTITY_REF: another entity's scene id
+	// (Scene::IdOf), e.g. a PhysicsJoint's connected body. Drawn as the entity's name - drop an entity
+	// from the Hierarchy onto it to set it, X clears it. Only the scene id is stored, never the
+	// Entity handle, so the link survives saving, reloading and play-mode Stop (all of which
+	// hand out new handles but keep scene ids).
+	bool EntityRefField(char const* label, std::uint64_t& id) {
+		Crucible::Core* core = Crucible::EditorManager::GetInstance().GetCore();
+		if (!core) {
+			ImGui::TextDisabled("%s: (no Core)", label);
+			return false;
+		}
+		Crucible::SceneManager& scenes = core->GetScenes();
+		Crucible::World&        world  = core->GetWorld();
+
+		// What the id names right now. EntityOf searches the open scene's guid map; fine here,
+		// since it only runs while this entity is selected in the Inspector.
+		Crucible::Entity const target = (id == 0) ? Crucible::kNullEntity
+		                                          : scenes.Current().EntityOf(xresource::instance_guid{ id });
+		// Shown by its EntityName, the same label the Hierarchy uses, so a renamed entity reads
+		// as "LeftThigh" rather than "Entity 12". Read every frame, so a rename shows straight away.
+		std::string text;
+		if (id == 0)                                          text = "None";
+		else if (!target.IsValid() || !world.IsAlive(target)) text = "Missing entity";   // deleted, or from another scene
+		else {
+			Crucible::EntityName const* name = world.Read<Crucible::EntityName>(target);
+			text = (name && !name->name.empty()) ? name->name : "Entity " + std::to_string(target.index);
+		}
+
+		bool changed = false;
+		ImGui::PushID(label);
+
+		float const spacing    = ImGui::GetStyle().ItemInnerSpacing.x;
+		float const clearWidth = ImGui::GetFrameHeight();
+		ImGui::Button(text.c_str(), ImVec2(ImGui::CalcItemWidth() - clearWidth - spacing, 0.0f));
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("Drag an entity here from the Hierarchy");
+
+		if (ImGui::BeginDragDropTarget()) {
+			if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(Crucible::EditorWidgets::kEntityPayload)) {
+				Crucible::Entity dropped{};
+				std::memcpy(&dropped, payload->Data, sizeof(Crucible::Entity));   // the Hierarchy sends the Entity by value
+				if (world.IsAlive(dropped)) {
+					// EnsureId, not IdOf: an entity created since the last save has no id yet.
+					std::uint64_t const droppedId = scenes.EnsureId(dropped).m_Value;
+					if (droppedId != id) { id = droppedId; changed = true; }
+				}
+			}
+			ImGui::EndDragDropTarget();
+		}
+
+		ImGui::SameLine(0.0f, spacing);
+		if (ImGui::Button("X", ImVec2(clearWidth, 0.0f)) && id != 0) { id = 0; changed = true; }
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear");
+
+		ImGui::SameLine(0.0f, spacing);
+		ImGui::TextUnformatted(label);
+		ImGui::PopID();
+
+		if (changed) CRU_INFO("[Inspector] {}: now {:016X}", label, id);
 		return changed;
 	}
 
@@ -585,6 +723,8 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 		ImGui::PopID();
 		if (left) { ApplyPendingName(); }   // before this frame's commit captures the "after" state
 	}
+	// Prefab instances: "Prefab: Crate  [Select] [Unpack]" (PrefabInstance itself is never listed).
+	PrefabAuthoring::DrawInspectorBar(m_world, entity);
 	ImGui::Separator();
 
 	bool changed = false;
@@ -599,25 +739,39 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName>) \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, PrefabInstance>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \
 				std::string const header = ComponentHeader(*component);                                     \
 				ImGui::PushID(ComponentTraits<T>::name.data());                                               \
-				bool const open = ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);    \
+				bool const running = IsComponentRunning<T>(m_world, entity);   /* off: greyed header */    \
+				if (!running) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)); } \
+				bool const open = ToggleableComponent<T>                                                     \
+					? ImGui::CollapsingHeader(HeaderLabelWithToggle(header, ComponentTraits<T>::name).c_str(),  \
+					                          ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap) \
+					: ImGui::CollapsingHeader(header.c_str(), ImGuiTreeNodeFlags_DefaultOpen);                \
+				if (!running) { ImGui::PopStyleColor(); }                                                    \
+				ImVec2 const headerMin = ImGui::GetItemRectMin();                                            \
+				PrefabAuthoring::MarkComponentHeader(m_world, entity, ComponentTraits<T>::name);   /* prefab override bar */ \
 				if constexpr (RemovableComponent<T>) {                                                       \
 					if (ImGui::BeginPopupContextItem("##ComponentMenu")) {                                   \
 						char const* const removeBlocked = RemoveBlockedReason<T>(m_world, entity);           \
 						if (ImGui::MenuItem("Remove Component", nullptr, false, removeBlocked == nullptr))   \
 							{ deferredRemove = MakeComponentRemover<T>(m_world, entity); removeLabel = "Remove " + header; }  \
 						if (removeBlocked) ImGui::SetItemTooltip("%s", removeBlocked);                       \
+						PrefabAuthoring::ComponentMenuItems(m_world, entity, ComponentTraits<T>::name);  /* Revert to Prefab */ \
 						ImGui::EndPopup();                                                                   \
 					}                                                                                        \
 				}                                                                                            \
+				bool nowEnabled = true;                                                                      \
+				if (DrawEnabledToggle<T>(m_world, entity, headerMin, nowEnabled))                            \
+					{ changed = true; NoteEdit((nowEnabled ? "Enable " : "Disable ") + header); }            \
 				if (open)                                                                                    \
 				{                                                                                            \
+					PrefabAuthoring::BeginDrawComponent(m_world, entity, ComponentTraits<T>::name);  /* override marks */ \
 					bool const fieldEdited  = DrawInstance(*component);  \
+					PrefabAuthoring::EndDrawComponent();  \
 					bool const extrasEdited = DrawComponentExtras(*component);  \
 					if (fieldEdited || extrasEdited) { changed = true; NoteEdit("Edit " + header); }  \
 				}                                                                                            \
@@ -653,7 +807,7 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 		// Same X-macro as the inspector loop. Skips mandatory components (Transform,
 		// WorldTransform, HierarchyNode), World-managed ones, and ones already present.
 #define CRU_ADD_COMPONENT_ITEM(T)																			    \
-		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !std::is_same_v<T, ScriptComponent>) { \
+		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !std::is_same_v<T, ScriptComponent> && !std::is_same_v<T, PrefabInstance>) { \
 			std::string_view const name = ComponentTraits<T>::name;											        \
 			if (!m_world.HasComponent<T>(entity) &&															        \
 				m_addComponentFilter.PassFilter(name.data(), name.data() + name.size())) {					        \
@@ -978,6 +1132,12 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool impor
 bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 	bool changed = false;
 
+	// Prefab override marks go on a component's own properties, not on the fields of a struct
+	// inside one (DrawInstance recurses for those): only depth 1 is marked.
+	struct DepthGuard { int& depth; explicit DepthGuard(int& d) : depth(d) { ++depth; } ~DepthGuard() { --depth; } };
+	static int s_depth = 0;
+	DepthGuard const depthGuard(s_depth);
+
 	auto const props = obj.get_derived_type().get_properties();
 	if (props.empty()) {
 		// Catches a component someone forgot to register.
@@ -1005,6 +1165,11 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			// Asset id: picker instead of the raw hex field below.
 			std::uint64_t v = value.get_value<std::uint64_t>();
 			if (AssetRefField(name, assetKind.get_value<ResourceKind>(), v)) { newValue = v; edited = true; }
+		}
+		else if (prop.get_metadata(MetaDataTypes::ENTITY_REF).to_bool() && type == rttr::type::get<std::uint64_t>()) {
+			// Another entity's scene id: picker instead of the raw hex field below.
+			std::uint64_t v = value.get_value<std::uint64_t>();
+			if (EntityRefField(name, v)) { newValue = v; edited = true; }
 		}
 		else if (type == rttr::type::get<bool>()) {
 			bool v = value.get_value<bool>();
@@ -1057,18 +1222,19 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 				ImGui::EndCombo();
 			}
 		}
+		// Vectors: one box per axis, each led by its letter in the Scene gizmo's colour, so X is
+		// the red handle, Y the green and Z the blue (EditorWidgets::AxisDragFloats, which also
+		// does the infinite drag). Colour fields keep the colour picker.
 		else if (type == rttr::type::get<Math::vec2>()) {
 			Math::vec2 v = value.get_value<Math::vec2>();
-			if (ImGui::DragFloat2(name, &v.x, 0.05f)) { newValue = v; edited = true; }
-			EditorWidgets::InfiniteDrag();
+			if (EditorWidgets::AxisDragFloats(name, &v.x, 2, 0.05f)) { newValue = v; edited = true; }
 		}
 		else if (type == rttr::type::get<Math::vec3>()) {
 			Math::vec3 v = value.get_value<Math::vec3>();
 			bool const isColour = prop.get_metadata(MetaDataTypes::COLOUR).to_bool();
 			edited = isColour
 				? ImGui::ColorEdit3(name, &v.x)
-				: ImGui::DragFloat3(name, &v.x, 0.05f);
-			if (!isColour) EditorWidgets::InfiniteDrag();   // colour pickers keep a normal cursor
+				: EditorWidgets::AxisDragFloats(name, &v.x, 3, 0.05f);
 			if (edited) newValue = v;
 		}
 		else if (type == rttr::type::get<Math::vec4>()) {
@@ -1076,15 +1242,14 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			bool const isColour = prop.get_metadata(MetaDataTypes::COLOUR).to_bool();
 			edited = isColour
 				? ImGui::ColorEdit4(name, &v.x)
-				: ImGui::DragFloat4(name, &v.x, 0.05f);
-			if (!isColour) EditorWidgets::InfiniteDrag();   // colour pickers keep a normal cursor
+				: EditorWidgets::AxisDragFloats(name, &v.x, 4, 0.05f);
 			if (edited) newValue = v;
 		}
 		else if (type == rttr::type::get<Math::quat>()) {
-			// Edited as Euler degrees, stored as a quaternion (same trade-off as before).
+			// Edited as Euler degrees, stored as a quaternion (same trade-off as before). X, Y, Z
+			// here are the turns around the gizmo's red, green and blue axes - the rotate rings.
 			Math::vec3 euler = glm::degrees(glm::eulerAngles(value.get_value<Math::quat>()));
-			if (ImGui::DragFloat3(name, &euler.x, 0.5f)) { newValue = Math::quat(glm::radians(euler)); edited = true; }
-			EditorWidgets::InfiniteDrag();
+			if (EditorWidgets::AxisDragFloats(name, &euler.x, 3, 0.5f)) { newValue = Math::quat(glm::radians(euler)); edited = true; }
 		}
 		else if (type == rttr::type::get<RigidBodyConstraints>()) {
 			// Two rows like Unity's Rigidbody "Constraints", instead of a tree of six
@@ -1117,6 +1282,7 @@ bool Crucible::Inspector::DrawInstance(rttr::instance obj) {
 			}
 		}
 		ImGui::EndDisabled();
+		if (s_depth == 1) { PrefabAuthoring::MarkProperty(label); }   // overridden on a prefab instance: bar + Revert
 
 		changed |= DrawPropertyExtras(obj, label);
 	}
@@ -1410,7 +1576,120 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
     return changed;
 }
 
+bool Crucible::Inspector::DrawComponentExtras(UIRect& rect) {
+	bool changed = false;
+
+	// ---- position: stored +y down (screen pixels). Shown +y up unless turned off with the checkbox -
+	// purely visual: what is stored never changes, and the choice resets to +Y up each start.
+	EditorManager& editor = EditorManager::GetInstance();
+	bool const yUp = editor.GetUIPositionYUp();
+	float shown[2] = { rect.position.x, yUp ? -rect.position.y : rect.position.y };
+	if (ImGui::DragFloat2("position", shown, 1.0f, 0.0f, 0.0f, "%.1f")) {
+		rect.position = { shown[0], yUp ? -shown[1] : shown[1] };
+		changed = true;
+	}
+	ImGui::SameLine();
+	bool up = yUp;
+	if (ImGui::Checkbox("+Y up", &up)) { editor.SetUIPositionYUp(up); }
+	ImGui::SetItemTooltip(up ? "Position Y shown with positive = up (like Unity). Display only: the scene stores the same value either way."
+	                         : "Position Y shown as stored: positive = down (screen pixels). Display only.");
+
+	changed |= ImGui::DragFloat2("size", &rect.size.x, 1.0f, 0.0f, 0.0f, "%.1f");
+	changed |= ImGui::DragFloat("rotation", &rect.rotation, 0.5f, 0.0f, 0.0f, "%.1f deg");
+	ImGui::SetItemTooltip("Counter-clockwise, around the pivot.");
+	changed |= ImGui::Checkbox("raycastTarget", &rect.raycastTarget);
+	ImGui::TextDisabled("computed (screen box): %.0f, %.0f  to  %.0f, %.0f", rect.computed.x, rect.computed.y, rect.computed.z, rect.computed.w);
+
+	// Where this element is drawn - or that it isn't (dragged out of its canvas in the Hierarchy).
+	Entity const entity = GetSelectedEntity();
+	if (!entity.IsValid() || !m_world.IsAlive(entity) || m_world.HasComponent<UICanvas>(entity)) { return changed; }
+	Entity canvas = kNullEntity;
+	for (Entity p = m_world.GetParent(entity); p.IsValid(); p = m_world.GetParent(p)) {
+		if (m_world.HasComponent<UICanvas>(p)) { canvas = p; }   // the topmost canvas owns the tree
+	}
+	if (canvas == kNullEntity) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Not under a UICanvas: not drawn.");
+		ImGui::TextDisabled("Make it a child of a canvas (UI, or UI (World) for the 3D world).");
+	} else if (UICanvas const* settings = m_world.Read<UICanvas>(canvas); settings && settings->renderMode == UICanvas::RenderMode::WorldSpace) {
+		ImGui::TextDisabled("On a world-space canvas: page pixels (%.0f px = 1 m). Display only.", std::max(settings->pixelsPerUnit, 1.0f));
+	}
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UICanvas& canvas) {
+	bool changed = false;
+	bool const world = canvas.renderMode == UICanvas::RenderMode::WorldSpace;
+
+	// ---- Screen Space: greyed out (kept, not lost) on a world-space canvas.
+	ImGui::SeparatorText("Screen Space");
+	ImGui::BeginDisabled(world);
+	changed |= ImGui::Checkbox("scaleWithScreenSize", &canvas.scaleWithScreenSize);
+	changed |= ImGui::InputInt("sortOrder", &canvas.sortOrder);
+	ImGui::SetItemTooltip("With several canvases, higher draws on top.");
+	changed |= ImGui::Checkbox("toggleWithEscape", &canvas.toggleWithEscape);
+	ImGui::SetItemTooltip("An in-game menu: hidden when Play starts, Escape shows / hides it and frees the cursor.");
+	changed |= ImGui::Checkbox("showsCursor", &canvas.showsCursor);
+	ImGui::SetItemTooltip("While shown, the cursor is free (a title screen, game over).");
+	ImGui::EndDisabled();
+
+	// ---- World Space: greyed out on a screen-space canvas.
+	ImGui::SeparatorText("World Space");
+	ImGui::BeginDisabled(!world);
+	changed |= ImGui::DragFloat("pixelsPerUnit", &canvas.pixelsPerUnit, 1.0f, 1.0f, 100000.0f, "%.0f px / m", ImGuiSliderFlags_AlwaysClamp);
+	float const ppu = std::max(canvas.pixelsPerUnit, 1.0f);
+	ImGui::TextDisabled("Page: %.0f x %.0f px = %.2f x %.2f m (referenceResolution / pixelsPerUnit)",
+		canvas.referenceResolution.x, canvas.referenceResolution.y, canvas.referenceResolution.x / ppu, canvas.referenceResolution.y / ppu);
+	changed |= ImGui::DragFloat2("pivot", &canvas.pivot.x, 0.01f, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+	ImGui::SetItemTooltip("The page's point on this entity: (0, 0) top-left, (0.5, 0.5) centre, (1, 1) bottom-right.");
+
+	static constexpr char const* kBillboards[] = { "Off", "Face Camera", "Upright" };
+	int billboard = static_cast<int>(canvas.billboard);
+	if (ImGui::Combo("billboard", &billboard, kBillboards, IM_ARRAYSIZE(kBillboards))) {
+		canvas.billboard = static_cast<WorldBillboard>(billboard);
+		changed = true;
+	}
+	ImGui::SetItemTooltip("Off: the Transform's rotation. Face Camera: always square on.\nUpright: turns around Y only (a nameplate that never tips back).");
+	changed |= ImGui::Checkbox("alwaysOnTop", &canvas.alwaysOnTop);
+	ImGui::SameLine();
+	changed |= ImGui::Checkbox("doubleSided", &canvas.doubleSided);
+	ImGui::SetItemTooltip("Off: not drawn when seen from behind.");
+	changed |= ImGui::DragFloat("intensity", &canvas.intensity, 0.05f, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+	ImGui::SetItemTooltip("Brightness in the scene: above 1 glows with bloom.");
+
+	changed |= ImGui::Checkbox("fade", &canvas.fade);
+	ImGui::SetItemTooltip("Fully visible up to fade start from the camera, gone by fade end.");
+	ImGui::BeginDisabled(!canvas.fade);
+	ImGui::Indent();
+	changed |= ImGui::DragFloat("fade start", &canvas.fadeStart, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	changed |= ImGui::DragFloat("fade end", &canvas.fadeEnd, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	if (canvas.fade && canvas.fadeEnd <= canvas.fadeStart) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Fade end should be past fade start (it vanishes at once).");
+	}
+	ImGui::Unindent();
+	ImGui::EndDisabled();
+	ImGui::EndDisabled();
+
+	if (world) {
+		ImGui::TextDisabled("Display only: nothing on a world-space canvas reacts to the mouse.");
+	}
+	return changed;
+}
+
 bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {
+	// Custom: the action's name (actionId is hidden from the generic fields so it only shows here).
+	if (button.onClick == UIButton::ClickAction::Custom) {
+		bool const edited = ImGui::InputText("actionId", &button.actionId);
+		if (button.actionId.empty()) {
+			ImGui::TextColored(EditorTheme::GetPalette().warning, "Name the action this button runs.");
+		}
+		ImGui::TextDisabled("Run by the game: GameApp::RegisterAction(\"%s\", ...)", button.actionId.empty() ? "..." : button.actionId.c_str());
+		return edited;
+	}
+	if (button.onClick == UIButton::ClickAction::Quit) {
+		ImGui::TextDisabled("Closes the game. In the editor it stops Play mode.");
+		return false;
+	}
+
 	// sceneAsset is hidden from the generic fields (a raw id means nothing to a person): pick the
 	// scene from the project's scene files instead. Only shown when the button loads a scene.
 	if (button.onClick != UIButton::ClickAction::LoadScene) { return false; }
@@ -1470,6 +1749,152 @@ bool Crucible::Inspector::DrawComponentExtras(UISlider& slider) {
 		}
 		ImGui::EndCombo();
 	}
+	return changed;
+}
+
+// The text, alignment, font and effects fields UIText and WorldText share (their field names
+// match). `world`: WorldText - sizes in metres instead of reference pixels, and a bitmap font is
+// a warning rather than a note (it is blocky up close in the world).
+template <typename T>
+bool Crucible::Inspector::DrawTextExtras(T& text, bool world) {
+	bool changed = false;
+	char const* const widthFormat = world ? "%.3f m" : "%.1f px";
+	float const widthSpeed = world ? 0.001f : 0.05f;
+	float const widthMax   = world ? 1.0f : 64.0f;
+
+	// ---- Text: a multi-line box (the generic string field is one line). Enter types a new line;
+	// the edit is one undo step from the first key to clicking away, like every Inspector field.
+	ImGui::TextUnformatted("text");
+	float const lines  = std::clamp(static_cast<float>(std::count(text.text.begin(), text.text.end(), '\n') + 1), 3.0f, 10.0f);
+	ImVec2 const size(-FLT_MIN, ImGui::GetTextLineHeight() * lines + ImGui::GetStyle().FramePadding.y * 2.0f);
+	if (ImGui::InputTextMultiline("##text", &text.text, size, ImGuiInputTextFlags_AllowTabInput)) { changed = true; }
+
+	// ---- Alignment: Unity's 3 x 3 grid. Each button sets both axes; the current one is lit.
+	ImGui::TextUnformatted("alignment");
+	ImGui::SameLine(ImGui::GetContentRegionAvail().x * 0.35f);
+	ImGui::BeginGroup();
+	static constexpr char const* kRowNames[] = { "Top", "Middle", "Bottom" };
+	static constexpr char const* kColumnNames[] = { "Left", "Center", "Right" };
+	static constexpr char const* kGlyphs[3][3] = { { "TL", "T", "TR" }, { "L", "C", "R" }, { "BL", "B", "BR" } };
+	for (int row = 0; row < 3; ++row) {
+		for (int column = 0; column < 3; ++column) {
+			TextAlignH const h = static_cast<TextAlignH>(column);
+			TextAlignV const v = static_cast<TextAlignV>(row);
+			bool const active = text.horizontalAlign == h && text.verticalAlign == v;
+			ImGui::PushID(row * 3 + column);
+			if (active) { ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive)); }
+			if (column > 0) { ImGui::SameLine(0.0f, 2.0f); }
+			if (ImGui::Button(kGlyphs[row][column], ImVec2(28.0f, 0.0f)) && !active) {
+				text.horizontalAlign = h;
+				text.verticalAlign = v;
+				changed = true;
+			}
+			if (active) { ImGui::PopStyleColor(); }
+			ImGui::SetItemTooltip("%s %s", kRowNames[row], kColumnNames[column]);
+			ImGui::PopID();
+		}
+	}
+	ImGui::EndGroup();
+
+	// ---- Which font is actually used (a font that isn't compiled falls back to the default).
+	if (ResourceManager* rm = EditorManager::GetInstance().GetResources()) {
+		FontAsset const* font = text.fontAsset != 0 ? rm->GetFont(text.fontAsset) : nullptr;
+		if (text.fontAsset != 0 && font == nullptr) {
+			ImGui::TextColored(EditorTheme::GetPalette().warning, "Font not loaded - using the default font (see the Console)");
+		}
+		if (font == nullptr) { font = rm->GetDefaultFont(); }
+		if (font == nullptr) {
+			ImGui::TextColored(EditorTheme::GetPalette().error, "No font: compile %s in the Font Importer", ResourceManager::m_defaultFontPath);
+		} else if (font->data.m_outputType == FontOutputType::Bitmap) {
+			std::string sizes;
+			for (FontSizeGroup const& group : font->data.m_groups) {
+				sizes += (sizes.empty() ? "" : ", ") + std::to_string(static_cast<int>(group.pixelSize));
+			}
+			if (world) {
+				ImGui::TextColored(EditorTheme::GetPalette().warning, "Bitmap font: blocky up close, shimmers far away.");
+				ImGui::TextDisabled("Use an SDF / MTSDF font for world text (Font Importer > Output Type).");
+			} else {
+				ImGui::TextDisabled("Bitmap font: sharp at %s px on screen", sizes.c_str());
+			}
+		} else {
+			ImGui::TextDisabled("%s font: sharp at any size", ToString(font->data.m_outputType));
+		}
+
+		// ---- Effects: each with its checkbox; its settings greyed out while it is off.
+		ImGui::SeparatorText("Effects");
+		bool const bitmap = font == nullptr || font->data.m_outputType == FontOutputType::Bitmap;
+		float const maxWidth = font ? UI::MaxTextEffectWidth(*font, text.bestFit ? text.maxFontSize : text.fontSize) : 0.0f;
+		if (bitmap) {
+			ImGui::TextColored(EditorTheme::GetPalette().warning, "Bitmap font: outline and glow need an SDF / MTSDF font.");
+			ImGui::TextDisabled("Shadow still works (a flat copy, no softness).");
+		} else {
+			ImGui::TextDisabled(world ? "Outline + glow (+ bold) can reach %.3f m at this size." : "Outline + glow (+ bold) can reach %.1f px at this size.", maxWidth);
+			ImGui::SetItemTooltip("The font's distance field ends half its Pixel Range past each edge;\n"
+			                      "wider settings are clamped. Raise Pixel Range in the Font Importer for more.");
+		}
+
+		auto widthWarning = [&](float width) {
+			if (!bitmap && width > maxWidth + 0.01f) {
+				ImGui::SameLine();
+				ImGui::TextColored(EditorTheme::GetPalette().warning, world ? "(max %.3f)" : "(max %.1f)", maxWidth);
+			}
+		};
+
+		ImGui::BeginDisabled(bitmap);
+		changed |= ImGui::Checkbox("outline", &text.outline);
+		ImGui::BeginDisabled(!text.outline);
+		ImGui::Indent();
+		changed |= ImGui::ColorEdit4("outline colour", &text.outlineColour.x, ImGuiColorEditFlags_AlphaBar);
+		changed |= ImGui::DragFloat("outline width", &text.outlineWidth, widthSpeed, 0.0f, widthMax, widthFormat, ImGuiSliderFlags_AlwaysClamp);
+		widthWarning(text.outlineWidth);
+		ImGui::Unindent();
+		ImGui::EndDisabled();
+
+		changed |= ImGui::Checkbox("glow", &text.glow);
+		ImGui::BeginDisabled(!text.glow);
+		ImGui::Indent();
+		changed |= ImGui::ColorEdit4("glow colour", &text.glowColour.x, ImGuiColorEditFlags_AlphaBar);
+		changed |= ImGui::DragFloat("glow width", &text.glowWidth, widthSpeed, 0.0f, widthMax, widthFormat, ImGuiSliderFlags_AlwaysClamp);
+		widthWarning((text.outline ? text.outlineWidth : 0.0f) + text.glowWidth);
+		changed |= ImGui::SliderFloat("glow softness", &text.glowSoftness, 0.0f, 1.0f, "%.2f");
+		ImGui::Unindent();
+		ImGui::EndDisabled();
+		ImGui::EndDisabled();
+
+		changed |= ImGui::Checkbox("shadow", &text.shadow);
+		ImGui::BeginDisabled(!text.shadow);
+		ImGui::Indent();
+		changed |= ImGui::ColorEdit4("shadow colour", &text.shadowColour.x, ImGuiColorEditFlags_AlphaBar);
+		changed |= ImGui::DragFloat2("shadow offset", &text.shadowOffset.x, widthSpeed * 2.0f, -widthMax, widthMax, widthFormat);
+		ImGui::BeginDisabled(bitmap);
+		changed |= ImGui::SliderFloat("shadow softness", &text.shadowSoftness, 0.0f, 1.0f, "%.2f");
+		ImGui::EndDisabled();
+		ImGui::Unindent();
+		ImGui::EndDisabled();
+	}
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
+	return DrawTextExtras(text, false);
+}
+
+bool Crucible::Inspector::DrawComponentExtras(WorldText& text) {
+	bool changed = DrawTextExtras(text, true);
+
+	// ---- Distance fade: the range greyed out while it is off.
+	ImGui::SeparatorText("Distance Fade");
+	changed |= ImGui::Checkbox("fade", &text.fade);
+	ImGui::SetItemTooltip("Fully visible up to fade start from the camera, gone by fade end.");
+	ImGui::BeginDisabled(!text.fade);
+	ImGui::Indent();
+	changed |= ImGui::DragFloat("fade start", &text.fadeStart, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	changed |= ImGui::DragFloat("fade end", &text.fadeEnd, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	if (text.fade && text.fadeEnd <= text.fadeStart) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Fade end should be past fade start (it vanishes at once).");
+	}
+	ImGui::Unindent();
+	ImGui::EndDisabled();
 	return changed;
 }
 

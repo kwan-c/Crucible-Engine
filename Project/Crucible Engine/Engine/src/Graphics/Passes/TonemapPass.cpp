@@ -15,7 +15,7 @@ namespace Crucible {
 
     void TonemapPass::Create(VulkanContext& context, vk::DescriptorSetLayout twoTextureSetLayout, vk::Format colourFormat, vk::Format depthFormat) {
 
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/Post.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "Post.spv");
         vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(PostPush) };
         {
             vk::DescriptorSetLayout setLayout = twoTextureSetLayout;

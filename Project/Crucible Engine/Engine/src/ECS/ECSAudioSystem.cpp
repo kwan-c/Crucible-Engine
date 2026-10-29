@@ -1,8 +1,9 @@
 /*************************************************************************
 * \file:         ECSAudioSystem.cpp
-* \author:       Hugo
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
 * \date          1 October 2026
-* \version       1.3
+* \version       1.5
 * \brief
 *                Implementation of ECSAudioSystem. See the header for
 *                what happens each frame.
@@ -25,11 +26,15 @@
 *    -v1.1       AudioSource and AudioListener components; edit mode
 *    -v1.2       with no AudioListener entity, the ears follow the camera
 *    -v1.3       SetPaused: voices freeze, requests wait for Resume
+*    -v1.4       fix: file paths reach FMOD as UTF-8, so an accented
+*                folder name no longer hides every sound under it
+*    -v1.5       the player's bus volumes (UserSettings) reach the buses
 *
 **************************************************************************/
 #include "ECSAudioSystem.h"
 
 // STL
+#include <filesystem>
 #include <map>
 #include <optional>
 #include <unordered_map>
@@ -39,6 +44,7 @@
 // Crucible engine
 #include "AssetPipe/Assetmanager.h"
 #include "Components/Components.h"
+#include "Configuration/UserSettings.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/RenderSystem.h"
@@ -54,6 +60,16 @@ namespace {
     // and only when a value actually changed.
     using SourceQuery   = Query<const AudioSource, const WorldTransform>;
     using ListenerQuery = Query<const AudioListener, const WorldTransform>;
+
+    // FMOD reads file names as UTF-8. path::string() hands back the old Windows
+    // code page instead, so one accented letter anywhere in the path - a user
+    // folder named after its owner, say - reaches FMOD as different bytes and
+    // the file "does not exist". u8string() is UTF-8; its char8_t bytes are
+    // copied into the plain std::string that Audio::LoadClip takes.
+    std::string ToUtf8(const std::filesystem::path& path) {
+        const std::u8string utf8 = path.u8string();
+        return std::string(utf8.begin(), utf8.end());
+    }
 
     // The engine's convention, the same one lights use: position is the
     // world matrix's translation, forward its local -Z axis, up its local +Y.
@@ -120,10 +136,12 @@ namespace Crucible {
 
     struct ECSAudioSystem::State {
 
-        State(AssetManager& assetManager, const Renderer* rendererToFollow) : assets(assetManager), renderer(rendererToFollow) {}
+        State(AssetManager& assetManager, const AudioSettings& playerVolumes, const Renderer* rendererToFollow)
+            : assets(assetManager), volumes(playerVolumes), renderer(rendererToFollow) {}
 
-        AssetManager&   assets;
-        const Renderer* renderer = nullptr;     // only for its camera, the listener when no entity has one
+        AssetManager&        assets;
+        const AudioSettings& volumes;           // Core's UserSettings: the player's bus sliders
+        const Renderer*      renderer = nullptr;     // only for its camera, the listener when no entity has one
         Audio           audio;
         World*        world    = nullptr;
         bool          editMode = false;
@@ -131,6 +149,8 @@ namespace Crucible {
 
         std::optional<SourceQuery>   sources;
         std::optional<ListenerQuery> listeners;
+        std::optional<Query<const AudioSource>> offSources;     // switched-off sources (WhereDisabled)
+        std::vector<Entity>                     offWrites;      // reused every frame
 
         std::unordered_map<std::uint64_t, Record> records;      // keyed by EntityToUserData(entity)
         std::vector<WriteBack>                    writeBacks;   // reused every frame
@@ -139,6 +159,10 @@ namespace Crucible {
         // A failed load is kept too (as an invalid handle), so a missing file
         // is reported once rather than on every Play.
         std::map<std::pair<std::uint64_t, AudioClipLoadType>, AudioClip> clips;
+
+        // The volumes last sent to the buses. -1 is never a real volume, so the
+        // first frame after Init always sends all three.
+        AudioSettings sentVolumes{ -1.0f, -1.0f, -1.0f };
 
         std::uint64_t frame               = 0;
         bool          warnedNoListener    = false;
@@ -151,6 +175,7 @@ namespace Crucible {
         std::string   previewPath;     // which asset previewClip is, so selecting it again keeps it
 
         void      BindWorld(World& ecs);
+        void      SyncBuses();
         void      SyncListener();
         void      SyncSource(Record& record, const AudioSource& source, const WorldTransform& transform);
         AudioClip ClipFor(const AudioSource& source);
@@ -163,7 +188,8 @@ namespace Crucible {
     // LIFECYCLE
     // ------------------------------------------------------------------- //
 
-    ECSAudioSystem::ECSAudioSystem(AssetManager& assets, const Renderer* renderer) : m_state{ std::make_unique<State>(assets, renderer) } {}
+    ECSAudioSystem::ECSAudioSystem(AssetManager& assets, const AudioSettings& volumes, const Renderer* renderer)
+        : m_state{ std::make_unique<State>(assets, volumes, renderer) } {}
 
     ECSAudioSystem::~ECSAudioSystem() { Shutdown(); }
 
@@ -185,6 +211,7 @@ namespace Crucible {
         // outlive it, so a restart builds fresh ones.
         s.sources.reset();
         s.listeners.reset();
+        s.offSources.reset();
         s.world = nullptr;
 
         // Audio::Shutdown releases every clip - the cached ones and the
@@ -193,6 +220,7 @@ namespace Crucible {
         s.previewClip  = AudioClip{};
         s.previewVoice = AudioVoice{};
         s.previewPath.clear();
+        s.sentVolumes = AudioSettings{ -1.0f, -1.0f, -1.0f };   // a restarted FMOD has fresh buses at 1
         s.audio.Shutdown();
 
     }   // ECSAudioSystem::Shutdown()
@@ -265,6 +293,7 @@ namespace Crucible {
         s.BindWorld(world);
         ++s.frame;
 
+        s.SyncBuses();
         s.SyncListener();
 
         s.writeBacks.clear();
@@ -288,6 +317,22 @@ namespace Crucible {
             }
         }
 
+        // Switched off: its voices stop below with its record (the query no longer finds it).
+        // Unity ignores Play() on a disabled AudioSource; here a request is only a field, so drop
+        // what is asked for while off - otherwise it would fire the moment it is switched on.
+        s.offWrites.clear();
+        s.offSources->ForEach([&](Entity entity, const AudioSource& source) {
+            if (source.m_request != AudioRequest::None || source.m_pendingOneShots != 0 || source.m_isPlaying)
+                s.offWrites.push_back(entity);
+        });
+        for (const Entity entity : s.offWrites) {
+            if (AudioSource* source = world.GetComponent<AudioSource>(entity)) {
+                source->m_isPlaying       = false;
+                source->m_request         = AudioRequest::None;
+                source->m_pendingOneShots = 0;
+            }
+        }
+
         // Not seen this frame: the entity was destroyed, or lost its
         // AudioSource. Unity stops the sound with it, and so do we.
         for (auto it = s.records.begin(); it != s.records.end();) {
@@ -304,6 +349,24 @@ namespace Crucible {
 
     }   // ECSAudioSystem::Update()
 
+    /*!
+        \brief
+        Sends the player's Master / Music / SFX volumes to the buses, but only
+        the ones that changed since last frame.
+        \details
+        Read every frame rather than pushed by a "volume changed" call, so an
+        options menu only has to write Core::GetUserSettings().audio and the
+        slider is heard at once - there is no second call to forget.
+    */
+    void ECSAudioSystem::State::SyncBuses() {
+
+        if (volumes.masterVolume != sentVolumes.masterVolume) audio.SetBusVolume(AudioBus::Master, volumes.masterVolume);
+        if (volumes.musicVolume  != sentVolumes.musicVolume)  audio.SetBusVolume(AudioBus::Music,  volumes.musicVolume);
+        if (volumes.sfxVolume    != sentVolumes.sfxVolume)    audio.SetBusVolume(AudioBus::SFX,    volumes.sfxVolume);
+        sentVolumes = volumes;
+
+    }   // ECSAudioSystem::State::SyncBuses()
+
     // A different world means a different scene: every voice belongs to
     // entities that are gone, so they all stop.
     void ECSAudioSystem::State::BindWorld(World& ecs) {
@@ -314,6 +377,7 @@ namespace Crucible {
         world = &ecs;
         sources.emplace(ecs.CreateQuery<const AudioSource, const WorldTransform>());
         listeners.emplace(ecs.CreateQuery<const AudioListener, const WorldTransform>());
+        offSources.emplace(ecs.BuildQuery<const AudioSource>().WhereDisabled().Build());
         warnedNoListener    = false;
         warnedManyListeners = false;
 
@@ -472,7 +536,7 @@ namespace Crucible {
         else if (entry->type != AssetType::Audio)
             CRU_WARN("ECSAudioSystem: {} is not an audio file", entry->virtualPath);
         else
-            clip = audio.LoadClip(entry->absolutePath, source.m_loadType);
+            clip = audio.LoadClip(ToUtf8(assets.Resolve(entry->virtualPath)), source.m_loadType);   // not absolutePath: that is code-page text
 
         clips.emplace(key, clip);
         return clip;
@@ -514,7 +578,7 @@ namespace Crucible {
         // Streamed: opening it only reads the header, so selecting a long
         // track is instant, and a preview is only ever one voice - the one
         // thing a stream cannot do is overlap.
-        s.previewClip = s.audio.LoadClip(s.assets.Resolve(virtualPath).string(), AudioClipLoadType::Streaming);
+        s.previewClip = s.audio.LoadClip(ToUtf8(s.assets.Resolve(virtualPath)), AudioClipLoadType::Streaming);
         if (!s.previewClip.IsValid()) return false;     // LoadClip has already said why
 
         s.previewPath = virtualPath;

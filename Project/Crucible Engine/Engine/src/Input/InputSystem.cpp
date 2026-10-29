@@ -1,10 +1,81 @@
+/*************************************************************************
+* \file:         InputSystem.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          14 September 2026
+* \version       1.3
+* \brief
+*                Crucible::Input's implementation: the GLFW callbacks, the
+*                gamepad poll and the per-frame snapshot.
+*
+* \details
+*                The callbacks write this frame's state; BeginFrame first
+*                copies it to last frame's and clears the mouse movement
+*                and scroll. Shutdown removes every callback it installed,
+*                so a window that outlives Input never calls into freed
+*                memory.
+*
+* \history
+*    -v1.0       keyboard: down, pressed and released this frame
+*    -v1.1       mouse: buttons, position, movement, scroll and cursor
+*                lock; maths moved to glm
+*    -v1.2       fix: a KeyCode past Count returns false instead of
+*                throwing out of the key queries
+*    -v1.3       gamepad: polled in BeginFrame - buttons into the same
+*                bitset, sticks (dead zone) and triggers beside it
+*
+**************************************************************************/
 #include "InputSystem.h"
 #include "Diagnostics/Logger.h"
 #include "GLFW/glfw3.h"
 
+// STL
+#include <algorithm>    // std::clamp
+
 namespace {
 
+    // Unity's default stick dead zone (the new Input System's StickDeadzone): below 0.125 of
+    // full tilt a stick reads as centred - worn sticks rest slightly off-centre and would
+    // otherwise drift the camera - and from 0.925 it reads as fully pushed, because many sticks
+    // never quite reach 1. Everything between is stretched back over 0..1.
+    constexpr float kStickDeadMin = 0.125f;
+    constexpr float kStickDeadMax = 0.925f;
+
+    // A trigger past this much counts as the button GamepadLT / GamepadRT being held.
+    constexpr float kTriggerAsButton = 0.5f;
+
+    /*!
+        \brief
+        A raw stick reading with the dead zone applied, as a whole vector (radial), not per
+        axis: a per-axis dead zone snaps diagonals onto the axes and makes walking at an
+        angle feel notchy. The direction is kept; only the length is remapped.
+    */
+    Crucible::Math::vec2 ApplyStickDeadZone(const float x, const float y) {
+        const Crucible::Math::vec2 raw{ x, y };
+        const float length = glm::length(raw);
+        if (length <= kStickDeadMin) return Crucible::Math::vec2{ 0.f, 0.f };
+
+        const float remapped = std::clamp((length - kStickDeadMin) / (kStickDeadMax - kStickDeadMin), 0.0f, 1.0f);
+        return raw * (remapped / length);
+    }
+
+    // GLFW reports a trigger from -1 (released) to +1 (fully pulled).
+    float TriggerTo01(const float raw) {
+        return std::clamp((raw + 1.0f) * 0.5f, 0.0f, 1.0f);
+    }
+
 	Crucible::Input* g_instance = nullptr;  // set by AttachWindow, read by the static queries
+
+    // A KeyCode made from a number - a saved key binding, a loop that runs up to
+    // Count - can point past the end of the bitsets, and bitset::test THROWS
+    // std::out_of_range on that: nothing catches it, so the game just closes.
+    // The key queries refuse it here instead, and say why.
+    bool IsValidKey(const Crucible::KeyCode& key) {
+        if (static_cast<std::size_t>(key) < static_cast<std::size_t>(Crucible::KeyCode::Count)) return true;
+
+        CRU_ERROR("Input queried with KeyCode {}, which is past KeyCode::Count - treated as not pressed", static_cast<int>(key));
+        return false;
+    }
 
 }// Anonymous namespace
 
@@ -42,6 +113,13 @@ namespace Crucible{
         g_instance = nullptr;
         m_window = nullptr;
 
+        // Forget the pad, so a later Init starts from "nothing connected" and logs the
+        // connection again rather than inheriting stale sticks.
+        m_gamepadId = -1;
+        m_gamepadName.clear();
+        m_leftStick = m_rightStick = Math::vec2{ 0.f, 0.f };
+        m_leftTrigger = m_rightTrigger = 0.0f;
+
         CRU_DEBUG("[Input] successfully shutdown!");
     }
 
@@ -54,7 +132,91 @@ namespace Crucible{
         // function has to run immediately before PollEvents.
         m_mouseDelta = Math::vec2{ 0.f, 0.f };
         m_mouseScroll = Math::vec2{ 0.f, 0.f };
+
+        // AFTER the copy: the pad's buttons land in m_current as this frame's state, so
+        // IsPressed(GamepadA) compares them against last frame's exactly like a key.
+        PollGamepad();
 	}
+
+    void Input::PollGamepad() {
+
+        // WHICH PAD ----------------------------------------------------------------------- //
+        // Keep the one we have while it stays connected, so plugging in a second pad does
+        // not steal control mid-game; otherwise take the first one GLFW recognises.
+        // glfwJoystickIsGamepad, not glfwJoystickPresent: a flight stick or a wheel is a
+        // joystick with no gamepad layout, and its buttons would mean nothing here.
+        if (m_gamepadId >= 0 && glfwJoystickIsGamepad(m_gamepadId) == GLFW_FALSE) {
+            CRU_INFO("[Input] gamepad disconnected: {}", m_gamepadName);
+            m_gamepadId = -1;
+            m_gamepadName.clear();
+        }
+        if (m_gamepadId < 0) {
+            for (int id = GLFW_JOYSTICK_1; id <= GLFW_JOYSTICK_LAST; ++id) {
+                if (glfwJoystickIsGamepad(id) == GLFW_FALSE) continue;
+                const char* const name = glfwGetGamepadName(id);
+                m_gamepadId   = id;
+                m_gamepadName = name != nullptr ? name : "gamepad";
+                CRU_INFO("[Input] gamepad connected: {}", m_gamepadName);
+                break;
+            }
+        }
+
+        // READ IT ------------------------------------------------------------------------- //
+        // Ignored while the window is in the background, the same as the keys: a pad left on
+        // the desk next to a browser should not walk the mech. The read still has to happen
+        // to zero everything, or a button held when focus left would stay "down" forever.
+        GLFWgamepadstate state{};
+        const bool live = m_gamepadId >= 0 && m_hasFocus && glfwGetGamepadState(m_gamepadId, &state) == GLFW_TRUE;
+
+        for (int button = GLFW_GAMEPAD_BUTTON_A; button <= GLFW_GAMEPAD_BUTTON_LAST; ++button) {
+            const std::size_t index = static_cast<std::size_t>(KeyCodeFromGlfwGamepadButton(button));
+            m_current.set(index, live && state.buttons[button] == GLFW_PRESS);
+        }
+
+        if (!live) {
+            m_leftStick = m_rightStick = Math::vec2{ 0.f, 0.f };
+            m_leftTrigger = m_rightTrigger = 0.0f;
+        }
+        else {
+            // GLFW's Y axes are positive DOWN (its database follows SDL). Flipped, so up is
+            // positive the way Unity and every camera here expect.
+            m_leftStick    = ApplyStickDeadZone(state.axes[GLFW_GAMEPAD_AXIS_LEFT_X],  -state.axes[GLFW_GAMEPAD_AXIS_LEFT_Y]);
+            m_rightStick   = ApplyStickDeadZone(state.axes[GLFW_GAMEPAD_AXIS_RIGHT_X], -state.axes[GLFW_GAMEPAD_AXIS_RIGHT_Y]);
+            m_leftTrigger  = TriggerTo01(state.axes[GLFW_GAMEPAD_AXIS_LEFT_TRIGGER]);
+            m_rightTrigger = TriggerTo01(state.axes[GLFW_GAMEPAD_AXIS_RIGHT_TRIGGER]);
+        }
+
+        // The triggers as buttons too, so "fire on RT" can use IsPressed.
+        m_current.set(static_cast<std::size_t>(KeyCode::GamepadLT), m_leftTrigger  > kTriggerAsButton);
+        m_current.set(static_cast<std::size_t>(KeyCode::GamepadRT), m_rightTrigger > kTriggerAsButton);
+
+    }   // Input::PollGamepad()
+
+    // --- gamepad queries: zero, silently, with no instance - a camera reads them every frame --- //
+
+    bool Input::IsGamepadConnected() {
+        return g_instance != nullptr && g_instance->m_gamepadId >= 0;
+    }
+
+    std::string Input::GetGamepadName() {
+        return g_instance != nullptr ? g_instance->m_gamepadName : std::string{};
+    }
+
+    Math::vec2 Input::GetGamepadLeftStick() {
+        return g_instance != nullptr ? g_instance->m_leftStick : Math::vec2{ 0.f, 0.f };
+    }
+
+    Math::vec2 Input::GetGamepadRightStick() {
+        return g_instance != nullptr ? g_instance->m_rightStick : Math::vec2{ 0.f, 0.f };
+    }
+
+    float Input::GetGamepadLeftTrigger() {
+        return g_instance != nullptr ? g_instance->m_leftTrigger : 0.0f;
+    }
+
+    float Input::GetGamepadRightTrigger() {
+        return g_instance != nullptr ? g_instance->m_rightTrigger : 0.0f;
+    }
 
     void Input::AttachWindow(GLFWwindow* window) {
         // Register the window
@@ -87,6 +249,7 @@ namespace Crucible{
 			CRU_ERROR("Input queried before AttachWindow was called.");
             return false;
         }
+        if (!IsValidKey(key)) return false;
 
 		const std::size_t index = static_cast<std::size_t>(key);
 
@@ -98,6 +261,7 @@ namespace Crucible{
             CRU_ERROR("Input queried before AttachWindow was called.");
             return false;
         }
+        if (!IsValidKey(key)) return false;
 
         const std::size_t index = static_cast<std::size_t>(key);
 
@@ -109,6 +273,7 @@ namespace Crucible{
             CRU_ERROR("Input queried before AttachWindow was called.");
             return false;
         }
+        if (!IsValidKey(key)) return false;
 
         const std::size_t index = static_cast<std::size_t>(key);
 
@@ -278,6 +443,7 @@ namespace Crucible{
     }
 
     void Input::OnFocusChanged(const bool& focused) {
+        m_hasFocus = focused;   // PollGamepad ignores the pad while this is false
         if (focused) return;
 
 		m_current.reset();  // clear all keys when focus is lost

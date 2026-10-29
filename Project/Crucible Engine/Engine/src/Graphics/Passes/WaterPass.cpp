@@ -21,7 +21,7 @@ namespace Crucible {
     void WaterPass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout sceneCopySetLayout,
                            vk::Format colourFormat, vk::Format depthFormat) {
 
-        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "../../../Assets/Shaders/Water.spv");
+        vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "Water.spv");
         vk::PipelineShaderStageCreateInfo shaderStages[] = {
             { .stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "waterVert" },
             { .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "waterFrag" }

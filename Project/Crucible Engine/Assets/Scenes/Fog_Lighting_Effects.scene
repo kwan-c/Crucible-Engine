@@ -1456,8 +1456,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 54.15911865234375,
-                        "y": 214.47283935546875
+                        "x": -77.78230285644531,
+                        "y": 191.85430908203125
                     },
                     "size": {
                         "x": 160.0,
@@ -1476,8 +1476,9 @@
                     "textureAsset": 0
                 },
                 "UIButton": {
-                    "onClick": "None",
+                    "onClick": "Quit",
                     "sceneAsset": 0,
+                    "actionId": "",
                     "normal": {
                         "x": 1.0,
                         "y": 1.0,
@@ -1503,6 +1504,58 @@
                         "w": 0.5
                     },
                     "interactable": true
+                },
+                "UIText": {
+                    "text": "quit game",
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 24.75,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": true,
+                    "underline": true,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
                 }
             }
         },
@@ -1546,8 +1599,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -0.7539510130882263,
-                        "y": 0.0
+                        "x": -313.64300537109375,
+                        "y": -348.089111328125
                     },
                     "size": {
                         "x": 24.0,
@@ -2187,6 +2240,110 @@
             }
         },
         {
+            "id": "B78438D9180EC003",
+            "parent": "2CF768D80E590001",
+            "siblingIndex": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Entity 48"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -522.786865234375,
+                        "y": 23.737451553344727
+                    },
+                    "size": {
+                        "x": 767.1387329101563,
+                        "y": 213.9597625732422
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Sample Text",
+                    "colour": {
+                        "x": 0.5647059082984924,
+                        "y": 0.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 50.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Ellipsis",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": true,
+                    "bestFit": true,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 200.0,
+                    "outline": true,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.5,
+                    "glow": true,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 5.0,
+                    "glowSoftness": 0.0,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 7.699999809265137,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
             "id": "BE4D08D31EF60001",
             "components": {
                 "Transform": {
@@ -2653,8 +2810,8 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -372.0688171386719,
-                        "y": 313.6182556152344
+                        "x": -293.8465881347656,
+                        "y": 192.7293701171875
                     },
                     "size": {
                         "x": 160.0,
@@ -2675,6 +2832,7 @@
                 "UIButton": {
                     "onClick": "LoadScene",
                     "sceneAsset": 11221343899601584135,
+                    "actionId": "",
                     "normal": {
                         "x": 1.0,
                         "y": 1.0,
@@ -2700,6 +2858,58 @@
                         "w": 0.5
                     },
                     "interactable": true
+                },
+                "UIText": {
+                    "text": "switch scene",
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 16.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": true,
+                    "underline": true,
+                    "bestFit": true,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
                 }
             }
         },

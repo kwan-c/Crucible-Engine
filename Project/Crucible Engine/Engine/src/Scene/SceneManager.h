@@ -187,6 +187,14 @@ namespace Crucible {
 		 *********************************************************************/
 		const Scene& Current() const { return m_scene; }
 
+		/*********************************************************************
+		 \brief  The open scene's guid for an entity, issued now if it has
+		         none (Scene::EnsureId). The one write to the guid map that
+		         editor tools need - the Inspector's entity picker - without
+		         handing out the whole Scene as mutable.
+		 *********************************************************************/
+		xresource::instance_guid EnsureId(Entity entity) { return m_scene.EnsureId(entity); }
+
 		// ===================================================================
 		//  Listeners
 		// ===================================================================
@@ -199,6 +207,15 @@ namespace Crucible {
 		 \note   Not called by RestoreSnapshot (play-mode Stop) - see there.
 		 *********************************************************************/
 		void OnSceneChanged(std::function<void()> callback);
+
+		/*********************************************************************
+		 \brief  Register a callback run at the start of every Save / SaveAs,
+				 just before the file is written (after the play-mode check).
+		 \details
+			For editor tools that keep data on entities which must be up to
+			date in the file - the prefab override lists, for one.
+		 *********************************************************************/
+		void OnBeforeSave(std::function<void()> callback);
 
 	private:
 		enum class Pending { None, New, Load };
@@ -224,6 +241,7 @@ namespace Crucible {
 		std::filesystem::path				 m_pendingPath;
 
 		std::vector<std::function<void()>>	 m_listeners;
+		std::vector<std::function<void()>>	 m_beforeSave;   // OnBeforeSave
 	};
 
 #ifdef _MSC_VER

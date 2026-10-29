@@ -12,6 +12,7 @@
 
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "ImGui/EditorWidgets.h"
+#include "Input/InputSystem.h"   // the hint while the game has the mouse
 
 #include <algorithm>
 #include <cmath>
@@ -169,6 +170,21 @@ void Crucible::GameView::Update(float) {
 		ImDrawList* dl = ImGui::GetWindowDrawList();
 		dl->AddText(ImVec2(centre.x - titleSize.x * 0.5f, centre.y - line), ImGui::GetColorU32(ImGuiCol_Text), title);
 		dl->AddText(ImVec2(centre.x - hintSize.x * 0.5f, centre.y), ImGui::GetColorU32(ImGuiCol_TextDisabled), hint);
+	}
+
+	// The game has the mouse (Play, after a click on the view): say how to get it back, top-left
+	// of the image. Drawn by the editor, so it is never in the game's own frame.
+	if (Input::IsMouseLocked()) {
+		std::string const hint = KeyChordToString(EditorManager::GetInstance().GetReleaseCursorKey()) + " to release the mouse";
+		ImVec2 const textSize = ImGui::CalcTextSize(hint.c_str());
+		ImVec2 const pad(6.0f, 3.0f);
+		ImVec2 const boxMin(min.x + 8.0f, min.y + 8.0f);
+		ImVec2 const boxMax(boxMin.x + textSize.x + pad.x * 2.0f, boxMin.y + textSize.y + pad.y * 2.0f);
+		ImDrawList* dl = ImGui::GetWindowDrawList();
+		dl->PushClipRect(min, max, true);
+		dl->AddRectFilled(boxMin, boxMax, IM_COL32(0, 0, 0, 150), 4.0f);
+		dl->AddText(ImVec2(boxMin.x + pad.x, boxMin.y + pad.y), IM_COL32(255, 255, 255, 220), hint.c_str());
+		dl->PopClipRect();
 	}
 
 	// Invisible item over the whole panel (not just the letterboxed rect) so hover queries work

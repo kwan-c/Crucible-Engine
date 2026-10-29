@@ -52,7 +52,7 @@ namespace Crucible {
             .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
         vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
 
-        vk::raii::ShaderModule module = LoadShaderModule(context, "../../../Assets/Shaders/DepthNormal.spv");
+        vk::raii::ShaderModule module = LoadShaderModule(context, "DepthNormal.spv");
         vk::PipelineShaderStageCreateInfo stages[] = {
             { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "depthNormalVert" },
             { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "depthNormalFrag" }
@@ -110,7 +110,7 @@ namespace Crucible {
 
 
         // Occlusion and its blur: fullscreen steps reading two textures each (Post.spv).
-        vk::raii::ShaderModule postModule = LoadShaderModule(context, "../../../Assets/Shaders/Post.spv");
+        vk::raii::ShaderModule postModule = LoadShaderModule(context, "Post.spv");
         vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(PostPush) };
         {
             vk::DescriptorSetLayout setLayout = twoTextureSetLayout;

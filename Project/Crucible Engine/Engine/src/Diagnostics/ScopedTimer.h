@@ -1,3 +1,26 @@
+/*************************************************************************
+* \file:         ScopedTimer.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.2
+* \brief
+*                CRU_SCOPED_TIMER: times the scope it sits in and logs how
+*                long it took.
+*
+* \details
+*                Logs from its destructor, so it reports even on an early
+*                return or an exception. A stopgap for "how long did that
+*                take", not a profiler: never put one in a per-frame loop.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       start time kept as a tick count, so no std::chrono member
+*                crosses the DLL boundary (C4251)
+*    -v1.2       fix: the tick count was read as milliseconds, so every time
+*                printed a million times too big
+*
+**************************************************************************/
 #pragma once
 
 #include <chrono>
@@ -31,10 +54,12 @@ namespace Crucible::Debug
         ScopedTimer& operator=(const ScopedTimer&) = delete;
 
     private:
-        // const char* rather than std::string, and a plain time_point, so this
-        // class has no standard-library members. That is deliberate: exporting
-        // a class that owns a std::string across the DLL boundary is what
-        // triggers warning C4251.
+        // const char* rather than std::string, and the start time as a bare
+        // tick count rather than a time_point, so this class has no
+        // standard-library members. That is deliberate: exporting a class that
+        // owns one across the DLL boundary is what triggers warning C4251.
+        // The count is in steady_clock's own unit; the destructor puts the
+        // unit back before converting to milliseconds.
         const char* m_label;
         Level       m_level;
         std::int64_t m_startTicks;

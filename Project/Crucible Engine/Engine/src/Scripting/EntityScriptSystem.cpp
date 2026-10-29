@@ -52,8 +52,11 @@ namespace Crucible {
 
         // Copy before callbacks: no managed execution while a query pins columns.
         std::vector<std::pair<Entity, ScriptComponent>> definitions;
-        world.CreateQuery<const ScriptComponent>().ForEach([&](Entity entity, const ScriptComponent& script) {
+        // Switched off (World::SetComponentEnabled) pauses the script exactly like its own
+        // `enabled` field: the instance and its state are kept, not destroyed and recreated.
+        world.BuildQuery<const ScriptComponent>().IncludeDisabled().Build().ForEach([&](Entity entity, const ScriptComponent& script) {
             definitions.emplace_back(entity, script);
+            if (!world.IsComponentActive<ScriptComponent>(entity)) definitions.back().second.enabled = false;
         });
         std::set<uint64_t> present;
         for (const auto& [entity, definition] : definitions) {

@@ -3,13 +3,14 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          30 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                See RenderExtractSystem.h for what this system does and
 *                why it exists.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       a switched-off AnimatedModel draws the rest pose
 *
 **************************************************************************/
 
@@ -199,7 +200,9 @@ namespace Crucible {
             }
 
             if (meshRenderer.modelAsset != 0) {
-                ExtractModel(entity, worldTransform, meshRenderer, world.Read<AnimatedModel>(entity), record);
+                // A switched-off AnimatedModel isn't evaluated: draw the rest pose, as if it weren't there.
+                const AnimatedModel* animation = world.IsComponentActive<AnimatedModel>(entity) ? world.Read<AnimatedModel>(entity) : nullptr;
+                ExtractModel(entity, worldTransform, meshRenderer, animation, record);
                 return;
             }
             if (record.modelAsset != 0) ReleaseDraws(record);

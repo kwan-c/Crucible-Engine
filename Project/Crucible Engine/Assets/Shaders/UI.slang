@@ -4,14 +4,27 @@
 //
 // The target is an sRGB image, so this shader works in linear values: vertex colours are converted
 // here, textures created as sRGB are converted when sampled, and the hardware converts the result
-// back when it is written.
+// back when it is written. The per-pixel text shading is shared with world-space text: see
+// TextShading.slang.
 
-// Per draw command. Must match Crucible::UIPush (UIPass.cpp), 32 bytes.
+#include "TextShading.slang"
+
+// Per draw command. Must match Crucible::UIPush (UIPass.cpp), 64 bytes.
 struct UIPush {
     float4 transform;       // xy = scale, zw = offset: canvas pixels -> target pixels
     float2 invTargetSize;   // 1 / the target's size in pixels
-    uint   mode;            // UIDrawMode: 0 image, 1 signed distance (alpha), 2 multi-channel signed distance
-    uint   pad;
+    uint   mode;            // UIDrawMode: 0 image, 1 signed distance (alpha), 2 multi-channel, 3 multi-channel + true distance in alpha
+    float  pixelRange;      // distance-field atlases: the field's range in atlas texels (0 = unknown)
+    // Text effects (Crucible::UITextEffects). Distances are in field units: 0 -> 1 across the
+    // pixel range, edge at 0.5. Colours are sRGB RGBA8, red in the lowest byte.
+    uint   outlineColour;
+    uint   glowColour;
+    float  outlineWidth;
+    float  glowWidth;
+    float  glowSoftness;
+    float  dilate;          // moves the fill's edge outward: synthetic bold
+    float  shadowSoftness;
+    uint   flags;           // bit 0: shadow pass
 };
 
 [[vk::push_constant]] ConstantBuffer<UIPush> pc;
@@ -30,17 +43,6 @@ struct VSOutput {
     float4 colour;     // linear rgb, alpha as given
 };
 
-// The exact sRGB curve (not a 2.2 power), so a designer's #FF8800 lands on screen as #FF8800.
-float3 SrgbToLinear(float3 c) {
-    float3 low  = c / 12.92;
-    float3 high = pow((c + 0.055) / 1.055, 2.4);
-    return lerp(high, low, step(c, float3(0.04045)));
-}
-
-float Median(float a, float b, float c) {
-    return max(min(a, b), min(max(a, b), c));
-}
-
 [shader("vertex")]
 VSOutput uiVert(VSInput input) {
     VSOutput output;
@@ -58,18 +60,16 @@ VSOutput uiVert(VSInput input) {
 
 [shader("fragment")]
 float4 uiFrag(VSOutput input) : SV_Target {
-    // Sampled before any branch, so its implicit mip selection sees the whole pixel quad.
-    float4 texel = uiTexture.Sample(input.uv);
-
-    if (pc.mode == 0) {
-        return texel * input.colour;
-    }
-
-    // Distance-field text. The edge is where the stored distance is 0.5. fwidth is how much the
-    // distance changes from one screen pixel to the next, so the edge is always about one pixel
-    // soft - sharp at any size and zoom (and later at an angle, for world-space text).
-    float dist     = pc.mode == 2 ? Median(texel.r, texel.g, texel.b) : texel.a;
-    float width    = max(fwidth(dist), 1.0e-5);
-    float coverage = saturate((dist - 0.5) / width + 0.5);
-    return float4(input.colour.rgb, input.colour.a * coverage);
+    TextShading s;
+    s.mode           = pc.mode;
+    s.pixelRange     = pc.pixelRange;
+    s.outlineColour  = pc.outlineColour;
+    s.glowColour     = pc.glowColour;
+    s.outlineWidth   = pc.outlineWidth;
+    s.glowWidth      = pc.glowWidth;
+    s.glowSoftness   = pc.glowSoftness;
+    s.dilate         = pc.dilate;
+    s.shadowSoftness = pc.shadowSoftness;
+    s.flags          = pc.flags;
+    return ShadeText(uiTexture, input.uv, input.colour, s);
 }

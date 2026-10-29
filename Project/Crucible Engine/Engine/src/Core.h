@@ -20,6 +20,7 @@
 #include <ECS/Systems/EventBus/EventBuses.h>
 #include <ECS/Systems/EventBus/EcsEvents.h>
 #include <Configuration/EngineConfig.h>
+#include <Configuration/UserSettings.h>
 #include "AssetPipe/Assetmanager.h"
 #include "Resources/ResourceManager.h"
 
@@ -50,6 +51,16 @@ namespace Crucible
 
         // The settings this Core was started with (see EngineConfigLoader::LoadForApp).
         const EngineConfig& GetConfig() const noexcept { return m_config; }
+
+        // The PLAYER's settings (volumes, look sensitivity, invert Y), from UserSettings.json
+        // next to the .exe - see Configuration/UserSettings.h. An options menu edits them here:
+        // the audio and player-controller systems read them every frame, so a slider is heard
+        // and felt straight away. SaveUserSettings writes them to disk (when the player
+        // confirms, so dragging a slider doesn't write the file every frame).
+        UserSettings& GetUserSettings() noexcept { return m_userSettings; }
+        const UserSettings& GetUserSettings() const noexcept { return m_userSettings; }
+        bool SaveUserSettings() const { return UserSettingsLoader::Save(m_userSettings); }
+
         ScriptRuntime& GetScriptRuntime() const noexcept { return *m_scriptRuntime; }
 
         // Fixes the window's shape to `width`:`height` (e.g. 16, 9) so the game is framed the
@@ -59,6 +70,16 @@ namespace Crucible
         void  UnlockWindowAspectRatio();
         // Width / height of the locked shape, or 0 when the window is free.
         float GetWindowAspectRatioLock() const;
+
+        // Window mode. F11 or Alt+Enter toggle fullscreen in both apps. Every change is saved to
+        // UserSettings.json next to the .exe (also at shutdown, which catches the title bar's
+        // maximize button), so the next launch opens the same way. See WindowManager.
+        void SetFullscreen(bool fullscreen);
+        void ToggleFullscreen() { SetFullscreen(!IsFullscreen()); }
+        bool IsFullscreen() const { return m_window->IsFullscreen(); }
+        void MaximizeWindow();
+        void RestoreWindow();      // un-maximize
+        bool IsWindowMaximized() const { return m_window->IsMaximized(); }
         // Both valid only after Init(). The engine's shared asset index (AssetManager) and the
         // GUID -> Renderer-handle cache built on top of it (ResourceManager).
         AssetManager&    GetAssets() const { return *m_assets; }
@@ -130,9 +151,19 @@ namespace Crucible
         // The play-mode controller itself.
         PlayMode& GetPlayMode() noexcept { return *m_playMode; }
 
+        // Quits: the main loop ends after the current frame and the engine shuts down normally,
+        // as if the window's X was clicked. For the standalone game (a UI "Quit" button); the
+        // editor intercepts window closes (unsaved-changes prompt) and doesn't use this.
+        void RequestQuit();
+
     private:
         EngineConfig m_config;
+        // Declared before the systems that hold a pointer into it, so it outlives them.
+        UserSettings m_userSettings;
         void RegisterEngineSystems();
+
+        // Writes the window's current mode to UserSettings.json (for m_config.app).
+        void SaveWindowState() const;
 
         void CleanUp();
 

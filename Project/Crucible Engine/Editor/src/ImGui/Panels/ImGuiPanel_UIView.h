@@ -122,6 +122,7 @@ namespace Crucible {
 		GizmoHandle m_dragHandle = GizmoHandle::None;
 		bool        m_dragMoved = false;
 		std::string m_dragBefore;
+		Entity      m_contextEntity{};   // the element the right-click menu is about (null: empty page)
 		ImVec2      m_dragStartMouse{ 0.0f, 0.0f };
 		UIRect      m_dragStartRect{};
 

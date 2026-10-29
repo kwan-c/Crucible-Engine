@@ -21,8 +21,11 @@
 #include "Graphics/DebugDrawSystem.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Undo/EntityCommands.h"
+#include "Prefabs/PrefabAuthoring.h"
 #include "Resources/ResourceManager.h"
 #include "Spatial/Bounds.h"
+#include "UI/WorldUIPlane.h"      // world UI boxes for this view (WorldText, world canvases): outline, picking, framing
+#include "UI/UISystem.h"          // UI::LayoutWorldCanvas: which element on a world canvas a click is on
 
 #include <ImGuizmo.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -123,6 +126,7 @@ void Crucible::SceneView::Update(float dt) {
 	SyncSelection();
 	m_iconHits.clear();
 	if (m_showIcons) { DrawIcons(min, avail); }
+	DrawWorldTextBoxes(min, avail);
 	if (m_showStats) { DrawStatsOverlay(min); }
 	DrawGizmo(min, avail);   // before picking, so a click on the gizmo is known to be the gizmo's
 	HandleClickPicking(min, avail);
@@ -131,7 +135,12 @@ void Crucible::SceneView::Update(float dt) {
 	if (ImGui::BeginDragDropTarget()) {
 		if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) {
 			char const* virtualPath = static_cast<char const*>(payload->Data);
-			CRU_INFO("[Scene] Asset dropped into scene: {} (spawning not implemented yet)", virtualPath);
+			if (PrefabAuthoring::IsPrefabFile(virtualPath)) {
+				// Lands where the cursor points; one undo step, and the copy is selected.
+				PrefabAuthoring::PlacePrefab(m_world, virtualPath, kNullEntity, DropPoint(min, avail));
+			} else {
+				CRU_INFO("[Scene] Asset dropped into scene: {} (only prefabs can be placed so far)", virtualPath);
+			}
 		}
 		ImGui::EndDragDropTarget();
 	}
@@ -220,6 +229,27 @@ void Crucible::SceneView::FrameSelected() {
 				add(AABB::Transform(AABB(mn, mx), wt->matrix));
 				usedMesh = true;
 			}
+		}
+		if (!usedMesh) {
+			// A world canvas's page, or an element's rect on one, as this view sees it.
+			Camera& camera = m_viewport.GetCamera();
+			std::array<glm::vec3, 4> corners;
+			if (WorldUICorners(entity, camera.position, camera.GetView(), corners)) {
+				AABB b(corners[0], corners[0]);
+				for (glm::vec3 const& c : corners) { b = AABB::Union(b, AABB(c, c)); }
+				add(b);
+				usedMesh = true;
+			}
+		}
+		if (!usedMesh) if (WorldText const* text = m_world.Read<WorldText>(entity)) {
+			// Its box as this view sees it (a billboard turns toward the camera).
+			Camera& camera = m_viewport.GetCamera();
+			WorldUIPlane const plane = WorldTextPlaneFor(*text, wt->matrix, camera.position, camera.GetView());
+			auto const corners = WorldTextBoxCorners(*text, plane);
+			AABB b(corners[0], corners[0]);
+			for (glm::vec3 const& c : corners) { b = AABB::Union(b, AABB(c, c)); }
+			add(b);
+			usedMesh = true;
 		}
 		if (!usedMesh) {
 			glm::vec3 const p(wt->matrix[3]);
@@ -382,6 +412,11 @@ void Crucible::SceneView::SyncSelection() {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	const Entity active = inspector ? inspector->GetSelectedEntity() : kNullEntity;
 	DebugDrawSystem::SetSelectedEntity(active);
+	// Billboarded world canvases are outlined facing this view's camera (DebugDrawSystem::DrawWorldUI).
+	if (m_viewport.IsValid()) {
+		Camera& camera = m_viewport.GetCamera();
+		DebugDrawSystem::SetViewCamera(camera.position, camera.GetView());
+	}
 
 	// Every selected entity gets the outline. Picks up selections made elsewhere (Hierarchy,
 	// Inspector) too; the renderer ignores the call when the list hasn't changed.
@@ -442,8 +477,15 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 		});
 
 	// Anything else with nothing to click on in the scene (empties, collider-only, characters...).
-	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent>().Build().ForEach(
+	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent, WorldText, UICanvas, UIRect>().Build().ForEach(
 		[&](Entity e, const WorldTransform& wt) {
+			place(e, wt, [&](ImVec2 p) { GlyphDiamond(dl, p, IM_COL32(200, 200, 200, 255)); });
+		});
+	// World text is clicked on its box (PickWorldText); an empty one has nothing to see, so it
+	// keeps the diamond.
+	m_world.CreateQuery<const WorldTransform, const WorldText>().ForEach(
+		[&](Entity e, const WorldTransform& wt, const WorldText& text) {
+			if (!text.text.empty()) { return; }
 			place(e, wt, [&](ImVec2 p) { GlyphDiamond(dl, p, IM_COL32(200, 200, 200, 255)); });
 		});
 
@@ -483,9 +525,150 @@ void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
 	}
 	if (best) { Select(best->entity); return; }
 
-	// No icon: cast a ray from the cursor through the scene. The image is drawn with a flipped
-	// (negative-height) viewport, so screen top = NDC +1.
-	if (viewSize.x <= 0.0f || viewSize.y <= 0.0f) { return; }
+	// No icon: cast a ray from the cursor through the scene.
+	glm::vec3 origin{}, toFar{};
+	if (!MouseRay(viewMin, viewSize, origin, toFar)) { return; }
+	// The nearest of: a mesh (Renderer::Raycast), a world text's box.
+	const float length = glm::length(toFar);
+	Entity picked = kNullEntity;
+	float  nearest = length;
+	RenderRaycastHit hit;
+	if (m_renderer.Raycast(origin, toFar, length, hit)) {
+		const Entity entity = UserDataToEntity(hit.userData);
+		if (m_world.IsAlive(entity)) { picked = entity; nearest = hit.distance; }
+	}
+	if (length > 0.0f) {
+		const Entity text = PickWorldText(origin, toFar / length, nearest);
+		if (text.IsValid()) { picked = text; }
+		const Entity ui = PickWorldCanvas(origin, toFar / length, nearest);
+		if (ui.IsValid()) { picked = ui; }
+	}
+	Select(picked);   // kNullEntity: clicked empty space
+}
+
+Crucible::Entity Crucible::SceneView::PickWorldText(const glm::vec3& origin, const glm::vec3& direction, float& distance) {
+	Camera& camera = m_viewport.GetCamera();
+	const glm::mat4 view = camera.GetView();
+	Entity picked = kNullEntity;
+	m_world.CreateQuery<const WorldTransform, const WorldText>().ForEach(
+		[&](Entity e, const WorldTransform& wt, const WorldText& text) {
+			if (!wt.valid || text.text.empty()) { return; }
+			const WorldUIPlane plane = WorldTextPlaneFor(text, wt.matrix, camera.position, view);
+			float t = 0.0f;
+			if (RayHitsWorldTextBox(text, plane, origin, direction, t) && t < distance) { distance = t; picked = e; }
+		});
+	return picked;
+}
+
+namespace {
+	// The world-space canvas whose tree `entity` is in (the canvas itself, or the topmost canvas above
+	// an element with a UIRect), or kNullEntity.
+	Crucible::Entity WorldCanvasOf(Crucible::World& world, Crucible::Entity entity) {
+		Crucible::Entity canvas = world.HasComponent<Crucible::UICanvas>(entity) ? entity : Crucible::kNullEntity;
+		if (canvas == Crucible::kNullEntity && !world.HasComponent<Crucible::UIRect>(entity)) { return Crucible::kNullEntity; }
+		for (Crucible::Entity p = world.GetParent(entity); p.IsValid(); p = world.GetParent(p)) {
+			if (world.HasComponent<Crucible::UICanvas>(p)) { canvas = p; }   // the topmost canvas owns the tree
+		}
+		if (canvas == Crucible::kNullEntity) { return Crucible::kNullEntity; }
+		Crucible::UICanvas const* settings = world.Read<Crucible::UICanvas>(canvas);
+		return settings && settings->renderMode == Crucible::UICanvas::RenderMode::WorldSpace ? canvas : Crucible::kNullEntity;
+	}
+}
+
+bool Crucible::SceneView::WorldUICorners(Entity entity, const glm::vec3& cameraPosition, const glm::mat4& view, std::array<glm::vec3, 4>& corners) {
+	const Entity canvasEntity = WorldCanvasOf(m_world, entity);
+	if (!canvasEntity.IsValid()) { return false; }
+	UICanvas const* canvas = m_world.Read<UICanvas>(canvasEntity);
+	WorldTransform const* wt = m_world.Read<WorldTransform>(canvasEntity);
+	if (!canvas || !wt || !wt->valid) { return false; }
+
+	const WorldUIPlane plane = WorldCanvasPlaneFor(*canvas, wt->matrix, cameraPosition, view);
+	if (entity == canvasEntity) {
+		corners = WorldUIBoxCorners(plane, WorldCanvasBoxInPlane(*canvas));
+		return true;
+	}
+	UI::LayoutWorldCanvas(m_world, canvasEntity, *canvas, m_canvasLayout);
+	for (const UI::LayoutItem& item : m_canvasLayout) {
+		if (!(item.entity == entity)) { continue; }
+		const auto page = item.Corners();   // page pixels, turned with the element
+		for (int i = 0; i < 4; ++i) { corners[i] = WorldUIPlanePoint(plane, WorldCanvasToPlane(*canvas, page[i])); }
+		return true;
+	}
+	return false;   // under a switched-off rect: not laid out
+}
+
+Crucible::Entity Crucible::SceneView::PickWorldCanvas(const glm::vec3& origin, const glm::vec3& direction, float& distance) {
+	Camera& camera = m_viewport.GetCamera();
+	const glm::mat4 view = camera.GetView();
+
+	// Every drawn world canvas (enabled, not under another canvas). Collected first: laying one out
+	// reads its tree, which mustn't happen while the query iterates.
+	std::vector<Entity> canvases;
+	m_world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity e, const WorldTransform& wt, const UICanvas& canvas) {
+		if (canvas.renderMode == UICanvas::RenderMode::WorldSpace && canvas.enabled && wt.valid) { canvases.push_back(e); }
+	});
+
+	Entity picked = kNullEntity;
+	for (const Entity canvasEntity : canvases) {
+		if (!(WorldCanvasOf(m_world, canvasEntity) == canvasEntity)) { continue; }   // nested: part of another canvas's page
+		const UICanvas canvas = *m_world.Read<UICanvas>(canvasEntity);
+		const WorldUIPlane plane = WorldCanvasPlaneFor(canvas, m_world.Read<WorldTransform>(canvasEntity)->matrix, camera.position, view);
+		float t = 0.0f;
+		glm::vec2 local{ 0.0f };
+		if (!RayHitsWorldUIBox(plane, WorldCanvasBoxInPlane(canvas), origin, direction, t, &local) || t >= distance) { continue; }
+
+		// The topmost element under that point of the page (drawn last = on top), else the canvas.
+		distance = t;
+		picked = canvasEntity;
+		const glm::vec2 point = WorldCanvasToPage(canvas, local);
+		UI::LayoutWorldCanvas(m_world, canvasEntity, canvas, m_canvasLayout);
+		for (auto it = m_canvasLayout.rbegin(); it != m_canvasLayout.rend(); ++it) {
+			if (it->Contains(point)) { picked = it->entity; break; }
+		}
+	}
+	return picked;
+}
+
+void Crucible::SceneView::DrawWorldTextBoxes(ImVec2 viewMin, ImVec2 viewSize) {
+	if (!m_viewport.IsValid() || viewSize.x <= 0.0f || viewSize.y <= 0.0f) { return; }
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (!inspector) { return; }
+
+	Camera& camera = m_viewport.GetCamera();
+	camera.SetAspect(viewSize.x, viewSize.y);   // match the image this frame (the Renderer does the same)
+	const glm::mat4 view = camera.GetView();
+	const glm::mat4 viewProj = camera.GetProjection() * view;
+	const Entity active = DebugDrawSystem::GetSelectedEntity();
+
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	dl->PushClipRect(viewMin, ImVec2(viewMin.x + viewSize.x, viewMin.y + viewSize.y), true);
+	for (Entity const e : inspector->GetSelection()) {
+		if (!m_world.IsAlive(e)) { continue; }
+		WorldTransform const* wt = m_world.Read<WorldTransform>(e);
+		WorldText const* text = m_world.Read<WorldText>(e);
+		if (!wt || !wt->valid || !text) { continue; }
+
+		// The box as this view sees it, in the selection colour (solid on the active entity).
+		const WorldUIPlane plane = WorldTextPlaneFor(*text, wt->matrix, camera.position, view);
+		ImVec2 points[4];
+		bool visible = true;
+		const auto corners = WorldTextBoxCorners(*text, plane);
+		for (int i = 0; i < 4 && visible; ++i) {
+			const glm::vec4 clip = viewProj * glm::vec4(corners[i], 1.0f);
+			if (clip.w <= 1.0e-4f) { visible = false; break; }   // a corner behind the camera: skip it this frame
+			const glm::vec2 ndc = glm::vec2(clip) / clip.w;
+			points[i] = ImVec2(viewMin.x + (ndc.x * 0.5f + 0.5f) * viewSize.x, viewMin.y + (0.5f - ndc.y * 0.5f) * viewSize.y);
+		}
+		if (!visible) { continue; }
+		dl->AddPolyline(points, 4, e == active ? IM_COL32(255, 140, 26, 255) : IM_COL32(255, 140, 26, 150), ImDrawFlags_Closed, 1.5f);
+	}
+	dl->PopClipRect();
+}
+
+bool Crucible::SceneView::MouseRay(ImVec2 viewMin, ImVec2 viewSize, glm::vec3& origin, glm::vec3& toFar) {
+	if (viewSize.x <= 0.0f || viewSize.y <= 0.0f) { return false; }
+	// The image is drawn with a flipped (negative-height) viewport, so screen top = NDC +1.
+	const ImVec2 mouse = ImGui::GetMousePos();
 	Camera& camera = m_viewport.GetCamera();
 	const float ndcX = (mouse.x - viewMin.x) / viewSize.x * 2.0f - 1.0f;
 	const float ndcY = 1.0f - (mouse.y - viewMin.y) / viewSize.y * 2.0f;
@@ -494,15 +677,31 @@ void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
 	glm::vec4 farPoint  = invViewProj * glm::vec4(ndcX, ndcY, 1.0f, 1.0f);
 	nearPoint /= nearPoint.w;
 	farPoint  /= farPoint.w;
+	origin = glm::vec3(nearPoint);
+	toFar  = glm::vec3(farPoint) - origin;
+	return true;
+}
 
-	const glm::vec3 origin(nearPoint);
-	const glm::vec3 toFar = glm::vec3(farPoint) - origin;
+glm::vec3 Crucible::SceneView::DropPoint(ImVec2 viewMin, ImVec2 viewSize) {
+	glm::vec3 origin{}, toFar{};
+	if (!MouseRay(viewMin, viewSize, origin, toFar)) { return glm::vec3(0.0f); }
+	const float length = glm::length(toFar);
+	if (length <= 0.0f) { return origin; }
+	const glm::vec3 dir = toFar / length;
+
+	// 1. On whatever mesh is under the cursor (the same exact pick as click selection).
 	RenderRaycastHit hit;
-	if (m_renderer.Raycast(origin, toFar, glm::length(toFar), hit)) {
-		const Entity entity = UserDataToEntity(hit.userData);
-		if (m_world.IsAlive(entity)) { Select(entity); return; }
+	if (m_renderer.Raycast(origin, toFar, length, hit)) { return hit.point; }
+
+	// 2. On the y = 0 ground plane, when the cursor points down at it within the far plane.
+	if (dir.y < -1e-4f) {
+		const float t = -origin.y / dir.y;
+		if (t > 0.0f && t < length) { return origin + dir * t; }
 	}
-	Select(kNullEntity);   // clicked empty space
+
+	// 3. Floating in front of the camera (looking at the sky, or from below the ground).
+	constexpr float kDropDistance = 10.0f;
+	return origin + dir * kDropDistance;
 }
 
 void Crucible::SceneView::DrawGizmoMenu() {
@@ -521,6 +720,7 @@ void Crucible::SceneView::DrawGizmoMenu() {
 		//{ "Selection",      DebugCategory::Selection  },
 		{ "Gameplay lines", DebugCategory::Gameplay   },
 		{ "Culling bounds", DebugCategory::Bounds     },
+		{ "World UI bounds", DebugCategory::WorldUI   },
 	};
 	for (const Entry& e : entries) {
 		bool on = DebugDraw::IsCategoryEnabled(e.category);
@@ -694,6 +894,18 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 		EndGizmoDrag();
 		return;
 	}
+	// A UI element (it has a UIRect) is placed by its UIRect, not its Transform: on a world-space
+	// canvas it gets a gizmo in the page that edits the UIRect; screen-space UI is edited in the UI
+	// tab. Its canvas has an ordinary gizmo, like any entity.
+	if (m_world.HasComponent<UIRect>(entity)) {
+		if (WorldCanvasOf(m_world, entity).IsValid() && !m_world.HasComponent<UICanvas>(entity)) {
+			DrawWorldUIGizmo(entity, viewMin, viewSize);
+		} else {
+			m_gizmoDrawn = false;
+			EndGizmoDrag();
+		}
+		return;
+	}
 	if (m_gizmoWasUsing && !(entity == m_gizmoEntity)) { EndGizmoDrag(); }   // selection changed mid-drag
 
 	Camera& camera = m_viewport.GetCamera();
@@ -804,6 +1016,118 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 			if (!Detail::DecomposeTRS(glm::inverse(otherParent) * (delta * otherWorld), otherT, otherR, otherS)) { continue; }
 			t->positions = otherT;                                                   // Move and Rotate both move it
 			if (m_gizmoMode == GizmoMode::Rotate) { t->rotation = otherR; }          // only Rotate turns it
+			m_scenes.MarkDirty();
+		}
+	}
+
+	if (!usingGizmo && m_gizmoWasUsing) { EndGizmoDrag(); }
+	m_gizmoWasUsing = usingGizmo;
+}
+
+void Crucible::SceneView::DrawWorldUIGizmo(Entity entity, ImVec2 viewMin, ImVec2 viewSize) {
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	auto stop = [&] { m_gizmoDrawn = false; EndGizmoDrag(); };
+
+	const Entity canvasEntity = WorldCanvasOf(m_world, entity);
+	UICanvas const* canvasSettings = m_world.Read<UICanvas>(canvasEntity);
+	WorldTransform const* canvasTransform = m_world.Read<WorldTransform>(canvasEntity);
+	if (!canvasSettings || !canvasTransform || !canvasTransform->valid || !m_world.HasComponent<UIRect>(entity)) { stop(); return; }
+	if (m_gizmoWasUsing && !(entity == m_gizmoEntity)) { EndGizmoDrag(); }   // selection changed mid-drag
+	const UICanvas canvas = *canvasSettings;
+
+	Camera& camera = m_viewport.GetCamera();
+	glm::mat4 const view = camera.GetView();
+	glm::mat4 const projection = camera.GetProjection();
+
+	// Where the element is this frame: its rect on the page, then the page in the world (as this
+	// view sees it - a billboarded canvas turns toward the camera).
+	UI::LayoutWorldCanvas(m_world, canvasEntity, canvas, m_canvasLayout);
+	auto found = std::find_if(m_canvasLayout.begin(), m_canvasLayout.end(), [&](UI::LayoutItem const& i) { return i.entity == entity; });
+	if (found == m_canvasLayout.end()) { stop(); return; }   // under a switched-off rect: not laid out
+	const UI::LayoutItem item = *found;
+	const WorldUIPlane plane = WorldCanvasPlaneFor(canvas, canvasTransform->matrix, camera.position, view);
+	auto pageToWorld = [&](glm::vec2 p) { return WorldUIPlanePoint(plane, WorldCanvasToPlane(canvas, p)); };
+
+	// The gizmo's frame: at the element's pivot, along its own axes (rotation included). +y is the
+	// element's up (page -y), z its front.
+	const glm::vec2 pivotPage = item.ToScreen(item.pivot);
+	const glm::vec3 origin = pageToWorld(pivotPage);
+	glm::vec3 xAxis = pageToWorld(item.ToScreen(item.pivot + glm::vec2(1.0f, 0.0f))) - origin;
+	glm::vec3 yAxis = pageToWorld(item.ToScreen(item.pivot - glm::vec2(0.0f, 1.0f))) - origin;
+	const float pixel = glm::length(xAxis);   // one page pixel, in metres
+	if (!(pixel > 0.0f) || !(glm::length(yAxis) > 0.0f)) { stop(); return; }
+	xAxis = glm::normalize(xAxis);
+	yAxis = glm::normalize(yAxis);
+	const glm::vec3 zAxis = glm::normalize(glm::cross(xAxis, yAxis));
+	glm::mat4 world(1.0f);
+	world[0] = glm::vec4(xAxis, 0.0f);
+	world[1] = glm::vec4(yAxis, 0.0f);
+	world[2] = glm::vec4(zAxis, 0.0f);
+	world[3] = glm::vec4(origin, 1.0f);
+
+	// Only the page's two axes: nothing moves off the page.
+	int operation = ImGuizmo::TRANSLATE_X | ImGuizmo::TRANSLATE_Y;
+	float snapStep = 10.0f * pixel;   // Ctrl-snap: 10 page pixels...
+	char const* verb = "Move";
+	if (m_gizmoMode == GizmoMode::Rotate) { operation = ImGuizmo::ROTATE_Z; snapStep = 15.0f; verb = "Rotate"; }                 // ...15 degrees...
+	if (m_gizmoMode == GizmoMode::Scale)  { operation = ImGuizmo::SCALE_X | ImGuizmo::SCALE_Y; snapStep = 0.1f; verb = "Scale"; } // ...0.1
+	float const snap[3] = { snapStep, snapStep, snapStep };
+	bool const snapping = ImGui::GetIO().KeyCtrl;
+
+	ImGuizmo::SetOrthographic(false);
+	ImGuizmo::SetDrawlist(ImGui::GetWindowDrawList());
+	ImGuizmo::SetRect(viewMin.x, viewMin.y, viewSize.x, viewSize.y);
+	ImGuizmo::SetGizmoSizeClipSpace(0.25f);
+
+	bool const changed = ImGuizmo::Manipulate(glm::value_ptr(view), glm::value_ptr(projection),
+		static_cast<ImGuizmo::OPERATION>(operation), ImGuizmo::LOCAL, glm::value_ptr(world), nullptr, snapping ? snap : nullptr);
+	bool const usingGizmo = ImGuizmo::IsUsing();
+	m_gizmoDrawn = true;
+
+	if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && (usingGizmo || ImGuizmo::IsOver())) {
+		m_gizmoClaimedClick = true;   // a drag, not a pick of whatever is behind it
+	}
+
+	if (usingGizmo && !m_gizmoWasUsing) {
+		// The drag starts: one undo step for the whole of it (EndGizmoDrag), this element only.
+		if (inspector) { inspector->CommitPendingEdit(); }
+		m_gizmoEntity = entity;
+		m_gizmoBefore.clear();
+		m_gizmoBefore.emplace_back(entity, EntityState::Capture(m_world, entity));
+		m_gizmoVerb = verb;
+		m_uiGizmoStartSize = m_world.Read<UIRect>(entity)->size;
+	}
+
+	if (changed) {
+		if (UIRect* rect = m_world.GetComponent<UIRect>(entity)) {
+			switch (m_gizmoMode) {
+			case GizmoMode::Translate: {
+				// The pivot's new place on the page, as a change in the parent's own space (which may
+				// be turned): position is the pivot's offset from the anchors there.
+				const glm::vec2 newPage = WorldCanvasToPage(canvas, WorldUIPlaneLocal(plane, glm::vec3(world[3])));
+				const glm::mat2 parentLinear(glm::vec2(item.parentToScreen[0]), glm::vec2(item.parentToScreen[1]));
+				if (std::abs(glm::determinant(parentLinear)) > 1.0e-9f && item.scale > 0.0f) {
+					rect->position += (glm::inverse(parentLinear) * (newPage - pivotPage)) / item.scale;
+				}
+				break;
+			}
+			case GizmoMode::Rotate: {
+				// This frame's turn around the page's front normal: counter-clockwise seen from the
+				// front, the same way UIRect::rotation counts.
+				const glm::vec3 newX = glm::normalize(glm::vec3(world[0]));
+				const float radians = std::atan2(glm::dot(glm::cross(xAxis, newX), zAxis), glm::dot(xAxis, newX));
+				rect->rotation += glm::degrees(radians);
+				break;
+			}
+			case GizmoMode::Scale: {
+				// ImGuizmo scales from the drag's start: size = start size times the total factor, on
+				// each axis whose anchors are together (a stretched axis follows its parent instead).
+				const glm::vec2 factor(glm::length(glm::vec3(world[0])), glm::length(glm::vec3(world[1])));
+				if (rect->anchorMin.x == rect->anchorMax.x) { rect->size.x = std::max(m_uiGizmoStartSize.x * factor.x, 0.0f); }
+				if (rect->anchorMin.y == rect->anchorMax.y) { rect->size.y = std::max(m_uiGizmoStartSize.y * factor.y, 0.0f); }
+				break;
+			}
+			}
 			m_scenes.MarkDirty();
 		}
 	}

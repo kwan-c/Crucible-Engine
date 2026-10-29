@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -25,6 +25,8 @@
 *    -v1.1       HierarchyNode and WorldTransform kinds; WorldManaged and
 *                Mandatory traits, RemovableComponent concept
 *    -v1.2       EntityName kind (17); WorldValidated trait
+*    -v1.3       ToggleableComponent concept, RequiresComponents trait
+*                (per-component on/off state and its dependencies)
 *
 *
 **************************************************************************/
@@ -69,26 +71,29 @@ namespace Crucible
 		Skybox = 9,           // Graphics: scene sky + ambient + exposure
 		AudioListener = 10,   // Audio: where the ears are (Audio/AudioComponents.h)
 		Camera = 11,          // Graphics: the game camera (struct CameraComponent)
-		PlayerController = 12,   // Physics: keyboard -> CharacterController, local player only (Physics/PhysicsComponents.h)
-		CameraOrbit = 13,        // Physics: mouse -> third-person camera pivot (Physics/PhysicsComponents.h)
+		PlayerController = 12,   // Player: keyboard / gamepad -> CharacterController, local player only (Player/PlayerComponents.h)
+		CameraOrbit = 13,        // Player: mouse / right stick -> third-person camera pivot (Player/PlayerComponents.h)
 		ParticleEmitter = 14,    // Graphics: a particle effect (sparks, fire, smoke...) - Components.h
 		MaterialParams = 15,     // Graphics: per-object material tweaks (glow strength...) - Components.h
 		StressMover = 16,        // TEMPORARY load-test helper: walks an entity in a circle - Components.h
 		EntityName = 17,         // every entity's display name (mandatory) - Components.h
-		UICanvas = 18, 
-		UIRect = 19, 
-		UIImage = 20, 
-		UIButton = 21, 
+		UICanvas = 18,
+		UIRect = 19,
+		UIImage = 20,
+		UIButton = 21,
 		UIText = 22,
 		UISlider = 23,           // UI: a draggable value (UI/UIComponents.h)
 		Water = 24,
 		AnimatedModel = 25,
 		SocketAttachment = 26,
 		ScriptComponent = 27,
-		Vine = 28,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
+		PrefabInstance = 28,     // Editor/Scene: links an entity to the .cprefab it was placed from (Scene/Prefab.h)
+		ConstantForce = 29,      // Physics: a steady push set in the Inspector (Physics/PhysicsComponents.h)
+		PhysicsJoint = 30,       // Physics: hinge, fixed, ball, character or spring joint between two bodies (Physics/PhysicsComponents.h)
+		WorldText = 31,          // Graphics: text placed in the 3D world by its Transform (Text/WorldText.h)
+		Vine = 32,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
 
-
-		MAXCOMPONENT = 29
+		MAXCOMPONENT = 33
 	};
 
 
@@ -158,6 +163,44 @@ namespace Crucible
 	template <typename T>
 	concept RemovableComponent = !Mandatory<T>::value;
 
+	/*************************************************************************
+	 \brief
+		A component the ECS can switch off without removing it (Unity's
+		Behaviour.enabled): every component except the mandatory base ones
+		and World-managed ones.
+	 \details
+		The ECS keeps the on/off state itself, next to the component's data
+		(one byte per entity in the component's column), so a new component
+		type gets it with nothing to write. It is independent of any flag a
+		component has of its own (MeshRenderer::visible, Light::enabled...):
+		those keep their meaning and are never changed by it. See
+		World::SetComponentEnabled.
+	 *************************************************************************/
+	template <typename T>
+	concept ToggleableComponent = !Mandatory<T>::value && !WorldManaged<T>::value;
+
+	/*************************************************************************
+	 \brief  A list of component types (used by RequiresComponents).
+	 *************************************************************************/
+	template <typename... Components>
+	struct ComponentTypeList {};
+
+	/*************************************************************************
+	 \brief
+		The other components on the SAME entity that T needs in order to
+		run (e.g. RigidBody needs a Collider). Specialised in Components.h:
+			template <> struct RequiresComponents<RigidBody>
+			{ using type = ComponentTypeList<Collider>; };
+	 \details
+		Only affects the on/off state: while any of them (or anything they
+		require in turn) is switched off, T counts as off too - not
+		"active" - and comes back by itself when they are on again. T's own
+		on/off choice is untouched. A requirement the entity doesn't have
+		blocks nothing. Cycles are rejected when the World is built.
+	 *************************************************************************/
+	template <typename T>
+	struct RequiresComponents { using type = ComponentTypeList<>; };
+
 
 /*************************************************************************
  \brief
@@ -224,5 +267,9 @@ namespace Crucible
  X(SocketAttachment)                                                           \
  X(ScriptComponent)                                                            \
  X(Vine)                                                                       \
+ X(PrefabInstance)                                                             \
+ X(ConstantForce)                                                              \
+ X(PhysicsJoint)                                                               \
+ X(WorldText)                                                                  \
 
 }

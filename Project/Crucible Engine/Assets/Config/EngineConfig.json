@@ -4,16 +4,12 @@
         "windowWidth": 1200,
         "windowHeight": 800,
         "fullScreen": false,
+        "maximized": false,
         "targetFPS": 60
     },
     "network": {
         "port": 9999,
         "maxPlayers": 4
-    },
-    "audio": {
-        "masterVolume": 1.0,
-        "musicVolume": 1.0,
-        "sfxVolume": 1.0
     },
     "project": {
         "startupScene": "Scenes/Fog_Lighting_Effects.scene",
@@ -22,10 +18,25 @@
             9
         ]
     },
-    "editor": {},
+    "editor": {
+        "releaseCursorKey": "Shift+F1"
+    },
     "game": {
         "graphics": {
-            "windowTitle": "Mekanomachia"
+            "windowTitle": "Mekanomachia",
+            "fullScreen": true,
+            "maximized": false
         }
+    },
+    "scripting": {
+        "enabled": true,
+        "runtimeDirectory": "Mono",
+        "verifyManagedExecution": true,
+        "startupAssembly": "",
+        "startupNamespace": "",
+        "startupClass": "",
+        "startupMethod": "",
+        "startupStatic": false,
+        "instances": []
     }
 }

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 September 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Declares CommandBuffer: records structural ECS changes
 *                (create/destroy entity, add/remove component) made
@@ -33,6 +33,8 @@
 *                SetSiblingIndex, EntitySpawn::WithParent); HierarchyNode
 *                can't be written/added through the buffer; mandatory base
 *                components can't be removed
+*    -v1.4       SetComponentEnabled (typed and by ComponentId);
+*                EntitySpawn::WithDisabled (components born switched off)
 *
 **************************************************************************/
 
@@ -115,6 +117,28 @@ namespace  Crucible
 				 replay if entity has died.
 		 *********************************************************************/
 		void SetSiblingIndex(Entity entity, std::uint32_t index);
+
+		/*********************************************************************
+		 \brief  Queues World::SetComponentEnabled<T>(entity, enabled).
+		 \details Replayed in order with every other command in this buffer:
+				  switch-off-then-DestroyEntity switches off (hooks fire) and
+				  then destroys; DestroyEntity- or RemoveComponent-then-switch
+				  is skipped. Repeated switches all replay in order - the last
+				  one wins, and every real change of a component's active
+				  state fires its hooks. Never moves the entity between
+				  archetypes.
+		 \note   Skipped on replay if entity has died or no longer has T.
+		 *********************************************************************/
+		template <ToggleableComponent T>
+		void SetComponentEnabled(Entity entity, bool enabled);
+
+		/*********************************************************************
+		 \brief  SetComponentEnabled by ComponentId (scripting, tools): queues
+				 World::TrySetComponentEnabled. Skipped on replay if the
+				 entity is dead, lacks the component, or it can't be
+				 switched off.
+		 *********************************************************************/
+		void SetComponentEnabled(Entity entity, ComponentId id, bool enabled);
 
 
 		class EntitySpawn;
@@ -233,6 +257,7 @@ namespace  Crucible
 		void RecordSetSpawnedComponent(std::uint32_t token, std::uint32_t epoch, T value);
 
 		void RecordSpawnParent(std::uint32_t token, std::uint32_t epoch, Entity parent, bool worldPositionStays);
+		void RecordSpawnDisabled(std::uint32_t token, std::uint32_t epoch, ComponentId id);
 
 		// Throws std::logic_error if an EntitySpawn handle outlived its buffer epoch.
 		void RequireLiveSpawn(std::uint32_t token, std::uint32_t epoch, const char* operation) const;
@@ -243,6 +268,7 @@ namespace  Crucible
 
 		std::vector<Entity> m_spawnedEntities;
 		std::vector<ComponentSignature> m_spawnSignatures;   // final component set per spawn token
+		std::vector<ComponentSignature> m_spawnDisabled;     // per spawn token: components born switched off (WithDisabled)
 
 		// Bumped whenever spawn tokens are reset (Execute/Clear) or the buffer
 		// is moved from, so an EntitySpawn from an earlier epoch is rejected.
@@ -293,6 +319,24 @@ namespace  Crucible
 			return *this;
 		}
 
+		/*********************************************************************
+		 \brief  The spawned entity's T starts switched off; its data is
+				 still whatever With<T>() gave it. Call after With<T>().
+		 \details Applied the moment the entity is created, before anything
+				  else in the buffer can see it and before its add hooks
+				  run, so it is never seen switched on. Born switched off is
+				  not a change: no OnComponentActiveChanged and no event.
+				  Several components may be switched off; repeating it is
+				  harmless.
+		 \note   Throws std::logic_error if With<T>() was not called first.
+		 *********************************************************************/
+		template <ToggleableComponent T>
+		EntitySpawn& WithDisabled()
+		{
+			m_buffer->RecordSpawnDisabled(m_token, m_epoch, ComponentTypeId<T>());
+			return *this;
+		}
+
 	private:
 		friend class CommandBuffer;
 		EntitySpawn(CommandBuffer& buffer, std::uint32_t token, std::uint32_t epoch)
@@ -334,6 +378,21 @@ namespace  Crucible
 				world.RemoveComponent<T>(p->entity);
 			},
 			Payload{ entity });
+	}
+
+	template <ToggleableComponent T>
+	void CommandBuffer::SetComponentEnabled(Entity entity, bool enabled)
+	{
+		struct Payload { Entity entity; bool enabled; };
+		Emplace<Payload>(
+			[](std::byte* raw, World& world, CommandBuffer&)
+			{
+				const Payload* p = std::launder(reinterpret_cast<Payload*>(raw));
+				// Destroyed, or lost T, earlier in the buffer (or since recording): nothing to switch.
+				if (!world.HasComponent<T>(p->entity)) return;
+				world.SetComponentEnabled<T>(p->entity, p->enabled);
+			},
+			Payload{ entity, enabled });
 	}
 
 	template <typename T>

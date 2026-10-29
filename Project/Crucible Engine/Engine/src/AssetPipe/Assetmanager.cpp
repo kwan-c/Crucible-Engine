@@ -27,6 +27,8 @@
 *************************************************************************/
 #include "AssetManager.h"
 #include "AssetRegistry.h"
+#include "AssetPaths.h"
+#include "Systems/ExecutablePath.h"
  
 #include <algorithm>
 #include <array>
@@ -36,7 +38,9 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <string>
 #include <xresource_guid.h>
+
 
 namespace fs = std::filesystem;
  
@@ -171,14 +175,17 @@ namespace Crucible {
             e == ".glsl" || e == ".spv")
             return AssetType::Shader;
  
+        // No ".bank": that is an FMOD Studio bank, and the engine uses FMOD Core, which
+        // cannot play one - listed here it only showed up in the clip picker and failed.
+        // ".fsb" stays: Core opens those directly.
         if (e == ".wav" || e == ".mp3" || e == ".ogg" || e == ".flac" ||
-            e == ".bank" || e == ".fsb")
+            e == ".fsb")
             return AssetType::Audio;
  
         if (e == ".scene")  
             return AssetType::Scene;
 
-        if (e == ".prefab") 
+        if (e == ".cprefab") 
             return AssetType::Prefab;
 
         if (e == ".mat")    
@@ -187,7 +194,7 @@ namespace Crucible {
         if (e == ".animcontroller")
             return AssetType::AnimatorController;
  
-        if (e == ".ttf" || e == ".otf")
+        if (e == ".ttf" || e == ".otf" || e == ".cfont")   // .cfont = compiled by the editor (Text/FontData.h)
             return AssetType::Font;
  
         if (e == ".cs")
@@ -206,9 +213,8 @@ namespace Crucible {
  
     fs::path AssetManager::GetExecutableDirectory()
     {
-        std::error_code ec;
-        const fs::path cwd = fs::current_path(ec);
-        return ec ? fs::path{} : cwd;
+        // Shared with the logger (crucible.log goes next to the .exe) - see Systems/ExecutablePath.h.
+        return ExecutableDirectory();
     }
  
     fs::path AssetManager::FindAssetRoot(const std::string& explicitRoot)
@@ -282,7 +288,9 @@ namespace Crucible {
  
     bool AssetManager::Init(const std::string& explicitRoot)
     {
-        m_assetRoot = FindAssetRoot(explicitRoot);
+        // No explicit root: use the engine-wide one (AssetPaths.h), so the index, the shaders and
+        // the config file can never disagree about which Assets folder they are using.
+        m_assetRoot = explicitRoot.empty() ? AssetRoot() : FindAssetRoot(explicitRoot);
  
         if (m_assetRoot.empty())
         {

@@ -1,3 +1,23 @@
+/*************************************************************************
+* \file:         LogTime.h
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          12 September 2026
+* \version       1.0
+* \brief
+*                Time helpers for the logger: today's date and time, and
+*                the seconds since the session started.
+*
+* \details
+*                Two clocks on purpose: system_clock for the date, which
+*                can jump, and steady_clock for durations, which never
+*                goes backwards. Engine-internal: only Logger.cpp uses
+*                these.
+*
+* \history
+*    -v1.0       first version
+*
+**************************************************************************/
 #pragma once
 
 #include <chrono>

@@ -24,6 +24,7 @@
 #include "ECS/ECSAudioSystem.h"
 #include "Input/InputSystem.h"   // the game's cursor lock, see the end of ImGuiManager::Update
 #include "UI/UISystem.h"         // UI::IsMenuOpen: the game's in-game menu owns the cursor while open
+#include "UI/UIEvents.h"         // QuitRequested / CustomAction from UI buttons
 
 // Include all other panels...
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
@@ -35,6 +36,7 @@
 #include "ImGui/Panels/ImGuiPanel_UIView.h"
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/Panels/ImGuiPanel_Console.h"
+#include "ImGui/Panels/ImGuiPanel_FontImporter.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
 
@@ -288,21 +290,23 @@ void Crucible::ImGuiManager::Update(float dt) {
 	}
 
 	// Whether the cursor was locked at the end of last frame's editor update, i.e. before this
-	// frame's systems ran (see the Esc rule below).
+	// frame's systems ran (see the release-key rule below).
 	static bool s_cursorLockedLastFrame = false;
 
 	// The game's mouse look, with Unity's Game-view cursor rules. The game locks the cursor
 	// when Play or Resume starts (ECSPlayerControllerSystem); getting it back is the editor's
-	// job: Esc frees it, a left click on the Game view takes it again, and Pause / Stop always
-	// free it. After the panel loop on purpose, so the Game view's hover state is this frame's.
+	// job: the release key (Shift+F1 by default, Project Settings > Editor) frees it, a left
+	// click on the Game view takes it again, and Pause / Stop always free it. Escape is the
+	// game's (UIMenuSystem's pause menu), exactly as in the built game. After the panel loop on
+	// purpose, so the Game view's hover state is this frame's.
 	if (Core* core = EditorManager::GetInstance().GetCore()) {
 		ImGuiIO& io = ImGui::GetIO();
 		if (core->GetPlayState() == PlayState::Playing) {
 			auto gameView = EditorManager::GetInstance().GetPanel<GameView>(ImguiPanels::GAMESCENE);
-			// Esc frees the cursor only if it was already locked before this frame's systems ran:
-			// the game's UIMenuSystem also answers Esc, and closing its menu re-locks the cursor this
-			// same frame - the editor must not undo that.
-			if (Input::IsMouseLocked() && s_cursorLockedLastFrame && Input::IsPressed(KeyCode::Escape))
+			// Only if the cursor was already locked before this frame's systems ran: should the key
+			// be set to one the game also answers (Escape for its menu), a press that re-locked the
+			// cursor this same frame is the game's - the editor must not undo it.
+			if (Input::IsMouseLocked() && s_cursorLockedLastFrame && IsChordPressed(EditorManager::GetInstance().GetReleaseCursorKey()))
 				Input::SetMouseLocked(false);
 			// ...but not when the click is on the game's UI (that click is for a button), nor while the
 			// game wants a free cursor (its menu is open, or a title-screen canvas is shown).
@@ -394,20 +398,50 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(core.GetAssets(), core.GetScenes(), audio);   // audio may be null: previews just do nothing
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>(core);   // queues Play/Pause/Resume/Stop on Core
+	m_panels[ImguiPanels::FONTIMPORTER] = std::make_shared<FontImporter>(core.GetAssets(), core.GetRenderer(), core);   // .ttf -> .cfont (Editor/src/Fonts)
 	m_panels[ImguiPanels::ANIMATOR] = std::make_shared<AnimatorPanel>(core);
 
 	for (auto& panel : m_panels)
 		panel.second->Init();
 
+	// The mouse-release key. A bad value in the file falls back to the default (and says so).
+	{
+		std::string const& text = core.GetConfig().editor.releaseCursorKey;
+		KeyChord chord;
+		if (ParseKeyChord(text, chord)) {
+			m_releaseCursorKey = chord;
+		}
+		else {
+			ParseKeyChord(EditorSettings{}.releaseCursorKey, m_releaseCursorKey);
+			CRU_USER_WARN("[Editor] releaseCursorKey '{}' in EngineConfig.json is not a key (e.g. \"Shift+F1\") - using {}",
+				text, KeyChordToString(m_releaseCursorKey));
+		}
+	}
+
 	// Selection and undo history across Play / Stop (see OnPlayStateChanged).
 	m_core = &core;
 	m_playStateChanged = core.Events().engine.Subscribe<EngineEvents::PlayStateChanged>(
 		[this](const EngineEvents::PlayStateChanged& change) { OnPlayStateChanged(change); });
+
+	// UI buttons. Quitting the editor from a game menu would lose work, so a "Quit" button stops
+	// Play mode instead - Unity's Application.Quit does nothing in the editor either.
+	m_uiQuit = core.Events().engine.Subscribe<UIEvents::QuitRequested>([this](const UIEvents::QuitRequested& click) {
+		CRU_USER_INFO("[UI] Quit button (entity {}) pressed: stopping Play mode. In the built game this closes the window.", click.button.index);
+		if (m_core && m_core->IsInPlaySession()) { m_core->RequestStop(); }
+	});
+	// Custom actions are the game's to run (GameApp::RegisterAction, later scripts); here they are
+	// only logged, so a menu can be tested in the editor.
+	m_uiCustom = core.Events().engine.Subscribe<UIEvents::CustomAction>([](const UIEvents::CustomAction& click) {
+		CRU_USER_INFO("[UI] Button (entity {}) action '{}' - run by the game (GameApp::RegisterAction), not in the editor",
+		              click.button.index, click.actionId);
+	});
 }
 
 void Crucible::EditorManager::Shutdown()
 {
 	m_playStateChanged.Reset();
+	m_uiQuit.Reset();
+	m_uiCustom.Reset();
 	m_core = nullptr;
 	m_history.Clear();
 	m_panels.clear();

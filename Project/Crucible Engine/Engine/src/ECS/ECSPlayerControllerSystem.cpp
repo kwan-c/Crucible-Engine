@@ -1,8 +1,9 @@
 /*************************************************************************
 * \file:         ECSPlayerControllerSystem.cpp
-* \author:       Hugo
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
 * \date          2 October 2026
-* \version       1.3
+* \version       1.6
 * \brief
 *                Implementation of ECSPlayerControllerSystem. See the
 *                header for what happens each frame.
@@ -12,6 +13,12 @@
 *    -v1.1       reads the CameraComponent entity; SimulationOnly
 *    -v1.2       third-person camera: CameraOrbit and the cursor lock
 *    -v1.3       the mech turns to face the camera (m_faceCamera)
+*    -v1.4       hierarchy-aware camera orbit: the mech no longer has to be
+*                a root - its world rotation (and the frame its own
+*                Transform is in) come from its parents
+*    -v1.5       gamepad: left stick walks (analog), right stick turns the
+*                camera (CameraOrbit::m_stickSpeed), A jumps
+*    -v1.6       the player's look sensitivity and invert Y (UserSettings)
 *
 **************************************************************************/
 #include "ECSPlayerControllerSystem.h"
@@ -22,16 +29,44 @@
 
 // Crucible engine
 #include "Components/Components.h"
+#include "Configuration/UserSettings.h"  // InputSettings
 #include "Input/InputSystem.h"
 #include "Math/Math.h"
-#include "Physics/PhysicsComponents.h"
+#include "Physics/PhysicsComponents.h"   // CharacterController
+#include "Player/PlayerComponents.h"     // PlayerController, CameraOrbit
 #include "Systems/Query.h"
 #include "World.h"
 
 namespace Crucible {
 
+    namespace {
+
+        // The rotation of the frame an entity's Transform is relative to: its parent's world
+        // rotation (sockets included, via World::TryGetParentFrame). Exactly the identity for
+        // a root, so a root mech's maths below is bit-for-bit what it was before hierarchies.
+        Math::quat FrameRotation(const World& world, Entity entity) {
+            const Math::quat identity(1.0f, 0.0f, 0.0f, 0.0f);
+            Math::mat4 frame(1.0f);
+            if (!world.TryGetParentFrame(entity, frame) || frame == Math::mat4(1.0f)) return identity;
+            Math::vec3 translation, scale;
+            Math::quat rotation;
+            return Detail::DecomposeTRS(frame, translation, rotation, scale) ? rotation : identity;
+        }
+    }
+
+    ECSPlayerControllerSystem::ECSPlayerControllerSystem(const InputSettings& settings) : m_settings(settings) {}
+
     void ECSPlayerControllerSystem::Describe(SystemDesc& desc) const {
         desc.SimulationOnly();      // Playing only; Edit and Paused leave the keyboard to the editor
+    }
+
+    // No longer driven by the keyboard: stand still, and drop a jump asked for this frame.
+    // Switched back on, the query below drives it again from the next Update.
+    void ECSPlayerControllerSystem::OnComponentDeactivated(World& world, Entity entity, [[maybe_unused]] ComponentId component) {
+        if (CharacterController* controller = world.GetComponent<CharacterController>(entity)) {
+            controller->SimpleMove(Math::vec3(0.0f, 0.0f, 0.0f));
+            controller->m_jumpHeight = 0.0f;
+        }
     }
 
     /*!
@@ -58,7 +93,21 @@ namespace Crucible {
         // cursor is on its way to the editor's Pause button or the Inspector, and
         // the view spinning as it travels there would be maddening.
         // GetMouseDelta is a distance in pixels, so it is NOT multiplied by dt.
-        const Math::vec2 mouse = Input::IsMouseLocked() ? Input::GetMouseDelta() : Math::vec2(0.0f, 0.0f);
+        Math::vec2 mouse = Input::IsMouseLocked() ? Input::GetMouseDelta() : Math::vec2(0.0f, 0.0f);
+
+        // The right stick turns it too, and not only while the cursor is captured: a pad
+        // cannot wander off to the Inspector the way a free mouse does. A stick is a
+        // POSITION, not a distance, so unlike the mouse it is a speed - times dt.
+        Math::vec2  stick = Input::GetGamepadRightStick();
+        const float dt    = world.DeltaTime();
+
+        // The PLAYER's settings on top of the designer's feel (CameraOrbit's m_sensitivity
+        // and m_stickSpeed): multipliers, so 1 is "as designed". Applied to the input here,
+        // once, rather than to the component, so a saved setting never overwrites what the
+        // designer tuned. Read every frame, so an options menu takes effect at once.
+        const float flipY = m_settings.invertY ? -1.0f : 1.0f;
+        mouse = Math::vec2(mouse.x, mouse.y * flipY) * m_settings.mouseSensitivity;
+        stick = Math::vec2(stick.x, stick.y * flipY) * m_settings.stickSensitivity;
 
         world.CreateQuery<CameraOrbit, const Transform>()
             .ForEach([&](Entity pivot, CameraOrbit& orbit, const Transform& transform) {
@@ -68,6 +117,12 @@ namespace Crucible {
                 // is + pitch. Neither axis is inverted - the common default.
                 orbit.m_yaw   -= mouse.x * orbit.m_sensitivity;
                 orbit.m_pitch += mouse.y * orbit.m_sensitivity;
+
+                // Stick right turns the view right (- yaw), like the mouse. Stick UP looks
+                // up, which lowers the camera: - pitch. (The mouse's y counts downward in
+                // pixels; the stick's y is up-positive - Input flipped GLFW's for us.)
+                orbit.m_yaw   -= stick.x * orbit.m_stickSpeed * dt;
+                orbit.m_pitch -= stick.y * orbit.m_stickSpeed * dt;
 
                 // Yaw goes round and round; wrapping it stops a long session
                 // growing it into the millions, where a float has no precision left.
@@ -95,19 +150,28 @@ namespace Crucible {
                 // camera twice - and every frame the mech chases it, it runs away
                 // further. So the mech's rotation is cancelled out below, whatever it
                 // is: toggle on or off, flipped mid-Play or not, the view never jumps.
-                // Assumes the mech is at the top of the hierarchy, so its Transform
-                // rotation IS its world rotation - the Mech -> Pivot -> Camera setup.
+                // The mech's WORLD rotation is what has to be cancelled: its own
+                // Transform rotation on top of whatever it hangs under (a rotated
+                // group, a moving platform). For the usual root mech that frame is
+                // the identity, so it is just its Transform rotation.
                 Math::quat parentRotation = Math::quat(1.0f, 0.0f, 0.0f, 0.0f);   // no parent: nothing to cancel
                 const Entity mech = world.GetParent(pivot);
                 if (const Transform* mechTransform = world.Read<Transform>(mech)) {
-                    parentRotation = mechTransform->rotation;
+                    const Math::quat mechFrame = FrameRotation(world, mech);   // what the mech's Transform is relative to
+                    parentRotation = mechFrame * mechTransform->rotation;
 
                     // Toggle on: the mech turns to the camera's yaw. Yaw only - a
                     // mech that pitched with the camera would lie down to look at the
                     // floor. Written only when it changed, same reason as the pivot.
                     const PlayerController* player = world.Read<PlayerController>(mech);
+                    // yawRotation is a world rotation; the mech's Transform is in
+                    // mechFrame, so local = inverse(frame) x world (just yawRotation
+                    // for a root mech).
                     if (player != nullptr && player->m_faceCamera && yawRotation != parentRotation) {
-                        if (Transform* writable = world.GetComponent<Transform>(mech)) writable->rotation = yawRotation;
+                        const Math::quat localYaw = glm::inverse(mechFrame) * yawRotation;
+                        if (localYaw != mechTransform->rotation) {
+                            if (Transform* writable = world.GetComponent<Transform>(mech)) writable->rotation = localYaw;
+                        }
                         parentRotation = yawRotation;
                     }
                 }
@@ -136,9 +200,16 @@ namespace Crucible {
         if (Input::IsDown(KeyCode::W)) forward += 1.0f;
         if (Input::IsDown(KeyCode::S)) forward -= 1.0f;
 
+        // The left stick adds to the keys rather than replacing them, so either works
+        // and neither has to be "switched to". It is analog: half tilt walks at half
+        // speed (the length clamp below only shrinks values OVER 1).
+        const Math::vec2 walkStick = Input::GetGamepadLeftStick();
+        right   += walkStick.x;
+        forward += walkStick.y;
+
         // IsPressed, not IsDown: one jump per press. Holding Space would
         // otherwise jump again the moment the mech lands - a pogo stick.
-        const bool jump = Input::IsPressed(KeyCode::Space);
+        const bool jump = Input::IsPressed(KeyCode::Space) || Input::IsPressed(KeyCode::GamepadA);
 
         // THE CAMERA -------------------------------------------------------------- //
         // Unity's Camera.main: the enabled camera with the highest priority, the

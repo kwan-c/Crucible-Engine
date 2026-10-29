@@ -29,6 +29,12 @@ namespace Crucible::EditorWidgets {
 	//		}
 	inline constexpr char const* kAssetPayload = "CRUCIBLE_ASSET";
 
+	// Drag-and-drop payload type used when an entity row is dragged out of the Hierarchy.
+	// The payload data is the dragged Entity, by value (copy it out with std::memcpy). When the
+	// dragged row is part of a multi-selection, the drag stands for the whole selection.
+	// The Asset Browser accepts it to create prefabs (Prefabs/PrefabAuthoring.h).
+	inline constexpr char const* kEntityPayload = "CRUCIBLE_ENTITY";
+
 	// A small toolbar button that stays highlighted while 'active' is true.
 	inline bool ToolbarToggle(char const* label, bool active)
 	{
@@ -88,4 +94,11 @@ namespace Crucible::EditorWidgets {
 
 	// Call once per frame, after all panels have drawn (ImGuiManager::Render does this).
 	void EndFrameMouseLock();
+
+	// A row of 2, 3 or 4 number boxes, each led by a small coloured axis letter: X, Y and Z
+	// in the Scene view gizmo's own red, green and blue (read from ImGuizmo's style, so the
+	// two can never drift apart), brightened to read on the dark theme. W, a 4th, has no
+	// gizmo colour and stays plain. Ends with the label, like ImGui's DragFloat3, and does
+	// the infinite drag for every box. True when any value changed this frame.
+	bool AxisDragFloats(char const* label, float* values, int count, float speed, char const* format = "%.3f");
 }

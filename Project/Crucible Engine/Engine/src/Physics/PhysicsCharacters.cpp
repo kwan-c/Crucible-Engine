@@ -1,3 +1,25 @@
+/*************************************************************************
+* \file:         PhysicsCharacters.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          27 September 2026
+* \version       1.2
+* \brief
+*                Characters, Unity's CharacterController: a capsule that
+*                walks, slides along walls and climbs steps.
+*
+* \details
+*                Built on Jolt's CharacterVirtual, which is not a body and
+*                only moves when MoveCharacter is called. Each one carries
+*                an inner body of the same shape so raycasts and crates
+*                can see it.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       maths types moved to glm
+*    -v1.2       GetGroundVelocity: the speed of what the character stands on
+*
+**************************************************************************/
 #include "PhysicsSystem.h"
 
 // Jolt - Jolt.h always comes before any other Jolt header
@@ -173,6 +195,17 @@ namespace Crucible {
     Math::vec3 Physics::GetCharacterVelocity(const CharacterHandle& character) const {
         const Impl::Character* slot = m_impl->Slot(character);
         return slot != nullptr ? FromJolt(slot->velocity) : Math::vec3(0.0f, 0.0f, 0.0f);
+    }
+
+    // Jolt remembers the ground body from the last move; UpdateGroundVelocity re-reads
+    // that body's velocity now (the lift was just given this step's), without the cost
+    // of a new collision check. The velocity of the exact point under the feet, so a
+    // spinning platform's spin counts, not only its centre's movement.
+    Math::vec3 Physics::GetGroundVelocity(const CharacterHandle& character) {
+        Impl::Character* slot = m_impl->Slot(character);
+        if (slot == nullptr) return Math::vec3(0.0f, 0.0f, 0.0f);
+        slot->character->UpdateGroundVelocity();
+        return FromJolt(slot->character->GetGroundVelocity());
     }
 
     // Jolt owns the inner body, so this is the only way to name it.

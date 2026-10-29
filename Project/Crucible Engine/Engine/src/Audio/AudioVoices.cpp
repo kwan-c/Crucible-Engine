@@ -1,7 +1,32 @@
+/*************************************************************************
+* \file:         AudioVoices.cpp
+* \author:       Hugo Low Ren Hao
+* \par:          Email: low.h@digipen.edu
+* \date          1 October 2026
+* \version       1.3
+* \brief
+*                Voices, one playing instance of a clip: play, stop,
+*                pause, volume, pitch and 3D position. Also bus volumes
+*                and the listener.
+*
+* \details
+*                Each voice starts paused, is set up, then unpaused, so it
+*                never makes a sound with the wrong settings. A voice
+*                whose sound has already ended is not an error, so FMOD's
+*                invalid-handle result is not logged.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       SetPaused (Abhishek)
+*    -v1.2       linear rolloff
+*    -v1.3       fix: min/max distance, negative pitch and a zero-length
+*                listener axis are made safe before they reach FMOD
+*
+**************************************************************************/
 #include "AudioSystem.h"
 
 // STL
-#include <algorithm>    // std::clamp
+#include <algorithm>    // std::clamp, std::max
 
 // Crucible engine
 #include "Audio/AudioInternal.h"
@@ -18,6 +43,11 @@ namespace {
     // Unity keeps volume and spatialBlend in 0..1. FMOD accepts more - a
     // volume of 3 amplifies and distorts - so values are clamped on the way in.
     float Clamp01(float value) { return std::clamp(value, 0.0f, 1.0f); }
+
+    // Unity's pitch runs -3..3, negative playing backwards. FMOD has no reverse
+    // playback and refuses a negative pitch - logging on every call - so it
+    // stops at 0 (legal: silent and frozen) instead.
+    float ClampPitch(float pitch) { return std::max(pitch, 0.0f); }
 
 }   // ANONYMOUS NAMESPACE
 
@@ -65,8 +95,15 @@ namespace Crucible {
         const FMOD_VECTOR position = ToFmod(desc.m_position);
         const FMOD_VECTOR velocity = FMOD_VECTOR{ 0.0f, 0.0f, 0.0f };   // no Doppler yet
 
+        // FMOD refuses a negative minimum, or a maximum below the minimum, and
+        // then keeps its own 1 m to 10 km: the sound stops fading with distance
+        // and every Play logs an error. A designer typing them the wrong way
+        // round is easy, so they are fixed up here, the way volume is clamped.
+        const float minDistance = std::max(desc.m_minDistance, 0.0f);
+        const float maxDistance = std::max(desc.m_maxDistance, minDistance);
+
         Impl::Check(channel->setVolume(Clamp01(desc.m_volume)),                            "Audio::Play: Channel::setVolume");
-        Impl::Check(channel->setPitch(desc.m_pitch),                                       "Audio::Play: Channel::setPitch");
+        Impl::Check(channel->setPitch(ClampPitch(desc.m_pitch)),                           "Audio::Play: Channel::setPitch");
         // Loop and rolloff in one call: setMode only changes the groups of flags it is given,
         // so the FMOD_3D the clip was created with is left as it is. INVERSE is FMOD's default
         // and Unity's Logarithmic; it is still set explicitly so a reused channel cannot keep
@@ -76,7 +113,7 @@ namespace Crucible {
         Impl::Check(channel->setMode(loop | rolloff),                                      "Audio::Play: Channel::setMode");
         Impl::Check(channel->set3DLevel(Clamp01(desc.m_spatialBlend)),                     "Audio::Play: Channel::set3DLevel");
         Impl::Check(channel->set3DAttributes(&position, &velocity),                        "Audio::Play: Channel::set3DAttributes");
-        Impl::Check(channel->set3DMinMaxDistance(desc.m_minDistance, desc.m_maxDistance),  "Audio::Play: Channel::set3DMinMaxDistance");
+        Impl::Check(channel->set3DMinMaxDistance(minDistance, maxDistance),                "Audio::Play: Channel::set3DMinMaxDistance");
         Impl::Check(channel->setPaused(false),                                             "Audio::Play: Channel::setPaused");
 
         if (slot->m_loadType == AudioClipLoadType::Streaming) slot->m_streamVoice = channel;
@@ -110,7 +147,7 @@ namespace Crucible {
 
     void Audio::SetPitch(const AudioVoice& voice, float pitch) {
         if (!m_impl->m_initialised || !voice.IsValid()) return;
-        Impl::Check(Impl::ToChannel(voice)->setPitch(pitch), "Audio::SetPitch: Channel::setPitch");
+        Impl::Check(Impl::ToChannel(voice)->setPitch(ClampPitch(pitch)), "Audio::SetPitch: Channel::setPitch");
     }
 
     void Audio::SetPosition(const AudioVoice& voice, const Math::vec3& position) {
@@ -137,6 +174,13 @@ namespace Crucible {
     void Audio::SetListener(const Math::vec3& position, const Math::vec3& forward, const Math::vec3& up) {
 
         if (!m_impl->m_initialised) return;
+
+        // A zero-length axis - the listener entity scaled to 0 - has no
+        // direction. Normalising it divides by zero and gives NaN, which FMOD
+        // refuses every frame, so the log floods and the ears freeze anyway.
+        // Skipping the update keeps the last good listener, quietly.
+        constexpr float kMinAxisLength = 1.0e-6f;
+        if (glm::length(forward) < kMinAxisLength || glm::length(up) < kMinAxisLength) return;
 
         // Normalised here, the way Raycast normalises its direction, so the
         // caller can pass a camera axis without thinking about its length.

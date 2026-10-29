@@ -1,3 +1,32 @@
+/*************************************************************************
+* \file:         Logger.h
+* \author:       Hugo Low Ren Hao (main author),
+*                Tan Chun Kwang Xavier (v1.1: listeners, user-facing messages)
+* \par:          Email: low.h@digipen.edu,
+*                Email: chunkwangxavier.tan@digipen.edu
+* \date          12 September 2026
+* \version       1.1
+* \brief
+*                The engine's logger: the CRU_TRACE to CRU_FATAL macros,
+*                LogSession, and the functions behind them.
+*
+* \details
+*                Messages use std::format syntax. Every line gets the date
+*                and time, the time since startup, the level, and the
+*                source file and line, and goes to every sink in
+*                LogSink.h. A LogSession in main() starts and ends the
+*                log.
+*
+*                Listeners let other code, such as the editor's console,
+*                receive each line. The CRU_USER_* macros mark messages
+*                meant for the person using the editor rather than for
+*                programmers.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       listeners and the CRU_USER_* messages (Xavier)
+*
+**************************************************************************/
 #pragma once
 
 #include <cstdint>
@@ -34,7 +63,10 @@ namespace Crucible::Debug
     {
         bool consoleSink     = true;                 // stdout
         bool debugOutputSink = true;                 // VS Output window
-        std::filesystem::path logFile = "crucible.log";   // empty = no file
+        // Empty = no file. A relative path (like the default) is placed next to the running
+        // .exe, not in the working directory, so the log is always beside the program it is
+        // from - Build/Game/Debug/crucible.log, or the packaged game's folder.
+        std::filesystem::path logFile = "crucible.log";
         Level minLevel = Level::Trace;
         bool  showSourceLocation = true;             // the [Core.cpp:87] part
     };
@@ -54,6 +86,10 @@ namespace Crucible::Debug
 
     // Seconds since Init().
     ENGINE_API double ElapsedSeconds();
+
+    // The full path of the log file being written, or empty if there is none (logFile was
+    // empty, or the file could not be opened). Starts the logger if nothing has yet.
+    ENGINE_API std::filesystem::path LogFilePath();
 
     // The single real entry point. Use the CRU_* macros instead of calling
     // this directly - they fill in the file and line for you.

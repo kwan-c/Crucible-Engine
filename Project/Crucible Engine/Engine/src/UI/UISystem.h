@@ -2,7 +2,7 @@
   \file       UISystem.h
   \brief
     Screen-space UI: layout (UIRect -> a rectangle on the screen) and
-    drawing (UIImage -> quads for the renderer), shared by the game and the
+    drawing (UIImage / UISlider / UIText -> quads for the renderer), shared by the game and the
     editor's UI Editor tab, plus UIRenderSystem, which draws the game's UI.
   \details
     Layout, per screen-space UICanvas (lowest sortOrder first):
@@ -41,6 +41,7 @@
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <span>
 #include <utility>
 #include <vector>
 
@@ -51,6 +52,7 @@
 #include "ECS/Systems/IECSSystems.h"
 #include "EngineExport.h"
 #include "Graphics/UITypes.h"
+#include "Graphics/WorldUITypes.h"   // world-space canvases are drawn as world UI panels
 #include "UI/UIComponents.h"
 
 namespace Crucible {
@@ -58,6 +60,7 @@ namespace Crucible {
 	class World;
 	class Renderer;
 	class ResourceManager;
+	struct FontAsset;
 	class SceneManager;
 	class AssetManager;
 
@@ -113,16 +116,68 @@ namespace Crucible {
 		ENGINE_API void LayoutScreenCanvases(World& world, Math::vec2 screenSize, std::vector<LayoutItem>& out, bool writeComputed);
 
 		/*********************************************************************
-		 \brief  Appends one quad per laid-out element with a UIImage: its
-				 colour, times the UIButton state's tint if it has one, and its
-				 texture. Consecutive quads with the same texture share a draw.
+		 \brief  Lays out one world-space canvas's tree on its own page:
+				 referenceResolution canvas pixels, origin top-left, +y down,
+				 scale 1 (never fitted to a screen). The same per-element
+				 layout as screen UI, so anchors, pivots, rotation and sibling
+				 order work the same. UIRect::computed is not written (it
+				 holds screen boxes).
+		 \param[out] out  Cleared, then every element, in draw order.
+		 *********************************************************************/
+		ENGINE_API void LayoutWorldCanvas(World& world, Entity canvas, const UICanvas& settings, std::vector<LayoutItem>& out);
+
+		/*********************************************************************
+		 \brief  Turns a world-space canvas's draw list (AppendDrawList, in page
+				 pixels) into a world UI panel (Graphics/WorldUITypes.h): six
+				 corners per triangle pair in the canvas's plane - metres from
+				 the canvas entity, +y up, the page placed by settings.pivot and
+				 sized by pixelsPerUnit.
+		 \details Clip rects (Truncate / Ellipsis text) become exact cuts, the
+				 atlas rect cut by the same share. Draw order is kept, so the
+				 canvas's layering holds. Triangles are wound counter-clockwise
+				 seen from the front (+z), like WorldText's.
+		 \param[out] vertices, runs  Cleared first.
+		 \return How far the farthest corner is from the canvas entity, in
+				 metres before the Transform's scale. 0 = nothing to draw.
+		 *********************************************************************/
+		ENGINE_API float BuildWorldCanvasPanel(const UICanvas& settings, std::span<const UIVertex> vertices, std::span<const std::uint32_t> indices,
+		                                       std::span<const UIDrawCommand> commands,
+		                                       std::vector<WorldUIVertex>& outVertices, std::vector<WorldUIRun>& outRuns);
+
+		/*********************************************************************
+		 \brief  Appends what every laid-out element draws, in this order:
+				 - UIImage: one quad, its colour times the UIButton state's
+				   tint if it has one, with its texture.
+				 - UISlider: track, fill, handle.
+				 - UIText: one quad per glyph (Text/TextLayout.h), with the
+				   font's atlas and draw mode. Truncate / Ellipsis cut at the
+				   rect (clip rect when upright, whole glyphs when turned);
+				   bitmap fonts are snapped to whole screen pixels.
+				 Consecutive quads with the same texture, mode and clip share a
+				 draw, so a label is one draw. Text layouts are cached between
+				 calls and redone only when the text or its settings change.
 		 \param[in] resources  Resolves UIImage::textureAsset into
-							   UIImage::texture (as MeshRenderer does). Null:
-							   use whatever UIImage::texture already holds.
+							   UIImage::texture (as MeshRenderer does) and
+							   UIText::fontAsset into a font. Null: images use
+							   whatever UIImage::texture holds; no text is drawn.
 		 *********************************************************************/
 		ENGINE_API void AppendDrawList(World& world, const std::vector<LayoutItem>& items, ResourceManager* resources,
 		                               std::vector<UIVertex>& vertices, std::vector<std::uint32_t>& indices,
 		                               std::vector<UIDrawCommand>& commands);
+
+		/*********************************************************************
+		 \brief  Field units (see UITextEffects) per reference pixel, for text of
+				 `fontSize` in this font. 0 for bitmap fonts (no field).
+		 *********************************************************************/
+		ENGINE_API float TextEffectFieldPerPixel(const FontAsset& font, float fontSize);
+
+		/*********************************************************************
+		 \brief  The widest outline + glow (+ bold) a font allows at `fontSize`,
+				 in reference pixels: the distance field only reaches half its
+				 pixel range past each edge. 0 for bitmap fonts. Raise the
+				 font's Pixel Range in the Font Importer for more.
+		 *********************************************************************/
+		ENGINE_API float MaxTextEffectWidth(const FontAsset& font, float fontSize);
 
 		/// Is the in-game menu open (UIMenuSystem)? Gameplay can use it to ignore input or pause.
 		ENGINE_API bool IsMenuOpen();
@@ -170,6 +225,40 @@ namespace Crucible {
 	};
 
 	/*************************************************************************
+	 \brief  Draws every world-space UICanvas in the 3D scene, every frame, in
+			 Edit mode too (so the Scene view shows it while you build it).
+	 \details
+		Each enabled world canvas (not under another canvas) is laid out on
+		its page (UI::LayoutWorldCanvas), drawn into a UI draw list like
+		screen UI (UI::AppendDrawList - images, sliders, text, effects),
+		turned into a world UI panel (UI::BuildWorldCanvasPanel) and handed
+		to Renderer::SubmitWorldUI with the canvas's world settings:
+		billboard, always on top, double-sided, intensity, distance fade.
+		Display only: nothing reads the mouse here.
+	 *************************************************************************/
+	class WorldCanvasSystem final : public IECSSystem {
+	public:
+		WorldCanvasSystem(Renderer& renderer, ResourceManager* resources) : m_renderer(renderer), m_resources(resources) {}
+
+		void Update(World& world, CommandBuffer& commands) override;
+		void Describe(SystemDesc& desc) const override;
+		SystemStage Stage() const override { return SystemStage::PreRender; }
+
+	private:
+		Renderer&        m_renderer;
+		ResourceManager* m_resources = nullptr;
+
+		// Reused every frame, so steady-state frames don't allocate.
+		std::vector<Entity>         m_canvases;
+		std::vector<UI::LayoutItem> m_layout;
+		std::vector<UIVertex>       m_vertices;
+		std::vector<std::uint32_t>  m_indices;
+		std::vector<UIDrawCommand>  m_commands;
+		std::vector<WorldUIVertex>  m_panelVertices;
+		std::vector<WorldUIRun>     m_panelRuns;
+	};
+
+	/*************************************************************************
 	 \brief  Escape opens / closes the game's in-game menu: every canvas with
 			 UICanvas::toggleWithEscape is shown or hidden (UICanvas::enabled),
 			 and the cursor is freed so the menu's buttons can be clicked, then
@@ -213,11 +302,17 @@ namespace Crucible {
 		  - Hovered: the mouse is over this button (and not pressing it).
 		  - Click: released over the same button it went down on.
 		  - Disabled: interactable is off. Never hovered, pressed or clicked.
+		  - Switched off (World::SetComponentEnabled on the UIButton / UISlider
+			or a component it requires): its press or drag is cancelled, so
+			switching it back on before release neither clicks nor drags.
 		Sliders: pressing one jumps its value to the mouse, dragging follows
 		it until release (even outside), each change sends
 		UIEvents::SliderChanged; Pressed while dragged, Hovered under the mouse.
 		A click sends UIEvents::ButtonClicked, then runs the button's own
-		onClick action (load a scene, close the menu).
+		onClick action (load a scene, close the menu). Quit and Custom are
+		only reported - UIEvents::QuitRequested / CustomAction - because what
+		they mean is the app's call (GameApp quits / runs its action table;
+		the editor stops Play / logs).
 		While the cursor is locked (mouse-look) the UI ignores the mouse and
 		every button shows Normal.
 	 \note  SimulationOnly, so the editor's clicks in Edit mode never press
@@ -236,6 +331,8 @@ namespace Crucible {
 
 	private:
 		void RunClickAction(World& world, Entity button);   // UIButton::onClick, after the event is sent
+		// ReactiveTo<UIButton, UISlider> (Core.cpp): a control switched off drops its press / drag.
+		void OnComponentDeactivated(World& world, Entity entity, ComponentId component) override;
 
 		Renderer&                   m_renderer;
 		SceneManager*               m_scenes = nullptr;

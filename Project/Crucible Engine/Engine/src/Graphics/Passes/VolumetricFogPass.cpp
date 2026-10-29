@@ -43,7 +43,7 @@ namespace Crucible {
         m_layout = vk::raii::PipelineLayout(device, vk::PipelineLayoutCreateInfo{
             .setLayoutCount = static_cast<uint32_t>(setLayouts.size()), .pSetLayouts = setLayouts.data() });
 
-        vk::raii::ShaderModule module = LoadShaderModule(m_context, "../../../Assets/Shaders/VolumetricFog.spv");
+        vk::raii::ShaderModule module = LoadShaderModule(m_context, "VolumetricFog.spv");
         m_injectPipeline    = CreateComputePipeline(m_context, module, "fogInject", *m_layout);
         m_integratePipeline = CreateComputePipeline(m_context, module, "fogIntegrate", *m_layout);
 
