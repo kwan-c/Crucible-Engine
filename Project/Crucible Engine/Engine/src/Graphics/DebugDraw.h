@@ -64,6 +64,7 @@ namespace Crucible {
         Gameplay   = 1u << 5,   //!< anything gameplay code draws (the default)
         Bounds     = 1u << 6,   //!< every render proxy's culling box (off by default - can be thousands)
         WorldUI    = 1u << 7,   //!< world-space canvases' pages, and the selected element on one
+        Audio      = 1u << 8,   //!< audio sources' ranges, audio listeners' facing
         All        = 0xFFFFFFFFu
     };
 
