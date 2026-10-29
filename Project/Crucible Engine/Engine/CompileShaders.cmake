@@ -22,7 +22,7 @@ endmacro()
 
 crucible_shader(DefaultShader    vertMain fragMain)
 crucible_shader(Skybox           skyVert skyFrag)
-crucible_shader(DebugLine        lineVert lineFrag)
+crucible_shader(DebugLine        lineVert sphereOutlineVert lineFrag)
 crucible_shader(Shadow           shadowVert shadowCutoutVert shadowCutoutFrag)
 crucible_shader(OutlineMask      maskVert maskFrag maskCutoutVert maskCutoutFrag)
 crucible_shader(OutlineComposite compositeVert compositeFrag)

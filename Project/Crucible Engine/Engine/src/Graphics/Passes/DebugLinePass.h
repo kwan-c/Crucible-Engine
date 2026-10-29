@@ -44,8 +44,8 @@ namespace Crucible {
          *********************************************************************/
         void Update(VulkanContext& context, uint32_t frameIndex, uint32_t framesInFlight);
 
-        /// True when Update() found at least one line this frame.
-        bool HasLines() const { return m_debugTestedCount + m_debugOnTopCount > 0; }
+        /// True when Update() found at least one line or sphere outline this frame.
+        bool HasLines() const { return m_debugTestedCount + m_debugOnTopCount + m_spheresTestedCount + m_spheresOnTopCount > 0; }
 
         /*********************************************************************
          \brief  Draws the frame's lines into the rendering pass that is
@@ -59,20 +59,45 @@ namespace Crucible {
         void Record(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet frameSet, uint32_t frameIndex) const;
 
     private:
-        // Debug lines: one host-visible vertex buffer per frame in flight, grown on demand (see
-        // Update()). Depth-tested vertices first, then the on-top ones.
+
+        // One host-visible vertex buffer per frame in flight, grown on demand; the lines use one
+        // set, the sphere outlines another.
+        struct FrameBuffers {
+            std::vector<VulkanBuffer>   buffers;
+            std::vector<void*>          mapped;
+            std::vector<vk::DeviceSize> capacity;
+        };
+        /*********************************************************************
+         \brief  Makes this frame's buffer in `set` hold at least `bytes`,
+                 growing it (powers of two, from 128 KiB) if needed.
+         \return Where this frame's buffer is mapped.
+         *********************************************************************/
+        static void* Reserve(VulkanContext& context, FrameBuffers& set, uint32_t frameIndex, uint32_t framesInFlight, vk::DeviceSize bytes);
+
+        // Debug lines: depth-tested vertices first, then the on-top ones.
         static constexpr uint32_t                   kMaxDebugVertices = 2'000'000;
-        std::vector<VulkanBuffer>                   m_debugBuffers;
-        std::vector<void*>                          m_debugBuffersMapped;
-        std::vector<uint32_t>                       m_debugBufferCapacity;   // in vertices
+        FrameBuffers                                m_lineBuffers;
         std::vector<DebugVertex>                    m_debugTested;           // scratch, reused every frame
         std::vector<DebugVertex>                    m_debugOnTop;
         uint32_t                                    m_debugTestedCount = 0;
         uint32_t                                    m_debugOnTopCount = 0;
         bool                                        m_warnedDebugOverflow = false;
 
+        // Sphere outlines: one instance per sphere (depth-tested first, then on-top), each drawn
+        // as kOutlineVertices line-list vertices made up in the shader - no geometry is stored.
+        static constexpr uint32_t                   kMaxDebugSpheres = 100'000;
+        static constexpr uint32_t                   kOutlineVertices = 128;   // 64 segments: must match DebugLine.slang's kOutlineSegments
+        FrameBuffers                                m_sphereBuffers;
+        std::vector<DebugSphere>                    m_spheresTested;         // scratch, reused every frame
+        std::vector<DebugSphere>                    m_spheresOnTop;
+        uint32_t                                    m_spheresTestedCount = 0;
+        uint32_t                                    m_spheresOnTopCount = 0;
+        bool                                        m_warnedSphereOverflow = false;
+
         vk::raii::Pipeline       m_debugLinePipeline = nullptr;        // hidden by scene geometry
         vk::raii::Pipeline       m_debugLineOnTopPipeline = nullptr;   // always visible
+        vk::raii::Pipeline       m_outlinePipeline = nullptr;          // sphere outlines, hidden by scene geometry
+        vk::raii::Pipeline       m_outlineOnTopPipeline = nullptr;     // sphere outlines, always visible
         vk::raii::PipelineLayout m_debugLineLayout = nullptr;
     };
 
