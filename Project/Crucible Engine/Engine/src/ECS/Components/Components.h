@@ -37,7 +37,10 @@
 #pragma once
 
 #include <cstdint>
+#include <memory>
 #include <string>
+#include "Animation/ModelPose.h"
+#include "Animation/AnimatorController.h"
 
 #include"ComponentKind.h"
 #include"Math/Math.h"
@@ -49,9 +52,20 @@
 #include"Graphics/CubemapHandle.h"    // CubemapHandle (Skybox) - same reasoning
 #include"Graphics/LightTypes.h"       // LightType (Light) - same reasoning
 #include"../../UI/UIComponents.h"
+#include "Scripting/ScriptTypes.h"
 
 namespace Crucible
 {
+    // Authored configuration only. Managed objects and transient diagnostics
+    // belong to EntityScriptSystem, never to scene/undo/component copies.
+    struct ScriptComponent {
+        bool enabled = true;
+        std::string assembly = "Managed/Crucible.Scripts.dll";
+        std::string nameSpace = "Crucible.Scripts";
+        std::string className;
+        std::vector<ScriptFieldValue> fields;
+        bool operator==(const ScriptComponent&) const = default;
+    };
 	/*************************************************************************
 	 \brief  Position of an entity in local/world space.
 	 *************************************************************************/
@@ -64,7 +78,7 @@ namespace Crucible
 
 	/*************************************************************************
 	 \brief  The entity's final transform in world space.
-	 \note   Written ONLY by HierarchyTransformSystem, first in PreRender
+	 \note   Written ONLY by HierarchyTransformSystem, after CPU poses in PreRender
 			 (after every earlier stage's commands and events). Read it from
 			 PreRender systems that RunAfter<HierarchyTransformSystem>(), or
 			 after the frame's systems (the renderer); edit Transform instead.
@@ -75,6 +89,7 @@ namespace Crucible
 	{
 		Math::mat4 matrix = Math::mat4(1.0f);
 		bool valid = false;   // false until the propagation system has computed it
+		bool socketApplied = false; // detects removal/disable without a local TRS edit
 	};
 
 	/*************************************************************************
@@ -119,6 +134,29 @@ namespace Crucible
 		false, so a not-yet-loaded model is simply not drawn yet rather
 		than crashing.
 	 *************************************************************************/
+	struct AnimatedModel
+	{
+		// Playback/pose for the complete model owned by MeshRenderer on this entity.
+		std::uint32_t clip = 0;
+		float speed = 1.0f;
+		bool loop = true;
+		bool previewInEditor = true;
+		bool playOnStart = true;
+		std::uint64_t controllerAsset = 0; // 0 keeps direct single-clip playback
+
+		// Per-entity CPU state only. Never reflected/serialized or shared between instances.
+		float time = 0.0f;
+		bool playing = true;
+		bool initialized = false, poseValid = false, poseFailed = false;
+		std::uint64_t evaluatedAsset = 0;
+		std::uint32_t evaluatedClip = InvalidModelIndex;
+		ModelPose pose;
+		std::uint64_t evaluatedController = 0;
+		bool controllerFailed = false;
+		AnimatorInstance controller;
+		std::shared_ptr<const AnimatorController> controllerDefinition; // pins a saved revision until reset
+	};
+
 	struct MeshRenderer
 	{
 		bool visible = true;
@@ -137,6 +175,27 @@ namespace Crucible
 		// them 0 for procedural/runtime-created meshes and materials - the handles are used as-is.
 		std::uint64_t meshAsset = 0;
 		std::uint64_t materialAsset = 0;
+
+		// Complete compiled model; when nonzero this takes precedence over meshAsset/mesh.
+		std::uint64_t modelAsset = 0;
+		std::uint32_t modelRoot = InvalidModelIndex; // complete model, or a rebased node subtree
+		// Indexed by imported material index. 0 inherits the global material or import default.
+		// materialAsset/material above are the optional override for every model primitive.
+		std::vector<std::uint64_t> materialOverrides;
+	};
+
+	// Mount this entity on a node of its ECS parent's model. Transform is the
+	// alignment offset in that node's coordinates. No entity-per-bone hierarchy.
+	struct SocketAttachment
+	{
+		bool enabled = true;
+		std::string socketName; // optional gameplay alias; indices disambiguate duplicate node names
+		std::uint64_t modelAsset = 0; // expected parent model; changing models requires rebinding
+		std::uint32_t node = InvalidModelIndex;
+		// Runtime-only shared CPU resources, never serialized.
+		std::uint64_t cachedAsset = 0;
+		std::shared_ptr<const ModelResource> model;
+		std::shared_ptr<const ModelPose> restPose;
 	};
 	
 	/*************************************************************************
@@ -680,6 +739,9 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(Transform, Transform);
 	CRUCIBLE_COMPONENT(RigidBody, RigidBody);
 	CRUCIBLE_COMPONENT(MeshRenderer, MeshRenderer);
+	CRUCIBLE_COMPONENT(AnimatedModel, AnimatedModel);
+	CRUCIBLE_COMPONENT(SocketAttachment, SocketAttachment);
+	CRUCIBLE_COMPONENT(ScriptComponent, ScriptComponent);
 	CRUCIBLE_COMPONENT(HierarchyNode, HierarchyNode);
 	CRUCIBLE_COMPONENT(WorldTransform, WorldTransform);
 	CRUCIBLE_COMPONENT(Light, Light);

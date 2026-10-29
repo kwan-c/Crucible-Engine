@@ -81,10 +81,14 @@ namespace Crucible
 		UIButton = 21, 
 		UIText = 22,
 		UISlider = 23,           // UI: a draggable value (UI/UIComponents.h)
-		Water = 24,				 // Graphics: a water surface (pond, lake, river) - Components.h
-		Vine = 25,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
+		Water = 24,
+		AnimatedModel = 25,
+		SocketAttachment = 26,
+		ScriptComponent = 27,
+		Vine = 28,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
 
-		MAXCOMPONENT = 26
+
+		MAXCOMPONENT = 29
 	};
 
 
@@ -208,7 +212,6 @@ namespace Crucible
  X(ParticleEmitter)                                                            \
  X(MaterialParams)                                                             \
  X(StressMover)                                                                \
- X(Vine)                                                                       \
  X(EntityName)                                                                 \
  X(UICanvas)																   \
  X(UIRect)																	   \
@@ -217,5 +220,9 @@ namespace Crucible
  X(UIText)																	   \
  X(UISlider)														           \
  X(Water)                                                                      \
+ X(AnimatedModel)                                                              \
+ X(SocketAttachment)                                                           \
+ X(ScriptComponent)                                                            \
+ X(Vine)                                                                       \
 
 }

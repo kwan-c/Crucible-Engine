@@ -1,0 +1,195 @@
+{
+    "version": 1,
+    "name": "Animation Preview",
+    "entities": [
+        {
+            "id": "40898ADBC14B4B0D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.05000000074505806,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 15.0,
+                        "y": 1.0,
+                        "z": 15.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 3649096549467294993,
+                    "materialAsset": 0
+                }
+            }
+        },
+        {
+            "id": "48E28DE722304599",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 7.0,
+                        "z": 28.0
+                    },
+                    "rotation": {
+                        "x": -0.10452846437692642,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9945219159126282
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 55.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 200.0,
+                    "priority": 0
+                }
+            }
+        },
+        {
+            "id": "5F13FF78672A4BC9",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -5.5,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 15112841005028671489
+                },
+                "AnimatedModel": {
+                    "clip": 4,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": false
+                }
+            }
+        },
+        {
+            "id": "7F1BC843765049C9",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 5.5,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 10372749620956168211
+                },
+                "AnimatedModel": {
+                    "clip": 0,
+                    "speed": 0.699999988079071,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": false
+                }
+            }
+        },
+        {
+            "id": "AF3E75CDA161462B",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 8.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9063078165054321
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.949999988079071,
+                        "z": 0.8500000238418579
+                    },
+                    "intensity": 3.0,
+                    "range": 30.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                }
+            }
+        }
+    ]
+}

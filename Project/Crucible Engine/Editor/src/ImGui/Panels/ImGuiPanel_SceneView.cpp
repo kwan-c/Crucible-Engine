@@ -206,7 +206,12 @@ void Crucible::SceneView::FrameSelected() {
 		if (!wt || !wt->valid) { continue; }   // created this frame: not placed yet
 
 		bool usedMesh = false;
-		if (MeshRenderer const* mr = m_world.Read<MeshRenderer>(entity)) {
+		glm::vec3 modelMin, modelMax;
+		if (m_renderer.GetObjectBounds(EntityToUserData(entity), modelMin, modelMax)) {
+			add(AABB(modelMin, modelMax));
+			usedMesh = true;
+		}
+		if (!usedMesh) if (MeshRenderer const* mr = m_world.Read<MeshRenderer>(entity)) {
 			// Entities loaded from a scene carry only meshAsset (the handle is resolved per frame
 			// by RenderExtractSystem), so resolve it the same way here.
 			MeshHandle const mesh = (mr->meshAsset != 0) ? m_resources.GetMesh(mr->meshAsset) : mr->mesh;
@@ -654,14 +659,8 @@ namespace {
 
 	// World matrix of `entity`'s parent, composed from the Transforms themselves (see DrawGizmo
 	// for why not WorldTransform). Identity for a root.
-	glm::mat4 ParentWorldOf(World& world, Entity entity) {
-		glm::mat4 parentWorld(1.0f);
-		for (Entity p = world.GetParent(entity); p.IsValid(); p = world.GetParent(p)) {
-			if (Transform const* t = world.Read<Transform>(p)) {
-				parentWorld = Detail::ComposeTRS(t->positions, t->rotation, t->scale) * parentWorld;
-			}
-		}
-		return parentWorld;
+	bool ParentWorldOf(World& world, Entity entity, glm::mat4& parentWorld) {
+		return world.TryGetParentFrame(entity, parentWorld);
 	}
 
 	// The selected entities a gizmo drag should move: the ones with a Transform whose parent /
@@ -705,7 +704,8 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 	// chain is composed from the Transforms themselves, the same way HierarchyTransformSystem
 	// does (Detail::ComposeTRS, parent * local), rather than read from WorldTransform: that is
 	// only refreshed once a frame, so mid-drag it would lag a frame behind the mouse.
-	glm::mat4 const parentWorld = ParentWorldOf(m_world, entity);
+	glm::mat4 parentWorld;
+	if (!ParentWorldOf(m_world, entity, parentWorld)) { m_gizmoDrawn = false; EndGizmoDrag(); return; }
 	Transform const local = *m_world.Read<Transform>(entity);   // a copy: the "before" of this frame's change
 	glm::mat4 const oldWorld = parentWorld * Detail::ComposeTRS(local.positions, local.rotation, local.scale);
 	glm::mat4 world = oldWorld;
@@ -796,7 +796,8 @@ void Crucible::SceneView::DrawGizmo(ImVec2 viewMin, ImVec2 viewSize) {
 				continue;
 			}
 
-			glm::mat4 const otherParent = ParentWorldOf(m_world, other);
+			glm::mat4 otherParent;
+			if (!ParentWorldOf(m_world, other, otherParent)) continue;
 			glm::mat4 const otherWorld = otherParent * Detail::ComposeTRS(t->positions, t->rotation, t->scale);
 			Math::vec3 otherT, otherS;
 			Math::quat otherR;

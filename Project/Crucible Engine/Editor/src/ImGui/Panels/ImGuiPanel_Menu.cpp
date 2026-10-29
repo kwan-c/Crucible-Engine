@@ -14,6 +14,7 @@
 #include "Scene/SceneManager.h"
 #include "Diagnostics/Logger.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "Configuration/EngineConfigLoader.h"
@@ -62,7 +63,8 @@ void Crucible::Menu::Update(float) {
 	// Keyboard shortcuts. Checked here every frame, NOT inside BeginMenu("File"),
 	// which only runs while the File menu is open. Skipped while any popup is up,
 	// so pressing Ctrl+S while typing a name in "Save Scene As" doesn't save behind it.
-	if (!ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
+	auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR);
+	if ((!animator || !animator->HasKeyboardFocus()) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 	{
 		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
 			SaveScene();
@@ -145,6 +147,7 @@ void Crucible::Menu::Update(float) {
 		// ---------------- View ----------------
 		if (ImGui::BeginMenu("View"))
 		{
+			if (ImGui::MenuItem("Animator")) { if (animator) animator->Show(); }
 			// The third argument is a bool* that MenuItem toggles for us (shows a tick).
 			ImGui::MenuItem("ImGui Demo Window", nullptr, &m_showDemoWindow);
 			ImGui::MenuItem("FPS Counter", nullptr, &m_showFps);
@@ -271,7 +274,12 @@ void Crucible::Menu::RunAction(GuardedAction action, const std::filesystem::path
 	{
 	case GuardedAction::New:  m_scenes.RequestNew();      break;
 	case GuardedAction::Open: m_scenes.RequestLoad(path); break;
-	case GuardedAction::Exit: m_quitConfirmed = true; if (GLFWwindow* window = MainWindow()) glfwSetWindowShouldClose(window, GLFW_TRUE);    break;
+	case GuardedAction::Exit: {
+		auto finish = [this] { m_quitConfirmed = true; if (GLFWwindow* window = MainWindow()) glfwSetWindowShouldClose(window, GLFW_TRUE); };
+		auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR);
+		if (!animator || animator->GuardExit(finish)) finish();
+		break;
+	}
 	case GuardedAction::None: break;
 	}
 }

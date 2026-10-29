@@ -111,6 +111,8 @@ namespace Crucible
 		// ===================================================================
 
 		PlayState State() const noexcept { return m_state; }
+		// Changes on successful Play/Stop, even when several requests finish in one frame.
+		std::uint64_t SessionRevision() const noexcept { return m_sessionRevision; }
 
 		//! True from Play to Stop (Playing or Paused).
 		bool InSession() const noexcept { return m_state != PlayState::Edit; }
@@ -217,6 +219,7 @@ namespace Crucible
 		ECSSystemManager& m_systems;
 
 		PlayState                         m_state = PlayState::Edit;
+		std::uint64_t                     m_sessionRevision = 0;
 		std::vector<PendingRequest>       m_requests;     // applied in order at the next safe point
 		SceneManager::Snapshot            m_snapshot;     // the scene at Play; empty when not restorable
 		std::string                       m_lastError;

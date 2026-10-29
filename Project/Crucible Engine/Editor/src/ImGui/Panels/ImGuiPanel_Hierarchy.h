@@ -102,6 +102,7 @@ namespace Crucible {
 
 		// Creates a new entity with only the mandatory base components (Transform, WorldTransform, HierarchyNode - see kMandatoryComponents), default-valued: a root at the origin.
 		void CreateEmptyObject();
+		void CreateAnimatedModel();
 
 		// Creating Primitives (cube, sphere, etc.) is a common editor action, so the "+" menu in the toolbar
 		// calls this to spawn a new entity with a MeshRenderer and the requested primitive mesh.

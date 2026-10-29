@@ -262,6 +262,7 @@ namespace Crucible {
                  mesh hasn't finished uploading.
          *********************************************************************/
         ENGINE_API bool GetMeshBounds(MeshHandle handle, glm::vec3& outMin, glm::vec3& outMax) const;
+        ENGINE_API bool GetObjectBounds(std::uint64_t userData, glm::vec3& outMin, glm::vec3& outMax) const;
 
         /*********************************************************************
          \brief
@@ -803,6 +804,11 @@ namespace Crucible {
             Invalid MaterialHandle; the scene pass always binds a
             material descriptor set per draw.
          *********************************************************************/
+        // Current mesh-local bounds apply to rigid animated nodes as well as skins.
+        // An empty palette means rigid; invalid bounds revert to the mesh's rest bounds.
+        ENGINE_API void SetRenderProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
+                                               const glm::vec3& boundsMin, const glm::vec3& boundsMax);
+
         ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model,
                                const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
 

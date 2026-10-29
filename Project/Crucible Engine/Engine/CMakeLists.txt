@@ -7,6 +7,10 @@ project(Engine)
 file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS 
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
+# Source model interpretation belongs exclusively to the offline compiler.
+list(REMOVE_ITEM ENGINE_SOURCES
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/AssetPipe/GLTFLoader.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/AssetPipe/GLTFDocument.cpp")
 file(GLOB_RECURSE ENGINE_HEADERS CONFIGURE_DEPENDS 
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.h"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.tpp"
@@ -18,6 +22,7 @@ add_library(Engine SHARED
     ${ENGINE_SOURCES}
     ${ENGINE_HEADERS}
 )
+add_dependencies(Engine CompiledModels)
 
 target_precompile_headers(Engine PRIVATE src/pch.h)
 set_target_properties(Engine PROPERTIES LINKER_LANGUAGE CXX)
@@ -60,6 +65,7 @@ target_include_directories(Engine
 
 # Link against third-party dependencies
 target_link_libraries(Engine PUBLIC EngineThirdParty)
+include("${CMAKE_CURRENT_SOURCE_DIR}/MonoRuntime.cmake")
 
 # Compile Assets/Shaders/*.slang to SPIR-V before Engine builds (see CompileShaders.cmake).
 include("${CMAKE_CURRENT_SOURCE_DIR}/CompileShaders.cmake")
