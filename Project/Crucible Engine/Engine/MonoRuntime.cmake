@@ -1,5 +1,13 @@
 # Optional Windows x64 Mono SDK integration. No downloads or global PATH changes.
-option(CRUCIBLE_ENABLE_MONO "Embed the Mono C# runtime in Engine" OFF)
+# A Mono SDK committed under Extern/mono (created by Tools/VendorMono.ps1) is
+# used automatically, so a fresh clone needs no download or extra CMake flags.
+set(CRUCIBLE_VENDORED_MONO "${CMAKE_SOURCE_DIR}/Extern/mono")
+if(EXISTS "${CRUCIBLE_VENDORED_MONO}/include/mono-2.0/mono/jit/jit.h")
+    set(crucible_mono_default ON)
+else()
+    set(crucible_mono_default OFF)
+endif()
+option(CRUCIBLE_ENABLE_MONO "Embed the Mono C# runtime in Engine" ${crucible_mono_default})
 set(CRUCIBLE_MONO_ROOT "" CACHE PATH "Mono 6.12 x64 SDK root (bin, include, lib, etc)")
 
 if(CRUCIBLE_ENABLE_MONO)
@@ -10,6 +18,9 @@ if(CRUCIBLE_ENABLE_MONO)
     endif()
     if(NOT CRUCIBLE_MONO_ROOT AND DEFINED ENV{MONO_ROOT})
         set(CRUCIBLE_MONO_ROOT "$ENV{MONO_ROOT}" CACHE PATH "Mono SDK root" FORCE)
+    endif()
+    if(NOT CRUCIBLE_MONO_ROOT AND crucible_mono_default)
+        set(CRUCIBLE_MONO_ROOT "${CRUCIBLE_VENDORED_MONO}" CACHE PATH "Mono SDK root" FORCE)
     endif()
     if(NOT CRUCIBLE_MONO_ROOT)
         message(FATAL_ERROR "Set CRUCIBLE_MONO_ROOT to a Mono 6.12 x64 SDK, or disable CRUCIBLE_ENABLE_MONO. See Docs/ScriptingRuntime.md.")

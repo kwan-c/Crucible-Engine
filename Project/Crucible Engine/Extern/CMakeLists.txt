@@ -313,9 +313,6 @@ target_link_libraries(CrucibleFonts INTERFACE
     Freetype::Freetype
 )
 
-
-# ----------------------------------- #
-
 # Create an interface library that bundles all common dependencies
 add_library(EngineThirdParty INTERFACE)
 
