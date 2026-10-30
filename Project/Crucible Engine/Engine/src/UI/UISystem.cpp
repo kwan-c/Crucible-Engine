@@ -774,7 +774,7 @@ namespace Crucible {
 				break;
 
 			case UIButton::ClickAction::LoadScene: {
-				if (!m_scenes || !m_assets) {
+				if (!m_scenes) {
 					CRU_USER_WARN("UI button (entity {}): can't load a scene - no scene manager", entity.index);
 					break;
 				}
@@ -782,18 +782,17 @@ namespace Crucible {
 					CRU_USER_WARN("UI button (entity {}): onClick is LoadScene but no scene is picked", entity.index);
 					break;
 				}
-				const AssetEntry* scene = m_assets->FindByGuid(xresource::instance_guid{ button->sceneAsset });
-				if (!scene) {
-					CRU_USER_WARN("UI button (entity {}): its scene ({:X}) is no longer in the project", entity.index, button->sceneAsset);
+				// Loaded by its GUID through the ResourceManager (SceneManager::RequestLoadAsset checks
+				// it is still a scene in the project, and logs why if not). Applied at the next frame's
+				// safe point (SceneManager::ApplyPending), never mid-system.
+				if (!m_scenes->RequestLoadAsset(button->sceneAsset)) {
+					CRU_USER_WARN("UI button (entity {}): its scene ({:X}) can't be loaded - it is no longer a scene in the project",
+								  entity.index, button->sceneAsset);
 					break;
 				}
-				// Applied at the next frame's safe point (SceneManager::ApplyPending), never mid-system.
-				// Close the menu first, so the new level starts in mouse-look (UIMenuSystem locks the
-				// cursor when nothing needs it any more).
+				// Close the menu, so the new level starts in mouse-look (UIMenuSystem locks the cursor
+				// when nothing needs it any more).
 				UI::SetMenuOpen(false);
-				if (!m_scenes->RequestLoad(scene->absolutePath)) {
-					CRU_USER_WARN("UI button (entity {}): scene file '{}' is missing", entity.index, scene->virtualPath);
-				}
 				break;
 			}
 		}

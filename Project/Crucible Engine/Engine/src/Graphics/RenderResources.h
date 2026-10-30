@@ -91,6 +91,7 @@ namespace Crucible {
         vk::raii::ImageView view = nullptr;
         uint32_t            width = 0;
         uint32_t            height = 0;
+        bool                destroyed = false;   // DestroyTexture: the slot stays (never reused) but is empty
     };
 
     // GPU-side material: which texture each of the five PBR slots currently points at (kept
@@ -102,6 +103,7 @@ namespace Crucible {
         MaterialData             data;
         PushConstants            push;            // what the scene pass pushes for it (MakeMaterialPush)
         vk::raii::DescriptorSet   descriptorSet = nullptr;
+        bool                      destroyed = false;   // DestroyMaterial: the slot stays (never reused) but is empty
     };
 
     /// The scene pass's push constant for a material: its factors plus its cut-out, shading and
@@ -216,6 +218,41 @@ namespace Crucible {
         TextureHandle  DefaultNormalTexture() const { return m_defaultNormalTexture; }   ///< 1x1 flat normal.
         MaterialHandle DefaultMaterial() const      { return m_defaultMaterial; }        ///< Placeholders and neutral factors.
 
+        // ---- Destroying (the ResourceManager frees what no scene uses: UnloadUnused) ----
+
+        /*********************************************************************
+         \brief  Frees a mesh's / texture's / material's GPU memory.
+         \details
+            The slot is emptied at once and never reused, so a handle kept
+            anywhere draws nothing (mesh) or the default (texture, material)
+            from now on - never some other resource. The Vulkan objects
+            themselves are freed by ReleaseDestroyed() a few frames later,
+            once every frame that could still be drawing with them has
+            finished on the GPU.
+         \return false (nothing done) for a default resource, a dynamic
+                 mesh, an unknown handle, or one already destroyed.
+         *********************************************************************/
+        bool DestroyMesh(MeshHandle handle);
+        bool DestroyTexture(TextureHandle handle);      //!< \copydoc DestroyMesh
+        bool DestroyMaterial(MaterialHandle handle);    //!< \copydoc DestroyMesh
+
+        /// Whether a texture can be drawn with: valid, ours, and not destroyed.
+        bool IsTextureUsable(TextureHandle handle) const {
+            return handle.IsValid() && handle.id < m_textures.size() && !m_textures[handle.id].destroyed;
+        }
+        /// Whether a material can be drawn with: valid, ours, and not destroyed.
+        bool IsMaterialUsable(MaterialHandle handle) const {
+            return handle.IsValid() && handle.id < m_materials.size() && !m_materials[handle.id].destroyed;
+        }
+
+        /*********************************************************************
+         \brief  Frees the Vulkan objects of resources destroyed long enough
+                 ago that no frame in flight can still be using them. Call
+                 once a frame, after BeginFrame() has waited on this frame's
+                 fence (next to the upload queue's ReleaseFrame).
+         *********************************************************************/
+        void ReleaseDestroyed();
+
         /*********************************************************************
          \brief  Draws a list of batches with whatever pipeline and descriptor
                  sets are already bound: geometry only, no materials.
@@ -239,7 +276,7 @@ namespace Crucible {
 
         /// Whether the depth-only passes need to know this material (cut-out or double-sided).
         bool NeedsMaterialInDepthPasses(MaterialHandle handle) const {
-            if (!handle.IsValid() || handle.id >= m_materials.size()) { return false; }
+            if (!IsMaterialUsable(handle)) { return false; }
             const MaterialData& d = m_materials[handle.id].data;
             return d.alphaCutoff > 0.0f || d.doubleSided;
         }
@@ -309,6 +346,15 @@ namespace Crucible {
         struct PendingMeshUpload { MeshHandle handle; MeshData data; std::string debugName; };
         std::deque<PendingMeshUpload> m_pendingMeshUploads;
         static constexpr uint32_t     kMaxMeshUploadsPerFrame = 2;
+
+        // Destroyed resources waiting for the GPU to finish with them (ReleaseDestroyed), each with
+        // the ReleaseDestroyed() count at which it was destroyed. Declared last so they are freed
+        // first - before the descriptor pools their material sets were allocated from.
+        template <typename T> struct Retired { uint64_t frame = 0; T resource; };
+        std::vector<Retired<GpuMesh>>     m_retiredMeshes;
+        std::vector<Retired<GpuTexture>>  m_retiredTextures;
+        std::vector<Retired<GpuMaterial>> m_retiredMaterials;
+        uint64_t                          m_releaseCount = 0;   // ReleaseDestroyed() calls so far
     };
 
 }   // NAMESPACE CRUCIBLE

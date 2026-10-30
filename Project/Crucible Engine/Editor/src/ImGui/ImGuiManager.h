@@ -38,6 +38,7 @@ enum class ImguiPanels
 	PLAYPAUSE,
 	CONSOLE,
 	ANIMATOR,
+	RESOURCES,		// what the ResourceManager holds in memory (tab next to the Asset Browser)
 	FONTIMPORTER	// floating window, opened from the Asset Browser or View > Font Importer
 };
 

@@ -173,6 +173,23 @@ namespace Crucible {
         bool LoadFromString(const std::string& json);
 
         /*********************************************************************
+         \brief  Same as Load(file), from the text of a registered prefab
+                 file: copies made from it link back to that asset.
+         \param[in] json        The .cprefab file's contents.
+         \param[in] assetGuid   The file's asset guid (from its .meta).
+         \param[in] contentHash AssetRegistry::HashFileContents of the file.
+         \param[in] source      The file's path, for log messages; its stem
+                                is the name when the file has none.
+         \return true if the text parsed and its entity tree is well formed.
+         \details
+            What the ResourceManager uses (GetPrefab / ReadPrefab): the same
+            result as Load(file), with the text read through the
+            AssetManager by GUID instead of from a path.
+         *********************************************************************/
+        bool LoadFromAsset(const std::string& json, std::uint64_t assetGuid,
+                           std::uint64_t contentHash, const std::string& source);
+
+        /*********************************************************************
          \brief
             Add one copy of this prefab to a world.
 
