@@ -58,6 +58,7 @@ namespace Crucible {
 	void SceneManager::RequestNew() {
 		m_pending = Pending::New;
 		m_pendingPath.clear();
+		m_pendingAsset = 0;
 	}
 
 	bool SceneManager::CreateSceneFile(const std::filesystem::path& file) {
@@ -95,6 +96,27 @@ namespace Crucible {
 
 		m_pending = Pending::Load;
 		m_pendingPath = file;
+		m_pendingAsset = 0;
+		return true;
+	}
+
+	bool SceneManager::RequestLoadAsset(std::uint64_t sceneAsset) {
+		if (m_resources == nullptr)
+		{
+			CRU_USER_ERROR("SceneManager: cannot load scene {:X} - no ResourceManager to load it through", sceneAsset);
+			return false;
+		}
+		// Checked now, so the caller gets feedback straight away rather than next frame.
+		if (!m_resources->IsScene(sceneAsset))
+		{
+			CRU_USER_ERROR("SceneManager: cannot load {} - it is not a scene in the project",
+						   m_resources->GetName(sceneAsset));
+			return false;
+		}
+
+		m_pending = Pending::LoadAsset;
+		m_pendingAsset = sceneAsset;
+		m_pendingPath.clear();
 		return true;
 	}
 
@@ -104,12 +126,14 @@ namespace Crucible {
 		// instead of being wiped out here.
 		const Pending   pending = std::exchange(m_pending, Pending::None);
 		const std::filesystem::path  path = std::exchange(m_pendingPath, std::filesystem::path{});
+		const std::uint64_t          asset = std::exchange(m_pendingAsset, std::uint64_t{ 0 });
 
 		switch (pending)
 		{
 		case Pending::None:                     return;
 		case Pending::New:  ApplyNew();         return;
 		case Pending::Load: ApplyLoad(path);    return;
+		case Pending::LoadAsset: ApplyLoadAsset(asset); return;
 		}
 	}
 
@@ -172,6 +196,39 @@ namespace Crucible {
 			// scope ends, after the highest "Entity N" the file holds.
 			World::DeferredNaming loading(m_world);
 			loaded = m_scene.Load(m_world, file);
+		}
+		if (!loaded)
+		{
+			CRU_USER_ERROR("SceneManager: failed to load '{}' - keeping '{}'", file.string(), m_scene.Name());
+			return;
+		}
+
+		m_path = file;
+		m_dirty = false;
+		CRU_USER_INFO("Loaded scene '{}'", m_scene.Name());
+
+		NotifyChanged();
+	}
+
+	void SceneManager::ApplyLoadAsset(std::uint64_t sceneAsset) {
+		// Read through the ResourceManager first: if the scene can no longer be read (deleted
+		// since the request), the open scene stays exactly as it is.
+		std::string text;
+		if (m_resources == nullptr || !m_resources->ReadScene(sceneAsset, text))
+		{
+			CRU_USER_ERROR("SceneManager: failed to load scene {:X} - keeping '{}'", sceneAsset, m_scene.Name());
+			return;
+		}
+
+		// Where Save writes back to. Loading itself only needed the GUID.
+		const std::filesystem::path file = m_resources->GetFilePath(sceneAsset);
+
+		// As in ApplyLoad: Scene checks the text before destroying anything, and blank
+		// names are filled once every entity exists.
+		bool loaded = false;
+		{
+			World::DeferredNaming loading(m_world);
+			loaded = m_scene.LoadFromText(m_world, text, file);
 		}
 		if (!loaded)
 		{

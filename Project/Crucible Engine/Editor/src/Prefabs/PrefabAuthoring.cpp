@@ -258,13 +258,21 @@ namespace Crucible::PrefabAuthoring {
 			return kNullEntity;
 		}
 
-		// Loaded fresh each time: the file may have been re-saved since the last placement.
-		// Load also reads the file's .meta, so the copy is linked to it (PrefabInstance).
-		Prefab prefab;
-		if (!prefab.Load(core->GetAssets().Resolve(virtualPath))) {
+		// Loaded by GUID through the ResourceManager, so the copy is linked to the prefab
+		// (PrefabInstance). Reloaded first: the file may have been re-saved since the last placement.
+		ResourceManager& resources = core->GetResources();
+		AssetId const prefabId = resources.GetIdForPath(virtualPath);
+		if (prefabId == 0) {
+			CRU_USER_WARN("Could not place '{}': it is not in the asset index yet (refresh the Asset Browser)", virtualPath);
+			return kNullEntity;
+		}
+		resources.ReloadPrefab(prefabId);
+		std::shared_ptr<Prefab const> const loaded = resources.GetPrefab(prefabId);
+		if (!loaded) {
 			CRU_USER_WARN("Could not place '{}': the prefab failed to load (see the log)", virtualPath);
 			return kNullEntity;
 		}
+		Prefab const& prefab = *loaded;
 
 		CommitInspectorEdit();
 		auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
@@ -410,8 +418,10 @@ namespace Crucible::PrefabAuthoring {
 			CachedPrefab& cached = g_prefabs[prefabAsset];
 			if (!cached.loaded || cached.stamp != stamp) {
 				// A file that fails to load is not retried until it changes again.
-				auto fresh = std::make_shared<Prefab>();
-				cached.loaded = fresh->Load(file);
+				// Read fresh through the ResourceManager (by GUID, bypassing its cache): this
+				// compares versions of the file, so it must see the file as it is on disk now.
+				std::shared_ptr<Prefab> fresh = core->GetResources().ReadPrefab(prefabAsset);
+				cached.loaded = fresh != nullptr;
 				cached.stamp  = stamp;
 				cached.prefab = fresh;
 				if (cached.loaded) { g_versions[prefabAsset].emplace(fresh->ContentHash(), fresh); }   // kept for later comparisons
@@ -864,6 +874,8 @@ namespace Crucible::PrefabAuthoring {
 
 		void InvalidateCachedPrefab(std::uint64_t prefabAsset) {
 			g_prefabs.erase(prefabAsset);
+			// The file is being re-written: the ResourceManager's shared copy is out of date too.
+			if (Core* core = EditorManager::GetInstance().GetCore()) { core->GetResources().ReloadPrefab(prefabAsset); }
 			g_draw.frame = -1;
 		}
 

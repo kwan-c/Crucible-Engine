@@ -191,6 +191,8 @@ namespace Crucible {
         // BeginFrame() has waited on this frame index's fence, so the GPU is done with the staging
         // buffers of the uploads recorded the last time this index was used: free them.
         m_uploads.ReleaseFrame(frameIndex);
+        m_resources.ReleaseDestroyed();   // frees meshes/textures/materials destroyed long enough ago
+        m_environmentMaps.ReleaseDestroyed();   // ... and skyboxes
 
         // ...and with this index's dynamic-mesh buffers: refill the ones whose geometry changed.
         m_resources.UploadDynamicMeshes(frameIndex);
@@ -817,6 +819,10 @@ namespace Crucible {
     MaterialHandle Renderer::CreateMaterial(const MaterialData& data) { return m_resources.CreateMaterial(data); }
     void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) { m_resources.UpdateMaterial(handle, data); }
     const MaterialData& Renderer::GetMaterialData(MaterialHandle handle) const { return m_resources.GetMaterialData(handle); }
+    bool Renderer::DestroyMesh(MeshHandle handle)         { return m_resources.DestroyMesh(handle); }
+    bool Renderer::DestroyTexture(TextureHandle handle)   { return m_resources.DestroyTexture(handle); }
+    bool Renderer::DestroyMaterial(MaterialHandle handle) { return m_resources.DestroyMaterial(handle); }
+    bool Renderer::DestroyCubemap(CubemapHandle handle)   { return m_environmentMaps.DestroyCubemap(handle); }
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  LIGHTS & ENVIRONMENT
@@ -1185,7 +1191,7 @@ namespace Crucible {
         vk::DescriptorSet skySet{};
         if (m_environment.drawSkybox) {
             CubemapHandle sky = m_environment.skybox;
-            if (!sky.IsValid() || sky.id >= m_environmentMaps.Cubemaps().size()) { sky = m_environmentMaps.DefaultSkybox(); }
+            if (!m_environmentMaps.IsUsable(sky)) { sky = m_environmentMaps.DefaultSkybox(); }   // also a destroyed one
             if (sky.IsValid() && sky.id < m_environmentMaps.Cubemaps().size()) { skySet = *m_environmentMaps.Cubemaps()[sky.id].descriptorSet; }
         }
         m_scenePass.Record(cmd, t, depthImage, depthView, extent, frameSet, draws.main, skySet, draws.particles, draws.water, draws.worldUI);

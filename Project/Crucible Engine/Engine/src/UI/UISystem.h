@@ -321,9 +321,10 @@ namespace Crucible {
 	 *************************************************************************/
 	class UIInputSystem final : public IECSSystem {
 	public:
-		/// scenes / assets: for UIButton::ClickAction::LoadScene (null: that action only warns).
-		UIInputSystem(Renderer& renderer, SceneManager* scenes, AssetManager* assets)
-			: m_renderer(renderer), m_scenes(scenes), m_assets(assets) {}
+		/// scenes: for UIButton::ClickAction::LoadScene, which loads by GUID through the
+		/// ResourceManager (SceneManager::RequestLoadAsset). Null: that action only warns.
+		UIInputSystem(Renderer& renderer, SceneManager* scenes)
+			: m_renderer(renderer), m_scenes(scenes) {}
 
 		void Update(World& world, SystemContext& ctx) override;
 		void Describe(SystemDesc& desc) const override;
@@ -336,7 +337,6 @@ namespace Crucible {
 
 		Renderer&                   m_renderer;
 		SceneManager*               m_scenes = nullptr;
-		AssetManager*               m_assets = nullptr;
 		std::vector<UI::LayoutItem> m_layout;     // this frame's layout at the game screen's size (reused)
 		Entity                      m_pressed{};  // the button the current press started on (none: kNullEntity)
 		Entity                      m_dragSlider{};  // the slider being dragged (none: kNullEntity)

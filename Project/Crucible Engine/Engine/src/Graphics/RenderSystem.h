@@ -385,6 +385,26 @@ namespace Crucible {
          *********************************************************************/
         MaterialHandle GetDefaultMaterial() const { return m_resources.DefaultMaterial(); }
 
+        /*********************************************************************
+         \brief  Frees a mesh / texture / material the ResourceManager no
+                 longer needs (UnloadUnused). The GPU memory goes a few
+                 frames later, once no frame in flight can use it; handles
+                 still held anywhere draw nothing / the default instead.
+         \return false if it was a default, dynamic, unknown or already
+                 destroyed resource (nothing done).
+         *********************************************************************/
+        ENGINE_API bool DestroyMesh(MeshHandle handle);
+        ENGINE_API bool DestroyTexture(TextureHandle handle);       //!< \copydoc DestroyMesh
+        ENGINE_API bool DestroyMaterial(MaterialHandle handle);     //!< \copydoc DestroyMesh
+        ENGINE_API bool DestroyCubemap(CubemapHandle handle);       //!< \copydoc DestroyMesh (a dead skybox shows the built-in sky)
+
+        /// Number of material slots ever made (destroyed ones included) - walk 0..count-1 with IsMaterialAlive.
+        uint32_t GetMaterialCount() const { return static_cast<uint32_t>(m_resources.Materials().size()); }
+        /// Whether a material exists and was not destroyed.
+        bool IsMaterialAlive(MaterialHandle handle) const { return m_resources.IsMaterialUsable(handle); }
+        /// Whether a texture exists and was not destroyed.
+        bool IsTextureAlive(TextureHandle handle) const { return m_resources.IsTextureUsable(handle); }
+
         // ---- Lights & environment ------------------------------------------------------------
 
         /*********************************************************************

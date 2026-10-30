@@ -195,7 +195,7 @@ namespace Crucible {
                 });
             }
 
-            const bool textured = submit.desc.texture.IsValid() && submit.desc.texture.id < m_resources.Textures().size();
+            const bool textured = m_resources.IsTextureUsable(submit.desc.texture);
             ParticleBatch batch;
             batch.texture = textured ? submit.desc.texture : m_resources.DefaultWhiteTexture();
             batch.first   = first;
@@ -237,7 +237,7 @@ namespace Crucible {
 
     vk::DescriptorSet ParticlePass::EnsureTextureSet(TextureHandle texture) {
 
-        if (!texture.IsValid() || texture.id >= m_resources.Textures().size()) { texture = m_resources.DefaultWhiteTexture(); }
+        if (!m_resources.IsTextureUsable(texture)) { texture = m_resources.DefaultWhiteTexture(); }   // also destroyed ones
 
         if (auto it = m_particleTextureSets.find(texture.id); it != m_particleTextureSets.end()) { return *it->second; }
 

@@ -6,6 +6,7 @@
 #include "Graphics/RenderResources.h"
 
 #include "Graphics/Vulkan/RenderLayouts.h"   // Vertex
+#include "Graphics/Vulkan/VulkanFrameManager.h"   // MAX_FRAMES_IN_FLIGHT (ReleaseDestroyed)
 
 #include <stb_image.h>   // the implementation is compiled in RenderSystem.cpp
 
@@ -418,6 +419,9 @@ namespace Crucible {
         if (!handle.IsValid() || handle.id >= m_textures.size()) {
             throw std::runtime_error("[Renderer] Unknown or invalid TextureHandle.");
         }
+        if (m_textures[handle.id].destroyed) {
+            throw std::runtime_error("[Renderer] TextureHandle refers to a destroyed texture.");
+        }
         return m_textures[handle.id];
 
     }   // RenderResources::GetTextureOrThrow()
@@ -479,7 +483,7 @@ namespace Crucible {
         // 2=metallicRoughness, 3=emissive, 4=occlusion.
         auto resolve = [&](TextureHandle h, bool isNormalSlot) -> vk::ImageView {
             const TextureHandle fallback = isNormalSlot ? m_defaultNormalTexture : m_defaultWhiteTexture;
-            return *GetTextureOrThrow(h.IsValid() ? h : fallback).view;
+            return *GetTextureOrThrow(IsTextureUsable(h) ? h : fallback).view;   // destroyed counts as missing
         };
 
         vk::DescriptorImageInfo imageInfos[5] = {
@@ -543,7 +547,7 @@ namespace Crucible {
             }
 
             if (!(batch.material == boundMaterial)) {
-                const MaterialData* data = batch.material.IsValid() && batch.material.id < m_materials.size()
+                const MaterialData* data = IsMaterialUsable(batch.material)   // destroyed: plain solid depth
                                          ? &m_materials[batch.material.id].data : nullptr;
                 const bool cutout = data && data->alphaCutoff > 0.0f;
                 if (cutout != cutoutBound) {
@@ -608,6 +612,7 @@ namespace Crucible {
             throw std::runtime_error("[Renderer] Unknown or invalid MaterialHandle.");
         }
         GpuMaterial& mat = m_materials[handle.id];
+        if (mat.destroyed) { return; }   // freed (no scene used it): nothing to update
 
         const bool texturesChanged =
             !(mat.data.albedo == data.albedo) || !(mat.data.normal == data.normal) ||
@@ -650,5 +655,68 @@ namespace Crucible {
         m_defaultMaterial = CreateMaterial(MaterialData{});   // Invalid textures -> both placeholders, neutral factors
 
     }   // RenderResources::InitMaterials()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  DESTROYING
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    bool RenderResources::DestroyMesh(MeshHandle handle) {
+
+        if (!handle.IsValid() || handle.id >= m_meshes.size()) { return false; }
+        GpuMesh& mesh = m_meshes[handle.id];
+        if (mesh.dynamic) { return false; }   // owned by whoever made it (e.g. vines), not the ResourceManager
+
+        // Still waiting for its upload (CreateMeshAsync): drop the request - there is nothing to free yet.
+        std::erase_if(m_pendingMeshUploads, [&](const PendingMeshUpload& p) { return p.handle.id == handle.id; });
+
+        m_retiredMeshes.push_back({ m_releaseCount, std::move(mesh) });
+        mesh = GpuMesh{};                     // indexCount 0: IsDrawable / BindMesh / bounds skip it from now on
+        mesh.debugName = "(destroyed)";
+        return true;
+
+    }   // RenderResources::DestroyMesh()
+
+    bool RenderResources::DestroyTexture(TextureHandle handle) {
+
+        if (!IsTextureUsable(handle) || handle == m_defaultWhiteTexture || handle == m_defaultNormalTexture) { return false; }
+
+        // Forget its cache key(s), so asking for the same file again makes a new texture.
+        std::erase_if(m_textureCacheByKey, [&](const auto& entry) { return entry.second == handle.id; });
+
+        GpuTexture& texture = m_textures[handle.id];
+        m_retiredTextures.push_back({ m_releaseCount, std::move(texture) });
+        texture = GpuTexture{};
+        texture.destroyed = true;             // IsTextureUsable false: passes draw the default instead
+        return true;
+
+    }   // RenderResources::DestroyTexture()
+
+    bool RenderResources::DestroyMaterial(MaterialHandle handle) {
+
+        if (!IsMaterialUsable(handle) || handle == m_defaultMaterial) { return false; }
+
+        GpuMaterial& material = m_materials[handle.id];
+        m_retiredMaterials.push_back({ m_releaseCount, std::move(material) });
+        material = GpuMaterial{};
+        material.destroyed = true;            // IsMaterialUsable false: draws use the default material instead
+        return true;
+
+    }   // RenderResources::DestroyMaterial()
+
+    void RenderResources::ReleaseDestroyed() {
+
+        ++m_releaseCount;
+
+        // Destroyed at count c (during frame n): frames up to n-1 may still be on the GPU. Each later
+        // call has waited for one more frame's fence, so after MAX_FRAMES_IN_FLIGHT + 1 more calls
+        // every one of them has finished - one frame of margin on top of what is strictly needed.
+        const auto finished = [&](const auto& retired) {
+            return m_releaseCount - retired.frame > VulkanFrameManager::MAX_FRAMES_IN_FLIGHT;
+        };
+        std::erase_if(m_retiredMeshes, finished);
+        std::erase_if(m_retiredTextures, finished);
+        std::erase_if(m_retiredMaterials, finished);
+
+    }   // RenderResources::ReleaseDestroyed()
 
 }   // NAMESPACE CRUCIBLE

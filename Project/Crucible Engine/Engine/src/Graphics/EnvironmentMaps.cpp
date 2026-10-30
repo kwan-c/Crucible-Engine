@@ -4,6 +4,7 @@
     See EnvironmentMaps.h.
 *************************************************************************/
 #include "Graphics/EnvironmentMaps.h"
+#include "Graphics/Vulkan/VulkanFrameManager.h"   // MAX_FRAMES_IN_FLIGHT (ReleaseDestroyed)
 
 #include <glm/gtc/packing.hpp>   // packHalf4x16 - RGBA16F cubemap texels
 
@@ -150,7 +151,11 @@ namespace Crucible {
     CubemapHandle EnvironmentMaps::UploadCubemapFaces(const void* faceData, uint32_t faceSize, vk::Format format,
                                                uint32_t bytesPerTexel, const std::string& debugName) {
 
-        if (m_cubemaps.size() >= kMaxCubemaps) {
+        // The limit is the descriptor pool's: one set per cubemap still alive (or destroyed but
+        // not yet released). Destroyed slots no longer hold one.
+        const size_t live = std::count_if(m_cubemaps.begin(), m_cubemaps.end(), [](const GpuCubemap& c) { return !c.destroyed; })
+                          + m_retiredCubemaps.size();
+        if (live >= kMaxCubemaps) {
             throw std::runtime_error("[Renderer] UploadCubemapFaces: kMaxCubemaps exceeded; raise the limit if you genuinely need more.");
         }
 
@@ -517,6 +522,32 @@ namespace Crucible {
         return handle;
 
     }   // EnvironmentMaps::CreateCubemapFromEquirect()
+
+    bool EnvironmentMaps::DestroyCubemap(CubemapHandle handle) {
+
+        if (!IsUsable(handle) || handle == m_defaultSkybox) { return false; }
+
+        // Forget its cache key, so loading the same file again makes a new cubemap.
+        std::erase_if(m_cubemapCacheByKey, [&](const auto& entry) { return entry.second == handle.id; });
+
+        GpuCubemap& cube = m_cubemaps[handle.id];
+        m_retiredCubemaps.push_back({ m_releaseCount, std::move(cube) });
+        cube = GpuCubemap{};
+        cube.destroyed = true;   // IsUsable false: Resolve and the sky pass use the built-in sky instead
+        return true;
+
+    }   // EnvironmentMaps::DestroyCubemap()
+
+    void EnvironmentMaps::ReleaseDestroyed() {
+
+        // Same rule as RenderResources::ReleaseDestroyed: every frame that could still sample
+        // it has finished after MAX_FRAMES_IN_FLIGHT more fence waits (plus one frame of margin).
+        ++m_releaseCount;
+        std::erase_if(m_retiredCubemaps, [&](const RetiredCubemap& retired) {
+            return m_releaseCount - retired.frame > VulkanFrameManager::MAX_FRAMES_IN_FLIGHT;
+        });
+
+    }   // EnvironmentMaps::ReleaseDestroyed()
 
     glm::vec3 EvaluateSkyIrradiance(const std::array<glm::vec4, 9>& sh, const glm::vec3& n) {
 
