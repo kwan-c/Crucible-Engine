@@ -34,6 +34,7 @@ namespace Crucible {
 		std::atomic<std::uint64_t> g_selected{ 0 };   // (index << 32) | generation; 0 = kNullEntity
 		std::atomic<float>         g_velocityScale{ 0.25f };
 		std::atomic<bool>          g_collidersThroughWalls{ false };
+		std::atomic<bool>		   g_audioRangesForAll{ false };
 
 		const glm::vec4 kStaticCollider  { 0.30f, 0.90f, 0.40f, 1.0f };
 		const glm::vec4 kDynamicCollider { 0.25f, 0.80f, 1.00f, 1.0f };
@@ -44,6 +45,10 @@ namespace Crucible {
 		const glm::vec4 kWorldCanvas     { 0.35f, 0.75f, 1.00f, 1.0f };   // a world canvas's page
 		const glm::vec4 kWorldCanvasOff  { 0.45f, 0.45f, 0.50f, 1.0f };   // ...switched off (not drawn)
 		const glm::vec4 kWorldUISelected { 1.00f, 0.55f, 0.10f, 1.0f };   // the selected element on one (the selection orange)
+		const glm::vec4 kAudioRange      { 0.45f, 0.80f, 1.00f, 1.0f };   // a sound's edge: Min Distance, and Max Distance with Linear rolloff
+		const glm::vec4 kAudioRangeDim   { 0.22f, 0.40f, 0.55f, 1.0f };	  // Max Distance with Logarithmic rolloff (still heard beyond it)
+		const glm::vec4 kAudioOff        { 0.50f, 0.50f, 0.50f, 1.0f };	  // switched off, or no clip
+		const glm::vec4 kAudioListener   { 0.95f, 0.95f, 0.95f, 1.0f };
 
 		// The Scene view's camera (SetViewCamera). Main thread only, like the rest of the system.
 		bool      g_hasViewCamera = false;
@@ -113,6 +118,9 @@ namespace Crucible {
 	void DebugDrawSystem::SetCollidersThroughWalls(bool enabled) { g_collidersThroughWalls.store(enabled); }
 	bool DebugDrawSystem::GetCollidersThroughWalls() { return g_collidersThroughWalls.load(); }
 
+	void DebugDrawSystem::SetAudioRangesForAll(bool enabled) { g_audioRangesForAll.store(enabled); }
+	bool DebugDrawSystem::GetAudioRangesForAll() { return g_audioRangesForAll.load(); }
+
 	void DebugDrawSystem::SetViewCamera(const glm::vec3& position, const glm::mat4& view) {
 		g_hasViewCamera      = true;
 		g_viewCameraPosition = position;
@@ -126,7 +134,7 @@ namespace Crucible {
 	void DebugDrawSystem::Describe(SystemDesc& desc) const {
 
 		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent,
-		           UICanvas, UIRect, HierarchyNode>()   // world canvases' pages and the selected element's rect
+		           UICanvas, UIRect, HierarchyNode, AudioSource, AudioListener>()   // world canvases' pages and the selected element's rect
 			.RunAfter<HierarchyTransformSystem>()        // WorldTransform must be this frame's
 			.Affinity(SystemAffinity::MainThread);       // Renderer/ResourceManager aren't thread-safe
 
@@ -139,6 +147,7 @@ namespace Crucible {
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Colliders))  { DrawColliders(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Velocities)) { DrawVelocities(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Lights))     { DrawLights(world); }
+		if (DebugDraw::IsCategoryEnabled(DebugCategory::Audio))      { DrawAudio(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Grid))       { DrawGrid(); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Selection))  { DrawSelection(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::WorldUI))    { DrawWorldUI(world); }
@@ -291,6 +300,56 @@ namespace Crucible {
 			});
 
 	}   // DebugDrawSystem::DrawLights()
+
+	void DebugDrawSystem::DrawAudio(World& world) {
+
+		const Entity selected = GetSelectedEntity();
+		const bool   all      = g_audioRangesForAll.load();
+
+		DebugStyle style;
+		style.category = DebugCategory::Audio;
+		style.depthTest = false;	// like the light gizmos: drawn on top, for finding the edge
+
+		// Source: a 3D sound is at full volume inside Min Distance and fades out to Max Distance.
+		// Spatial Blend 0 is plain 2D - as loud everywhere - so there is no range to show. Distances
+		// are metres, not scaled by the Transform, and clamped as AudioVoices clamps them for FMOD.
+		// IncludeDisabled: a switched-off source keeps its spheres, in grey, as lights do.
+		world.BuildQuery<const WorldTransform, const AudioSource>().IncludeDisabled().Build()
+			.ForEach([&](Entity entity, const WorldTransform& wt, const AudioSource& source) {
+
+				if (!wt.valid || source.m_spatialBlend <= 0.0f) { return; }
+				if (!all && entity != selected) { return; }
+
+				const glm::vec3 p(wt.matrix[3]);
+				const float minDistance = std::max(source.m_minDistance, 0.0f);
+				const float maxDistance = std::max(source.m_maxDistance, minDistance);
+				const bool  on = source.m_clip != 0 && world.IsComponentActive<AudioSource>(entity);
+
+				if (minDistance > 0.0f) {
+					style.color = on ? kAudioRange : kAudioOff;
+					DebugDraw::Sphere(p, minDistance, style);
+				}
+				// Linear rolloff is silent at Max Distance, so that sphere is where the sound:
+				// bright. Logarithmic only stops getting quieter there and is still heard beyond it:
+				// dim. More segments, since it is often hundreds of metres across.
+				if (maxDistance > minDistance) {
+					style.color = !on ? kAudioOff : source.m_rolloffMode == AudioRolloffMode::Linear ? kAudioRange : kAudioRangeDim;
+					DebugDraw::Sphere(p, maxDistance, style, 64);
+				}
+			});
+		
+		// Listeners: which way the ears face (local -Z forward, the same as ECSAudioSystem), so
+		// a listener turned round - left and right swapped - is easy to spot.
+		style.color = kAudioListener;
+		world.CreateQuery<const WorldTransform, const AudioListener>()
+			.ForEach([&](Entity, const WorldTransform& wt, const AudioListener&) {
+				if (!wt.valid) { return; }
+				const glm::vec3 p(wt.matrix[3]);
+				const glm::vec3 forward = -glm::vec3(wt.matrix[2]);
+				const float		length = glm::length(forward);
+				if (length > 1e-6f) { DebugDraw::Arrow(p, p + forward / length, style); }
+			});
+	}	// DebugDrawSystem::DrawAudio()
 
 	void DebugDrawSystem::DrawGrid() {
 
