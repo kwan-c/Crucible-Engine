@@ -90,9 +90,10 @@ namespace Crucible
 		PrefabInstance = 28,     // Editor/Scene: links an entity to the .cprefab it was placed from (Scene/Prefab.h)
 		ConstantForce = 29,      // Physics: a steady push set in the Inspector (Physics/PhysicsComponents.h)
 		PhysicsJoint = 30,       // Physics: hinge, fixed, ball, character or spring joint between two bodies (Physics/PhysicsComponents.h)
+		WorldText = 31,          // Graphics: text placed in the 3D world by its Transform (Text/WorldText.h)
+		Vine = 32,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
 
-
-		MAXCOMPONENT = 31
+		MAXCOMPONENT = 33
 	};
 
 
@@ -265,8 +266,10 @@ namespace Crucible
  X(AnimatedModel)                                                              \
  X(SocketAttachment)                                                           \
  X(ScriptComponent)                                                            \
+ X(Vine)                                                                       \
  X(PrefabInstance)                                                             \
  X(ConstantForce)                                                              \
  X(PhysicsJoint)                                                               \
+ X(WorldText)                                                                  \
 
 }

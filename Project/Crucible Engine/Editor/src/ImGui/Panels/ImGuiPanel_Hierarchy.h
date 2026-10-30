@@ -172,10 +172,14 @@ namespace Crucible {
 		// A root entity with a UICanvas: where screen-space UI elements go (as its children).
 		void CreateCanvasObject();
 
-		// "Image", "Button" or "Slider": a UI element (UIRect + UIImage / UIButton / UISlider) placed under the selected
-		// entity if it is part of a UI tree, else under the first screen-space canvas, else under a
-		// new canvas made with it. One undo step either way.
-		void CreateUIElement(const std::string& kind);
+		// "Image", "Button", "Slider" or "Text": a UI element (UIRect + UIImage / UIButton / UISlider / UIText)
+		// placed under the selected entity if it is part of a UI tree, else under the first
+		// screen-space canvas, else under a new canvas made with it. One undo step either way.
+		// worldSpace (UI (World) menu): only under world-space UI, else under a new world canvas.
+		void CreateUIElement(const std::string& kind, bool worldSpace = false);
+		// "UI (World) > World Canvas": a world-space UICanvas with a 400 x 100 px page (4 x 1 m),
+		// a little above the origin. Its images, sliders and text are drawn in the 3D scene.
+		void CreateWorldCanvasObject();
 
 		// Double-click / F: frames the selected entity where it is edited. A screen-space UI element
 		// (or its canvas) switches to the UI Editor tab and frames it there; anything else switches
@@ -193,6 +197,8 @@ namespace Crucible {
 		// Spawns a new entity with a Water component: a 10 x 10 m surface (the built-in plane,
 		// scaled) at the origin. It needs ground under it to show depth, shores and foam.
 		void CreateWaterObject();
+		// "UI (World) > World Text": an entity with a WorldText (Text/WorldText.h) a little above the origin.
+		void CreateWorldTextObject();
 	};
 
 }

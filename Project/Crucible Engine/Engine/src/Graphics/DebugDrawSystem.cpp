@@ -22,6 +22,8 @@
 #include "Graphics/DebugDraw.h"
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
+#include "UI/UISystem.h"      // UI::LayoutWorldCanvas: the selected element's rect on its page
+#include "UI/WorldUIPlane.h"  // where a world canvas's page is for the Scene view's camera
 
 namespace Crucible {
 
@@ -32,6 +34,7 @@ namespace Crucible {
 		std::atomic<std::uint64_t> g_selected{ 0 };   // (index << 32) | generation; 0 = kNullEntity
 		std::atomic<float>         g_velocityScale{ 0.25f };
 		std::atomic<bool>          g_collidersThroughWalls{ false };
+		std::atomic<bool>		   g_audioRangesForAll{ false };
 
 		const glm::vec4 kStaticCollider  { 0.30f, 0.90f, 0.40f, 1.0f };
 		const glm::vec4 kDynamicCollider { 0.25f, 0.80f, 1.00f, 1.0f };
@@ -39,6 +42,18 @@ namespace Crucible {
 		const glm::vec4 kSlow            { 1.00f, 0.90f, 0.20f, 1.0f };
 		const glm::vec4 kFast            { 1.00f, 0.20f, 0.20f, 1.0f };
 		const glm::vec4 kGrid            { 0.32f, 0.32f, 0.34f, 1.0f };
+		const glm::vec4 kWorldCanvas     { 0.35f, 0.75f, 1.00f, 1.0f };   // a world canvas's page
+		const glm::vec4 kWorldCanvasOff  { 0.45f, 0.45f, 0.50f, 1.0f };   // ...switched off (not drawn)
+		const glm::vec4 kWorldUISelected { 1.00f, 0.55f, 0.10f, 1.0f };   // the selected element on one (the selection orange)
+		const glm::vec4 kAudioRange      { 0.45f, 0.80f, 1.00f, 1.0f };   // a sound's edge: Min Distance, and Max Distance with Linear rolloff
+		const glm::vec4 kAudioRangeDim   { 0.22f, 0.40f, 0.55f, 1.0f };	  // Max Distance with Logarithmic rolloff (still heard beyond it)
+		const glm::vec4 kAudioOff        { 0.50f, 0.50f, 0.50f, 1.0f };	  // switched off, or no clip
+		const glm::vec4 kAudioListener   { 0.95f, 0.95f, 0.95f, 1.0f };
+
+		// The Scene view's camera (SetViewCamera). Main thread only, like the rest of the system.
+		bool      g_hasViewCamera = false;
+		glm::vec3 g_viewCameraPosition{ 0.0f };
+		glm::mat4 g_viewCameraView{ 1.0f };
 
 		constexpr float kFastSpeed = 20.0f;   // m/s at which the arrow is fully red
 
@@ -103,13 +118,23 @@ namespace Crucible {
 	void DebugDrawSystem::SetCollidersThroughWalls(bool enabled) { g_collidersThroughWalls.store(enabled); }
 	bool DebugDrawSystem::GetCollidersThroughWalls() { return g_collidersThroughWalls.load(); }
 
+	void DebugDrawSystem::SetAudioRangesForAll(bool enabled) { g_audioRangesForAll.store(enabled); }
+	bool DebugDrawSystem::GetAudioRangesForAll() { return g_audioRangesForAll.load(); }
+
+	void DebugDrawSystem::SetViewCamera(const glm::vec3& position, const glm::mat4& view) {
+		g_hasViewCamera      = true;
+		g_viewCameraPosition = position;
+		g_viewCameraView     = view;
+	}
+
 	// ------------------------------------------------------------------------------------------------------------- //
 	//  SYSTEM
 	// ------------------------------------------------------------------------------------------------------------- //
 
 	void DebugDrawSystem::Describe(SystemDesc& desc) const {
 
-		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent>()
+		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent,
+		           UICanvas, UIRect, HierarchyNode, AudioSource, AudioListener>()   // world canvases' pages and the selected element's rect
 			.RunAfter<HierarchyTransformSystem>()        // WorldTransform must be this frame's
 			.Affinity(SystemAffinity::MainThread);       // Renderer/ResourceManager aren't thread-safe
 
@@ -122,10 +147,62 @@ namespace Crucible {
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Colliders))  { DrawColliders(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Velocities)) { DrawVelocities(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Lights))     { DrawLights(world); }
+		if (DebugDraw::IsCategoryEnabled(DebugCategory::Audio))      { DrawAudio(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Grid))       { DrawGrid(); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Selection))  { DrawSelection(world); }
+		if (DebugDraw::IsCategoryEnabled(DebugCategory::WorldUI))    { DrawWorldUI(world); }
 
 	}   // DebugDrawSystem::Update()
+
+	void DebugDrawSystem::DrawWorldUI(World& world) {
+
+		// Drawn on top of everything: the page is often in front of or inside other objects, and
+		// these lines are for finding it.
+		DebugStyle style;
+		style.category  = DebugCategory::WorldUI;
+		style.depthTest = false;
+
+		auto outline = [&](const std::array<glm::vec3, 4>& c, const glm::vec4& colour) {
+			style.color = colour;
+			for (int i = 0; i < 4; ++i) { DebugDraw::Line(c[i], c[(i + 1) % 4], style); }
+		};
+		auto planeFor = [&](const UICanvas& canvas, const glm::mat4& matrix) {
+			return g_hasViewCamera ? WorldCanvasPlaneFor(canvas, matrix, g_viewCameraPosition, g_viewCameraView)
+			                       : WorldUIPlaneFor(WorldBillboard::Off, matrix, glm::vec3(0.0f), glm::mat4(1.0f));
+		};
+
+		// Every world canvas's page; a switched-off one in grey (it isn't drawn, but is still there),
+		// the selected one in the selection colour.
+		const Entity selected = GetSelectedEntity();
+		world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity entity, const WorldTransform& wt, const UICanvas& canvas) {
+			if (canvas.renderMode != UICanvas::RenderMode::WorldSpace || !wt.valid) { return; }
+			const glm::vec4& colour = entity == selected ? kWorldUISelected : canvas.enabled ? kWorldCanvas : kWorldCanvasOff;
+			outline(WorldUIBoxCorners(planeFor(canvas, wt.matrix), WorldCanvasBoxInPlane(canvas)), colour);
+		});
+
+		// The selected element on a world canvas: its rect (turned, if it is), in the selection colour.
+		if (selected == kNullEntity || !world.IsAlive(selected) || !world.HasComponent<UIRect>(selected)) { return; }
+		Entity canvasEntity = kNullEntity;
+		for (Entity p = world.GetParent(selected); p.IsValid(); p = world.GetParent(p)) {
+			if (world.HasComponent<UICanvas>(p)) { canvasEntity = p; }   // the topmost canvas owns the tree
+		}
+		if (canvasEntity == kNullEntity) { return; }
+		const UICanvas* canvas = world.Read<UICanvas>(canvasEntity);
+		const WorldTransform* wt = world.Read<WorldTransform>(canvasEntity);
+		if (!canvas || !wt || !wt->valid || canvas->renderMode != UICanvas::RenderMode::WorldSpace) { return; }
+
+		static std::vector<UI::LayoutItem> s_layout;   // reused: no allocation per frame
+		UI::LayoutWorldCanvas(world, canvasEntity, *canvas, s_layout);
+		const WorldUIPlane plane = planeFor(*canvas, wt->matrix);
+		for (const UI::LayoutItem& item : s_layout) {
+			if (item.entity != selected) { continue; }
+			const auto page = item.Corners();   // page pixels, turned with the element
+			std::array<glm::vec3, 4> corners;
+			for (int i = 0; i < 4; ++i) { corners[i] = WorldUIPlanePoint(plane, WorldCanvasToPlane(*canvas, page[i])); }
+			outline(corners, kWorldUISelected);
+			break;
+		}
+	}   // DebugDrawSystem::DrawWorldUI()
 
 	void DebugDrawSystem::DrawColliders(World& world) {
 
@@ -223,6 +300,56 @@ namespace Crucible {
 			});
 
 	}   // DebugDrawSystem::DrawLights()
+
+	void DebugDrawSystem::DrawAudio(World& world) {
+
+		const Entity selected = GetSelectedEntity();
+		const bool   all      = g_audioRangesForAll.load();
+
+		DebugStyle style;
+		style.category = DebugCategory::Audio;
+		style.depthTest = false;	// like the light gizmos: drawn on top, for finding the edge
+
+		// Source: a 3D sound is at full volume inside Min Distance and fades out to Max Distance.
+		// Spatial Blend 0 is plain 2D - as loud everywhere - so there is no range to show. Distances
+		// are metres, not scaled by the Transform, and clamped as AudioVoices clamps them for FMOD.
+		// IncludeDisabled: a switched-off source keeps its spheres, in grey, as lights do.
+		world.BuildQuery<const WorldTransform, const AudioSource>().IncludeDisabled().Build()
+			.ForEach([&](Entity entity, const WorldTransform& wt, const AudioSource& source) {
+
+				if (!wt.valid || source.m_spatialBlend <= 0.0f) { return; }
+				if (!all && entity != selected) { return; }
+
+				const glm::vec3 p(wt.matrix[3]);
+				const float minDistance = std::max(source.m_minDistance, 0.0f);
+				const float maxDistance = std::max(source.m_maxDistance, minDistance);
+				const bool  on = source.m_clip != 0 && world.IsComponentActive<AudioSource>(entity);
+
+				if (minDistance > 0.0f) {
+					style.color = on ? kAudioRange : kAudioOff;
+					DebugDraw::Sphere(p, minDistance, style);
+				}
+				// Linear rolloff is silent at Max Distance, so that sphere is where the sound:
+				// bright. Logarithmic only stops getting quieter there and is still heard beyond it:
+				// dim. More segments, since it is often hundreds of metres across.
+				if (maxDistance > minDistance) {
+					style.color = !on ? kAudioOff : source.m_rolloffMode == AudioRolloffMode::Linear ? kAudioRange : kAudioRangeDim;
+					DebugDraw::Sphere(p, maxDistance, style, 64);
+				}
+			});
+		
+		// Listeners: which way the ears face (local -Z forward, the same as ECSAudioSystem), so
+		// a listener turned round - left and right swapped - is easy to spot.
+		style.color = kAudioListener;
+		world.CreateQuery<const WorldTransform, const AudioListener>()
+			.ForEach([&](Entity, const WorldTransform& wt, const AudioListener&) {
+				if (!wt.valid) { return; }
+				const glm::vec3 p(wt.matrix[3]);
+				const glm::vec3 forward = -glm::vec3(wt.matrix[2]);
+				const float		length = glm::length(forward);
+				if (length > 1e-6f) { DebugDraw::Arrow(p, p + forward / length, style); }
+			});
+	}	// DebugDrawSystem::DrawAudio()
 
 	void DebugDrawSystem::DrawGrid() {
 

@@ -1,0 +1,237 @@
+{
+    "version": 1,
+    "name": "Test World UI",
+    "entities": [
+        {
+            "id": "52DF60DB5C418005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 4.649855613708496,
+                        "z": 0.8921153545379639
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 5.150000095367432,
+                        "y": 5.150000095367432,
+                        "z": 5.150000095367432
+                    }
+                },
+                "EntityName": {
+                    "name": "World Canvas"
+                },
+                "UICanvas": {
+                    "enabled": true,
+                    "renderMode": "WorldSpace",
+                    "referenceResolution": {
+                        "x": 400.0,
+                        "y": 100.0
+                    },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 0,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
+                }
+            }
+        },
+        {
+            "id": "62DF60DB5C418001",
+            "parent": "52DF60DB5C418005",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Image"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -15.58111572265625,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 42.278499603271484,
+                        "y": 30.399368286132813
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 3715637708821250059
+                }
+            }
+        },
+        {
+            "id": "72DF60DB5C418007",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 30.0,
+                        "y": 0.5,
+                        "z": 30.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Ground"
+                }
+            }
+        },
+        {
+            "id": "7ADF60DB5C418009",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.4598749279975891,
+                        "y": 4.759897232055664,
+                        "z": -2.322638988494873
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Cube"
+                }
+            }
+        },
+        {
+            "id": "D2DF60DB5C418003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 100.0,
+                        "y": 100.0,
+                        "z": 100.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": -0.0,
+                        "z": -0.0,
+                        "w": 0.9063077569007874
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 1.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Directional Light"
+                }
+            }
+        }
+    ]
+}

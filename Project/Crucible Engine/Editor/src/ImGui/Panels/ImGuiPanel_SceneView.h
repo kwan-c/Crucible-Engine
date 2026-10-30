@@ -21,7 +21,9 @@
 #include <Graphics/ViewportPanel.h>
 #include <Graphics/CameraController.h>
 #include <ECS/Core/ECSCore.h>   // Entity
+#include "UI/UISystem.h"        // UI::LayoutItem (world canvas picking)
 
+#include <array>
 #include <string>
 #include <utility>
 #include <vector>
@@ -76,6 +78,18 @@ namespace Crucible {
 		// the cursor picks the nearest mesh (Renderer::Raycast); empty space clears the selection.
 		// Ctrl+click adds/removes the picked entity, Shift+click adds it (multi-selection).
 		void HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize);
+		// World text: the selected texts' boxes, outlined over the image (they have no mesh for
+		// the renderer's selection outline), and the nearest text box a ray hits (click picking;
+		// returns kNullEntity and leaves `distance` alone when none is nearer than it).
+		void DrawWorldTextBoxes(ImVec2 viewMin, ImVec2 viewSize);
+		Entity PickWorldText(const glm::vec3& origin, const glm::vec3& direction, float& distance);
+		// World-space canvases: the nearest page a ray hits (nearer than `distance`, which it then
+		// becomes), and on it the topmost element under the hit point - or the canvas itself on bare
+		// page. Editor selection only: nothing in the game reacts.
+		Entity PickWorldCanvas(const glm::vec3& origin, const glm::vec3& direction, float& distance);
+		// The world corners (top-left, top-right, bottom-right, bottom-left) of a world canvas's page,
+		// or of an element's rect on one, for a camera. False for anything else.
+		bool WorldUICorners(Entity entity, const glm::vec3& cameraPosition, const glm::mat4& view, std::array<glm::vec3, 4>& corners);
 		// The ray from the camera through the mouse cursor, in world space (toFar spans the near
 		// plane to the far plane). False if the view has no size yet.
 		bool MouseRay(ImVec2 viewMin, ImVec2 viewSize, glm::vec3& origin, glm::vec3& toFar);
@@ -89,10 +103,16 @@ namespace Crucible {
 		// rotates / scales all of them by the same amount. One whole drag = one undo step
 		// (EndGizmoDrag pushes it).
 		void DrawGizmo(ImVec2 viewMin, ImVec2 viewSize);
+		// The gizmo on an element of a world-space canvas: in its page, along its own (turned) axes.
+		// Move changes UIRect::position, Rotate UIRect::rotation (around the page's normal), Scale
+		// UIRect::size (on an axis whose anchors are together). One drag = one undo step, as usual.
+		void DrawWorldUIGizmo(Entity entity, ImVec2 viewMin, ImVec2 viewSize);
 		void EndGizmoDrag();
 		// Mirrors the Inspector's selection into DebugDrawSystem (the active entity's selection
 		// box and light gizmos) and the renderer's outline (every selected entity).
 		void SyncSelection();
+
+		std::vector<UI::LayoutItem> m_canvasLayout;   // reused by PickWorldCanvas / WorldUICorners
 
 		struct IconHit { Entity entity; ImVec2 pos; float depth; };
 		std::vector<IconHit> m_iconHits;
@@ -127,6 +147,7 @@ namespace Crucible {
 		// Only top-level ones: a selected child already moves with its selected parent.
 		std::vector<std::pair<Entity, std::string>> m_gizmoBefore;
 		std::string m_gizmoVerb;                  // "Move" / "Rotate" / "Scale", the Edit menu label
+		glm::vec2   m_uiGizmoStartSize{ 0.0f };    // a world UI element's UIRect::size as a Scale drag began (ImGuizmo scales from the start)
 	};
 
 }

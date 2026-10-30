@@ -11,9 +11,11 @@
 #include "AssetPipe/Assetmanager.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/World.h"
+#include "ECS/HierarchyTransformSystem.h"   // WorldCanvasSystem runs after it (canvas world matrices)
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
 #include "Scene/SceneManager.h"
+#include "Text/TextBuilder.h"   // the glyph quads, effects and layout cache shared with world text
 #include "Text/TextLayout.h"
 
 #include <algorithm>
@@ -183,65 +185,11 @@ namespace Crucible {
 		// The colour a button's current state multiplies its image by.
 		// ---- Text ------------------------------------------------------------------------------
 
-		// Laid-out text, kept between frames: a label is only laid out again when something that
-		// changes its layout changes. Keyed by entity + bitmap size group (the game and the UI
-		// Editor tab can pick different baked sizes for the same label). Layout is in reference
-		// pixels, so both views share an entry otherwise.
-		struct TextCacheEntry {
-			const FontAsset*   font = nullptr;
-			std::uint32_t      texture = TextureHandle::Invalid;   // changes when the font is reloaded, even at the same address
-			std::string        text;
-			TextLayoutSettings settings;
-			TextLayoutResult   result;
-			std::uint64_t      lastUse = 0;
-		};
-		std::unordered_map<std::uint64_t, TextCacheEntry> g_textCache;
-		std::uint64_t                                     g_textClock = 0;     // one tick per AppendDrawList call
-		std::unordered_set<std::uint64_t>                 g_warnedMissing;     // (font, codepoint) already reported
-
-		constexpr std::uint64_t kTextCacheKeepTicks = 600;   // entries unused this long are dropped (deleted labels)
-
-		bool SameSettings(const TextLayoutSettings& a, const TextLayoutSettings& b) {
-			return a.fontSize == b.fontSize && a.box == b.box && a.alignH == b.alignH && a.alignV == b.alignV
-			    && a.wrap == b.wrap && a.overflow == b.overflow && a.lineSpacing == b.lineSpacing
-			    && a.characterSpacing == b.characterSpacing && a.sizeGroup == b.sizeGroup
-			    && a.richText == b.richText && a.bold == b.bold && a.underline == b.underline && a.bestFit == b.bestFit
-			    && a.minFontSize == b.minFontSize && a.maxFontSize == b.maxFontSize && a.pixelScale == b.pixelScale;
-		}
-
-		const TextLayoutResult& LayoutCached(Entity entity, const FontAsset& font, const std::string& text, const TextLayoutSettings& settings) {
-			const std::uint64_t key = (static_cast<std::uint64_t>(entity.generation & 0xFFFFu) << 48)
-			                        | (static_cast<std::uint64_t>(settings.sizeGroup & 0xFFu) << 40)
-			                        | static_cast<std::uint64_t>(entity.index);
-			TextCacheEntry& entry = g_textCache[key];
-			entry.lastUse = g_textClock;
-			if (entry.font != &font || entry.texture != font.texture.id || entry.text != text || !SameSettings(entry.settings, settings)) {
-				entry.font     = &font;
-				entry.texture  = font.texture.id;
-				entry.text     = text;
-				entry.settings = settings;
-				LayoutText(font.data, text, settings, entry.result);
-
-				for (const std::uint32_t cp : entry.result.missing) {
-					const std::uint64_t warnKey = (static_cast<std::uint64_t>(font.texture.id) << 32) | cp;
-					if (g_warnedMissing.insert(warnKey).second) {
-						CRU_USER_WARN("[UI] Entity {}: the font has no character U+{:04X}, drawn as '?' - add it in the Font Importer",
-						              entity.index, cp);
-					}
-				}
-			}
-			return entry.result;
-		}
-
-		constexpr float kMaxField      = 0.49f;                    // how far outside the edge effects may reach, field units (the field ends at 0.5)
-		constexpr float kBoldDilateEm  = kTextBoldWidthEm * 0.5f;  // distance-field bold: each side moves out by half the extra advance
-
-		void PruneTextCache() {
-			if (g_textClock % 256 != 0) { return; }
-			for (auto it = g_textCache.begin(); it != g_textCache.end();) {
-				if (g_textClock - it->second.lastUse > kTextCacheKeepTicks) { it = g_textCache.erase(it); } else { ++it; }
-			}
-		}
+		// Laid-out text, kept between frames (Text/TextBuilder.h). Keyed by entity + bitmap size
+		// group: the game and the UI Editor tab can pick different baked sizes for the same label.
+		// Layout is in reference pixels, so both views share an entry otherwise.
+		TextLayoutCache g_textCache{ "UI" };
+		TextQuads       g_textQuads;   // reused for every label, so building them doesn't allocate each frame
 
 		Math::vec4 ButtonTint(const UIButton& button) {
 			if (!button.interactable || button.state == UIButton::State::Disabled) { return button.disabled; }
@@ -290,12 +238,106 @@ namespace Crucible {
 		}
 	}
 
+	void UI::LayoutWorldCanvas(World& world, Entity canvas, const UICanvas& settings, std::vector<LayoutItem>& out) {
+		out.clear();
+		const Math::vec2 page = glm::max(settings.referenceResolution, Math::vec2(0.0f));
+		if (page.x <= 0.0f || page.y <= 0.0f) { return; }
+
+		const Math::vec4 pageRect(0.0f, 0.0f, page.x, page.y);
+		world.ForEachChild(canvas, [&](Entity child) { LayoutNode(world, child, pageRect, glm::mat3(1.0f), 1.0f, out, false); });
+	}
+
+	float UI::BuildWorldCanvasPanel(const UICanvas& settings, std::span<const UIVertex> vertices, std::span<const std::uint32_t> indices,
+	                                std::span<const UIDrawCommand> commands,
+	                                std::vector<WorldUIVertex>& outVertices, std::vector<WorldUIRun>& outRuns) {
+		outVertices.clear();
+		outRuns.clear();
+
+		// Page pixels (origin top-left, +y down) -> the canvas's plane (metres from the entity, +y up).
+		const Math::vec2 page   = glm::max(settings.referenceResolution, Math::vec2(0.0f));
+		const float      ppu    = std::max(settings.pixelsPerUnit, 1.0e-3f);
+		const Math::vec2 origin = settings.pivot * page;
+		auto toPlane = [&](Math::vec2 p) { return Math::vec2((p.x - origin.x) / ppu, (origin.y - p.y) / ppu); };
+		auto emit = [&](Math::vec2 position, Math::vec2 uv, std::uint32_t colour) {
+			outVertices.push_back(WorldUIVertex{ toPlane(position), uv, colour });
+		};
+
+		const Math::vec4 noClip = UIDrawCommand{}.clipRect;
+		const int64_t vertexCount = static_cast<int64_t>(vertices.size());
+
+		for (const UIDrawCommand& command : commands) {
+			const uint32_t count = command.indexCount - command.indexCount % 3;
+			if (count == 0 || static_cast<uint64_t>(command.firstIndex) + count > indices.size()) { continue; }
+			// Every index must land inside the list (as UIPass::Submit checks).
+			bool ok = true;
+			for (uint32_t i = 0; ok && i < count; ++i) {
+				const int64_t v = static_cast<int64_t>(indices[command.firstIndex + i]) + command.vertexOffset;
+				ok = v >= 0 && v < vertexCount;
+			}
+			if (!ok) { continue; }
+			auto at = [&](uint32_t i) -> const UIVertex& { return vertices[static_cast<size_t>(static_cast<int64_t>(indices[command.firstIndex + i]) + command.vertexOffset)]; };
+
+			const uint32_t first = static_cast<uint32_t>(outVertices.size());
+			const bool clipped = command.clipRect != noClip && count % 6 == 0;
+			if (!clipped) {
+				// As drawn. The flip to +y up turns every triangle over, so each is emitted b <-> c
+				// swapped: counter-clockwise seen from the front again.
+				for (uint32_t i = 0; i < count; i += 3) {
+					const UIVertex& a = at(i); const UIVertex& b = at(i + 1); const UIVertex& c = at(i + 2);
+					emit(a.position, a.uv, a.colour);
+					emit(c.position, c.uv, c.colour);
+					emit(b.position, b.uv, b.colour);
+				}
+			} else {
+				// Clip rects are only set on upright quads (AppendDrawList: top-left, top-right,
+				// bottom-right, bottom-left; indices 0 1 2 0 2 3), so each quad is an axis-aligned
+				// box: cut it to the clip rect, and its atlas rect by the same share.
+				const Math::vec4& clip = command.clipRect;
+				for (uint32_t i = 0; i < count; i += 6) {
+					const UIVertex& tl = at(i);
+					const UIVertex& br = at(i + 2);
+					const Math::vec2 p0 = tl.position, p1 = br.position;
+					if (!(p1.x > p0.x) || !(p1.y > p0.y)) { continue; }
+					const Math::vec2 c0(std::max(p0.x, clip.x), std::max(p0.y, clip.y));
+					const Math::vec2 c1(std::min(p1.x, clip.z), std::min(p1.y, clip.w));
+					if (c1.x <= c0.x || c1.y <= c0.y) { continue; }
+					const Math::vec2 duv = (br.uv - tl.uv) / (p1 - p0);
+					const Math::vec2 uv0 = tl.uv + (c0 - p0) * duv;
+					const Math::vec2 uv1 = tl.uv + (c1 - p0) * duv;
+					// Top-left, bottom-right, top-right; top-left, bottom-left, bottom-right (the flipped order).
+					emit(c0, uv0, tl.colour);
+					emit(c1, uv1, tl.colour);
+					emit({ c1.x, c0.y }, { uv1.x, uv0.y }, tl.colour);
+					emit(c0, uv0, tl.colour);
+					emit({ c0.x, c1.y }, { uv0.x, uv1.y }, tl.colour);
+					emit(c1, uv1, tl.colour);
+				}
+			}
+
+			const uint32_t added = static_cast<uint32_t>(outVertices.size()) - first;
+			if (added == 0) { continue; }
+			if (!outRuns.empty()) {
+				WorldUIRun& last = outRuns.back();
+				if (last.texture == command.texture && last.mode == command.mode && last.pixelRange == command.pixelRange &&
+				    last.effects == command.effects && last.firstVertex + last.vertexCount == first) {
+					last.vertexCount += added;
+					continue;
+				}
+			}
+			outRuns.push_back(WorldUIRun{ .texture = command.texture, .mode = command.mode, .pixelRange = command.pixelRange,
+			                              .effects = command.effects, .firstVertex = first, .vertexCount = added });
+		}
+
+		float reach = 0.0f;
+		for (const WorldUIVertex& v : outVertices) { reach = std::max(reach, glm::length(v.local)); }
+		return reach;
+	}
+
 	void UI::AppendDrawList(World& world, const std::vector<LayoutItem>& items, ResourceManager* resources,
 	                        std::vector<UIVertex>& vertices, std::vector<std::uint32_t>& indices,
 	                        std::vector<UIDrawCommand>& commands) {
 
-		++g_textClock;
-		PruneTextCache();
+		g_textCache.Tick();
 
 		// One quad: `local` is a rect in the element's own (upright) space, so it goes through the
 		// element's transform and a turned element draws turned. Merged into the previous draw when
@@ -368,29 +410,20 @@ namespace Crucible {
 			// Laid out in reference pixels (the rect divided by the canvas scale), then scaled back up,
 			// so the layout is the same at any screen size.
 			const float scale = item.scale;
-			TextLayoutSettings settings;
-			settings.fontSize         = text->fontSize;
-			settings.box              = { (item.rect.z - item.rect.x) / scale, (item.rect.w - item.rect.y) / scale };
-			settings.alignH           = text->horizontalAlign;
-			settings.alignV           = text->verticalAlign;
-			settings.wrap             = text->wrap;
-			settings.overflow         = text->overflow;
-			settings.lineSpacing      = text->lineSpacing;
-			settings.characterSpacing = text->characterSpacing;
-			settings.richText         = text->richText;
-			settings.bold             = text->bold;
-			settings.underline        = text->underline;
-			settings.bestFit          = text->bestFit;
-			settings.minFontSize      = text->minFontSize;
-			settings.maxFontSize      = text->maxFontSize;
+			TextLayoutSettings settings = TextLayoutSettingsOf(*text, { (item.rect.z - item.rect.x) / scale, (item.rect.w - item.rect.y) / scale });
 			const bool bitmap         = font->data.m_outputType == FontOutputType::Bitmap;
 			settings.pixelScale       = bitmap ? scale : 0.0f;   // bitmap: the baked size nearest the on-screen size, for whatever size is used
 			// Only part of the cache key (so the game and the UI Editor tab, at different scales, keep
 			// separate entries instead of taking turns); LayoutText picks the group from pixelScale.
 			settings.sizeGroup        = bitmap ? font->data.ClosestGroup((text->bestFit ? text->maxFontSize : text->fontSize) * scale) : 0;
 
-			const TextLayoutResult& layout = LayoutCached(item.entity, *font, text->text, settings);
+			const TextLayoutResult& layout = g_textCache.Get(TextLayoutCache::KeyFor(item.entity.index, item.entity.generation, settings.sizeGroup),
+			                                                 item.entity.index, *font, text->text, settings);
 			if (layout.quads.empty() && layout.underlines.empty()) { continue; }
+
+			// Glyphs, underlines and the shadow, with the effects worked out - in reference pixels,
+			// box-local. Placing them in the element is what's left here.
+			BuildTextQuads(*font, layout, TextStyleOf(*text), scale, g_textQuads);
 
 			// Upright (not turned): the clip rect can cut glyphs at the rect's edges exactly, and bitmap
 			// glyphs can be put on whole screen pixels so they stay sharp.
@@ -399,125 +432,51 @@ namespace Crucible {
 			const bool cut       = text->overflow != TextOverflow::Overflow;
 			const Math::vec4 box = upright && cut ? item.Bounds() : noClip;
 			const Math::vec2 origin(item.rect.x, item.rect.y);
+			const Math::vec4 origin4(origin, origin);
 
-			// ---- Effects (distance-field fonts), converted from reference pixels into field units:
-			// the stored distance goes 0 -> 1 across the atlas's pixel range, edge at 0.5, so
-			// everything outside the edge has to fit in 0.5 (kept a little under, at kMaxField).
-			const bool  field      = !bitmap && font->data.m_atlas.pixelRange > 0.0f;
-			const float toField    = field ? TextEffectFieldPerPixel(*font, layout.fontSize) : 0.0f;
-			const float boldDilate = field ? kBoldDilateEm * layout.fontSize * toField : 0.0f;   // bold widens each side by half its extra advance
-			bool anyBold = false;
-			for (const TextGlyphQuad& glyph : layout.quads) { anyBold = anyBold || glyph.boldWidth > 0.0f; }
-			float budget = kMaxField - (anyBold ? boldDilate : 0.0f);
-			const float outlineWidth = (field && text->outline) ? std::clamp(text->outlineWidth * toField, 0.0f, budget) : 0.0f;
-			budget -= outlineWidth;
-			const float glowWidth    = (field && text->glow) ? std::clamp(text->glowWidth * toField, 0.0f, budget) : 0.0f;
+			// Turned: no clip rect can follow the rect, so a glyph that pokes out is left out whole.
+			auto pokesOut = [&](const Math::vec4& local) {
+				return cut && !upright && (local.x < item.rect.x - 0.5f || local.z > item.rect.z + 0.5f ||
+				                           local.y < item.rect.y - 0.5f || local.w > item.rect.w + 0.5f);
+			};
 
-			UITextEffects effects;
-			if (outlineWidth > 0.0f) {
-				effects.outlineColour = PackUIColour(text->outlineColour);
-				effects.outlineWidth  = outlineWidth;
-			}
-			if (glowWidth > 0.0f) {
-				effects.glowColour   = PackUIColour(text->glowColour);
-				effects.glowWidth    = glowWidth;
-				effects.glowSoftness = std::clamp(text->glowSoftness, 0.0f, 1.0f);
-			}
-
-			// Draws every glyph and underline once. `offset` is in element-local units; `shadow` draws
-			// them as the drop shadow (flat colour, the shape with its outline, maybe blurred).
-			auto drawText = [&](Math::vec2 offset, bool shadow) {
-				const Math::vec4 shadowColour(Math::vec3(text->shadowColour), text->shadowColour.a * text->colour.a);
-
-				for (const TextGlyphQuad& glyph : layout.quads) {
-					Math::vec4 local(origin.x + glyph.rect.x * scale + offset.x, origin.y + glyph.rect.y * scale + offset.y,
-					                 origin.x + glyph.rect.z * scale + offset.x, origin.y + glyph.rect.w * scale + offset.y);
-
-					// Turned: no clip rect can follow the rect, so a glyph that pokes out is left out whole.
-					if (cut && !upright && (local.x < item.rect.x - 0.5f || local.z > item.rect.z + 0.5f ||
-					                        local.y < item.rect.y - 0.5f || local.w > item.rect.w + 0.5f)) {
-						continue;
-					}
-					if (bitmap && upright && m[0][0] != 0.0f && m[1][1] != 0.0f) {
-						const Math::vec2 pen    = item.ToScreen(origin + glyph.pen * scale + offset);
-						const Math::vec2 snap   = (glm::round(pen) - pen) / Math::vec2(m[0][0], m[1][1]);
-						local += Math::vec4(snap, snap);
-					}
-
-					// <color>: its colour, with the component's alpha on top (so fading the text fades it too).
-					const Math::vec4 colour = shadow ? shadowColour
-						: glyph.hasColour ? Math::vec4(Math::vec3(glyph.colour), glyph.colour.a * text->colour.a) : text->colour;
-					const bool bold = glyph.boldWidth > 0.0f;
-
-					if (field) {
-						// Bold: the edge moved outward (no extra quads), centred in the wider advance it got.
-						UITextEffects fx = effects;
-						if (bold) {
-							fx.dilate = boldDilate;
-							const float dx = glyph.boldWidth * scale * 0.5f;
-							local += Math::vec4(dx, 0.0f, dx, 0.0f);
-						}
-						if (shadow) {
-							fx.glowColour     = 0;
-							fx.glowWidth      = 0.0f;
-							fx.outlineColour  = 0;
-							fx.shadowPass     = true;
-							const float edge  = 0.5f - fx.dilate - fx.outlineWidth;   // the shape's outer edge
-							fx.shadowSoftness = std::clamp(text->shadowSoftness, 0.0f, 1.0f) * std::max(edge - (0.5f - kMaxField), 0.0f);
-						}
-						quad(item, local, colour, font->texture, glyph.uv, font->drawMode, &box, font->data.m_atlas.pixelRange, fx);
-					} else {
-						quad(item, local, colour, font->texture, glyph.uv, font->drawMode, &box);
-						// Bitmap bold: the glyph again, in steps of at most one pixel up to boldWidth to the right.
-						if (bold) {
-							const float width = glyph.boldWidth * scale;
-							const int   steps = std::max(1, static_cast<int>(std::ceil(width)));
-							for (int step = 1; step <= steps; ++step) {
-								const float dx = width * static_cast<float>(step) / static_cast<float>(steps);
-								quad(item, local + Math::vec4(dx, 0.0f, dx, 0.0f), colour, font->texture, glyph.uv, font->drawMode, &box);
-							}
-						}
-					}
-				}
+			for (const TextQuad& q : g_textQuads.quads) {
+				Math::vec4 local = origin4 + q.rect * scale;
 
 				// Underlines: solid bars (no texture), at least one screen pixel thick, on whole pixels when upright.
-				for (const TextDecoration& bar : layout.underlines) {
-					Math::vec4 local(origin.x + bar.rect.x * scale + offset.x, origin.y + bar.rect.y * scale + offset.y,
-					                 origin.x + bar.rect.z * scale + offset.x, origin.y + bar.rect.w * scale + offset.y);
+				if (q.kind == TextQuadKind::Underline) {
 					const float thickness = std::max(local.w - local.y, 1.0f);
 					if (upright && m[1][1] != 0.0f) {
 						const float top = item.ToScreen({ local.x, local.y }).y;
 						local.y += (std::round(top) - top) / m[1][1];
 					}
 					local.w = local.y + thickness;
-					if (cut && !upright && (local.x < item.rect.x - 0.5f || local.z > item.rect.z + 0.5f ||
-					                        local.y < item.rect.y - 0.5f || local.w > item.rect.w + 0.5f)) {
-						continue;
-					}
-					const Math::vec4 colour = shadow ? shadowColour
-						: bar.hasColour ? Math::vec4(Math::vec3(bar.colour), bar.colour.a * text->colour.a) : text->colour;
-					quad(item, local, colour, TextureHandle{}, Math::vec4(0.0f, 0.0f, 1.0f, 1.0f), UIDrawMode::Image, &box);
+					if (pokesOut(local)) { continue; }
+					quad(item, local, q.colour, TextureHandle{}, Math::vec4(0.0f, 0.0f, 1.0f, 1.0f), UIDrawMode::Image, &box);
+					continue;
 				}
-			};
 
-			// The shadow first (any font: bitmap ones get a flat offset copy), then the text over it.
-			if (text->shadow && text->shadowColour.a > 0.0f) {
-				drawText(Math::vec2(text->shadowOffset) * scale, true);
+				if (pokesOut(origin4 + q.glyphRect * scale)) { continue; }
+				if (g_textQuads.bitmap && upright && m[0][0] != 0.0f && m[1][1] != 0.0f) {
+					const Math::vec2 pen  = item.ToScreen(origin + q.pen * scale);
+					const Math::vec2 snap = (glm::round(pen) - pen) / Math::vec2(m[0][0], m[1][1]);
+					local += Math::vec4(snap, snap);
+				}
+				if (g_textQuads.field) {
+					quad(item, local, q.colour, font->texture, q.uv, font->drawMode, &box, font->data.m_atlas.pixelRange, q.effects);
+				} else {
+					quad(item, local, q.colour, font->texture, q.uv, font->drawMode, &box);
+				}
 			}
-			drawText(Math::vec2(0.0f), false);
 		}
 	}
 
 	float UI::TextEffectFieldPerPixel(const FontAsset& font, float fontSize) {
-		const float range = font.data.m_atlas.pixelRange;
-		if (font.data.m_outputType == FontOutputType::Bitmap || range <= 0.0f || fontSize <= 0.0f || font.data.m_groups.empty()) { return 0.0f; }
-		// One reference pixel = (glyphSize / fontSize) atlas texels; one field unit = `range` texels.
-		return font.data.m_groups.front().pixelSize / (fontSize * range);
+		return Crucible::TextEffectFieldPerUnit(font, fontSize);   // UIText's layout units are reference pixels
 	}
 
 	float UI::MaxTextEffectWidth(const FontAsset& font, float fontSize) {
-		const float perPixel = TextEffectFieldPerPixel(font, fontSize);
-		return perPixel > 0.0f ? kMaxField / perPixel : 0.0f;
+		return Crucible::MaxTextEffectWidth(font, fontSize);
 	}
 
 	// ------------------------------------------------------------------------------------------- //
@@ -543,6 +502,70 @@ namespace Crucible {
 
 		if (!m_commands.empty()) {
 			m_renderer.SubmitUI(UIDrawList{ .vertices = m_vertices, .indices = m_indices, .commands = m_commands });
+		}
+	}
+
+	// ------------------------------------------------------------------------------------------- //
+	//  WorldCanvasSystem
+	// ------------------------------------------------------------------------------------------- //
+
+	void WorldCanvasSystem::Describe(SystemDesc& desc) const {
+		desc.Reads<UICanvas, UIButton, UISlider, UIText, HierarchyNode, WorldTransform>()   // canvases, element states, text, the tree, placement
+			.Writes<UIImage>()                              // UIImage::texture (AppendDrawList resolves it)
+			.RunAfter<HierarchyTransformSystem>()           // the canvases' world matrices must be this frame's
+			.Affinity(SystemAffinity::MainThread);          // touches the Renderer
+	}
+
+	void WorldCanvasSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
+
+		// Collected first: laying out and drawing reads (and AppendDrawList writes) components, which
+		// isn't allowed while a query is iterating. A canvas under another canvas belongs to that
+		// canvas's tree, as on screen.
+		m_canvases.clear();
+		world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity entity, const WorldTransform& transform, const UICanvas& canvas) {
+			if (canvas.renderMode != UICanvas::RenderMode::WorldSpace || !canvas.enabled || !transform.valid) { return; }
+			m_canvases.push_back(entity);
+		});
+		std::erase_if(m_canvases, [&](Entity canvas) {
+			for (Entity p = world.GetParent(canvas); p.IsValid(); p = world.GetParent(p)) {
+				if (world.HasComponent<UICanvas>(p)) { return true; }
+			}
+			return false;
+		});
+
+		for (const Entity entity : m_canvases) {
+			const UICanvas canvas = *world.Read<UICanvas>(entity);   // a copy: AppendDrawList may write components
+			UI::LayoutWorldCanvas(world, entity, canvas, m_layout);
+			if (m_layout.empty()) { continue; }
+
+			m_vertices.clear();
+			m_indices.clear();
+			m_commands.clear();
+			UI::AppendDrawList(world, m_layout, m_resources, m_vertices, m_indices, m_commands);
+			const float reach = UI::BuildWorldCanvasPanel(canvas, m_vertices, m_indices, m_commands, m_panelVertices, m_panelRuns);
+			if (m_panelRuns.empty()) { continue; }
+
+			const glm::mat4& m = world.Read<WorldTransform>(entity)->matrix;
+			const glm::vec3 right(m[0]), up(m[1]);
+			const float scale = std::max(glm::length(right), glm::length(up));
+			if (!(scale > 0.0f)) { continue; }   // scaled to nothing
+
+			WorldUIDesc desc;
+			desc.anchor      = glm::vec3(m[3]);
+			desc.right       = right;
+			desc.up          = up;
+			desc.radius      = reach * scale;
+			desc.facing      = canvas.billboard == WorldBillboard::FaceCamera ? WorldUIFacing::FaceCamera
+			                 : canvas.billboard == WorldBillboard::Upright    ? WorldUIFacing::Upright
+			                 :                                                  WorldUIFacing::Transform;
+			desc.alwaysOnTop = canvas.alwaysOnTop;
+			desc.doubleSided = canvas.doubleSided;
+			desc.intensity   = std::max(canvas.intensity, 0.0f);
+			if (canvas.fade) {
+				desc.fadeStart = std::max(canvas.fadeStart, 0.0f);
+				desc.fadeEnd   = std::max(canvas.fadeEnd, desc.fadeStart + 0.001f);
+			}
+			m_renderer.SubmitWorldUI(desc, m_panelVertices, m_panelRuns);
 		}
 	}
 
@@ -595,8 +618,10 @@ namespace Crucible {
 		bool showsCursor = false;
 		m_menus.clear();
 		world.CreateQuery<const UICanvas>().ForEach([&](Entity entity, const UICanvas& canvas) {
-			const bool shown = canvas.toggleWithEscape ? open : canvas.enabled;
-			if (canvas.toggleWithEscape && canvas.enabled != open) { m_menus.push_back(entity); }
+			// Menus are screen-space only: a world-space canvas ignores toggleWithEscape (greyed out in the Inspector).
+			const bool menu  = canvas.toggleWithEscape && canvas.renderMode == UICanvas::RenderMode::ScreenSpace;
+			const bool shown = menu ? open : canvas.enabled;
+			if (menu && canvas.enabled != open) { m_menus.push_back(entity); }
 			if (shown && canvas.showsCursor && canvas.renderMode == UICanvas::RenderMode::ScreenSpace) { showsCursor = true; }
 		});
 		for (Entity entity : m_menus) {

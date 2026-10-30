@@ -19,7 +19,7 @@ namespace Crucible {
 
     namespace {
 
-        // Per draw command. Must match UIPush in UI.slang, 32 bytes.
+        // Per draw command. Must match UIPush in UI.slang, 64 bytes (the text fields feed TextShading.slang).
         struct UIPush {
             glm::vec4 transform;       // xy = scale, zw = offset: canvas pixels -> target pixels
             glm::vec2 invTargetSize;   // 1 / target size in pixels

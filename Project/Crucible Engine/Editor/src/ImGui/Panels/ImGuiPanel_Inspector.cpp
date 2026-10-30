@@ -112,6 +112,28 @@ namespace {
 			: nullptr;
 	}
 
+	// Text: UIText for a UI element (it has a UIRect), WorldText for anything in the 3D world.
+	template <>
+	char const* AddBlockedReason<Crucible::WorldText>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::UIRect>(entity)
+			? "This entity is a UI element (it has a UIRect).\nUse UIText for text on a canvas."
+			: nullptr;
+	}
+
+	template <>
+	char const* AddBlockedReason<Crucible::UIRect>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::WorldText>(entity)
+			? "This entity has a WorldText, so it lives in the 3D world.\nUI elements go under a UICanvas."
+			: nullptr;
+	}
+
+	template <>
+	char const* AddBlockedReason<Crucible::UIText>(Crucible::World& world, Crucible::Entity entity) {
+		return world.HasComponent<Crucible::WorldText>(entity)
+			? "This entity has a WorldText (text in the 3D world).\nAn entity uses one or the other."
+			: nullptr;
+	}
+
 	// 2. Defaults for the new component before it goes on the entity. The plain version does
 	//    nothing; add an overload for any component whose T{} isn't a useful starting point.
 	template <typename T>
@@ -1554,6 +1576,105 @@ bool Crucible::Inspector::DrawComponentExtras(MeshRenderer& renderer) {
     return changed;
 }
 
+bool Crucible::Inspector::DrawComponentExtras(UIRect& rect) {
+	bool changed = false;
+
+	// ---- position: stored +y down (screen pixels). Shown +y up unless turned off with the checkbox -
+	// purely visual: what is stored never changes, and the choice resets to +Y up each start.
+	EditorManager& editor = EditorManager::GetInstance();
+	bool const yUp = editor.GetUIPositionYUp();
+	float shown[2] = { rect.position.x, yUp ? -rect.position.y : rect.position.y };
+	if (ImGui::DragFloat2("position", shown, 1.0f, 0.0f, 0.0f, "%.1f")) {
+		rect.position = { shown[0], yUp ? -shown[1] : shown[1] };
+		changed = true;
+	}
+	ImGui::SameLine();
+	bool up = yUp;
+	if (ImGui::Checkbox("+Y up", &up)) { editor.SetUIPositionYUp(up); }
+	ImGui::SetItemTooltip(up ? "Position Y shown with positive = up (like Unity). Display only: the scene stores the same value either way."
+	                         : "Position Y shown as stored: positive = down (screen pixels). Display only.");
+
+	changed |= ImGui::DragFloat2("size", &rect.size.x, 1.0f, 0.0f, 0.0f, "%.1f");
+	changed |= ImGui::DragFloat("rotation", &rect.rotation, 0.5f, 0.0f, 0.0f, "%.1f deg");
+	ImGui::SetItemTooltip("Counter-clockwise, around the pivot.");
+	changed |= ImGui::Checkbox("raycastTarget", &rect.raycastTarget);
+	ImGui::TextDisabled("computed (screen box): %.0f, %.0f  to  %.0f, %.0f", rect.computed.x, rect.computed.y, rect.computed.z, rect.computed.w);
+
+	// Where this element is drawn - or that it isn't (dragged out of its canvas in the Hierarchy).
+	Entity const entity = GetSelectedEntity();
+	if (!entity.IsValid() || !m_world.IsAlive(entity) || m_world.HasComponent<UICanvas>(entity)) { return changed; }
+	Entity canvas = kNullEntity;
+	for (Entity p = m_world.GetParent(entity); p.IsValid(); p = m_world.GetParent(p)) {
+		if (m_world.HasComponent<UICanvas>(p)) { canvas = p; }   // the topmost canvas owns the tree
+	}
+	if (canvas == kNullEntity) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Not under a UICanvas: not drawn.");
+		ImGui::TextDisabled("Make it a child of a canvas (UI, or UI (World) for the 3D world).");
+	} else if (UICanvas const* settings = m_world.Read<UICanvas>(canvas); settings && settings->renderMode == UICanvas::RenderMode::WorldSpace) {
+		ImGui::TextDisabled("On a world-space canvas: page pixels (%.0f px = 1 m). Display only.", std::max(settings->pixelsPerUnit, 1.0f));
+	}
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UICanvas& canvas) {
+	bool changed = false;
+	bool const world = canvas.renderMode == UICanvas::RenderMode::WorldSpace;
+
+	// ---- Screen Space: greyed out (kept, not lost) on a world-space canvas.
+	ImGui::SeparatorText("Screen Space");
+	ImGui::BeginDisabled(world);
+	changed |= ImGui::Checkbox("scaleWithScreenSize", &canvas.scaleWithScreenSize);
+	changed |= ImGui::InputInt("sortOrder", &canvas.sortOrder);
+	ImGui::SetItemTooltip("With several canvases, higher draws on top.");
+	changed |= ImGui::Checkbox("toggleWithEscape", &canvas.toggleWithEscape);
+	ImGui::SetItemTooltip("An in-game menu: hidden when Play starts, Escape shows / hides it and frees the cursor.");
+	changed |= ImGui::Checkbox("showsCursor", &canvas.showsCursor);
+	ImGui::SetItemTooltip("While shown, the cursor is free (a title screen, game over).");
+	ImGui::EndDisabled();
+
+	// ---- World Space: greyed out on a screen-space canvas.
+	ImGui::SeparatorText("World Space");
+	ImGui::BeginDisabled(!world);
+	changed |= ImGui::DragFloat("pixelsPerUnit", &canvas.pixelsPerUnit, 1.0f, 1.0f, 100000.0f, "%.0f px / m", ImGuiSliderFlags_AlwaysClamp);
+	float const ppu = std::max(canvas.pixelsPerUnit, 1.0f);
+	ImGui::TextDisabled("Page: %.0f x %.0f px = %.2f x %.2f m (referenceResolution / pixelsPerUnit)",
+		canvas.referenceResolution.x, canvas.referenceResolution.y, canvas.referenceResolution.x / ppu, canvas.referenceResolution.y / ppu);
+	changed |= ImGui::DragFloat2("pivot", &canvas.pivot.x, 0.01f, 0.0f, 1.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+	ImGui::SetItemTooltip("The page's point on this entity: (0, 0) top-left, (0.5, 0.5) centre, (1, 1) bottom-right.");
+
+	static constexpr char const* kBillboards[] = { "Off", "Face Camera", "Upright" };
+	int billboard = static_cast<int>(canvas.billboard);
+	if (ImGui::Combo("billboard", &billboard, kBillboards, IM_ARRAYSIZE(kBillboards))) {
+		canvas.billboard = static_cast<WorldBillboard>(billboard);
+		changed = true;
+	}
+	ImGui::SetItemTooltip("Off: the Transform's rotation. Face Camera: always square on.\nUpright: turns around Y only (a nameplate that never tips back).");
+	changed |= ImGui::Checkbox("alwaysOnTop", &canvas.alwaysOnTop);
+	ImGui::SameLine();
+	changed |= ImGui::Checkbox("doubleSided", &canvas.doubleSided);
+	ImGui::SetItemTooltip("Off: not drawn when seen from behind.");
+	changed |= ImGui::DragFloat("intensity", &canvas.intensity, 0.05f, 0.0f, 100.0f, "%.2f", ImGuiSliderFlags_AlwaysClamp);
+	ImGui::SetItemTooltip("Brightness in the scene: above 1 glows with bloom.");
+
+	changed |= ImGui::Checkbox("fade", &canvas.fade);
+	ImGui::SetItemTooltip("Fully visible up to fade start from the camera, gone by fade end.");
+	ImGui::BeginDisabled(!canvas.fade);
+	ImGui::Indent();
+	changed |= ImGui::DragFloat("fade start", &canvas.fadeStart, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	changed |= ImGui::DragFloat("fade end", &canvas.fadeEnd, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	if (canvas.fade && canvas.fadeEnd <= canvas.fadeStart) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Fade end should be past fade start (it vanishes at once).");
+	}
+	ImGui::Unindent();
+	ImGui::EndDisabled();
+	ImGui::EndDisabled();
+
+	if (world) {
+		ImGui::TextDisabled("Display only: nothing on a world-space canvas reacts to the mouse.");
+	}
+	return changed;
+}
+
 bool Crucible::Inspector::DrawComponentExtras(UIButton& button) {
 	// Custom: the action's name (actionId is hidden from the generic fields so it only shows here).
 	if (button.onClick == UIButton::ClickAction::Custom) {
@@ -1631,8 +1752,15 @@ bool Crucible::Inspector::DrawComponentExtras(UISlider& slider) {
 	return changed;
 }
 
-bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
+// The text, alignment, font and effects fields UIText and WorldText share (their field names
+// match). `world`: WorldText - sizes in metres instead of reference pixels, and a bitmap font is
+// a warning rather than a note (it is blocky up close in the world).
+template <typename T>
+bool Crucible::Inspector::DrawTextExtras(T& text, bool world) {
 	bool changed = false;
+	char const* const widthFormat = world ? "%.3f m" : "%.1f px";
+	float const widthSpeed = world ? 0.001f : 0.05f;
+	float const widthMax   = world ? 1.0f : 64.0f;
 
 	// ---- Text: a multi-line box (the generic string field is one line). Enter types a new line;
 	// the edit is one undo step from the first key to clicking away, like every Inspector field.
@@ -1682,7 +1810,12 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 			for (FontSizeGroup const& group : font->data.m_groups) {
 				sizes += (sizes.empty() ? "" : ", ") + std::to_string(static_cast<int>(group.pixelSize));
 			}
-			ImGui::TextDisabled("Bitmap font: sharp at %s px on screen", sizes.c_str());
+			if (world) {
+				ImGui::TextColored(EditorTheme::GetPalette().warning, "Bitmap font: blocky up close, shimmers far away.");
+				ImGui::TextDisabled("Use an SDF / MTSDF font for world text (Font Importer > Output Type).");
+			} else {
+				ImGui::TextDisabled("Bitmap font: sharp at %s px on screen", sizes.c_str());
+			}
 		} else {
 			ImGui::TextDisabled("%s font: sharp at any size", ToString(font->data.m_outputType));
 		}
@@ -1695,7 +1828,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 			ImGui::TextColored(EditorTheme::GetPalette().warning, "Bitmap font: outline and glow need an SDF / MTSDF font.");
 			ImGui::TextDisabled("Shadow still works (a flat copy, no softness).");
 		} else {
-			ImGui::TextDisabled("Outline + glow (+ bold) can reach %.1f px at this size.", maxWidth);
+			ImGui::TextDisabled(world ? "Outline + glow (+ bold) can reach %.3f m at this size." : "Outline + glow (+ bold) can reach %.1f px at this size.", maxWidth);
 			ImGui::SetItemTooltip("The font's distance field ends half its Pixel Range past each edge;\n"
 			                      "wider settings are clamped. Raise Pixel Range in the Font Importer for more.");
 		}
@@ -1703,7 +1836,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		auto widthWarning = [&](float width) {
 			if (!bitmap && width > maxWidth + 0.01f) {
 				ImGui::SameLine();
-				ImGui::TextColored(EditorTheme::GetPalette().warning, "(max %.1f)", maxWidth);
+				ImGui::TextColored(EditorTheme::GetPalette().warning, world ? "(max %.3f)" : "(max %.1f)", maxWidth);
 			}
 		};
 
@@ -1712,7 +1845,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		ImGui::BeginDisabled(!text.outline);
 		ImGui::Indent();
 		changed |= ImGui::ColorEdit4("outline colour", &text.outlineColour.x, ImGuiColorEditFlags_AlphaBar);
-		changed |= ImGui::DragFloat("outline width", &text.outlineWidth, 0.05f, 0.0f, 64.0f, "%.1f px", ImGuiSliderFlags_AlwaysClamp);
+		changed |= ImGui::DragFloat("outline width", &text.outlineWidth, widthSpeed, 0.0f, widthMax, widthFormat, ImGuiSliderFlags_AlwaysClamp);
 		widthWarning(text.outlineWidth);
 		ImGui::Unindent();
 		ImGui::EndDisabled();
@@ -1721,7 +1854,7 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		ImGui::BeginDisabled(!text.glow);
 		ImGui::Indent();
 		changed |= ImGui::ColorEdit4("glow colour", &text.glowColour.x, ImGuiColorEditFlags_AlphaBar);
-		changed |= ImGui::DragFloat("glow width", &text.glowWidth, 0.05f, 0.0f, 64.0f, "%.1f px", ImGuiSliderFlags_AlwaysClamp);
+		changed |= ImGui::DragFloat("glow width", &text.glowWidth, widthSpeed, 0.0f, widthMax, widthFormat, ImGuiSliderFlags_AlwaysClamp);
 		widthWarning((text.outline ? text.outlineWidth : 0.0f) + text.glowWidth);
 		changed |= ImGui::SliderFloat("glow softness", &text.glowSoftness, 0.0f, 1.0f, "%.2f");
 		ImGui::Unindent();
@@ -1732,13 +1865,36 @@ bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
 		ImGui::BeginDisabled(!text.shadow);
 		ImGui::Indent();
 		changed |= ImGui::ColorEdit4("shadow colour", &text.shadowColour.x, ImGuiColorEditFlags_AlphaBar);
-		changed |= ImGui::DragFloat2("shadow offset", &text.shadowOffset.x, 0.1f, -64.0f, 64.0f, "%.1f px");
+		changed |= ImGui::DragFloat2("shadow offset", &text.shadowOffset.x, widthSpeed * 2.0f, -widthMax, widthMax, widthFormat);
 		ImGui::BeginDisabled(bitmap);
 		changed |= ImGui::SliderFloat("shadow softness", &text.shadowSoftness, 0.0f, 1.0f, "%.2f");
 		ImGui::EndDisabled();
 		ImGui::Unindent();
 		ImGui::EndDisabled();
 	}
+	return changed;
+}
+
+bool Crucible::Inspector::DrawComponentExtras(UIText& text) {
+	return DrawTextExtras(text, false);
+}
+
+bool Crucible::Inspector::DrawComponentExtras(WorldText& text) {
+	bool changed = DrawTextExtras(text, true);
+
+	// ---- Distance fade: the range greyed out while it is off.
+	ImGui::SeparatorText("Distance Fade");
+	changed |= ImGui::Checkbox("fade", &text.fade);
+	ImGui::SetItemTooltip("Fully visible up to fade start from the camera, gone by fade end.");
+	ImGui::BeginDisabled(!text.fade);
+	ImGui::Indent();
+	changed |= ImGui::DragFloat("fade start", &text.fadeStart, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	changed |= ImGui::DragFloat("fade end", &text.fadeEnd, 0.1f, 0.0f, 10000.0f, "%.1f m", ImGuiSliderFlags_AlwaysClamp);
+	if (text.fade && text.fadeEnd <= text.fadeStart) {
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "Fade end should be past fade start (it vanishes at once).");
+	}
+	ImGui::Unindent();
+	ImGui::EndDisabled();
 	return changed;
 }
 

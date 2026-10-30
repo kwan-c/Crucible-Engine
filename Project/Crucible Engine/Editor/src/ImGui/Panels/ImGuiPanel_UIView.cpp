@@ -349,7 +349,8 @@ void Crucible::UIView::HandleSelection(bool hovered, bool active) {
 					case GizmoHandle::ScaleX: case GizmoHandle::ScaleY: case GizmoHandle::ScaleUniform:
 						ImGui::SetTooltip("Size %.0f x %.0f", rect->size.x, rect->size.y); break;
 					default:
-						ImGui::SetTooltip("Position %.0f, %.0f", rect->position.x, rect->position.y); break;
+						ImGui::SetTooltip("Position %.0f, %.0f", rect->position.x,   // y as the Inspector shows it (+y up, display only)
+							EditorManager::GetInstance().GetUIPositionYUp() ? -rect->position.y : rect->position.y); break;
 				}
 			}
 		}

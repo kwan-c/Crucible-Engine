@@ -19,7 +19,9 @@
 #include "Animation/SocketAttachmentSystem.h"
 #include "Graphics/DebugDrawSystem.h"
 #include "Graphics/ParticleSystem.h"
+#include "Text/WorldTextSystem.h"
 #include "Graphics/StressMoverSystem.h"   // TEMPORARY: load testing
+#include "Graphics/VineSystem.h"
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"
 #include "Scripting/ScriptRuntime.h"
@@ -220,8 +222,11 @@ namespace Crucible {
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
+        m_systems.RegisterSystem<VineSystem>(*m_renderer, m_resources.get());            // PreRender: grows/simulates Vines (proof of concept), submits their meshes
+        m_systems.RegisterSystem<WorldTextSystem>(*m_renderer, m_resources.get());       // PreRender, Edit mode too: lays out WorldText components and submits their glyphs
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
         m_systems.RegisterSystem<UIRenderSystem>(*m_renderer, m_resources.get());        // PreRender, Edit mode too: lays out screen-space UICanvases against the game screen and SubmitUI()s them
+        m_systems.RegisterSystem<WorldCanvasSystem>(*m_renderer, m_resources.get());     // PreRender, Edit mode too: lays out world-space UICanvases and submits each as a world UI panel
         m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_userSettings.audio, m_renderer);                // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
     }
 

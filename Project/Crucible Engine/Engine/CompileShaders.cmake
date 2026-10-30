@@ -22,7 +22,7 @@ endmacro()
 
 crucible_shader(DefaultShader    vertMain fragMain)
 crucible_shader(Skybox           skyVert skyFrag)
-crucible_shader(DebugLine        lineVert lineFrag)
+crucible_shader(DebugLine        lineVert sphereOutlineVert lineFrag)
 crucible_shader(Shadow           shadowVert shadowCutoutVert shadowCutoutFrag)
 crucible_shader(OutlineMask      maskVert maskFrag maskCutoutVert maskCutoutFrag)
 crucible_shader(OutlineComposite compositeVert compositeFrag)
@@ -32,6 +32,7 @@ crucible_shader(DepthNormal      depthNormalVert depthNormalFrag depthNormalCuto
 crucible_shader(UI               uiVert uiFrag)
 crucible_shader(VolumetricFog    fogInject fogIntegrate)
 crucible_shader(Water            waterVert waterFrag)
+crucible_shader(WorldUI          worldUIVert worldUIFrag)
 
 # Flags shared by every shader.
 set(CRUCIBLE_SLANGC_FLAGS
