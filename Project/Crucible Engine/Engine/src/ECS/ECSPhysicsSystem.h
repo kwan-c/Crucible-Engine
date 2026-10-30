@@ -152,10 +152,12 @@ namespace Crucible {
         // Unity's Rigidbody.AddExplosionForce, same arguments and same default
         // mode. Pushes one entity's body away from the blast: full force at the
         // centre, fading to nothing at the radius (a radius of 0 means no fading),
-        // landing on the side of the body facing the blast so it tumbles.
-        // upwardsModifier lowers the blast by that many metres, so things are
-        // thrown up as well as out. Only dynamic bodies move - static, kinematic
-        // and characters are left alone, as in Unity. False if it pushed nothing.
+        // landing on the side of the body facing the blast so it tumbles. A blast
+        // inside the body pushes at its centre of mass instead (no spin).
+        // upwardsModifier lowers the blast, and the point the push lands on, by
+        // that many metres, so things are thrown up and flip as they go. Only
+        // dynamic bodies move - static, kinematic and characters are left alone,
+        // as in Unity. False if it pushed nothing.
         ENGINE_API bool AddExplosionForce(const Entity& entity, float explosionForce, const Math::vec3& explosionPosition,
                                           float explosionRadius, float upwardsModifier = 0.0f, ForceMode mode = ForceMode::Force);
 

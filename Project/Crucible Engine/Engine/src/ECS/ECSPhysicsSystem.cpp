@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.9
+* \version       3.0
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -59,6 +59,9 @@
 *                EntityFilter turned into Physics' QueryFilter (ToQuery)
 *    -v2.9       AddExplosionForce and Explode; Force-mode explosions join
 *                the frame's forces through explosionPushes (TakeForces)
+*    -v3.0       explosions match Unity's documented rules: a blast inside
+*                the body pushes at its centre of mass; upwardsModifier
+*                also lowers the point the push lands on
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -616,11 +619,14 @@ namespace Crucible {
         1. Where: the point on the body's surface nearest the blast. A push there,
            not at the centre, is what makes things tumble (a blast by a crate's
            corner spins it); and measuring to the surface means a big crate
-           beside the blast gets the full hit.
+           beside the blast gets the full hit. A blast inside the body pushes at
+           its centre of mass instead, as in Unity.
         2. How hard: linear fade from the centre to the radius.
         3. Which way: from the blast as if it were `upwards` metres lower, so
            things are lifted as well as thrown out.
-        4. Impulse lands now; Force waits for this frame's steps, like AddForce.
+        4. The push lands on that point lowered by `upwards` (Unity's rule, so
+           lifted things also flip), except inside the body. Impulse lands now;
+           Force waits for this frame's steps, like AddForce.
     */
     bool ECSPhysicsSystem::State::PushFromBlast(const Entity& entity, float force, const Math::vec3& position, float radius,
                                                 float upwards, ForceMode mode) {
@@ -641,6 +647,14 @@ namespace Crucible {
         float      distance = 0.0f;
         if (!physics.ClosestPointOnBody(body, position, reach, point, distance)) return false;
 
+        // A blast INSIDE the body (distance 0) has no surface between it and the
+        // body, so it pushes at the centre of mass: straight out, no spin - Unity's
+        // rule. Pushing at the blast point instead would spin a crate depending on
+        // where inside it the grenade happened to be. Outside, the surface point
+        // stays, so off-centre hits still tumble.
+        const bool inside = distance <= 0.0f;
+        if (inside) point = centre;
+
         // 2. HOW HARD --------------------------------------------------------- //
         float strength = force;
         if (radius > 0.0f) {
@@ -658,15 +672,21 @@ namespace Crucible {
         const Math::vec3 push = glm::normalize(direction) * strength;
 
         // 4. PUSH ------------------------------------------------------------- //
+        // Unity also lowers the point the push lands on by upwardsModifier: pushed
+        // low, a crate flips over as it flies - the "thrown into the air" look.
+        // Not for a blast inside the body: that one stays at the centre, no spin.
+        Math::vec3 pushAt = point;
+        if (!inside) pushAt.y -= upwards;
+
         if (mode == ForceMode::Impulse) {
-            physics.ApplyImpulseAtPosition(body, push, point);
+            physics.ApplyImpulseAtPosition(body, push, pushAt);
         }
         else {
             // A force off-centre is that force at the centre plus a twist, which is
             // what the frame's force pipeline takes (force and torque, world axes).
             PendingPush& pending = explosionPushes[key];
             pending.force  += push;
-            pending.torque += glm::cross(point - centre, push);
+            pending.torque += glm::cross(pushAt - centre, push);
         }
         return true;
 

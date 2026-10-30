@@ -4,6 +4,7 @@
 #include "Diagnostics/Logger.h"
 #include "ECS/ECSAudioSystem.h"
 #include "ECS/ECSPhysicsSystem.h"
+#include "ECS/ECSPhysicsDebugSystem.h"
 #include "ECS/ECSPlayerControllerSystem.h"
 #include "ECS/Components/Components.h"
 #include "Json/JsonWrapper.h"
@@ -211,6 +212,7 @@ namespace Crucible {
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
         m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get())                      // the scene turns a PhysicsJoint's saved connected body back into an entity
             .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
+        m_systems.RegisterSystem<ECSPhysicsDebugSystem>(m_systems);                     // DEBUG TOOL, Update, Playing only: B sets off an explosion where the camera looks
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
