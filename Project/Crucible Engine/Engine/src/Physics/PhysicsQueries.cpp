@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.0
+* \version       2.1
 * \brief
 *                The queries, Unity's Physics.Raycast / RaycastAll /
 *                SphereCast / CapsuleCast / OverlapSphere / OverlapBox /
@@ -28,6 +28,8 @@
 *    -v2.0       QueryFilter (layer mask, triggers, ignore); RaycastAll,
 *                SphereCast, CapsuleCast, OverlapSphere, OverlapBox,
 *                OverlapCapsule
+*    -v2.1       ClosestPointOnBody: one body's nearest surface point
+*                (explosions)
 *
 **************************************************************************/
 #include "PhysicsSystem.h"
@@ -358,5 +360,51 @@ namespace Crucible {
         OverlapOneShape(*impl.m_world, capsule, transform, filter, out);
 
     }   // Physics::OverlapCapsule()
+
+    /*!
+        \brief
+        The point on one body nearest to a given point. Jolt's TransformedShape
+        is the body's shape where it is right now, so nothing else is looked at.
+        \details
+        Jolt has no "closest point" question, but a collision test answers it:
+        a tiny ball at the point, tested against the body with an allowed gap
+        of maxDistance, reports the body's nearest surface point even when they
+        are apart. The ball's radius is added back to the gap it reports.
+    */
+    bool Physics::ClosestPointOnBody(const BodyHandle& body, const Math::vec3& point, float maxDistance,
+                                     Math::vec3& outPoint, float& outDistance) const {
+
+        const Impl& impl = *m_impl;
+        if (!impl.m_initialised || !body.IsValid() || !IsFinite(point) || !(maxDistance >= 0.0f)) return false;
+
+        const JPH::BodyLockRead lock(impl.m_world->GetBodyLockInterface(), JPH::BodyID(body.m_id));
+        if (!lock.Succeeded()) return false;
+
+        constexpr float kProbe = 0.01f;
+        JPH::SphereShape probe(kProbe);
+        probe.SetEmbedded();
+
+        JPH::CollideShapeSettings settings;
+        settings.mMaxSeparationDistance = maxDistance;
+        JPH::ClosestHitCollisionCollector<JPH::CollideShapeCollector> closest;
+        lock.GetBody().GetTransformedShape().CollideShape(&probe, JPH::Vec3::sOne(), JPH::RMat44::sTranslation(ToJolt(point)),
+                                                          settings, JPH::RVec3::sZero(), closest);
+        if (!closest.HadHit()) return false;
+
+        // Penetration is how far the probe is INSIDE (negative: how far apart).
+        // Inside the body, the point itself is where the blast is.
+        const JPH::CollideShapeResult& hit = closest.mHit;
+        const float gap = -hit.mPenetrationDepth + kProbe;
+        if (gap <= 0.0f) {
+            outPoint    = point;
+            outDistance = 0.0f;
+        }
+        else {
+            outPoint    = FromJolt(hit.mContactPointOn2);
+            outDistance = gap;
+        }
+        return true;
+
+    }   // Physics::ClosestPointOnBody()
 
 }   // NAMESPACE CRUCIBLE

@@ -5,7 +5,7 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          22 September 2026
-* \version       1.8
+* \version       1.9
 * \brief
 *                Crucible::Physics: the public face of the Jolt physics
 *                world. Bodies, characters, joints, raycasts and forces,
@@ -33,6 +33,7 @@
 *    -v1.8       queries: QueryFilter (layer mask, triggers, ignore) on
 *                Raycast, plus RaycastAll, SphereCast, CapsuleCast,
 *                OverlapSphere, OverlapBox and OverlapCapsule
+*    -v1.9       GetCenterOfMass and ClosestPointOnBody (for explosions)
 *
 **************************************************************************/
 #pragma once
@@ -439,6 +440,10 @@ namespace Crucible {
         // sync; see GetMovedBody below for the one that skips sleeping bodies.
         void GetTransform(const BodyHandle& body, Math::vec3& outPosition, Math::quat& outRotation) const;
 
+        // Where the body's mass is centred, in the world. Not always its position: a
+        // collider with an offset centre moves it. What a push "at the centre" means.
+        Math::vec3 GetCenterOfMass(const BodyHandle& body) const;
+
         // Moves a kinematic body toward a target over one step by giving it the
         // velocity that gets it there. That velocity is what lets it push dynamic
         // bodies; SetTransform would slide it straight through them.
@@ -573,6 +578,12 @@ namespace Crucible {
                         const QueryFilter& filter = QueryFilter{}) const;
         void OverlapCapsule(const Math::vec3& point0, const Math::vec3& point1, float radius, std::vector<OverlapHit>& out,
                             const QueryFilter& filter = QueryFilter{}) const;
+
+        // The point on ONE body's surface nearest to `point`, if within maxDistance -
+        // "where does a blast here hit this crate". A point inside the body is
+        // distance 0. False if the body is further than maxDistance, or gone.
+        bool ClosestPointOnBody(const BodyHandle& body, const Math::vec3& point, float maxDistance,
+                                Math::vec3& outPoint, float& outDistance) const;
 
         // --- reading results back ---
 

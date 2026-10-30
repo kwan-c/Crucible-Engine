@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.5
+* \version       2.6
 * \brief
 *                The ECS side of physics: keeps Crucible::Physics in step
 *                with the Transform, Collider, RigidBody, ConstantForce and
@@ -40,6 +40,7 @@
 *                GetContacts; Update takes the SystemContext to send them
 *    -v2.5       queries in entities: Raycast, RaycastAll, SphereCast,
 *                CapsuleCast, OverlapSphere, OverlapBox, OverlapCapsule
+*    -v2.6       AddExplosionForce (Unity's) and Explode
 *
 **************************************************************************/
 #pragma once
@@ -145,6 +146,24 @@ namespace Crucible {
                                    const EntityFilter& filter = EntityFilter{}) const;
         ENGINE_API void OverlapCapsule(const Math::vec3& point0, const Math::vec3& point1, float radius, std::vector<Entity>& out,
                                        const EntityFilter& filter = EntityFilter{}) const;
+
+        // --- explosions ------------------------------------------------------ //
+
+        // Unity's Rigidbody.AddExplosionForce, same arguments and same default
+        // mode. Pushes one entity's body away from the blast: full force at the
+        // centre, fading to nothing at the radius (a radius of 0 means no fading),
+        // landing on the side of the body facing the blast so it tumbles.
+        // upwardsModifier lowers the blast by that many metres, so things are
+        // thrown up as well as out. Only dynamic bodies move - static, kinematic
+        // and characters are left alone, as in Unity. False if it pushed nothing.
+        ENGINE_API bool AddExplosionForce(const Entity& entity, float explosionForce, const Math::vec3& explosionPosition,
+                                          float explosionRadius, float upwardsModifier = 0.0f, ForceMode mode = ForceMode::Force);
+
+        // A whole explosion in one call: every entity inside the sphere (passing the
+        // filter, and not shielded by a wall if explosion.blockedByWalls) is pushed
+        // with AddExplosionForce, and listed in `outHit` - characters and static
+        // things too, so gameplay can damage everything the blast reached.
+        ENGINE_API void Explode(const Explosion& explosion, std::vector<Entity>& outHit);
 
         // Update with a frame time you choose, instead of World::DeltaTime().
         // This is what a test harness drives, and how you simulate 30 or 144 fps.

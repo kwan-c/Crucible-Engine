@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.8
+* \version       2.9
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -57,6 +57,8 @@
 *                GetTriggerOccupants and GetContacts
 *    -v2.8       the queries in entities (Raycast ... OverlapCapsule), with
 *                EntityFilter turned into Physics' QueryFilter (ToQuery)
+*    -v2.9       AddExplosionForce and Explode; Force-mode explosions join
+*                the frame's forces through explosionPushes (TakeForces)
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -370,6 +372,15 @@ namespace Crucible {
         // Mutable: the queries are const, and this is scratch, not state.
         mutable std::vector<RaycastHit> scratchHits;
         mutable std::vector<OverlapHit> scratchOverlaps;
+        std::vector<Entity>             scratchEntities;     // Explode's sphere
+
+        // Force-mode explosions asked for since the last Sync, keyed like records.
+        // TakeForces adds them to the frame's forces - the same path AddForce takes,
+        // so they last this frame's steps and no longer. (Not written onto the
+        // RigidBody component: a gameplay system would then need to declare
+        // RigidBody access just to set off an explosion.)
+        struct PendingPush { Math::vec3 force{ 0.0f, 0.0f, 0.0f }; Math::vec3 torque{ 0.0f, 0.0f, 0.0f }; };
+        std::unordered_map<std::uint64_t, PendingPush> explosionPushes;
         bool          inSession      = false;                   // between BeginSession and EndSession
 
         void BindWorld(World& ecs);
@@ -382,6 +393,7 @@ namespace Crucible {
         void PushForces(Record& record);
         void DriveKinematic(Record& record);
         void CollectContacts();
+        bool PushFromBlast(const Entity& entity, float force, const Math::vec3& position, float radius, float upwards, ForceMode mode);
         BodyHandle BodyOf(const Entity& entity) const;
         QueryFilter ToQuery(const EntityFilter& filter) const;
         void SyncJoints(World& ecs);
@@ -594,6 +606,121 @@ namespace Crucible {
     }
 
     // ------------------------------------------------------------------- //
+    // EXPLOSIONS
+    // ------------------------------------------------------------------- //
+
+    /*!
+        \brief
+        One body pushed away from a blast. Unity's AddExplosionForce.
+        \details
+        1. Where: the point on the body's surface nearest the blast. A push there,
+           not at the centre, is what makes things tumble (a blast by a crate's
+           corner spins it); and measuring to the surface means a big crate
+           beside the blast gets the full hit.
+        2. How hard: linear fade from the centre to the radius.
+        3. Which way: from the blast as if it were `upwards` metres lower, so
+           things are lifted as well as thrown out.
+        4. Impulse lands now; Force waits for this frame's steps, like AddForce.
+    */
+    bool ECSPhysicsSystem::State::PushFromBlast(const Entity& entity, float force, const Math::vec3& position, float radius,
+                                                float upwards, ForceMode mode) {
+
+        const std::uint64_t key   = EntityToUserData(entity);
+        const auto          found = records.find(key);
+        if (found == records.end() || !found->second.body.IsValid() || found->second.recipe.m_motion != BodyMotion::Dynamic) return false;
+        if (!Finite(position) || !std::isfinite(force) || !std::isfinite(radius) || !std::isfinite(upwards)) return false;
+
+        const BodyHandle body   = found->second.body;
+        const Math::vec3 centre = physics.GetCenterOfMass(body);
+
+        // 1. WHERE ------------------------------------------------------------ //
+        // Searched only as far as the radius: anything further is not pushed. A
+        // radius of 0 (no fading, as in Unity) searches as far as the centre is.
+        const float reach = radius > 0.0f ? radius : glm::length(centre - position) + 1.0f;
+        Math::vec3 point    = centre;
+        float      distance = 0.0f;
+        if (!physics.ClosestPointOnBody(body, position, reach, point, distance)) return false;
+
+        // 2. HOW HARD --------------------------------------------------------- //
+        float strength = force;
+        if (radius > 0.0f) {
+            if (distance >= radius) return false;
+            strength *= 1.0f - distance / radius;
+        }
+
+        // 3. WHICH WAY -------------------------------------------------------- //
+        // Falls back to the centre, then to straight up, when the point and the
+        // (lowered) blast coincide.
+        const Math::vec3 blast = position - Math::vec3(0.0f, upwards, 0.0f);
+        Math::vec3 direction = point - blast;
+        if (glm::dot(direction, direction) < 1.0e-8f) direction = centre - blast;
+        if (glm::dot(direction, direction) < 1.0e-8f) direction = Math::vec3(0.0f, 1.0f, 0.0f);
+        const Math::vec3 push = glm::normalize(direction) * strength;
+
+        // 4. PUSH ------------------------------------------------------------- //
+        if (mode == ForceMode::Impulse) {
+            physics.ApplyImpulseAtPosition(body, push, point);
+        }
+        else {
+            // A force off-centre is that force at the centre plus a twist, which is
+            // what the frame's force pipeline takes (force and torque, world axes).
+            PendingPush& pending = explosionPushes[key];
+            pending.force  += push;
+            pending.torque += glm::cross(point - centre, push);
+        }
+        return true;
+
+    }   // ECSPhysicsSystem::State::PushFromBlast()
+
+    bool ECSPhysicsSystem::AddExplosionForce(const Entity& entity, float explosionForce, const Math::vec3& explosionPosition,
+                                             float explosionRadius, float upwardsModifier, ForceMode mode) {
+        return m_state->PushFromBlast(entity, explosionForce, explosionPosition, explosionRadius, upwardsModifier, mode);
+    }
+
+    /*!
+        \brief
+        A whole explosion: OverlapSphere, the wall check, then a push for each.
+        \details
+        The wall check is one ray from the blast to the thing, against the arena
+        (NonMoving) only, seeing through the thing itself: anything in between
+        shields it, and it is neither pushed nor listed.
+    */
+    void ECSPhysicsSystem::Explode(const Explosion& explosion, std::vector<Entity>& outHit) {
+
+        outHit.clear();
+        State& s = *m_state;
+        if (!(explosion.radius > 0.0f)) return;
+
+        EntityFilter reach = explosion.filter;
+        reach.hitTriggers  = false;                 // a trigger zone is not something a blast throws
+        OverlapSphere(explosion.position, explosion.radius, s.scratchEntities, reach);
+
+        for (const Entity& entity : s.scratchEntities) {
+
+            if (explosion.blockedByWalls) {
+                // Aim at the body's centre of mass, or a mech's capsule position.
+                const std::uint64_t key       = EntityToUserData(entity);
+                const auto          record    = s.records.find(key);
+                const auto          character = s.characterRecords.find(key);
+                Math::vec3 target = explosion.position;
+                if (record != s.records.end())                 target = s.physics.GetCenterOfMass(record->second.body);
+                else if (character != s.characterRecords.end()) target = s.physics.GetCharacterPosition(character->second.character);
+
+                QueryFilter walls;
+                walls.m_layers = LayerMask(PhysicsLayer::NonMoving);
+                walls.m_ignore = s.BodyOf(entity);
+                RaycastHit wall;
+                const Math::vec3 toTarget = target - explosion.position;
+                if (s.physics.Raycast(explosion.position, toTarget, wall, glm::length(toTarget), walls)) continue;   // shielded
+            }
+
+            outHit.push_back(entity);
+            s.PushFromBlast(entity, explosion.force, explosion.position, explosion.radius, explosion.upwardsModifier, explosion.mode);
+        }
+
+    }   // ECSPhysicsSystem::Explode()
+
+    // ------------------------------------------------------------------- //
     // THE FRAME
     // ------------------------------------------------------------------- //
 
@@ -723,6 +850,7 @@ namespace Crucible {
             // After SyncBody, which may have just (re)built the body.
             TakeForces(ecs, record, rigidbody);
         });
+        explosionPushes.clear();    // any left were for entities that lost their body since: nothing to push
 
         characters->ForEach([&](Entity entity, const Transform& transform, CharacterController& controller) {
             CharacterRecord& record = TouchCharacter(entity);
@@ -1242,6 +1370,13 @@ namespace Crucible {
         record.relativeForce  = constant != nullptr ? constant->m_relativeForce  : zero;
         record.relativeTorque = constant != nullptr ? constant->m_relativeTorque : zero;
         record.impulse        = zero;
+
+        // Force-mode explosions since the last Sync (AddExplosionForce), on top.
+        if (const auto pending = explosionPushes.find(EntityToUserData(record.entity)); pending != explosionPushes.end()) {
+            record.force  += pending->second.force;
+            record.torque += pending->second.torque;
+            explosionPushes.erase(pending);
+        }
 
         if (rigidbody == nullptr) {
             // A static body ignores forces, so without this the designer just sees nothing happen.
