@@ -153,8 +153,10 @@ namespace Crucible {
 
     /// How WriteFont stores the atlas.
     enum class FontAtlasEncoding : std::uint8_t {
-        Raw = 0,   ///< The bytes as they are (fastest to load, biggest file).
-        Png = 1,   ///< Lossless PNG (much smaller; the default).
+        Raw    = 0,   ///< The bytes as they are (fastest to load, biggest file).
+        Png    = 1,   ///< Old fonts only: PNG needs an image library, which the game does not have. Read in
+                      ///< the editor only (Resources/ImageDecoders.h); compile the font again to fix.
+        Billet = 2,   ///< The bytes packed losslessly with Billet (Compression/Billet.h; the default).
     };
 
     /*************************************************************************
@@ -172,16 +174,17 @@ namespace Crucible {
      \param[in]  font      Must pass Validate().
      \param[out] out       The file's bytes.
      \param[out] error     Why it failed (empty on success).
-     \param[in]  encoding  How to store the atlas.
+     \param[in]  encoding  How to store the atlas: Billet or Raw (Png can no longer be written).
      \return true on success.
      *************************************************************************/
     ENGINE_API bool WriteFont(const FontData& font, std::vector<std::uint8_t>& out, std::string& error,
-                              FontAtlasEncoding encoding = FontAtlasEncoding::Png);
+                              FontAtlasEncoding encoding = FontAtlasEncoding::Billet);
 
     /// A .cfont's header: what ReadFontInfo() returns without decoding the atlas.
     struct FontFileInfo {
         std::uint32_t  version      = 0;
         FontOutputType outputType   = FontOutputType::Bitmap;
+        FontAtlasEncoding encoding  = FontAtlasEncoding::Raw;   ///< Png: an old font the game cannot read
         std::uint32_t  atlasWidth   = 0;
         std::uint32_t  atlasHeight  = 0;
         std::uint32_t  groupCount   = 0;

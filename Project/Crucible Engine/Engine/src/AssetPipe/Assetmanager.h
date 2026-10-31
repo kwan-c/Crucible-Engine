@@ -135,6 +135,11 @@ namespace Crucible {
         // FNV-1a hash of the file's contents. Used to recognise an asset whose
         // filename changed: same bytes, same asset, keep the same guid.
         std::uint64_t contentHash = 0;
+
+        // True for a compiled file found in the Resources folder (.cmodel, .cfont,
+        // .spv, ...); virtualPath is then relative to Resources. False for a file in
+        // Assets. The Asset Browser shows Assets only.
+        bool          compiled = false;
     };
  
     /*************************************************************************
@@ -262,6 +267,14 @@ namespace Crucible {
             of those cases; the upward search works from the build tree, an
             install folder and a zipped release without configuration.
 
+            With no explicit root, the compiled files (IsCompiledExtension) in
+            the Resources folder next to Assets (ResourceRoot(), AssetPaths.h)
+            are indexed too, with the same virtual paths: "Models/Cannon.cmodel"
+            is Resources/Models/Cannon.cmodel. A compiled file shares its
+            source's guid, and FindByGuid() returns the compiled one. With an
+            explicit root (tools such as the model compiler) only that folder
+            is indexed.
+
          \note
             Returning false is not fatal. The engine can continue and report
             the problem rather than failing to start.
@@ -304,13 +317,26 @@ namespace Crucible {
             even if its file has since been deleted from disk.
          *********************************************************************/
         bool Refresh();
- 
+
+        /*********************************************************************
+         \brief  The assets whose file is new, or whose contents changed, in
+                 the last Refresh() - what the ResourceManager hot-reloads
+                 (ResourceManager::ReloadChanged). Empty after the first scan.
+         *********************************************************************/
+        const std::vector<xresource::instance_guid>& GetChangedOnLastRefresh() const { return m_changed; }
+
         /*********************************************************************
          \brief  The resolved asset root.
          \return Absolute path to the Assets folder, using forward slashes.
          *********************************************************************/
         const std::string& GetAssetRoot() const { return m_assetRootStr; }
- 
+
+        /*********************************************************************
+         \brief  The Resources folder whose compiled files are indexed too.
+         \return Absolute path using forward slashes, or empty if none.
+         *********************************************************************/
+        const std::string& GetResourceRoot() const { return m_resourceRootStr; }
+
         /*********************************************************************
          \brief
             Look up one asset in the index.
@@ -493,7 +519,26 @@ namespace Crucible {
             writing a .meta file - rather than for loading assets.
          *********************************************************************/
         bool WriteText(const std::string& virtualPath, const std::string& text);
- 
+
+        /*********************************************************************
+         \brief
+            Write a compiled file (e.g. a .cfont) into the Resources folder.
+
+         \param[in]
+            virtualPath Destination path relative to Resources, e.g.
+            "Fonts/Arial.cfont".
+         \param[in]
+            bytes The contents to write.
+         \return
+            true if written; false if there is no Resources folder or the
+            write failed.
+
+         \details
+            Creates any missing parent folders. Overwrites an existing file.
+            Call Refresh() afterwards so the file is indexed (and gets a .meta).
+         *********************************************************************/
+        bool WriteCompiled(const std::string& virtualPath, const std::vector<unsigned char>& bytes);
+
         // ===================================================================
         //  CACHE - read once, keep the result.
         // ===================================================================
@@ -621,7 +666,15 @@ namespace Crucible {
             asset. Supporting one more file format is one more line here.
          *********************************************************************/
         static AssetType ClassifyExtension(const std::string& lowercaseExtension);
- 
+
+        /*********************************************************************
+         \brief  Whether a file extension is one a compiler writes into the
+                 Resources folder: .cmodel, .cfont, .spv, .bill, .sky.
+         \param[in] lowercaseExtension Extension including the dot, lowercased.
+         \return true for a compiled extension.
+         *********************************************************************/
+        static bool IsCompiledExtension(const std::string& lowercaseExtension);
+
         /*********************************************************************
          \brief
             Convert backslashes to forward slashes, changing nothing else.
@@ -702,13 +755,24 @@ namespace Crucible {
             anywhere, while the executable's location is fixed.
          *********************************************************************/
         static std::filesystem::path GetExecutableDirectory();
- 
+
+        /*********************************************************************
+         \brief  Adds every file under `root` to `out` (no .meta, nothing
+                 hidden). onlyCompiled keeps just IsCompiledExtension files and
+                 marks them compiled.
+         \return false if the folder could not be scanned.
+         *********************************************************************/
+        static bool ScanFolder(const std::filesystem::path& root, bool onlyCompiled, std::vector<AssetEntry>& out);
+
         std::filesystem::path m_assetRoot;      // Resolved Assets folder
         std::string           m_assetRootStr;   // Same path, forward slashes, for display
+        std::filesystem::path m_resourceRoot;   // Resources folder (compiled files), or empty
+        std::string           m_resourceRootStr;
  
         // The index: every file that exists.
         std::vector<AssetEntry>                      m_index;
         std::unordered_map<std::string, std::size_t> m_lookup;  // virtualPath -> index
+        std::vector<xresource::instance_guid>        m_changed; // new or edited in the last Refresh
 
         // Owns every asset's permanent guid and the .meta files that store
         // them. Reconciled at the end of each Refresh().

@@ -27,12 +27,12 @@
 #include <array>
 #include <chrono>
 #include <cmath>
-#include <memory>       // unique_ptr (stb_image pixel ownership in CreateCubemap)
+#include <memory>
 
 #include <glm/gtc/packing.hpp>   // packHalf4x16 - RGBA16F cubemap texels
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+// No image library here: the engine uploads compiled textures and skies (.bill, .sky); the
+// editor decodes images that are not compiled yet itself (Resources/ImageDecoders.h).
 
 #include "Primitives.h"             // Primitives::MakeCube() and the rest of the whitebox set
 #include "Diagnostics/Logger.h"
@@ -809,9 +809,8 @@ namespace Crucible {
     //  TEXTURES & MATERIALS (stored in RenderResources)
     // ------------------------------------------------------------------------------------------------------------- //
 
-    TextureHandle Renderer::CreateTexture(const std::string& path, bool isSRGB) { return m_resources.CreateTexture(path, isSRGB); }
-    TextureHandle Renderer::CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount, bool isSRGB, const std::string& cacheKey) {
-        return m_resources.CreateTextureFromMemory(fileBytes, byteCount, isSRGB, cacheKey);
+    TextureHandle Renderer::CreateTextureCompressed(const CompiledTexture& texture, bool isSRGB, const std::string& cacheKey) {
+        return m_resources.CreateTextureCompressed(texture, isSRGB, cacheKey);
     }
     TextureHandle Renderer::CreateTextureFromPixels(const void* pixels, uint32_t width, uint32_t height, TexturePixelFormat format, bool mipmaps) {
         return m_resources.CreateTextureFromPixels(pixels, width, height, format, mipmaps);
@@ -977,8 +976,10 @@ namespace Crucible {
     //  SKYBOX / CUBEMAPS (stored in EnvironmentMaps)
     // ------------------------------------------------------------------------------------------------------------- //
 
-    CubemapHandle Renderer::CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB) { return m_environmentMaps.CreateCubemap(facePaths, isSRGB); }
-    CubemapHandle Renderer::CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize)    { return m_environmentMaps.CreateCubemapFromEquirect(path, faceSize); }
+    CubemapHandle Renderer::CreateCubemapFromEquirect(const float* rgba, uint32_t width, uint32_t height, uint32_t faceSize, const std::string& cacheKey) {
+        return m_environmentMaps.CreateCubemapFromEquirect(rgba, width, height, faceSize, cacheKey);
+    }
+    CubemapHandle Renderer::CreateCubemapCompiled(const CompiledSky& sky, const std::string& debugName) { return m_environmentMaps.CreateCubemapCompiled(sky, debugName); }
 
     glm::vec3 Renderer::GetSkyIrradiance(CubemapHandle sky, const glm::vec3& normal) const {
 

@@ -39,7 +39,8 @@ enum class ImguiPanels
 	CONSOLE,
 	ANIMATOR,
 	RESOURCES,		// what the ResourceManager holds in memory (tab next to the Asset Browser)
-	FONTIMPORTER	// floating window, opened from the Asset Browser or View > Font Importer
+	FONTIMPORTER,	// floating window, opened from the Asset Browser or View > Font Importer
+	TEXTUREIMPORTER	// floating window, opened from the Asset Browser or View > Texture Importer
 };
 
 namespace Crucible {

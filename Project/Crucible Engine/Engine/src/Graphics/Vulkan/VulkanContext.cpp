@@ -18,7 +18,7 @@
 // <vk_mem_alloc.h> for declarations (no VMA_IMPLEMENTATION defined there); the library's own
 // implementation block sits OUTSIDE that header's include guard specifically so a second,
 // macro-guarded #include like this one re-triggers it in one chosen translation unit, same idea
-// as this codebase's own "#define STB_IMAGE_IMPLEMENTATION" in RenderSystem.cpp.
+// as the usual single-header "#define ..._IMPLEMENTATION" pattern.
 #define VMA_IMPLEMENTATION
 #include <vk_mem_alloc.h>
 
@@ -253,7 +253,10 @@ namespace Crucible {
             vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
                 // Anisotropic texture filtering is optional: switched on whenever the GPU has it
                 // (Renderer::CreateMaterialSampler() checks the same flag before using it).
-                {.features = {.samplerAnisotropy = m_physicalDevice.getFeatures().samplerAnisotropy}},
+                // So are BC compressed textures (.bill, every desktop GPU has them):
+                // RenderResources::CreateTextureCompressed() checks the format is usable.
+                {.features = {.samplerAnisotropy = m_physicalDevice.getFeatures().samplerAnisotropy,
+                              .textureCompressionBC = m_physicalDevice.getFeatures().textureCompressionBC}},
                 {.shaderDrawParameters = true},
                 {.synchronization2 = true, .dynamicRendering = true},
                 {.extendedDynamicState = true}

@@ -334,6 +334,31 @@ namespace Crucible {
          *********************************************************************/
         void ReloadFont(AssetId id);
 
+        /*********************************************************************
+         \brief  Loads a texture again from its file - call after it was
+                 compiled again (the editor's Texture Importer). Materials
+                 that sampled the old texture switch to the new one.
+         \param[in] id The image's asset id.
+         *********************************************************************/
+        void ReloadTexture(AssetId id);
+
+        /*********************************************************************
+         \brief  Hot reload: after AssetManager::Refresh(), loads again every
+                 loaded asset whose file changed on disk
+                 (AssetManager::GetChangedOnLastRefresh), and lets every
+                 earlier failed load try again. The editor's Asset Browser
+                 calls it after each refresh.
+         \return How many assets were reloaded.
+         \details
+            Textures: reloaded; materials using them switch over.
+            .mat materials: updated in place, so every object using one
+            changes at once. Fonts, prefabs, animator controllers, skyboxes:
+            forgotten, so the next use loads the new file. Models: only
+            reported - their meshes are held by the objects using them, so
+            the scene must be opened again.
+         *********************************************************************/
+        std::size_t ReloadChanged();
+
         // ---- Unloading ------------------------------------------------------------------------
 
         /*********************************************************************
@@ -566,6 +591,8 @@ namespace Crucible {
         // Loaders - the only functions that understand file formats.
         bool LoadModel(AssetId modelId);                         // fills m_meshes[modelId] + embedded material
         MaterialHandle LoadMaterialFile(AssetId id);             // .mat (JSON)
+        bool ReloadMaterialFile(AssetId id);                     // .mat read again into its existing handle
+        void ForgetFailures();                                   // every remembered failed load may be tried again
         std::string SerializeMaterial(const MaterialData& data) const;
         AssetId ResolveFontId(AssetId id) const;                 // .ttf/.otf -> its .cfont; .cfont -> itself; else 0
         std::unique_ptr<FontAsset> LoadFont(AssetId fontId);    // .cfont -> FontData + uploaded atlas
