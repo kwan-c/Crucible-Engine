@@ -3,8 +3,10 @@ if(NOT CRUCIBLE_ENABLE_MONO)
     return()
 endif()
 include("${CMAKE_CURRENT_SOURCE_DIR}/ManagedLibrary.cmake")
+# Every .cs under Runtime/ (including subfolders) is part of the engine C# API.
+file(GLOB_RECURSE script_core_sources CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Runtime/*.cs")
 crucible_add_managed_library(CrucibleScriptCore
-    ASSEMBLY Crucible.ScriptCore SOURCES Runtime/EntityScript.cs Runtime/Animator.cs)
+    ASSEMBLY Crucible.ScriptCore SOURCES ${script_core_sources})
 crucible_add_managed_library(CrucibleManagedExamples
     ASSEMBLY Crucible.Examples
     SOURCES Examples/Counter.cs Examples/LifecycleCounter.cs)
