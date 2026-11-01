@@ -403,6 +403,26 @@ namespace {
 	void GlyphDiamond(ImDrawList* dl, ImVec2 p, ImU32 col) {
 		dl->AddQuad(ImVec2(p.x, p.y - 6.0f), ImVec2(p.x + 6.0f, p.y), ImVec2(p.x, p.y + 6.0f), ImVec2(p.x - 6.0f, p.y), col, 1.5f);
 	}
+	// Loudspeaker with sound waves: one while silent, two while it is playing.
+	void GlyphSpeaker(ImDrawList* dl, ImVec2 p, ImU32 col, bool playing) {
+		dl->AddRectFilled(ImVec2(p.x - 8.0f, p.y - 3.0f), ImVec2(p.x - 4.5f, p.y + 3.0f), col);    // magnet
+		dl->AddQuadFilled(ImVec2(p.x - 4.5f, p.y - 3.0f), ImVec2(p.x + 0.5f, p.y - 7.5f),		   // cone
+						  ImVec2(p.x + 0.5f, p.y + 7.5f), ImVec2(p.x - 4.5f, p.y + 3.0f), col);
+		const ImVec2 c(p.x + 0.5f, p.y);
+		dl->PathArcTo(c, 4.5f, -0.8f, 0.8f, 8);
+		dl->PathStroke(col, ImDrawFlags_None, 1.5f);
+		if (playing) {
+			dl->PathArcTo(c, 8.0f, -0.8f, 0.8f, 10);
+			dl->PathStroke(col, ImDrawFlags_None, 1.5f);
+		}
+	}
+	// Headphones: the band over the top and an ear cup on each side.
+	void GlyphHeadphones(ImDrawList* dl, ImVec2 p, ImU32 col) {
+		dl->PathArcTo(ImVec2(p.x, p.y + 1.0f), 7.5f, 3.14159265f, 6.28318531f, 12);	// top half (screen y points down)
+		dl->PathStroke(col, ImDrawFlags_None, 1.5f);
+		dl->AddRectFilled(ImVec2(p.x - 9.5f, p.y), ImVec2(p.x - 5.0f, p.y + 7.5f), col, 1.5f);
+		dl->AddRectFilled(ImVec2(p.x + 5.0f, p.y), ImVec2(p.x + 9.5f, p.y + 7.5f), col, 1.5f);
+	}
 
 	constexpr float kIconRadius = 12.0f;   // backdrop disc + click radius, in pixels
 
@@ -476,8 +496,32 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 			place(e, wt, [&](ImVec2 p) { GlyphCamera(dl, p, col); });
 		});
 
+	// Audio sources: blue for 3D (placed in world with ranges - DebugDrawSystem::DrawAudio),
+	// white for 2D (as loud everywhere, so where it sits doesn't matter), grey when switched off or
+	// without a clip. A second wave while it places. Include Disabled: a switched-off source can
+	// still be found and clicked.
+	m_world.BuildQuery<const WorldTransform, const AudioSource>().IncludeDisabled().Build().ForEach(
+		[&](Entity e, const WorldTransform& wt, const AudioSource& source) {
+			const bool on = source.m_clip != 0 && m_world.IsComponentActive<AudioSource>(e);
+			const ImU32 col = !on							? IM_COL32(128, 128, 128, 255)
+							: source.m_spatialBlend > 0.0f	? IM_COL32(115, 205, 255, 255)
+															: IM_COL32(235, 235, 235, 255);
+			place(e, wt, [&](ImVec2 p) { GlyphSpeaker(dl, p, col, on && source.m_isPlaying); });
+		});
+	
+	// Audio listeners: only the first one is used (ECSAudioSystem warns about the rest), so with
+	// more than one they are all drawn in the warning colour.
+	int listeners = 0;
+	m_world.CreateQuery<const AudioListener>().ForEach([&](Entity, const AudioListener&) { ++listeners; });
+	m_world.CreateQuery<const WorldTransform, const AudioListener>().ForEach(
+		[&](Entity e, const WorldTransform& wt, const AudioListener&) {
+			const ImU32 col = listeners > 1 ? IM_COL32(255, 170, 60, 255) : IM_COL32(235, 235, 235, 255);
+			place(e, wt, [&](ImVec2 p) { GlyphHeadphones(dl, p, col); });
+		});
+
 	// Anything else with nothing to click on in the scene (empties, collider-only, characters...).
-	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent, WorldText, UICanvas, UIRect>().Build().ForEach(
+	m_world.BuildQuery<const WorldTransform>().Exclude<MeshRenderer, Light, Skybox, CameraComponent, WorldText, UICanvas, UIRect,
+													   AudioSource, AudioListener>().Build().ForEach(
 		[&](Entity e, const WorldTransform& wt) {
 			place(e, wt, [&](ImVec2 p) { GlyphDiamond(dl, p, IM_COL32(200, 200, 200, 255)); });
 		});
@@ -716,6 +760,7 @@ void Crucible::SceneView::DrawGizmoMenu() {
 		{ "Colliders",      DebugCategory::Colliders  },
 		{ "Velocities",     DebugCategory::Velocities },
 		{ "Light gizmos",   DebugCategory::Lights     },
+		{ "Audio gizmos",   DebugCategory::Audio      },
 		{ "Grid",           DebugCategory::Grid       },
 		//{ "Selection",      DebugCategory::Selection  },
 		{ "Gameplay lines", DebugCategory::Gameplay   },
@@ -729,6 +774,16 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	bool throughWalls = DebugDrawSystem::GetCollidersThroughWalls();
 	if (ImGui::Checkbox("Colliders through walls", &throughWalls)) { DebugDrawSystem::SetCollidersThroughWalls(throughWalls); }
 	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Draw colliders even when another object is in front of them."); }
+
+	bool allAudio = DebugDrawSystem::GetAudioRangesForAll();
+	if (ImGui::Checkbox("Audio ranges of every source", &allAudio)) { DebugDrawSystem::SetAudioRangesForAll(allAudio); }
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("Off: only the selected source's ranges (3D sources only).\n"
+						  "Inner sphere: Min Distance - full volume inside it.\n"
+						  "Outer sphere: Max Distance - bright: silent (Linear rolloff);\n"
+						  "dim: stops getting quieter at Max Distance, still hear beyond (Logarithmic).");
+	}
+
 	float scale = DebugDrawSystem::GetVelocityScale();
 	ImGui::SetNextItemWidth(140.0f);
 	if (ImGui::SliderFloat("Velocity scale", &scale, 0.01f, 2.0f, "%.2f m per m/s")) { DebugDrawSystem::SetVelocityScale(scale); }
@@ -736,7 +791,7 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	ImGui::EndDisabled();
 
 	ImGui::Separator();
-	ImGui::Checkbox("Icons (lights, cameras, sky, empties)", &m_showIcons);
+	ImGui::Checkbox("Icons (lights, cameras, audio, sky, empties)", &m_showIcons);
 	bool outline = m_viewport.GetOutline();
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
 }

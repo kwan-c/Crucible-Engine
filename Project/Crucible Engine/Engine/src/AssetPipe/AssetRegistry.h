@@ -46,7 +46,14 @@ namespace Crucible {
 			}
 		};
 
-		Report Reconcile(std::vector<AssetEntry>& entries, const std::filesystem::path& assetRoot);
+		// Gives every entry (all found under assetRoot) its guid and adds them to the
+		// guid -> path map. Call Clear() first, then once per folder: a guid already in the
+		// map is taken over by the later folder (Resources after Assets, so a compiled
+		// .cmodel wins over the .glb it was made from) - except that a compiled file is never
+		// replaced by a source file with the same guid. removeOrphans = false keeps the
+		// .meta files of files left out of `entries` (a folder that is only partly indexed).
+		Report Reconcile(std::vector<AssetEntry>& entries, const std::filesystem::path& assetRoot,
+			bool removeOrphans = true);
 
 		void Clear();
 

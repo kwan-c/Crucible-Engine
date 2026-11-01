@@ -18,8 +18,11 @@
 *                record dropped, the same "absence is the signal" rule
 *                ECSPhysicsSystem uses.
 *
-*                Clips are loaded the first time a source needs one and
-*                kept, shared by every source that names the same file.
+*                Clips come from the ResourceManager (GetAudioClip): loaded
+*                the first time a source needs one, shared by every source
+*                that names the same file, and freed when a scene change
+*                leaves them unused. The editor preview keeps its own
+*                private clip (see LoadPreview).
 *
 * \history
 *    -v1.0       owns Audio, ticks it, editor preview
@@ -42,7 +45,7 @@
 #include <vector>
 
 // Crucible engine
-#include "AssetPipe/Assetmanager.h"
+#include "Resources/ResourceManager.h"
 #include "Components/Components.h"
 #include "Configuration/UserSettings.h"
 #include "Diagnostics/Logger.h"
@@ -136,10 +139,10 @@ namespace Crucible {
 
     struct ECSAudioSystem::State {
 
-        State(AssetManager& assetManager, const AudioSettings& playerVolumes, const Renderer* rendererToFollow)
-            : assets(assetManager), volumes(playerVolumes), renderer(rendererToFollow) {}
+        State(ResourceManager& resourceManager, const AudioSettings& playerVolumes, const Renderer* rendererToFollow)
+            : resources(resourceManager), volumes(playerVolumes), renderer(rendererToFollow) {}
 
-        AssetManager&        assets;
+        ResourceManager&     resources;         // clips are found by GUID through it
         const AudioSettings& volumes;           // Core's UserSettings: the player's bus sliders
         const Renderer*      renderer = nullptr;     // only for its camera, the listener when no entity has one
         Audio           audio;
@@ -154,11 +157,6 @@ namespace Crucible {
 
         std::unordered_map<std::uint64_t, Record> records;      // keyed by EntityToUserData(entity)
         std::vector<WriteBack>                    writeBacks;   // reused every frame
-
-        // One clip per file per load type, shared by every source naming it.
-        // A failed load is kept too (as an invalid handle), so a missing file
-        // is reported once rather than on every Play.
-        std::map<std::pair<std::uint64_t, AudioClipLoadType>, AudioClip> clips;
 
         // The volumes last sent to the buses. -1 is never a real volume, so the
         // first frame after Init always sends all three.
@@ -188,8 +186,8 @@ namespace Crucible {
     // LIFECYCLE
     // ------------------------------------------------------------------- //
 
-    ECSAudioSystem::ECSAudioSystem(AssetManager& assets, const AudioSettings& volumes, const Renderer* renderer)
-        : m_state{ std::make_unique<State>(assets, volumes, renderer) } {}
+    ECSAudioSystem::ECSAudioSystem(ResourceManager& resources, const AudioSettings& volumes, const Renderer* renderer)
+        : m_state{ std::make_unique<State>(resources, volumes, renderer) } {}
 
     ECSAudioSystem::~ECSAudioSystem() { Shutdown(); }
 
@@ -198,6 +196,8 @@ namespace Crucible {
     void ECSAudioSystem::Init() {
         if (!m_state->audio.Init())
             CRU_ERROR("ECSAudioSystem: audio did not start - the game will run silent");
+        // Clips are loaded by the ResourceManager into this engine (silent no-ops if it failed).
+        m_state->resources.AttachAudio(&m_state->audio);
     }
 
     void ECSAudioSystem::Shutdown() noexcept {
@@ -214,9 +214,9 @@ namespace Crucible {
         s.offSources.reset();
         s.world = nullptr;
 
-        // Audio::Shutdown releases every clip - the cached ones and the
-        // preview - so the handles only need forgetting.
-        s.clips.clear();
+        // The ResourceManager unloads the clips it loaded into this engine;
+        // Audio::Shutdown then releases anything left (the preview).
+        s.resources.AttachAudio(nullptr);
         s.previewClip  = AudioClip{};
         s.previewVoice = AudioVoice{};
         s.previewPath.clear();
@@ -524,22 +524,11 @@ namespace Crucible {
 
         if (source.m_clip == 0) return AudioClip{};
 
-        const auto key = std::make_pair(source.m_clip, source.m_loadType);
-        if (const auto found = clips.find(key); found != clips.end()) return found->second;
-
         // The id is the asset's guid from its .meta file, so a renamed or
-        // moved file is still found.
-        AudioClip clip;
-        const AssetEntry* entry = assets.FindByGuid(xresource::instance_guid{ source.m_clip });
-        if (entry == nullptr)
-            CRU_WARN("ECSAudioSystem: no asset has id {:016X} - deleted, or its .meta was lost", source.m_clip);
-        else if (entry->type != AssetType::Audio)
-            CRU_WARN("ECSAudioSystem: {} is not an audio file", entry->virtualPath);
-        else
-            clip = audio.LoadClip(ToUtf8(assets.Resolve(entry->virtualPath)), source.m_loadType);   // not absolutePath: that is code-page text
-
-        clips.emplace(key, clip);
-        return clip;
+        // moved file is still found. The ResourceManager loads, shares and
+        // frees clips (and reports a bad one once); asked on every Play, so
+        // a clip freed by a scene change is simply loaded again.
+        return resources.GetAudioClip(source.m_clip, source.m_loadType);
 
     }   // ECSAudioSystem::State::ClipFor()
 
@@ -578,7 +567,16 @@ namespace Crucible {
         // Streamed: opening it only reads the header, so selecting a long
         // track is instant, and a preview is only ever one voice - the one
         // thing a stream cannot do is overlap.
-        s.previewClip = s.audio.LoadClip(ToUtf8(s.assets.Resolve(virtualPath)), AudioClipLoadType::Streaming);
+        // Found by GUID through the ResourceManager, but loaded as a private
+        // copy rather than GetAudioClip's shared one: a Streaming clip has a
+        // single read position, so sharing it with a scene's music would let
+        // the preview take over (or stop) the game's voice.
+        const AssetId id = s.resources.GetIdForPath(virtualPath);
+        if (!s.resources.IsAudio(id)) {
+            CRU_WARN("ECSAudioSystem: '{}' is not an audio file in the project (refresh the Asset Browser?)", virtualPath);
+            return false;
+        }
+        s.previewClip = s.audio.LoadClip(ToUtf8(s.resources.GetFilePath(id)), AudioClipLoadType::Streaming);
         if (!s.previewClip.IsValid()) return false;     // LoadClip has already said why
 
         s.previewPath = virtualPath;

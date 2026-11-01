@@ -165,7 +165,8 @@ namespace Crucible {
         // Add a new asset type by adding one line here. That is the only place
         // the engine needs to learn about it.
         if (e == ".png" || e == ".jpg" || e == ".jpeg" || e == ".tga" ||
-            e == ".bmp" || e == ".dds" || e == ".hdr")
+            e == ".bmp" || e == ".dds" || e == ".hdr" ||
+            e == ".bill" || e == ".sky")   // compiled: Resources/CompiledTexture.h, Resources/CompiledSky.h
             return AssetType::Texture;
  
         if (e == ".cmodel" || e == ".gltf" || e == ".glb" || e == ".fbx" || e == ".obj" || e == ".dae")
@@ -206,7 +207,13 @@ namespace Crucible {
  
         return AssetType::Unknown;
     }
- 
+
+    bool AssetManager::IsCompiledExtension(const std::string& lowercaseExtension)
+    {
+        const std::string& e = lowercaseExtension;
+        return e == ".cmodel" || e == ".cfont" || e == ".spv" || e == ".bill" || e == ".sky";
+    }
+
     // =======================================================================
     //  Finding the asset root
     // =======================================================================
@@ -304,9 +311,16 @@ namespace Crucible {
  
         m_assetRootStr = NormalizeSeparators(m_assetRoot.string());
         m_initialized  = true;
- 
+
+        // The engine (no explicit root) also reads compiled files from Resources - unless it
+        // runs from Resources alone (installed game), which the scan above already covers.
+        m_resourceRoot    = (explicitRoot.empty() && !IsCookedRun()) ? ResourceRoot() : fs::path{};
+        m_resourceRootStr = NormalizeSeparators(m_resourceRoot.string());
+
         std::cout << "[Assetmanager] Root: " << m_assetRootStr << "\n";
- 
+        if (!m_resourceRoot.empty())
+            std::cout << "[Assetmanager] Compiled files: " << m_resourceRootStr << "\n";
+
         return Refresh();
     }
  
@@ -318,6 +332,8 @@ namespace Crucible {
         m_registry.Clear();
         m_assetRoot.clear();
         m_assetRootStr.clear();
+        m_resourceRoot.clear();
+        m_resourceRootStr.clear();
         m_initialized = false;
     }
  
@@ -327,23 +343,89 @@ namespace Crucible {
  
     bool AssetManager::Refresh()
     {
+        // What every file looked like before, to tell afterwards which ones are new or edited.
+        std::unordered_map<std::string, std::uint64_t> before;
+        before.reserve(m_index.size());
+        for (const AssetEntry& entry : m_index)
+            before.emplace(entry.absolutePath, entry.contentHash);
+
         m_index.clear();
         m_lookup.clear();
         m_registry.Clear();
+        m_changed.clear();
  
         if (!m_initialized || m_assetRoot.empty())
             return false;
- 
+
+        if (!ScanFolder(m_assetRoot, false, m_index))
+            return false;
+
+        // Give every asset its stable guid before anything is sorted: adopt
+        // if from a .meta carry it across a rename, or mint a new one.
+        m_registry.Reconcile(m_index, m_assetRoot);
+
+        // Then the compiled files in Resources. Reconciled second, so a compiled
+        // file takes over the guid it shares with its source (.cmodel over .glb).
+        // Only part of Resources is indexed, so the .meta files of the rest stay.
+        if (!m_resourceRoot.empty())
+        {
+            std::vector<AssetEntry> compiled;
+            if (ScanFolder(m_resourceRoot, true, compiled))
+            {
+                m_registry.Reconcile(compiled, m_resourceRoot, false);
+                for (AssetEntry& entry : compiled)
+                    m_index.push_back(std::move(entry));
+            }
+        }
+
+        // Alphabetical, so console output and any future browser list are stable.
+        std::sort(m_index.begin(), m_index.end(),
+            [](const AssetEntry& a, const AssetEntry& b) {
+                return a.virtualPath < b.virtualPath;
+            });
+
+        // The sort moved everything, so the lookup table is built afterwards.
+        // Building it during the scan would leave every index pointing at the
+        // wrong entry - a nasty, silent bug.
+        m_lookup.reserve(m_index.size());
+        for (std::size_t i = 0; i < m_index.size(); ++i)
+        {
+            if (!m_lookup.emplace(m_index[i].virtualPath, i).second)
+                std::cout << "[Assetmanager] '" << m_index[i].virtualPath
+                          << "' is in both Assets and Resources - only one is used.\n";
+        }
+
+        // New or edited since the last scan (nothing on the first scan: everything is new then).
+        if (!before.empty())
+        {
+            for (const AssetEntry& entry : m_index)
+            {
+                const auto it = before.find(entry.absolutePath);
+                if (it == before.end() || it->second != entry.contentHash)
+                    m_changed.push_back(entry.guid);
+            }
+        }
+
+        std::cout << "[Assetmanager] Indexed " << m_index.size() << " file(s)";
+        if (!m_changed.empty())
+            std::cout << ", " << m_changed.size() << " new or changed";
+        std::cout << ".\n";
+        return true;
+    }
+
+    bool AssetManager::ScanFolder(const fs::path& root, bool onlyCompiled, std::vector<AssetEntry>& out)
+    {
         std::error_code ec;
         fs::recursive_directory_iterator it{
-            m_assetRoot, fs::directory_options::skip_permission_denied, ec };
- 
+            root, fs::directory_options::skip_permission_denied, ec };
+
         if (ec)
         {
-            std::cout << "[Assetmanager] Could not scan the asset root: " << ec.message() << "\n";
+            std::cout << "[Assetmanager] Could not scan '" << NormalizeSeparators(root.string())
+                      << "': " << ec.message() << "\n";
             return false;
         }
- 
+
         const fs::recursive_directory_iterator end{};
         for (; it != end; it.increment(ec))
         {
@@ -378,16 +460,21 @@ namespace Crucible {
                 continue;
             }
 
+            const std::string extension = ToLower(p.extension().string());
+            if (onlyCompiled && !IsCompiledExtension(extension))
+                continue;
+
             AssetEntry entry;
             entry.absolutePath = NormalizeSeparators(p.string());
- 
-            const fs::path relative = fs::relative(p, m_assetRoot, ec);
+
+            const fs::path relative = fs::relative(p, root, ec);
             entry.virtualPath = ec ? p.filename().string()
                                    : NormalizePath(relative.string());
             ec.clear();
- 
-            entry.extension = ToLower(p.extension().string());
+
+            entry.extension = extension;
             entry.type      = ClassifyExtension(entry.extension);
+            entry.compiled  = onlyCompiled;
  
             entry.sizeBytes = fs::file_size(p, ec);
             if (ec) { entry.sizeBytes = 0; ec.clear(); }
@@ -397,27 +484,9 @@ namespace Crucible {
                 : static_cast<std::int64_t>(writeTime.time_since_epoch().count());
             ec.clear();
  
-            m_index.push_back(std::move(entry));
+            out.push_back(std::move(entry));
         }
- 
-        // Give every asset its stable guid before anything is sorted: adopt
-        // if from a .meta carry it across a rename, or mint a new one.
-        m_registry.Reconcile(m_index, m_assetRoot);
 
-        // Alphabetical, so console output and any future browser list are stable.
-        std::sort(m_index.begin(), m_index.end(),
-            [](const AssetEntry& a, const AssetEntry& b) {
-                return a.virtualPath < b.virtualPath;
-            });
- 
-        // The sort moved everything, so the lookup table is built afterwards.
-        // Building it during the scan would leave every index pointing at the
-        // wrong entry - a nasty, silent bug.
-        m_lookup.reserve(m_index.size());
-        for (std::size_t i = 0; i < m_index.size(); ++i)
-            m_lookup.emplace(m_index[i].virtualPath, i);
- 
-        std::cout << "[Assetmanager] Indexed " << m_index.size() << " file(s).\n";
         return true;
     }
  
@@ -554,6 +623,30 @@ namespace Crucible {
         }
  
         file.write(text.data(), static_cast<std::streamsize>(text.size()));
+        return file.good();
+    }
+
+    bool AssetManager::WriteCompiled(const std::string& virtualPath, const std::vector<unsigned char>& bytes)
+    {
+        if (!m_initialized || m_resourceRoot.empty())
+        {
+            std::cout << "[Assetmanager] No Resources folder to write '" << virtualPath << "' into.\n";
+            return false;
+        }
+
+        const fs::path full = m_resourceRoot / fs::path{ NormalizePath(virtualPath) };
+
+        std::error_code ec;
+        fs::create_directories(full.parent_path(), ec);
+
+        std::ofstream file{ full, std::ios::binary | std::ios::trunc };
+        if (!file.is_open())
+        {
+            std::cout << "[Assetmanager] Could not open '" << virtualPath << "' for writing.\n";
+            return false;
+        }
+
+        file.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
         return file.good();
     }
  

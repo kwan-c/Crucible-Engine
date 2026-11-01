@@ -27,12 +27,12 @@
 #include <array>
 #include <chrono>
 #include <cmath>
-#include <memory>       // unique_ptr (stb_image pixel ownership in CreateCubemap)
+#include <memory>
 
 #include <glm/gtc/packing.hpp>   // packHalf4x16 - RGBA16F cubemap texels
 
-#define STB_IMAGE_IMPLEMENTATION
-#include <stb_image.h>
+// No image library here: the engine uploads compiled textures and skies (.bill, .sky); the
+// editor decodes images that are not compiled yet itself (Resources/ImageDecoders.h).
 
 #include "Primitives.h"             // Primitives::MakeCube() and the rest of the whitebox set
 #include "Diagnostics/Logger.h"
@@ -191,6 +191,8 @@ namespace Crucible {
         // BeginFrame() has waited on this frame index's fence, so the GPU is done with the staging
         // buffers of the uploads recorded the last time this index was used: free them.
         m_uploads.ReleaseFrame(frameIndex);
+        m_resources.ReleaseDestroyed();   // frees meshes/textures/materials destroyed long enough ago
+        m_environmentMaps.ReleaseDestroyed();   // ... and skyboxes
 
         // ...and with this index's dynamic-mesh buffers: refill the ones whose geometry changed.
         m_resources.UploadDynamicMeshes(frameIndex);
@@ -807,9 +809,8 @@ namespace Crucible {
     //  TEXTURES & MATERIALS (stored in RenderResources)
     // ------------------------------------------------------------------------------------------------------------- //
 
-    TextureHandle Renderer::CreateTexture(const std::string& path, bool isSRGB) { return m_resources.CreateTexture(path, isSRGB); }
-    TextureHandle Renderer::CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount, bool isSRGB, const std::string& cacheKey) {
-        return m_resources.CreateTextureFromMemory(fileBytes, byteCount, isSRGB, cacheKey);
+    TextureHandle Renderer::CreateTextureCompressed(const CompiledTexture& texture, bool isSRGB, const std::string& cacheKey) {
+        return m_resources.CreateTextureCompressed(texture, isSRGB, cacheKey);
     }
     TextureHandle Renderer::CreateTextureFromPixels(const void* pixels, uint32_t width, uint32_t height, TexturePixelFormat format, bool mipmaps) {
         return m_resources.CreateTextureFromPixels(pixels, width, height, format, mipmaps);
@@ -817,6 +818,10 @@ namespace Crucible {
     MaterialHandle Renderer::CreateMaterial(const MaterialData& data) { return m_resources.CreateMaterial(data); }
     void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) { m_resources.UpdateMaterial(handle, data); }
     const MaterialData& Renderer::GetMaterialData(MaterialHandle handle) const { return m_resources.GetMaterialData(handle); }
+    bool Renderer::DestroyMesh(MeshHandle handle)         { return m_resources.DestroyMesh(handle); }
+    bool Renderer::DestroyTexture(TextureHandle handle)   { return m_resources.DestroyTexture(handle); }
+    bool Renderer::DestroyMaterial(MaterialHandle handle) { return m_resources.DestroyMaterial(handle); }
+    bool Renderer::DestroyCubemap(CubemapHandle handle)   { return m_environmentMaps.DestroyCubemap(handle); }
 
     // ------------------------------------------------------------------------------------------------------------- //
     //  LIGHTS & ENVIRONMENT
@@ -971,8 +976,10 @@ namespace Crucible {
     //  SKYBOX / CUBEMAPS (stored in EnvironmentMaps)
     // ------------------------------------------------------------------------------------------------------------- //
 
-    CubemapHandle Renderer::CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB) { return m_environmentMaps.CreateCubemap(facePaths, isSRGB); }
-    CubemapHandle Renderer::CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize)    { return m_environmentMaps.CreateCubemapFromEquirect(path, faceSize); }
+    CubemapHandle Renderer::CreateCubemapFromEquirect(const float* rgba, uint32_t width, uint32_t height, uint32_t faceSize, const std::string& cacheKey) {
+        return m_environmentMaps.CreateCubemapFromEquirect(rgba, width, height, faceSize, cacheKey);
+    }
+    CubemapHandle Renderer::CreateCubemapCompiled(const CompiledSky& sky, const std::string& debugName) { return m_environmentMaps.CreateCubemapCompiled(sky, debugName); }
 
     glm::vec3 Renderer::GetSkyIrradiance(CubemapHandle sky, const glm::vec3& normal) const {
 
@@ -1185,7 +1192,7 @@ namespace Crucible {
         vk::DescriptorSet skySet{};
         if (m_environment.drawSkybox) {
             CubemapHandle sky = m_environment.skybox;
-            if (!sky.IsValid() || sky.id >= m_environmentMaps.Cubemaps().size()) { sky = m_environmentMaps.DefaultSkybox(); }
+            if (!m_environmentMaps.IsUsable(sky)) { sky = m_environmentMaps.DefaultSkybox(); }   // also a destroyed one
             if (sky.IsValid() && sky.id < m_environmentMaps.Cubemaps().size()) { skySet = *m_environmentMaps.Cubemaps()[sky.id].descriptorSet; }
         }
         m_scenePass.Record(cmd, t, depthImage, depthView, extent, frameSet, draws.main, skySet, draws.particles, draws.water, draws.worldUI);

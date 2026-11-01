@@ -10,7 +10,7 @@
 *
 * \details
 *                Declares CubemapHandle, a cheap-to-copy integer handle
-*                returned by Renderer::CreateCubemap()/
+*                returned by Renderer::CreateCubemapCompiled()/
 *                CreateCubemapFromEquirect() (see RenderSystem.h). Kept a
 *                distinct type from TextureHandle (rather than a flag on a
 *                TextureHandle) so a cubemap can never be bound into a 2D
@@ -32,7 +32,7 @@ namespace Crucible {
     /*************************************************************************
      \brief
         Opaque handle to a cubemap living on the GPU (see RenderSystem.h's
-        Renderer::CreateCubemap()).
+        Renderer::CreateCubemapCompiled()).
 
      \details
         Cheap to copy; this is what the ECS Skybox component and

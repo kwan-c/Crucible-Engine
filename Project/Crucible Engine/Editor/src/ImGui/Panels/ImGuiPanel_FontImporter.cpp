@@ -90,6 +90,7 @@ namespace {
 // ------------------------------------------------------------------------------------------------ //
 
 Crucible::FontImporter::~FontImporter() {
+	m_previewFontId = 0;   // shutting down: the ResourceManager may already be gone, and pins no longer matter
 	ReleasePreview();
 	FreeRetiredPreviews(true);
 }
@@ -595,6 +596,8 @@ void Crucible::FontImporter::AcquirePreview() {
 		FontAsset const* font = resources->GetFont(compiled->guid.m_Value);
 		if (font == nullptr || !font->texture.IsValid()) { return; }
 		m_previewTexture       = font->texture;
+		m_previewFontId        = compiled->guid.m_Value;
+		resources->KeepLoaded(m_previewFontId);   // a scene change must not free the atlas ImGui is showing
 		m_previewWidth         = font->data.m_atlas.width;
 		m_previewHeight        = font->data.m_atlas.height;
 		m_previewType          = font->data.m_outputType;
@@ -620,6 +623,10 @@ void Crucible::FontImporter::ReleasePreview() {
 	}
 	m_previewTexture = {};
 	m_previewTried   = false;
+	if (m_previewFontId != 0) {
+		if (ResourceManager* resources = EditorManager::GetInstance().GetResources()) { resources->ReleaseKeepLoaded(m_previewFontId); }
+		m_previewFontId = 0;
+	}
 }
 
 void Crucible::FontImporter::FreeRetiredPreviews(bool all) {

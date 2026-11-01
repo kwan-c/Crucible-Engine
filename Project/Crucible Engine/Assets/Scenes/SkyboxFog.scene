@@ -641,7 +641,7 @@
                     "fogBaseHeight": 0.0,
                     "fogStart": 7.456999778747559,
                     "fogMaxOpacity": 1.0,
-                    "skyboxAsset": 3715637708821250059
+                    "skyboxAsset": 14705493977499680769
                 },
                 "PlayerController": {
                     "moveSpeed": 6.0,

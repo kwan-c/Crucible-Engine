@@ -214,7 +214,7 @@ namespace Crucible {
 
         // The main pass always needs SOME material set bound (the pipeline layout declares set 1
         // unconditionally), so substitute the default rather than skip.
-        return material.IsValid() && material.id < m_resources.Materials().size() ? material : m_resources.DefaultMaterial();
+        return m_resources.IsMaterialUsable(material) ? material : m_resources.DefaultMaterial();   // destroyed -> default
 
     }   // RenderScene::ResolveMaterial()
 
@@ -600,6 +600,7 @@ namespace Crucible {
             if (tBox >= best) { return best; }
             const RenderProxy& p = m_proxies[static_cast<uint32_t>(m_spatial.GetUserData(h))];
             if (!p.mesh.IsValid() || p.mesh.id >= m_resources.Meshes().size()) { return best; }
+            if (m_resources.Meshes()[p.mesh.id].indexCount == 0 && !m_resources.Meshes()[p.mesh.id].dynamic) { return best; }   // destroyed / not uploaded yet
             const GpuMesh& mesh = m_resources.Meshes()[p.mesh.id];
 
             float tHit = -1.0f;

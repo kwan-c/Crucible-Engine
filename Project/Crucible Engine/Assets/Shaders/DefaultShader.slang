@@ -377,7 +377,12 @@ SceneOutput fragMain(VSOutput inVert, bool frontFacing : SV_IsFrontFace) {
     }
     float3 B = cross(N, T) * inVert.tangentSign;
 
-    float3 normalSample = normalTex.Sample(inVert.uv).rgb * 2.0 - 1.0;   // unpack [0,1] -> [-1,1]
+    // Unpack x and y [0,1] -> [-1,1] and rebuild z from them (a unit vector pointing out of the
+    // surface): BC5 normal maps store only x and y, and for every other normal map this gives the
+    // z it already had.
+    float3 normalSample;
+    normalSample.xy = normalTex.Sample(inVert.uv).rg * 2.0 - 1.0;
+    normalSample.z  = sqrt(saturate(1.0 - dot(normalSample.xy, normalSample.xy)));
     float3 Nmapped = normalize(T * normalSample.x + B * normalSample.y + N * normalSample.z);
 
     float3 V  = normalize(frame.cameraPosWS.xyz - inVert.worldPos);

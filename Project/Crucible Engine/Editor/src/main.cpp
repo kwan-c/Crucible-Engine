@@ -9,6 +9,7 @@
 #include "Diagnostics/FatalError.h"
 #include "Diagnostics/Logger.h"
 #include "ImGui/ImGuiLayer.h"
+#include "Assets/EditorImageDecoders.h"
 
 int main(int argc, char** argv)
 {
@@ -25,6 +26,10 @@ int main(int argc, char** argv)
     {
         return 1;
     }
+
+    // The engine reads only compiled files; the editor can also show images (and old PNG
+    // fonts) that are not compiled yet, with stb - before anything is loaded.
+    Crucible::InstallEditorImageDecoders();
 
     // Everything inside the try, so a failure anywhere (no Vulkan GPU, a broken shader, ...)
     // ends in a message box saying why, not an abort() dialog.

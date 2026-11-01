@@ -22,7 +22,7 @@ add_library(Engine SHARED
     ${ENGINE_SOURCES}
     ${ENGINE_HEADERS}
 )
-add_dependencies(Engine CompiledModels)
+add_dependencies(Engine CompiledModels CompiledTextures)
 
 target_precompile_headers(Engine PRIVATE src/pch.h)
 set_target_properties(Engine PROPERTIES LINKER_LANGUAGE CXX)

@@ -21,33 +21,21 @@
       groupCount   x { f32 pixelSize; u32 firstGlyph; u32 glyphCount; }              12 bytes
       glyphCount   x { u32 codepoint; f32 advance; f32 plane[4]; f32 uv[4]; }        40 bytes
       kernCount    x { u32 left; u32 right; f32 adjust; }                            12 bytes
-      atlasByteCount bytes: raw texels, or a PNG with atlasChannels channels
+      atlasByteCount bytes: raw texels, a Billet stream of them, or (old files) a PNG
 
     A new field goes into the reserved words or bumps the version; ReadFont
     rejects versions it doesn't know rather than guessing.
 *************************************************************************/
 
 #include "Text/FontData.h"
+#include "Compression/Billet.h"
+#include "Resources/ImageDecoders.h"   // old PNG atlases, in the editor only
 
 #include <algorithm>
 #include <bit>
 #include <cmath>
 #include <cstring>
 #include <memory>
-
-#include <stb_image.h>   // stbi_load_from_memory; implemented in Graphics/RenderSystem.cpp
-
-// The PNG writer is only needed here, so its implementation is private to this file.
-#ifdef _MSC_VER
-#pragma warning(push, 0)
-#pragma warning(disable : 4996)
-#endif
-#define STB_IMAGE_WRITE_STATIC
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include <stb_image_write.h>
-#ifdef _MSC_VER
-#pragma warning(pop)
-#endif
 
 static_assert(std::endian::native == std::endian::little, ".cfont is read and written as little-endian memory");
 
@@ -124,12 +112,6 @@ namespace Crucible {
 
         bool Finite(float v) { return std::isfinite(v); }
         bool Finite(const glm::vec4& v) { return Finite(v.x) && Finite(v.y) && Finite(v.z) && Finite(v.w); }
-
-        void AppendPng(void* context, void* data, int size) {
-            auto* out = static_cast<std::vector<std::uint8_t>*>(context);
-            const auto* p = static_cast<const std::uint8_t*>(data);
-            out->insert(out->end(), p, p + size);
-        }
 
     }   // anonymous namespace
 
@@ -282,15 +264,15 @@ namespace Crucible {
         out.clear();
         if (!font.Validate(error)) { error = "Can't write font: " + error; return false; }
 
+        // Lossless either way: a distance-field atlas is damaged by lossy compression (BC).
         std::vector<std::uint8_t> atlasBytes;
-        if (encoding == FontAtlasEncoding::Png) {
-            const int stride = static_cast<int>(font.m_atlas.width * font.m_atlas.channels);
-            const int ok = stbi_write_png_to_func(&AppendPng, &atlasBytes,
-                static_cast<int>(font.m_atlas.width), static_cast<int>(font.m_atlas.height),
-                static_cast<int>(font.m_atlas.channels), font.m_atlas.pixels.data(), stride);
-            if (!ok || atlasBytes.empty()) { error = "Can't write font: PNG encoding failed"; return false; }
-        } else {
+        if (encoding == FontAtlasEncoding::Billet) {
+            atlasBytes = Billet::Compress(font.m_atlas.pixels);
+        } else if (encoding == FontAtlasEncoding::Raw) {
             atlasBytes = font.m_atlas.pixels;
+        } else {
+            error = "Can't write font: PNG atlases are not written any more (use Billet)";
+            return false;
         }
 
         out.reserve(kHeaderSize + font.m_groups.size() * kGroupSize + font.m_glyphs.size() * kGlyphSize
@@ -359,7 +341,9 @@ namespace Crucible {
             return false;
         }
         out.outputType = static_cast<FontOutputType>(r.U8());
-        r.U8(); r.U8(); r.U8();                     // channels, encoding, reserved
+        r.U8();                                     // channels
+        out.encoding   = static_cast<FontAtlasEncoding>(r.U8());
+        r.U8();                                     // reserved
         out.atlasWidth  = r.U32();
         out.atlasHeight = r.U32();
         r.Skip(4 + 5 * 4);                          // pixel range, metrics
@@ -417,7 +401,7 @@ namespace Crucible {
         if (groupCount == 0 || groupCount > kMaxGroups || glyphCount > kMaxGlyphs || kernCount > kMaxKerns) {
             return fail("corrupt header (counts out of range)");
         }
-        if (encoding > static_cast<std::uint8_t>(FontAtlasEncoding::Png)) {
+        if (encoding > static_cast<std::uint8_t>(FontAtlasEncoding::Billet)) {
             return fail("unknown atlas encoding " + std::to_string(encoding));
         }
         if (channels != 1 && channels != 4) { return fail("corrupt header (atlas channels)"); }
@@ -457,17 +441,24 @@ namespace Crucible {
         if (encoding == static_cast<std::uint8_t>(FontAtlasEncoding::Raw)) {
             if (atlasBytes != texels) { return fail("atlas is the wrong size"); }
             font.m_atlas.pixels.assign(atlasData, atlasData + atlasBytes);
+        } else if (encoding == static_cast<std::uint8_t>(FontAtlasEncoding::Billet)) {
+            std::string why;
+            if (!Billet::Decompress(std::span<const std::uint8_t>(atlasData, atlasBytes), font.m_atlas.pixels, why, texels)) {
+                return fail("atlas: " + why);
+            }
+            if (font.m_atlas.pixels.size() != texels) { return fail("atlas is the wrong size"); }
         } else {
-            int w = 0, h = 0, fileChannels = 0;
-            std::unique_ptr<stbi_uc, void (*)(void*)> decoded(
-                stbi_load_from_memory(atlasData, static_cast<int>(atlasBytes), &w, &h, &fileChannels, channels),
-                &stbi_image_free);
-            if (!decoded) { return fail(std::string("atlas PNG decode failed: ") + stbi_failure_reason()); }
-            if (static_cast<std::uint32_t>(w) != font.m_atlas.width || static_cast<std::uint32_t>(h) != font.m_atlas.height) {
-                return fail("atlas PNG is " + std::to_string(w) + "x" + std::to_string(h) + ", header says "
+            // An old PNG atlas: only readable where an image decoder is installed (the editor).
+            const auto decode = GetImageDecoders().decode;
+            if (!decode) { return fail("the atlas is a PNG, which the game cannot read - open the font in the Font Importer and compile it again"); }
+            DecodedImage decoded;
+            std::string why;
+            if (!decode(std::span<const std::uint8_t>(atlasData, atlasBytes), channels, decoded, why)) { return fail("atlas PNG: " + why); }
+            if (decoded.width != font.m_atlas.width || decoded.height != font.m_atlas.height) {
+                return fail("atlas PNG is " + std::to_string(decoded.width) + "x" + std::to_string(decoded.height) + ", header says "
                             + std::to_string(font.m_atlas.width) + "x" + std::to_string(font.m_atlas.height));
             }
-            font.m_atlas.pixels.assign(decoded.get(), decoded.get() + texels);
+            font.m_atlas.pixels = std::move(decoded.pixels);
         }
 
         if (r.Remaining() != 0) { return fail("unexpected bytes after the atlas"); }

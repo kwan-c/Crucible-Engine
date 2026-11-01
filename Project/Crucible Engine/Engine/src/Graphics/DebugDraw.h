@@ -64,6 +64,7 @@ namespace Crucible {
         Gameplay   = 1u << 5,   //!< anything gameplay code draws (the default)
         Bounds     = 1u << 6,   //!< every render proxy's culling box (off by default - can be thousands)
         WorldUI    = 1u << 7,   //!< world-space canvases' pages, and the selected element on one
+        Audio      = 1u << 8,   //!< audio sources' ranges, audio listeners' facing
         All        = 0xFFFFFFFFu
     };
 
@@ -95,6 +96,23 @@ namespace Crucible {
         std::uint32_t color = 0xFFFFFFFFu;
     };
     static_assert(sizeof(DebugVertex) == 16, "DebugVertex must stay 16 bytes (see the line pipeline's vertex input).");
+
+    /*************************************************************************
+     \brief  One sphere's outline as the GPU reads it (20 bytes, one per
+             instance).
+     \details The outline is the circle where the sphere meets what is
+              behind it - which circle that is depends on where it is seen
+              from, so unlike the lines it can't be stored as points. Each
+              view's vertex shader works its own circle out from this
+              (DebugLine.slang's sphereOutlineVert, drawn by DebugLinePass);
+              matches that pipeline's per-instance vertex input.
+     *************************************************************************/
+    struct DebugSphere {
+        glm::vec3     center{ 0.0f };
+        float         radius = 0.0f;
+        std::uint32_t color = 0xFFFFFFFFu;
+    };
+    static_assert(sizeof(DebugSphere) == 20, "DebugSphere must stay 20 bytes (see the sphere outline pipeline's vertex input).");
 
     /*************************************************************************
      \brief  Static immediate-mode debug drawing API. See the file header.
@@ -144,7 +162,15 @@ namespace Crucible {
         static void Circle(const glm::vec3& center, const glm::vec3& normal, float radius, const DebugStyle& style = {}, int segments = 32);
 
         /*********************************************************************
-         \brief  A wire sphere: three great circles (XY, YZ, XZ).
+         \brief  A wire sphere: three great circles (XY, YZ, XZ), plus its
+                 outline as each view sees it (Unity's "horizon disc") - the
+                 circle where the sphere meets what is behind it, so its
+                 size reads at a glance from any angle.
+         \details The outline is worked out on the GPU for every view
+                  separately (the Scene and Game views each get their own),
+                  and is left out when the camera is inside the sphere.
+                  `segments` is for the three circles; the outline always
+                  has 64.
          *********************************************************************/
         static void Sphere(const glm::vec3& center, float radius, const DebugStyle& style = {}, int segments = 32);
 
@@ -209,6 +235,12 @@ namespace Crucible {
                  depth-tested and always-on-top lists.
          *********************************************************************/
         static void Collect(std::vector<DebugVertex>& depthTested, std::vector<DebugVertex>& onTop);
+
+        /*********************************************************************
+         \brief  Copies this frame's sphere outlines (one-frame + timed) out,
+                 split like Collect().
+         *********************************************************************/
+        static void CollectSpheres(std::vector<DebugSphere>& depthTested, std::vector<DebugSphere>& onTop);
 
         /*********************************************************************
          \brief  Drops one-frame lines, ages timed ones by dt, and records

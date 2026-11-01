@@ -75,7 +75,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "L_Arm"
@@ -195,7 +196,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "R_Arm"
@@ -429,7 +431,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "R_Thigh"
@@ -547,7 +550,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Platform"
@@ -627,7 +631,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "L_Forearm"
@@ -725,7 +730,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Ground"
@@ -831,7 +837,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "L_Thigh"
@@ -951,7 +958,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "R_Forearm"
@@ -1104,7 +1112,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Cube"
@@ -1182,7 +1191,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Cube"
@@ -1302,7 +1312,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "L_Shin"
@@ -1354,9 +1365,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -6.199671745300293,
+                        "x": 8.739995002746582,
                         "y": 1.8067007064819336,
-                        "z": 4.232025146484375
+                        "z": 4.912278652191162
                     },
                     "rotation": {
                         "x": 0.0,
@@ -1365,13 +1376,13 @@
                         "w": 1.0
                     },
                     "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
+                        "x": 5.727874279022217,
+                        "y": 10.028863906860352,
+                        "z": 6.6519904136657715
                     }
                 },
                 "MeshRenderer": {
-                    "visible": true,
+                    "visible": false,
                     "modelAsset": 0,
                     "modelRoot": 4294967295,
                     "materialOverrides": [],
@@ -1400,7 +1411,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": true
                 },
                 "EntityName": {
                     "name": "Cube"
@@ -1480,7 +1492,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "R_Shin"
@@ -1600,7 +1613,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Head"
@@ -1720,7 +1734,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Torso"

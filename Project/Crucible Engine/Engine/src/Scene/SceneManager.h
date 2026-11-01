@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <functional>
 #include <filesystem>
@@ -11,6 +12,7 @@
 namespace Crucible {
 
 	class World;
+	class ResourceManager;
 
 	#ifdef _MSC_VER
 	#pragma warning(push)
@@ -64,6 +66,29 @@ namespace Crucible {
 				 for RequestNew.
 		 *********************************************************************/
 		bool RequestLoad(const std::filesystem::path& file);
+
+		/*********************************************************************
+		 \brief  Ask for a scene to be loaded, by its asset GUID, at the next
+				 safe point.
+		 \details
+			How the game loads scenes: the file is found and read through the
+			ResourceManager (which reads it through the AssetManager), so a
+			scene renamed or moved in the project still loads. A GUID that is
+			not a scene in the project is rejected here, straight away.
+			RequestLoad(path) stays for editor file operations (File > Open).
+		 \param[in] sceneAsset The .scene's asset GUID (from its .meta).
+		 \return false if there is no ResourceManager (SetResources) or the
+				 GUID is not a scene - nothing is queued.
+		 \note   During a play session this is a runtime scene change, as
+				 for RequestNew.
+		 *********************************************************************/
+		bool RequestLoadAsset(std::uint64_t sceneAsset);
+
+		/*********************************************************************
+		 \brief  The ResourceManager scenes are loaded through. Core sets it
+				 once the ResourceManager exists (it is created after this).
+		 *********************************************************************/
+		void SetResources(ResourceManager* resources) noexcept { m_resources = resources; }
 
 		/*********************************************************************
 		 \brief  Write a new .scene file holding the default objects, without
@@ -218,7 +243,7 @@ namespace Crucible {
 		void OnBeforeSave(std::function<void()> callback);
 
 	private:
-		enum class Pending { None, New, Load };
+		enum class Pending { None, New, Load, LoadAsset };
 
 		// Creates a new scene holding the default objects, replacing the current one.
 		void ApplyNew();
@@ -228,6 +253,8 @@ namespace Crucible {
 		static void PopulateDefaultScene(World& world);
 		// Loads a scene file, replacing the current one.
 		void ApplyLoad(const std::filesystem::path& file);
+		// Loads a scene by its asset GUID, read through the ResourceManager.
+		void ApplyLoadAsset(std::uint64_t sceneAsset);
 		// Notifies every listener that the scene has changed. Called after ApplyNew or ApplyLoad.
 		void NotifyChanged();
 
@@ -239,6 +266,8 @@ namespace Crucible {
 
 		Pending								 m_pending = Pending::None;
 		std::filesystem::path				 m_pendingPath;
+		std::uint64_t						 m_pendingAsset = 0;     // Pending::LoadAsset
+		ResourceManager*					 m_resources = nullptr;  // SetResources; scenes by GUID load through it
 
 		std::vector<std::function<void()>>	 m_listeners;
 		std::vector<std::function<void()>>	 m_beforeSave;   // OnBeforeSave

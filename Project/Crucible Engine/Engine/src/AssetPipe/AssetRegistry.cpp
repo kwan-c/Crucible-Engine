@@ -185,13 +185,12 @@ namespace Crucible
 		return (it == m_guidToPath.end()) ? nullptr : &it->second;
 	}
 
-	AssetRegistry::Report AssetRegistry::Reconcile(std::vector<AssetEntry>& entries, const fs::path& assetRoot)
+	AssetRegistry::Report AssetRegistry::Reconcile(std::vector<AssetEntry>& entries, const fs::path& assetRoot,
+		bool removeOrphans)
 
 	{
 		Report report;
 		std::error_code ec;
-
-		m_guidToPath.clear();
 
 		if (assetRoot.empty())
 		{
@@ -320,19 +319,33 @@ namespace Crucible
 		// Pass 3: whatever is left is described a deleted asset
 		for (const auto& [key, meta] : orphans)
 		{
+			if (!removeOrphans)
+			{
+				break;
+			}
 			(void)meta;
 			fs::remove(fs::path{ key }, ec);
 			ec.clear();
 			++report.is_removed;
 		}
 
-		// Building the guid -> path map
-		m_guidToPath.reserve(entries.size());
+		// Building the guid -> path map (a later folder takes over a guid, see the header).
+		// A compiled file always keeps the guid it shares with its source, whichever is
+		// seen first - in an installed game both sit in Resources (Cook copies some sources).
+		m_guidToPath.reserve(m_guidToPath.size() + entries.size());
 		for (const AssetEntry& entry : entries)
 		{
-			if (entry.guid.m_Value != 0)
+			if (entry.guid.m_Value == 0)
 			{
-				m_guidToPath.emplace(entry.guid, entry.virtualPath);
+				continue;
+			}
+			const auto existing = m_guidToPath.find(entry.guid);
+			const bool keepExisting = existing != m_guidToPath.end()
+				&& AssetManager::IsCompiledExtension(AssetManager::ToLower(fs::path{ existing->second }.extension().string()))
+				&& !AssetManager::IsCompiledExtension(entry.extension);
+			if (!keepExisting)
+			{
+				m_guidToPath.insert_or_assign(entry.guid, entry.virtualPath);
 			}
 		}
 

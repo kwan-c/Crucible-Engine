@@ -30,6 +30,12 @@ namespace Crucible {
             bool        depthTest = true;
         };
 
+        struct TimedSphere {
+            DebugSphere sphere;
+            float       remaining = 0.0f;
+            bool        depthTest = true;
+        };
+
         // All state lives in the Engine DLL (function-local static), so Editor, Game and Engine
         // code all draw into the same lists.
         struct State {
@@ -37,6 +43,9 @@ namespace Crucible {
             std::vector<DebugVertex>   frameTested;
             std::vector<DebugVertex>   frameOnTop;
             std::vector<TimedLine>     timed;
+            std::vector<DebugSphere>   frameSpheresTested;  // sphere outlines (DebugDraw::Sphere)
+            std::vector<DebugSphere>   frameSpheresOnTop;
+            std::vector<TimedSphere>   timedSpheres;
             std::atomic<std::uint32_t> categories{ static_cast<std::uint32_t>(DebugCategory::All) & ~static_cast<std::uint32_t>(DebugCategory::Bounds) };
             std::atomic<bool>          active{ true };   // true until the Renderer reports otherwise
         };
@@ -197,9 +206,23 @@ namespace Crucible {
     }
 
     void DebugDraw::Sphere(const glm::vec3& center, float radius, const DebugStyle& style, int segments) {
+
+        if (!Wanted(style) || radius <= 0.0f) { return; }
         Circle(center, glm::vec3(1.0f, 0.0f, 0.0f), radius, style, segments);
         Circle(center, glm::vec3(0.0f, 1.0f, 0.0f), radius, style, segments);
         Circle(center, glm::vec3(0.0f, 0.0f, 1.0f), radius, style, segments);
+
+        // Outline: only sphere itself is recorded; each view's vertex shader makes its own circle from it.
+        // (DebugLinePass, Debugline.slang's sphereOutlineVert).
+        const DebugSphere sphere{ center, radius, PackColor(style.color) };
+        State& s = GetState();
+        std::lock_guard<std::mutex> lock(s.mutex);
+        if (style.duration > 0.0f) {
+            s.timedSpheres.push_back({ sphere, style.duration, style.depthTest });
+        }
+        else {
+            (style.depthTest ? s.frameSpheresTested : s.frameSpheresOnTop).push_back(sphere);
+        }
     }
 
     void DebugDraw::Capsule(const glm::vec3& center, float r, float h, const glm::quat& rotation, const DebugStyle& style, int segments) {
@@ -311,6 +334,18 @@ namespace Crucible {
         }
     }
 
+    void DebugDraw::CollectSpheres(std::vector<DebugSphere>& depthTested, std::vector<DebugSphere>& onTop) {
+
+        State& s = GetState();
+        std::lock_guard<std::mutex> lock(s.mutex);
+
+        depthTested.assign(s.frameSpheresTested.begin(), s.frameSpheresTested.end());
+        onTop.assign(s.frameSpheresOnTop.begin(), s.frameSpheresOnTop.end());
+        for (const TimedSphere& timed : s.timedSpheres) {
+            (timed.depthTest ? depthTested : onTop).push_back(timed.sphere);
+        }
+    }
+
     void DebugDraw::EndFrame(float dt, bool activeNextFrame) {
 
         State& s = GetState();
@@ -321,6 +356,11 @@ namespace Crucible {
         for (TimedLine& line : s.timed) { line.remaining -= dt; }
         s.timed.erase(std::remove_if(s.timed.begin(), s.timed.end(),
             [](const TimedLine& line) { return line.remaining <= 0.0f; }), s.timed.end());
+        s.frameSpheresTested.clear();
+        s.frameSpheresOnTop.clear();
+        for (TimedSphere& timed : s.timedSpheres) { timed.remaining -= dt; }
+        s.timedSpheres.erase(std::remove_if(s.timedSpheres.begin(), s.timedSpheres.end(),
+            [](const TimedSphere& timed) { return timed.remaining <= 0.0f; }), s.timedSpheres.end());
 
         s.active.store(activeNextFrame);
     }
@@ -332,6 +372,9 @@ namespace Crucible {
         s.frameTested.clear();
         s.frameOnTop.clear();
         s.timed.clear();
+        s.frameSpheresTested.clear();
+        s.frameSpheresOnTop.clear();
+        s.timedSpheres.clear();
     }
 
 }   // NAMESPACE CRUCIBLE

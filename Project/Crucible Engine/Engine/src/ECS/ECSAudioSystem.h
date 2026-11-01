@@ -46,7 +46,7 @@
 
 namespace Crucible {
 
-    class AssetManager;
+    class ResourceManager;
     class Renderer;
     struct AudioSettings;
 
@@ -61,9 +61,12 @@ namespace Crucible {
 
     public:
 
-        // Core's AssetManager, so clips can be named by their virtual path
-        // ("Audio/cannon5.wav") and resolved here. It must outlive this system;
-        // Core owns both and destroys systems first.
+        // Core's ResourceManager: clips are named by their asset GUID (or, for
+        // the editor preview, their virtual path "Audio/cannon5.wav") and found
+        // through it - the audio system never asks the AssetManager itself.
+        // FMOD still opens the file (music streams from disk while it plays)
+        // and owns the sound memory; this system shares one clip per file. It
+        // must outlive this system; Core owns both and destroys systems first.
         //
         // The Renderer is optional and only lends its camera: the camera is not
         // an entity yet, so it cannot carry an AudioListener. With no listener
@@ -73,8 +76,8 @@ namespace Crucible {
         //
         // `volumes` is the player's Master / Music / SFX (Core's UserSettings),
         // read every frame so an options-menu slider is heard at once. Like
-        // `assets`, it must outlive this system; Core owns it.
-        ECSAudioSystem(AssetManager& assets, const AudioSettings& volumes, const Renderer* renderer = nullptr);
+        // `resources`, it must outlive this system; Core owns it.
+        ECSAudioSystem(ResourceManager& resources, const AudioSettings& volumes, const Renderer* renderer = nullptr);
         ~ECSAudioSystem() override;
 
         ECSAudioSystem(const ECSAudioSystem&)            = delete;

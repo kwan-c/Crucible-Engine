@@ -22,16 +22,33 @@
 *                                colliders are not scaled). Green = static,
 *                                cyan = dynamic (has a RigidBody), yellow =
 *                                CharacterController capsule.
+* 
 *                  - Velocities: an arrow from each RigidBody /
 *                                CharacterController along its velocity,
 *                                |v| x VelocityScale long, yellow -> red as
 *                                speed rises towards 20 m/s.
+* 
 *                  - Lights:     the selected light's full shape (point range
 *                                sphere, spot cone to its range, sun arrow);
 *                                other lights get a short direction arrow
 *                                (their position is shown by the editor icon).
+* 
+*                  - Audio:      a 3D AudioSource's ranges: an inner sphere
+*                                at Min Distance (full volume inside it) and
+*                                an outer one at Max Distance - bright with
+*                                Linear rolloff (silent there), dim with
+*                                Logarithmic (it only stops getting quieter
+*                                there). For the selected source, or every
+*                                source (SetAudioRangesForAll). Grey when
+*                                the source is switched off or has no clip.
+*                                2D sources (Spatial Blend 0) have no range.
+*                                Each AudioListener gets an arrow the way it
+*                                faces (local -Z), so ears turned the wrong
+*                                way - left and right swapped - show.
+* 
 *                  - Grid:       a 40 x 40 m, 1 m ground grid on y = 0 plus
 *                                the world X (red) and Z (blue) axes.
+* 
 *                  - Selection:  the selected entity's mesh bounds (orange)
 *                                and its local axes, drawn on top.
 *
@@ -135,6 +152,21 @@ namespace Crucible
 		static bool   GetCollidersThroughWalls();
 
 		/*********************************************************************
+		 \brief  Whether every 3D AudioSource shows its ranges, or only the
+				 selected one. Off by default: Max Distance is 500 m unless
+				 changed, so a scene of sources is mostly spheres.
+		 \param[in] enabled True to draw every source's ranges (e.g. to see
+							where ambient sounds overlap).
+		 *********************************************************************/
+		static void   SetAudioRangesForAll(bool enabled);
+
+		/*********************************************************************
+		 \brief  The current setting of SetAudioRangesForAll().
+		 \return True when every source's ranges are drawn.
+		 *********************************************************************/
+		static bool   GetAudioRangesForAll();
+
+		/*********************************************************************
 		 \brief  The camera the editor's Scene view looks through, so the
 				 outline of a billboarded world canvas turns the way that
 				 view shows it. Set every frame by the Scene view. Without
@@ -149,6 +181,7 @@ namespace Crucible
 		void DrawColliders(World& world);
 		void DrawVelocities(World& world);
 		void DrawLights(World& world);
+		void DrawAudio(World& world);	  // DebugCategory::Audio
 		void DrawGrid();
 		void DrawSelection(World& world);
 		void DrawWorldUI(World& world);   // DebugCategory::WorldUI

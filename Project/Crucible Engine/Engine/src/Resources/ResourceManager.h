@@ -44,9 +44,11 @@
 *                  - Fonts: compiled .cfont files (see Text/FontData.h),
 *                    with their atlas uploaded. A .ttf/.otf id resolves to
 *                    the .cfont next to it, once it has been compiled.
-*                Loads are synchronous and on demand (first Get). Nothing is
-*                unloaded yet - the Renderer has no Destroy* API - so
-*                resources live until shutdown.
+*                Loads are synchronous and on demand (first Get). After
+*                every scene change Core calls UnloadUnused(), which frees
+*                whatever the new scene no longer refers to (models,
+*                materials, textures, fonts and CPU caches); asking for one
+*                again simply loads it again.
 *
 *                Models load only compiled .cmodel resources. Source GLB parsing
 *                belongs to CrucibleModelCompiler; callers retain their GUIDs.
@@ -58,6 +60,8 @@
 **************************************************************************/
 
 #include <cstdint>
+#include <filesystem>
+#include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -69,6 +73,7 @@
 #include "Graphics/TextureHandle.h"
 #include "Graphics/CubemapHandle.h"
 #include "Text/FontData.h"
+#include "Audio/AudioSystem.h"   // AudioClip, AudioClipLoadType (no FMOD types)
 
 namespace Crucible {
 
@@ -80,6 +85,7 @@ namespace Crucible {
     struct ModelPose;
     struct RenderedModel;
     struct AnimatorController;
+    class Prefab;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -99,7 +105,7 @@ namespace Crucible {
         Mesh,
         Material,
         Texture,
-        Audio,     // audio files; listed for the Inspector's picker only - the renderer never loads them
+        Audio,     // audio files - see GetAudioClip()
         Font,       // compiled fonts (.cfont) - see GetFont()
         Model,     // complete CPU model definition; GetModel does not upload GPU resources
         AnimatorController
@@ -119,6 +125,38 @@ namespace Crucible {
         std::string  name;
         bool         builtin = false;
         bool         loaded = false;
+    };
+
+    /*************************************************************************
+     \brief  One resource currently held in memory, as returned by
+             ResourceManager::ListLoaded() (the editor's Resources tab).
+     \details
+        - kind:    "Model", "Material", "Texture", "Font", ... (display only).
+        - failed:  the load failed; remembered so it is not retried every
+                   frame.
+        - pinned:  kept loaded by KeepLoaded() even if no scene uses it.
+     *************************************************************************/
+    struct LoadedResourceInfo {
+        AssetId     id = 0;
+        const char* kind = "";
+        std::string name;
+        bool        builtin = false;
+        bool        failed = false;
+        bool        pinned = false;
+    };
+
+    /*************************************************************************
+     \brief  What one ResourceManager::UnloadUnused() call freed.
+     *************************************************************************/
+    struct UnloadSummary {
+        std::size_t models = 0;      //!< models freed with their meshes and materials
+        std::size_t materials = 0;   //!< .mat materials
+        std::size_t textures = 0;    //!< texture assets and model-embedded textures
+        std::size_t fonts = 0;       //!< fonts (and their atlases)
+        std::size_t skyboxes = 0;    //!< skybox cubemaps (with their lighting maps)
+        std::size_t audioClips = 0;  //!< audio clips (one per file per load type)
+        std::size_t cached = 0;      //!< CPU-only definitions (models, prefabs, animator controllers)
+        std::size_t Total() const { return models + materials + textures + fonts + skyboxes + audioClips + cached; }
     };
 
     /*************************************************************************
@@ -248,9 +286,37 @@ namespace Crucible {
          *********************************************************************/
         const FontAsset* GetFont(AssetId id);
 
-        /// The font UIText uses when it names none (or its own can't be loaded).
-        /// Whatever m_defaultFontPath is compiled to in the Font Importer is what you get.
-        static constexpr const char* m_defaultFontPath = "Fonts/LiberationSans-Regular.ttf";
+        // ---- Audio ------------------------------------------------------------------------
+
+        /*********************************************************************
+         \brief  Lends the ResourceManager the audio engine clips are loaded
+                 into. ECSAudioSystem calls it with its Audio after Init(),
+                 and with nullptr before Audio::Shutdown() - which first
+                 unloads every clip loaded here.
+         \param[in] audio The audio engine, or nullptr.
+         *********************************************************************/
+        void AttachAudio(Audio* audio);
+
+        /*********************************************************************
+         \brief  An audio clip, loaded the first time it is asked for and
+                 shared by every AudioSource that names the same file and
+                 load type.
+         \param[in] id       The audio file's asset id.
+         \param[in] loadType DecompressOnLoad (short effects, decoded into
+                             memory) or Streaming (music, read from disk
+                             while it plays - FMOD opens the file itself).
+         \return The clip, or an invalid handle if id is 0, not an audio
+                 file, failed to load (warned once), or no audio engine is
+                 attached. Freed by UnloadUnused() like everything else; ask
+                 again each time you play (handles of freed clips just stop
+                 working, they never play another clip).
+         *********************************************************************/
+        AudioClip GetAudioClip(AssetId id, AudioClipLoadType loadType);
+
+        /// The font UIText uses when it names none (or its own can't be loaded): the compiled
+        /// font itself, so a packaged game does not need the .ttf (compile
+        /// Fonts/LiberationSans-Regular.ttf in the Font Importer to rebuild it).
+        static constexpr const char* m_defaultFontPath = "Fonts/LiberationSans-Regular.cfont";
 
         /*********************************************************************
          \brief  GetFont() for m_defaultFontPath.
@@ -267,6 +333,143 @@ namespace Crucible {
                  has no DestroyTexture yet).
          *********************************************************************/
         void ReloadFont(AssetId id);
+
+        /*********************************************************************
+         \brief  Loads a texture again from its file - call after it was
+                 compiled again (the editor's Texture Importer). Materials
+                 that sampled the old texture switch to the new one.
+         \param[in] id The image's asset id.
+         *********************************************************************/
+        void ReloadTexture(AssetId id);
+
+        /*********************************************************************
+         \brief  Hot reload: after AssetManager::Refresh(), loads again every
+                 loaded asset whose file changed on disk
+                 (AssetManager::GetChangedOnLastRefresh), and lets every
+                 earlier failed load try again. The editor's Asset Browser
+                 calls it after each refresh.
+         \return How many assets were reloaded.
+         \details
+            Textures: reloaded; materials using them switch over.
+            .mat materials: updated in place, so every object using one
+            changes at once. Fonts, prefabs, animator controllers, skyboxes:
+            forgotten, so the next use loads the new file. Models: only
+            reported - their meshes are held by the objects using them, so
+            the scene must be opened again.
+         *********************************************************************/
+        std::size_t ReloadChanged();
+
+        // ---- Unloading ------------------------------------------------------------------------
+
+        /*********************************************************************
+         \brief  Frees every loaded resource the scene does not refer to.
+                 Core calls this after each scene change (OnSceneChanged).
+         \param[in] sceneDocument The scene as JSON (SceneManager::
+                     CaptureSnapshot of the open scene - unsaved edits too).
+         \return What was freed.
+         \details
+            Kept: every asset id the scene mentions anywhere (any component
+            field), the model behind a kept model material, the compiled
+            font behind a kept .ttf, built-ins, the default font, ids pinned
+            with KeepLoaded(), and any texture a live material still uses
+            (including materials made in the Inspector). Everything else is
+            freed: GPU memory a few frames later (Renderer::Destroy*), CPU
+            caches at once. A freed resource is loaded again the next time
+            anything asks for it - nothing breaks, it only costs the load.
+            If the document can't be read nothing is freed.
+         \note   Handles from before the call may now be dead: a dead mesh
+                 draws nothing, a dead texture or material draws the
+                 default, a dead skybox shows the built-in sky. Code that needs a resource asks by id (every Get*
+                 here), so it gets a live one again.
+         *********************************************************************/
+        UnloadSummary UnloadUnused(const std::string& sceneDocument);
+
+        /*********************************************************************
+         \brief  Keeps a resource loaded through UnloadUnused() even when no
+                 scene uses it - for editor tools showing it (e.g. the Font
+                 Importer's atlas preview). Counted: call ReleaseKeepLoaded()
+                 once per KeepLoaded().
+         \param[in] id The id the tool loaded (for a font, the .cfont id).
+         *********************************************************************/
+        void KeepLoaded(AssetId id);
+        void ReleaseKeepLoaded(AssetId id);   //!< \copydoc KeepLoaded
+
+        /*********************************************************************
+         \brief  Everything currently in memory here (loaded or remembered
+                 as failed), sorted by kind then name - for the editor's
+                 Resources tab.
+         *********************************************************************/
+        std::vector<LoadedResourceInfo> ListLoaded() const;
+
+        // ---- Scenes and prefabs ------------------------------------------------------------
+        //
+        // Loaded by GUID like everything else, read through the AssetManager - so a renamed
+        // or moved file still loads, and nothing outside here needs a path.
+
+        /*********************************************************************
+         \brief  Whether an id is a .scene in the project.
+         \param[in] id Asset id.
+         \return False for 0, an unknown id, or any other kind of asset.
+         *********************************************************************/
+        bool IsScene(AssetId id) const;
+
+        /*********************************************************************
+         \brief  Whether an id is an audio file in the project.
+         \param[in] id Asset id.
+         \return False for 0, an unknown id, or any other kind of asset.
+         \details GetAudioClip() loads one; the editor's audio preview uses
+                  this with GetFilePath(id) for its own private copy.
+         *********************************************************************/
+        bool IsAudio(AssetId id) const;
+
+        /*********************************************************************
+         \brief  The text of a .scene asset, read through the AssetManager.
+         \param[in]  id   The scene's asset id (its .meta GUID).
+         \param[out] text Replaced with the file's contents on success.
+         \return False if id is 0, not a scene, or the file can't be read
+                 (logged).
+         \details Not cached: a scene is built into the World once per load
+                  (SceneManager::RequestLoadAsset), not shared between
+                  users, and the editor re-saves it all the time - a cached
+                  copy would go stale.
+         *********************************************************************/
+        bool ReadScene(AssetId id, std::string& text);
+
+        /*********************************************************************
+         \brief  A prefab, loaded once and shared by every caller.
+         \param[in] id The .cprefab's asset id.
+         \return The prefab - copies made from it link back to id - or null
+                 if id is 0, not a prefab, or failed to load (warned once).
+         \note   Cached: call ReloadPrefab(id) after the file is re-saved.
+                 A shared_ptr already handed out stays valid either way.
+         *********************************************************************/
+        std::shared_ptr<const Prefab> GetPrefab(AssetId id);
+
+        /*********************************************************************
+         \brief  A prefab read fresh from its file, bypassing the cache.
+         \param[in] id The .cprefab's asset id.
+         \return A new Prefab, or null on failure (logged).
+         \details For editor tools that compare versions of a prefab file
+                  (prefab overrides) and must see it as it is on disk now.
+         *********************************************************************/
+        std::shared_ptr<Prefab> ReadPrefab(AssetId id);
+
+        /*********************************************************************
+         \brief  Forgets the cached prefab, so the next GetPrefab() reads the
+                 file again - call after the prefab file is re-saved.
+         \param[in] id The .cprefab's asset id.
+         *********************************************************************/
+        void ReloadPrefab(AssetId id);
+
+        /*********************************************************************
+         \brief  The file an asset lives in, on this machine.
+         \param[in] id Asset id.
+         \return The absolute path, or empty if id is 0 or unknown.
+         \details For editor tools that write a resource back to its own
+                  file - SceneManager's Save after RequestLoadAsset. Loading
+                  never needs it.
+         *********************************************************************/
+        std::filesystem::path GetFilePath(AssetId id) const;
 
         /*********************************************************************
          \brief  The asset id for a virtual path (0 if not indexed).
@@ -388,6 +591,8 @@ namespace Crucible {
         // Loaders - the only functions that understand file formats.
         bool LoadModel(AssetId modelId);                         // fills m_meshes[modelId] + embedded material
         MaterialHandle LoadMaterialFile(AssetId id);             // .mat (JSON)
+        bool ReloadMaterialFile(AssetId id);                     // .mat read again into its existing handle
+        void ForgetFailures();                                   // every remembered failed load may be tried again
         std::string SerializeMaterial(const MaterialData& data) const;
         AssetId ResolveFontId(AssetId id) const;                 // .ttf/.otf -> its .cfont; .cfont -> itself; else 0
         std::unique_ptr<FontAsset> LoadFont(AssetId fontId);    // .cfont -> FontData + uploaded atlas
@@ -410,6 +615,7 @@ namespace Crucible {
         std::unordered_map<AssetId, TextureSlots>   m_textures;
         std::unordered_map<AssetId, CubemapHandle>  m_cubemaps;    // Invalid value = failed load
         std::unordered_map<AssetId, std::unique_ptr<FontAsset>> m_fonts;   // keyed by .cfont id; null = failed load
+        std::unordered_map<AssetId, std::shared_ptr<const Prefab>> m_prefabs;   // null = failed load (until ReloadPrefab)
 
         std::unordered_map<std::uint32_t, AssetId>  m_meshIds;      // handle.id -> asset
         std::unordered_map<std::uint32_t, AssetId>  m_materialIds;
@@ -418,6 +624,10 @@ namespace Crucible {
         std::unordered_map<uint32_t, ModelTextureSource> m_modelTextureSources;
 
         std::unordered_map<AssetId, bool>           m_warned;
+        std::unordered_map<AssetId, std::uint32_t>  m_pins;         // KeepLoaded counts
+
+        Audio* m_audio = nullptr;                                   // lent by ECSAudioSystem (AttachAudio)
+        std::map<std::pair<AssetId, AudioClipLoadType>, AudioClip> m_audioClips;   // invalid value = failed load
     };
 
 #ifdef _MSC_VER

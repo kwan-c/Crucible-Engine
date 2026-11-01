@@ -18,7 +18,9 @@
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
+#include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
 #include "Configuration/EngineConfigLoader.h"
+#include "Cook.h"   // Tools/Cook
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -97,6 +99,23 @@ void Crucible::Menu::Update(float) {
 				EditConfigSettings();
 			}
 
+			// Fills Resources with everything the shipped game reads (Tools/Cook/Cook.h).
+			// Copies the files as saved on disk: save the scene first to include unsaved edits.
+			if (ImGui::MenuItem("Cook Resources", nullptr, false, !playing)) {
+				if (m_assets.GetResourceRoot().empty()) {
+					CRU_USER_ERROR("Cook: there is no Resources folder next to Assets");
+				}
+				else {
+					Cook::Report const report = Cook::Run(std::filesystem::path{ m_assets.GetAssetRoot() },
+					                                      std::filesystem::path{ m_assets.GetResourceRoot() });
+					for (std::string const& line : report.warnings) CRU_USER_WARN("Cook: {}", line);
+					for (std::string const& line : report.missing)  CRU_USER_ERROR("Cook: missing {}", line);
+					for (std::string const& line : report.errors)   CRU_USER_ERROR("Cook: {}", line);
+					CRU_USER_INFO("Cook {}: {} copied, {} already up to date, {} removed", report.Ok() ? "done" : "INCOMPLETE",
+					              report.copied, report.unchanged, report.removed);
+				}
+			}
+
 			if (ImGui::MenuItem("Exit", "Alt+F4"))
 			{
 				// The ImGui GLFW backend stores the GLFWwindow* in the main viewport,
@@ -155,6 +174,11 @@ void Crucible::Menu::Update(float) {
 			if (auto fonts = EditorManager::GetInstance().GetPanel<FontImporter>(ImguiPanels::FONTIMPORTER)) {
 				if (ImGui::MenuItem("Font Importer", nullptr, fonts->IsOpen())) {
 					if (fonts->IsOpen()) { fonts->SetOpen(false); } else { fonts->Open(""); }
+				}
+			}
+			if (auto textures = EditorManager::GetInstance().GetPanel<TextureImporter>(ImguiPanels::TEXTUREIMPORTER)) {
+				if (ImGui::MenuItem("Texture Importer", nullptr, textures->IsOpen())) {
+					if (textures->IsOpen()) { textures->SetOpen(false); } else { textures->Open(""); }
 				}
 			}
 			ImGui::Separator();

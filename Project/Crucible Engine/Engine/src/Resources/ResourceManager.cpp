@@ -16,10 +16,13 @@
 #include "Resources/RenderedModel.h"
 
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <string_view>
+#include <unordered_set>
 
 #include <rapidjson/document.h>
 #include <rapidjson/prettywriter.h>
@@ -27,7 +30,12 @@
 
 #include "AssetPipe/Assetmanager.h"
 #include "Resources/CompiledModel.h"
+#include "Resources/CompiledTexture.h"
+#include "Resources/CompiledSky.h"
+#include "Resources/ImageDecoders.h"
 #include "Resources/AnimatorControllerIO.h"
+#include "AssetPipe/AssetRegistry.h"   // HashFileContents (which version of a prefab file this is)
+#include "Scene/Prefab.h"
 #include "ECS/Components/Components.h"
 #include "Graphics/RenderSystem.h"
 #include "Diagnostics/Logger.h"
@@ -102,6 +110,18 @@ namespace Crucible {
         void ReadBool(const rapidjson::Value& object, const char* key, bool& out) {
             auto it = object.FindMember(key);
             if (it != object.MemberEnd() && it->value.IsBool()) { out = it->value.GetBool(); }
+        }
+
+        // An image file that is not compiled yet, decoded by the editor's image decoder
+        // (Resources/ImageDecoders.h) and uploaded with mipmaps made now. Invalid where no decoder
+        // is installed - the game, which reads compiled textures only.
+        TextureHandle UploadSourceImage(Renderer& renderer, std::span<const unsigned char> file, bool isSRGB) {
+            const auto decode = GetImageDecoders().decode;
+            DecodedImage image;
+            std::string error;
+            if (!decode || !decode(file, 4, image, error)) { return {}; }
+            return renderer.CreateTextureFromPixels(image.pixels.data(), image.width, image.height,
+                isSRGB ? TexturePixelFormat::RGBA8_sRGB : TexturePixelFormat::RGBA8, true);
         }
 
     }   // anonymous namespace
@@ -202,7 +222,7 @@ namespace Crucible {
             return {};
         }
         if (entry->extension != ".cmodel") {
-            WarnOnce(id, "Source model cannot be loaded at runtime; compile it from AssetsSource first");
+            WarnOnce(id, "Source model cannot be loaded at runtime; build CompiledModels to make its .cmodel in Resources");
             return {};
         }
         if (entry->sizeBytes > MaxCompiledModelBytes || !m_assets.ReadBytes(entry->virtualPath, bytes)) {
@@ -361,6 +381,10 @@ namespace Crucible {
             WarnOnce(id, "Not a texture asset");
             return {};
         }
+        if (entry->extension == CompiledSkyExtension) {
+            WarnOnce(id, "This image is a skybox (its name has _skybox), so it is compiled to a .sky, not a texture");
+            return {};
+        }
 
         std::vector<unsigned char> bytes;
         if (!m_assets.ReadBytes(entry->virtualPath, bytes) || bytes.empty()) {
@@ -369,8 +393,26 @@ namespace Crucible {
         }
 
         try {
-            handle = m_renderer.CreateTextureFromMemory(bytes.data(), bytes.size(), isSRGB,
-                "asset:" + ToHex(id) + (isSRGB ? ":srgb" : ":linear"));
+            const std::string cacheKey = "asset:" + ToHex(id) + (isSRGB ? ":srgb" : ":linear");
+            if (entry->extension == CompiledTextureExtension) {
+                // Compiled by the texture compiler: GPU blocks + mipmaps, uploaded as they are.
+                CompiledTexture compiled;
+                std::string error;
+                if (!DecodeCompiledTexture(bytes, id, compiled, error)) {
+                    WarnOnce(id, "Compiled texture load failed: " + error);
+                    return {};
+                }
+                handle = m_renderer.CreateTextureCompressed(compiled, isSRGB, cacheKey);
+                CRU_INFO("[Resources] Loaded compiled texture {} ({}x{} {}, {} mips)", entry->virtualPath,
+                         compiled.width, compiled.height, ToString(compiled.format), compiled.mips.size());
+            } else {
+                // Not compiled yet (added since the last build): only the editor can read the image itself.
+                handle = UploadSourceImage(m_renderer, bytes, isSRGB);
+                if (!handle.IsValid()) {
+                    WarnOnce(id, "Image is not compiled yet - build the project (CompiledTextures) to make its .bill");
+                    return {};
+                }
+            }
             m_textureIds[handle.id] = id;
         } catch (const std::exception& e) {
             WarnOnce(id, std::string("Texture decode failed: ") + e.what());
@@ -387,11 +429,49 @@ namespace Crucible {
 
         CubemapHandle handle{};
         const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
-        if (!entry || entry->type != AssetType::Texture) {
-            WarnOnce(id, "Not a texture asset (skyboxes are loaded from equirectangular images)");
+        if (entry && entry->extension == CompiledSkyExtension) {
+            // Baked by the texture compiler: only an upload.
+            std::vector<unsigned char> bytes;
+            CompiledSky sky;
+            std::string error;
+            if (!m_assets.ReadBytes(entry->virtualPath, bytes) || !DecodeCompiledSky(bytes, id, sky, error)) {
+                WarnOnce(id, "Compiled skybox load failed: " + (error.empty() ? std::string("could not read the file") : error));
+            } else {
+                try {
+                    handle = m_renderer.CreateCubemapCompiled(sky, std::filesystem::path(entry->virtualPath).stem().string());
+                    CRU_INFO("[Resources] Loaded compiled skybox {} ({} per face {}, {} reflection levels)", entry->virtualPath,
+                             sky.sky.width, ToString(sky.sky.format), sky.environment.mips.size());
+                } catch (const std::exception& e) {
+                    WarnOnce(id, std::string("Skybox load failed: ") + e.what());
+                }
+            }
+            m_cubemaps[id] = handle;
+            return handle;
+        }
+
+        // Not compiled as a sky (its name has no "_skybox", or it was added since the last build).
+        // Bake it from the image itself - only where an image decoder is installed (the editor);
+        // a packaged game shows the default sky (and Cook reports it).
+        if (entry && entry->extension == CompiledTextureExtension) {
+            entry = nullptr;
+            for (const AssetEntry* candidate : m_assets.GetByType(AssetType::Texture)) {
+                if (candidate->guid.m_Value == id && !AssetManager::IsCompiledExtension(candidate->extension)) { entry = candidate; break; }
+            }
+        }
+        const auto decodeHdr = GetImageDecoders().decodeHdr;
+        std::vector<unsigned char> bytes;
+        DecodedImageHdr image;
+        std::string error;
+        if (!entry || entry->type != AssetType::Texture || !decodeHdr) {
+            WarnOnce(id, "Skybox image is not compiled as a .sky - add _skybox to its file name and build the project");
+        } else if (!m_assets.ReadBytes(entry->virtualPath, bytes) || !decodeHdr(bytes, image, error)) {
+            WarnOnce(id, "Skybox load failed: " + (error.empty() ? std::string("could not read the image") : error));
         } else {
+            if (!IsSkyboxSource(entry->virtualPath)) {
+                WarnOnce(id, "Skybox image's name has no _skybox, so it is not compiled to a .sky - baked from the image now, and missing in a packaged game");
+            }
             try {
-                handle = m_renderer.CreateCubemapFromEquirect(m_assets.Resolve(entry->virtualPath).string());
+                handle = m_renderer.CreateCubemapFromEquirect(image.rgba.data(), image.width, image.height, 512, entry->virtualPath);
             } catch (const std::exception& e) {
                 WarnOnce(id, std::string("Skybox load failed: ") + e.what());
             }
@@ -478,6 +558,445 @@ namespace Crucible {
         m_warned.erase(id);
 
     }   // ResourceManager::ReloadFont()
+
+    void ResourceManager::ReloadTexture(AssetId id) {
+
+        m_warned.erase(id);
+        const auto found = m_textures.find(id);
+        if (found == m_textures.end()) { return; }   // not loaded: the next GetTexture reads the new file anyway
+        const TextureSlots old = found->second;
+        m_textures.erase(found);
+
+        // Which materials sample the old texture, and in which slots.
+        struct Use { MaterialHandle material; MaterialData data; };
+        std::vector<Use> uses;
+        for (std::uint32_t i = 0; i < m_renderer.GetMaterialCount(); ++i) {
+            MaterialHandle material;
+            material.id = i;
+            if (!m_renderer.IsMaterialAlive(material)) { continue; }
+            const MaterialData& data = m_renderer.GetMaterialData(material);
+            for (const SlotDesc& slot : kSlots) {
+                const TextureHandle texture = data.*slot.member;
+                if ((old.srgb.IsValid() && texture == old.srgb) || (old.linear.IsValid() && texture == old.linear)) {
+                    uses.push_back({ material, data });
+                    break;
+                }
+            }
+        }
+
+        // Free the old one first: that also forgets its cache key, so the loads below make new ones.
+        for (const TextureHandle texture : { old.srgb, old.linear }) {
+            if (!texture.IsValid()) { continue; }
+            m_textureIds.erase(texture.id);
+            m_renderer.DestroyTexture(texture);
+        }
+
+        for (Use& use : uses) {
+            for (const SlotDesc& slot : kSlots) {
+                TextureHandle& texture = use.data.*slot.member;
+                if (old.srgb.IsValid() && texture == old.srgb)          { texture = GetTexture(id, true); }
+                else if (old.linear.IsValid() && texture == old.linear) { texture = GetTexture(id, false); }
+            }
+            m_renderer.UpdateMaterial(use.material, use.data);
+        }
+
+    }   // ResourceManager::ReloadTexture()
+
+    std::size_t ResourceManager::ReloadChanged() {
+
+        // A failed load is remembered so it isn't retried every frame - but a refresh is exactly
+        // when the missing or broken file may have been fixed.
+        ForgetFailures();
+
+        std::size_t reloaded = 0;
+        for (const xresource::instance_guid guid : m_assets.GetChangedOnLastRefresh()) {
+            const AssetId id = guid.m_Value;
+            if (m_textures.count(id) != 0) { ReloadTexture(id); ++reloaded; }
+            if (auto it = m_materials.find(id); it != m_materials.end() && IsMaterialFile(id) && ReloadMaterialFile(id)) { ++reloaded; }
+            if (m_fonts.count(id) != 0)       { ReloadFont(id); ++reloaded; }
+            if (m_prefabs.count(id) != 0)     { ReloadPrefab(id); ++reloaded; }
+            if (m_controllers.erase(id) != 0) { m_warned.erase(id); ++reloaded; }
+            if (auto it = m_cubemaps.find(id); it != m_cubemaps.end()) {
+                // Skybox components ask by id every frame: the next frame loads the new one.
+                if (it->second.IsValid()) { m_renderer.DestroyCubemap(it->second); }
+                m_cubemaps.erase(it);
+                ++reloaded;
+            }
+            if (auto it = m_models.find(id); it != m_models.end() && it->second) {
+                CRU_USER_INFO("[Resources] {} changed on disk - open the scene again to see the new model", GetName(id));
+            }
+        }
+        if (reloaded != 0) { CRU_USER_INFO("[Resources] Hot reload: {} asset(s) loaded again", reloaded); }
+        return reloaded;
+
+    }   // ResourceManager::ReloadChanged()
+
+    bool ResourceManager::ReloadMaterialFile(AssetId id) {
+
+        // Read into a new material, then copy its data into the existing handle: every object
+        // holding that handle sees the change, nothing has to be resolved again.
+        const MaterialHandle current = m_materials[id];
+        if (!current.IsValid()) { m_materials.erase(id); return false; }
+        const MaterialHandle fresh = LoadMaterialFile(id);
+        if (!fresh.IsValid()) { return false; }
+        m_renderer.UpdateMaterial(current, m_renderer.GetMaterialData(fresh));
+        m_renderer.DestroyMaterial(fresh);
+        return true;
+
+    }   // ResourceManager::ReloadMaterialFile()
+
+    void ResourceManager::ForgetFailures() {
+
+        m_warned.clear();
+        for (auto it = m_textures.begin(); it != m_textures.end();) {
+            TextureSlots& slots = it->second;
+            if (slots.triedSrgb && !slots.srgb.IsValid())     { slots.triedSrgb = false; }
+            if (slots.triedLinear && !slots.linear.IsValid()) { slots.triedLinear = false; }
+            it = (!slots.srgb.IsValid() && !slots.linear.IsValid()) ? m_textures.erase(it) : std::next(it);
+        }
+        std::erase_if(m_meshes,      [](const auto& e) { return !e.second.IsValid(); });
+        std::erase_if(m_materials,   [](const auto& e) { return !e.second.IsValid(); });
+        std::erase_if(m_cubemaps,    [](const auto& e) { return !e.second.IsValid(); });
+        std::erase_if(m_models,      [](const auto& e) { return !e.second; });
+        std::erase_if(m_fonts,       [](const auto& e) { return !e.second; });
+        std::erase_if(m_prefabs,     [](const auto& e) { return !e.second; });
+        std::erase_if(m_controllers, [](const auto& e) { return !e.second; });
+        std::erase_if(m_audioClips,  [](const auto& e) { return !e.second.IsValid(); });
+
+    }   // ResourceManager::ForgetFailures()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  AUDIO
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    void ResourceManager::AttachAudio(Audio* audio) {
+
+        // Clips belong to the engine they were loaded into: free them there before switching.
+        if (m_audio != nullptr) {
+            for (const auto& [key, clip] : m_audioClips) { m_audio->UnloadClip(clip); }
+        }
+        m_audioClips.clear();
+        m_audio = audio;
+
+    }   // ResourceManager::AttachAudio()
+
+    AudioClip ResourceManager::GetAudioClip(AssetId id, AudioClipLoadType loadType) {
+
+        if (id == 0 || m_audio == nullptr) { return {}; }
+
+        const auto key = std::make_pair(id, loadType);
+        if (const auto found = m_audioClips.find(key); found != m_audioClips.end()) { return found->second; }
+
+        AudioClip clip;
+        if (!IsAudio(id)) {
+            WarnOnce(id, "Not an audio file in the project - deleted, its .meta lost, or another kind of asset");
+        } else {
+            // FMOD opens the file itself (a stream keeps reading it while it plays), so it gets a
+            // real path - as UTF-8, so an accented folder name doesn't hide the file.
+            const std::u8string utf8 = GetFilePath(id).u8string();
+            clip = m_audio->LoadClip(std::string(utf8.begin(), utf8.end()), loadType);   // logs why on failure
+        }
+        m_audioClips.emplace(key, clip);   // a failure is remembered too: reported once, not on every Play
+        return clip;
+
+    }   // ResourceManager::GetAudioClip()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  UNLOADING
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    namespace {
+
+        // Every value in a scene document that could be an asset id: unsigned integers (how
+        // components save their *Asset fields) and 16-digit hex strings (how .mat files write
+        // them). Collecting too much is harmless - only ids that are loaded here matter.
+        void CollectIds(const rapidjson::Value& value, std::unordered_set<AssetId>& out) {
+            if (value.IsObject()) {
+                for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it) { CollectIds(it->value, out); }
+            } else if (value.IsArray()) {
+                for (const rapidjson::Value& element : value.GetArray()) { CollectIds(element, out); }
+            } else if (value.IsUint64()) {
+                if (value.GetUint64() != 0) { out.insert(value.GetUint64()); }
+            } else if (value.IsString() && value.GetStringLength() == 16) {
+                const char* text = value.GetString();
+                if (std::all_of(text, text + 16, [](unsigned char c) { return std::isxdigit(c) != 0; })) {
+                    out.insert(FromHex(text));
+                }
+            }
+        }
+
+    }   // anonymous namespace
+
+    UnloadSummary ResourceManager::UnloadUnused(const std::string& sceneDocument) {
+
+        UnloadSummary summary;
+
+        rapidjson::Document document;
+        document.Parse(sceneDocument.c_str(), sceneDocument.size());
+        if (document.HasParseError()) {
+            CRU_WARN("[Resources] UnloadUnused: could not read the scene document - nothing unloaded");
+            return summary;
+        }
+
+        // 1. What stays: what the scene mentions, plus what that implies.
+        std::unordered_set<AssetId> keep;
+        CollectIds(document, keep);
+        for (const auto& [id, name] : m_builtinNames) { keep.insert(id); }
+        for (const auto& [id, count] : m_pins)        { keep.insert(id); }
+        if (const AssetId font = GetIdForPath(m_defaultFontPath); font != 0) { keep.insert(font); }
+
+        std::vector<AssetId> implied;
+        for (const AssetId id : keep) {
+            if (auto sub = m_subAssets.find(id); sub != m_subAssets.end()) { implied.push_back(sub->second.parent); }   // model material -> its model
+            if (const AssetId font = ResolveFontId(id); font != 0 && font != id) { implied.push_back(font); }          // .ttf -> its .cfont
+        }
+        keep.insert(implied.begin(), implied.end());
+        const auto kept = [&](AssetId id) { return keep.count(id) != 0; };
+
+        // 2. Models: their meshes and materials go with them; their textures are candidates (step 4).
+        std::vector<TextureHandle> modelTextures;
+        for (auto it = m_renderedModels.begin(); it != m_renderedModels.end();) {
+            const AssetId modelId = it->first;
+            if (kept(modelId) || !it->second) { ++it; continue; }   // a failed load stays remembered as failed
+
+            for (const auto& primitives : it->second->meshes) {
+                for (const MeshHandle mesh : primitives) { m_meshIds.erase(mesh.id); m_renderer.DestroyMesh(mesh); }
+            }
+            for (const MaterialHandle material : it->second->materials) {
+                m_materialIds.erase(material.id);
+                m_renderer.DestroyMaterial(material);
+            }
+            m_meshes.erase(modelId);                                    // the first-primitive alias (GetMesh)
+            m_materials.erase(DeriveSubAssetId(modelId, "material"));   // the embedded-material alias (GetMaterial)
+            for (const auto& [textureId, source] : m_modelTextureSources) {
+                if (source.model == modelId) { TextureHandle texture; texture.id = textureId; modelTextures.push_back(texture); }
+            }
+            ++summary.models;
+            it = m_renderedModels.erase(it);
+        }
+
+        // CPU-only definitions: shared_ptrs, so anyone still holding one keeps their copy.
+        const auto dropUnkept = [&](auto& cache) {
+            for (auto it = cache.begin(); it != cache.end();) {
+                if (kept(it->first)) { ++it; continue; }
+                if (it->second) { ++summary.cached; }
+                it = cache.erase(it);
+            }
+        };
+        dropUnkept(m_models);
+        dropUnkept(m_modelRestPoses);
+        dropUnkept(m_controllers);
+        dropUnkept(m_prefabs);
+
+        // 3. Material files (.mat). Built-ins and model materials are handled above.
+        for (auto it = m_materials.begin(); it != m_materials.end();) {
+            const AssetId id = it->first;
+            if (kept(id) || m_builtinNames.count(id) != 0 || m_subAssets.count(id) != 0 || !it->second.IsValid()) { ++it; continue; }
+            m_materialIds.erase(it->second.id);
+            if (m_renderer.DestroyMaterial(it->second)) { ++summary.materials; }
+            it = m_materials.erase(it);
+        }
+
+        // 4. Textures - but never one a live material still samples, whoever made that material
+        //    (a kept .mat, a kept model, or one made in the Inspector).
+        std::unordered_set<std::uint32_t> usedTextures;
+        for (std::uint32_t i = 0; i < m_renderer.GetMaterialCount(); ++i) {
+            MaterialHandle material;
+            material.id = i;
+            if (!m_renderer.IsMaterialAlive(material)) { continue; }
+            const MaterialData& data = m_renderer.GetMaterialData(material);
+            for (const SlotDesc& slot : kSlots) {
+                const TextureHandle texture = data.*slot.member;
+                if (texture.IsValid()) { usedTextures.insert(texture.id); }
+            }
+        }
+        const auto inUse = [&](TextureHandle texture) { return texture.IsValid() && usedTextures.count(texture.id) != 0; };
+        const auto freeTexture = [&](TextureHandle texture) {
+            if (!texture.IsValid() || inUse(texture)) { return; }
+            m_textureIds.erase(texture.id);
+            m_modelTextureSources.erase(texture.id);
+            if (m_renderer.DestroyTexture(texture)) { ++summary.textures; }
+        };
+
+        for (auto it = m_textures.begin(); it != m_textures.end();) {
+            if (kept(it->first) || inUse(it->second.srgb) || inUse(it->second.linear)) { ++it; continue; }
+            freeTexture(it->second.srgb);
+            freeTexture(it->second.linear);
+            it = m_textures.erase(it);
+        }
+        for (const TextureHandle texture : modelTextures) { freeTexture(texture); }
+
+        // 5. Fonts (their atlas is a texture of their own).
+        for (auto it = m_fonts.begin(); it != m_fonts.end();) {
+            if (kept(it->first)) { ++it; continue; }
+            if (it->second) {
+                freeTexture(it->second->texture);
+                ++summary.fonts;
+            }
+            it = m_fonts.erase(it);
+        }
+
+        // 6. Audio clips. Unloading one also stops any voice still playing it - only voices of
+        //    the old scene's sources, which the audio system silences anyway.
+        for (auto it = m_audioClips.begin(); it != m_audioClips.end();) {
+            if (kept(it->first.first) || !it->second.IsValid()) { ++it; continue; }
+            if (m_audio) { m_audio->UnloadClip(it->second); }
+            ++summary.audioClips;
+            it = m_audioClips.erase(it);
+        }
+
+        // 7. Skyboxes (cubemap + its lighting maps). Skybox components ask by id every frame.
+        for (auto it = m_cubemaps.begin(); it != m_cubemaps.end();) {
+            if (kept(it->first) || !it->second.IsValid()) { ++it; continue; }   // a failed load stays remembered as failed
+            if (m_renderer.DestroyCubemap(it->second)) { ++summary.skyboxes; }
+            it = m_cubemaps.erase(it);
+        }
+
+        if (summary.Total() != 0) {
+            CRU_INFO("[Resources] Unloaded unused: {} models, {} materials, {} textures, {} fonts, {} skyboxes, {} audio clips, {} cached definitions",
+                     summary.models, summary.materials, summary.textures, summary.fonts, summary.skyboxes, summary.audioClips, summary.cached);
+        }
+        return summary;
+
+    }   // ResourceManager::UnloadUnused()
+
+    void ResourceManager::KeepLoaded(AssetId id) {
+
+        if (id != 0) { ++m_pins[id]; }
+
+    }   // ResourceManager::KeepLoaded()
+
+    void ResourceManager::ReleaseKeepLoaded(AssetId id) {
+
+        auto it = m_pins.find(id);
+        if (it == m_pins.end()) { return; }
+        if (--it->second == 0) { m_pins.erase(it); }
+
+    }   // ResourceManager::ReleaseKeepLoaded()
+
+    std::vector<LoadedResourceInfo> ResourceManager::ListLoaded() const {
+
+        std::vector<LoadedResourceInfo> out;
+        const auto add = [&](AssetId id, const char* kind, bool ok) {
+            out.push_back({ id, kind, GetName(id), m_builtinNames.count(id) != 0, !ok, m_pins.count(id) != 0 });
+        };
+
+        for (const auto& [id, mesh] : m_meshes) {
+            if (m_builtinNames.count(id) != 0) { add(id, "Mesh", mesh.IsValid()); }   // model meshes are listed as their model
+        }
+        for (const auto& [id, model] : m_renderedModels) { add(id, "Model", model != nullptr); }
+        for (const auto& [id, model] : m_models) {
+            if (m_renderedModels.count(id) == 0) { add(id, "Model (CPU only)", model != nullptr); }
+        }
+        for (const auto& [id, material] : m_materials) {
+            if (m_subAssets.count(id) == 0) { add(id, "Material", material.IsValid()); }   // model materials belong to their model
+        }
+        for (const auto& [id, slots] : m_textures)       { add(id, "Texture", slots.srgb.IsValid() || slots.linear.IsValid()); }
+        for (const auto& [id, cubemap] : m_cubemaps)     { add(id, "Skybox", cubemap.IsValid()); }
+        for (const auto& [id, font] : m_fonts)           { add(id, "Font", font != nullptr); }
+        for (const auto& [id, controller] : m_controllers) { add(id, "Animator Controller", controller != nullptr); }
+        for (const auto& [id, prefab] : m_prefabs)       { add(id, "Prefab", prefab != nullptr); }
+        for (const auto& [key, clip] : m_audioClips) {
+            add(key.first, key.second == AudioClipLoadType::Streaming ? "Audio (streamed)" : "Audio", clip.IsValid());
+        }
+
+        std::sort(out.begin(), out.end(), [](const LoadedResourceInfo& a, const LoadedResourceInfo& b) {
+            const int byKind = std::string_view{ a.kind }.compare(b.kind);
+            return byKind != 0 ? byKind < 0 : a.name < b.name;
+        });
+        return out;
+
+    }   // ResourceManager::ListLoaded()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  SCENES / PREFABS
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    bool ResourceManager::IsScene(AssetId id) const {
+
+        const AssetEntry* entry = id != 0 ? m_assets.FindByGuid(ToGuid(id)) : nullptr;
+        return entry != nullptr && entry->type == AssetType::Scene;
+
+    }   // ResourceManager::IsScene()
+
+    bool ResourceManager::IsAudio(AssetId id) const {
+
+        const AssetEntry* entry = id != 0 ? m_assets.FindByGuid(ToGuid(id)) : nullptr;
+        return entry != nullptr && entry->type == AssetType::Audio;
+
+    }   // ResourceManager::IsAudio()
+
+    bool ResourceManager::ReadScene(AssetId id, std::string& text) {
+
+        if (id == 0) { return false; }
+
+        const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+        if (!entry || entry->type != AssetType::Scene) {
+            CRU_USER_WARN("[Resources] {} is not a scene in the project", GetName(id));
+            return false;
+        }
+
+        // Not cached (see the header): every load reads the file as it is now.
+        if (!m_assets.ReadText(entry->virtualPath, text)) {
+            CRU_USER_WARN("[Resources] Could not read scene '{}'", entry->virtualPath);
+            return false;
+        }
+        return true;
+
+    }   // ResourceManager::ReadScene()
+
+    std::shared_ptr<Prefab> ResourceManager::ReadPrefab(AssetId id) {
+
+        if (id == 0) { return nullptr; }
+
+        const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+        if (!entry || entry->type != AssetType::Prefab) {
+            WarnOnce(id, "Not a prefab in the project");
+            return nullptr;
+        }
+
+        std::string text;
+        if (!m_assets.ReadText(entry->virtualPath, text)) {
+            WarnOnce(id, "Could not read prefab");
+            return nullptr;
+        }
+
+        // The same hash Prefab::Load(file) records, so an instance can tell which version of
+        // the file it was made from (the editor's prefab overrides compare against it).
+        const std::uint64_t hash = AssetRegistry::HashFileContents(std::filesystem::path{ entry->absolutePath });
+
+        auto prefab = std::make_shared<Prefab>();
+        if (!prefab->LoadFromAsset(text, id, hash, entry->absolutePath)) {
+            return nullptr;   // Prefab logged why
+        }
+        return prefab;
+
+    }   // ResourceManager::ReadPrefab()
+
+    std::shared_ptr<const Prefab> ResourceManager::GetPrefab(AssetId id) {
+
+        if (id == 0) { return nullptr; }
+        if (auto found = m_prefabs.find(id); found != m_prefabs.end()) { return found->second; }
+
+        std::shared_ptr<const Prefab> prefab = ReadPrefab(id);
+        m_prefabs[id] = prefab;   // a failed load is remembered as null until ReloadPrefab
+        return prefab;
+
+    }   // ResourceManager::GetPrefab()
+
+    void ResourceManager::ReloadPrefab(AssetId id) {
+
+        m_prefabs.erase(id);
+        m_warned.erase(id);
+
+    }   // ResourceManager::ReloadPrefab()
+
+    std::filesystem::path ResourceManager::GetFilePath(AssetId id) const {
+
+        const AssetEntry* entry = id != 0 ? m_assets.FindByGuid(ToGuid(id)) : nullptr;
+        return entry ? std::filesystem::path{ entry->absolutePath } : std::filesystem::path{};
+
+    }   // ResourceManager::GetFilePath()
 
     std::unique_ptr<FontAsset> ResourceManager::LoadFont(AssetId fontId) {
 
@@ -573,7 +1092,10 @@ namespace Crucible {
             switch (kind) {
                 case ResourceKind::Mesh:     { auto it = m_meshes.find(id);    return it != m_meshes.end()    && it->second.IsValid(); }
                 case ResourceKind::Material: { auto it = m_materials.find(id); return it != m_materials.end() && it->second.IsValid(); }
-                case ResourceKind::Audio:    return false;   // never loaded here; ECSAudioSystem loads audio itself
+                case ResourceKind::Audio: {
+                    for (const auto& [key, clip] : m_audioClips) { if (key.first == id && clip.IsValid()) { return true; } }
+                    return false;
+                }
                 case ResourceKind::Font:     { auto it = m_fonts.find(id);     return it != m_fonts.end()     && it->second != nullptr; }
                 case ResourceKind::Model:    { auto it = m_models.find(id); return it != m_models.end() && bool(it->second); }
                 case ResourceKind::AnimatorController: { auto it = m_controllers.find(id); return it != m_controllers.end() && bool(it->second); }
@@ -592,6 +1114,9 @@ namespace Crucible {
             for (const AssetEntry* entry : m_assets.GetByType(type)) {
                 const AssetId fileId = entry->guid.m_Value;
                 if (fileId == 0) { continue; }
+                // A source (.glb, .png) shares its guid with its compiled file (.cmodel, .bill):
+                // list the one the id loads from, once.
+                if (m_assets.FindByGuid(entry->guid) != entry) { continue; }
                 const AssetId id = derived ? DeriveSubAssetId(fileId, "material") : fileId;
                 assets.push_back({ id, kind, entry->virtualPath + suffix, false, isLoaded(id) });
             }
@@ -701,8 +1226,27 @@ namespace Crucible {
         }
         const auto& image = model->images[model->textures[texture].image];
         try {
-            const auto handle = m_renderer.CreateTextureFromMemory(image.bytes.data(), image.bytes.size(), isSRGB,
-                "model:" + ToHex(id) + ":texture:" + std::to_string(texture) + (isSRGB ? ":srgb" : ":linear"));
+            const std::string cacheKey = "model:" + ToHex(id) + ":texture:" + std::to_string(texture) + (isSRGB ? ":srgb" : ":linear");
+            TextureHandle handle;
+            if (image.mimeType == CompiledTextureMimeType) {
+                // Compressed by the model compiler: uploaded as it is, no decoding.
+                CompiledTexture compiled;
+                std::string error;
+                if (!DecodeCompiledTexture(image.bytes, id, compiled, error)) {
+                    WarnOnce(id, "Embedded texture is damaged: " + error);
+                    return {};
+                }
+                handle = m_renderer.CreateTextureCompressed(compiled, isSRGB, cacheKey);
+                CRU_INFO("[Resources] Model {} texture {}: compiled ({}x{} {}, {} mips)", id, texture,
+                         compiled.width, compiled.height, ToString(compiled.format), compiled.mips.size());
+            } else {
+                // A model compiled before textures were compressed: only the editor can read its PNG/JPEG.
+                handle = UploadSourceImage(m_renderer, image.bytes, isSRGB);
+                if (!handle.IsValid()) {
+                    WarnOnce(id, "Embedded texture is an image file - build the project to compile the model again");
+                    return {};
+                }
+            }
             m_modelTextureSources[handle.id] = {id, texture};
             return handle;
         } catch (const std::exception& error) {

@@ -5,7 +5,7 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          27 September 2026
-* \version       1.4
+* \version       1.6
 * \brief
 *                Bodies: create, destroy, teleport, move, set velocity,
 *                and push with impulses and forces.
@@ -22,6 +22,8 @@
 *    -v1.3       forces: AddForce, AddForceAtPosition, AddTorque,
 *                ApplyImpulseAtPosition
 *    -v1.4       DestroyBody removes the body's joints first
+*    -v1.5       sensors (BodyDesc::m_isSensor)
+*    -v1.6       GetCenterOfMass
 *
 **************************************************************************/
 #include "PhysicsSystem.h"
@@ -115,6 +117,12 @@ namespace Crucible {
         // Jolt's per-body gravity multiplier; 0 is Unity's useGravity = false.
         creation.mGravityFactor  = desc.m_gravityFactor;
 
+        // Unity's isTrigger. A static sensor - the usual trigger, a Collider with
+        // no RigidBody - is the cheapest kind and sees every moving body,
+        // characters included: Jolt keeps a character's hidden body awake for
+        // exactly this. Like Unity's, it does not notice other static things.
+        creation.mIsSensor       = desc.m_isSensor;
+
         // Frozen axes (Unity's Rigidbody constraints). Only a dynamic body is
         // simulated, so only it has axes to lock. Jolt crashes on a dynamic body
         // with no free axis at all - its own advice is a static body instead,
@@ -201,6 +209,14 @@ namespace Crucible {
         outRotation = FromJolt(rotation);
 
     }   // Physics::GetTransform()
+
+    Math::vec3 Physics::GetCenterOfMass(const BodyHandle& body) const {
+
+        const Impl& impl = *m_impl;
+        if (!impl.Has(body)) return Math::vec3(0.0f, 0.0f, 0.0f);    // the same answer as GetTransform for a stale handle
+        return FromJolt(impl.Bodies().GetCenterOfMassPosition(Impl::ToId(body)));
+
+    }   // Physics::GetCenterOfMass()
 
     // Drives a kinematic body toward a target over one step. Jolt works out the
     // velocity that gets it there, and it is that velocity - not the teleport -

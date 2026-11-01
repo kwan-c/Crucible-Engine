@@ -30,7 +30,7 @@
 *                (same dependency Primitives.h already has - see that
 *                file), but deliberately NOT on RenderSystem.h/Renderer:
 *                turning the parsed data into GPU resources
-*                (Renderer::CreateMesh, CreateTextureFromMemory,
+*                (Renderer::CreateMesh, CreateTextureCompressed,
 *                CreateMaterial) is left to the caller, so this parser
 *                stays testable standalone (no live Vulkan device needed),
 *                mirroring how Primitives.h was verified.
@@ -60,7 +60,7 @@ namespace Crucible {
         (PNG/JPEG/...) exactly as stored.
 
      \details
-        Decode with Renderer::CreateTextureFromMemory (stb_image under the
+        CrucibleModelCompiler compresses them for the GPU (stb_image under the
         hood).
      *************************************************************************/
     struct GLTFImage {

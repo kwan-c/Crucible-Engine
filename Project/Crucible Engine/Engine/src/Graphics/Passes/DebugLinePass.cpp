@@ -26,6 +26,12 @@ namespace Crucible {
             { .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "lineFrag" }
         };
 
+        // Sphere outlines: their own vertex shader, the same fragment shader.
+        vk::PipelineShaderStageCreateInfo outlineStages[] = {
+            {.stage = vk::ShaderStageFlagBits::eVertex,   .module = shaderModule, .pName = "sphereOutlineVert" },
+            {.stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "lineFrag" }
+        };
+
         // DebugVertex (DebugDraw.h): vec3 position + RGBA8 colour, 16 bytes. The colour is read as
         // UNORM so the shader receives 0..1 floats with no unpacking.
         vk::VertexInputBindingDescription binding{ .binding = 0, .stride = 16, .inputRate = vk::VertexInputRate::eVertex };
@@ -39,6 +45,20 @@ namespace Crucible {
             .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size()),
             .pVertexAttributeDescriptions    = attributes.data()
         };
+        // DebugSphere (DebugDraw.h), one per INSTANCE: centre + radius as one vec4, then the
+        // RGBA8 colour - 20 bytes. The outline's vertices have no data of their own.
+        vk::VertexInputBindingDescription sphereBinding{ .binding = 0, .stride = sizeof(DebugSphere), .inputRate = vk::VertexInputRate::eInstance };
+        std::array<vk::VertexInputAttributeDescription, 2> sphereAttributes{ {
+            {.location = 0, .binding = 0, .format = vk::Format::eR32G32B32A32Sfloat, .offset = 0 },
+            {.location = 1, .binding = 0, .format = vk::Format::eR8G8B8A8Unorm,      .offset = 16 }
+        } };
+        vk::PipelineVertexInputStateCreateInfo sphereInputInfo{
+            .vertexBindingDescriptionCount = 1,
+            .pVertexBindingDescriptions = &sphereBinding,
+            .vertexAttributeDescriptionCount = static_cast<uint32_t>(sphereAttributes.size()),
+            .pVertexAttributeDescriptions = sphereAttributes.data()
+        };
+
         vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eLineList };
 
         std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
@@ -77,10 +97,11 @@ namespace Crucible {
 
         auto swapchainFormat = colourFormat;
 
-        // Two pipelines differing only in depth state: depth-tested lines hide behind geometry
+        // Pairs of pipelines differing only in depth state: depth-tested lines hide behind geometry
         // (LESS_OR_EQUAL so a line lying exactly on a surface still shows), on-top lines ignore
-        // depth. Neither writes depth, so debug lines never occlude anything.
-        auto build = [&](bool depthTested) {
+        // depth. Neither writes depth, so debug lines never occlude anything. One pair for the
+        // lines, one for the sphere outlines (other vertex shader and vertex input).
+        auto build = [&](bool depthTested, const vk::PipelineShaderStageCreateInfo* stages, const vk::PipelineVertexInputStateCreateInfo& input) {
             vk::PipelineDepthStencilStateCreateInfo depthStencil{
                 .depthTestEnable       = depthTested ? vk::True : vk::False,
                 .depthWriteEnable      = vk::False,
@@ -91,8 +112,8 @@ namespace Crucible {
             vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
                 {
                     .stageCount          = 2,
-                    .pStages             = shaderStages,
-                    .pVertexInputState   = &vertexInputInfo,
+                    .pStages             = stages,
+                    .pVertexInputState   = &input,
                     .pInputAssemblyState = &inputAssembly,
                     .pViewportState      = &viewportState,
                     .pRasterizationState = &rasterizer,
@@ -107,10 +128,34 @@ namespace Crucible {
             };
             return vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
         };
-        m_debugLinePipeline      = build(true);
-        m_debugLineOnTopPipeline = build(false);
+        m_debugLinePipeline         = build(true, shaderStages, vertexInputInfo);
+        m_debugLineOnTopPipeline    = build(false, shaderStages, vertexInputInfo);
+        m_outlinePipeline           = build(true, outlineStages, sphereInputInfo);
+        m_outlineOnTopPipeline      = build(false, outlineStages, sphereInputInfo);
 
     }   // DebugLinePass::Create()
+
+    void* DebugLinePass::Reserve(VulkanContext& context, FrameBuffers& set, uint32_t frameIndex, uint32_t framesInFlight, vk::DeviceSize bytes) {
+
+        if (set.buffers.empty()) {
+            set.buffers.resize(framesInFlight);
+            set.mapped.assign(framesInFlight, nullptr);
+            set.capacity.assign(framesInFlight, 0);
+        }
+
+        // Grow this frame's buffer (power of two, at least 128 KiB). Safe to recreate here:
+        // BeginFrame() already waited on this frame index's fence, so the GPU is done with it.
+        if (set.capacity[frameIndex] < bytes) {
+            vk::DeviceSize capacity = 128 * 1024;
+            while (capacity < bytes) { capacity *= 2; }
+            set.buffers[frameIndex].Create(context, capacity, vk::BufferUsageFlagBits::eVertexBuffer,
+                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
+            set.mapped[frameIndex] = set.buffers[frameIndex].Map();
+            set.capacity[frameIndex] = capacity;
+        }
+        return set.mapped[frameIndex];
+
+    }   // DebugLinePass::Reserve()
 
     void DebugLinePass::Update(VulkanContext& context, uint32_t frameIndex, uint32_t framesInFlight) {
 
@@ -131,55 +176,72 @@ namespace Crucible {
 
         m_debugTestedCount = static_cast<uint32_t>(m_debugTested.size());
         m_debugOnTopCount  = static_cast<uint32_t>(m_debugOnTop.size());
-        if (total == 0) { return; }
 
-        if (m_debugBuffers.empty()) {
-            const uint32_t frames = framesInFlight;
-            m_debugBuffers.resize(frames);
-            m_debugBuffersMapped.assign(frames, nullptr);
-            m_debugBufferCapacity.assign(frames, 0);
+        if (total > 0) {
+            auto* dst = static_cast<DebugVertex*>(Reserve(context, m_lineBuffers, frameIndex, framesInFlight, total * sizeof(DebugVertex)));
+            if (!m_debugTested.empty()) { memcpy(dst, m_debugTested.data(), m_debugTested.size() * sizeof(DebugVertex)); }
+            if (!m_debugOnTop.empty()) { memcpy(dst + m_debugTested.size(), m_debugOnTop.data(), m_debugOnTop.size() * sizeof(DebugVertex)); }
         }
 
-        // Grow this frame's buffer (power of two, at least 8K vertices). Safe to recreate here:
-        // BeginFrame() already waited on this frame index's fence, so the GPU is done with it.
-        if (m_debugBufferCapacity[frameIndex] < total) {
-            uint32_t capacity = 8192;
-            while (capacity < total) { capacity *= 2; }
-            m_debugBuffers[frameIndex].Create(context, vk::DeviceSize{ capacity } * sizeof(DebugVertex),
-                vk::BufferUsageFlagBits::eVertexBuffer,
-                vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent);
-            m_debugBuffersMapped[frameIndex]  = m_debugBuffers[frameIndex].Map();
-            m_debugBufferCapacity[frameIndex] = capacity;
+        // The sphere outlines, the same way: depth-tested first, then on-top.
+        DebugDraw::CollectSpheres(m_spheresTested, m_spheresOnTop);
+        if (m_spheresTested.size() + m_spheresOnTop.size() > kMaxDebugSpheres) {
+            if (!m_warnedSphereOverflow) {
+                CRU_WARN("[Renderer] More than {} debug spheres in one frame; the rest have no outline.", kMaxDebugSpheres);
+                m_warnedSphereOverflow = true;
+            }
+            m_spheresTested.resize(std::min<size_t>(m_spheresTested.size(), kMaxDebugSpheres));
+            m_spheresOnTop.resize(std::min<size_t>(m_spheresOnTop.size(), kMaxDebugSpheres - m_spheresTested.size()));
         }
-
-        auto* dst = static_cast<DebugVertex*>(m_debugBuffersMapped[frameIndex]);
-        if (!m_debugTested.empty()) { memcpy(dst, m_debugTested.data(), m_debugTested.size() * sizeof(DebugVertex)); }
-        if (!m_debugOnTop.empty())  { memcpy(dst + m_debugTested.size(), m_debugOnTop.data(), m_debugOnTop.size() * sizeof(DebugVertex)); }
+        m_spheresTestedCount = static_cast<uint32_t>(m_spheresTested.size());
+        m_spheresOnTopCount = static_cast<uint32_t>(m_spheresOnTop.size());
+        if (m_spheresTestedCount + m_spheresOnTopCount > 0) {
+            const size_t spheres = m_spheresTested.size() + m_spheresOnTop.size();
+            auto* dst = static_cast<DebugSphere*>(Reserve(context, m_sphereBuffers, frameIndex, framesInFlight, spheres * sizeof(DebugSphere)));
+            if (!m_spheresTested.empty()) { memcpy(dst, m_spheresTested.data(), m_spheresTested.size() * sizeof(DebugSphere)); }
+            if (!m_spheresOnTop.empty()) { memcpy(dst + m_spheresTested.size(), m_spheresOnTop.data(), m_spheresOnTop.size() * sizeof(DebugSphere)); }
+        }
 
     }   // DebugLinePass::Update()
 
     void DebugLinePass::Record(vk::CommandBuffer cmd, vk::Extent2D extent, vk::DescriptorSet frameSet, uint32_t frameIndex) const {
 
         if (!HasLines()) { return; }   // also: the buffers only exist once there has been something to draw
-        const uint32_t   testedCount  = m_debugTestedCount;
-        const uint32_t   onTopCount   = m_debugOnTopCount;
-        const vk::Buffer vertexBuffer = *m_debugBuffers[frameIndex].GetBuffer();
+        const uint32_t testedCount = m_debugTestedCount;
+        const uint32_t onTopCount = m_debugOnTopCount;
+        // A buffer only exists once there has been something of its kind to draw.
+        const vk::Buffer lineBuffer = testedCount + onTopCount > 0 ? *m_lineBuffers.buffers[frameIndex].GetBuffer() : vk::Buffer{};
+        const vk::Buffer sphereBuffer = m_spheresTestedCount + m_spheresOnTopCount > 0 ? *m_sphereBuffers.buffers[frameIndex].GetBuffer() : vk::Buffer{};
 
         // The tonemap triangle drawn just before used a plain viewport; world geometry uses the
         // flipped one (+Y up), like the scene pass.
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
-
+        
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_debugLineLayout, 0, frameSet, nullptr);
-        cmd.bindVertexBuffers(0, vertexBuffer, { 0 });
 
+        // Depth-tested first (lines, then sphere outlines), then everything that is always on top.
+        // A sphere outline is kOutlineVertices vertices with no data of their own, drawn once per
+        // sphere: the sphere buffer is the per-instance stream, firstInstance picks the sphere.
         if (testedCount > 0) {
+            cmd.bindVertexBuffers(0, lineBuffer, { 0 });
             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_debugLinePipeline);
             cmd.draw(testedCount, 1, 0, 0);
         }
+        if (m_spheresTestedCount > 0) {
+            cmd.bindVertexBuffers(0, sphereBuffer, { 0 });
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_outlinePipeline);
+            cmd.draw(kOutlineVertices, m_spheresTestedCount, 0, 0);
+        }
         if (onTopCount > 0) {
+            cmd.bindVertexBuffers(0, lineBuffer, { 0 });
             cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_debugLineOnTopPipeline);
             cmd.draw(onTopCount, 1, testedCount, 0);
+        }
+        if (m_spheresOnTopCount > 0) {
+            cmd.bindVertexBuffers(0, sphereBuffer, { 0 });
+            cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_outlineOnTopPipeline);
+            cmd.draw(kOutlineVertices, m_spheresOnTopCount, 0, m_spheresTestedCount);
         }
 
     }   // DebugLinePass::Record()

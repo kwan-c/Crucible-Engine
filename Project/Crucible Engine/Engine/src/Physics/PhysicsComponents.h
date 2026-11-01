@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                The physics components the designer and gameplay touch:
 *                Collider, CharacterController, ConstantForce and
@@ -26,6 +26,7 @@
 *    -v1.5       PhysicsJoint
 *    -v1.6       PlayerController and CameraOrbit moved out to
 *                Player/PlayerComponents.h: controls, not physics
+*    -v1.7       Collider::m_isTrigger
 *
 **************************************************************************/
 #pragma once
@@ -84,6 +85,15 @@ namespace Crucible {
         // moves wants Moving, Player or Enemy - two NonMoving bodies never
         // collide with each other, by design (PhysicsLayers.cpp).
         PhysicsLayer m_layer      = PhysicsLayer::NonMoving;
+
+        // Unity's isTrigger: blocks nothing, and reports what goes in and out
+        // (PhysicsEvents::TriggerEnter / TriggerExit, and
+        // ECSPhysicsSystem::GetTriggerOccupants for who is inside right now).
+        // A pickup, a damage zone, a checkpoint, a kill floor. On its own (no
+        // RigidBody) it sees crates, mechs and enemies but not the arena; with a
+        // RigidBody it is a trigger that falls, as in Unity - tick isKinematic
+        // for one that is carried or animated instead.
+        bool         m_isTrigger  = false;
 
     };  // COLLIDER STRUCT
 

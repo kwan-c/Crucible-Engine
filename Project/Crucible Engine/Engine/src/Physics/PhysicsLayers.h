@@ -3,10 +3,10 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          22 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                PhysicsLayer: the collision layers, Unity's Layer
-*                Collision Matrix.
+*                Collision Matrix. LayerMask: a set of them, for queries.
 *
 * \details
 *                Kept in its own file because it is the designer's list.
@@ -16,6 +16,7 @@
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       LayerMask (Unity's), for queries
 *
 **************************************************************************/
 #pragma once
@@ -23,6 +24,7 @@
 // STL
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>  // LayerMask
 
 // Crucible engine
 #include "EngineExport.h"
@@ -68,5 +70,41 @@ namespace Crucible {
 
     // For logs, and later for the editor's dropdown.
     ENGINE_API const char* ToString(const PhysicsLayer& layer);
+
+    /*
+        Unity's LayerMask: a set of layers, for telling a query which ones it may
+        hit. Built from names, so it cannot be got wrong the way 1 << layer can:
+
+            LayerMask(PhysicsLayer::Enemy, PhysicsLayer::NonMoving)   enemies and walls
+            LayerMask::All().Without(PhysicsLayer::Player)            everything but players
+
+        One bit per layer underneath, exactly like Unity's.
+    */
+    class LayerMask {
+
+    public:
+
+        constexpr LayerMask() = default;     // empty: hits nothing
+
+        template <typename... Rest>
+            requires (std::is_same_v<Rest, PhysicsLayer> && ...)
+        constexpr explicit LayerMask(PhysicsLayer first, Rest... rest) : m_bits((Bit(first) | ... | Bit(rest))) {}
+
+        static constexpr LayerMask All() { LayerMask mask; mask.m_bits = (1u << kPhysicsLayerCount) - 1u; return mask; }
+
+        constexpr LayerMask With(PhysicsLayer layer)    const { LayerMask mask = *this; mask.m_bits |= Bit(layer);  return mask; }
+        constexpr LayerMask Without(PhysicsLayer layer) const { LayerMask mask = *this; mask.m_bits &= ~Bit(layer); return mask; }
+
+        constexpr bool          Contains(PhysicsLayer layer) const { return (m_bits & Bit(layer)) != 0u; }
+        constexpr bool          Contains(std::uint32_t layer) const { return layer < 32u && ((m_bits >> layer) & 1u) != 0u; }
+        constexpr std::uint32_t Bits() const { return m_bits; }
+
+    private:
+
+        static constexpr std::uint32_t Bit(PhysicsLayer layer) { return 1u << static_cast<std::uint32_t>(layer); }
+
+        std::uint32_t m_bits = 0u;
+
+    };  // LAYERMASK CLASS
 
 }   // NAMESPACE CRUCIBLE
