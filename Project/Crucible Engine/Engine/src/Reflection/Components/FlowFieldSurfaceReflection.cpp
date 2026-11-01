@@ -32,8 +32,6 @@ RTTR_REGISTRATION
 
     rttr::registration::class_<FlowFieldSurface>("FlowFieldSurface")
         .constructor<>()
-        .property("width",             &FlowFieldSurface::m_width)
-        .property("depth",             &FlowFieldSurface::m_depth)
         .property("cellSize",          &FlowFieldSurface::m_cellSize)
         .property("bodyRadiusPadding", &FlowFieldSurface::m_bodyRadiusPadding)
         .property("stepHeight",        &FlowFieldSurface::m_stepHeight)

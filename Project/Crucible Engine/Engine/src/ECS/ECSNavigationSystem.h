@@ -12,9 +12,10 @@
 * \details
 *                Bakes when the Inspector's Bake button asks (a preview in
 *                Edit) and again on its own when Play starts, so the game
-*                never runs on a stale or missing grid. Draws the grid's
-*                outline and its blocked cells every frame while baked,
-*                under the Gizmos menu's Gameplay toggle.
+*                never runs on a stale or missing grid. Draws the surface's
+*                outline live from its Transform (position = centre, scale
+*                X/Z = size), and the grid and its blocked cells while
+*                baked, under the Gizmos menu's Gameplay toggle.
 *
 *                Runs in Edit as well as Play (no SimulationOnly), because
 *                the preview has to show while editing - the same as
@@ -88,7 +89,7 @@ namespace Crucible {
         PlayState                m_lastState = PlayState::Edit;   // last frame's, to catch Edit -> Playing
 
         NavGrid                  m_grid;
-        FlatNavTerrain           m_terrain;     // until a terrain system exists: no walls, ground at 0
+        FlatNavTerrain           m_terrain;     // until a terrain system exists: no walls, ground at the surface's height (set by Bake)
         std::vector<NavObstacle> m_obstacles;   // kept between bakes so a re-bake reuses its memory
 
     };  // ECSNAVIGATIONSYSTEM CLASS
