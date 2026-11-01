@@ -19,11 +19,15 @@
 #include "Core.h"
 #include "ImGui/Panels/ImGuiPanel_Menu.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
+#include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 #include "Prefabs/PrefabAuthoring.h"
 #include "Scene/Prefab.h"   // kPrefabExtension
+#include "Resources/ResourceManager.h"   // hot reload after a refresh
+
+#include <GLFW/glfw3.h>   // glfwGetWindowAttrib: refresh when the editor gets the focus back
 
 #include <algorithm>
 #include <cctype>
@@ -122,7 +126,7 @@ namespace {
 	// in the Font Importer.
 	// Their suffixes, appended to the owning asset's full name ("Arial.ttf" + ".fontsettings").
 	// Deleting the asset deletes these too (DeleteOnDisk), since nothing else can.
-	constexpr std::string_view kCompanionSuffixes[] = { ".fontsettings" };
+	constexpr std::string_view kCompanionSuffixes[] = { ".fontsettings", ".texsettings" };   // .texsettings: the Texture Importer
 
 	bool IsHiddenCompanionFile(std::string const& name)
 	{
@@ -414,6 +418,13 @@ void Crucible::AssetBrowser::Refresh() {
 	RebuildFolderTree();
 	m_listingDirty = true;
 
+	// Hot reload: loaded assets whose file changed on disk are loaded again, and failed loads
+	// may try again (an image that was missing has been compiled since, ...).
+	if (ResourceManager* resources = EditorManager::GetInstance().GetResources()) {
+		resources->RefreshCatalog();
+		resources->ReloadChanged();
+	}
+
 	// A .cprefab changed on disk (a git pull, another scene's Apply): bring the open scene's
 	// instances of it up to date, keeping their overrides. One undo step; nothing if none changed.
 	if (Core* core = EditorManager::GetInstance().GetCore()) { PrefabAuthoring::UpdateChangedInstances(core->GetWorld()); }
@@ -428,6 +439,13 @@ void Crucible::AssetBrowser::Reveal(std::string const& virtualPath) {
 }
 
 void Crucible::AssetBrowser::Update(float) {
+	// The editor's window got the focus back - say after saving an image or a .mat in another
+	// program: refresh, so the change shows up (hot reload) without pressing F5.
+	GLFWwindow* window = static_cast<GLFWwindow*>(ImGui::GetMainViewport()->PlatformHandle);
+	bool const appFocused = window != nullptr && glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
+	if (appFocused && !m_appWasFocused && m_ready && IsRefreshAllowed()) { Refresh(); }
+	m_appWasFocused = appFocused;
+
 	// Something else took the Inspector (an entity was picked in the Hierarchy): the clip
 	// preview is no longer on screen, so stop it and let the clip go. Checked before Begin so
 	// it still happens while this panel is collapsed.
@@ -558,6 +576,7 @@ void Crucible::AssetBrowser::RebuildListing() {
 		// Search mode: match file names across the whole index, ignoring folders.
 		std::string const needle = ToLowerCopy(m_search);
 		for (AssetEntry const& entry : m_assets.GetAll()) {
+			if (entry.compiled) continue;   // in Resources, not Assets: the browser shows Assets only
 			std::size_t const slash = entry.virtualPath.find_last_of('/');
 			std::string name = (slash == std::string::npos) ? entry.virtualPath : entry.virtualPath.substr(slash + 1);
 			if (ToLowerCopy(name).find(needle) == std::string::npos) continue;
@@ -1074,6 +1093,11 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 		// .ttf/.otf: its import settings; .cfont: the font it was compiled from.
 		if (auto fonts = EditorManager::GetInstance().GetPanel<FontImporter>(ImguiPanels::FONTIMPORTER))
 			fonts->Open(item.virtualPath);
+		return;
+	case AssetType::Texture:
+		// An image: its import settings, compile, and the BC format comparison.
+		if (auto textures = EditorManager::GetInstance().GetPanel<TextureImporter>(ImguiPanels::TEXTUREIMPORTER))
+			textures->Open(item.virtualPath);
 		return;
 	default:
 		CRU_INFO("[AssetBrowser] Open {} ({}): no editor for this type yet", item.virtualPath, ToString(item.type));

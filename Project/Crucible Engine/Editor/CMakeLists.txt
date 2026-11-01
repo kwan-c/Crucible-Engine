@@ -12,10 +12,17 @@ file(GLOB_RECURSE EDITOR_HEADERS CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.tpp"
 )
 
-# Create the executable
+# Create the executable. Cook.cpp is shared with the CrucibleCook tool (File -> Cook Resources).
 add_executable(Editor
     ${EDITOR_SOURCES}
     ${EDITOR_HEADERS}
+    "${CMAKE_SOURCE_DIR}/Tools/Cook/Cook.cpp"
+    "${CMAKE_SOURCE_DIR}/Tools/Cook/Cook.h"
+    # The Texture Importer compiles one image the same way the build does (stb + Compressonator: editor only).
+    "${CMAKE_SOURCE_DIR}/Tools/Common/TextureBuild.cpp"
+    "${CMAKE_SOURCE_DIR}/Tools/Common/TextureBuild.h"
+    "${CMAKE_SOURCE_DIR}/Tools/Common/TextureImport.cpp"
+    "${CMAKE_SOURCE_DIR}/Tools/Common/TextureImport.h"
 )
 
 target_precompile_headers(Editor PRIVATE src/pch.h)
@@ -32,6 +39,8 @@ endif()
 target_include_directories(Editor
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/Tools/Cook
+        ${CMAKE_SOURCE_DIR}/Tools/Common
 )
 
 # Link against the engine (brings in EngineThirdParty transitively) plus the

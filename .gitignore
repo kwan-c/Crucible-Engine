@@ -27,3 +27,19 @@ Thumbs.db
 *.swp
 *.swo
 .vscode/
+
+# Resources: Cook (File > Cook Resources, or the Cook build target) copies scenes, materials,
+# audio and config here from Assets. Those copies are not committed - Assets has the
+# originals. Compiled files ARE committed: .cmodel, .cfont, .spv, .bill, .sky and their .meta.
+/Project/Crucible Engine/Resources/**
+!/Project/Crucible Engine/Resources/**/
+!/Project/Crucible Engine/Resources/**/*.cmodel
+!/Project/Crucible Engine/Resources/**/*.cmodel.meta
+!/Project/Crucible Engine/Resources/**/*.cfont
+!/Project/Crucible Engine/Resources/**/*.cfont.meta
+!/Project/Crucible Engine/Resources/**/*.spv
+!/Project/Crucible Engine/Resources/**/*.spv.meta
+!/Project/Crucible Engine/Resources/**/*.bill
+!/Project/Crucible Engine/Resources/**/*.bill.meta
+!/Project/Crucible Engine/Resources/**/*.sky
+!/Project/Crucible Engine/Resources/**/*.sky.meta

@@ -7,8 +7,8 @@
 
 #include "Graphics/Vulkan/RenderLayouts.h"   // Vertex
 #include "Graphics/Vulkan/VulkanFrameManager.h"   // MAX_FRAMES_IN_FLIGHT (ReleaseDestroyed)
+#include "Resources/CompiledTexture.h"            // CreateTextureCompressed
 
-#include <stb_image.h>   // the implementation is compiled in RenderSystem.cpp
 
 #include <algorithm>
 #include <array>
@@ -370,28 +370,7 @@ namespace Crucible {
 
     }   // RenderResources::CreateTextureFromPixels()
 
-    TextureHandle RenderResources::CreateTexture(const std::string& path, bool isSRGB) {
-
-        if (auto it = m_textureCacheByKey.find(path); it != m_textureCacheByKey.end()) {
-            return TextureHandle{ it->second };
-        }
-
-        int texWidth{}, texHeight{}, texChannels{};
-        stbi_uc* pixels = stbi_load(path.c_str(), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-        if (!pixels) {
-            throw std::runtime_error("[Renderer] Failed to load texture image: (" + path + ")");
-        }
-
-        TextureHandle handle = UploadTexturePixels(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight),
-                                                   isSRGB ? TexturePixelFormat::RGBA8_sRGB : TexturePixelFormat::RGBA8, true);
-        stbi_image_free(pixels);
-
-        m_textureCacheByKey.emplace(path, handle.id);
-        return handle;
-
-    }   // RenderResources::CreateTexture()
-
-    TextureHandle RenderResources::CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount, bool isSRGB, const std::string& cacheKey) {
+    TextureHandle RenderResources::CreateTextureCompressed(const CompiledTexture& texture, bool isSRGB, const std::string& cacheKey) {
 
         if (!cacheKey.empty()) {
             if (auto it = m_textureCacheByKey.find(cacheKey); it != m_textureCacheByKey.end()) {
@@ -399,20 +378,60 @@ namespace Crucible {
             }
         }
 
-        int texWidth{}, texHeight{}, texChannels{};
-        stbi_uc* pixels = stbi_load_from_memory(fileBytes, static_cast<int>(byteCount), &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
-        if (!pixels) {
-            throw std::runtime_error("[Renderer] Failed to decode in-memory texture" + (cacheKey.empty() ? std::string() : " (" + cacheKey + ")"));
+        if (texture.layers != 1) {
+            throw std::runtime_error("[Renderer] CreateTextureCompressed: a cube (.sky) is not a 2D texture");
         }
 
-        TextureHandle handle = UploadTexturePixels(pixels, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight),
-                                                   isSRGB ? TexturePixelFormat::RGBA8_sRGB : TexturePixelFormat::RGBA8, true);
-        stbi_image_free(pixels);
+        // The Vulkan format of each .bill format. BC4, BC5 and BC6H have no sRGB variant.
+        vk::Format format = vk::Format::eUndefined;
+        switch (texture.format) {
+            case CompiledTextureFormat::RGBA8: format = isSRGB ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm; break;
+            case CompiledTextureFormat::BC1:   format = isSRGB ? vk::Format::eBc1RgbaSrgbBlock : vk::Format::eBc1RgbaUnormBlock; break;
+            case CompiledTextureFormat::BC3:   format = isSRGB ? vk::Format::eBc3SrgbBlock : vk::Format::eBc3UnormBlock; break;
+            case CompiledTextureFormat::BC4:   format = vk::Format::eBc4UnormBlock; break;
+            case CompiledTextureFormat::BC5:   format = vk::Format::eBc5UnormBlock; break;
+            case CompiledTextureFormat::BC6H:  format = vk::Format::eBc6HUfloatBlock; break;
+            case CompiledTextureFormat::BC7:   format = isSRGB ? vk::Format::eBc7SrgbBlock : vk::Format::eBc7UnormBlock; break;
+        }
+        const vk::FormatProperties support = m_context.GetPhysicalDevice().getFormatProperties(format);
+        if (format == vk::Format::eUndefined || !(support.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImage)) {
+            throw std::runtime_error(std::string("[Renderer] This GPU cannot use ") + ToString(texture.format) + " textures");
+        }
 
+        const uint32_t mipLevels = static_cast<uint32_t>(texture.mips.size());
+        GpuTexture tex;
+        tex.width = texture.width;
+        tex.height = texture.height;
+        tex.image.Create(m_context, texture.width, texture.height, format,
+            vk::ImageTiling::eOptimal,
+            vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+            vk::MemoryPropertyFlagBits::eDeviceLocal, 1, {}, mipLevels);
+
+        // Every level as stored: no mipmaps to make here (the texture compiler made them).
+        for (uint32_t level = 0; level < mipLevels; ++level) {
+            const CompiledTextureMip& mip = texture.mips[level];
+            m_uploads.QueueImage(*tex.image.GetImage(), texture.data.data() + mip.offset, mip.size, mip.width, mip.height, 1, level);
+        }
+
+        // BC4 holds one channel (red): read it as grey, like the image it was compiled from.
+        const vk::ComponentMapping components = texture.format == CompiledTextureFormat::BC4
+            ? vk::ComponentMapping{ .r = vk::ComponentSwizzle::eR, .g = vk::ComponentSwizzle::eR, .b = vk::ComponentSwizzle::eR, .a = vk::ComponentSwizzle::eOne }
+            : vk::ComponentMapping{};
+        vk::ImageViewCreateInfo viewInfo{
+            .image = tex.image.GetImage(),
+            .viewType = vk::ImageViewType::e2D,
+            .format = format,
+            .components = components,
+            .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = mipLevels, .layerCount = 1 }
+        };
+        tex.view = vk::raii::ImageView(m_context.GetDevice(), viewInfo);
+
+        const TextureHandle handle{ static_cast<uint32_t>(m_textures.size()) };
+        m_textures.push_back(std::move(tex));
         if (!cacheKey.empty()) { m_textureCacheByKey.emplace(cacheKey, handle.id); }
         return handle;
 
-    }   // RenderResources::CreateTextureFromMemory()
+    }   // RenderResources::CreateTextureCompressed()
 
     const GpuTexture& RenderResources::GetTextureOrThrow(TextureHandle handle) const {
 

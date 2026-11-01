@@ -246,7 +246,7 @@ namespace Crucible
 		RenderExtractSystem hands it to Renderer::SetEnvironment() each
 		frame; with no Skybox entity the Renderer uses its defaults (the
 		built-in procedural sky, default ambient, exposure 1).
-		  - cubemap: from Renderer::CreateCubemap()/CreateCubemapFromEquirect();
+		  - cubemap: from Renderer::CreateCubemapCompiled()/CreateCubemapFromEquirect();
 		    Invalid -> the built-in procedural sky. Runtime-only (not saved
 		    in scene files yet), same as MeshRenderer::mesh - see the asset
 		    GUID -> handle mapping planned for the Inspector.

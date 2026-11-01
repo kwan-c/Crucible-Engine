@@ -4,14 +4,16 @@
 # Compiles every shader in Assets/Shaders with slangc as part of the normal build.
 # Engine depends on the "Shaders" target, so building Editor or Game first rebuilds
 # any shader whose source changed, and a shader error shows up as a build error.
-# Each .spv is written next to its .slang, where the passes load it from
-# (../../../Assets/Shaders/<Name>.spv), so nothing at runtime changes.
+# Each .spv is written to Resources/Shaders/<Name>.spv (the compiled files the game
+# reads), where the passes load it from (VulkanShader.h). The .slang sources stay in Assets.
 #
 # Adding a shader: add one crucible_shader(<Name> <entry points...>) line below.
 # Every other .slang in the folder (Common.slang, ...) counts as a shared include:
 # editing one rebuilds every shader. A new .slang file needs a CMake re-run.
 
 set(CRUCIBLE_SHADER_DIR "${CMAKE_SOURCE_DIR}/Assets/Shaders")
+set(CRUCIBLE_SHADER_OUT_DIR "${CMAKE_SOURCE_DIR}/Resources/Shaders")
+file(MAKE_DIRECTORY "${CRUCIBLE_SHADER_OUT_DIR}")
 
 # <Name>.slang -> <Name>.spv, with these entry points.
 set(CRUCIBLE_SHADERS "")
@@ -51,7 +53,7 @@ find_program(SLANGC_EXECUTABLE slangc
 )
 if(NOT SLANGC_EXECUTABLE)
     message(WARNING "slangc was not found in the Vulkan SDK, so shaders will not be compiled. "
-                    "The .spv files already in Assets/Shaders are used as they are.")
+                    "The .spv files already in Resources/Shaders are used as they are.")
     return()
 endif()
 message(STATUS "Shader compiler: ${SLANGC_EXECUTABLE}")
@@ -69,7 +71,7 @@ endforeach()
 set(CRUCIBLE_SHADER_OUTPUTS "")
 foreach(_shader IN LISTS CRUCIBLE_SHADERS)
     set(_shader_src "${CRUCIBLE_SHADER_DIR}/${_shader}.slang")
-    set(_shader_out "${CRUCIBLE_SHADER_DIR}/${_shader}.spv")
+    set(_shader_out "${CRUCIBLE_SHADER_OUT_DIR}/${_shader}.spv")
 
     set(_shader_entries "")
     foreach(_entry IN LISTS CRUCIBLE_SHADER_ENTRIES_${_shader})

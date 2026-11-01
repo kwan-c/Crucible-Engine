@@ -1,4 +1,5 @@
 #include "CompiledModel.h"
+#include "CompiledTexture.h"   // CompiledTextureMimeType
 
 #include <algorithm>
 #include <array>
@@ -170,7 +171,8 @@ namespace {
             Require(sampler.minFilter<=ModelFilter::LinearMipLinear && sampler.magFilter<=ModelFilter::Linear &&
                     sampler.wrapS<=ModelWrap::MirroredRepeat && sampler.wrapT<=ModelWrap::MirroredRepeat,"Invalid texture sampler enum");
         for (const auto& image:m.images)
-            Require(!image.bytes.empty() && (image.mimeType=="image/png" || image.mimeType=="image/jpeg"),"Unsupported/empty compiled image");
+            Require(!image.bytes.empty() && (image.mimeType==CompiledTextureMimeType ||
+                    image.mimeType=="image/png" || image.mimeType=="image/jpeg"),"Unsupported/empty compiled image");
         for (const auto& texture:m.textures)
             Require(Ref(texture.image,m.images.size()) && Optional(texture.sampler,m.samplers.size()),"Invalid texture reference");
         auto slot=[&](const ModelTextureInfo& s) {

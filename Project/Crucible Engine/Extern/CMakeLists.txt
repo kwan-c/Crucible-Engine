@@ -330,9 +330,60 @@ target_link_libraries(EngineThirdParty INTERFACE
     vma
     Vulkan::Vulkan
     rttr_core
-    stb
     rapidjson
+    # stb's folder, for stb_easy_font only (Graphics/UITestOverlay.cpp, an editor debug view).
+    # NOT stb_image: ApprovedLibraries rates stb Y* (tools and editor only), so the engine reads
+    # only compiled files (.bill, .sky, .cmodel, .cfont) - never include stb_image.h in Engine.
+    stb
 )
+
+# ----------------------------------- #
+# COMPRESSONATOR - CMP_Core (static, tools/editor ONLY)
+# ----------------------------------- #
+# Texture compression (BC1-BC7) for the texture compiler. ApprovedLibraries lists Compressonator
+# as Y*: allowed in tools and the editor, NOT in the game - so only EditorThirdParty (below) and
+# compiler tools link it; Engine.dll and Game never do.
+# Only the CMP_Core part of GPUOpen-Tools/compressonator is kept (the block encoders, no file
+# I/O, no extra downloads - see compressonator/VERSION.txt for the commit). Built from source
+# here, the same way xGPU's xtexture compiler does, so nobody needs Python or
+# fetch_dependencies.py, or a separate Compressonator solution.
+
+set(CMP_DIR "${CMAKE_CURRENT_SOURCE_DIR}/compressonator")
+
+add_library(compressonator_core STATIC
+    ${CMP_DIR}/cmp_core/source/cmp_core.cpp
+    ${CMP_DIR}/cmp_core/source/core_simd_sse.cpp
+    ${CMP_DIR}/cmp_core/source/core_simd_avx.cpp
+    ${CMP_DIR}/cmp_core/source/core_simd_avx512.cpp
+    ${CMP_DIR}/cmp_core/shaders/bc1_encode_kernel.cpp
+    ${CMP_DIR}/cmp_core/shaders/bc2_encode_kernel.cpp
+    ${CMP_DIR}/cmp_core/shaders/bc3_encode_kernel.cpp
+    ${CMP_DIR}/cmp_core/shaders/bc4_encode_kernel.cpp
+    ${CMP_DIR}/cmp_core/shaders/bc5_encode_kernel.cpp
+    ${CMP_DIR}/cmp_core/shaders/bc6_encode_kernel.cpp
+    ${CMP_DIR}/cmp_core/shaders/bc7_encode_kernel.cpp
+    ${CMP_DIR}/applications/_libs/cmp_math/cpu_extensions.cpp
+    ${CMP_DIR}/applications/_libs/cmp_math/cmp_math_common.cpp
+)
+
+# SYSTEM: their headers come in as /external:I, so our /W4 and code analysis skip them.
+target_include_directories(compressonator_core SYSTEM PUBLIC
+    ${CMP_DIR}/cmp_core/source
+    ${CMP_DIR}/cmp_core/shaders
+    ${CMP_DIR}/applications/_libs/cmp_math
+)
+
+# Written for C++14/17; keep it there rather than the engine's C++23.
+set_target_properties(compressonator_core PROPERTIES CXX_STANDARD 17 FOLDER "ThirdParty")
+
+if(MSVC)
+    # Each SIMD file is built for its instruction set; CMP_Core checks the CPU at runtime and
+    # only calls what it supports (same as Compressonator's own CMake).
+    set_source_files_properties(${CMP_DIR}/cmp_core/source/core_simd_avx.cpp    PROPERTIES COMPILE_OPTIONS "/arch:AVX2")
+    set_source_files_properties(${CMP_DIR}/cmp_core/source/core_simd_avx512.cpp PROPERTIES COMPILE_OPTIONS "/arch:AVX512")
+    target_compile_options(compressonator_core PRIVATE /W0)   # third-party code: no warnings
+    target_compile_definitions(compressonator_core PRIVATE _CRT_SECURE_NO_WARNINGS NOMINMAX)
+endif()
 
 # ----------------------------------- #
 # Editor-only dependencies (ImGui, ImGuizmo).
@@ -346,4 +397,6 @@ target_link_libraries(EditorThirdParty INTERFACE
     imgui_backends
     imguizmo
     CrucibleFonts   # FreeType + msdfgen + msdf-atlas-gen: the font compiler (Editor/src/Fonts). The engine only reads .cfont files.
+    compressonator_core   # texture compression for the texture compiler. The engine only reads compiled textures.
+    stb                   # image files not compiled yet, shown in the editor only (Editor/src/Assets/EditorImageDecoders.cpp)
 )

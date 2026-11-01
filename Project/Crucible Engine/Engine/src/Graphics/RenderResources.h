@@ -32,6 +32,8 @@
 
 namespace Crucible {
 
+    struct CompiledTexture;
+
     // The CPU-written side of a dynamic mesh (RenderResources::CreateDynamicMesh): the latest
     // geometry, plus one host-visible vertex/index buffer pair per frame in flight. A frame's
     // pair is refilled at the start of that frame (UploadDynamicMeshes), once its fence has
@@ -198,11 +200,11 @@ namespace Crucible {
          *********************************************************************/
         void InitMaterials(vk::DescriptorSetLayout materialSetLayout);
 
-        TextureHandle CreateTexture(const std::string& path, bool isSRGB);
-        TextureHandle CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount, bool isSRGB, const std::string& cacheKey);
         /// Raw texels (not an image file). Throws std::runtime_error for no pixels, a zero size, or a
         /// size past the GPU's limit. Not cached: every call makes a new texture.
         TextureHandle CreateTextureFromPixels(const void* pixels, uint32_t width, uint32_t height, TexturePixelFormat format, bool mipmaps);
+        /// A compiled .bill's blocks, every mip as stored. Throws if the GPU cannot sample its format.
+        TextureHandle CreateTextureCompressed(const CompiledTexture& texture, bool isSRGB, const std::string& cacheKey);
 
         MaterialHandle      CreateMaterial(const MaterialData& data);
         void                UpdateMaterial(MaterialHandle handle, const MaterialData& data);

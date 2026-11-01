@@ -6,7 +6,7 @@
     diffuse light (image-based lighting).
   \details
     Moved out of the Renderer class. Game and editor code still uses the
-    Renderer's CreateCubemap / CreateCubemapFromEquirect / GetDefaultSkybox,
+    Renderer's CreateCubemapCompiled / CreateCubemapFromEquirect / GetDefaultSkybox,
     which forward here.
 *************************************************************************/
 #pragma once
@@ -24,6 +24,8 @@
 #include <vector>
 
 namespace Crucible {
+
+    struct CompiledSky;
 
     // Direction TOWARDS the sun of the built-in sky, and of the light used when a scene has no
     // lights of its own. Shared so the painted sun and the light it casts agree.
@@ -74,8 +76,8 @@ namespace Crucible {
         void Init(vk::DescriptorSetLayout skySetLayout);
 
         // See the Renderer functions of the same names for the full notes.
-        CubemapHandle CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB);
-        CubemapHandle CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize);
+        CubemapHandle CreateCubemapFromEquirect(const float* rgba, uint32_t width, uint32_t height, uint32_t faceSize, const std::string& name);
+        CubemapHandle CreateCubemapCompiled(const CompiledSky& sky, const std::string& debugName);
 
         CubemapHandle DefaultSkybox() const { return m_defaultSkybox; }   ///< The built-in procedural sky.
 
@@ -119,6 +121,10 @@ namespace Crucible {
                                          uint32_t bytesPerTexel, const std::string& debugName);
         /// Builds a cubemap's envImage and sh from its faces (called by UploadCubemapFaces).
         void BuildEnvironmentLighting(GpuCubemap& cube, const void* faceData, uint32_t faceSize, vk::Format format);
+        /// Throws if another cubemap would not fit in the descriptor pool.
+        void CheckCubemapLimit(const char* caller) const;
+        /// Gives a finished cube (image, view, environment map) its descriptor set and a handle.
+        CubemapHandle RegisterCubemap(GpuCubemap cube);
 
         VulkanContext&     m_context;
         VulkanUploadQueue& m_uploads;

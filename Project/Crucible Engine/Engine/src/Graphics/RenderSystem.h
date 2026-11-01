@@ -267,47 +267,6 @@ namespace Crucible {
 
         /*********************************************************************
          \brief
-            Loads an image file from disk and uploads it to the GPU,
-            returning a handle for use in a MaterialData.
-
-         \param[in] path   Path to the image file on disk.
-         \param[in] isSRGB Should be true for color data (albedo,
-                            emissive) and false for data textures (normal
-                            maps, metallic-roughness, occlusion) - getting
-                            this wrong silently double-gamma-corrects those
-                            maps.
-         \return A texture handle.
-
-         \details
-            Cached by resolved path - calling this twice with the same
-            path returns the same handle instead of decoding/uploading
-            twice.
-         *********************************************************************/
-        ENGINE_API TextureHandle CreateTexture(const std::string& path, bool isSRGB = true);
-
-        /*********************************************************************
-         \brief
-            Same as CreateTexture() but from an already-loaded image
-            file's bytes in memory (still a file format stb_image
-            understands - PNG/JPG/etc, not raw pixels).
-
-         \param[in] fileBytes Pointer to the encoded image file's bytes.
-         \param[in] byteCount Number of bytes at fileBytes.
-         \param[in] isSRGB    See CreateTexture().
-         \param[in] cacheKey  Optional; pass one (e.g. the glTF image
-                               index) to dedupe repeated calls the same way
-                               the path-based overload does.
-         \return A texture handle.
-
-         \details
-            e.g. a glTF texture whose image lives in a binary buffer view
-            rather than as a standalone file.
-         *********************************************************************/
-        ENGINE_API TextureHandle CreateTextureFromMemory(const unsigned char* fileBytes, size_t byteCount,
-            bool isSRGB = true, const std::string& cacheKey = std::string());
-
-        /*********************************************************************
-         \brief
             Creates a texture from raw texels (not an image file), e.g. a
             font atlas the font system has rasterized.
          \param[in] pixels   Tightly packed rows, top row first; copied
@@ -324,12 +283,32 @@ namespace Crucible {
                  for the RGBA formats).
          \details
             Not cached: every call makes a new texture. Uploaded at the
-            start of the next frame, like CreateTexture().
+            start of the next frame.
          \throws std::runtime_error for no pixels, a zero size, or a size
                  past the GPU's limit (usually 16384 per side).
          *********************************************************************/
         ENGINE_API TextureHandle CreateTextureFromPixels(const void* pixels, uint32_t width, uint32_t height,
             TexturePixelFormat format, bool mipmaps = false);
+
+        /*********************************************************************
+         \brief
+            Creates a texture from a compiled .bill (Resources/CompiledTexture.h):
+            blocks already compressed for the GPU, every mip level included.
+            Nothing is decoded - the blocks are copied to the GPU as they are.
+         \param[in] texture   The decoded .bill.
+         \param[in] isSRGB    true for colour data (albedo, emissive), false for
+                              data textures (normal, metallic-roughness,
+                              occlusion). Picks the sRGB or plain variant of
+                              the format (BC7, BC1, BC3); BC4, BC5 and BC6H
+                              have only one.
+         \param[in] cacheKey  Optional; a second call with the same key returns
+                              the same handle instead of uploading again.
+         \return A texture handle. A BC4 (one channel) texture reads as
+                 (value, value, value, 1), like the grey image it came from.
+         \throws std::runtime_error if this GPU cannot sample the format.
+         *********************************************************************/
+        ENGINE_API TextureHandle CreateTextureCompressed(const CompiledTexture& texture, bool isSRGB = true,
+            const std::string& cacheKey = std::string());
 
         /*********************************************************************
          \brief
@@ -453,46 +432,40 @@ namespace Crucible {
 
         /*********************************************************************
          \brief
-            Creates a cubemap from six square face images of equal size.
-
-         \param[in] facePaths Image file paths in Vulkan/OpenGL cube face
-                                order: +X, -X, +Y, -Y, +Z, -Z (right, left,
-                                top, bottom, front, back).
-         \param[in] isSRGB    true for ordinary colour images (the usual
-                                case for LDR skybox sets).
-
-         \return A handle for Skybox::cubemap / EnvironmentSettings::skybox.
-
-         \details
-            Cached by the joined path list, like CreateTexture(). Throws if
-            a face fails to load, isn't square, or doesn't match face 0's
-            size.
-
-         \note
-            Face sets exported for other engines sometimes use a different
-            handedness; if the sky looks mirrored or a face is rotated,
-            swap +X/-X (or +Z/-Z) in facePaths.
-         *********************************************************************/
-        ENGINE_API CubemapHandle CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB = true);
-
-        /*********************************************************************
-         \brief
             Creates a cubemap from one equirectangular (latitude/longitude,
-            2:1) panorama - the format HDRI sites such as Poly Haven ship.
+            2:1) panorama, already decoded - the format HDRI sites such as
+            Poly Haven ship.
 
-         \param[in] path     Image path. .hdr files are loaded as true HDR
-                               (values above 1.0 kept); LDR formats
-                               (.png/.jpg/...) are converted to linear.
-         \param[in] faceSize Resolution of each generated cube face.
+         \param[in] rgba      width * height * 4 linear floats, top row first
+                               (values above 1.0 kept: HDR).
+         \param[in] width     Panorama width in pixels.
+         \param[in] height    Panorama height in pixels.
+         \param[in] faceSize  Resolution of each generated cube face.
+         \param[in] cacheKey  Names it (GPU debuggers) and dedupes repeated calls.
 
          \return A handle for Skybox::cubemap / EnvironmentSettings::skybox.
 
          \details
             Resampled on the CPU into six faces (bilinear), stored as
-            RGBA16F so HDR range survives. Cached by path + faceSize.
-            Throws if the file can't be loaded.
+            RGBA16F so HDR range survives, and its lighting baked - all at
+            load time. The engine cannot read image files itself: a game
+            uses compiled skies (CreateCubemapCompiled); the editor uses this
+            for a sky that is not compiled yet (Resources/ImageDecoders.h).
          *********************************************************************/
-        ENGINE_API CubemapHandle CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize = 512);
+        ENGINE_API CubemapHandle CreateCubemapFromEquirect(const float* rgba, uint32_t width, uint32_t height,
+            uint32_t faceSize, const std::string& cacheKey);
+
+        /*********************************************************************
+         \brief  A skybox from a compiled .sky (Resources/CompiledSky.h): its
+                 faces, reflection levels and diffuse light were baked by the
+                 texture compiler, so this only uploads - no image decoding
+                 and none of CreateCubemapFromEquirect's CPU work.
+         \param[in] sky        The decoded .sky.
+         \param[in] debugName  Shown in GPU debuggers.
+         \return A handle for Skybox::cubemap / EnvironmentSettings::skybox.
+         \throws std::runtime_error if this GPU cannot use BC6H textures.
+         *********************************************************************/
+        ENGINE_API CubemapHandle CreateCubemapCompiled(const CompiledSky& sky, const std::string& debugName);
 
         /*********************************************************************
          \brief  The built-in procedural sky (a blue gradient with a soft

@@ -1,6 +1,8 @@
 #include "AssetPipe/AssetManager.h"
 #include "AssetPipe/GLTFLoader.h"
 #include "Resources/CompiledModel.h"
+#include "Resources/CompiledTexture.h"
+#include "TextureBuild.h"   // Tools/Common
 
 #include <algorithm>
 #include <filesystem>
@@ -77,10 +79,41 @@ namespace {
         for (const auto& warning:m.warnings) std::cout<<"  warning: "<<warning<<'\n';
     }
 
-    void UniqueGuids(const AssetManager& assets) {
+    // Each image becomes a GPU-compressed texture (Tools/Common/TextureBuild, packed with Billet),
+    // so the engine uploads it as it is - no image decoding (stb) at runtime. Images a material
+    // uses for colour (base colour, emissive) get sRGB mipmaps (BC7); normal maps BC5 with
+    // direction-averaged mipmaps (the shader rebuilds z); other data (metallic-roughness,
+    // occlusion) BC7, averaged as stored.
+    void CompileImages(ModelResource& m,uint64_t guid) {
+        std::vector<bool> colour(m.images.size(),false), normal(m.images.size(),false);
+        auto mark=[&](const ModelTextureInfo& s,std::vector<bool>& as) {
+            if (s.texture<m.textures.size() && m.textures[s.texture].image<m.images.size()) as[m.textures[s.texture].image]=true;
+        };
+        for (const auto& material:m.materials) {
+            mark(material.baseColor,colour); mark(material.emissive,colour); mark(material.normal,normal);
+        }
+        for (size_t i=0;i<m.images.size();++i) {
+            auto& image=m.images[i];
+            TextureBuild::Options options; options.srgb=colour[i];
+            if (normal[i] && !colour[i]) { options.format=CompiledTextureFormat::BC5; options.normalMap=true; }
+            CompiledTexture texture=TextureBuild::Build(TextureBuild::DecodeImage(image.bytes),options);
+            texture.assetGuid=guid;
+            auto bytes=EncodeCompiledTexture(texture);
+            CompiledTexture check; std::string error;
+            const bool decoded=DecodeCompiledTexture(bytes,guid,check,error);   // before the message reads `error`
+            Check(decoded && check.data==texture.data,"Embedded texture round trip failed: "+error);
+            image.bytes=std::move(bytes);
+            image.mimeType=CompiledTextureMimeType;
+        }
+    }
+
+    // compiledOnly: in Resources a compiled file shares its GUID with the source copy Cook may
+    // have put next to it (CannonTex.bill and CannonTex.png), so only compiled files must differ.
+    void UniqueGuids(const AssetManager& assets,bool compiledOnly=false) {
         std::unordered_set<uint64_t> ids;
         for (const auto& entry:assets.GetAll())
-            Check(ids.insert(entry.guid.m_Value).second,"Duplicate asset GUID in "+assets.GetAssetRoot()+": "+entry.virtualPath);
+            if (!compiledOnly || AssetManager::IsCompiledExtension(entry.extension))
+                Check(ids.insert(entry.guid.m_Value).second,"Duplicate asset GUID in "+assets.GetAssetRoot()+": "+entry.virtualPath);
     }
 
     int CompileTree(const fs::path& sourceRoot,const fs::path& outputRoot,bool verify) {
@@ -93,7 +126,7 @@ namespace {
         Check(!within(sourcePath,outputPath) && !within(outputPath,sourcePath),"Source and runtime roots must be separate, non-nested directories");
         AssetManager sources,outputs;
         Check(sources.Init(sourcePath.string()) && outputs.Init(outputPath.string()),"Cannot index asset roots");
-        UniqueGuids(sources); UniqueGuids(outputs);
+        UniqueGuids(sources); UniqueGuids(outputs,true);
         size_t built=0,unchanged=0,failed=0;
         std::unordered_set<std::string> destinations;
         for (const auto* source:sources.GetByType(AssetType::Model)) {
@@ -117,6 +150,7 @@ namespace {
                 // tolerant hash deliberately folds CRLF, even in binary files.
                 uint64_t sourceHash=1469598103934665603ull;
                 for (auto byte:sourceBytes) { sourceHash^=byte; sourceHash*=1099511628211ull; }
+                for (int i=0;i<8;++i) { sourceHash^=uint8_t(TextureBuild::Version>>(8*i)); sourceHash*=1099511628211ull; }   // texture output changed: rebuild
                 CompiledModelInfo info{CompiledModelVersion,source->guid.m_Value,sourceHash};
                 if (!verify && fs::exists(target)) {
                     CompiledModelInfo cached;
@@ -125,6 +159,7 @@ namespace {
                 }
                 auto imported=GLTFLoader::LoadModelGLB(sourceBytes);
                 Check(imported.ok,source->virtualPath+": "+imported.error);
+                CompileImages(imported.model,source->guid.m_Value);
                 auto compiled=EncodeCompiledModel(imported.model,info);
                 auto decoded=DecodeCompiledModel(compiled,info.assetGuid);
                 Check(decoded.ok,"Compiled round trip failed: "+decoded.error);
@@ -152,8 +187,8 @@ int main(int argc,char** argv) {
             std::cout<<"Crucible model v"<<info.version<<" GUID="<<AssetRegistry::GuidToString(xresource::instance_guid{info.assetGuid})<<'\n';
             Summary(argv[2],decoded.model); return 0;
         }
-        std::cerr<<"Usage: CrucibleModelCompiler --compile-tree <AssetsSource> <Assets>\n"
-                   "       CrucibleModelCompiler --verify-tree <AssetsSource> <Assets>\n"
+        std::cerr<<"Usage: CrucibleModelCompiler --compile-tree <Assets> <Resources>\n"
+                   "       CrucibleModelCompiler --verify-tree <Assets> <Resources>\n"
                    "       CrucibleModelCompiler --inspect <file.cmodel>\n";
         return 2;
     } catch (const std::exception& e) { std::cerr<<"[ModelCompiler] "<<e.what()<<'\n'; return 1; }

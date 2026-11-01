@@ -68,7 +68,9 @@ namespace Crucible {
     struct ModelImage {
         std::string name;
         std::string mimeType;
-        std::vector<unsigned char> bytes; // embedded, still encoded PNG/JPEG
+        // Embedded image file (PNG/JPEG, as imported), or - in a compiled model - a compiled
+        // texture (mimeType == CompiledTextureMimeType, see Resources/CompiledTexture.h).
+        std::vector<unsigned char> bytes;
     };
 
     // Engine enums; source-format constants are translated by the offline importer.

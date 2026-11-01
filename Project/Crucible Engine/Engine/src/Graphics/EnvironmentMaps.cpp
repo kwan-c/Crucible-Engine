@@ -4,66 +4,23 @@
     See EnvironmentMaps.h.
 *************************************************************************/
 #include "Graphics/EnvironmentMaps.h"
+#include "Graphics/EnvironmentBake.h"
 #include "Graphics/Vulkan/VulkanFrameManager.h"   // MAX_FRAMES_IN_FLIGHT (ReleaseDestroyed)
+#include "Resources/CompiledSky.h"                // CreateCubemapCompiled
 
 #include <glm/gtc/packing.hpp>   // packHalf4x16 - RGBA16F cubemap texels
 
-#include <stb_image.h>   // the implementation is compiled in RenderSystem.cpp
-
 #include <algorithm>
 #include <cmath>
-#include <cstring>
-#include <filesystem>
-#include <memory>       // unique_ptr (stb_image pixel ownership in CreateCubemap)
 #include <stdexcept>
 
 namespace Crucible {
 
     namespace {
 
-        // The reverse of CubeFaceTexelDirection below: which face, and which texel of it, a
-        // direction points at (same face selection table).
-        void DirectionToCubeTexel(const glm::vec3& d, uint32_t size, uint32_t& face, uint32_t& x, uint32_t& y) {
-
-            const glm::vec3 a = glm::abs(d);
-            float u, v, major;
-            if (a.x >= a.y && a.x >= a.z) {
-                major = a.x;
-                if (d.x > 0.0f) { face = 0; u = -d.z; v = -d.y; } else { face = 1; u = d.z; v = -d.y; }
-            } else if (a.y >= a.z) {
-                major = a.y;
-                if (d.y > 0.0f) { face = 2; u = d.x; v = d.z; } else { face = 3; u = d.x; v = -d.z; }
-            } else {
-                major = a.z;
-                if (d.z > 0.0f) { face = 4; u = d.x; v = -d.y; } else { face = 5; u = -d.x; v = -d.y; }
-            }
-            major = std::max(major, 1e-8f);
-            const float fs = static_cast<float>(size);
-            x = static_cast<uint32_t>(glm::clamp((u / major * 0.5f + 0.5f) * fs, 0.0f, fs - 1.0f));
-            y = static_cast<uint32_t>(glm::clamp((v / major * 0.5f + 0.5f) * fs, 0.0f, fs - 1.0f));
-
-        }
-
-        // World-space direction through the centre of texel (x, y) of cube face `face`, using the
-        // Vulkan/OpenGL cube-map face selection table (face order +X, -X, +Y, -Y, +Z, -Z; row 0 =
-        // t near 0). Inverse of what the sampler does, so procedural/equirect faces generated with
-        // this line up with SamplerCube lookups by construction.
-        glm::vec3 CubeFaceTexelDirection(uint32_t face, uint32_t x, uint32_t y, uint32_t size) {
-
-            const float u = 2.0f * (static_cast<float>(x) + 0.5f) / static_cast<float>(size) - 1.0f;
-            const float v = 2.0f * (static_cast<float>(y) + 0.5f) / static_cast<float>(size) - 1.0f;
-
-            glm::vec3 d;
-            switch (face) {
-                case 0:  d = glm::vec3( 1.0f,   -v,   -u); break;   // +X
-                case 1:  d = glm::vec3(-1.0f,   -v,    u); break;   // -X
-                case 2:  d = glm::vec3(    u, 1.0f,    v); break;   // +Y
-                case 3:  d = glm::vec3(    u,-1.0f,   -v); break;   // -Y
-                case 4:  d = glm::vec3(    u,   -v, 1.0f); break;   // +Z
-                default: d = glm::vec3(   -u,   -v,-1.0f); break;   // -Z
-            }
-            return glm::normalize(d);
-        }
+        // Shared with the texture compiler, which bakes .sky files offline (EnvironmentBake.h).
+        using EnvironmentBake::CubeFaceTexelDirection;
+        using EnvironmentBake::DirectionToCubeTexel;
 
         // RGBA float -> one RGBA16F texel. Clamped to half's finite range (an HDRI's sun can
         // exceed 65504) and NaN-scrubbed, so one bad source pixel can't poison the sky.
@@ -151,13 +108,7 @@ namespace Crucible {
     CubemapHandle EnvironmentMaps::UploadCubemapFaces(const void* faceData, uint32_t faceSize, vk::Format format,
                                                uint32_t bytesPerTexel, const std::string& debugName) {
 
-        // The limit is the descriptor pool's: one set per cubemap still alive (or destroyed but
-        // not yet released). Destroyed slots no longer hold one.
-        const size_t live = std::count_if(m_cubemaps.begin(), m_cubemaps.end(), [](const GpuCubemap& c) { return !c.destroyed; })
-                          + m_retiredCubemaps.size();
-        if (live >= kMaxCubemaps) {
-            throw std::runtime_error("[Renderer] UploadCubemapFaces: kMaxCubemaps exceeded; raise the limit if you genuinely need more.");
-        }
+        CheckCubemapLimit("UploadCubemapFaces");
 
         const vk::DeviceSize faceBytes  = vk::DeviceSize{ faceSize } * faceSize * bytesPerTexel;
         const vk::DeviceSize totalBytes = faceBytes * 6;
@@ -186,6 +137,24 @@ namespace Crucible {
         };
         cube.view = vk::raii::ImageView(m_context.GetDevice(), viewInfo);
 
+        return RegisterCubemap(std::move(cube));
+
+    }   // EnvironmentMaps::UploadCubemapFaces()
+
+    void EnvironmentMaps::CheckCubemapLimit(const char* caller) const {
+
+        // The limit is the descriptor pool's: one set per cubemap still alive (or destroyed but
+        // not yet released). Destroyed slots no longer hold one.
+        const size_t live = std::count_if(m_cubemaps.begin(), m_cubemaps.end(), [](const GpuCubemap& c) { return !c.destroyed; })
+                          + m_retiredCubemaps.size();
+        if (live >= kMaxCubemaps) {
+            throw std::runtime_error(std::string("[Renderer] ") + caller + ": kMaxCubemaps exceeded; raise the limit if you genuinely need more.");
+        }
+
+    }   // EnvironmentMaps::CheckCubemapLimit()
+
+    CubemapHandle EnvironmentMaps::RegisterCubemap(GpuCubemap cube) {
+
         vk::DescriptorSetLayout layout = m_skySetLayout;
         vk::DescriptorSetAllocateInfo allocInfo{
             .descriptorPool     = m_cubemapDescriptorPool,
@@ -212,7 +181,54 @@ namespace Crucible {
         m_cubemaps.push_back(std::move(cube));
         return handle;
 
-    }   // EnvironmentMaps::UploadCubemapFaces()
+    }   // EnvironmentMaps::RegisterCubemap()
+
+    CubemapHandle EnvironmentMaps::CreateCubemapCompiled(const CompiledSky& sky, const std::string& debugName) {
+
+        CheckCubemapLimit("CreateCubemapCompiled");
+        constexpr vk::Format format = vk::Format::eBc6HUfloatBlock;
+        const vk::FormatProperties support = m_context.GetPhysicalDevice().getFormatProperties(format);
+        if (!(support.optimalTilingFeatures & vk::FormatFeatureFlagBits::eSampledImage)) {
+            throw std::runtime_error("[Renderer] This GPU cannot use BC6H textures, so it cannot show compiled skyboxes");
+        }
+        if (sky.sky.format != CompiledTextureFormat::BC6H || sky.environment.format != CompiledTextureFormat::BC6H) {
+            throw std::runtime_error("[Renderer] CreateCubemapCompiled: expected BC6H cubes");
+        }
+
+        // One cube image from a compiled cube: every mip level holds its six faces back to back,
+        // exactly how a multi-layer copy reads them.
+        const auto upload = [&](const CompiledTexture& source, VulkanImage& image, vk::raii::ImageView& view) {
+            const uint32_t levels = static_cast<uint32_t>(source.mips.size());
+            image.Create(m_context, source.width, source.height, format,
+                vk::ImageTiling::eOptimal,
+                vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
+                vk::MemoryPropertyFlagBits::eDeviceLocal,
+                /*arrayLayers*/ 6, vk::ImageCreateFlagBits::eCubeCompatible, levels);
+            for (uint32_t level = 0; level < levels; ++level) {
+                const CompiledTextureMip& mip = source.mips[level];
+                m_uploads.QueueImage(*image.GetImage(), source.data.data() + mip.offset, mip.size, mip.width, mip.height, 6, level);
+            }
+            vk::ImageViewCreateInfo viewInfo{
+                .image            = image.GetImage(),
+                .viewType         = vk::ImageViewType::eCube,
+                .format           = format,
+                .subresourceRange = { .aspectMask = vk::ImageAspectFlagBits::eColor, .levelCount = levels, .layerCount = 6 }
+            };
+            view = vk::raii::ImageView(m_context.GetDevice(), viewInfo);
+        };
+
+        // Everything BuildEnvironmentLighting would work out was baked by the texture compiler.
+        GpuCubemap cube;
+        cube.faceSize    = sky.sky.width;
+        cube.debugName   = debugName;
+        upload(sky.sky, cube.image, cube.view);
+        upload(sky.environment, cube.envImage, cube.envView);
+        cube.envMipCount = static_cast<uint32_t>(sky.environment.mips.size());
+        for (size_t i = 0; i < 9; ++i) { cube.sh[i] = glm::vec4(sky.sh[i][0], sky.sh[i][1], sky.sh[i][2], 0.0f); }
+
+        return RegisterCubemap(std::move(cube));
+
+    }   // EnvironmentMaps::CreateCubemapCompiled()
 
     void EnvironmentMaps::BuildEnvironmentLighting(GpuCubemap& cube, const void* faceData, uint32_t faceSize, vk::Format format) {
 
@@ -239,147 +255,25 @@ namespace Crucible {
             }
         }
 
-        // 2. A chain of plain shrunk copies: base size (power of two, at most 128) down to 16.
-        //    Not smaller: the GPU stretches the smallest level over a whole hemisphere of
-        //    reflection directions, and a 4x4 image stretched that far shows its texels as flat
-        //    patches on round objects.
-        uint32_t baseSize = 4;
-        while (baseSize * 2 <= std::min(faceSize, 128u)) { baseSize *= 2; }
-        std::vector<uint32_t>               sizes;
-        std::vector<std::vector<glm::vec3>> boxes;
-        for (uint32_t s = baseSize; s >= std::min(baseSize, 16u) && sizes.size() < 6; s /= 2) { sizes.push_back(s); }
+        // 2. Shrink, blur for reflections and project onto spherical harmonics - the same code
+        //    the texture compiler bakes .sky files with (EnvironmentBake.h).
+        const EnvironmentBake::Lighting lighting = EnvironmentBake::BakeLighting(source, faceSize);
+        for (int i = 0; i < 9; ++i) { cube.sh[i] = glm::vec4(lighting.sh[i], 0.0f); }
 
-        boxes.emplace_back(static_cast<size_t>(baseSize) * baseSize * 6);
-        for (uint32_t face = 0; face < 6; ++face) {
-            for (uint32_t y = 0; y < baseSize; ++y) {
-                const uint32_t y0 = y * faceSize / baseSize, y1 = std::max((y + 1) * faceSize / baseSize, y0 + 1);
-                for (uint32_t x = 0; x < baseSize; ++x) {
-                    const uint32_t x0 = x * faceSize / baseSize, x1 = std::max((x + 1) * faceSize / baseSize, x0 + 1);
-                    glm::vec3 sum(0.0f);
-                    for (uint32_t sy = y0; sy < y1; ++sy) {
-                        for (uint32_t sx = x0; sx < x1; ++sx) { sum += source[face * facePixels + static_cast<size_t>(sy) * faceSize + sx]; }
-                    }
-                    boxes[0][(static_cast<size_t>(face) * baseSize + y) * baseSize + x] = sum / static_cast<float>((y1 - y0) * (x1 - x0));
-                }
-            }
-        }
-        for (size_t level = 1; level < sizes.size(); ++level) {
-            const uint32_t s = sizes[level], ps = sizes[level - 1];
-            boxes.emplace_back(static_cast<size_t>(s) * s * 6);
-            for (uint32_t face = 0; face < 6; ++face) {
-                for (uint32_t y = 0; y < s; ++y) {
-                    for (uint32_t x = 0; x < s; ++x) {
-                        const size_t row0 = (static_cast<size_t>(face) * ps + y * 2) * ps + x * 2;
-                        const size_t row1 = row0 + ps;
-                        boxes[level][(static_cast<size_t>(face) * s + y) * s + x] =
-                            (boxes[level - 1][row0] + boxes[level - 1][row0 + 1] + boxes[level - 1][row1] + boxes[level - 1][row1 + 1]) * 0.25f;
-                    }
-                }
-            }
-        }
-        const auto lookup = [&](size_t level, const glm::vec3& dir) {
-            uint32_t face, x, y;
-            DirectionToCubeTexel(dir, sizes[level], face, x, y);
-            return boxes[level][(static_cast<size_t>(face) * sizes[level] + y) * sizes[level] + x];
-        };
-
-        // 3. Diffuse light: project the sky onto nine spherical harmonics (from a small level -
-        //    the result only keeps the broadest features anyway), with the cosine falloff of a
-        //    diffuse surface and the basis constants folded in, so the shader evaluates a plain
-        //    polynomial of the normal (see SkyIrradiance in DefaultShader.slang).
-        {
-            size_t level = 0;
-            while (level + 1 < sizes.size() && sizes[level] > 32) { ++level; }
-            const uint32_t s = sizes[level];
-            std::array<glm::vec3, 9> sum{};
-            float weightSum = 0.0f;
-            for (uint32_t face = 0; face < 6; ++face) {
-                for (uint32_t y = 0; y < s; ++y) {
-                    for (uint32_t x = 0; x < s; ++x) {
-                        const glm::vec3 d = CubeFaceTexelDirection(face, x, y, s);   // normalized
-                        // A texel near a face's corner covers less of the sphere than one at its centre.
-                        const float u = 2.0f * (static_cast<float>(x) + 0.5f) / static_cast<float>(s) - 1.0f;
-                        const float v = 2.0f * (static_cast<float>(y) + 0.5f) / static_cast<float>(s) - 1.0f;
-                        const float w = 1.0f / std::pow(1.0f + u * u + v * v, 1.5f);
-                        const glm::vec3 c = boxes[level][(static_cast<size_t>(face) * s + y) * s + x] * w;
-                        const float basis[9] = {
-                            0.282095f, 0.488603f * d.y, 0.488603f * d.z, 0.488603f * d.x,
-                            1.092548f * d.x * d.y, 1.092548f * d.y * d.z, 0.315392f * (3.0f * d.z * d.z - 1.0f),
-                            1.092548f * d.x * d.z, 0.546274f * (d.x * d.x - d.y * d.y) };
-                        for (int i = 0; i < 9; ++i) { sum[i] += c * basis[i]; }
-                        weightSum += w;
-                    }
-                }
-            }
-            const float norm = 4.0f * 3.14159265f / std::max(weightSum, 1e-6f);
-            // (cosine-lobe factor / pi) * basis constant, per coefficient.
-            const float scale[9] = {
-                1.0f * 0.282095f,
-                (2.0f / 3.0f) * 0.488603f, (2.0f / 3.0f) * 0.488603f, (2.0f / 3.0f) * 0.488603f,
-                0.25f * 1.092548f, 0.25f * 1.092548f, 0.25f * 0.315392f, 0.25f * 1.092548f, 0.25f * 0.546274f };
-            for (int i = 0; i < 9; ++i) { cube.sh[i] = glm::vec4(sum[i] * norm * scale[i], 0.0f); }
-        }
-
-        // 4. Reflections: level 0 is the shrunk sky as is (a mirror); each further level is what a
-        //    rougher surface would reflect - the average of the sky over the spread of directions
-        //    such a surface scatters into (GGX importance sampling, 64 directions per texel, read
-        //    from the shrunk copy of the same size so bright spots do not turn into speckles).
-        cube.envMipCount = static_cast<uint32_t>(sizes.size());
+        // 3. Upload the reflection levels.
+        const uint32_t baseSize = lighting.sizes.front();
+        cube.envMipCount = static_cast<uint32_t>(lighting.sizes.size());
         cube.envImage.Create(m_context, baseSize, baseSize, vk::Format::eR16G16B16A16Sfloat,
             vk::ImageTiling::eOptimal,
             vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled,
             vk::MemoryPropertyFlagBits::eDeviceLocal,
             /*arrayLayers*/ 6, vk::ImageCreateFlagBits::eCubeCompatible, cube.envMipCount);
 
-        constexpr uint32_t kSamples = 64;
         std::vector<uint64_t> packed;
-        for (size_t level = 0; level < sizes.size(); ++level) {
-            const uint32_t s = sizes[level];
-            packed.resize(static_cast<size_t>(s) * s * 6);
-            const float roughness = sizes.size() > 1 ? static_cast<float>(level) / static_cast<float>(sizes.size() - 1) : 0.0f;
-            const float a         = roughness * roughness;
-            for (uint32_t face = 0; face < 6; ++face) {
-                for (uint32_t y = 0; y < s; ++y) {
-                    for (uint32_t x = 0; x < s; ++x) {
-                        glm::vec3 colour;
-                        if (level == 0) {
-                            colour = boxes[0][(static_cast<size_t>(face) * s + y) * s + x];
-                        } else {
-                            const glm::vec3 n  = CubeFaceTexelDirection(face, x, y, s);
-                            const glm::vec3 up = std::abs(n.z) < 0.999f ? glm::vec3(0.0f, 0.0f, 1.0f) : glm::vec3(1.0f, 0.0f, 0.0f);
-                            const glm::vec3 tx = glm::normalize(glm::cross(up, n));
-                            const glm::vec3 ty = glm::cross(n, tx);
-                            glm::vec3 sum(0.0f);
-                            float     weight = 0.0f;
-                            for (uint32_t i = 0; i < kSamples; ++i) {
-                                // Hammersley point i: evenly spread pairs (u1, u2) in the unit square.
-                                uint32_t bits = i;
-                                bits = (bits << 16u) | (bits >> 16u);
-                                bits = ((bits & 0x55555555u) << 1u) | ((bits & 0xAAAAAAAAu) >> 1u);
-                                bits = ((bits & 0x33333333u) << 2u) | ((bits & 0xCCCCCCCCu) >> 2u);
-                                bits = ((bits & 0x0F0F0F0Fu) << 4u) | ((bits & 0xF0F0F0F0u) >> 4u);
-                                bits = ((bits & 0x00FF00FFu) << 8u) | ((bits & 0xFF00FF00u) >> 8u);
-                                const float u1 = (static_cast<float>(i) + 0.5f) / static_cast<float>(kSamples);
-                                const float u2 = static_cast<float>(bits) * 2.3283064365386963e-10f;
-
-                                const float phi      = 2.0f * 3.14159265f * u1;
-                                const float cosTheta = std::sqrt((1.0f - u2) / (1.0f + (a * a - 1.0f) * u2));
-                                const float sinTheta = std::sqrt(std::max(1.0f - cosTheta * cosTheta, 0.0f));
-                                const glm::vec3 h = tx * (sinTheta * std::cos(phi)) + ty * (sinTheta * std::sin(phi)) + n * cosTheta;
-                                const glm::vec3 l = 2.0f * glm::dot(n, h) * h - n;
-                                const float nDotL = glm::dot(n, l);
-                                if (nDotL <= 0.0f) { continue; }
-                                sum    += lookup(level, l) * nDotL;
-                                weight += nDotL;
-                            }
-                            colour = weight > 0.0f ? sum / weight : lookup(level, n);
-                        }
-                        // Half floats top out near 65504: keep an HDR sun from becoming infinity.
-                        colour = glm::min(colour, glm::vec3(60000.0f));
-                        packed[(static_cast<size_t>(face) * s + y) * s + x] = PackHalfTexel(glm::vec4(colour, 1.0f));
-                    }
-                }
-            }
+        for (size_t level = 0; level < lighting.sizes.size(); ++level) {
+            const uint32_t s = lighting.sizes[level];
+            packed.resize(lighting.levels[level].size());
+            for (size_t i = 0; i < packed.size(); ++i) { packed[i] = PackHalfTexel(glm::vec4(lighting.levels[level][i], 1.0f)); }
             m_uploads.QueueImage(*cube.envImage.GetImage(), packed.data(), vk::DeviceSize{ packed.size() } * 8, s, s, 6,
                                  static_cast<uint32_t>(level));
         }
@@ -415,108 +309,24 @@ namespace Crucible {
 
     }   // EnvironmentMaps::CreateDefaultSkybox()
 
-    CubemapHandle EnvironmentMaps::CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB) {
-
-        std::string cacheKey = isSRGB ? "faces[srgb]:" : "faces[unorm]:";
-        for (const std::string& path : facePaths) { cacheKey += path + "|"; }
-        if (auto it = m_cubemapCacheByKey.find(cacheKey); it != m_cubemapCacheByKey.end()) {
-            return CubemapHandle{ it->second };
-        }
-
-        using StbPixels = std::unique_ptr<stbi_uc, void(*)(void*)>;
-        std::vector<StbPixels> faces;
-        faces.reserve(6);
-        int faceSize = 0;
-
-        for (size_t f = 0; f < 6; ++f) {
-            int w{}, h{}, channels{};
-            stbi_uc* pixels = stbi_load(facePaths[f].c_str(), &w, &h, &channels, STBI_rgb_alpha);
-            if (!pixels) {
-                throw std::runtime_error("[Renderer] CreateCubemap: failed to load face image (" + facePaths[f] + ")");
-            }
-            faces.emplace_back(pixels, stbi_image_free);
-
-            if (w != h) {
-                throw std::runtime_error("[Renderer] CreateCubemap: face is not square (" + facePaths[f] + ")");
-            }
-            if (f == 0) { faceSize = w; }
-            else if (w != faceSize) {
-                throw std::runtime_error("[Renderer] CreateCubemap: face size differs from face 0 (" + facePaths[f] + ")");
-            }
-        }
-
-        const size_t faceBytes = static_cast<size_t>(faceSize) * faceSize * 4;
-        std::vector<unsigned char> packed(faceBytes * 6);
-        for (size_t f = 0; f < 6; ++f) {
-            memcpy(packed.data() + f * faceBytes, faces[f].get(), faceBytes);
-        }
-
-        const vk::Format format = isSRGB ? vk::Format::eR8G8B8A8Srgb : vk::Format::eR8G8B8A8Unorm;
-        const CubemapHandle handle = UploadCubemapFaces(packed.data(), static_cast<uint32_t>(faceSize), format, 4,
-            std::filesystem::path(facePaths[0]).parent_path().filename().string());
-
-        m_cubemapCacheByKey.emplace(cacheKey, handle.id);
-        return handle;
-
-    }   // EnvironmentMaps::CreateCubemap()
-
-    CubemapHandle EnvironmentMaps::CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize) {
+    CubemapHandle EnvironmentMaps::CreateCubemapFromEquirect(const float* rgba, uint32_t width, uint32_t height,
+                                                            uint32_t faceSize, const std::string& name) {
 
         faceSize = std::max(faceSize, 1u);
-        const std::string cacheKey = "equirect:" + path + "@" + std::to_string(faceSize);
+        const std::string cacheKey = "equirect:" + name + "@" + std::to_string(faceSize);
         if (auto it = m_cubemapCacheByKey.find(cacheKey); it != m_cubemapCacheByKey.end()) {
             return CubemapHandle{ it->second };
         }
-
-        // stbi_loadf returns linear floats for every format: .hdr as-is (true HDR), LDR images
-        // converted through stb's default 2.2 gamma - so one path serves both.
-        int w{}, h{}, channels{};
-        float* pixels = stbi_loadf(path.c_str(), &w, &h, &channels, STBI_rgb_alpha);
-        if (!pixels) {
-            throw std::runtime_error("[Renderer] CreateCubemapFromEquirect: failed to load (" + path + ")");
-        }
-        std::unique_ptr<float, void(*)(void*)> owner(pixels, stbi_image_free);
-
-        // Bilinear lookup, wrapping horizontally (longitude is periodic) and clamping vertically.
-        auto fetch = [&](int x, int y) -> glm::vec4 {
-            x = ((x % w) + w) % w;
-            y = std::clamp(y, 0, h - 1);
-            const float* p = pixels + (static_cast<size_t>(y) * w + x) * 4;
-            return glm::vec4(p[0], p[1], p[2], 1.0f);
-        };
-        auto sample = [&](float u, float v) -> glm::vec4 {
-            const float fx = u * static_cast<float>(w) - 0.5f;
-            const float fy = v * static_cast<float>(h) - 0.5f;
-            const int   x0 = static_cast<int>(std::floor(fx));
-            const int   y0 = static_cast<int>(std::floor(fy));
-            const float tx = fx - static_cast<float>(x0);
-            const float ty = fy - static_cast<float>(y0);
-            const glm::vec4 top    = glm::mix(fetch(x0, y0),     fetch(x0 + 1, y0),     tx);
-            const glm::vec4 bottom = glm::mix(fetch(x0, y0 + 1), fetch(x0 + 1, y0 + 1), tx);
-            return glm::mix(top, bottom, ty);
-        };
-
-        constexpr float kInvTwoPi = 0.15915494309f;
-        constexpr float kInvPi    = 0.31830988618f;
-
-        std::vector<uint64_t> texels(static_cast<size_t>(faceSize) * faceSize * 6);
-        size_t i = 0;
-        for (uint32_t face = 0; face < 6; ++face) {
-            for (uint32_t y = 0; y < faceSize; ++y) {
-                for (uint32_t x = 0; x < faceSize; ++x) {
-                    const glm::vec3 d = CubeFaceTexelDirection(face, x, y, faceSize);
-                    // Longitude from +X towards +Z (turning right, in this right-handed Y-up
-                    // world) runs left-to-right across the panorama; latitude runs top (+Y) to
-                    // bottom (-Y).
-                    const float u = std::atan2(d.z, d.x) * kInvTwoPi + 0.5f;
-                    const float v = std::acos(glm::clamp(d.y, -1.0f, 1.0f)) * kInvPi;
-                    texels[i++] = PackHalfTexel(sample(u, v));
-                }
-            }
+        if (!rgba || width == 0 || height == 0) {
+            throw std::runtime_error("[Renderer] CreateCubemapFromEquirect: no pixels (" + name + ")");
         }
 
-        const CubemapHandle handle = UploadCubemapFaces(texels.data(), faceSize, vk::Format::eR16G16B16A16Sfloat, 8,
-            std::filesystem::path(path).stem().string());
+        // Six cube faces of half-float texels (EnvironmentBake, shared with the texture compiler).
+        const std::vector<glm::vec3> faces = EnvironmentBake::EquirectToCube(rgba, static_cast<int>(width), static_cast<int>(height), faceSize);
+        std::vector<uint64_t> texels(faces.size());
+        for (size_t i = 0; i < faces.size(); ++i) { texels[i] = PackHalfTexel(glm::vec4(faces[i], 1.0f)); }
+
+        const CubemapHandle handle = UploadCubemapFaces(texels.data(), faceSize, vk::Format::eR16G16B16A16Sfloat, 8, name);
 
         m_cubemapCacheByKey.emplace(cacheKey, handle.id);
         return handle;
