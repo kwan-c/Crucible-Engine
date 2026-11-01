@@ -45,7 +45,7 @@ namespace Crucible::ScriptAuthoring {
                 for (auto at = text.find(token); at != std::string::npos; at = text.find(token, at + value.size()))
                     text.replace(at, token.size(), value);
             }
-            const auto directory = projectRoot / "ManagedScripts/Scripts";
+            const auto directory = projectRoot / "Assets/Scripts"; // compiled by ManagedScripts/CMakeLists.txt
             std::filesystem::create_directories(directory);
             const auto path = directory / (name + ".cs");
             // C++23 exclusive creation: a duplicate/racing request never overwrites source.

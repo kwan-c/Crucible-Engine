@@ -14,7 +14,7 @@ input, audio and resource APIs remain team-owned extension work.
 3. For a new name select **Create C# script "Name"**, then **Create and assign**.
    For an existing compiled class select its **(C#)** result to attach it directly.
    Creation defaults to the Crucible.Scripts namespace; the modal allows changing it.
-4. The Editor creates `ManagedScripts/Scripts/<ClassName>.cs` and assigns its class
+4. The Editor creates `Assets/Scripts/<ClassName>.cs` and assigns its class
    to this component. Open that source file in your C# editor to add logic.
 5. Save the scene and close Editor/Game. Compile using a normal Visual Studio
    Editor/Game build or:
@@ -45,7 +45,7 @@ ScriptComponent can be filled through Add Component without adding a duplicate.
 Creation from Add Component adds the component and assignment as one undo step;
 Cancel adds neither a component nor a source file. Source files stay on disk after
 Undo. The Asset Browser does not create scripts; C# project sources live under
-ManagedScripts/Scripts, outside the Assets tree.
+Assets/Scripts and can be opened from the Asset Browser.
 
 ## Try the logging example
 
@@ -65,13 +65,14 @@ ManagedScripts/Scripts, outside the Assets tree.
 The example logs OnUpdate's first call and each five-second interval rather than
 every frame, so the Console stays readable. These are Crucible's three current
 entity-script callbacks; Unity's additional callbacks are not implied. See
-ManagedScripts/Scripts/ScriptLogProbe.cs. The example is ordinary project source
+Assets/Scripts/ScriptLogProbe.cs. The example is ordinary project source
 and is not automatically attached to any existing scene.
 
 Creation writes a new source file exclusively; it never overwrites an existing
 file. Invalid/reserved names or namespaces, missing templates and unavailable source folders
 produce an error in the modal. Source creation requires a source checkout: the
-Editor finds ManagedScripts beside the active Assets folder. The modal retains
+Editor checks for ManagedScripts beside the active Assets folder and writes the
+new file to Assets/Scripts. The modal retains
 its original target and refuses assignment if selection, component or PlayMode
 state has changed. Cancel creates nothing.
 

@@ -43,6 +43,39 @@
             }
         },
         {
+            "id": "4BBC50DC994B4001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 4.975678443908691,
+                        "z": 5.615981101989746
+                    },
+                    "rotation": {
+                        "x": -0.14653818309307098,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.989205002784729
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 0
+                },
+                "EntityName": {
+                    "name": "Camera"
+                }
+            }
+        },
+        {
             "id": "60F048DC9868C005",
             "components": {
                 "Transform": {
@@ -79,6 +112,13 @@
                 },
                 "EntityName": {
                     "name": "Cube"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "TransformTest",
+                    "fields": []
                 }
             }
         },

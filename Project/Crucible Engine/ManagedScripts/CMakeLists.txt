@@ -11,11 +11,13 @@ crucible_add_managed_library(CrucibleManagedExamples
     ASSEMBLY Crucible.Examples
     SOURCES Examples/Counter.cs Examples/LifecycleCounter.cs)
 
-# Match the engine's source discovery convention. Adding/removing .cs files
+# Gameplay scripts live with the game's assets: every .cs under Assets/Scripts
+# (subfolders allowed) goes into Crucible.Scripts.dll. Adding/removing .cs files
 # regenerates the build; no runtime file watcher or source-asset loader is added.
-file(GLOB_RECURSE project_scripts CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/Scripts/*.cs")
+# AssemblyInfo.cs stays here so the assembly still builds when there are no scripts.
+file(GLOB_RECURSE project_scripts CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/Assets/Scripts/*.cs")
 crucible_add_managed_library(CrucibleProjectScripts
-    ASSEMBLY Crucible.Scripts SOURCES ${project_scripts} REFERENCES CrucibleScriptCore)
+    ASSEMBLY Crucible.Scripts SOURCES AssemblyInfo.cs ${project_scripts} REFERENCES CrucibleScriptCore)
 add_custom_target(CrucibleManagedScripts)
 get_property(managed_targets GLOBAL PROPERTY CRUCIBLE_MANAGED_TARGETS)
 add_dependencies(CrucibleManagedScripts ${managed_targets})

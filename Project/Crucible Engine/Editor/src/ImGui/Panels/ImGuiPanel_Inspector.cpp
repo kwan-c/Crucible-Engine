@@ -851,8 +851,8 @@ CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 			if (!scriptHeading) ImGui::SeparatorText("C# scripts");
 			any = true;
 			std::error_code ec;
-			const auto source = std::filesystem::path(m_assets.GetAssetRoot()).parent_path() /
-				"ManagedScripts/Scripts" / (search + ".cs");
+			const auto source = std::filesystem::path(m_assets.GetAssetRoot()) /
+				"Scripts" / (search + ".cs");
 			// Never suggest creating a duplicate source file just because its assembly is stale.
 			if (ScriptAuthoring::IsIdentifier(search) && std::filesystem::exists(source, ec)) {
 				ImGui::TextDisabled("Source file already exists.");

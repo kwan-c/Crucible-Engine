@@ -22,13 +22,14 @@ First configure and build the Mono-enabled Editor/Game as described in
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Tools\NewScript.ps1 -Name MyScript
 ```
 
-This creates `ManagedScripts/Scripts/MyScript.cs` with the S3 callbacks and prints
+This creates `Assets/Scripts/MyScript.cs` with the S3 callbacks and prints
 the configuration entry. Existing files are never overwritten. You can also
-create `.cs` files manually anywhere under `ManagedScripts/Scripts`; CMake
-discovers additions/removals recursively at build time. No CMake source-list edit
-is needed for project scripts. They appear under the Managed solution folder
-after regeneration. Keep `AssemblyInfo.cs` so an otherwise empty project builds.
-Scripts under `Assets` are not compiled by this target.
+create `.cs` files manually anywhere under `Assets/Scripts` (subfolders are
+fine); CMake discovers additions/removals recursively at build time. No CMake
+source-list edit is needed for project scripts. They appear under the Managed
+solution folder after regeneration. `ManagedScripts/AssemblyInfo.cs` keeps an
+otherwise empty project buildable. `.cs` files elsewhere in `Assets` are not
+compiled by this target.
 
 Add the printed entry to the existing `editor.scripting.instances` array in
 `Assets/Config/EngineConfig.json`, retaining your other settings:
@@ -75,7 +76,7 @@ solution folder also contains these targets:
 | Target | Purpose |
 |---|---|
 | CrucibleManagedExamples | Existing Counter and LifecycleCounter example DLL |
-| CrucibleProjectScripts | All project `.cs` files under ManagedScripts/Scripts |
+| CrucibleProjectScripts | All project `.cs` files under Assets/Scripts |
 | CrucibleManagedScripts | Compile all registered managed libraries only |
 | EditorManagedScripts | Compile all managed libraries, deploy to Editor/Managed |
 | GameManagedScripts | Compile all managed libraries, deploy to Game/Managed |
