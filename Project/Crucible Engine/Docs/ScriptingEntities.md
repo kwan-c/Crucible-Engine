@@ -29,7 +29,7 @@ input, audio and resource APIs remain team-owned extension work.
 
 For existing compiled scripts, use **Add Component**. It lists public,
 concrete, nongeneric classes with a public parameterless constructor that derive
-from Crucible.EntityScript. New/changed code requires build and application restart.
+from Crucible.EntityScript. New/changed code requires a script build, then Scripts > Reload Scripts.
 There is no class picker, refresh button, creation button, Advanced settings or
 routine execution-counter display inside an attached script component.
 
@@ -88,7 +88,7 @@ Supported fields are public mutable instance bool, int, float, double and string
 fields, including inherited fields. Private/protected fields, static/const/readonly
 fields, [NonSerialized] fields, properties, enums, arrays and custom/object types
 are excluded. This does not yet implement private [SerializeField] or arbitrary
-Unity serialization. Rebuild and restart after editing a script's declaration.
+Unity serialization. Rebuild and use Scripts > Reload Scripts after editing a script's declaration.
 
 For example, adding public bool canMove = true; exposes a Can Move checkbox.
 Default values come from C# field initializers. Inspecting a class with supported
@@ -196,7 +196,7 @@ Failed OnCreate gets one partial-cleanup attempt and leaves a diagnostic, not a
 live object. Failed OnUpdate faults only that instance, attempts OnDestroy and
 releases its root. Other scripts continue. Failed creation/update does not retry
 every frame or on a disable/re-enable toggle. Correct configuration and start a
-new Play session; changes to compiled code also require close/build/restart.
+new Play session; changes to compiled code also require a build and Scripts > Reload Scripts.
 
 Class assignment controls are disabled during Play/Pause; enabled can still be
 toggled. Programmatic retargeting releases the old object and defers any new

@@ -59,9 +59,19 @@ namespace Crucible
         private bool bound;
         /// <summary>The entity this script is attached to.</summary>
         public EntityIdentity Entity { get; private set; }
+
+        // Entity components ----------------------------
+        public Transform Transform { get; private set; }
+
+        public RigidBody RigidBody { get; private set; }
+
         /// <summary>Sets parameters on this entity's Animator controller.</summary>
         public Animator Animator { get; private set; }
-        public Transform Transform { get; private set; }
+
+
+
+        // Entity components ----------------------------
+
         /// <summary>
         /// Called by the engine (ScriptRuntime) right after construction and
         /// before OnCreate. Gives the script its entity and creates the
@@ -72,8 +82,11 @@ namespace Crucible
             if (bound)
                 throw new InvalidOperationException("An EntityScript instance cannot be rebound.");
             Entity = new EntityIdentity(unchecked((uint)index), unchecked((uint)generation));
-            Animator = new global::Crucible.Animator(Entity);
+
+            // Remember to bind new components to entity
             Transform = new global::Crucible.Transform(Entity);
+            RigidBody = new global::Crucible.RigidBody(Entity);
+            Animator = new global::Crucible.Animator(Entity);
             bound = true;
         }
         /// <summary>Called once when Play starts (or when the script is first enabled).</summary>

@@ -127,7 +127,7 @@ namespace Crucible::ScriptBindings
 		}
 
 		// ======================================================================
-		// Scale (TODO)
+		// Scale
 		// ======================================================================
 		int32_t ManagedTransformGetScale(int32_t index, int32_t generation, ScriptVec3* out) noexcept
 		{
@@ -169,7 +169,7 @@ namespace Crucible::ScriptBindings
 		}
 
 		// ======================================================================
-		// Rotation (TODO)
+		// Rotation
 		// ======================================================================
 		int32_t ManagedTransformGetRotation(int32_t index, int32_t generation, ScriptQuat* out) noexcept
 		{
@@ -214,6 +214,87 @@ namespace Crucible::ScriptBindings
 				return 0;
 			}
 		}
+
+		// -------------------------------------------
+		// RigidBody Members
+		// -------------------------------------------
+
+		int32_t ManagedRigidBodyGetVelocity(int32_t index, int32_t generation, ScriptVec3* out) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!out || !ResolveEntity(index, generation, entity))
+					return 0;
+				const RigidBody* rigidbody = world->Read<RigidBody>(entity); // Read: does not mark it changed
+				if (!rigidbody)
+					return 0;
+				out->x = rigidbody->velocity.x;
+				out->y = rigidbody->velocity.y;
+				out->z = rigidbody->velocity.z;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+		int32_t ManagedRigidBodySetVelocity(int32_t index, int32_t generation, const ScriptVec3* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !IsFinite(*value) || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world->Write<RigidBody>(entity); // Write: marks it changed so
+				if (!rigidbody)                                         // the hierarchy recomputes it
+					return 0;
+				rigidbody->velocity = { value->x, value->y, value->z };
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedRigidbodyGetActiveGravity(int32_t index, int32_t generation, int* out) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!out || !ResolveEntity(index, generation, entity))
+					return 0;
+				const RigidBody* rigidbody = world->Read<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				*out = rigidbody->useGravity;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedRigidbodySetActiveGravity(int32_t index, int32_t generation, const int* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world->Write<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				rigidbody->useGravity = *value;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
 	}
 
 	void SetWorld(World* newWorld, PlayMode* newPlay)
@@ -225,6 +306,8 @@ namespace Crucible::ScriptBindings
 	void RegisterTransformBindings()
 	{
 		// Names must match the C# class and method names in Transform.cs exactly.
+		
+		// Transform Component stuff...
 		mono_add_internal_call("Crucible.Transform::GetPosition",
 		                       reinterpret_cast<const void*>(ManagedTransformGetPosition));
 		mono_add_internal_call("Crucible.Transform::SetPosition",
@@ -237,6 +320,16 @@ namespace Crucible::ScriptBindings
 		                       reinterpret_cast<const void*>(ManagedTransformGetRotation));
 		mono_add_internal_call("Crucible.Transform::SetRotation",
 		                       reinterpret_cast<const void*>(ManagedTransformSetRotation));
+
+		// RigidBody Component stuff...
+		mono_add_internal_call("Crucible.RigidBody::GetVelocity",
+							   reinterpret_cast<const void*>(ManagedRigidBodyGetVelocity));
+		mono_add_internal_call("Crucible.RigidBody::SetVelocity",
+							   reinterpret_cast<const void*>(ManagedRigidBodySetVelocity));
+		mono_add_internal_call("Crucible.RigidBody::GetActiveGravity",
+							   reinterpret_cast<const void*>(ManagedRigidbodyGetActiveGravity));
+		mono_add_internal_call("Crucible.RigidBody::SetActiveGravity",
+							   reinterpret_cast<const void*>(ManagedRigidbodySetActiveGravity));
 	}
 }
 #endif

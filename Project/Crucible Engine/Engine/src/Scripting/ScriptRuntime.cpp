@@ -35,6 +35,7 @@
 #include <fstream>
 #include <limits>
 #include <map>
+#include <optional>
 #include <set>
 #include <mutex>
 #include <stdexcept>
@@ -57,6 +58,7 @@
 #include <mono/metadata/class.h>
 #include <mono/metadata/debug-helpers.h>
 #include <mono/metadata/mono-config.h>
+#include <mono/metadata/mono-gc.h>
 #include <mono/metadata/loader.h>
 #include <mono/metadata/object.h>
 #include <mono/metadata/row-indexes.h>
@@ -874,8 +876,19 @@ namespace Crucible
 		std::string version, error;
 		bool verified = false;
 #if CRUCIBLE_WITH_MONO
-		MonoDomain* root = nullptr;
+		MonoDomain* root = nullptr;    // created once by Initialize, never unloaded (framework only)
+		MonoDomain* scripts = nullptr; // holds every script DLL and object; replaced by ReloadScripts
 		std::thread::id ownerThread;
+		uint64_t reloadCount = 0;      // bumped by every successful ReloadScripts
+		std::optional<ScriptingConfig> configured; // last CreateConfiguredInstances config, recreated on reload
+
+		/*********************************************************************
+		 \brief  The domain user code runs in: the script domain once it exists.
+		 *********************************************************************/
+		MonoDomain* Domain() const
+		{
+			return scripts ? scripts : root;
+		}
 
 		// A loaded DLL.
 		struct Assembly
@@ -911,6 +924,7 @@ namespace Crucible
 			MonoMethod* create = nullptr;
 			MonoMethod* update = nullptr;
 			MonoMethod* destroy = nullptr;
+			void* updateThunk = nullptr; // direct native entry point for `update` (see CallUpdate)
 		};
 		uint64_t nextInstance = 1;
 		std::map<uint64_t, Instance> instances;
@@ -958,7 +972,7 @@ namespace Crucible
 				failure = Label(instance) + ": managed object was released";
 				return false;
 			}
-			if (!CallManaged(root, method, target, arguments, result, failure))
+			if (!CallManaged(Domain(), method, target, arguments, result, failure))
 			{
 				failure = Label(instance) + " " + name + ": " + failure;
 				return false;
@@ -1031,12 +1045,44 @@ namespace Crucible
 		         the instance becomes Faulted, OnDestroy is attempted once and the
 		         error is stored in instance.info.lastError.
 		 *********************************************************************/
+		/*********************************************************************
+		 \brief  Calls OnUpdate(deltaTime) through its unmanaged thunk: a native
+		         function pointer Mono generates for the method, so each frame skips
+		         mono_runtime_invoke's argument boxing and reflection-style dispatch.
+		         Falls back to Callback() if no thunk was created.
+		 *********************************************************************/
+		bool CallUpdate(Instance& instance, float deltaTime, std::string& failure)
+		{
+			if (!instance.updateThunk)
+				return Callback(instance, instance.update, "OnUpdate", {deltaTime}, failure);
+			const auto found = objects.find(instance.object.value);
+			auto* target = found == objects.end() ? nullptr : mono_gchandle_get_target(found->second.handle);
+			if (!target)
+			{
+				failure = Label(instance) + ": managed object was released";
+				return false;
+			}
+			// Instance method thunk signature: (this, arguments..., MonoException** out).
+			using UpdateThunk = void (*)(MonoObject*, float, MonoException**);
+			MonoException* exception = nullptr;
+			{
+				ManagedCallScope scope;
+				reinterpret_cast<UpdateThunk>(instance.updateThunk)(target, deltaTime, &exception);
+			}
+			if (exception)
+			{
+				failure = Label(instance) + " OnUpdate: " + ManagedException(reinterpret_cast<MonoObject*>(exception));
+				return false;
+			}
+			return true;
+		}
+
 		bool Step(Instance& instance, float deltaTime)
 		{
 			if (instance.info.state != ScriptInstanceState::Running)
 				return true;
 			std::string failure;
-			if (!Callback(instance, instance.update, "OnUpdate", {deltaTime}, failure))
+			if (!CallUpdate(instance, deltaTime, failure))
 			{
 				instance.info.state = ScriptInstanceState::Faulted;
 				std::string cleanup;
@@ -1083,9 +1129,9 @@ namespace Crucible
 				Fail("Class name is not valid UTF-8");
 				return nullptr;
 			}
-			GcRoot owner(reinterpret_cast<MonoObject*>(mono_assembly_get_object(root, assembly.assembly)));
+			GcRoot owner(reinterpret_cast<MonoObject*>(mono_assembly_get_object(Domain(), assembly.assembly)));
 			GcRoot text(reinterpret_cast<MonoObject*>(mono_string_new_utf16(
-			    root, reinterpret_cast<const mono_unichar2*>(wide.data()), int32_t(wide.size()))));
+			    Domain(), reinterpret_cast<const mono_unichar2*>(wide.data()), int32_t(wide.size()))));
 			uint8_t throwOnError = 1;
 			void* arguments[] = {text.Get(), &throwOnError};
 			GcRoot reflectedType;
@@ -1132,6 +1178,64 @@ namespace Crucible
 			fieldDefaults.clear();
 			validatedClasses.clear();
 			assemblies.clear(); // metadata/images are owned by Mono until final cleanup
+		}
+
+		/*********************************************************************
+		 \brief  Creates a fresh, empty script domain and makes it current, so the
+		         next LoadAssembly loads into it.
+		 *********************************************************************/
+		bool CreateScriptDomain(std::string& failure)
+		{
+			char name[] = "Crucible.Scripts";
+			{
+				ManagedCallScope scope; // domain setup runs framework code
+				scripts = mono_domain_create_appdomain(name, nullptr);
+			}
+			if (!scripts)
+			{
+				failure = "Mono could not create the script domain";
+				return false;
+			}
+			if (!mono_domain_set(scripts, false))
+			{
+				failure = "Mono could not switch to the script domain";
+				return false;
+			}
+			return true;
+		}
+
+		/*********************************************************************
+		 \brief  Unloads the script domain: every script DLL and object in it goes
+		         (Mono aborts any threads a script started). Call ReleaseManaged()
+		         first - nothing may still point into it.
+		 \return false if Mono still knows the domain afterwards (it was not
+		         unloaded).
+		 \note   mono_domain_unload, not mono_domain_try_unload: called from native
+		         code, try_unload aborts the process in Mono 6.8 ("Cannot transition
+		         thread ... from STATE_BLOCKING"), because it skips the GC-state
+		         switch that mono_domain_unload performs. Verified with a reload test harness;
+		         mono_domain_unload does not report errors, so success is checked
+		         by looking the domain up by id afterwards.
+		 *********************************************************************/
+		bool UnloadScriptDomain(std::string& failure)
+		{
+			if (!scripts)
+				return true;
+			MonoDomain* old = scripts;
+			scripts = nullptr;
+			const int32_t id = mono_domain_get_id(old);
+			mono_domain_set(root, false);
+			{
+				ManagedCallScope scope; // finalizers in the old domain run here
+				mono_domain_unload(old);
+			}
+			if (mono_domain_get_by_id(id))
+			{
+				failure = "Mono did not unload the old script domain";
+				return false;
+			}
+			mono_gc_collect(mono_gc_max_generation());
+			return true;
 		}
 #endif
 
@@ -1319,6 +1423,18 @@ namespace Crucible
 				return fail(data.error);
 			}
 			data.verified = config.verifyManagedExecution;
+
+			// Step 8: the script domain. Every script DLL and object lives here, so
+			// ReloadScripts can unload it and start over; the root domain stays.
+			std::string domainError;
+			if (!data.CreateScriptDomain(domainError))
+			{
+				data.scripts = nullptr; // freed with the root domain
+				CleanupDomain(data.root);
+				data.root = nullptr;
+				processRuntime = ProcessRuntime::Finished;
+				return fail(domainError);
+			}
 			data.state = ScriptRuntimeState::Running;
 			return true;
 		}
@@ -1327,6 +1443,7 @@ namespace Crucible
 			if (data.root)
 			{
 				data.ReleaseManaged();
+				data.scripts = nullptr; // freed with the root domain
 				CleanupDomain(data.root);
 				data.root = nullptr;
 				processRuntime = ProcessRuntime::Finished;
@@ -1389,6 +1506,17 @@ namespace Crucible
 			}
 		}
 		data.ReleaseManaged();
+		std::string unloadError;
+		if (!data.UnloadScriptDomain(unloadError))
+		{
+			try
+			{
+				CRU_ERROR("[Scripting] Unloading the script domain at shutdown failed: {}", unloadError);
+			}
+			catch (...)
+			{
+			}
+		}
 		CleanupDomain(data.root);
 		data.root = nullptr;
 		processRuntime = ProcessRuntime::Finished;
@@ -1567,7 +1695,7 @@ namespace Crucible
 		auto* loaded = data.GetAssembly(assembly);
 		if (!loaded)
 			return false;
-		GcRoot owner(reinterpret_cast<MonoObject*>(mono_assembly_get_object(data.root, loaded->assembly)));
+		GcRoot owner(reinterpret_cast<MonoObject*>(mono_assembly_get_object(data.Domain(), loaded->assembly)));
 		GcRoot exported;
 		std::string error;
 		if (!Reflect(owner.Get(), "GetExportedTypes", 0, nullptr, exported, error) || !exported.Get())
@@ -1622,7 +1750,7 @@ namespace Crucible
 		if (!DefaultConstructor(type))
 			return data.Fail("Class requires a public parameterless constructor: " + name);
 		GcRoot reflected(
-		    reinterpret_cast<MonoObject*>(mono_type_get_object(data.root, mono_class_get_type(type))));
+		    reinterpret_cast<MonoObject*>(mono_type_get_object(data.Domain(), mono_class_get_type(type))));
 		auto* descriptor = mono_method_desc_new("System.Activator:CreateInstance(System.Type)", true);
 		auto* constructor =
 		    descriptor ? mono_method_desc_search_in_image(descriptor, mono_get_corlib()) : nullptr;
@@ -1708,7 +1836,7 @@ namespace Crucible
 		auto* target = mono_gchandle_get_target(found->second.handle);
 		if (!target)
 			return data.Fail("Managed object was released");
-		if (!CallManaged(data.root, callable, target, arguments, result, error))
+		if (!CallManaged(data.Domain(), callable, target, arguments, result, error))
 			return data.Fail("Calling " + method + ": " + error);
 		data.error.clear();
 		return true;
@@ -1742,7 +1870,7 @@ namespace Crucible
 		auto* callable = FindMethod(type, method, true, arguments, error);
 		if (!callable)
 			return data.Fail(error);
-		if (!CallManaged(data.root, callable, nullptr, arguments, result, error))
+		if (!CallManaged(data.Domain(), callable, nullptr, arguments, result, error))
 			return data.Fail("Calling " + name + "." + method + ": " + error);
 		data.error.clear();
 		return true;
@@ -1908,7 +2036,7 @@ namespace Crucible
 		if (found == data.objects.end())
 			return data.Fail("Managed object was released");
 		std::string failure;
-		if (!WriteFields(data.root, mono_gchandle_get_target(found->second.handle), found->second.type,
+		if (!WriteFields(data.Domain(), mono_gchandle_get_target(found->second.handle), found->second.type,
 		                 fields, failure))
 			return data.Fail(failure);
 		return true;
@@ -2047,13 +2175,13 @@ namespace Crucible
 		// Step 3: find all three callbacks BEFORE constructing, so a bad signature
 		// fails without running any user code.
 		std::string failure;
-		auto* create = LifecycleMethod(data.root, type, "OnCreate", {}, failure);
+		auto* create = LifecycleMethod(data.Domain(), type, "OnCreate", {}, failure);
 		if (!create)
 			return data.Fail(name + ": " + failure);
-		auto* update = LifecycleMethod(data.root, type, "OnUpdate", {0.0f}, failure);
+		auto* update = LifecycleMethod(data.Domain(), type, "OnUpdate", {0.0f}, failure);
 		if (!update)
 			return data.Fail(name + ": " + failure);
-		auto* destroy = LifecycleMethod(data.root, type, "OnDestroy", {}, failure);
+		auto* destroy = LifecycleMethod(data.Domain(), type, "OnDestroy", {}, failure);
 		if (!destroy)
 			return data.Fail(name + ": " + failure);
 
@@ -2069,7 +2197,7 @@ namespace Crucible
 			auto* target = mono_gchandle_get_target(data.objects.at(object.value).handle);
 			const std::vector<ScriptValue> identity{std::bit_cast<int32_t>(entityIdentity[0]),
 			                                        std::bit_cast<int32_t>(entityIdentity[1])};
-			if (!CallManaged(data.root, bind, target, identity, result, failure))
+			if (!CallManaged(data.Domain(), bind, target, identity, result, failure))
 			{
 				data.ReleaseObject(object);
 				return data.Fail("Binding entity: " + failure);
@@ -2082,7 +2210,7 @@ namespace Crucible
 			const auto& entry = data.objects.at(object.value);
 			try
 			{
-				if (!WriteFields(data.root, mono_gchandle_get_target(entry.handle), entry.type, *fields,
+				if (!WriteFields(data.Domain(), mono_gchandle_get_target(entry.handle), entry.type, *fields,
 				                 failure))
 				{
 					data.ReleaseObject(object);
@@ -2110,7 +2238,8 @@ namespace Crucible
 			                       object,
 			                       create,
 			                       update,
-			                       destroy});
+			                       destroy,
+			                       mono_method_get_unmanaged_thunk(update)});
 			(void)inserted;
 			owned = &found->second;
 		}
@@ -2322,6 +2451,9 @@ namespace Crucible
 		auto& data = *m_impl;
 		if (!data.Ready())
 			return false;
+#if CRUCIBLE_WITH_MONO
+		data.configured = config; // ReloadScripts recreates these
+#endif
 		std::vector<ScriptInstanceHandle> created;
 		for (const auto& definition : config.instances)
 		{
@@ -2350,6 +2482,85 @@ namespace Crucible
 	         Static: calls the method directly. Instance: creates an object,
 	         calls the method, then destroys the object. Logs the return value.
 	 *********************************************************************/
+	// --- Reload
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Steps are marked below.
+	 *********************************************************************/
+	bool ScriptRuntime::ReloadScripts()
+	{
+		auto& data = *m_impl;
+		if (!data.Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		if (!data.scripts)
+			return data.Fail("Script reload requires a script domain");
+
+		// Step 1: only between Play sessions. Entity scripts exist only during Play;
+		// their live state would be lost, so refuse rather than destroy it.
+		for (const auto& [id, instance] : data.instances)
+		{
+			(void)id;
+			if (instance.info.entityOwned && instance.object)
+				return data.Fail("Stop Play before reloading scripts: entity scripts are still running");
+		}
+
+		// Step 2: OnDestroy on every remaining (standalone) instance.
+		std::string problems;
+		try
+		{
+			if (!data.StopInstances())
+				problems = data.error;
+		}
+		catch (...)
+		{
+			problems = "Native failure while disposing script instances";
+		}
+
+		// Step 3: drop every handle and cached Mono pointer into the old domain.
+		// Handles callers still hold (assembly, object, instance) become stale.
+		data.ReleaseManaged();
+
+		// Step 4: unload the old domain. If Mono refuses, the old one is left behind
+		// (leaked) and a new one is created anyway, so editing can continue.
+		std::string unloadError;
+		if (!data.UnloadScriptDomain(unloadError))
+			problems += (problems.empty() ? "" : "\n") +
+			            ("Old scripts could not be unloaded (restart the Editor if they misbehave): " + unloadError);
+
+		// Step 5: a fresh domain. The next LoadAssembly reads the DLLs from disk again.
+		std::string domainError;
+		if (!data.CreateScriptDomain(domainError))
+		{
+			data.scripts = nullptr;
+			data.state = ScriptRuntimeState::Failed;
+			return data.Fail("Script reload failed: " + domainError);
+		}
+		++data.reloadCount;
+
+		// Step 6: recreate the configured standalone instances from the new DLLs.
+		if (data.configured && !CreateConfiguredInstances(*data.configured))
+			problems += (problems.empty() ? "" : "\n") + data.error;
+
+		if (!problems.empty())
+			return data.Fail("Scripts reloaded with problems: " + problems);
+		data.error.clear();
+		CRU_INFO("[Scripting] Scripts reloaded (reload #{})", data.reloadCount);
+		return true;
+#else
+		return false;
+#endif
+	}
+
+	uint64_t ScriptRuntime::ReloadCount() const noexcept
+	{
+#if CRUCIBLE_WITH_MONO
+		return m_impl->reloadCount;
+#else
+		return 0;
+#endif
+	}
+
 	bool ScriptRuntime::RunStartupEntry(const ScriptingConfig& config)
 	{
 		if (!config.enabled)

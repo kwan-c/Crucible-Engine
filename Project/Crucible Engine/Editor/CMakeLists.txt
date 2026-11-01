@@ -38,6 +38,11 @@ target_include_directories(Editor
 # Editor-only ImGui libraries. Engine and Game must NOT link EditorThirdParty.
 target_link_libraries(Editor PRIVATE Engine EditorThirdParty)
 crucible_deploy_mono(Editor)
+# The Editor compiles C# scripts itself on save (Editor/src/Scripting/ScriptCompiler.cpp)
+# with this SDK's mono.exe + mcs.exe.
+if(CRUCIBLE_ENABLE_MONO)
+    target_compile_definitions(Editor PRIVATE CRUCIBLE_MONO_SDK="${CRUCIBLE_MONO_ROOT}")
+endif()
 
 # Copy Engine.dll to Editor output directory (ImGui is static, so no imgui.dll)
 add_custom_command(TARGET Editor POST_BUILD

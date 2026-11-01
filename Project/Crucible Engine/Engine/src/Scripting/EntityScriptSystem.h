@@ -128,6 +128,7 @@ namespace Crucible
 		std::set<uint64_t> m_removed;         // entities whose ScriptComponent was removed since last Update
 		std::shared_ptr<int> m_lifetime = std::make_shared<int>(0); // lets event callbacks detect this system is gone
 		uint64_t m_session = 0;               // Play session revision the records belong to
+		uint64_t m_reloadSeen = 0;            // ScriptRuntime::ReloadCount() the records belong to
 		bool m_sceneChanged = false;          // set by the scene-changed callback
 	};
 #ifdef _MSC_VER

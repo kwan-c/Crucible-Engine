@@ -856,7 +856,7 @@ CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 			// Never suggest creating a duplicate source file just because its assembly is stale.
 			if (ScriptAuthoring::IsIdentifier(search) && std::filesystem::exists(source, ec)) {
 				ImGui::TextDisabled("Source file already exists.");
-				ImGui::TextDisabled("Close, build scripts and restart to attach it.");
+				ImGui::TextDisabled("It is compiling (see the menu bar); attach it once scripts reload.");
 			} else {
 				const bool validName = ScriptAuthoring::IsIdentifier(search);
 				ImGui::BeginDisabled(blocked != nullptr || !validName);
@@ -865,7 +865,7 @@ CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 				ImGui::EndDisabled();
 				ImGui::SetItemTooltip("%s", blocked ? blocked : !validName ?
 					"Use letters, digits and underscores, starting with a letter or underscore." :
-					"Create and attach a new C# script. Save the scene, close, build and restart before Play.");
+					"Create and attach a new C# script. It compiles and reloads by itself before Play.");
 			}
 		}
 		if (!m_scriptPickerError.empty()) {
@@ -1985,8 +1985,12 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
     auto* core = EditorManager::GetInstance().GetCore();
     const bool inSession = core && core->IsInPlaySession();
     auto* runtime = core && core->GetScriptRuntime().IsRunning() ? &core->GetScriptRuntime() : nullptr;
-    if (m_scriptFieldAssembly != script.assembly || m_scriptFieldNamespace != script.nameSpace || m_scriptFieldClass != script.className) {
+    // Re-read after Scripts > Reload Scripts too: fields may have been added, removed or re-defaulted.
+    const uint64_t reload = runtime ? runtime->ReloadCount() : 0;
+    if (m_scriptFieldAssembly != script.assembly || m_scriptFieldNamespace != script.nameSpace || m_scriptFieldClass != script.className ||
+        m_scriptFieldReload != reload) {
         m_scriptFieldAssembly = script.assembly; m_scriptFieldNamespace = script.nameSpace; m_scriptFieldClass = script.className;
+        m_scriptFieldReload = reload;
         m_scriptFieldDefaults.clear(); m_scriptFieldError.clear();
         ScriptAssemblyHandle assembly;
         if (!runtime) m_scriptFieldError = "A Mono-enabled Editor is needed to inspect compiled public fields.";
@@ -2064,7 +2068,7 @@ void Crucible::Inspector::DrawCreateScriptModal() {
     if (!ImGui::BeginPopupModal("Create C# script", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
     ImGui::InputText("Class name", &m_scriptNewName);
     ImGui::InputText("Namespace", &m_scriptNewNamespace);
-    ImGui::TextUnformatted("Creates C# source and attaches it to the selected entity.\nSave the scene, close Editor, build scripts, then restart.");
+    ImGui::TextUnformatted("Creates C# source and attaches it to the selected entity.\nIt compiles and reloads by itself (see the menu bar).");
     auto* core = EditorManager::GetInstance().GetCore();
     const auto* existing = m_world.IsAlive(m_scriptCreateTarget) ? m_world.Read<ScriptComponent>(m_scriptCreateTarget) : nullptr;
     const bool valid = m_scriptCreateTarget == m_selected && m_world.IsAlive(m_scriptCreateTarget) &&
@@ -2077,7 +2081,7 @@ void Crucible::Inspector::DrawCreateScriptModal() {
         if (ScriptAuthoring::Create(projectRoot, m_scriptNewName, m_scriptNewNamespace, output, m_scriptCreateError)) {
             AssignScript(m_selected, ProjectScriptAssembly, m_scriptNewNamespace, m_scriptNewName);
             m_scriptNoticeTarget = m_selected;
-            m_scriptNotice = "Source created. Save the scene, close Editor, build scripts and restart before Play.";
+            m_scriptNotice = "Source created. It compiles and reloads by itself; wait for the Console before Play.";
             CRU_USER_INFO("Created entity script: {}", output.string());
             ImGui::CloseCurrentPopup();
         }

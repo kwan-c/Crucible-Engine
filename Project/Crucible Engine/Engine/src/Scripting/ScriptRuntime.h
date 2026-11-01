@@ -24,7 +24,8 @@
 *     - Call only from the main thread (the one that called Initialize).
 *     - Functions return false on failure; LastError() says why.
 *     - No Mono types appear here; they stay inside the Scripting .cpp files.
-*     - Loaded DLLs stay loaded until the application closes (no reload).
+*     - Script DLLs live in a separate script domain; ReloadScripts() unloads
+*       it and starts over (Editor, between Play sessions).
 *
 **************************************************************************/
 #pragma once
@@ -298,6 +299,30 @@ namespace Crucible
 		         invalid, none are written.
 		 *********************************************************************/
 		bool SetEntityFields(ScriptInstanceHandle instance, const std::vector<ScriptFieldValue>& fields);
+
+		// ==================================================================
+		// Reload (Editor): swap in rebuilt script DLLs without restarting
+		// ==================================================================
+
+		/*********************************************************************
+		 \brief  Unloads every script DLL and C# object and starts a fresh script
+		         domain; the next LoadAssembly reads the DLLs from disk again.
+		         Calls OnDestroy on standalone instances, then recreates the ones
+		         from CreateConfiguredInstances.
+		 \note   Refused while entity scripts are running: call it between Play
+		         sessions. Every assembly/object/instance handle obtained before
+		         is stale afterwards (calls with it fail) - fetch new ones.
+		         Static C# fields reset.
+		 \return false with LastError() on failure or problems (e.g. OnDestroy
+		         threw); scripting stays usable unless State() becomes Failed.
+		 *********************************************************************/
+		bool ReloadScripts();
+
+		/*********************************************************************
+		 \brief  Number of successful ReloadScripts calls. Editor panels compare it
+		         with a saved value to know when cached script data is stale.
+		 *********************************************************************/
+		uint64_t ReloadCount() const noexcept;
 
 		// ==================================================================
 		// 5. Bindings: engine features C# can call

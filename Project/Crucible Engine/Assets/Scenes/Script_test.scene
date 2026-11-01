@@ -145,6 +145,26 @@
                         "z": 1.0
                     }
                 },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
                 "MeshRenderer": {
                     "visible": true,
                     "modelAsset": 0,
@@ -159,6 +179,24 @@
                     "meshAsset": 8362592118289502741,
                     "materialAsset": 0
                 },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                },
                 "EntityName": {
                     "name": "Sphere"
                 },
@@ -170,11 +208,11 @@
                     "fields": [
                         {
                             "declaringType": "Crucible.Scripts.Test",
-                            "name": "speed",
-                            "type": "Float",
+                            "name": "useGravity",
+                            "type": "Bool",
                             "boolean": false,
                             "integer": 0,
-                            "single": 0.009999999776482582,
+                            "single": 0.0,
                             "real": 0.0,
                             "text": "",
                             "stringIsNull": false

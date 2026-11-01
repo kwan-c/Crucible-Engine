@@ -1176,7 +1176,7 @@ void Crucible::AssetBrowser::DrawCreateScriptModal() {
 				std::string const virtualPath = fs::relative(output, assetRoot, ec).generic_string();
 				Refresh();
 				m_selected = virtualPath;
-				CRU_USER_INFO("Created script {}. Close the Editor, build, and restart to attach it to an entity.", virtualPath);
+				CRU_USER_INFO("Created script {}. It compiles by itself; attach it through Add Component once the Console says scripts reloaded.", virtualPath);
 				close = true;
 			}
 		}

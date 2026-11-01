@@ -83,6 +83,15 @@ namespace Crucible
 
 	void EntityScriptSystem::Update(World& world, [[maybe_unused]] SystemContext& ctx)
 	{
+		// --- Step 0: after ScriptRuntime::ReloadScripts every old instance handle is
+		// stale (the runtime already destroyed the objects), so just forget them.
+		if (m_reloadSeen != m_runtime.ReloadCount())
+		{
+			m_records.clear();
+			m_removed.clear();
+			m_reloadSeen = m_runtime.ReloadCount();
+		}
+
 		// --- Step 1: reset everything on scene change, Stop, or a new Play session.
 		if (m_sceneChanged || m_session != m_play.SessionRevision() || !m_play.InSession())
 		{
