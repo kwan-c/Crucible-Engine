@@ -30,6 +30,7 @@ namespace Crucible
 	class IScriptAnimatorBinding;
 	class World;
 	class PlayMode;
+	class SceneManager;
 
 	namespace ScriptBindings
 	{
@@ -54,16 +55,19 @@ namespace Crucible
 		void SetAnimator(IScriptAnimatorBinding* binding);
 
 		/*********************************************************************
-		 \brief  Gives entity bindings (Transform, ...) access to the ECS and Play
-		         state. nullptr clears it. Non-owning; main thread only.
+		 \brief  Gives entity bindings (Transform, Entity, ...) access to the ECS,
+		         Play state and the open scene (for entity fields saved as scene
+		         ids). nullptr clears it. Non-owning; main thread only.
 		         Called through ScriptRuntime::SetWorldBinding. Defined in
-		         Bindings/TransformBindings.cpp.
+		         Bindings/EntityContext.cpp.
 		 *********************************************************************/
-		void SetWorld(World* world, PlayMode* play);
+		void SetWorld(World* world, PlayMode* play, SceneManager* scenes);
 
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
 		void RegisterAnimatorBindings(); // Bindings/AnimatorBindings.cpp (C# Animator)
 		void RegisterTransformBindings(); // Bindings/TransformBindings.cpp (C# Transform)
+		void RegisterInputBindings();     // Bindings/InputBindings.cpp     (C# Input)
+		void RegisterEntityBindings();    // Bindings/EntityBindings.cpp    (C# Entity)
 	}
 }

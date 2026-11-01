@@ -17,13 +17,14 @@ namespace Crucible::ScriptBindings
 		RegisterLogBindings();
 		RegisterAnimatorBindings();
 		RegisterTransformBindings();
-		// Add new RegisterXxxBindings() calls here.
+		RegisterInputBindings();
+		RegisterEntityBindings();
 	}
 
 	void ClearAll()
 	{
 		SetAnimator(nullptr);
-		SetWorld(nullptr, nullptr);
+		SetWorld(nullptr, nullptr, nullptr);
 		// Clear new adapters here.
 	}
 }

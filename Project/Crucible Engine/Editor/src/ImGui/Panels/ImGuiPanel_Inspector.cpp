@@ -2038,6 +2038,12 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
             edited = ImGui::InputText(label.c_str(), &field.text);
             if (edited) field.stringIsNull = false;
             break;
+        case ScriptFieldType::Entity: {
+            // Same drag-from-Hierarchy picker as a PhysicsJoint's connected body; stores the scene id.
+            const std::string shown = label.substr(0, label.find("###"));
+            edited = EntityRefField(shown.c_str(), field.entityId);
+            break;
+        }
         }
         if (edited && ((field.type == ScriptFieldType::Single && !std::isfinite(field.single)) ||
                        (field.type == ScriptFieldType::Double && !std::isfinite(field.real)))) edited = false;

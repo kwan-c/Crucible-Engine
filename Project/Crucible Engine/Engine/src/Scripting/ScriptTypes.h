@@ -23,7 +23,7 @@ namespace Crucible
 {
 	/*********************************************************************
 	 \brief  C# field types that can be shown in the Inspector and saved
-	         in scenes (bool, int, float, double, string).
+	         in scenes (bool, int, float, double, string, Crucible.Entity).
 	 *********************************************************************/
 	enum class ScriptFieldType
 	{
@@ -31,7 +31,8 @@ namespace Crucible
 		Int32,
 		Single,
 		Double,
-		String
+		String,
+		Entity // a reference to another entity, saved as its scene id
 	};
 
 	/*********************************************************************
@@ -51,6 +52,7 @@ namespace Crucible
 		double real = 0;
 		std::string text;
 		bool stringIsNull = false; // distinguishes a null string from ""
+		uint64_t entityId = 0;     // Entity: the target's scene id (Scene::EnsureId); 0 = none
 		bool operator==(const ScriptFieldValue&) const = default;
 	};
 

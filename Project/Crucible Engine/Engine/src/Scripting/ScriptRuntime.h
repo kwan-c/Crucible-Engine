@@ -41,6 +41,7 @@ namespace Crucible
 	class IScriptAnimatorBinding;
 	class World;
 	class PlayMode;
+	class SceneManager;
 
 	/*********************************************************************
 	 \brief  NotStarted  = Initialize() not called yet.
@@ -273,7 +274,7 @@ namespace Crucible
 		         C# field initializers) for the Inspector. Constructs one
 		         temporary object per class and caches the result.
 		 *********************************************************************/
-		// Public mutable instance fields: bool/int/float/double/string, including
+		// Public mutable instance fields: bool/int/float/double/string/Entity, including
 		// inherited fields. Default inspection constructs once per class, without callbacks.
 		bool GetEntityFieldDefaults(ScriptAssemblyHandle assembly, const std::string& nameSpace,
 		                            const std::string& name, std::vector<ScriptFieldValue>& fields);
@@ -281,11 +282,32 @@ namespace Crucible
 		/*********************************************************************
 		 \brief  Same as the overload above, but also writes the saved
 		         Inspector field values into the object before OnCreate().
+		 \param  deferOnCreate  true to skip OnCreate here; call
+		         StartEntityInstance later. EntityScriptSystem creates every new
+		         script first and then starts them all, so one script's OnCreate
+		         can already find another entity's script (Unity's Awake/Start).
 		 *********************************************************************/
 		bool CreateEntityInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
 		                          const std::string& name, uint32_t index, uint32_t generation,
 		                          ScriptInstanceHandle& instance,
-		                          const std::vector<ScriptFieldValue>& fields);
+		                          const std::vector<ScriptFieldValue>& fields, bool deferOnCreate = false);
+
+		/*********************************************************************
+		 \brief  Calls OnCreate() on an entity script created with
+		         deferOnCreate. Does nothing if it already ran. If OnCreate
+		         throws, OnDestroy is attempted once, the instance is destroyed
+		         and its handle becomes stale (like a failed CreateEntityInstance).
+		         An instance that never started gets no OnDestroy and no OnUpdate.
+		 *********************************************************************/
+		bool StartEntityInstance(ScriptInstanceHandle instance);
+
+		/*********************************************************************
+		 \brief  INTERNAL (script bindings): the GC handle of an instance's C#
+		         object, so another script can be handed a reference to it.
+		 \return false for a stale/faulted instance. The handle stays valid
+		         until the instance is destroyed - never store it.
+		 *********************************************************************/
+		bool GetInstanceGcHandle(ScriptInstanceHandle instance, uint32_t& handle);
 
 		/*********************************************************************
 		 \brief  Reads the current public field values of a live entity script
@@ -336,11 +358,12 @@ namespace Crucible
 		bool SetAnimatorBinding(IScriptAnimatorBinding* binding);
 
 		/*********************************************************************
-		 \brief  Gives the entity bindings (Transform, ...) access to the world and
-		         Play state. Pass nullptr, nullptr to disconnect (Core does this
-		         before the world is destroyed).
+		 \brief  Gives the entity bindings (Transform, Entity, ...) access to the
+		         world, Play state and open scene (entity fields are saved as scene
+		         ids). Pass nullptrs to disconnect (Core does this before the world
+		         is destroyed).
 		 *********************************************************************/
-		bool SetWorldBinding(World* world, PlayMode* play);
+		bool SetWorldBinding(World* world, PlayMode* play, SceneManager* scenes);
 
 	private:
 		/*********************************************************************
@@ -354,7 +377,8 @@ namespace Crucible
 		bool CreateInstanceImpl(ScriptAssemblyHandle assembly, const std::string& nameSpace,
 		                        const std::string& name, ScriptInstanceHandle& instance, bool enabled,
 		                        const uint32_t* entityIdentity,
-		                        const std::vector<ScriptFieldValue>* fields = nullptr);
+		                        const std::vector<ScriptFieldValue>* fields = nullptr,
+		                        bool deferOnCreate = false);
 
 		// All Mono state (domain, loaded DLLs, objects, instances) lives in Impl,
 		// which is defined in ScriptRuntime.cpp so this header needs no Mono headers.

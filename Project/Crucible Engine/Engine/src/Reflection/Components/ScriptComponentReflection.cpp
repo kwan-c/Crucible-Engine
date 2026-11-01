@@ -6,14 +6,15 @@ RTTR_REGISTRATION {
     rttr::registration::enumeration<ScriptFieldType>("ScriptFieldType")(
         rttr::value("Bool", ScriptFieldType::Boolean), rttr::value("Int", ScriptFieldType::Int32),
         rttr::value("Float", ScriptFieldType::Single), rttr::value("Double", ScriptFieldType::Double),
-        rttr::value("String", ScriptFieldType::String));
+        rttr::value("String", ScriptFieldType::String), rttr::value("Entity", ScriptFieldType::Entity));
     rttr::registration::class_<ScriptFieldValue>("ScriptFieldValue")
         .constructor<>()
         .property("declaringType", &ScriptFieldValue::declaringType)
         .property("name", &ScriptFieldValue::name).property("type", &ScriptFieldValue::type)
         .property("boolean", &ScriptFieldValue::boolean).property("integer", &ScriptFieldValue::integer)
         .property("single", &ScriptFieldValue::single).property("real", &ScriptFieldValue::real)
-        .property("text", &ScriptFieldValue::text).property("stringIsNull", &ScriptFieldValue::stringIsNull);
+        .property("text", &ScriptFieldValue::text).property("stringIsNull", &ScriptFieldValue::stringIsNull)
+        .property("entityId", &ScriptFieldValue::entityId); // missing in older scenes - stays 0
     rttr::registration::class_<ScriptComponent>("ScriptComponent")
         .constructor<>()
         .property("enabled", &ScriptComponent::enabled)

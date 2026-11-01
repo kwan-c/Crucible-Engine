@@ -57,36 +57,36 @@ namespace Crucible
     public abstract class EntityScript
     {
         private bool bound;
-        /// <summary>The entity this script is attached to.</summary>
-        public EntityIdentity Entity { get; private set; }
+        /// <summary>
+        /// The entity this script is attached to. Other entities are referenced
+        /// with public Entity fields set in the Inspector (see Entity.cs).
+        /// </summary>
+        public Entity Entity { get; private set; }
 
-        // Entity components ----------------------------
-        public Transform Transform { get; private set; }
+        // Entity components (shortcuts for Entity.Transform etc.) --------
+        // New components go on Entity (Entity.cs) first, then get a shortcut here.
+        public Transform Transform { get { return Entity.Transform; } }
 
-        public RigidBody RigidBody { get; private set; }
+        public RigidBody RigidBody { get { return Entity.RigidBody; } }
 
         /// <summary>Sets parameters on this entity's Animator controller.</summary>
-        public Animator Animator { get; private set; }
+        public Animator Animator { get { return Entity.Animator; } }
 
+        /// <summary>This entity's component or script of type T, or null. See Entity.GetComponent.</summary>
+        public T GetComponent<T>() where T : class { return Entity.GetComponent<T>(); }
 
-
-        // Entity components ----------------------------
+        /// <summary>Does this entity have a component or script of type T?</summary>
+        public bool HasComponent<T>() where T : class { return Entity.HasComponent<T>(); }
 
         /// <summary>
         /// Called by the engine (ScriptRuntime) right after construction and
-        /// before OnCreate. Gives the script its entity and creates the
-        /// per-entity API objects (Animator). Can only happen once.
+        /// before OnCreate. Gives the script its entity. Can only happen once.
         /// </summary>
         internal void BindEntity(int index, int generation)
         {
             if (bound)
                 throw new InvalidOperationException("An EntityScript instance cannot be rebound.");
-            Entity = new EntityIdentity(unchecked((uint)index), unchecked((uint)generation));
-
-            // Remember to bind new components to entity
-            Transform = new global::Crucible.Transform(Entity);
-            RigidBody = new global::Crucible.RigidBody(Entity);
-            Animator = new global::Crucible.Animator(Entity);
+            Entity = new global::Crucible.Entity(unchecked((uint)index), unchecked((uint)generation));
             bound = true;
         }
         /// <summary>Called once when Play starts (or when the script is first enabled).</summary>

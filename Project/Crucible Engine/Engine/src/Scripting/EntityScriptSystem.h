@@ -74,6 +74,8 @@ namespace Crucible
 		 \brief  Called every frame. Cleans up removed/old scripts, creates
 		         scripts that should be running, applies Inspector field edits
 		         and calls OnUpdate on enabled scripts while Playing.
+		         New scripts are all created first and only then given OnCreate,
+		         so OnCreate can find any other entity's script.
 		 *********************************************************************/
 		void Update(World& world, SystemContext& ctx) override;
 
@@ -119,6 +121,13 @@ namespace Crucible
 		         handle. Logs if cleanup fails.
 		 *********************************************************************/
 		void Release(Record& record);
+
+		/*********************************************************************
+		 \brief  For C# GetComponent<SomeScript>(): the GC handle of the script
+		         running on `entity`, or 0. Registered with the script bindings
+		         in Init (EntityContext::SetScriptLookup).
+		 *********************************************************************/
+		static uint32_t LookupScript(void* self, Entity entity);
 
 		ScriptRuntime& m_runtime;
 		World& m_world;

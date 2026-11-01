@@ -6,7 +6,7 @@
 * \version       1.0
 * \brief         INTERNAL helpers shared by the scripting .cpp files: GC roots,
 *                the managed-call counter, string conversion and the
-*                C#-layout math structs (ScriptVec3, ScriptQuat).
+*                C#-layout math structs (ScriptVec2, ScriptVec3, ScriptQuat).
 *
 * \details
 *    Only include this from .cpp files inside Engine/src/Scripting. It
@@ -33,9 +33,11 @@ namespace Crucible::ScriptingDetail
 	// ------------------------------------------------------------------
 	// Same memory layout as the C# structs in ManagedScripts/Runtime.
 	// C# passes `ref Vector3` / `out Quaternion` as a pointer to one of these.
+	struct ScriptVec2 { float x, y; };        // Crucible.Vector2
 	struct ScriptVec3 { float x, y, z; };     // Crucible.Vector3
 	struct ScriptQuat { float x, y, z, w; };  // Crucible.Quaternion (X, Y, Z, W order)
-	static_assert(sizeof(ScriptVec3) == 12 && sizeof(ScriptQuat) == 16, "must match the C# structs");
+	static_assert(sizeof(ScriptVec2) == 8 && sizeof(ScriptVec3) == 12 && sizeof(ScriptQuat) == 16,
+	              "must match the C# structs");
 
 	/*********************************************************************
 	 \brief  RAII counter: increments managedCallDepth while C# code is running,

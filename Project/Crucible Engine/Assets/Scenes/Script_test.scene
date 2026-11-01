@@ -3,6 +3,137 @@
     "name": "Script_test",
     "entities": [
         {
+            "id": "1360D8DCA41B0001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 4.390235424041748,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Empty_CompRef"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "FindComponentTest",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.FindComponentTest",
+                            "name": "findName",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Camera",
+                            "stringIsNull": false,
+                            "entityId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "209268DCA48F4003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 2.994795322418213,
+                        "y": 1.6802396774291992,
+                        "z": -3.4080777168273926
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 15775344583901223439,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving"
+                },
+                "EntityName": {
+                    "name": "Cone"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "TestForces",
+                    "fields": []
+                }
+            }
+        },
+        {
             "id": "40F048DC9868C001",
             "components": {
                 "Transform": {
@@ -43,15 +174,59 @@
             }
         },
         {
-            "id": "4BBC50DC994B4001",
-            "parent": "C7DB88DC9A4C8001",
-            "siblingIndex": 0,
+            "id": "421560DCA1F18001",
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 3.2721078395843506,
-                        "z": 7.819643497467041
+                        "y": 0.0,
+                        "z": 3.43270206451416
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Empty_inputtest"
+                },
+                "ScriptComponent": {
+                    "enabled": false,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "InputTest",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.InputTest",
+                            "name": "logMouseMovement",
+                            "type": "Bool",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "4BBC50DC994B4001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 4.975678443908691,
+                        "z": 5.615981101989746
                     },
                     "rotation": {
                         "x": -0.14653818309307098,
@@ -121,6 +296,52 @@
                     "namespace": "Crucible.Scripts",
                     "class": "TransformTest",
                     "fields": []
+                }
+            }
+        },
+        {
+            "id": "73F8C0DCA2F78003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Empty_testref"
+                },
+                "ScriptComponent": {
+                    "enabled": false,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "RefTest",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.RefTest",
+                            "name": "en",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 5457325756861071361
+                        }
+                    ]
                 }
             }
         },
@@ -215,7 +436,8 @@
                             "single": 0.0,
                             "real": 0.0,
                             "text": "",
-                            "stringIsNull": false
+                            "stringIsNull": false,
+                            "entityId": 0
                         }
                     ]
                 }
@@ -255,6 +477,24 @@
                     },
                     "meshAsset": 3578055278504480029,
                     "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving"
                 },
                 "EntityName": {
                     "name": "Ground"

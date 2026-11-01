@@ -25,6 +25,7 @@
 #include "Scripting/ScriptAnimatorBinding.h"
 #include "Scripting/ScriptBindings.h"
 #include "Scripting/ScriptInterop.h"
+#include "Scripting/Bindings/EntityContext.h"
 #include "Diagnostics/Logger.h"
 #include <cstdint>
 #include <cmath>
@@ -606,9 +607,66 @@ namespace Crucible
 		};
 
 		/*********************************************************************
+		 \brief  true if a field's type is Crucible.Entity from ScriptCore (an
+		         entity reference assigned in the Inspector). The assembly is
+		         checked too, so a user class with the same name is not mistaken
+		         for it.
+		 *********************************************************************/
+		bool IsEntityReference(MonoType* type)
+		{
+			if (!type || mono_type_is_byref(type) || mono_type_get_type(type) != MONO_TYPE_CLASS)
+				return false;
+			MonoClass* klass = mono_class_from_mono_type(type);
+			if (!klass || std::strcmp(mono_class_get_namespace(klass), "Crucible") != 0 ||
+			    std::strcmp(mono_class_get_name(klass), "Entity") != 0)
+				return false;
+			const char* image = mono_image_get_name(mono_class_get_image(klass));
+			return image && std::strcmp(image, "Crucible.ScriptCore") == 0;
+		}
+
+		/*********************************************************************
+		 \brief  Reads (index, generation) out of a managed Crucible.Entity.
+		         See Entity.cs: the fields are named `index` and `generation`.
+		 *********************************************************************/
+		bool ReadEntityIdentity(MonoObject* entity, Entity& out)
+		{
+			MonoClass* klass = mono_object_get_class(entity);
+			MonoClassField* index = mono_class_get_field_from_name(klass, "index");
+			MonoClassField* generation = mono_class_get_field_from_name(klass, "generation");
+			if (!index || !generation)
+				return false;
+			uint32_t values[2] = {0, 0};
+			mono_field_get_value(entity, index, &values[0]);
+			mono_field_get_value(entity, generation, &values[1]);
+			out = Entity{values[0], values[1]};
+			return true;
+		}
+
+		/*********************************************************************
+		 \brief  Creates a managed Crucible.Entity for a live entity. No
+		         constructor runs: the two id fields are written directly
+		         (Entity.cs keeps everything else lazily created).
+		 \return The new object, or nullptr if Entity.cs lacks the fields.
+		 *********************************************************************/
+		MonoObject* NewManagedEntity(MonoDomain* domain, MonoClass* klass, Entity entity)
+		{
+			MonoClassField* index = mono_class_get_field_from_name(klass, "index");
+			MonoClassField* generation = mono_class_get_field_from_name(klass, "generation");
+			if (!index || !generation)
+				return nullptr;
+			MonoObject* object = mono_object_new(domain, klass);
+			if (!object)
+				return nullptr;
+			uint32_t indexValue = entity.index, generationValue = entity.generation;
+			mono_field_set_value(object, index, &indexValue);
+			mono_field_set_value(object, generation, &generationValue);
+			return object;
+		}
+
+		/*********************************************************************
 		 \brief  Lists the fields the Inspector can show: public, non-static, not
 		         readonly/const, not [NonSerialized], of type bool/int/float/double/
-		         string. Includes fields inherited from base classes.
+		         string/Crucible.Entity. Includes fields inherited from base classes.
 		 *********************************************************************/
 		std::vector<InspectableField> InspectableFields(MonoClass* type)
 		{
@@ -624,7 +682,10 @@ namespace Crucible
 					             MONO_FIELD_ATTR_LITERAL | MONO_FIELD_ATTR_NOT_SERIALIZED))
 						continue;
 					ScriptFieldValue value;
-					switch (ManagedKind(mono_field_get_type(field)))
+					MonoType* fieldType = mono_field_get_type(field);
+					if (IsEntityReference(fieldType))
+						value.type = ScriptFieldType::Entity;
+					else switch (ManagedKind(fieldType))
 					{
 					case ValueKind::Boolean:
 						value.type = ScriptFieldType::Boolean;
@@ -694,6 +755,19 @@ namespace Crucible
 						error = "Public field contains invalid UTF-16: " + value.name;
 						return false;
 					}
+					break;
+				}
+				case ScriptFieldType::Entity:
+				{
+					// Shown as the target's scene id. An entity with no id (spawned
+					// during Play) or a destroyed one reads as 0 ("None").
+					MonoObject* target = nullptr;
+					mono_field_get_value(owner.Get(), entry.field, &target);
+					GcRoot targetRoot(target);
+					Entity entity;
+					value.entityId = targetRoot.Get() && ReadEntityIdentity(targetRoot.Get(), entity)
+					                     ? ScriptBindings::EntityContext::SceneIdOf(entity)
+					                     : 0;
 					break;
 				}
 				}
@@ -772,6 +846,25 @@ namespace Crucible
 					                      domain, reinterpret_cast<const mono_unichar2*>(wide.data()),
 					                      static_cast<int32_t>(wide.size()))));
 					mono_field_set_value(owner.Get(), field, text.Get());
+					break;
+				}
+				case ScriptFieldType::Entity:
+				{
+					// Scene id -> live entity -> new managed Entity. Unassigned or
+					// missing targets become null, so scripts can test `!= null`.
+					Entity entity;
+					GcRoot target;
+					if (value.entityId != 0)
+					{
+						if (ScriptBindings::EntityContext::FromSceneId(value.entityId, entity))
+							target = GcRoot(NewManagedEntity(
+							    domain, mono_class_from_mono_type(mono_field_get_type(field)), entity));
+						else
+							CRU_USER_WARN("[Script] Field '{}' points to an entity that is not in this scene; it "
+							              "will be null",
+							              value.name);
+					}
+					mono_field_set_value(owner.Get(), field, target.Get());
 					break;
 				}
 				}
@@ -925,6 +1018,7 @@ namespace Crucible
 			MonoMethod* update = nullptr;
 			MonoMethod* destroy = nullptr;
 			void* updateThunk = nullptr; // direct native entry point for `update` (see CallUpdate)
+			bool started = true;         // false until a deferred OnCreate has run (StartEntityInstance)
 		};
 		uint64_t nextInstance = 1;
 		std::map<uint64_t, Instance> instances;
@@ -1002,6 +1096,11 @@ namespace Crucible
 		{
 			if (!instance.object)
 				return true; // fault cleanup already attempted OnDestroy
+			if (!instance.started)
+			{
+				ReleaseObject(instance.object); // OnCreate never ran, so no OnDestroy either
+				return true;
+			}
 			bool success;
 			try
 			{
@@ -1917,7 +2016,7 @@ namespace Crucible
 	bool ScriptRuntime::CreateEntityInstance(ScriptAssemblyHandle assembly, const std::string& nameSpace,
 	                                         const std::string& name, uint32_t index, uint32_t generation,
 	                                         ScriptInstanceHandle& instance,
-	                                         const std::vector<ScriptFieldValue>& fields)
+	                                         const std::vector<ScriptFieldValue>& fields, bool deferOnCreate)
 	{
 		const uint32_t identity[] = {index, generation};
 		if (!index)
@@ -1925,7 +2024,65 @@ namespace Crucible
 			instance = {};
 			return m_impl->Fail("An entity script requires a non-null owner");
 		}
-		return CreateInstanceImpl(assembly, nameSpace, name, instance, true, identity, &fields);
+		return CreateInstanceImpl(assembly, nameSpace, name, instance, true, identity, &fields, deferOnCreate);
+	}
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Runs a deferred OnCreate (Step 8 of
+	         CreateInstanceImpl).
+	 *********************************************************************/
+	bool ScriptRuntime::StartEntityInstance(ScriptInstanceHandle instance)
+	{
+		auto& data = *m_impl;
+		if (!data.Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		auto* owned = data.GetInstance(instance);
+		if (!owned)
+			return false;
+		if (owned->started)
+			return true;
+		owned->started = true; // from here on OnDestroy is owed, even if OnCreate throws
+		std::string failure;
+		if (!data.Callback(*owned, owned->create, "OnCreate", {}, failure))
+		{
+			std::string cleanup;
+			if (!data.Dispose(*owned, cleanup))
+				failure += "\nCleanup also failed: " + cleanup;
+			data.instances.erase(instance.value);
+			return data.Fail(failure);
+		}
+		data.error.clear();
+		return true;
+#else
+		(void)instance;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h.
+	 *********************************************************************/
+	bool ScriptRuntime::GetInstanceGcHandle(ScriptInstanceHandle instance, uint32_t& handle)
+	{
+		handle = 0;
+		auto& data = *m_impl;
+		if (!data.Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		const auto found = data.instances.find(instance.value); // no Fail(): a miss is normal here
+		if (found == data.instances.end() || !found->second.object ||
+		    found->second.info.state == ScriptInstanceState::Faulted)
+			return false;
+		const auto object = data.objects.find(found->second.object.value);
+		if (object == data.objects.end())
+			return false;
+		handle = object->second.handle;
+		return handle != 0;
+#else
+		(void)instance;
+		return false;
+#endif
 	}
 
 	/*********************************************************************
@@ -2072,16 +2229,17 @@ namespace Crucible
 	/*********************************************************************
 	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetWorld.
 	 *********************************************************************/
-	bool ScriptRuntime::SetWorldBinding(World* world, PlayMode* play)
+	bool ScriptRuntime::SetWorldBinding(World* world, PlayMode* play, SceneManager* scenes)
 	{
 		if (!m_impl->Ready())
 			return false;
 #if CRUCIBLE_WITH_MONO
-		ScriptBindings::SetWorld(world, play);
+		ScriptBindings::SetWorld(world, play, scenes);
 		return true;
 #else
 		(void)world;
 		(void)play;
+		(void)scenes;
 		return false;
 #endif
 	}
@@ -2126,7 +2284,7 @@ namespace Crucible
 	bool ScriptRuntime::CreateInstanceImpl(ScriptAssemblyHandle assembly, const std::string& nameSpace,
 	                                       const std::string& name, ScriptInstanceHandle& instance,
 	                                       bool enabled, const uint32_t* entityIdentity,
-	                                       const std::vector<ScriptFieldValue>* fields)
+	                                       const std::vector<ScriptFieldValue>* fields, bool deferOnCreate)
 	{
 		instance = {};
 		auto& data = *m_impl;
@@ -2255,7 +2413,16 @@ namespace Crucible
 			owned->info.entityGeneration = entityIdentity[1];
 		}
 
-		// Step 8: OnCreate. If it throws, try OnDestroy once and drop the instance.
+		// Step 8: OnCreate, unless the caller starts it later (StartEntityInstance).
+		// If it throws, try OnDestroy once and drop the instance.
+		if (deferOnCreate)
+		{
+			owned->started = false;
+			instance.value = id;
+			data.error.clear();
+			CRU_INFO("[Scripting] Created lifecycle instance {} (OnCreate deferred)", data.Label(*owned));
+			return true;
+		}
 		if (!data.Callback(*owned, create, "OnCreate", {}, failure))
 		{
 			std::string cleanup;
@@ -2275,6 +2442,7 @@ namespace Crucible
 		(void)enabled;
 		(void)entityIdentity;
 		(void)fields;
+		(void)deferOnCreate;
 		return false;
 #endif
 	}
@@ -2387,6 +2555,8 @@ namespace Crucible
 			return false;
 		if (!owned->info.entityOwned)
 			return data.Fail("Entity update requires an entity-owned instance");
+		if (!owned->started)
+			return data.Fail("Entity script was not started; call StartEntityInstance first");
 		return data.Step(*owned, deltaTime);
 #else
 		(void)instance;

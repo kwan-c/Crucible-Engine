@@ -39,6 +39,11 @@ namespace Crucible
             set { SetAngularDrag((int)entity.Index, (int)entity.Generation, ref value); }
         }
 
+        public void AddForce(Vector3 v)
+        {
+            AddRBForce((int)entity.Index, (int)entity.Generation, ref v);
+        }
+
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int GetVelocity(int index, int generation, out Vector3 value);
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -68,5 +73,7 @@ namespace Crucible
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SetAngularDrag(int index, int generation, ref float value);
 
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int AddRBForce(int index, int generation, ref Vector3 value);
     }
 }

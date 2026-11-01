@@ -24,6 +24,7 @@
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
 #include "Scripting/ScriptInterop.h"
+#include "Scripting/Bindings/EntityContext.h"
 #include "ECS/World.h"
 #include "ECS/Components/Components.h"
 #include "Systems/PlayMode.h"
@@ -37,23 +38,13 @@ namespace Crucible::ScriptBindings
 	{
 		using namespace ScriptingDetail;
 
-		// Set by SetWorld() from Core (main thread). thread_local, so a call that
-		// arrives on any other thread (e.g. a GC finalizer) sees nullptr and fails.
-		thread_local World* world = nullptr;
-		thread_local PlayMode* play = nullptr;
-
-		/*********************************************************************
-		 \brief  Turns the (index, generation) a script passed in into a live
-		         Entity. Fails outside a Play session, before SetWorld(), or if
-		         the entity was destroyed (its generation no longer matches,
-		         e.g. after a scene reload).
-		 *********************************************************************/
-		bool ResolveEntity(int32_t index, int32_t generation, Entity& entity)
+		// World, Play state and ResolveEntity are shared with the other entity
+		// bindings (Bindings/EntityContext.h). ResolveEntity succeeding means the
+		// world is set, so `world()` is safe to dereference after it.
+		using EntityContext::ResolveEntity;
+		World* world()
 		{
-			if (!world || !play || !play->InSession())
-				return false;
-			entity = Entity{static_cast<uint32_t>(index), static_cast<uint32_t>(generation)};
-			return world->IsAlive(entity);
+			return EntityContext::GetWorld();
 		}
 
 		/*********************************************************************
@@ -86,7 +77,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!out || !ResolveEntity(index, generation, entity))
 					return 0;
-				const Transform* transform = world->Read<Transform>(entity); // Read: does not mark it changed
+				const Transform* transform = world()->Read<Transform>(entity); // Read: does not mark it changed
 				if (!transform)
 					return 0;
 				out->x = transform->positions.x;
@@ -114,7 +105,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!value || !IsFinite(*value) || !ResolveEntity(index, generation, entity))
 					return 0;
-				Transform* transform = world->Write<Transform>(entity); // Write: marks it changed so
+				Transform* transform = world()->Write<Transform>(entity); // Write: marks it changed so
 				if (!transform)                                         // the hierarchy recomputes it
 					return 0;
 				transform->positions = {value->x, value->y, value->z};
@@ -136,7 +127,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!out || !ResolveEntity(index, generation, entity))
 					return 0;
-				const Transform* transform = world->Read<Transform>(entity); // Read: does not mark it changed
+				const Transform* transform = world()->Read<Transform>(entity); // Read: does not mark it changed
 				if (!transform)
 					return 0;
 				out->x = transform->scale.x;
@@ -156,7 +147,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!value || !IsFinite(*value) || !ResolveEntity(index, generation, entity))
 					return 0;
-				Transform* transform = world->Write<Transform>(entity); // Write: marks it changed so
+				Transform* transform = world()->Write<Transform>(entity); // Write: marks it changed so
 				if (!transform)                                         // the hierarchy recomputes it
 					return 0;
 				transform->scale = { value->x, value->y, value->z };
@@ -178,7 +169,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!out || !ResolveEntity(index, generation, entity))
 					return 0;
-				const Transform* transform = world->Read<Transform>(entity); // Read: does not mark it changed
+				const Transform* transform = world()->Read<Transform>(entity); // Read: does not mark it changed
 				if (!transform)
 					return 0;
 				out->x = transform->rotation.x;
@@ -200,7 +191,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!value || !IsFinite(*value) || !ResolveEntity(index, generation, entity))
 					return 0;
-				Transform* transform = world->Write<Transform>(entity); // Write: marks it changed so
+				Transform* transform = world()->Write<Transform>(entity); // Write: marks it changed so
 				if (!transform)                                         // the hierarchy recomputes it
 					return 0;
 				const Math::quat rotation(value->w, value->x, value->y, value->z);   // glm order: w, x, y, z
@@ -218,7 +209,6 @@ namespace Crucible::ScriptBindings
 		// -------------------------------------------
 		// RigidBody Members
 		// -------------------------------------------
-
 		int32_t ManagedRigidBodyGetVelocity(int32_t index, int32_t generation, ScriptVec3* out) noexcept
 		{
 			try
@@ -226,7 +216,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!out || !ResolveEntity(index, generation, entity))
 					return 0;
-				const RigidBody* rigidbody = world->Read<RigidBody>(entity); // Read: does not mark it changed
+				const RigidBody* rigidbody = world()->Read<RigidBody>(entity); // Read: does not mark it changed
 				if (!rigidbody)
 					return 0;
 				out->x = rigidbody->velocity.x;
@@ -246,10 +236,47 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!value || !IsFinite(*value) || !ResolveEntity(index, generation, entity))
 					return 0;
-				RigidBody* rigidbody = world->Write<RigidBody>(entity); // Write: marks it changed so
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity); // Write: marks it changed so
 				if (!rigidbody)                                         // the hierarchy recomputes it
 					return 0;
 				rigidbody->velocity = { value->x, value->y, value->z };
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedRigidBodyGetMass(int32_t index, int32_t generation, float* out) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!out || !ResolveEntity(index, generation, entity))
+					return 0;
+				const RigidBody* rigidbody = world()->Read<RigidBody>(entity); // Read: does not mark it changed
+				if (!rigidbody)
+					return 0;
+				*out = rigidbody->mass;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+		int32_t ManagedRigidBodySetMass(int32_t index, int32_t generation, const float* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				rigidbody->mass = *value;
 				return 1;
 			}
 			catch (...)
@@ -265,7 +292,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!out || !ResolveEntity(index, generation, entity))
 					return 0;
-				const RigidBody* rigidbody = world->Read<RigidBody>(entity);
+				const RigidBody* rigidbody = world()->Read<RigidBody>(entity);
 				if (!rigidbody)
 					return 0;
 				*out = rigidbody->useGravity;
@@ -276,7 +303,6 @@ namespace Crucible::ScriptBindings
 				return 0;
 			}
 		}
-
 		int32_t ManagedRigidbodySetActiveGravity(int32_t index, int32_t generation, const int* value) noexcept
 		{
 			try
@@ -284,7 +310,7 @@ namespace Crucible::ScriptBindings
 				Entity entity;
 				if (!value || !ResolveEntity(index, generation, entity))
 					return 0;
-				RigidBody* rigidbody = world->Write<RigidBody>(entity);
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
 				if (!rigidbody)
 					return 0;
 				rigidbody->useGravity = *value;
@@ -295,12 +321,99 @@ namespace Crucible::ScriptBindings
 				return 0;
 			}
 		}
-	}
 
-	void SetWorld(World* newWorld, PlayMode* newPlay)
-	{
-		world = newWorld;
-		play = newPlay;
+		int32_t ManagedRigidBodyGetDrag(int32_t index, int32_t generation, float* out) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!out || !ResolveEntity(index, generation, entity))
+					return 0;
+				const RigidBody* rigidbody = world()->Read<RigidBody>(entity); // Read: does not mark it changed
+				if (!rigidbody)
+					return 0;
+				*out = rigidbody->drag;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+		int32_t ManagedRigidBodySetDrag(int32_t index, int32_t generation, const float* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				rigidbody->drag = *value;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedRigidBodyGetAngularDrag(int32_t index, int32_t generation, float* out) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!out || !ResolveEntity(index, generation, entity))
+					return 0;
+				const RigidBody* rigidbody = world()->Read<RigidBody>(entity); // Read: does not mark it changed
+				if (!rigidbody)
+					return 0;
+				*out = rigidbody->angularDrag;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+		int32_t ManagedRigidBodySetAngularDrag(int32_t index, int32_t generation, const float* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				rigidbody->angularDrag = *value;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedRigidBodyAddForce(int32_t index, int32_t generation, const ScriptVec3* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !IsFinite(*value) || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				rigidbody->AddForce({ value->x, value->y, value->z });
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
 	}
 
 	void RegisterTransformBindings()
@@ -323,13 +436,27 @@ namespace Crucible::ScriptBindings
 
 		// RigidBody Component stuff...
 		mono_add_internal_call("Crucible.RigidBody::GetVelocity",
-							   reinterpret_cast<const void*>(ManagedRigidBodyGetVelocity));
+								reinterpret_cast<const void*>(ManagedRigidBodyGetVelocity));
 		mono_add_internal_call("Crucible.RigidBody::SetVelocity",
-							   reinterpret_cast<const void*>(ManagedRigidBodySetVelocity));
+								reinterpret_cast<const void*>(ManagedRigidBodySetVelocity));
+		mono_add_internal_call("Crucible.RigidBody::GetMass",
+								reinterpret_cast<const void*>(ManagedRigidBodyGetMass));
+		mono_add_internal_call("Crucible.RigidBody::SetMass",
+								reinterpret_cast<const void*>(ManagedRigidBodySetMass));
 		mono_add_internal_call("Crucible.RigidBody::GetActiveGravity",
-							   reinterpret_cast<const void*>(ManagedRigidbodyGetActiveGravity));
+								reinterpret_cast<const void*>(ManagedRigidbodyGetActiveGravity));
 		mono_add_internal_call("Crucible.RigidBody::SetActiveGravity",
-							   reinterpret_cast<const void*>(ManagedRigidbodySetActiveGravity));
+								reinterpret_cast<const void*>(ManagedRigidbodySetActiveGravity));
+		mono_add_internal_call("Crucible.RigidBody::GetDrag",
+								reinterpret_cast<const void*>(ManagedRigidBodyGetDrag));
+		mono_add_internal_call("Crucible.RigidBody::SetDrag",
+								reinterpret_cast<const void*>(ManagedRigidBodySetDrag));
+		mono_add_internal_call("Crucible.RigidBody::GetAngularDrag",
+								reinterpret_cast<const void*>(ManagedRigidBodyGetAngularDrag));
+		mono_add_internal_call("Crucible.RigidBody::SetAngularDrag",
+								reinterpret_cast<const void*>(ManagedRigidBodySetAngularDrag));
+		mono_add_internal_call("Crucible.RigidBody::AddRBForce",
+								reinterpret_cast<const void*>(ManagedRigidBodyAddForce));
 	}
 }
 #endif

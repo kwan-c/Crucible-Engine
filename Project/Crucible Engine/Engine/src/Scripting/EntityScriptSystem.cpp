@@ -9,6 +9,7 @@
 **************************************************************************/
 #include "Scripting/EntityScriptSystem.h"
 #include "Scripting/ScriptRuntime.h"
+#include "Scripting/Bindings/EntityContext.h"
 #include "ECS/World.h"
 #include "Scene/SceneManager.h"
 #include "Systems/PlayMode.h"
@@ -46,6 +47,10 @@ namespace Crucible
 			    if (!alive.expired())
 				    m_sceneChanged = true;
 		    });
+#if CRUCIBLE_WITH_MONO
+		// Lets C# GetComponent<SomeScript>() reach the scripts this system owns.
+		ScriptBindings::EntityContext::SetScriptLookup(&EntityScriptSystem::LookupScript, this);
+#endif
 	}
 
 	void EntityScriptSystem::Describe(SystemDesc& desc) const
@@ -131,6 +136,7 @@ namespace Crucible
 
 		// --- Step 4: bring each entity's live script in line with its component.
 		std::set<uint64_t> present; // entities that still have a ScriptComponent
+		std::vector<Entity> created; // new scripts still waiting for OnCreate (step 5)
 		for (const auto& [entity, definition] : definitions)
 		{
 			const auto key = Key(entity);
@@ -182,6 +188,7 @@ namespace Crucible
 			}
 
 			// 4b. No script yet: create one (only while Playing, enabled and assigned).
+			// OnCreate is deferred to step 5, after every new script exists.
 			if (found == m_records.end())
 			{
 				if (m_play.State() != PlayState::Playing || !definition.enabled ||
@@ -192,7 +199,7 @@ namespace Crucible
 				if (!m_runtime.LoadAssembly(definition.assembly, assembly) ||
 				    !m_runtime.CreateEntityInstance(assembly, definition.nameSpace, definition.className,
 				                                    entity.index, entity.generation, record.instance,
-				                                    definition.fields))
+				                                    definition.fields, true))
 				{
 					// Keep a record anyway, so the error is shown and creation is
 					// not retried every frame.
@@ -200,10 +207,35 @@ namespace Crucible
 					CRU_USER_ERROR("Script on entity {}:{} could not start: {}", entity.index,
 					               entity.generation, record.error);
 				}
-				found = m_records.emplace(key, std::move(record)).first;
+				else
+					created.push_back(entity);
+				m_records.emplace(key, std::move(record));
 			}
+		}
 
-			// 4c. Apply enable/disable and call OnUpdate.
+		// --- Step 5: OnCreate for every script created above. All of them exist
+		// by now, so one script's OnCreate can find another's (GetComponent).
+		for (const Entity entity : created)
+		{
+			const auto found = m_records.find(Key(entity));
+			if (found == m_records.end() || !found->second.instance)
+				continue;
+			if (!m_runtime.StartEntityInstance(found->second.instance))
+			{
+				// The runtime already destroyed the instance; keep the error.
+				found->second.error = m_runtime.LastError();
+				found->second.instance = {};
+				CRU_USER_ERROR("Script on entity {}:{} could not start: {}", entity.index, entity.generation,
+				               found->second.error);
+			}
+		}
+
+		// --- Step 6: apply enable/disable and call OnUpdate.
+		for (const auto& [entity, definition] : definitions)
+		{
+			const auto found = m_records.find(Key(entity));
+			if (found == m_records.end())
+				continue;
 			auto& record = found->second;
 			record.definition.enabled = definition.enabled;
 			if (!record.instance)
@@ -232,7 +264,7 @@ namespace Crucible
 			}
 		}
 
-		// --- Step 5: destroy scripts whose entity no longer has a ScriptComponent
+		// --- Step 7: destroy scripts whose entity no longer has a ScriptComponent
 		// (e.g. the entity itself was destroyed).
 		for (auto it = m_records.begin(); it != m_records.end();)
 		{
@@ -256,5 +288,18 @@ namespace Crucible
 		{
 		}
 		m_lifetime.reset(); // expires `alive` in the Init() callbacks
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::EntityContext::SetScriptLookup(nullptr, nullptr);
+#endif
+	}
+
+	uint32_t EntityScriptSystem::LookupScript(void* self, Entity entity)
+	{
+		auto& system = *static_cast<EntityScriptSystem*>(self);
+		const auto found = system.m_records.find(Key(entity));
+		uint32_t handle = 0;
+		if (found != system.m_records.end() && found->second.instance)
+			system.m_runtime.GetInstanceGcHandle(found->second.instance, handle);
+		return handle;
 	}
 }

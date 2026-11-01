@@ -84,10 +84,10 @@ to the attached class and are cleared on a new assignment.
 
 ## Public fields
 
-Supported fields are public mutable instance bool, int, float, double and string
-fields, including inherited fields. Private/protected fields, static/const/readonly
-fields, [NonSerialized] fields, properties, enums, arrays and custom/object types
-are excluded. This does not yet implement private [SerializeField] or arbitrary
+Supported fields are public mutable instance bool, int, float, double, string
+and `Entity` fields, including inherited fields. Private/protected fields,
+static/const/readonly fields, [NonSerialized] fields, properties, enums, arrays
+and other custom/object types are excluded. This does not yet implement private [SerializeField] or arbitrary
 Unity serialization. Rebuild and use Scripts > Reload Scripts after editing a script's declaration.
 
 For example, adding public bool canMove = true; exposes a Can Move checkbox.
@@ -111,6 +111,46 @@ An initially disabled script has no instance yet, so its fields stay read-only
 during that session until an instance starts. Script-enabled is independent of
 a user-defined public bool such as Log Messages. Non-finite numeric writes and
 invalid UTF-8 strings are rejected without partially applying a field batch.
+
+### Referencing other entities
+
+Declare `public Entity door;` and drag an entity from the Hierarchy onto the
+field in the Inspector (X clears it). This is Unity's `public GameObject door;`.
+
+- The field saves the target's scene id, not its Entity handle, so the link
+  survives saving, reloading and play-mode Stop.
+- When the script starts, the id is turned into a live `Entity`, with
+  `Transform`, `RigidBody`, `Animator`, `Name` and `IsAlive`. An unassigned
+  field, or a target that is no longer in the scene, is `null` (a missing one
+  also logs a warning).
+- If the target is destroyed during Play the reference stays non-null, but
+  `IsAlive` turns false and component calls do nothing. Check `IsAlive` if
+  that can happen.
+- `EntityScript.Entity` (the script's own entity) is the same type, so
+  `Entity.Transform` and `door.Transform` work the same way.
+- `Entity.Find("Door")` returns an entity by its Hierarchy name, or null. Names
+  need not be unique (any match may be returned), and it searches every entity,
+  so call it in OnCreate and keep the result.
+- `GetComponent<T>()` / `HasComponent<T>()` on an `Entity` (or on the script
+  itself, for its own entity). T is `Transform`, `RigidBody`, `Animator`, or a
+  script class: `door.GetComponent<Door>()` returns the Door script so you can
+  read its fields and call its methods. `GetComponent<EntityScript>()` returns
+  whatever script is there. Null if the entity has no such component/script.
+  Any other T throws.
+- Not yet: remapping references inside spawned prefabs, more component types.
+
+#### OnCreate order
+
+When Play starts, every script is created and given its field values first;
+only then does each get OnCreate (like Unity's Awake then Start). So
+`GetComponent<Door>()` in OnCreate finds Door even if Door's own OnCreate has
+not run yet - don't rely on anything Door sets up in its OnCreate until the
+first OnUpdate. A script whose OnCreate never ran gets no OnUpdate or OnDestroy.
+
+C++ side: `ScriptRuntime.cpp` (`IsEntityReference`, `ReadFields`, `WriteFields`,
+`StartEntityInstance`), `EntityScriptSystem.cpp` (create / start / update
+passes, `LookupScript`), `Bindings/EntityContext.*` (scene id <-> entity,
+script lookup hook) and `Bindings/EntityBindings.cpp`.
 
 The command-line equivalent for entity source creation is:
 
