@@ -48,6 +48,7 @@
 #include"Math/Math.h"
 #include"Physics/PhysicsComponents.h"
 #include"Player/PlayerComponents.h"   // PlayerController, CameraOrbit (moved out of PhysicsComponents.h)
+#include"Navigation/NavigationComponents.h"   // FlowFieldSurface
 #include"Audio/AudioComponents.h"
 #include"../Core/ECSCore.h"   // Entity (HierarchyNode links)
 #include"Graphics/MeshHandle.h"   // MeshHandle - deliberately NOT RenderTypes.h, which pulls in Vulkan

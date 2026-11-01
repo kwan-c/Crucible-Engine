@@ -92,8 +92,9 @@ namespace Crucible
 		PhysicsJoint = 30,       // Physics: hinge, fixed, ball, character or spring joint between two bodies (Physics/PhysicsComponents.h)
 		WorldText = 31,          // Graphics: text placed in the 3D world by its Transform (Text/WorldText.h)
 		Vine = 32,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
+		FlowFieldSurface = 33,   // Navigation: where enemies can walk, Unity's NavMeshSurface (Navigation/NavigationComponents.h)
 
-		MAXCOMPONENT = 33
+		MAXCOMPONENT = 34
 	};
 
 
@@ -271,5 +272,6 @@ namespace Crucible
  X(ConstantForce)                                                              \
  X(PhysicsJoint)                                                               \
  X(WorldText)                                                                  \
+ X(FlowFieldSurface)                                                           \
 
 }
