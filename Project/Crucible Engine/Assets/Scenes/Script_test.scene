@@ -44,12 +44,14 @@
         },
         {
             "id": "4BBC50DC994B4001",
+            "parent": "C7DB88DC9A4C8001",
+            "siblingIndex": 0,
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 4.975678443908691,
-                        "z": 5.615981101989746
+                        "y": 3.2721078395843506,
+                        "z": 7.819643497467041
                     },
                     "rotation": {
                         "x": -0.14653818309307098,
@@ -119,6 +121,65 @@
                     "namespace": "Crucible.Scripts",
                     "class": "TransformTest",
                     "fields": []
+                }
+            }
+        },
+        {
+            "id": "C7DB88DC9A4C8001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.7035706043243408,
+                        "z": -2.203662395477295
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Sphere"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Test",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.Test",
+                            "name": "speed",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.009999999776482582,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false
+                        }
+                    ]
                 }
             }
         },

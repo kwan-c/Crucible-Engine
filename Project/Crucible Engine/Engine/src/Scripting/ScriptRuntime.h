@@ -135,6 +135,9 @@ namespace Crucible
 		/*********************************************************************
 		 \brief  Loads a C# DLL (e.g. "Managed/Crucible.Scripts.dll").
 		         Loading the same file again returns the same handle.
+		         The DLL is read into memory and loaded from there (dependencies
+		         next to it too), so the file is never locked: a build can replace
+		         it while the app runs. The running app keeps the copy it loaded.
 		 \param[out] assembly  Handle to pass to the other functions.
 		 *********************************************************************/
 		bool LoadAssembly(const std::string& path, ScriptAssemblyHandle& assembly);

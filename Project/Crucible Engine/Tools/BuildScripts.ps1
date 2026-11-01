@@ -32,7 +32,7 @@ $logs = Join-Path $buildPath 'ManagedScripts/logs'
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
 $log = Join-Path $logs ("BuildScripts-$Configuration.log")
 $buildArguments = @('--build',$buildPath,'--config',$Configuration,'--target') + $targets + @('--parallel','2')
-Write-Output 'Managed scripts use close-build-restart. No running application is closed or reloaded automatically.'
+Write-Output 'Scripts can be built while the Editor/Game is open; restart it to use them. Nothing is closed or reloaded automatically.'
 # Stream native diagnostics, then preserve the build exit code and complete log.
 $ErrorActionPreference = 'Continue'
 & $CMakePath @buildArguments 2>&1 | Tee-Object -FilePath $log

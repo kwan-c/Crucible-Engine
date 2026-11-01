@@ -92,8 +92,9 @@ Tools/BuildScripts.ps1 builds/deploys without rebuilding the native applications
 Compiler errors preserve the previous successful library outputs and block
 dependent deployment. See ScriptingDevelopment.md for workflows and verification.
 
-Close-build-restart is the supported reload policy. Deployment refuses to replace
-managed files in a running application. Any future domain reload must account for
+Build-restart is the supported reload policy. Script DLLs load from in-memory
+copies, so deployment can replace them while an application runs; the new code is
+used after a restart. Any future domain reload must account for
 S2 raw objects, S3 cached methods/classes and GC handles, plus managed threads,
 delegates and native callbacks. Stopping S3 instances alone is insufficient.
 Preserve the single root runtime. The S5 EntityScriptSystem now connects component

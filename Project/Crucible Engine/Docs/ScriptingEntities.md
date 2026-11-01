@@ -16,8 +16,8 @@ input, audio and resource APIs remain team-owned extension work.
    Creation defaults to the Crucible.Scripts namespace; the modal allows changing it.
 4. The Editor creates `Assets/Scripts/<ClassName>.cs` and assigns its class
    to this component. Open that source file in your C# editor to add logic.
-5. Save the scene and close Editor/Game. Compile using a normal Visual Studio
-   Editor/Game build or:
+5. Save the scene. Compile the scripts (the Editor can stay open) using the
+   Visual Studio EditorManagedScripts target or:
 
    ```powershell
    powershell -NoProfile -ExecutionPolicy Bypass -File .\Tools\BuildScripts.ps1
@@ -257,7 +257,8 @@ must use the existing command-buffer/safe-point rules. Declare scheduler access,
 callback lifetime and error behavior as part of each adapter.
 
 Do not reenter public host lifecycle APIs from managed callbacks. Do not restart
-Mono on Play/Stop or overwrite assemblies in a running application. Background
+Mono on Play/Stop. Replacing script DLLs on disk is safe (they load from memory)
+but has no effect until the application restarts. Background
 task/thread tracking, additional serialized field types, multiple script
 slots per entity, debugger attachment and hot reload are separate work.
 

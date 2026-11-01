@@ -49,13 +49,13 @@ Add the printed entry to the existing `editor.scripting.instances` array in
 }
 ```
 
-Save and close Editor/Game, then run:
+Save your scene, then run (the Editor/Game can stay open):
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\Tools\BuildScripts.ps1
 ```
 
-Restart Editor normally. The native log reports creation of `MyScript`; its
+Restart the Editor to load the new scripts. The native log reports creation of `MyScript`; its
 OnUpdate is called each Core frame. The generated methods are empty: add your
 standalone C# logic. `System.Console.WriteLine` writes to process stdout, not the
 Editor Console panel. See [ScriptingLifecycle.md](ScriptingLifecycle.md) for the
@@ -178,12 +178,16 @@ dependencies need separate approved native deployment; they are not inferred.
 
 ## Reload policy and S5 extension rules
 
-The supported reload policy is **save, close application, build/deploy, restart**.
-Deployment refuses to write managed files when the corresponding executable is
-running, identifying its PID. It never terminates an application or discards work.
-Compilation without deployment remains available through `-Application None`.
-Check again that the application is closed before starting deployment; do not
-launch it concurrently with a deployment command.
+The supported reload policy is **save, build/deploy, restart**. ScriptRuntime loads
+each script DLL (and its sibling dependencies such as Crucible.ScriptCore) from an
+in-memory copy, so Mono never locks the files: deployment may replace them while
+the Editor/Game runs. It prints a note when the application is running. Each DLL is
+copied beside its target and then swapped in, so an application that loads it at
+that moment never reads a partial file. The running application keeps the copy it
+loaded until it restarts. Deployment never terminates an application or discards
+work. Compilation without deployment remains available through `-Application None`.
+An Editor built before in-memory loading still locks its DLLs; close it, rebuild it
+once, and the restriction is gone.
 
 Play/Stop is not reload. Mono caches loaded assembly identity, metadata, methods,
 objects and dependencies until final shutdown. Same-path loading returns the

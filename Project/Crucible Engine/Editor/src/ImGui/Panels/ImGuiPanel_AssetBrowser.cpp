@@ -24,6 +24,7 @@
 #include "Scene/SceneManager.h"
 #include "Prefabs/PrefabAuthoring.h"
 #include "Scene/Prefab.h"   // kPrefabExtension
+#include "Scripting/ScriptAuthoring.h"
 
 #include <algorithm>
 #include <cctype>
@@ -500,6 +501,7 @@ void Crucible::AssetBrowser::Update(float) {
 	}
 
 	DrawDeleteConfirm();
+	DrawCreateScriptModal();
 
 	ImGui::End();
 
@@ -797,6 +799,10 @@ void Crucible::AssetBrowser::DrawGrid() {
 			if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) animator->RequestNew();
 		}
 		if (IsInScenesFolder(m_currentFolder) && ImGui::MenuItem("Create Scene", nullptr, false, !searching && IsRefreshAllowed())) CreateScene();
+		// Always listed so it can be found, but only enabled where the build will compile it.
+		bool const inScripts = IsInScriptsFolder(m_currentFolder);
+		if (ImGui::MenuItem("Create C# Script", nullptr, false, inScripts && !searching && IsRefreshAllowed())) BeginCreateScript();
+		if (!inScripts) ImGui::SetItemTooltip("Scripts are only compiled from the Scripts folder.\nOpen Assets/Scripts (or a folder in it) first.");
 		if (ImGui::MenuItem("Show in Explorer")) ShowInExplorer(AbsolutePathOf(m_currentFolder), false);
 		ImGui::Separator();
 		if (ImGui::MenuItem("Refresh", "F5", false, IsRefreshAllowed())) Refresh();
@@ -1108,6 +1114,82 @@ void Crucible::AssetBrowser::CreateScene() {
 	Refresh();
 	CRU_USER_INFO("Created scene {}", virtualPath);
 	BeginRename(virtualPath);   // Unity: type its name straight away
+}
+
+// ------------------------------------------------------------------ create C# script
+
+bool Crucible::AssetBrowser::IsInScriptsFolder(std::string const& folder) const {
+	std::string const f = ToLowerCopy(folder);
+	return f == "scripts" || f.rfind("scripts/", 0) == 0;
+}
+
+void Crucible::AssetBrowser::BeginCreateScript() {
+	if (!IsRefreshAllowed() || !IsInScriptsFolder(m_currentFolder)) return;
+	// Asked for in a modal rather than renamed afterwards (as Create Scene does): the class
+	// name is written inside the file, so it has to be known before the file is created.
+	m_createScriptFolder = m_currentFolder;
+	m_createScriptName[0] = '\0';
+	m_createScriptError.clear();
+	m_openCreateScript = true;
+}
+
+void Crucible::AssetBrowser::DrawCreateScriptModal() {
+	// Opened here, at the panel's ID level, like the delete confirm, so OpenPopup and
+	// BeginPopupModal see the same ID.
+	char const* const kTitle = "Create C# Script";
+	bool const justOpened = m_openCreateScript;
+	if (m_openCreateScript) {
+		ImGui::OpenPopup(kTitle);
+		m_openCreateScript = false;
+	}
+
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (!ImGui::BeginPopupModal(kTitle, nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		return;
+
+	ImGui::Text("New script in Assets/%s", m_createScriptFolder.c_str());
+	ImGui::Spacing();
+	if (justOpened) ImGui::SetKeyboardFocusHere();   // type the name straight away
+	bool const enter = ImGui::InputTextWithHint("Class name", "e.g. PlayerController", m_createScriptName,
+		sizeof(m_createScriptName), ImGuiInputTextFlags_EnterReturnsTrue);
+	ImGui::InputText("Namespace", m_createScriptNamespace, sizeof(m_createScriptNamespace));
+
+	if (!m_createScriptError.empty()) {
+		ImGui::Spacing();
+		ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", m_createScriptError.c_str());
+	}
+
+	ImGui::Spacing();
+	bool close = false;
+	bool const create = ImGui::Button("Create", ImVec2(120.0f, 0.0f)) || enter;
+	if (create) {
+		if (!IsRefreshAllowed()) {
+			m_createScriptError = "Cannot create scripts in play mode - press Stop first.";
+		}
+		else {
+			fs::path const assetRoot{ m_assets.GetAssetRoot() };
+			fs::path output;
+			// Same template, name checks and never-overwrite rule as Inspector > Add Component.
+			if (ScriptAuthoring::CreateIn(assetRoot.parent_path(), fs::path(AbsolutePathOf(m_createScriptFolder)),
+					m_createScriptName, m_createScriptNamespace, output, m_createScriptError)) {
+				std::error_code ec;
+				std::string const virtualPath = fs::relative(output, assetRoot, ec).generic_string();
+				Refresh();
+				m_selected = virtualPath;
+				CRU_USER_INFO("Created script {}. Close the Editor, build, and restart to attach it to an entity.", virtualPath);
+				close = true;
+			}
+		}
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false))
+		close = true;
+
+	if (close) {
+		m_createScriptError.clear();
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::EndPopup();
 }
 
 // ------------------------------------------------------------------ delete

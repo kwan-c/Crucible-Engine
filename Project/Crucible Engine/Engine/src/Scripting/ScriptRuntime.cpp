@@ -32,6 +32,7 @@
 #include <bit>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <limits>
 #include <map>
 #include <set>
@@ -129,6 +130,24 @@ namespace Crucible
 		/*********************************************************************
 		 \brief  Converts a filesystem path to a UTF-8 std::string for Mono and logging.
 		 *********************************************************************/
+		/*********************************************************************
+		 \brief  Reads a whole file into `bytes`. Used to load DLLs from memory, so
+		         Mono never keeps the file open (see LoadAssembly).
+		 \return false if the file cannot be read or is larger than 2 GB.
+		 *********************************************************************/
+		bool ReadFileBytes(const std::filesystem::path& file, std::vector<char>& bytes)
+		{
+			std::ifstream stream(file, std::ios::binary | std::ios::ate);
+			if (!stream)
+				return false;
+			const auto size = static_cast<std::streamoff>(stream.tellg());
+			if (size <= 0 || size > std::streamoff(std::numeric_limits<int32_t>::max()))
+				return false;
+			bytes.resize(static_cast<size_t>(size));
+			stream.seekg(0);
+			return static_cast<bool>(stream.read(bytes.data(), size));
+		}
+
 		std::string Utf8(const std::filesystem::path& path)
 		{
 			const auto value = path.u8string();
@@ -1420,9 +1439,14 @@ namespace Crucible
 				}
 			}
 
-			// Open the DLL's metadata first, to inspect it before Mono loads it.
+			// Read the DLL into memory and give Mono that copy. Mono then never holds the
+			// file open, so a script build can replace it while the Editor is running.
+			// (The running app keeps using the copy it loaded until it restarts.)
 			MonoImageOpenStatus status = MONO_IMAGE_OK;
 			const auto filename = Utf8(file);
+			std::vector<char> bytes;
+			if (!ReadFileBytes(file, bytes))
+				return data.Fail("Cannot read managed assembly " + filename);
 			struct ImageRef
 			{
 				MonoImage* image;
@@ -1432,7 +1456,10 @@ namespace Crucible
 						mono_image_close(image);
 				}
 			};
-			ImageRef image{mono_image_open_full(filename.c_str(), &status, false)};
+			// need_copy = true: Mono keeps its own copy, so `bytes` can be freed. The name is
+			// the real path, so error messages and the identity check below still use it.
+			ImageRef image{mono_image_open_from_data_with_name(bytes.data(), static_cast<uint32_t>(bytes.size()),
+			                                                   true, &status, false, filename.c_str())};
 			if (!image.image)
 				return data.Fail("Cannot read managed assembly " + filename + ": " +
 				                 mono_image_strerror(status));
@@ -1465,6 +1492,29 @@ namespace Crucible
 					    name);
 			}
 
+			// Load this DLL's dependencies that sit next to it the same way first (e.g.
+			// Crucible.Scripts needs Crucible.ScriptCore). Otherwise Mono would find them
+			// itself and open them from disk, locking those files.
+			for (int row = 0; row < mono_table_info_get_rows(references); ++row)
+			{
+				const std::string reference = mono_metadata_string_heap(
+				    image.image, mono_metadata_decode_row_col(references, row, MONO_ASSEMBLYREF_NAME));
+				const bool alreadyLoaded = std::any_of(data.assemblies.begin(), data.assemblies.end(),
+				                                       [&](const auto& entry)
+				                                       {
+					                                       return _stricmp(entry.second.name.c_str(),
+					                                                       reference.c_str()) == 0;
+				                                       });
+				const auto sibling = file.parent_path() / std::filesystem::path(std::u8string(
+				                                              reference.begin(), reference.end()) + u8".dll");
+				std::error_code siblingError;
+				if (alreadyLoaded || !std::filesystem::is_regular_file(sibling, siblingError))
+					continue; // framework assemblies (System, mscorlib) come from Mono's own folder
+				ScriptAssemblyHandle dependency;
+				if (!LoadAssembly(Utf8(sibling), dependency))
+					return false; // LoadAssembly already reported why
+			}
+
 			// Actually load it into Mono, then double-check Mono loaded THIS file.
 			auto* loaded = mono_assembly_load_from_full(image.image, filename.c_str(), &status, false);
 			if (!loaded)
@@ -1490,7 +1540,7 @@ namespace Crucible
 			const uint64_t id = data.nextAssembly++;
 			data.assemblies.emplace(id, Impl::Assembly{file, name, loaded, loadedImage});
 			assembly.value = id;
-			CRU_INFO("[Scripting] Loaded managed assembly {} from {}", name, filename);
+			CRU_INFO("[Scripting] Loaded managed assembly {} from {} (in-memory copy)", name, filename);
 			return true;
 		}
 		catch (const std::filesystem::filesystem_error& exception)
