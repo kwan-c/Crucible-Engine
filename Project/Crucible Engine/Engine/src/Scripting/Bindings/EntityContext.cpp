@@ -13,7 +13,11 @@
 #include "ECS/World.h"
 #include "Scene/SceneManager.h"
 #include "Systems/PlayMode.h"
+#include "AssetPipe/Assetmanager.h"
+#include "Audio/AudioComponents.h"
 #if CRUCIBLE_WITH_MONO
+#include <algorithm>
+#include <filesystem>
 
 namespace Crucible::ScriptBindings
 {
@@ -23,6 +27,27 @@ namespace Crucible::ScriptBindings
 		thread_local World* world = nullptr;
 		thread_local PlayMode* play = nullptr;
 		thread_local SceneManager* scenes = nullptr;
+		thread_local AssetManager* assets = nullptr;
+
+		// Entity.Destroy requests waiting for their delay (main thread only).
+		struct PendingDestroy
+		{
+			Entity entity;
+			float remaining; // seconds of Play time left
+		};
+		thread_local std::vector<PendingDestroy> pendingDestroys;
+
+		// Audio.PlayClipAtPoint entities waiting for their sound to end.
+		struct OneShotAudio
+		{
+			Entity entity;
+			float waited = 0.0f;  // seconds before it started playing
+			bool started = false; // its AudioSource has reported playing
+		};
+		thread_local std::vector<OneShotAudio> oneShots;
+
+		// A one-shot that has not started after this long never will (missing clip).
+		constexpr float OneShotStartTimeout = 2.0f;
 
 		// Set by EntityScriptSystem. Plain statics (not thread_local): it may be
 		// installed from whichever thread initializes systems. Every caller goes
@@ -31,11 +56,14 @@ namespace Crucible::ScriptBindings
 		void* scriptLookupContext = nullptr;
 	}
 
-	void SetWorld(World* newWorld, PlayMode* newPlay, SceneManager* newScenes)
+	void SetWorld(World* newWorld, PlayMode* newPlay, SceneManager* newScenes, AssetManager* newAssets)
 	{
 		world = newWorld;
 		play = newPlay;
 		scenes = newScenes;
+		assets = newAssets;
+		pendingDestroys.clear();
+		oneShots.clear();
 	}
 
 	namespace EntityContext
@@ -43,6 +71,100 @@ namespace Crucible::ScriptBindings
 		World* GetWorld()
 		{
 			return world;
+		}
+
+		AssetManager* GetAssets()
+		{
+			return assets;
+		}
+
+		bool IsPrefabAsset(uint64_t assetId)
+		{
+			if (!assets || assetId == 0)
+				return false;
+			const AssetEntry* entry = assets->FindByGuid(xresource::instance_guid{assetId});
+			return entry && std::filesystem::path(entry->virtualPath).extension() == ".cprefab";
+		}
+
+		bool IsAudioAsset(uint64_t assetId)
+		{
+			if (!assets || assetId == 0)
+				return false;
+			const AssetEntry* entry = assets->FindByGuid(xresource::instance_guid{assetId});
+			return entry && entry->type == AssetType::Audio;
+		}
+
+		void QueueDestroy(Entity entity, float delaySeconds)
+		{
+			const auto existing = std::find_if(pendingDestroys.begin(), pendingDestroys.end(),
+			                                   [&](const PendingDestroy& pending) { return pending.entity == entity; });
+			if (existing != pendingDestroys.end())
+				existing->remaining = std::min(existing->remaining, delaySeconds);
+			else
+				pendingDestroys.push_back({entity, delaySeconds});
+		}
+
+		void TakeDueDestroys(float deltaTime, std::vector<Entity>& due)
+		{
+			for (auto it = pendingDestroys.begin(); it != pendingDestroys.end();)
+			{
+				it->remaining -= deltaTime;
+				if (it->remaining <= 0.0f)
+				{
+					due.push_back(it->entity);
+					it = pendingDestroys.erase(it);
+				}
+				else
+					++it;
+			}
+		}
+
+		void ClearDestroyQueue()
+		{
+			pendingDestroys.clear();
+		}
+
+		bool InPlaySession()
+		{
+			return play && play->InSession();
+		}
+
+		void TrackOneShotAudio(Entity entity)
+		{
+			oneShots.push_back({entity});
+		}
+
+		void UpdateOneShotAudio(float deltaTime)
+		{
+			if (!world)
+				return;
+			for (auto it = oneShots.begin(); it != oneShots.end();)
+			{
+				const AudioSource* source = world->IsAlive(it->entity) ? world->Read<AudioSource>(it->entity) : nullptr;
+				bool done = !source; // destroyed by a script, or its AudioSource removed
+				if (source)
+				{
+					if (source->m_isPlaying)
+						it->started = true;
+					else if (it->started)
+						done = true; // finished
+					else if ((it->waited += deltaTime) > OneShotStartTimeout)
+						done = true; // never started
+				}
+				if (done)
+				{
+					if (source)
+						QueueDestroy(it->entity, 0.0f);
+					it = oneShots.erase(it);
+				}
+				else
+					++it;
+			}
+		}
+
+		void ClearOneShotAudio()
+		{
+			oneShots.clear();
 		}
 
 		bool ResolveEntity(int32_t index, int32_t generation, Entity& entity)

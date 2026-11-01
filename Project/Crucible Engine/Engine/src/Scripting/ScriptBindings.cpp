@@ -19,12 +19,15 @@ namespace Crucible::ScriptBindings
 		RegisterTransformBindings();
 		RegisterInputBindings();
 		RegisterEntityBindings();
+		RegisterPrefabBindings();
+		RegisterAudioBindings();
 	}
 
 	void ClearAll()
 	{
 		SetAnimator(nullptr);
-		SetWorld(nullptr, nullptr, nullptr);
+		SetWorld(nullptr, nullptr, nullptr, nullptr);
+		SetUserSettings(nullptr);
 		// Clear new adapters here.
 	}
 }

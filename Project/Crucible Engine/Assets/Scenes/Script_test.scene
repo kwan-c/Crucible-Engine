@@ -27,7 +27,7 @@
                     "name": "Empty_CompRef"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
+                    "enabled": false,
                     "assembly": "Managed/Crucible.Scripts.dll",
                     "namespace": "Crucible.Scripts",
                     "class": "FindComponentTest",
@@ -42,7 +42,8 @@
                             "real": 0.0,
                             "text": "Camera",
                             "stringIsNull": false,
-                            "entityId": 0
+                            "entityId": 0,
+                            "assetId": 0
                         }
                     ]
                 }
@@ -55,7 +56,7 @@
                     "positions": {
                         "x": 2.994795322418213,
                         "y": 1.6802396774291992,
-                        "z": -3.4080777168273926
+                        "z": -4.387475967407227
                     },
                     "rotation": {
                         "x": 0.0,
@@ -213,7 +214,8 @@
                             "real": 0.0,
                             "text": "",
                             "stringIsNull": false,
-                            "entityId": 0
+                            "entityId": 0,
+                            "assetId": 0
                         }
                     ]
                 }
@@ -240,6 +242,7 @@
                         "z": 1.0
                     }
                 },
+                "AudioListener": {},
                 "Camera": {
                     "enabled": true,
                     "fovY": 60.0,
@@ -291,11 +294,71 @@
                     "name": "Cube"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
+                    "enabled": false,
                     "assembly": "Managed/Crucible.Scripts.dll",
                     "namespace": "Crucible.Scripts",
                     "class": "TransformTest",
                     "fields": []
+                }
+            }
+        },
+        {
+            "id": "62D8A0DCA9C4C001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.620373249053955,
+                        "z": 3.832832098007202
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "AudioSource": {
+                    "clip": 5612796659169525761,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": false,
+                    "loop": false,
+                    "volume": 1.0,
+                    "pitch": 1.0,
+                    "spatialBlend": 0.0,
+                    "minDistance": 1.0,
+                    "maxDistance": 500.0,
+                    "rolloffMode": "Logarithmic"
+                },
+                "EntityName": {
+                    "name": "Empty_testAudio"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "AudioTest",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.AudioTest",
+                            "name": "otherClip",
+                            "type": "AudioClip",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 15989090200631148553
+                        }
+                    ]
                 }
             }
         },
@@ -339,7 +402,102 @@
                             "real": 0.0,
                             "text": "",
                             "stringIsNull": false,
-                            "entityId": 5457325756861071361
+                            "entityId": 5457325756861071361,
+                            "assetId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "8994C8DCA61C4007",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Cube"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 7607926520540626947,
+                    "fileId": 113936740596121601,
+                    "isRoot": true,
+                    "prefabHash": 3367115152188642115,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "C194C8DCA61C4005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 5.225093841552734,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Empty_Spawn"
+                },
+                "ScriptComponent": {
+                    "enabled": false,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "SpawnTest",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.SpawnTest",
+                            "name": "prefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 7607926520540626947
                         }
                     ]
                 }
@@ -437,7 +595,8 @@
                             "real": 0.0,
                             "text": "",
                             "stringIsNull": false,
-                            "entityId": 0
+                            "entityId": 0,
+                            "assetId": 0
                         }
                     ]
                 }

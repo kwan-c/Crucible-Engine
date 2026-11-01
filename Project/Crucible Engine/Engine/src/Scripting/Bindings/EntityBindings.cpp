@@ -18,6 +18,7 @@
 #include "Scripting/Bindings/EntityContext.h"
 #include "ECS/World.h"
 #include "ECS/Components/Components.h"
+#include "Audio/AudioComponents.h"
 #if CRUCIBLE_WITH_MONO
 #include <mono/metadata/appdomain.h>
 #include <mono/metadata/loader.h>
@@ -131,6 +132,7 @@ namespace Crucible::ScriptBindings
 			RigidBody = 1,
 			Animator = 2, // the AnimatedModel component
 			Script = 3,
+			AudioSource = 4,
 		};
 
 		/*********************************************************************
@@ -163,6 +165,9 @@ namespace Crucible::ScriptBindings
 				case ScriptComponentKind::Script:
 					*out = world.HasComponent<ScriptComponent>(entity) ? 1 : 0;
 					return 1;
+				case ScriptComponentKind::AudioSource:
+					*out = world.HasComponent<Crucible::AudioSource>(entity) ? 1 : 0;
+					return 1;
 				}
 				return 0;
 			}
@@ -193,10 +198,69 @@ namespace Crucible::ScriptBindings
 				return nullptr;
 			}
 		}
+
+		/*********************************************************************
+		 \brief  Depth-first search below `parent` for an entity named `name`.
+		         Children are visited in Hierarchy order, each one's own children
+		         before its next sibling.
+		 *********************************************************************/
+		bool FindDescendant(const World& world, Entity parent, const std::string& name, Entity& found)
+		{
+			const HierarchyNode* node = world.Read<HierarchyNode>(parent);
+			for (Entity child = node ? node->firstChild : Entity{}; child.IsValid();)
+			{
+				const EntityName* childName = world.Read<EntityName>(child);
+				if (childName && childName->name == name)
+				{
+					found = child;
+					return true;
+				}
+				if (FindDescendant(world, child, name, found))
+					return true;
+				const HierarchyNode* childNode = world.Read<HierarchyNode>(child);
+				child = childNode ? childNode->nextSibling : Entity{};
+			}
+			return false;
+		}
+
+		/*********************************************************************
+		 \brief  C# Entity.FindChild(name): a child, grandchild, ... of the
+		         entity whose Hierarchy name matches exactly. How a script reaches
+		         the parts of a prefab it spawned.
+		 \return 1 with its (index, generation), or 0 if none matches.
+		 *********************************************************************/
+		int32_t ManagedEntityFindChild(int32_t index, int32_t generation, MonoString* name, int32_t* outIndex,
+		                               int32_t* outGeneration) noexcept
+		{
+			try
+			{
+				if (!outIndex || !outGeneration)
+					return 0;
+				*outIndex = 0;
+				*outGeneration = 0;
+				GcRoot root(reinterpret_cast<MonoObject*>(name));
+				std::string wanted;
+				Entity parent;
+				if (!EntityContext::ResolveEntity(index, generation, parent) || !root.Get() ||
+				    !FromManagedString(reinterpret_cast<MonoString*>(root.Get()), wanted) || wanted.empty())
+					return 0;
+				Entity found;
+				if (!FindDescendant(*EntityContext::GetWorld(), parent, wanted, found))
+					return 0;
+				*outIndex = static_cast<int32_t>(found.index);
+				*outGeneration = static_cast<int32_t>(found.generation);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
 	}
 
 	void RegisterEntityBindings()
 	{
+		mono_add_internal_call("Crucible.Entity::FindChildInternal", reinterpret_cast<const void*>(ManagedEntityFindChild));
 		mono_add_internal_call("Crucible.Entity::IsAliveInternal", reinterpret_cast<const void*>(ManagedEntityIsAlive));
 		mono_add_internal_call("Crucible.Entity::GetNameInternal", reinterpret_cast<const void*>(ManagedEntityGetName));
 		mono_add_internal_call("Crucible.Entity::FindInternal", reinterpret_cast<const void*>(ManagedEntityFind));

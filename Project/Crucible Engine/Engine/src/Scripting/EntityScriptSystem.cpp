@@ -101,6 +101,10 @@ namespace Crucible
 		if (m_sceneChanged || m_session != m_play.SessionRevision() || !m_play.InSession())
 		{
 			StopAll();
+#if CRUCIBLE_WITH_MONO
+			ScriptBindings::EntityContext::ClearDestroyQueue(); // destroys belong to the session that asked
+			ScriptBindings::EntityContext::ClearOneShotAudio();
+#endif
 			m_sceneChanged = false;
 			m_session = m_play.SessionRevision();
 		}
@@ -264,6 +268,16 @@ namespace Crucible
 			}
 		}
 
+		// --- Step 6b: Entity.Destroy requests that are due (end of frame, like Unity),
+		// including Audio.PlayClipAtPoint entities whose sound has finished.
+		if (m_play.State() == PlayState::Playing)
+		{
+#if CRUCIBLE_WITH_MONO
+			ScriptBindings::EntityContext::UpdateOneShotAudio(world.DeltaTime());
+#endif
+			ApplyDestroys(world);
+		}
+
 		// --- Step 7: destroy scripts whose entity no longer has a ScriptComponent
 		// (e.g. the entity itself was destroyed).
 		for (auto it = m_records.begin(); it != m_records.end();)
@@ -290,6 +304,52 @@ namespace Crucible
 		m_lifetime.reset(); // expires `alive` in the Init() callbacks
 #if CRUCIBLE_WITH_MONO
 		ScriptBindings::EntityContext::SetScriptLookup(nullptr, nullptr);
+#endif
+	}
+
+	void EntityScriptSystem::ApplyDestroys(World& world)
+	{
+#if CRUCIBLE_WITH_MONO
+		std::vector<Entity> due;
+		ScriptBindings::EntityContext::TakeDueDestroys(world.DeltaTime(), due);
+		// A few rounds, for OnDestroy calls that destroy something else; anything
+		// still queued after that waits for the next frame.
+		for (int round = 0; round < 8 && !due.empty(); ++round)
+		{
+			for (const Entity root : due)
+			{
+				if (!world.IsAlive(root))
+					continue; // already gone, e.g. destroyed with its parent
+				// The subtree, parents before children.
+				std::vector<Entity> subtree{root};
+				for (std::size_t i = 0; i < subtree.size(); ++i)
+				{
+					const HierarchyNode* node = world.Read<HierarchyNode>(subtree[i]);
+					for (Entity child = node ? node->firstChild : Entity{}; child.IsValid();)
+					{
+						subtree.push_back(child);
+						const HierarchyNode* childNode = world.Read<HierarchyNode>(child);
+						child = childNode ? childNode->nextSibling : Entity{};
+					}
+				}
+				// OnDestroy children first, while every entity still exists.
+				for (auto it = subtree.rbegin(); it != subtree.rend(); ++it)
+				{
+					const auto found = m_records.find(Key(*it));
+					if (found != m_records.end())
+					{
+						Release(found->second);
+						m_records.erase(found);
+					}
+				}
+				if (world.IsAlive(root)) // an OnDestroy could have destroyed it already
+					world.DestroyEntity(root);
+			}
+			due.clear();
+			ScriptBindings::EntityContext::TakeDueDestroys(0.0f, due); // queued by those OnDestroys
+		}
+#else
+		(void)world;
 #endif
 	}
 

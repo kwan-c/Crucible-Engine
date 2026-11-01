@@ -42,6 +42,8 @@ namespace Crucible
 	class World;
 	class PlayMode;
 	class SceneManager;
+	class AssetManager;
+	struct UserSettings;
 
 	/*********************************************************************
 	 \brief  NotStarted  = Initialize() not called yet.
@@ -358,12 +360,20 @@ namespace Crucible
 		bool SetAnimatorBinding(IScriptAnimatorBinding* binding);
 
 		/*********************************************************************
-		 \brief  Gives the entity bindings (Transform, Entity, ...) access to the
-		         world, Play state and open scene (entity fields are saved as scene
-		         ids). Pass nullptrs to disconnect (Core does this before the world
-		         is destroyed).
+		 \brief  Gives the entity bindings (Transform, Entity, Prefab, ...) access
+		         to the world, Play state, open scene (entity fields are saved as
+		         scene ids) and assets (prefab fields are asset guids). Pass
+		         nullptrs to disconnect (Core does this before the world is
+		         destroyed).
 		 *********************************************************************/
-		bool SetWorldBinding(World* world, PlayMode* play, SceneManager* scenes);
+		bool SetWorldBinding(World* world, PlayMode* play, SceneManager* scenes, AssetManager* assets);
+
+		/*********************************************************************
+		 \brief  Gives the C# Audio class the player's UserSettings (bus
+		         volumes, saved with Audio.SaveSettings). Pass nullptr to
+		         disconnect (Core does this before shutdown).
+		 *********************************************************************/
+		bool SetUserSettingsBinding(UserSettings* settings);
 
 	private:
 		/*********************************************************************

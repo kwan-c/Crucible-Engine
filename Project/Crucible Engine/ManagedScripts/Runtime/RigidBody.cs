@@ -39,9 +39,36 @@ namespace Crucible
             set { SetAngularDrag((int)entity.Index, (int)entity.Generation, ref value); }
         }
 
+        public bool IsKinematic
+        {
+            get { int isKinematic; return GetIsKinematic((int)entity.Index, (int)entity.Generation, out isKinematic) != 0 && isKinematic != 0; }
+            set { int flag = value ? 1 : 0; SetIsKinematic((int)entity.Index, (int)entity.Generation, ref flag); }
+        }
+
+        // public class Constraints
+        // {
+        //     public bool FreezeRotationX
+        //     {
+                
+        //     }
+
+        //     public bool FreezePosition
+        //     {
+                
+        //     }
+        // }
+
         public void AddForce(Vector3 v)
         {
             AddRBForce((int)entity.Index, (int)entity.Generation, ref v);
+        }
+        public void AddTorque(Vector3 v)
+        {
+            AddRBTorque((int)entity.Index, (int)entity.Generation, ref v);
+        }
+        public void ApplyImpulse(Vector3 v)
+        {
+            ApplyRBImpulse((int)entity.Index, (int)entity.Generation, ref v);
         }
 
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -74,6 +101,18 @@ namespace Crucible
         private static extern int SetAngularDrag(int index, int generation, ref float value);
 
         [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetIsKinematic(int index, int generation, out int value);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetIsKinematic(int index, int generation, ref int value);
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int AddRBForce(int index, int generation, ref Vector3 value);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int AddRBTorque(int index, int generation, ref Vector3 value);
+        
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ApplyRBImpulse(int index, int generation, ref Vector3 value);
     }
 }

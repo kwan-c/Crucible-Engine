@@ -396,6 +396,43 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		int32_t ManagedRigidbodyGetIsKinematic(int32_t index, int32_t generation, int* out) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!out || !ResolveEntity(index, generation, entity))
+					return 0;
+				const RigidBody* rigidbody = world()->Read<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				*out = rigidbody->isKinematic;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+		int32_t ManagedRigidbodySetIsKinematic(int32_t index, int32_t generation, const int* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				rigidbody->isKinematic = *value;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		int32_t ManagedRigidBodyAddForce(int32_t index, int32_t generation, const ScriptVec3* value) noexcept
 		{
 			try
@@ -407,6 +444,42 @@ namespace Crucible::ScriptBindings
 				if (!rigidbody)
 					return 0;
 				rigidbody->AddForce({ value->x, value->y, value->z });
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+		int32_t ManagedRigidBodyAddTorque(int32_t index, int32_t generation, const ScriptVec3* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !IsFinite(*value) || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				rigidbody->AddTorque({ value->x, value->y, value->z });
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+		int32_t ManagedRigidBodyApplyImpulse(int32_t index, int32_t generation, const ScriptVec3* value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!value || !IsFinite(*value) || !ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
+				if (!rigidbody)
+					return 0;
+				rigidbody->ApplyImpulse({ value->x, value->y, value->z });
 				return 1;
 			}
 			catch (...)
@@ -455,8 +528,18 @@ namespace Crucible::ScriptBindings
 								reinterpret_cast<const void*>(ManagedRigidBodyGetAngularDrag));
 		mono_add_internal_call("Crucible.RigidBody::SetAngularDrag",
 								reinterpret_cast<const void*>(ManagedRigidBodySetAngularDrag));
+		mono_add_internal_call("Crucible.RigidBody::GetIsKinematic",
+								reinterpret_cast<const void*>(ManagedRigidbodyGetIsKinematic));
+		mono_add_internal_call("Crucible.RigidBody::SetIsKinematic",
+								reinterpret_cast<const void*>(ManagedRigidbodySetIsKinematic));
 		mono_add_internal_call("Crucible.RigidBody::AddRBForce",
 								reinterpret_cast<const void*>(ManagedRigidBodyAddForce));
+		mono_add_internal_call("Crucible.RigidBody::AddRBForce",
+								reinterpret_cast<const void*>(ManagedRigidBodyAddForce));
+		mono_add_internal_call("Crucible.RigidBody::AddRBTorque",
+								reinterpret_cast<const void*>(ManagedRigidBodyAddTorque));
+		mono_add_internal_call("Crucible.RigidBody::ApplyRBImpulse",
+								reinterpret_cast<const void*>(ManagedRigidBodyApplyImpulse));
 	}
 }
 #endif

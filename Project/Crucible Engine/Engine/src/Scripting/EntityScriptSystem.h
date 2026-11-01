@@ -129,6 +129,14 @@ namespace Crucible
 		 *********************************************************************/
 		static uint32_t LookupScript(void* self, Entity entity);
 
+		/*********************************************************************
+		 \brief  Carries out C# Entity.Destroy requests that are due: calls
+		         OnDestroy on every script in the entity's subtree (while it
+		         still exists), then destroys the entity and its children.
+		         Repeats for destroys requested from inside those OnDestroys.
+		 *********************************************************************/
+		void ApplyDestroys(World& world);
+
 		ScriptRuntime& m_runtime;
 		World& m_world;
 		PlayMode& m_play;

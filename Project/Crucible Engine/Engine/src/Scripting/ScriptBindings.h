@@ -31,6 +31,8 @@ namespace Crucible
 	class World;
 	class PlayMode;
 	class SceneManager;
+	class AssetManager;
+	struct UserSettings;
 
 	namespace ScriptBindings
 	{
@@ -55,13 +57,23 @@ namespace Crucible
 		void SetAnimator(IScriptAnimatorBinding* binding);
 
 		/*********************************************************************
-		 \brief  Gives entity bindings (Transform, Entity, ...) access to the ECS,
-		         Play state and the open scene (for entity fields saved as scene
-		         ids). nullptr clears it. Non-owning; main thread only.
+		 \brief  Gives entity bindings (Transform, Entity, Prefab, ...) access to
+		         the ECS, Play state, the open scene (entity fields are saved as
+		         scene ids) and the assets (prefab fields are asset guids).
+		         nullptr clears it. Non-owning; main thread only.
 		         Called through ScriptRuntime::SetWorldBinding. Defined in
 		         Bindings/EntityContext.cpp.
 		 *********************************************************************/
-		void SetWorld(World* world, PlayMode* play, SceneManager* scenes);
+		void SetWorld(World* world, PlayMode* play, SceneManager* scenes, AssetManager* assets);
+
+		/*********************************************************************
+		 \brief  Gives the C# Audio class the player's settings (bus volumes),
+		         which ECSAudioSystem reads every frame. nullptr clears it.
+		         Non-owning; main thread only. Called through
+		         ScriptRuntime::SetUserSettingsBinding. Defined in
+		         Bindings/AudioBindings.cpp.
+		 *********************************************************************/
+		void SetUserSettings(UserSettings* settings);
 
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
@@ -69,5 +81,7 @@ namespace Crucible
 		void RegisterTransformBindings(); // Bindings/TransformBindings.cpp (C# Transform)
 		void RegisterInputBindings();     // Bindings/InputBindings.cpp     (C# Input)
 		void RegisterEntityBindings();    // Bindings/EntityBindings.cpp    (C# Entity)
+		void RegisterPrefabBindings();    // Bindings/PrefabBindings.cpp    (C# Prefab, Entity.Destroy)
+		void RegisterAudioBindings();     // Bindings/AudioBindings.cpp     (C# AudioSource)
 	}
 }

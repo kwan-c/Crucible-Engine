@@ -217,7 +217,8 @@ namespace Crucible {
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
         if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(&animator);
-        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetWorldBinding(m_world.get(), m_playMode.get(), m_scenes.get());   // Transform & other entity bindings
+        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetWorldBinding(m_world.get(), m_playMode.get(), m_scenes.get(), m_assets.get());   // Transform & other entity bindings
+        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetUserSettingsBinding(&m_userSettings);   // C# Audio bus volumes
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
@@ -234,7 +235,8 @@ namespace Crucible {
         // Run managed teardown while Core's resources/systems are still alive.
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(nullptr);
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetWorldBinding(nullptr, nullptr, nullptr);
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetWorldBinding(nullptr, nullptr, nullptr, nullptr);
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetUserSettingsBinding(nullptr);
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }

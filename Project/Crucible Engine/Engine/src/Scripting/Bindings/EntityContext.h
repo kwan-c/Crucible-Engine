@@ -21,11 +21,13 @@
 **************************************************************************/
 #pragma once
 #include <cstdint>
+#include <vector>
 #include "ECS/Core/ECSCore.h"   // Entity
 
 namespace Crucible
 {
 	class World;
+	class AssetManager;
 
 	namespace ScriptBindings::EntityContext
 	{
@@ -33,6 +35,70 @@ namespace Crucible
 		 \brief  The world scripts act on, or nullptr before SetWorld().
 		 *********************************************************************/
 		World* GetWorld();
+
+		/*********************************************************************
+		 \brief  The asset manager (prefab fields are asset guids), or nullptr.
+		 *********************************************************************/
+		AssetManager* GetAssets();
+
+		/*********************************************************************
+		 \brief  true if `assetId` is an indexed .cprefab asset.
+		 *********************************************************************/
+		bool IsPrefabAsset(uint64_t assetId);
+
+		/*********************************************************************
+		 \brief  true if `assetId` is an indexed audio file (AssetType::Audio).
+		 *********************************************************************/
+		bool IsAudioAsset(uint64_t assetId);
+
+		// --- Destroy queue (C# Entity.Destroy) ----------------------------- //
+		// Destroys are queued, not done on the spot: the entity stays valid for
+		// the rest of the frame, like Unity. EntityScriptSystem applies them at
+		// the end of its Update.
+
+		/*********************************************************************
+		 \brief  Queues `entity` (and its children) for destruction after
+		         `delaySeconds` of Play time; 0 = at the end of this frame.
+		         Queuing an entity again keeps the earlier deadline.
+		 *********************************************************************/
+		void QueueDestroy(Entity entity, float delaySeconds);
+
+		/*********************************************************************
+		 \brief  Counts every queued delay down by `deltaTime` and moves the
+		         ones that are due into `due` (removing them from the queue).
+		 *********************************************************************/
+		void TakeDueDestroys(float deltaTime, std::vector<Entity>& due);
+
+		/*********************************************************************
+		 \brief  Forgets every queued destroy (Play stopped, scene changed).
+		 *********************************************************************/
+		void ClearDestroyQueue();
+
+		/*********************************************************************
+		 \brief  true during a Play session (Playing or Paused).
+		 *********************************************************************/
+		bool InPlaySession();
+
+		// --- One-shot audio (C# Audio.PlayClipAtPoint) ---------------------- //
+
+		/*********************************************************************
+		 \brief  Remembers a temporary "One Shot Audio" entity so it can be
+		         destroyed once its AudioSource has finished.
+		 *********************************************************************/
+		void TrackOneShotAudio(Entity entity);
+
+		/*********************************************************************
+		 \brief  Queues a destroy for every tracked one-shot whose sound has
+		         finished (its AudioSource reported playing, then stopped), or
+		         that never started within a couple of seconds (bad clip).
+		         EntityScriptSystem calls it once per Playing frame.
+		 *********************************************************************/
+		void UpdateOneShotAudio(float deltaTime);
+
+		/*********************************************************************
+		 \brief  Forgets every tracked one-shot (Play stopped, scene changed).
+		 *********************************************************************/
+		void ClearOneShotAudio();
 
 		/*********************************************************************
 		 \brief  Turns the (index, generation) a script passed in into a live

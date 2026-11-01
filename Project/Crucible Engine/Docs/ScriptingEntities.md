@@ -137,7 +137,66 @@ field in the Inspector (X clears it). This is Unity's `public GameObject door;`.
   read its fields and call its methods. `GetComponent<EntityScript>()` returns
   whatever script is there. Null if the entity has no such component/script.
   Any other T throws.
-- Not yet: remapping references inside spawned prefabs, more component types.
+- Not yet: more component types.
+
+### Spawning and destroying
+
+Declare `public Prefab bulletPrefab;` and drag a `.cprefab` from the Asset
+Browser onto it (saved as the prefab's asset guid, so renames keep the link).
+
+- `prefab.Instantiate()`, `Instantiate(position, rotation)` (as a root) and
+  `Instantiate(parent)` (keeps the prefab's saved transform as the local offset)
+  build the whole prefab at once and return its root `Entity`, or null. You can
+  set up the copy straight away (`copy.GetComponent<Bullet>().speed = 40f`);
+  scripts on it get OnCreate on the next frame. Loaded prefabs are cached and
+  reloaded only when the file changes.
+- `entity.FindChild("Trail")` searches the entity's children, grandchildren
+  and so on by Hierarchy name - the way to reach parts of a spawned prefab.
+- `Entity.Destroy(e)` (or `Destroy(e)` inside a script) destroys an entity and
+  its children at the end of the frame; `Destroy(e, 3f)` after 3 seconds of Play
+  time. Until then the entity works normally. Scripts in the subtree get
+  OnDestroy first, children before parents. Stop discards pending destroys.
+- Everything spawned during Play is removed on Stop (the scene snapshot is
+  restored).
+- **Limitation:** `public Entity` fields inside a prefab that point at another
+  entity of the same prefab are not remapped to the new copy - they still name
+  the entity the prefab was made from. Use `FindChild` until this is fixed.
+
+### Audio
+
+`GetComponent<AudioSource>()` (or `Entity.AudioSource`) gives Unity's
+AudioSource for an entity with an AudioSource component. `public AudioClip`
+fields take an audio file dragged from the Asset Browser (saved as its guid).
+
+- `Play()`, `Stop()`, `PlayOneShot()`, `PlayOneShot(clip)`, `IsPlaying`.
+- `Clip`, `Volume` (0..1), `Pitch`, `Loop`, `SpatialBlend` (0 = 2D, 1 = 3D),
+  `MinDistance`, `MaxDistance`.
+- Requests are carried out by ECSAudioSystem later in the same frame.
+  `IsPlaying` is updated once per frame, so it is still false right after
+  `Play()`. Volume and Pitch change a sound already playing; the other
+  settings apply from the next Play.
+- `PlayOneShot(clip)` also sets `Clip`; every one-shot in a frame uses the last
+  clip set that frame. Use separate AudioSources for different simultaneous
+  sounds.
+- Static `Audio` class:
+  - `Audio.MasterVolume`, `MusicVolume`, `SfxVolume`, or
+    `GetBusVolume(AudioBus)` / `SetBusVolume(AudioBus, v)` (0..1). These are the
+    player's settings (Core's UserSettings, which ECSAudioSystem reads every
+    frame), heard next frame. `Audio.SaveSettings()` writes UserSettings.json.
+    They are not scene data, so Stop does not undo them.
+  - `Audio.PlayClipAtPoint(clip, position, volume = 1)` plays a clip once in 3D
+    on the SFX bus, Unity-style: a temporary "One Shot Audio" entity with a Play
+    On Awake AudioSource, destroyed once the sound ends (or after 2 s if it
+    never starts). Returns that entity, or null. Pause and Stop apply as for
+    any AudioSource.
+- Bindings only - `Audio/`, `ECSAudioSystem` and `UserSettings` are unchanged.
+  Not yet: per-shot clips for one source (needs an AudioSource change).
+
+C++ side: `Bindings/AudioBindings.cpp`; one-shot tracking in
+`Bindings/EntityContext.cpp`, ticked by `EntityScriptSystem`.
+
+C++ side: `Bindings/PrefabBindings.cpp` (Instantiate, Destroy),
+`EntityScriptSystem::ApplyDestroys`, `EntityContext` (destroy queue).
 
 #### OnCreate order
 

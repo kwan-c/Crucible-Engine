@@ -49,6 +49,7 @@ namespace Crucible
         private Transform transform;
         private RigidBody rigidBody;
         private Animator animator;
+        private AudioSource audioSource;
 
         internal Entity(uint index, uint generation)
         {
@@ -69,6 +70,8 @@ namespace Crucible
         public RigidBody RigidBody { get { return rigidBody ?? (rigidBody = new RigidBody(Identity)); } }
         /// <summary>Sets parameters on this entity's Animator controller.</summary>
         public Animator Animator { get { return animator ?? (animator = new Animator(Identity)); } }
+        /// <summary>This entity's AudioSource (needs an AudioSource component).</summary>
+        public AudioSource AudioSource { get { return audioSource ?? (audioSource = new AudioSource(Identity)); } }
 
         /// <summary>False once the entity has been destroyed (and outside Play).</summary>
         public bool IsAlive
@@ -100,8 +103,33 @@ namespace Crucible
         }
 
         /// <summary>
+        /// A child, grandchild, ... of this entity named exactly <paramref name="name"/>, or null.
+        /// This is how to reach the parts of a spawned prefab: bullet.FindChild("Trail").
+        /// </summary>
+        public Entity FindChild(string name)
+        {
+            if (string.IsNullOrEmpty(name))
+                return null;
+            int foundIndex, foundGeneration;
+            return FindChildInternal((int)index, (int)generation, name, out foundIndex, out foundGeneration) != 0
+                ? new Entity(unchecked((uint)foundIndex), unchecked((uint)foundGeneration))
+                : null;
+        }
+
+        /// <summary>
+        /// Destroys an entity and its children at the end of this frame, or after
+        /// <paramref name="delay"/> seconds of Play time. Until then it still works normally.
+        /// Scripts on it get OnDestroy first. Null or already-destroyed entities are ignored.
+        /// </summary>
+        public static void Destroy(Entity entity, float delay = 0f)
+        {
+            if (!ReferenceEquals(entity, null))
+                DestroyInternal((int)entity.index, (int)entity.generation, delay);
+        }
+
+        /// <summary>
         /// The entity's component or script of type T, or null if it has none.
-        /// T can be Transform, RigidBody, Animator, or a script class (e.g. GetComponent&lt;Door&gt;()).
+        /// T can be Transform, RigidBody, Animator, AudioSource, or a script class (e.g. GetComponent&lt;Door&gt;()).
         /// A script found during OnCreate may not have run its own OnCreate yet.
         /// </summary>
         public T GetComponent<T>() where T : class
@@ -113,10 +141,12 @@ namespace Crucible
                 return Has(ComponentKind.RigidBody) ? (T)(object)RigidBody : null;
             if (type == typeof(Animator))
                 return Has(ComponentKind.Animator) ? (T)(object)Animator : null;
+            if (type == typeof(AudioSource))
+                return Has(ComponentKind.AudioSource) ? (T)(object)AudioSource : null;
             if (typeof(EntityScript).IsAssignableFrom(type))
                 return GetScriptInternal((int)index, (int)generation) as T;
             throw new ArgumentException("GetComponent<" + type.Name +
-                                        ">: use Transform, RigidBody, Animator or a script class.");
+                                        ">: use Transform, RigidBody, Animator, AudioSource or a script class.");
         }
 
         /// <summary>Does the entity have a component or script of type T? See GetComponent.</summary>
@@ -132,6 +162,7 @@ namespace Crucible
             RigidBody = 1,
             Animator = 2,
             Script = 3,
+            AudioSource = 4,
         }
 
         private bool Has(ComponentKind kind)
@@ -187,5 +218,10 @@ namespace Crucible
         private static extern int HasComponentInternal(int index, int generation, int kind, out int has);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern EntityScript GetScriptInternal(int index, int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int FindChildInternal(int index, int generation, string name, out int childIndex,
+                                                    out int childGeneration);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int DestroyInternal(int index, int generation, float delay);
     }
 }

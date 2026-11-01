@@ -607,21 +607,50 @@ namespace Crucible
 		};
 
 		/*********************************************************************
-		 \brief  true if a field's type is Crucible.Entity from ScriptCore (an
-		         entity reference assigned in the Inspector). The assembly is
-		         checked too, so a user class with the same name is not mistaken
-		         for it.
+		 \brief  true if a field's type is the class Crucible.<name> from
+		         ScriptCore (e.g. "Entity", "Prefab" - references assigned in the
+		         Inspector). The assembly is checked too, so a user class with
+		         the same name is not mistaken for it.
 		 *********************************************************************/
-		bool IsEntityReference(MonoType* type)
+		bool IsScriptCoreClass(MonoType* type, const char* name)
 		{
 			if (!type || mono_type_is_byref(type) || mono_type_get_type(type) != MONO_TYPE_CLASS)
 				return false;
 			MonoClass* klass = mono_class_from_mono_type(type);
 			if (!klass || std::strcmp(mono_class_get_namespace(klass), "Crucible") != 0 ||
-			    std::strcmp(mono_class_get_name(klass), "Entity") != 0)
+			    std::strcmp(mono_class_get_name(klass), name) != 0)
 				return false;
 			const char* image = mono_image_get_name(mono_class_get_image(klass));
 			return image && std::strcmp(image, "Crucible.ScriptCore") == 0;
+		}
+
+		/*********************************************************************
+		 \brief  Reads `assetId` out of a managed asset reference
+		         (Crucible.Prefab, Crucible.AudioClip).
+		 *********************************************************************/
+		uint64_t ReadAssetId(MonoObject* asset)
+		{
+			MonoClassField* id = mono_class_get_field_from_name(mono_object_get_class(asset), "assetId");
+			uint64_t value = 0;
+			if (id)
+				mono_field_get_value(asset, id, &value);
+			return value;
+		}
+
+		/*********************************************************************
+		 \brief  Creates a managed asset reference (Prefab, AudioClip) for an
+		         asset guid, writing its `assetId` field directly (no
+		         constructor runs).
+		 *********************************************************************/
+		MonoObject* NewManagedAsset(MonoDomain* domain, MonoClass* klass, uint64_t assetId)
+		{
+			MonoClassField* id = mono_class_get_field_from_name(klass, "assetId");
+			if (!id)
+				return nullptr;
+			MonoObject* object = mono_object_new(domain, klass);
+			if (object)
+				mono_field_set_value(object, id, &assetId);
+			return object;
 		}
 
 		/*********************************************************************
@@ -666,7 +695,7 @@ namespace Crucible
 		/*********************************************************************
 		 \brief  Lists the fields the Inspector can show: public, non-static, not
 		         readonly/const, not [NonSerialized], of type bool/int/float/double/
-		         string/Crucible.Entity. Includes fields inherited from base classes.
+		         string/Crucible.Entity/Prefab/AudioClip. Includes fields inherited from base classes.
 		 *********************************************************************/
 		std::vector<InspectableField> InspectableFields(MonoClass* type)
 		{
@@ -683,8 +712,12 @@ namespace Crucible
 						continue;
 					ScriptFieldValue value;
 					MonoType* fieldType = mono_field_get_type(field);
-					if (IsEntityReference(fieldType))
+					if (IsScriptCoreClass(fieldType, "Entity"))
 						value.type = ScriptFieldType::Entity;
+					else if (IsScriptCoreClass(fieldType, "Prefab"))
+						value.type = ScriptFieldType::Prefab;
+					else if (IsScriptCoreClass(fieldType, "AudioClip"))
+						value.type = ScriptFieldType::AudioClip;
 					else switch (ManagedKind(fieldType))
 					{
 					case ValueKind::Boolean:
@@ -768,6 +801,15 @@ namespace Crucible
 					value.entityId = targetRoot.Get() && ReadEntityIdentity(targetRoot.Get(), entity)
 					                     ? ScriptBindings::EntityContext::SceneIdOf(entity)
 					                     : 0;
+					break;
+				}
+				case ScriptFieldType::Prefab:
+				case ScriptFieldType::AudioClip:
+				{
+					MonoObject* asset = nullptr;
+					mono_field_get_value(owner.Get(), entry.field, &asset);
+					GcRoot assetRoot(asset);
+					value.assetId = assetRoot.Get() ? ReadAssetId(assetRoot.Get()) : 0;
 					break;
 				}
 				}
@@ -865,6 +907,25 @@ namespace Crucible
 							              value.name);
 					}
 					mono_field_set_value(owner.Get(), field, target.Get());
+					break;
+				}
+				case ScriptFieldType::Prefab:
+				case ScriptFieldType::AudioClip:
+				{
+					// Asset guid -> new managed Prefab / AudioClip; unassigned or missing -> null.
+					const bool prefab = value.type == ScriptFieldType::Prefab;
+					GcRoot asset;
+					if (value.assetId != 0)
+					{
+						if (prefab ? ScriptBindings::EntityContext::IsPrefabAsset(value.assetId)
+						           : ScriptBindings::EntityContext::IsAudioAsset(value.assetId))
+							asset = GcRoot(NewManagedAsset(
+							    domain, mono_class_from_mono_type(mono_field_get_type(field)), value.assetId));
+						else
+							CRU_USER_WARN("[Script] Field '{}' points to {} that no longer exists; it will be null",
+							              value.name, prefab ? "a prefab" : "an audio clip");
+					}
+					mono_field_set_value(owner.Get(), field, asset.Get());
 					break;
 				}
 				}
@@ -2067,9 +2128,13 @@ namespace Crucible
 	{
 		handle = 0;
 		auto& data = *m_impl;
-		if (!data.Ready())
-			return false;
 #if CRUCIBLE_WITH_MONO
+		// Not Ready(): this is called FROM C# (Entity.GetComponent<SomeScript>()), where
+		// Ready() refuses everything to stop re-entry. It only reads two maps - no managed
+		// code runs and nothing changes - so being inside a C# call is fine. Still require
+		// the running host and its own thread.
+		if (data.state != ScriptRuntimeState::Running || data.ownerThread != std::this_thread::get_id())
+			return false;
 		const auto found = data.instances.find(instance.value); // no Fail(): a miss is normal here
 		if (found == data.instances.end() || !found->second.object ||
 		    found->second.info.state == ScriptInstanceState::Faulted)
@@ -2081,6 +2146,7 @@ namespace Crucible
 		return handle != 0;
 #else
 		(void)instance;
+		(void)data;
 		return false;
 #endif
 	}
@@ -2229,17 +2295,34 @@ namespace Crucible
 	/*********************************************************************
 	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetWorld.
 	 *********************************************************************/
-	bool ScriptRuntime::SetWorldBinding(World* world, PlayMode* play, SceneManager* scenes)
+	bool ScriptRuntime::SetWorldBinding(World* world, PlayMode* play, SceneManager* scenes, AssetManager* assets)
 	{
 		if (!m_impl->Ready())
 			return false;
 #if CRUCIBLE_WITH_MONO
-		ScriptBindings::SetWorld(world, play, scenes);
+		ScriptBindings::SetWorld(world, play, scenes, assets);
 		return true;
 #else
 		(void)world;
 		(void)play;
 		(void)scenes;
+		(void)assets;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetUserSettings.
+	 *********************************************************************/
+	bool ScriptRuntime::SetUserSettingsBinding(UserSettings* settings)
+	{
+		if (!m_impl->Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::SetUserSettings(settings);
+		return true;
+#else
+		(void)settings;
 		return false;
 #endif
 	}

@@ -72,11 +72,20 @@ namespace Crucible
         /// <summary>Sets parameters on this entity's Animator controller.</summary>
         public Animator Animator { get { return Entity.Animator; } }
 
+        /// <summary>This entity's AudioSource (needs an AudioSource component).</summary>
+        public AudioSource AudioSource { get { return Entity.AudioSource; } }
+
         /// <summary>This entity's component or script of type T, or null. See Entity.GetComponent.</summary>
         public T GetComponent<T>() where T : class { return Entity.GetComponent<T>(); }
 
         /// <summary>Does this entity have a component or script of type T?</summary>
         public bool HasComponent<T>() where T : class { return Entity.HasComponent<T>(); }
+
+        /// <summary>
+        /// Destroys an entity (e.g. Destroy(Entity) for this one) at the end of the frame,
+        /// or after <paramref name="delay"/> seconds. Same as Entity.Destroy.
+        /// </summary>
+        public static void Destroy(Entity entity, float delay = 0f) { global::Crucible.Entity.Destroy(entity, delay); }
 
         /// <summary>
         /// Called by the engine (ScriptRuntime) right after construction and

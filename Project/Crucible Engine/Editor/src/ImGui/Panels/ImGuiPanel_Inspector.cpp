@@ -16,6 +16,8 @@
 #include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
 #include "Scene/SceneManager.h"
+#include "AssetPipe/Assetmanager.h"   // AssetRefField
+#include <filesystem>
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"   // UI::MaxTextEffectWidth, for the text effects
@@ -539,6 +541,59 @@ namespace {
 		ImGui::PopID();
 
 		if (changed) CRU_INFO("[Inspector] {}: now {:016X}", label, id);
+		return changed;
+	}
+
+	// Picker for a script's `public Prefab` or `public AudioClip` field: the asset's guid. Drawn as
+	// the file name - drop a matching file from the Asset Browser onto it to set it, X clears it.
+	// The guid (not the path) is stored, so renaming or moving the file keeps the link.
+	bool AssetRefField(char const* label, std::uint64_t& id, bool audio) {
+		Crucible::Core* core = Crucible::EditorManager::GetInstance().GetCore();
+		if (!core) {
+			ImGui::TextDisabled("%s: (no Core)", label);
+			return false;
+		}
+		Crucible::AssetManager& assets = core->GetAssets();
+		char const* const kind = audio ? "audio clip" : "prefab";
+		auto const accepts = [audio](Crucible::AssetEntry const& entry) {
+			return audio ? entry.type == Crucible::AssetType::Audio
+			             : std::filesystem::path(entry.virtualPath).extension() == ".cprefab";
+		};
+
+		std::string text;
+		if (id == 0) text = "None";
+		else if (Crucible::AssetEntry const* entry = assets.FindByGuid(xresource::instance_guid{ id }))
+			text = std::filesystem::path(entry->virtualPath).filename().string();
+		else text = std::string("Missing ") + kind;   // deleted, or its .meta was regenerated
+
+		bool changed = false;
+		ImGui::PushID(label);
+
+		float const spacing    = ImGui::GetStyle().ItemInnerSpacing.x;
+		float const clearWidth = ImGui::GetFrameHeight();
+		ImGui::Button(text.c_str(), ImVec2(ImGui::CalcItemWidth() - clearWidth - spacing, 0.0f));
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip(audio ? "Drag an audio file here from the Asset Browser" : "Drag a .cprefab here from the Asset Browser");
+
+		if (ImGui::BeginDragDropTarget()) {
+			if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(Crucible::EditorWidgets::kAssetPayload)) {
+				std::string const virtualPath = static_cast<char const*>(payload->Data);
+				std::uint64_t const droppedId = assets.GetGuid(virtualPath).m_Value;
+				Crucible::AssetEntry const* entry = droppedId ? assets.FindByGuid(xresource::instance_guid{ droppedId }) : nullptr;
+				if (!entry) CRU_USER_WARN("[Inspector] {}: '{}' has no asset id yet - refresh the Asset Browser", label, virtualPath);
+				else if (!accepts(*entry)) CRU_USER_WARN("[Inspector] {}: '{}' is not a {}", label, virtualPath, kind);
+				else if (droppedId != id) { id = droppedId; changed = true; }
+			}
+			ImGui::EndDragDropTarget();
+		}
+
+		ImGui::SameLine(0.0f, spacing);
+		if (ImGui::Button("X", ImVec2(clearWidth, 0.0f)) && id != 0) { id = 0; changed = true; }
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear");
+
+		ImGui::SameLine(0.0f, spacing);
+		ImGui::TextUnformatted(label);
+		ImGui::PopID();
 		return changed;
 	}
 
@@ -2042,6 +2097,12 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
             // Same drag-from-Hierarchy picker as a PhysicsJoint's connected body; stores the scene id.
             const std::string shown = label.substr(0, label.find("###"));
             edited = EntityRefField(shown.c_str(), field.entityId);
+            break;
+        }
+        case ScriptFieldType::Prefab:
+        case ScriptFieldType::AudioClip: {
+            const std::string shown = label.substr(0, label.find("###"));
+            edited = AssetRefField(shown.c_str(), field.assetId, field.type == ScriptFieldType::AudioClip);
             break;
         }
         }
