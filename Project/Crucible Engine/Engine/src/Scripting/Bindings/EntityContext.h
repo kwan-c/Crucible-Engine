@@ -21,6 +21,7 @@
 **************************************************************************/
 #pragma once
 #include <cstdint>
+#include <string>
 #include <vector>
 #include "ECS/Core/ECSCore.h"   // Entity
 
@@ -56,6 +57,17 @@ namespace Crucible
 		 \brief  true if `assetId` is an indexed audio file (AssetType::Audio).
 		 *********************************************************************/
 		bool IsAudioAsset(uint64_t assetId);
+
+		/*********************************************************************
+		 \brief  true if `assetId` is an indexed image (AssetType::Texture).
+		 *********************************************************************/
+		bool IsTextureAsset(uint64_t assetId);
+
+		/*********************************************************************
+		 \brief  true if `assetId` is an indexed font (AssetType::Font:
+		         .ttf / .otf / .cfont).
+		 *********************************************************************/
+		bool IsFontAsset(uint64_t assetId);
 
 		// --- Destroy queue (C# Entity.Destroy) ----------------------------- //
 		// Destroys are queued, not done on the spot: the entity stays valid for
@@ -108,6 +120,40 @@ namespace Crucible
 		 \brief  Playing frames since Play started.
 		 *********************************************************************/
 		int32_t PlayFrameCount();
+
+		// --- UI events (C# UIButton.WasClicked, UISlider.WasChanged, UI.WasActionTriggered) //
+
+		/*********************************************************************
+		 \brief  One UI event this frame, in the order UISystem sent them.
+		 *********************************************************************/
+		struct UIEvent
+		{
+			enum class Kind : int32_t
+			{
+				ButtonClicked = 0, // source = the button
+				SliderChanged = 1, // source = the slider, value = its new value
+				CustomAction = 2,  // source = the button, actionId = its Action Id
+			};
+			Kind kind = Kind::ButtonClicked;
+			Entity source{};
+			float value = 0.0f;
+			std::string actionId;
+		};
+
+		/*********************************************************************
+		 \brief  This frame's UI events (filled by the UIEvents listeners,
+		         before scripts run). EntityScriptSystem hands each to the
+		         scripts' OnButtonClicked / OnSliderChanged / OnUIAction.
+		 *********************************************************************/
+		const std::vector<UIEvent>& UIEvents();
+
+		/*********************************************************************
+		 \brief  Forgets this frame's UI events, so WasClicked etc. read true
+		         for one frame only. EntityScriptSystem calls it at the end of
+		         every Update. Defined in Bindings/UIBindings.cpp, next to the
+		         event listeners that fill the list.
+		 *********************************************************************/
+		void ClearUIEvents();
 
 		// --- One-shot audio (C# Audio.PlayClipAtPoint) ---------------------- //
 

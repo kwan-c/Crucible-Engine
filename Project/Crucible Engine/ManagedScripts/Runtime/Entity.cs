@@ -144,7 +144,7 @@ namespace Crucible
 
         /// <summary>
         /// The entity's component or script of type T, or null if it has none.
-        /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, or a script class (e.g. GetComponent&lt;Door&gt;()).
+        /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, or a script class (e.g. GetComponent&lt;Door&gt;()).
         /// A script found during OnCreate may not have run its own OnCreate yet.
         /// </summary>
         public T GetComponent<T>() where T : class
@@ -168,10 +168,16 @@ namespace Crucible
                 return Has(ComponentKind.Light) ? (T)(object)Light : null;
             if (type == typeof(ParticleEmitter))
                 return Has(ComponentKind.ParticleEmitter) ? (T)(object)ParticleEmitter : null;
+            if (type == typeof(UIText))   return Has(ComponentKind.UIText)   ? (T)(object)new UIText(Identity)   : null;
+            if (type == typeof(UIImage))  return Has(ComponentKind.UIImage)  ? (T)(object)new UIImage(Identity)  : null;
+            if (type == typeof(UISlider)) return Has(ComponentKind.UISlider) ? (T)(object)new UISlider(Identity) : null;
+            if (type == typeof(UIButton)) return Has(ComponentKind.UIButton) ? (T)(object)new UIButton(Identity) : null;
+            if (type == typeof(UIRect))   return Has(ComponentKind.UIRect)   ? (T)(object)new UIRect(Identity)   : null;
+            if (type == typeof(UICanvas)) return Has(ComponentKind.UICanvas) ? (T)(object)new UICanvas(Identity) : null;
             if (typeof(EntityScript).IsAssignableFrom(type))
                 return GetScriptInternal((int)index, (int)generation) as T;
             throw new ArgumentException("GetComponent<" + type.Name +
-                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter or a script class.");
+                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, a UI component or a script class.");
         }
 
         /// <summary>Does the entity have a component or script of type T? See GetComponent.</summary>
@@ -193,6 +199,12 @@ namespace Crucible
             CameraOrbit = 7,
             Light = 8,
             ParticleEmitter = 9,
+            UIText = 10,
+            UIImage = 11,
+            UISlider = 12,
+            UIButton = 13,
+            UIRect = 14,
+            UICanvas = 15,
         }
 
         private bool Has(ComponentKind kind)

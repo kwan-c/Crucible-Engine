@@ -241,6 +241,47 @@ C++ side: `Bindings/ParticleBindings.cpp`, and `Graphics/ParticleSystem.*`
 (the request list and per-emitter count; Core passes the system with
 `SetParticleSystemBinding`). The component is unchanged.
 
+### UI
+
+Get them with `GetComponent<T>()` on the UI entity (`ManagedScripts/Runtime/UI.cs`):
+
+- `UIText`: `Text`, `Color`, `FontSize`.
+- `UIImage`: `Color` (alpha 0 hides it).
+- `UISlider`: `Value` (setting it clamps / rounds; doesn't count as a change),
+  `MinValue`, `MaxValue`, `WholeNumbers`, `Interactable`, `State`, `WasChanged`.
+- `UIButton`: `WasClicked`, `Interactable`, `State` (`UIState`: Normal,
+  Hovered, Pressed, Disabled).
+- `UIRect`: `Position`, `Size` (reference pixels, **+y down**), `Rotation`,
+  `GetScreenRect(out min, out max)` (last frame's box in screen pixels).
+- `UICanvas`: `Enabled` (show / hide a whole HUD or menu).
+- Static `UI`: `MenuOpen` (the Escape menu; applied next frame),
+  `WasActionTriggered("Id")` for buttons whose On Click is Custom.
+
+- `UIImage.Texture` and `UIText.Font` take `public Texture` / `public Font`
+  fields (drag an image / a .ttf, .otf or .cfont onto them; saved as asset guids
+  like `AudioClip`). Null = a solid colour / the default font. UISystem looks the
+  asset up every frame, so a swap shows immediately. A .ttf / .otf must have been
+  compiled in the Font Importer.
+
+Two ways to react to the player:
+
+- Callbacks: override `OnButtonClicked(Entity button)`,
+  `OnSliderChanged(Entity slider, float value)` or `OnUIAction(string actionId)`
+  on `EntityScript`. Every running script hears every UI event once, in the frame
+  it happens, before that frame's `OnUpdate`; compare the entity with your own
+  fields (`if (button == startButton)`). Only scripts that override one of them
+  are called (checked once per class). An exception faults the script like a
+  failing `OnUpdate`.
+- Polling: `WasClicked` / `WasChanged` / `WasActionTriggered` are true
+for exactly the frame the player did it. UISystem sends `UIEvents` on the
+engine bus at the end of PreUpdate (before scripts); `UIBindings.cpp`
+subscribes (Core passes `EventBuses` via `SetEventsBinding`) and records them,
+and `EntityScriptSystem` hands them to the callbacks (step 5b, via
+`ScriptRuntime::DispatchUIEvent` -> `EntityScript.DispatchUIEvent`) and clears
+them at the end of its Update. Colours are sRGB 0-1 with alpha.
+
+C++ side: `Bindings/UIBindings.cpp`. `UI/` is unchanged.
+
 ### Scene loading
 
 - `Scene.Load("Scenes/Level2.scene")` (a path inside Assets), `Scene.Reload()`,

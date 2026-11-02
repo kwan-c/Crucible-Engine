@@ -140,6 +140,12 @@ namespace Crucible::ScriptBindings
 			CameraOrbit = 7,
 			Light = 8,
 			ParticleEmitter = 9,
+			UIText = 10,
+			UIImage = 11,
+			UISlider = 12,
+			UIButton = 13,
+			UIRect = 14,
+			UICanvas = 15,
 		};
 
 		/*********************************************************************
@@ -171,6 +177,24 @@ namespace Crucible::ScriptBindings
 					return 1;
 				case ScriptComponentKind::Script:
 					*out = world.HasComponent<ScriptComponent>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::UIText:
+					*out = world.HasComponent<Crucible::UIText>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::UIImage:
+					*out = world.HasComponent<Crucible::UIImage>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::UISlider:
+					*out = world.HasComponent<Crucible::UISlider>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::UIButton:
+					*out = world.HasComponent<Crucible::UIButton>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::UIRect:
+					*out = world.HasComponent<Crucible::UIRect>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::UICanvas:
+					*out = world.HasComponent<Crucible::UICanvas>(entity) ? 1 : 0;
 					return 1;
 				case ScriptComponentKind::ParticleEmitter:
 					*out = world.HasComponent<Crucible::ParticleEmitter>(entity) ? 1 : 0;

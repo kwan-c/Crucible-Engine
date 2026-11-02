@@ -104,6 +104,7 @@ namespace Crucible
 #if CRUCIBLE_WITH_MONO
 			ScriptBindings::EntityContext::ClearDestroyQueue(); // destroys belong to the session that asked
 			ScriptBindings::EntityContext::ClearOneShotAudio();
+			ScriptBindings::EntityContext::ClearUIEvents();
 			// Time.ElapsedTime keeps counting across a level switch (Scene.Load), like
 			// Unity's Time.time; only a new session or Stop starts it again.
 			if (m_session != m_play.SessionRevision() || !m_play.InSession())
@@ -244,6 +245,30 @@ namespace Crucible
 			}
 		}
 
+#if CRUCIBLE_WITH_MONO
+		// --- Step 5b: this frame's UI events (clicks, slider drags, custom actions) to every
+		// running script's OnButtonClicked / OnSliderChanged / OnUIAction, before OnUpdate.
+		// UISystem sent them at the end of PreUpdate; only while Playing.
+		if (m_play.State() == PlayState::Playing)
+		{
+			for (const auto& event : ScriptBindings::EntityContext::UIEvents())
+			{
+				for ([[maybe_unused]] auto& [key, record] : m_records)
+				{
+					if (!record.instance || !record.definition.enabled)
+						continue;
+					if (!m_runtime.DispatchUIEvent(record.instance, static_cast<int32_t>(event.kind), event.source.index,
+					                               event.source.generation, event.value, event.actionId))
+					{
+						record.error = m_runtime.LastError();
+						CRU_USER_ERROR("Script {}.{} stopped in a UI callback: {}", record.definition.nameSpace,
+						               record.definition.className, record.error);
+					}
+				}
+			}
+		}
+#endif
+
 		// --- Step 6: apply enable/disable and call OnUpdate.
 		for (const auto& [entity, definition] : definitions)
 		{
@@ -300,6 +325,12 @@ namespace Crucible
 			else
 				++it;
 		}
+
+#if CRUCIBLE_WITH_MONO
+		// --- Step 8: this frame's UI clicks have been seen by every script; forget
+		// them so UIButton.WasClicked etc. are true for one frame only.
+		ScriptBindings::EntityContext::ClearUIEvents();
+#endif
 	}
 
 	void EntityScriptSystem::Shutdown() noexcept

@@ -534,8 +534,6 @@ namespace Crucible::ScriptBindings
 								reinterpret_cast<const void*>(ManagedRigidbodySetIsKinematic));
 		mono_add_internal_call("Crucible.RigidBody::AddRBForce",
 								reinterpret_cast<const void*>(ManagedRigidBodyAddForce));
-		mono_add_internal_call("Crucible.RigidBody::AddRBForce",
-								reinterpret_cast<const void*>(ManagedRigidBodyAddForce));
 		mono_add_internal_call("Crucible.RigidBody::AddRBTorque",
 								reinterpret_cast<const void*>(ManagedRigidBodyAddTorque));
 		mono_add_internal_call("Crucible.RigidBody::ApplyRBImpulse",

@@ -108,6 +108,34 @@ namespace Crucible
         public virtual void OnUpdate(float deltaTime) {}
         /// <summary>Called once when Play stops, the scene changes, or the script/entity is removed.</summary>
         public virtual void OnDestroy() {}
+
+        // --- UI callbacks ---------------------------------------------------------
+        // Every running script hears every UI event, once, in the frame it happens and
+        // before that frame's OnUpdate (Unity's onClick listeners, without wiring each one).
+        // Compare the entity with your own fields: if (button == startButton) ...
+        // Polling (UIButton.WasClicked etc.) still works too.
+
+        /// <summary>A UIButton was clicked (pressed and released over it).</summary>
+        public virtual void OnButtonClicked(Entity button) {}
+        /// <summary>The player changed a UISlider (not when code sets Value).</summary>
+        public virtual void OnSliderChanged(Entity slider, float value) {}
+        /// <summary>A button whose On Click is Custom was clicked; actionId is its Action Id.</summary>
+        public virtual void OnUIAction(string actionId) {}
+
+        /// <summary>
+        /// Called by the engine (ScriptRuntime::DispatchUIEvent) with plain values; builds
+        /// the Entity and calls the matching virtual above. kind: 0 click, 1 slider, 2 action.
+        /// </summary>
+        internal void DispatchUIEvent(int kind, int index, int generation, float value, string actionId)
+        {
+            var source = new global::Crucible.Entity(unchecked((uint)index), unchecked((uint)generation));
+            switch (kind)
+            {
+                case 0: OnButtonClicked(source); break;
+                case 1: OnSliderChanged(source, value); break;
+                case 2: OnUIAction(actionId ?? string.Empty); break;
+            }
+        }
     }
 
     /// <summary>

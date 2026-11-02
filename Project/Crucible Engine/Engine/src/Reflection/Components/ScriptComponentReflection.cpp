@@ -8,7 +8,8 @@ RTTR_REGISTRATION {
         rttr::value("Float", ScriptFieldType::Single), rttr::value("Double", ScriptFieldType::Double),
         rttr::value("String", ScriptFieldType::String), rttr::value("Entity", ScriptFieldType::Entity),
         rttr::value("Prefab", ScriptFieldType::Prefab),
-        rttr::value("AudioClip", ScriptFieldType::AudioClip));
+        rttr::value("AudioClip", ScriptFieldType::AudioClip),
+        rttr::value("Texture", ScriptFieldType::Texture), rttr::value("Font", ScriptFieldType::Font));
     rttr::registration::class_<ScriptFieldValue>("ScriptFieldValue")
         .constructor<>()
         .property("declaringType", &ScriptFieldValue::declaringType)

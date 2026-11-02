@@ -36,6 +36,7 @@ namespace Crucible
 	class Physics;
 	class Renderer;
 	class ParticleSystem;
+	struct EventBuses;
 
 	namespace ScriptBindings
 	{
@@ -103,6 +104,14 @@ namespace Crucible
 		 *********************************************************************/
 		void SetParticleSystem(ParticleSystem* system);
 
+		/*********************************************************************
+		 \brief  Subscribes the C# UI classes to UIEvents (ButtonClicked,
+		         SliderChanged, CustomAction) on the engine bus; nullptr
+		         unsubscribes. Main thread only. Called through
+		         ScriptRuntime::SetEventsBinding. Defined in Bindings/UIBindings.cpp.
+		 *********************************************************************/
+		void SetEvents(EventBuses* events);
+
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
 		void RegisterAnimatorBindings(); // Bindings/AnimatorBindings.cpp (C# Animator)
@@ -118,5 +127,6 @@ namespace Crucible
 		void RegisterCameraBindings();    // Bindings/CameraBindings.cpp    (C# Camera, CameraOrbit)
 		void RegisterLightBindings();     // Bindings/LightBindings.cpp     (C# Light)
 		void RegisterParticleBindings();  // Bindings/ParticleBindings.cpp  (C# ParticleEmitter)
+		void RegisterUIBindings();        // Bindings/UIBindings.cpp        (C# UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, UI)
 	}
 }

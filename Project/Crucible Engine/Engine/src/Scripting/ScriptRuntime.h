@@ -47,6 +47,7 @@ namespace Crucible
 	class Physics;
 	class Renderer;
 	class ParticleSystem;
+	struct EventBuses;
 
 	/*********************************************************************
 	 \brief  NotStarted  = Initialize() not called yet.
@@ -315,6 +316,17 @@ namespace Crucible
 		bool GetInstanceGcHandle(ScriptInstanceHandle instance, uint32_t& handle);
 
 		/*********************************************************************
+		 \brief  Hands one UI event to an entity script: its OnButtonClicked
+		         (kind 0, source = index/generation), OnSliderChanged (1, with
+		         value) or OnUIAction (2, actionId). Does nothing for a script
+		         that overrides none of them, or is disabled / not started.
+		         If the callback throws, the script faults like a failing
+		         OnUpdate (and this returns false).
+		 *********************************************************************/
+		bool DispatchUIEvent(ScriptInstanceHandle instance, int32_t kind, uint32_t index, uint32_t generation,
+		                     float value, const std::string& actionId);
+
+		/*********************************************************************
 		 \brief  Reads the current public field values of a live entity script
 		         (shown in the Inspector during Play).
 		 *********************************************************************/
@@ -397,6 +409,13 @@ namespace Crucible
 		         this before shutdown).
 		 *********************************************************************/
 		bool SetParticleSystemBinding(ParticleSystem* system);
+
+		/*********************************************************************
+		 \brief  Lets the C# UI classes hear UIEvents (button clicks, slider
+		         changes, custom actions) on Core's engine bus. Pass nullptr to
+		         unsubscribe (Core does this before shutdown).
+		 *********************************************************************/
+		bool SetEventsBinding(EventBuses* events);
 
 	private:
 		/*********************************************************************

@@ -24,7 +24,8 @@ namespace Crucible
 	/*********************************************************************
 	 \brief  C# field types that can be shown in the Inspector and saved
 	         in scenes (bool, int, float, double, string, Crucible.Entity,
-	         Crucible.Prefab, Crucible.AudioClip).
+	         Crucible.Prefab, Crucible.AudioClip, Crucible.Texture,
+	         Crucible.Font).
 	 *********************************************************************/
 	enum class ScriptFieldType
 	{
@@ -33,9 +34,11 @@ namespace Crucible
 		Single,
 		Double,
 		String,
-		Entity, // a reference to another entity, saved as its scene id
-		Prefab,   // a .cprefab asset, saved as its asset guid
-		AudioClip // an audio file (.wav, .ogg, ...), saved as its asset guid
+		Entity,    // a reference to another entity, saved as its scene id
+		Prefab,    // a .cprefab asset, saved as its asset guid
+		AudioClip, // an audio file (.wav, .ogg, ...), saved as its asset guid
+		Texture,   // an image (.png, .jpg, ...), saved as its asset guid
+		Font       // a font (.ttf / .otf / .cfont), saved as its asset guid
 	};
 
 	/*********************************************************************
@@ -56,7 +59,7 @@ namespace Crucible
 		std::string text;
 		bool stringIsNull = false; // distinguishes a null string from ""
 		uint64_t entityId = 0;     // Entity: the target's scene id (Scene::EnsureId); 0 = none
-		uint64_t assetId = 0;      // Prefab / AudioClip: the asset guid (from its .meta); 0 = none
+		uint64_t assetId = 0;      // Prefab / AudioClip / Texture / Font: the asset guid (from its .meta); 0 = none
 		bool operator==(const ScriptFieldValue&) const = default;
 	};
 

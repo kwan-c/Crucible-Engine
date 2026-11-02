@@ -544,20 +544,28 @@ namespace {
 		return changed;
 	}
 
-	// Picker for a script's `public Prefab` or `public AudioClip` field: the asset's guid. Drawn as
-	// the file name - drop a matching file from the Asset Browser onto it to set it, X clears it.
-	// The guid (not the path) is stored, so renaming or moving the file keeps the link.
-	bool AssetRefField(char const* label, std::uint64_t& id, bool audio) {
+	// Picker for a script's `public Prefab` / `AudioClip` / `Texture` / `Font` field: the asset's
+	// guid. Drawn as the file name - drop a matching file from the Asset Browser onto it to set it,
+	// X clears it. The guid (not the path) is stored, so renaming or moving the file keeps the link.
+	bool AssetRefField(char const* label, std::uint64_t& id, Crucible::ScriptFieldType fieldType) {
 		Crucible::Core* core = Crucible::EditorManager::GetInstance().GetCore();
 		if (!core) {
 			ImGui::TextDisabled("%s: (no Core)", label);
 			return false;
 		}
 		Crucible::AssetManager& assets = core->GetAssets();
-		char const* const kind = audio ? "audio clip" : "prefab";
-		auto const accepts = [audio](Crucible::AssetEntry const& entry) {
-			return audio ? entry.type == Crucible::AssetType::Audio
-			             : std::filesystem::path(entry.virtualPath).extension() == ".cprefab";
+		using FT = Crucible::ScriptFieldType;
+		char const* const kind = fieldType == FT::AudioClip ? "audio clip"
+		                       : fieldType == FT::Texture   ? "texture"
+		                       : fieldType == FT::Font      ? "font"
+		                                                    : "prefab";
+		auto const accepts = [fieldType](Crucible::AssetEntry const& entry) {
+			switch (fieldType) {
+			case FT::AudioClip: return entry.type == Crucible::AssetType::Audio;
+			case FT::Texture:   return entry.type == Crucible::AssetType::Texture;
+			case FT::Font:      return entry.type == Crucible::AssetType::Font;
+			default:            return std::filesystem::path(entry.virtualPath).extension() == ".cprefab";
+			}
 		};
 
 		std::string text;
@@ -573,7 +581,7 @@ namespace {
 		float const clearWidth = ImGui::GetFrameHeight();
 		ImGui::Button(text.c_str(), ImVec2(ImGui::CalcItemWidth() - clearWidth - spacing, 0.0f));
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip(audio ? "Drag an audio file here from the Asset Browser" : "Drag a .cprefab here from the Asset Browser");
+			ImGui::SetTooltip("Drag a %s here from the Asset Browser", kind);
 
 		if (ImGui::BeginDragDropTarget()) {
 			if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(Crucible::EditorWidgets::kAssetPayload)) {
@@ -2100,9 +2108,11 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
             break;
         }
         case ScriptFieldType::Prefab:
-        case ScriptFieldType::AudioClip: {
+        case ScriptFieldType::AudioClip:
+        case ScriptFieldType::Texture:
+        case ScriptFieldType::Font: {
             const std::string shown = label.substr(0, label.find("###"));
-            edited = AssetRefField(shown.c_str(), field.assetId, field.type == ScriptFieldType::AudioClip);
+            edited = AssetRefField(shown.c_str(), field.assetId, field.type);
             break;
         }
         }

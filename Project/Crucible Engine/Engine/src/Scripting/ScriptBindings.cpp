@@ -28,6 +28,7 @@ namespace Crucible::ScriptBindings
 		RegisterCameraBindings();
 		RegisterLightBindings();
 		RegisterParticleBindings();
+		RegisterUIBindings();
 	}
 
 	void ClearAll()
@@ -38,6 +39,7 @@ namespace Crucible::ScriptBindings
 		SetPhysics(nullptr);
 		SetRenderer(nullptr);
 		SetParticleSystem(nullptr);
+		SetEvents(nullptr);
 		// Clear new adapters here.
 	}
 }

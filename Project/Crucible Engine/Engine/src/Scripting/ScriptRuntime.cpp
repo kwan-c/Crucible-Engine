@@ -626,7 +626,7 @@ namespace Crucible
 
 		/*********************************************************************
 		 \brief  Reads `assetId` out of a managed asset reference
-		         (Crucible.Prefab, Crucible.AudioClip).
+		         (Crucible.Prefab, AudioClip, Texture, Font).
 		 *********************************************************************/
 		uint64_t ReadAssetId(MonoObject* asset)
 		{
@@ -638,7 +638,7 @@ namespace Crucible
 		}
 
 		/*********************************************************************
-		 \brief  Creates a managed asset reference (Prefab, AudioClip) for an
+		 \brief  Creates a managed asset reference (Prefab, AudioClip, Texture, Font) for an
 		         asset guid, writing its `assetId` field directly (no
 		         constructor runs).
 		 *********************************************************************/
@@ -695,7 +695,7 @@ namespace Crucible
 		/*********************************************************************
 		 \brief  Lists the fields the Inspector can show: public, non-static, not
 		         readonly/const, not [NonSerialized], of type bool/int/float/double/
-		         string/Crucible.Entity/Prefab/AudioClip. Includes fields inherited from base classes.
+		         string/Crucible.Entity/Prefab/AudioClip/Texture/Font. Includes fields inherited from base classes.
 		 *********************************************************************/
 		std::vector<InspectableField> InspectableFields(MonoClass* type)
 		{
@@ -718,6 +718,10 @@ namespace Crucible
 						value.type = ScriptFieldType::Prefab;
 					else if (IsScriptCoreClass(fieldType, "AudioClip"))
 						value.type = ScriptFieldType::AudioClip;
+					else if (IsScriptCoreClass(fieldType, "Texture"))
+						value.type = ScriptFieldType::Texture;
+					else if (IsScriptCoreClass(fieldType, "Font"))
+						value.type = ScriptFieldType::Font;
 					else switch (ManagedKind(fieldType))
 					{
 					case ValueKind::Boolean:
@@ -805,6 +809,8 @@ namespace Crucible
 				}
 				case ScriptFieldType::Prefab:
 				case ScriptFieldType::AudioClip:
+				case ScriptFieldType::Texture:
+				case ScriptFieldType::Font:
 				{
 					MonoObject* asset = nullptr;
 					mono_field_get_value(owner.Get(), entry.field, &asset);
@@ -911,19 +917,29 @@ namespace Crucible
 				}
 				case ScriptFieldType::Prefab:
 				case ScriptFieldType::AudioClip:
+				case ScriptFieldType::Texture:
+				case ScriptFieldType::Font:
 				{
-					// Asset guid -> new managed Prefab / AudioClip; unassigned or missing -> null.
-					const bool prefab = value.type == ScriptFieldType::Prefab;
+					// Asset guid -> new managed Prefab / AudioClip / Texture / Font;
+					// unassigned or missing -> null.
+					namespace Ctx = ScriptBindings::EntityContext;
+					const bool exists = value.type == ScriptFieldType::Prefab    ? Ctx::IsPrefabAsset(value.assetId)
+					                    : value.type == ScriptFieldType::AudioClip ? Ctx::IsAudioAsset(value.assetId)
+					                    : value.type == ScriptFieldType::Texture   ? Ctx::IsTextureAsset(value.assetId)
+					                                                               : Ctx::IsFontAsset(value.assetId);
+					const char* kind = value.type == ScriptFieldType::Prefab      ? "a prefab"
+					                   : value.type == ScriptFieldType::AudioClip ? "an audio clip"
+					                   : value.type == ScriptFieldType::Texture   ? "a texture"
+					                                                              : "a font";
 					GcRoot asset;
 					if (value.assetId != 0)
 					{
-						if (prefab ? ScriptBindings::EntityContext::IsPrefabAsset(value.assetId)
-						           : ScriptBindings::EntityContext::IsAudioAsset(value.assetId))
+						if (exists)
 							asset = GcRoot(NewManagedAsset(
 							    domain, mono_class_from_mono_type(mono_field_get_type(field)), value.assetId));
 						else
 							CRU_USER_WARN("[Script] Field '{}' points to {} that no longer exists; it will be null",
-							              value.name, prefab ? "a prefab" : "an audio clip");
+							              value.name, kind);
 					}
 					mono_field_set_value(owner.Get(), field, asset.Get());
 					break;
@@ -1069,6 +1085,9 @@ namespace Crucible
 		// default field values per class.
 		std::set<MonoClass*> validatedClasses;
 		std::map<MonoClass*, std::vector<ScriptFieldValue>> fieldDefaults;
+		// Per script class: EntityScript.DispatchUIEvent if the class overrides a UI
+		// callback (OnButtonClicked / OnSliderChanged / OnUIAction), else nullptr.
+		std::map<MonoClass*, MonoMethod*> uiListeners;
 
 		// A script instance: its object plus the three cached callbacks.
 		struct Instance
@@ -1336,6 +1355,7 @@ namespace Crucible
 			}
 			objects.clear();
 			fieldDefaults.clear();
+			uiListeners.clear();
 			validatedClasses.clear();
 			assemblies.clear(); // metadata/images are owned by Mono until final cleanup
 		}
@@ -2122,6 +2142,79 @@ namespace Crucible
 	}
 
 	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Calls EntityScript.DispatchUIEvent, which
+	         builds the Entity and calls the right virtual callback.
+	 *********************************************************************/
+	bool ScriptRuntime::DispatchUIEvent(ScriptInstanceHandle instance, int32_t kind, uint32_t index,
+	                                    uint32_t generation, float value, const std::string& actionId)
+	{
+		auto& data = *m_impl;
+		if (!data.Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		auto* owned = data.GetInstance(instance);
+		if (!owned)
+			return false;
+		// Only running, started entity scripts hear UI events (like OnUpdate).
+		if (!owned->info.entityOwned || !owned->started || owned->info.state != ScriptInstanceState::Running)
+			return true;
+		const auto object = data.objects.find(owned->object.value);
+		if (object == data.objects.end())
+			return true;
+
+		// Does this class override a UI callback? Worked out once per class.
+		MonoClass* type = object->second.type;
+		auto cached = data.uiListeners.find(type);
+		if (cached == data.uiListeners.end())
+		{
+			bool listens = false;
+			MonoMethod* dispatch = nullptr;
+			for (auto* klass = type; klass; klass = mono_class_get_parent(klass))
+			{
+				if (std::strcmp(mono_class_get_name(klass), "EntityScript") == 0 &&
+				    std::strcmp(mono_class_get_namespace(klass), "Crucible") == 0)
+				{
+					dispatch = mono_class_get_method_from_name(klass, "DispatchUIEvent", 5);
+					break;
+				}
+				// Only this class's own methods - an override is declared in the user's class.
+				if (mono_class_get_method_from_name(klass, "OnButtonClicked", 1) ||
+				    mono_class_get_method_from_name(klass, "OnSliderChanged", 2) ||
+				    mono_class_get_method_from_name(klass, "OnUIAction", 1))
+					listens = true;
+			}
+			cached = data.uiListeners.emplace(type, listens ? dispatch : nullptr).first;
+		}
+		if (!cached->second)
+			return true; // nothing to call
+
+		const std::vector<ScriptValue> arguments{kind, std::bit_cast<int32_t>(index), std::bit_cast<int32_t>(generation),
+		                                         value, actionId};
+		std::string failure;
+		if (!data.Callback(*owned, cached->second, "UI callback", arguments, failure))
+		{
+			// Same as an OnUpdate that throws: the script faults and is cleaned up.
+			owned->info.state = ScriptInstanceState::Faulted;
+			std::string cleanup;
+			if (!data.Dispose(*owned, cleanup))
+				failure += "\nCleanup also failed: " + cleanup;
+			owned->info.lastError = failure;
+			return data.Fail(failure);
+		}
+		data.error.clear();
+		return true;
+#else
+		(void)instance;
+		(void)kind;
+		(void)index;
+		(void)generation;
+		(void)value;
+		(void)actionId;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
 	 \brief  See ScriptRuntime.h.
 	 *********************************************************************/
 	bool ScriptRuntime::GetInstanceGcHandle(ScriptInstanceHandle instance, uint32_t& handle)
@@ -2371,6 +2464,22 @@ namespace Crucible
 		return true;
 #else
 		(void)system;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetEvents.
+	 *********************************************************************/
+	bool ScriptRuntime::SetEventsBinding(EventBuses* events)
+	{
+		if (!m_impl->Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::SetEvents(events);
+		return true;
+#else
+		(void)events;
 		return false;
 #endif
 	}
