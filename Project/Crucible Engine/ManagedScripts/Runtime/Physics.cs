@@ -81,6 +81,20 @@ namespace Crucible
             return Raycast(origin, direction, out hit, maxDistance, ignore);
         }
 
+        /// <summary>Casts a Ray (e.g. from Camera.ScreenPointToRay). See the overload above.</summary>
+        public static bool Raycast(Ray ray, out RaycastHit hit, float maxDistance = float.PositiveInfinity,
+                                   Entity ignore = null)
+        {
+            return Raycast(ray.Origin, ray.Direction, out hit, maxDistance, ignore);
+        }
+
+        /// <summary>Does a Ray hit anything?</summary>
+        public static bool Raycast(Ray ray, float maxDistance = float.PositiveInfinity, Entity ignore = null)
+        {
+            RaycastHit hit;
+            return Raycast(ray.Origin, ray.Direction, out hit, maxDistance, ignore);
+        }
+
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int RaycastInternal(ref Vector3 origin, ref Vector3 direction, float maxDistance,
                                                   int ignoreIndex, int ignoreGeneration, out int index,

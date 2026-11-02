@@ -28,6 +28,7 @@ namespace Crucible
 {
 	class World;
 	class AssetManager;
+	class SceneManager;
 
 	namespace ScriptBindings::EntityContext
 	{
@@ -40,6 +41,11 @@ namespace Crucible
 		 \brief  The asset manager (prefab fields are asset guids), or nullptr.
 		 *********************************************************************/
 		AssetManager* GetAssets();
+
+		/*********************************************************************
+		 \brief  The scene manager (Scene.Load), or nullptr.
+		 *********************************************************************/
+		SceneManager* GetScenes();
 
 		/*********************************************************************
 		 \brief  true if `assetId` is an indexed .cprefab asset.

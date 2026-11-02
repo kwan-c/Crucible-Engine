@@ -20,6 +20,7 @@
 #include "ECS/Components/Components.h"
 #include "Audio/AudioComponents.h"
 #include "Physics/PhysicsComponents.h"
+#include "Player/PlayerComponents.h"
 #if CRUCIBLE_WITH_MONO
 #include <mono/metadata/appdomain.h>
 #include <mono/metadata/loader.h>
@@ -135,6 +136,8 @@ namespace Crucible::ScriptBindings
 			Script = 3,
 			AudioSource = 4,
 			CharacterController = 5,
+			Camera = 6,       // the CameraComponent
+			CameraOrbit = 7,
 		};
 
 		/*********************************************************************
@@ -166,6 +169,12 @@ namespace Crucible::ScriptBindings
 					return 1;
 				case ScriptComponentKind::Script:
 					*out = world.HasComponent<ScriptComponent>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::Camera:
+					*out = world.HasComponent<CameraComponent>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::CameraOrbit:
+					*out = world.HasComponent<Crucible::CameraOrbit>(entity) ? 1 : 0;
 					return 1;
 				case ScriptComponentKind::CharacterController:
 					*out = world.HasComponent<Crucible::CharacterController>(entity) ? 1 : 0;

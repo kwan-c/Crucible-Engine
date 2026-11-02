@@ -45,6 +45,7 @@ namespace Crucible
 	class AssetManager;
 	struct UserSettings;
 	class Physics;
+	class Renderer;
 
 	/*********************************************************************
 	 \brief  NotStarted  = Initialize() not called yet.
@@ -381,6 +382,13 @@ namespace Crucible
 		         disconnect (Core does this before shutdown).
 		 *********************************************************************/
 		bool SetPhysicsBinding(Physics* physics);
+
+		/*********************************************************************
+		 \brief  Gives the C# Camera class the renderer (game screen size and
+		         mouse mapping). Pass nullptr to disconnect (Core does this
+		         before shutdown).
+		 *********************************************************************/
+		bool SetRendererBinding(const Renderer* renderer);
 
 	private:
 		/*********************************************************************

@@ -104,7 +104,10 @@ namespace Crucible
 #if CRUCIBLE_WITH_MONO
 			ScriptBindings::EntityContext::ClearDestroyQueue(); // destroys belong to the session that asked
 			ScriptBindings::EntityContext::ClearOneShotAudio();
-			ScriptBindings::EntityContext::ResetPlayClock();
+			// Time.ElapsedTime keeps counting across a level switch (Scene.Load), like
+			// Unity's Time.time; only a new session or Stop starts it again.
+			if (m_session != m_play.SessionRevision() || !m_play.InSession())
+				ScriptBindings::EntityContext::ResetPlayClock();
 #endif
 			m_sceneChanged = false;
 			m_session = m_play.SessionRevision();

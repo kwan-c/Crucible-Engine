@@ -220,6 +220,7 @@ namespace Crucible {
         if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetWorldBinding(m_world.get(), m_playMode.get(), m_scenes.get(), m_assets.get());   // Transform & other entity bindings
         if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetUserSettingsBinding(&m_userSettings);   // C# Audio bus volumes
         if (m_scriptRuntime->IsRunning()) if (auto* physics = m_systems.FindSystem<ECSPhysicsSystem>()) m_scriptRuntime->SetPhysicsBinding(&physics->GetPhysics());   // C# Physics.Raycast
+        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetRendererBinding(m_renderer);   // C# Camera screen maths
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
@@ -239,6 +240,7 @@ namespace Crucible {
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetWorldBinding(nullptr, nullptr, nullptr, nullptr);
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetUserSettingsBinding(nullptr);
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetPhysicsBinding(nullptr);
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetRendererBinding(nullptr);
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }

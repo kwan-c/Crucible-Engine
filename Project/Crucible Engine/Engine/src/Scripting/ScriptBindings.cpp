@@ -23,6 +23,9 @@ namespace Crucible::ScriptBindings
 		RegisterAudioBindings();
 		RegisterPhysicsBindings();
 		RegisterTimeBindings();
+		RegisterHierarchyBindings();
+		RegisterSceneBindings();
+		RegisterCameraBindings();
 	}
 
 	void ClearAll()
@@ -31,6 +34,7 @@ namespace Crucible::ScriptBindings
 		SetWorld(nullptr, nullptr, nullptr, nullptr);
 		SetUserSettings(nullptr);
 		SetPhysics(nullptr);
+		SetRenderer(nullptr);
 		// Clear new adapters here.
 	}
 }

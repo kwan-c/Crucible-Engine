@@ -85,6 +85,11 @@ namespace Crucible::ScriptBindings
 			return assets;
 		}
 
+		SceneManager* GetScenes()
+		{
+			return scenes;
+		}
+
 		bool IsPrefabAsset(uint64_t assetId)
 		{
 			if (!assets || assetId == 0)

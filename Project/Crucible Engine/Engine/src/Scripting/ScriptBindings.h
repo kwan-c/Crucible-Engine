@@ -34,6 +34,7 @@ namespace Crucible
 	class AssetManager;
 	struct UserSettings;
 	class Physics;
+	class Renderer;
 
 	namespace ScriptBindings
 	{
@@ -84,6 +85,15 @@ namespace Crucible
 		 *********************************************************************/
 		void SetPhysics(Physics* physics);
 
+		/*********************************************************************
+		 \brief  Gives the C# Camera class the renderer (game screen size, and
+		         window -> game screen mapping for ScreenPointToRay). nullptr
+		         clears it. Non-owning; main thread only. Called through
+		         ScriptRuntime::SetRendererBinding. Defined in
+		         Bindings/CameraBindings.cpp.
+		 *********************************************************************/
+		void SetRenderer(const Renderer* renderer);
+
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
 		void RegisterAnimatorBindings(); // Bindings/AnimatorBindings.cpp (C# Animator)
@@ -94,5 +104,8 @@ namespace Crucible
 		void RegisterAudioBindings();     // Bindings/AudioBindings.cpp     (C# AudioSource)
 		void RegisterPhysicsBindings();   // Bindings/PhysicsBindings.cpp   (C# Physics, CharacterController)
 		void RegisterTimeBindings();      // Bindings/TimeBindings.cpp      (C# Time)
+		void RegisterHierarchyBindings(); // Bindings/HierarchyBindings.cpp (C# Transform world space, parent/children)
+		void RegisterSceneBindings();     // Bindings/SceneBindings.cpp     (C# Scene)
+		void RegisterCameraBindings();    // Bindings/CameraBindings.cpp    (C# Camera, CameraOrbit)
 	}
 }

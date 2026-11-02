@@ -162,6 +162,56 @@ Browser onto it (saved as the prefab's asset guid, so renames keep the link).
   entity of the same prefab are not remapped to the new copy - they still name
   the entity the prefab was made from. Use `FindChild` until this is fixed.
 
+### Transform: world space and hierarchy
+
+- `Position` / `Rotation` / `Scale` are LOCAL (relative to the parent).
+  `WorldPosition` and `WorldRotation` are world space (Unity's
+  `transform.position` / `rotation`), worked out from the current local values
+  (`World::TryGetWorldMatrix`), so they are right even after a move earlier in
+  the same frame. Setting them converts into the parent's space.
+- `Forward` (local **-Z**, the engine's convention for cameras and lights),
+  `Right` (+X), `Up` (+Y), all world space. `LookAt(position)`,
+  `LookAt(position, worldUp)`, `LookAt(entity)`.
+- `Parent` (get/set), `SetParent(parent, worldPositionStays = true)` (returns
+  false and logs why if refused), `ChildCount`, `GetChild(i)`.
+
+C++ side: `Bindings/HierarchyBindings.cpp` (local values stay in
+`ComponentBindings.cpp`).
+
+### Camera
+
+- `Camera.Main`: the enabled Camera with the highest `Priority` (first found on
+  a tie) - the same choice the renderer makes. `GetComponent<Camera>()` for a
+  specific one. Settings: `FieldOfView` (vertical, degrees), `NearClip`,
+  `FarClip`, `Priority` (raise it to switch cameras), `Enabled`, plus `Entity`.
+- `Camera.ScreenSize`: the game screen in pixels (Game view / window).
+- `ScreenPointToRay(Input.MousePosition, out Ray ray)`: takes WINDOW pixels and
+  maps them onto the Game view; false if the mouse is not over it.
+  `ViewportPointToRay(new Vector2(0.5f, 0.5f), out ray)` aims through the
+  screen centre (locked cursor). `Physics.Raycast(ray, out hit, ...)` takes the
+  `Ray` directly.
+- `WorldToScreenPoint(world, out Vector2 pixels[, out float depth])`:
+  game-screen pixels, origin top-left (the UI's space); false behind the camera.
+- Screen maths uses the camera's current world matrix and FOV, so it works for
+  any camera and is right even after a move earlier in the frame.
+- `CameraOrbit` (the player's third-person pivot, turned by the mouse/stick):
+  `Sensitivity`, `StickSpeed`, `MinPitch`, `MaxPitch`, `Yaw`, `Pitch` - for aim
+  tuning or recoil. Usually on the camera's parent.
+
+C++ side: `Bindings/CameraBindings.cpp`. Graphics/, Player/ and the components
+are unchanged; Core passes the Renderer (`SetRendererBinding`).
+
+### Scene loading
+
+- `Scene.Load("Scenes/Level2.scene")` (a path inside Assets), `Scene.Reload()`,
+  `Scene.Name`. Uses `SceneManager::RequestLoad`, like the UI's Load Scene
+  button: the switch happens at the start of the next frame; old scripts get
+  OnDestroy, new ones start. Stop still returns to the scene open at Play.
+- `Time.ElapsedTime` keeps counting across a scene switch; pending
+  `Destroy`s and one-shot sounds are dropped.
+
+C++ side: `Bindings/SceneBindings.cpp`.
+
 ### Movement, raycasts and time
 
 - `GetComponent<CharacterController>()` (or `CharacterController`): Unity's
@@ -176,7 +226,8 @@ Browser onto it (saved as the prefab's asset guid, so renames keep the link).
   `ignore` (usually the shooter) is seen through by re-casting past it. Rays hit
   Collider bodies, not CharacterControllers. Play only.
 - `Time.DeltaTime`, `Time.ElapsedTime` (Playing seconds since Play; Pause
-  excluded; `ElapsedTimeAsDouble` too) and `Time.FrameCount`. Reset on Stop.
+  excluded; `ElapsedTimeAsDouble` too) and `Time.FrameCount`. Reset on Stop,
+  not on `Scene.Load`.
 
 C++ side: `Bindings/PhysicsBindings.cpp`, `Bindings/TimeBindings.cpp` (play
 clock in `EntityContext`, advanced by `EntityScriptSystem`). Physics/ and

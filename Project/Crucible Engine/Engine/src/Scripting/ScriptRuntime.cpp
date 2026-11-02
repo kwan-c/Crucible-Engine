@@ -2343,6 +2343,22 @@ namespace Crucible
 #endif
 	}
 
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetRenderer.
+	 *********************************************************************/
+	bool ScriptRuntime::SetRendererBinding(const Renderer* renderer)
+	{
+		if (!m_impl->Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::SetRenderer(renderer);
+		return true;
+#else
+		(void)renderer;
+		return false;
+#endif
+	}
+
 	bool ScriptRuntime::DiscoverEntityClasses(ScriptAssemblyHandle assembly,
 	                                          std::vector<ScriptClassInfo>& classes)
 	{
