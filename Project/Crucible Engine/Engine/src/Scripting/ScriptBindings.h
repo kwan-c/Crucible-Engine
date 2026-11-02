@@ -107,5 +107,6 @@ namespace Crucible
 		void RegisterHierarchyBindings(); // Bindings/HierarchyBindings.cpp (C# Transform world space, parent/children)
 		void RegisterSceneBindings();     // Bindings/SceneBindings.cpp     (C# Scene)
 		void RegisterCameraBindings();    // Bindings/CameraBindings.cpp    (C# Camera, CameraOrbit)
+		void RegisterLightBindings();     // Bindings/LightBindings.cpp     (C# Light)
 	}
 }

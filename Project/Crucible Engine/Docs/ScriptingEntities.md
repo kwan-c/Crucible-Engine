@@ -201,6 +201,20 @@ C++ side: `Bindings/HierarchyBindings.cpp` (local values stay in
 C++ side: `Bindings/CameraBindings.cpp`. Graphics/, Player/ and the components
 are unchanged; Core passes the Renderer (`SetRendererBinding`).
 
+### Light
+
+- `GetComponent<Light>()` (or `Entity.Light`): `Type` (`LightType.Directional`,
+  `Point`, `Spot`), `Color`, `Intensity`, `Range`, `SpotAngle` (outer cone),
+  `InnerSpotAngle`, `Enabled`, `CastShadows` (first enabled directional light
+  only), plus `Entity`.
+- The renderer reads every Light each frame, so changes show the same frame.
+  A light shines along `Transform.Forward` (local -Z): aim a spotlight with
+  `Transform.LookAt(target)`.
+- `Color` (new, shared with UI later): `R, G, B, A` 0..1, `Color.Red` etc.,
+  `FromBytes`, `Lerp`, `*`, `+`. Lights ignore alpha and accept channels above 1.
+
+C++ side: `Bindings/LightBindings.cpp`. The Light component is unchanged.
+
 ### Scene loading
 
 - `Scene.Load("Scenes/Level2.scene")` (a path inside Assets), `Scene.Reload()`,

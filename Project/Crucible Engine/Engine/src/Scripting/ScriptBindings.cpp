@@ -26,6 +26,7 @@ namespace Crucible::ScriptBindings
 		RegisterHierarchyBindings();
 		RegisterSceneBindings();
 		RegisterCameraBindings();
+		RegisterLightBindings();
 	}
 
 	void ClearAll()

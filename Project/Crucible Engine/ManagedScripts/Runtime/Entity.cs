@@ -53,6 +53,7 @@ namespace Crucible
         private CharacterController characterController;
         private Camera camera;
         private CameraOrbit cameraOrbit;
+        private Light light;
 
         internal Entity(uint index, uint generation)
         {
@@ -81,6 +82,8 @@ namespace Crucible
         public Camera Camera { get { return camera ?? (camera = new Camera(Identity)); } }
         /// <summary>This entity's CameraOrbit (needs a CameraOrbit component).</summary>
         public CameraOrbit CameraOrbit { get { return cameraOrbit ?? (cameraOrbit = new CameraOrbit(Identity)); } }
+        /// <summary>This entity's Light (needs a Light component).</summary>
+        public Light Light { get { return light ?? (light = new Light(Identity)); } }
 
         /// <summary>False once the entity has been destroyed (and outside Play).</summary>
         public bool IsAlive
@@ -138,7 +141,7 @@ namespace Crucible
 
         /// <summary>
         /// The entity's component or script of type T, or null if it has none.
-        /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, or a script class (e.g. GetComponent&lt;Door&gt;()).
+        /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, or a script class (e.g. GetComponent&lt;Door&gt;()).
         /// A script found during OnCreate may not have run its own OnCreate yet.
         /// </summary>
         public T GetComponent<T>() where T : class
@@ -158,10 +161,12 @@ namespace Crucible
                 return Has(ComponentKind.Camera) ? (T)(object)Camera : null;
             if (type == typeof(CameraOrbit))
                 return Has(ComponentKind.CameraOrbit) ? (T)(object)CameraOrbit : null;
+            if (type == typeof(Light))
+                return Has(ComponentKind.Light) ? (T)(object)Light : null;
             if (typeof(EntityScript).IsAssignableFrom(type))
                 return GetScriptInternal((int)index, (int)generation) as T;
             throw new ArgumentException("GetComponent<" + type.Name +
-                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit or a script class.");
+                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light or a script class.");
         }
 
         /// <summary>Does the entity have a component or script of type T? See GetComponent.</summary>
@@ -181,6 +186,7 @@ namespace Crucible
             CharacterController = 5,
             Camera = 6,
             CameraOrbit = 7,
+            Light = 8,
         }
 
         private bool Has(ComponentKind kind)
