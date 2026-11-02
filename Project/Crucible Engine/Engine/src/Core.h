@@ -27,6 +27,7 @@
 namespace Crucible
 {
     class ScriptRuntime;
+    class NetworkSession;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -96,6 +97,12 @@ namespace Crucible
 
         // The engine / gameplay / network event buses (subscribe from a system's Init()).
         EventBuses& Events() noexcept { return m_events; }
+
+        // The multiplayer session (Network/NetworkSession.h). Offline unless this instance's
+        // NetworkSettings say Host or Client; then it starts when Play starts and stops at Stop.
+        // Settings come from CRUCIBLE_NET and --net-* (Network/NetworkSettings.h); a later editor
+        // panel sets them with GetNetwork().SetSettings(...) before Play.
+        NetworkSession& GetNetwork() noexcept { return *m_network; }
 
         // Opt-in entity/component events on the gameplay bus, e.g. EcsBridge().OnRemoved<MeshRenderer>(...).
         // (Not called "EcsEvents()" - that would hide the EcsEvents namespace inside Core.)
@@ -175,6 +182,11 @@ namespace Crucible
         // Declared BEFORE the World: members are destroyed in reverse order, so the buses
         // outlive the World and every system (the ECS bridge's World hooks point at a bus).
         EventBuses m_events;
+
+        // Created in Init(); declared after the buses it posts to and before the systems that
+        // hold a reference to it, so it outlives them. m_networkPlayState starts and stops it.
+        std::unique_ptr<NetworkSession> m_network;
+        Subscription m_networkPlayState;
 
         std::unique_ptr<World> m_world;
         std::unique_ptr<AssetManager>    m_assets;      // created in Init()

@@ -25,6 +25,10 @@
 #include "UI/UISystem.h"
 #include "Scripting/ScriptRuntime.h"
 #include "Scripting/EntityScriptSystem.h"
+#include "Network/GnsTransport.h"
+#include "Network/NetworkSession.h"
+#include "Network/NetworkSettings.h"
+#include "Network/Systems/NetReceiveSystem.h"
 
 // STL
 #include <algorithm>
@@ -146,6 +150,30 @@ namespace Crucible {
         m_events.network.SetFailureLogger(logFailure);
         m_systems.SetEventBuses(&m_events);
 
+        // Networking: the session exists for the whole run but stays Offline (no sockets) unless
+        // this instance's settings say Host or Client. Then it starts when Play starts and stops
+        // when Play stops; Pause keeps it running.
+        m_network = std::make_unique<NetworkSession>(m_events);
+        {
+            std::string overrideError;
+            m_network->SetSettings(ResolveStartupSettings(overrideError));
+            if (!overrideError.empty()) CRU_WARN("[Net] network override ignored - {}", overrideError);
+            const NetworkSettings& net = m_network->Settings();
+            if (net.mode == NetMode::Host)        CRU_INFO("[Net] mode host: listening on port {} when Play starts", net.hostPort);
+            else if (net.mode == NetMode::Client) CRU_INFO("[Net] mode client: joining {}:{} when Play starts", net.connectAddress, net.connectPort);
+        }
+        m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this](const EngineEvents::PlayStateChanged& e) {
+            if (e.from == PlayState::Edit && e.to == PlayState::Playing)
+            {
+                std::string error;
+                if (!m_network->Start(error)) CRU_ERROR("[Net] could not start the {} session: {}", ToString(m_network->Settings().mode), error);
+            }
+            else if (e.to == PlayState::Edit)
+            {
+                m_network->Stop("Play stopped");
+            }
+        });
+
         RegisterEngineSystems();
 
         m_systems.Init();
@@ -218,6 +246,7 @@ namespace Crucible {
 
     void Core::RegisterEngineSystems()
     {
+        m_systems.RegisterSystem<NetReceiveSystem>(*m_network);                           // PreUpdate, first, every state: runs the network session (Offline: nothing)
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
@@ -243,6 +272,8 @@ namespace Crucible {
     }
 
     void Core::CleanUp() {
+        // A multiplayer session ends first: clients are told, and nothing networked runs during teardown.
+        if (m_network) m_network->Stop("engine shutting down");
         if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
         // Run managed teardown while Core's resources/systems are still alive.
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
@@ -262,6 +293,9 @@ namespace Crucible {
         // Managed instances/bindings added later must be released before final cleanup.
         // Play/Stop never destroys or restarts the process-wide Mono runtime.
         if (m_scriptRuntime) m_scriptRuntime->Shutdown();
+
+        // GameNetworkingSockets stops last among the engine's own subsystems (a no-op if no session ever started).
+        GnsTransport::KillLibrary();
 
         // Remember how the window was left (fullscreen / maximized) for the next launch.
         SaveWindowState();

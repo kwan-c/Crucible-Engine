@@ -1,0 +1,59 @@
+/*************************************************************************
+* \file:         NetStats.h
+* \author:       Abhishek Akilandeswari Patchamuthu
+* \par:          Email: a.patchamuthu@digipen.edu
+* \date          3 November 2026
+* \version       1.1
+* \brief
+*                Counters the networking code measures itself, per session
+*                (reset by every Start).
+*
+* \details
+*                GNS measures the transport (ping, quality, rates, queues:
+*                GnsTransport::Status / LaneStatus). These count what only
+*                Crucible knows: what it received, what it rejected and why,
+*                and how long its own receive work took. A steady rise in a
+*                rejection counter means a bug or a misbehaving peer.
+*
+* \history
+*    -v1.0       connection, receive and rejection counters (Phase 4)
+*    -v1.1       carriedOver and oversized (receive budget review fix)
+*
+**************************************************************************/
+#pragma once
+
+#include <cstdint>
+
+namespace Crucible
+{
+	struct NetStats
+	{
+		// Receiving
+		std::uint64_t messagesReceived = 0;
+		std::uint64_t bytesReceived = 0;
+		std::uint32_t lastFrameMessages = 0;   // processed in the latest frame (budget: 256)
+		std::uint32_t lastFrameBytes = 0;      // processed in the latest frame (budget: 256 KB)
+		std::uint32_t carriedOver = 0;         // received but over the budget: first in the next frame
+		std::uint64_t oversized = 0;           // bigger than any protocol message: rejected unprocessed
+		std::int64_t  receiveMicros = 0;       // time spent in NetworkSession::Update, latest frame
+
+		// Rejected input
+		std::uint64_t malformed = 0;           // undecodable, wrong size, wrong lane, wrong direction
+		std::uint64_t unexpected = 0;          // valid, but not allowed in the sender's current phase
+		std::uint64_t unhandled = 0;           // valid, handled by a later phase (spawns, snapshots, input)
+		std::uint64_t quotaDropped = 0;        // over a peer's per-frame message quota
+		std::uint64_t unknownSender = 0;       // from a connection that is no longer a peer
+
+		// Connections (server)
+		std::uint32_t accepted = 0;            // connections accepted at the transport level
+		std::uint32_t joined = 0;              // JoinRequests accepted
+		std::uint32_t refusedFull = 0;
+		std::uint32_t refusedProtocol = 0;     // protocol version or content hash differs
+		std::uint32_t joinTimeouts = 0;
+		std::uint32_t closedMalformed = 0;     // peers closed for malformed traffic or flooding
+		std::uint32_t peersLeft = 0;
+
+		// Sending
+		std::uint32_t sendFailed = 0;
+	};
+}
