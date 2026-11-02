@@ -149,6 +149,7 @@ namespace Crucible::ScriptBindings
 			Collider = 16,
 			MeshRenderer = 17,
 			PlayerController = 18,
+			WorldText = 19,
 		};
 
 		/*********************************************************************
@@ -225,6 +226,9 @@ namespace Crucible::ScriptBindings
 					return 1;
 				case ScriptComponentKind::PlayerController:
 					*out = world.HasComponent<Crucible::PlayerController>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::WorldText:
+					*out = world.HasComponent<Crucible::WorldText>(entity) ? 1 : 0;
 					return 1;
 				}
 				return 0;

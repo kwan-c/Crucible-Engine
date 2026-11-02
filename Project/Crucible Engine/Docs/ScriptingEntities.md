@@ -305,6 +305,36 @@ them at the end of its Update. Colours are sRGB 0-1 with alpha.
 
 C++ side: `Bindings/UIBindings.cpp`. `UI/` is unchanged.
 
+### World text and world-space canvases
+
+- `GetComponent<WorldText>()` (or `Entity.WorldText`): `Text`, `Color`,
+  `FontSize`, `Font`; placement `Size`, `Pivot`, `Billboard` (`Off` /
+  `FaceCamera` / `Upright`), `AlwaysOnTop`, `DoubleSided`, `Intensity` (> 1
+  glows), `Fade` / `FadeStart` / `FadeEnd`; layout `HorizontalAlign`,
+  `VerticalAlign`, `Overflow`, `Wrap`, `LineSpacing`, `CharacterSpacing`,
+  `RichText`, `Bold`, `Underline`, `BestFit` / `MinFontSize` / `MaxFontSize`;
+  effects `Outline` / `OutlineColor` / `OutlineWidth`, `Glow` / `GlowColor` /
+  `GlowWidth` / `GlowSoftness`, `Shadow` / `ShadowColor` / `ShadowOffset` /
+  `ShadowSoftness`. World units (metres) before the Transform's scale.
+  `SetEnabled<WorldText>` / `HasComponent` work too.
+- The components were not changed: WorldTextSystem and the world-canvas pass
+  read them every frame, and the layout cache only lays text out again when the
+  text or a layout setting changes. Setting the same `Text` every frame is free
+  (and doesn't stamp the component as changed).
+- World-space `UICanvas`: `RenderMode` (read-only), `SortOrder`, and the
+  world-only `PixelsPerUnit`, `Pivot`, `Billboard`, `AlwaysOnTop`,
+  `DoubleSided`, `Intensity`, `Fade` / `FadeStart` / `FadeEnd`. Its
+  `UIText` / `UIImage` children work through the usual UI classes.
+- Damage numbers: a prefab with a WorldText, `Instantiate` at the hit,
+  set `Text`, move it, `Destroy(e, 1f)`.
+- Buttons on a world-space canvas can't be clicked (UISystem only takes the
+  mouse on screen-space canvases) - an engine feature, not a binding.
+- The C# UIText still has only Text / Color / FontSize / Font; its alignment and
+  effect settings could be added the same way (same field names).
+
+C++ side: `Bindings/UIBindings.cpp` (generic GetText / SetText, GetEnum /
+SetEnum, GetInt / SetInt templates). Test: `Assets/Scripts/WorldTextTest.cs`.
+
 ### Scene loading
 
 - `Scene.Load("Scenes/Level2.scene")` (a path inside Assets), `Scene.Reload()`,

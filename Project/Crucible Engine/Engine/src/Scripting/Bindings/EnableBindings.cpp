@@ -72,6 +72,7 @@ namespace Crucible::ScriptBindings
 			case 16: return ComponentTypeId<Collider>();
 			case 17: return ComponentTypeId<MeshRenderer>();
 			case 18: return ComponentTypeId<PlayerController>();
+			case 19: return ComponentTypeId<WorldText>();
 			default: return kInvalid; // 0 = Transform: mandatory
 			}
 		}

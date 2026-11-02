@@ -283,8 +283,118 @@ namespace Crucible
             set { SetEnabledInternal(I, G, value ? 1 : 0); }
         }
 
+        /// <summary>ScreenSpace (over the game screen) or WorldSpace (a panel in the 3D world). Set in the Inspector.</summary>
+        public CanvasRenderMode RenderMode
+        {
+            get { int v; return GetRenderModeInternal(I, G, out v) != 0 ? (CanvasRenderMode)v : CanvasRenderMode.ScreenSpace; }
+        }
+
+        /// <summary>With several canvases, higher draws on top.</summary>
+        public int SortOrder
+        {
+            get { int v; return GetSortOrderInternal(I, G, out v) != 0 ? v : 0; }
+            set { SetSortOrderInternal(I, G, value); }
+        }
+
+        // --- WorldSpace only (a screen-space canvas keeps them but ignores them) ---- //
+        // The page is laid out as on screen (its UIText / UIImage children work as usual) and
+        // placed in the world by this entity's Transform. Nothing on it reacts to the mouse.
+
+        /// <summary>Canvas pixels per metre: a 400 x 100 page at 100 is 4 x 1 m.</summary>
+        public float PixelsPerUnit
+        {
+            get { float v; return GetPixelsPerUnitInternal(I, G, out v) != 0 ? v : 100f; }
+            set { SetPixelsPerUnitInternal(I, G, ref value); }
+        }
+
+        /// <summary>The page's point on this entity: (0, 0) top-left, (0.5, 0.5) centre.</summary>
+        public Vector2 Pivot
+        {
+            get { Vector2 v; return GetPivotInternal(I, G, out v) != 0 ? v : new Vector2(0.5f, 0.5f); }
+            set { SetPivotInternal(I, G, ref value); }
+        }
+
+        /// <summary>Off (the Transform's rotation), FaceCamera, or Upright (health bars over heads).</summary>
+        public Billboard Billboard
+        {
+            get { int v; return GetBillboardInternal(I, G, out v) != 0 ? (Billboard)v : Billboard.Off; }
+            set { SetBillboardInternal(I, G, (int)value); }
+        }
+
+        /// <summary>Drawn over everything, not hidden behind walls.</summary>
+        public bool AlwaysOnTop
+        {
+            get { int v; return GetAlwaysOnTopInternal(I, G, out v) != 0 && v != 0; }
+            set { SetAlwaysOnTopInternal(I, G, value ? 1 : 0); }
+        }
+
+        /// <summary>Also drawn (mirrored) when seen from behind.</summary>
+        public bool DoubleSided
+        {
+            get { int v; return GetDoubleSidedInternal(I, G, out v) != 0 && v != 0; }
+            set { SetDoubleSidedInternal(I, G, value ? 1 : 0); }
+        }
+
+        /// <summary>Brightness in the scene; above 1 glows with bloom.</summary>
+        public float Intensity
+        {
+            get { float v; return GetIntensityInternal(I, G, out v) != 0 ? v : 1f; }
+            set { SetIntensityInternal(I, G, ref value); }
+        }
+
+        /// <summary>Fade out with distance from the camera (FadeStart .. FadeEnd).</summary>
+        public bool Fade
+        {
+            get { int v; return GetFadeInternal(I, G, out v) != 0 && v != 0; }
+            set { SetFadeInternal(I, G, value ? 1 : 0); }
+        }
+
+        /// <summary>World units: fully visible up to here.</summary>
+        public float FadeStart
+        {
+            get { float v; return GetFadeStartInternal(I, G, out v) != 0 ? v : 0f; }
+            set { SetFadeStartInternal(I, G, ref value); }
+        }
+
+        /// <summary>World units: gone from here.</summary>
+        public float FadeEnd
+        {
+            get { float v; return GetFadeEndInternal(I, G, out v) != 0 ? v : 0f; }
+            set { SetFadeEndInternal(I, G, ref value); }
+        }
+
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetEnabledInternal(int index, int generation, out int value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetEnabledInternal(int index, int generation, int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetRenderModeInternal(int index, int generation, out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetSortOrderInternal(int index, int generation, out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetSortOrderInternal(int index, int generation, int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetPixelsPerUnitInternal(int index, int generation, out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetPixelsPerUnitInternal(int index, int generation, ref float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetPivotInternal(int index, int generation, out Vector2 value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetPivotInternal(int index, int generation, ref Vector2 value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetBillboardInternal(int index, int generation, out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetBillboardInternal(int index, int generation, int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetAlwaysOnTopInternal(int index, int generation, out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetAlwaysOnTopInternal(int index, int generation, int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetDoubleSidedInternal(int index, int generation, out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetDoubleSidedInternal(int index, int generation, int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetIntensityInternal(int index, int generation, out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetIntensityInternal(int index, int generation, ref float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetFadeInternal(int index, int generation, out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetFadeInternal(int index, int generation, int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetFadeStartInternal(int index, int generation, out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetFadeStartInternal(int index, int generation, ref float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetFadeEndInternal(int index, int generation, out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetFadeEndInternal(int index, int generation, ref float value);
+    }
+
+    /// <summary>Where a UICanvas draws. Same values as UICanvas::RenderMode.</summary>
+    public enum CanvasRenderMode
+    {
+        /// <summary>Over the game screen, always on top (Unity: Screen Space - Overlay).</summary>
+        ScreenSpace = 0,
+        /// <summary>A panel in the 3D world, placed by the canvas entity's Transform.</summary>
+        WorldSpace = 1,
     }
 
     /// <summary>Game-wide UI: the in-game menu and named button actions.</summary>

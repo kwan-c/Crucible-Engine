@@ -5,8 +5,9 @@
 * \date          2 November 2026
 * \version       1.0
 * \brief         Internal calls behind the C# UI classes (UIText, UIImage,
-*                UISlider, UIButton, UIRect, UICanvas and the static UI) -
-*                ManagedScripts/Runtime/UI.cs.
+*                UISlider, UIButton, UIRect, UICanvas incl. its world-space
+*                settings, the static UI, and WorldText) -
+*                ManagedScripts/Runtime/UI.cs, WorldText.cs.
 *
 * \details
 *    Bindings only: UI/UIComponents.h and UISystem are unchanged.
@@ -51,6 +52,20 @@ namespace Crucible::ScriptBindings
 	namespace
 	{
 		using namespace ScriptingDetail;
+
+		// C# HorizontalAlign / VerticalAlign / TextOverflow / Billboard / CanvasRenderMode
+		// (WorldText.cs, UI.cs) pass these numbers.
+		static_assert(static_cast<int>(TextAlignH::Left) == 0 && static_cast<int>(TextAlignH::Right) == 2,
+		              "TextAlignH changed - update HorizontalAlign in ManagedScripts/Runtime/WorldText.cs");
+		static_assert(static_cast<int>(TextAlignV::Top) == 0 && static_cast<int>(TextAlignV::Bottom) == 2,
+		              "TextAlignV changed - update VerticalAlign in ManagedScripts/Runtime/WorldText.cs");
+		static_assert(static_cast<int>(TextOverflow::Overflow) == 0 && static_cast<int>(TextOverflow::Ellipsis) == 2,
+		              "TextOverflow changed - update TextOverflow in ManagedScripts/Runtime/WorldText.cs");
+		static_assert(static_cast<int>(WorldBillboard::Off) == 0 && static_cast<int>(WorldBillboard::Upright) == 2,
+		              "WorldBillboard changed - update Billboard in ManagedScripts/Runtime/WorldText.cs");
+		static_assert(static_cast<int>(UICanvas::RenderMode::ScreenSpace) == 0 &&
+		                  static_cast<int>(UICanvas::RenderMode::WorldSpace) == 1,
+		              "UICanvas::RenderMode changed - update CanvasRenderMode in ManagedScripts/Runtime/UI.cs");
 
 		// ======================================================================
 		// This frame's UI events (main thread)
@@ -262,14 +277,89 @@ namespace Crucible::ScriptBindings
 		}
 
 		// ======================================================================
-		// UIText.Text
+		// Ints and enums (enums cross as int; Max = the last valid value)
 		// ======================================================================
 
-		MonoString* ManagedUITextGetText(int32_t index, int32_t generation) noexcept
+		template <typename C, int C::*Member>
+		int32_t GetInt(int32_t index, int32_t generation, int32_t* out) noexcept
 		{
 			try
 			{
-				const UIText* text = ReadUI<UIText>(index, generation);
+				const C* component = out ? ReadUI<C>(index, generation) : nullptr;
+				if (!component)
+					return 0;
+				*out = static_cast<int32_t>(component->*Member);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		template <typename C, int C::*Member>
+		int32_t SetInt(int32_t index, int32_t generation, int32_t value) noexcept
+		{
+			try
+			{
+				C* component = WriteUI<C>(index, generation);
+				if (!component)
+					return 0;
+				component->*Member = value;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		template <typename C, typename E, E C::*Member>
+		int32_t GetEnum(int32_t index, int32_t generation, int32_t* out) noexcept
+		{
+			try
+			{
+				const C* component = out ? ReadUI<C>(index, generation) : nullptr;
+				if (!component)
+					return 0;
+				*out = static_cast<int32_t>(component->*Member);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		template <typename C, typename E, E C::*Member, E Max>
+		int32_t SetEnum(int32_t index, int32_t generation, int32_t value) noexcept
+		{
+			try
+			{
+				if (value < 0 || value > static_cast<int32_t>(Max))
+					return 0;
+				C* component = WriteUI<C>(index, generation);
+				if (!component)
+					return 0;
+				component->*Member = static_cast<E>(value);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		// ======================================================================
+		// Text (UIText.Text, WorldText.Text)
+		// ======================================================================
+
+		template <typename C>
+		MonoString* GetText(int32_t index, int32_t generation) noexcept
+		{
+			try
+			{
+				const C* text = ReadUI<C>(index, generation);
 				std::wstring wide;
 				if (!text || !ToUtf16(text->text, wide))
 					return nullptr;
@@ -282,7 +372,8 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
-		int32_t ManagedUITextSetText(int32_t index, int32_t generation, MonoString* value) noexcept
+		template <typename C>
+		int32_t SetText(int32_t index, int32_t generation, MonoString* value) noexcept
 		{
 			try
 			{
@@ -290,11 +381,17 @@ namespace Crucible::ScriptBindings
 				std::string text;
 				if (root.Get() && !FromManagedString(reinterpret_cast<MonoString*>(root.Get()), text))
 					return 0;
-				UIText* component = WriteUI<UIText>(index, generation);
+				// Most HUDs set the same text every frame: an unchanged text is not written, so the
+				// component is not stamped as changed for nothing.
+				const C* current = ReadUI<C>(index, generation);
+				if (!current)
+					return 0;
+				if (current->text == text)
+					return 1;
+				C* component = WriteUI<C>(index, generation);
 				if (!component)
 					return 0;
-				if (component->text != text) // most HUDs set the same text every frame
-					component->text = std::move(text);
+				component->text = std::move(text);
 				return 1;
 			}
 			catch (...)
@@ -577,8 +674,8 @@ namespace Crucible::ScriptBindings
 	void RegisterUIBindings()
 	{
 		// UIText
-		Add("Crucible.UIText::GetTextInternal", &ManagedUITextGetText);
-		Add("Crucible.UIText::SetTextInternal", &ManagedUITextSetText);
+		Add("Crucible.UIText::GetTextInternal", &GetText<UIText>);
+		Add("Crucible.UIText::SetTextInternal", &SetText<UIText>);
 		Add("Crucible.UIText::GetColorInternal", &GetColor<UIText, &UIText::colour>);
 		Add("Crucible.UIText::SetColorInternal", &SetColor<UIText, &UIText::colour>);
 		Add("Crucible.UIText::GetFontSizeInternal", &GetFloat<UIText, &UIText::fontSize>);
@@ -629,6 +726,111 @@ namespace Crucible::ScriptBindings
 		// UICanvas
 		Add("Crucible.UICanvas::GetEnabledInternal", &GetFlag<UICanvas, &UICanvas::enabled>);
 		Add("Crucible.UICanvas::SetEnabledInternal", &SetFlag<UICanvas, &UICanvas::enabled>);
+		Add("Crucible.UICanvas::GetRenderModeInternal", &GetEnum<UICanvas, UICanvas::RenderMode, &UICanvas::renderMode>);
+		Add("Crucible.UICanvas::GetSortOrderInternal", &GetInt<UICanvas, &UICanvas::sortOrder>);
+		Add("Crucible.UICanvas::SetSortOrderInternal", &SetInt<UICanvas, &UICanvas::sortOrder>);
+		// World-space only (screen-space canvases keep them but ignore them)
+		Add("Crucible.UICanvas::GetPixelsPerUnitInternal", &GetFloat<UICanvas, &UICanvas::pixelsPerUnit>);
+		Add("Crucible.UICanvas::SetPixelsPerUnitInternal", &SetFloat<UICanvas, &UICanvas::pixelsPerUnit, false>);
+		Add("Crucible.UICanvas::GetPivotInternal", &GetVec2<UICanvas, &UICanvas::pivot>);
+		Add("Crucible.UICanvas::SetPivotInternal", &SetVec2<UICanvas, &UICanvas::pivot>);
+		Add("Crucible.UICanvas::GetBillboardInternal", &GetEnum<UICanvas, WorldBillboard, &UICanvas::billboard>);
+		Add("Crucible.UICanvas::SetBillboardInternal",
+		    &SetEnum<UICanvas, WorldBillboard, &UICanvas::billboard, WorldBillboard::Upright>);
+		Add("Crucible.UICanvas::GetAlwaysOnTopInternal", &GetFlag<UICanvas, &UICanvas::alwaysOnTop>);
+		Add("Crucible.UICanvas::SetAlwaysOnTopInternal", &SetFlag<UICanvas, &UICanvas::alwaysOnTop>);
+		Add("Crucible.UICanvas::GetDoubleSidedInternal", &GetFlag<UICanvas, &UICanvas::doubleSided>);
+		Add("Crucible.UICanvas::SetDoubleSidedInternal", &SetFlag<UICanvas, &UICanvas::doubleSided>);
+		Add("Crucible.UICanvas::GetIntensityInternal", &GetFloat<UICanvas, &UICanvas::intensity>);
+		Add("Crucible.UICanvas::SetIntensityInternal", &SetFloat<UICanvas, &UICanvas::intensity, false>);
+		Add("Crucible.UICanvas::GetFadeInternal", &GetFlag<UICanvas, &UICanvas::fade>);
+		Add("Crucible.UICanvas::SetFadeInternal", &SetFlag<UICanvas, &UICanvas::fade>);
+		Add("Crucible.UICanvas::GetFadeStartInternal", &GetFloat<UICanvas, &UICanvas::fadeStart>);
+		Add("Crucible.UICanvas::SetFadeStartInternal", &SetFloat<UICanvas, &UICanvas::fadeStart, false>);
+		Add("Crucible.UICanvas::GetFadeEndInternal", &GetFloat<UICanvas, &UICanvas::fadeEnd>);
+		Add("Crucible.UICanvas::SetFadeEndInternal", &SetFloat<UICanvas, &UICanvas::fadeEnd, false>);
+
+		// WorldText (Text/WorldText.h; WorldTextSystem reads it every frame and only lays the
+		// text out again when the text or a layout setting changes)
+		Add("Crucible.WorldText::GetTextInternal", &GetText<WorldText>);
+		Add("Crucible.WorldText::SetTextInternal", &SetText<WorldText>);
+		Add("Crucible.WorldText::GetColorInternal", &GetColor<WorldText, &WorldText::colour>);
+		Add("Crucible.WorldText::SetColorInternal", &SetColor<WorldText, &WorldText::colour>);
+		Add("Crucible.WorldText::GetFontSizeInternal", &GetFloat<WorldText, &WorldText::fontSize>);
+		Add("Crucible.WorldText::SetFontSizeInternal", &SetFloat<WorldText, &WorldText::fontSize, false>);
+		Add("Crucible.WorldText::GetFontInternal", &GetAsset<WorldText, &WorldText::fontAsset>);
+		Add("Crucible.WorldText::SetFontInternal", &SetAsset<WorldText, &WorldText::fontAsset, &EntityContext::IsFontAsset>);
+		// Placement
+		Add("Crucible.WorldText::GetSizeInternal", &GetVec2<WorldText, &WorldText::size>);
+		Add("Crucible.WorldText::SetSizeInternal", &SetVec2<WorldText, &WorldText::size>);
+		Add("Crucible.WorldText::GetPivotInternal", &GetVec2<WorldText, &WorldText::pivot>);
+		Add("Crucible.WorldText::SetPivotInternal", &SetVec2<WorldText, &WorldText::pivot>);
+		Add("Crucible.WorldText::GetBillboardInternal", &GetEnum<WorldText, WorldBillboard, &WorldText::billboard>);
+		Add("Crucible.WorldText::SetBillboardInternal",
+		    &SetEnum<WorldText, WorldBillboard, &WorldText::billboard, WorldBillboard::Upright>);
+		Add("Crucible.WorldText::GetAlwaysOnTopInternal", &GetFlag<WorldText, &WorldText::alwaysOnTop>);
+		Add("Crucible.WorldText::SetAlwaysOnTopInternal", &SetFlag<WorldText, &WorldText::alwaysOnTop>);
+		Add("Crucible.WorldText::GetDoubleSidedInternal", &GetFlag<WorldText, &WorldText::doubleSided>);
+		Add("Crucible.WorldText::SetDoubleSidedInternal", &SetFlag<WorldText, &WorldText::doubleSided>);
+		Add("Crucible.WorldText::GetIntensityInternal", &GetFloat<WorldText, &WorldText::intensity>);
+		Add("Crucible.WorldText::SetIntensityInternal", &SetFloat<WorldText, &WorldText::intensity, false>);
+		Add("Crucible.WorldText::GetFadeInternal", &GetFlag<WorldText, &WorldText::fade>);
+		Add("Crucible.WorldText::SetFadeInternal", &SetFlag<WorldText, &WorldText::fade>);
+		Add("Crucible.WorldText::GetFadeStartInternal", &GetFloat<WorldText, &WorldText::fadeStart>);
+		Add("Crucible.WorldText::SetFadeStartInternal", &SetFloat<WorldText, &WorldText::fadeStart, false>);
+		Add("Crucible.WorldText::GetFadeEndInternal", &GetFloat<WorldText, &WorldText::fadeEnd>);
+		Add("Crucible.WorldText::SetFadeEndInternal", &SetFloat<WorldText, &WorldText::fadeEnd, false>);
+		// Layout
+		Add("Crucible.WorldText::GetHorizontalAlignInternal", &GetEnum<WorldText, TextAlignH, &WorldText::horizontalAlign>);
+		Add("Crucible.WorldText::SetHorizontalAlignInternal",
+		    &SetEnum<WorldText, TextAlignH, &WorldText::horizontalAlign, TextAlignH::Right>);
+		Add("Crucible.WorldText::GetVerticalAlignInternal", &GetEnum<WorldText, TextAlignV, &WorldText::verticalAlign>);
+		Add("Crucible.WorldText::SetVerticalAlignInternal",
+		    &SetEnum<WorldText, TextAlignV, &WorldText::verticalAlign, TextAlignV::Bottom>);
+		Add("Crucible.WorldText::GetOverflowInternal", &GetEnum<WorldText, TextOverflow, &WorldText::overflow>);
+		Add("Crucible.WorldText::SetOverflowInternal",
+		    &SetEnum<WorldText, TextOverflow, &WorldText::overflow, TextOverflow::Ellipsis>);
+		Add("Crucible.WorldText::GetWrapInternal", &GetFlag<WorldText, &WorldText::wrap>);
+		Add("Crucible.WorldText::SetWrapInternal", &SetFlag<WorldText, &WorldText::wrap>);
+		Add("Crucible.WorldText::GetLineSpacingInternal", &GetFloat<WorldText, &WorldText::lineSpacing>);
+		Add("Crucible.WorldText::SetLineSpacingInternal", &SetFloat<WorldText, &WorldText::lineSpacing, false>);
+		Add("Crucible.WorldText::GetCharacterSpacingInternal", &GetFloat<WorldText, &WorldText::characterSpacing>);
+		Add("Crucible.WorldText::SetCharacterSpacingInternal", &SetFloat<WorldText, &WorldText::characterSpacing, true>);
+		Add("Crucible.WorldText::GetRichTextInternal", &GetFlag<WorldText, &WorldText::richText>);
+		Add("Crucible.WorldText::SetRichTextInternal", &SetFlag<WorldText, &WorldText::richText>);
+		Add("Crucible.WorldText::GetBoldInternal", &GetFlag<WorldText, &WorldText::bold>);
+		Add("Crucible.WorldText::SetBoldInternal", &SetFlag<WorldText, &WorldText::bold>);
+		Add("Crucible.WorldText::GetUnderlineInternal", &GetFlag<WorldText, &WorldText::underline>);
+		Add("Crucible.WorldText::SetUnderlineInternal", &SetFlag<WorldText, &WorldText::underline>);
+		Add("Crucible.WorldText::GetBestFitInternal", &GetFlag<WorldText, &WorldText::bestFit>);
+		Add("Crucible.WorldText::SetBestFitInternal", &SetFlag<WorldText, &WorldText::bestFit>);
+		Add("Crucible.WorldText::GetMinFontSizeInternal", &GetFloat<WorldText, &WorldText::minFontSize>);
+		Add("Crucible.WorldText::SetMinFontSizeInternal", &SetFloat<WorldText, &WorldText::minFontSize, false>);
+		Add("Crucible.WorldText::GetMaxFontSizeInternal", &GetFloat<WorldText, &WorldText::maxFontSize>);
+		Add("Crucible.WorldText::SetMaxFontSizeInternal", &SetFloat<WorldText, &WorldText::maxFontSize, false>);
+		// Effects
+		Add("Crucible.WorldText::GetOutlineInternal", &GetFlag<WorldText, &WorldText::outline>);
+		Add("Crucible.WorldText::SetOutlineInternal", &SetFlag<WorldText, &WorldText::outline>);
+		Add("Crucible.WorldText::GetOutlineColorInternal", &GetColor<WorldText, &WorldText::outlineColour>);
+		Add("Crucible.WorldText::SetOutlineColorInternal", &SetColor<WorldText, &WorldText::outlineColour>);
+		Add("Crucible.WorldText::GetOutlineWidthInternal", &GetFloat<WorldText, &WorldText::outlineWidth>);
+		Add("Crucible.WorldText::SetOutlineWidthInternal", &SetFloat<WorldText, &WorldText::outlineWidth, false>);
+		Add("Crucible.WorldText::GetGlowInternal", &GetFlag<WorldText, &WorldText::glow>);
+		Add("Crucible.WorldText::SetGlowInternal", &SetFlag<WorldText, &WorldText::glow>);
+		Add("Crucible.WorldText::GetGlowColorInternal", &GetColor<WorldText, &WorldText::glowColour>);
+		Add("Crucible.WorldText::SetGlowColorInternal", &SetColor<WorldText, &WorldText::glowColour>);
+		Add("Crucible.WorldText::GetGlowWidthInternal", &GetFloat<WorldText, &WorldText::glowWidth>);
+		Add("Crucible.WorldText::SetGlowWidthInternal", &SetFloat<WorldText, &WorldText::glowWidth, false>);
+		Add("Crucible.WorldText::GetGlowSoftnessInternal", &GetFloat<WorldText, &WorldText::glowSoftness>);
+		Add("Crucible.WorldText::SetGlowSoftnessInternal", &SetFloat<WorldText, &WorldText::glowSoftness, false>);
+		Add("Crucible.WorldText::GetShadowInternal", &GetFlag<WorldText, &WorldText::shadow>);
+		Add("Crucible.WorldText::SetShadowInternal", &SetFlag<WorldText, &WorldText::shadow>);
+		Add("Crucible.WorldText::GetShadowColorInternal", &GetColor<WorldText, &WorldText::shadowColour>);
+		Add("Crucible.WorldText::SetShadowColorInternal", &SetColor<WorldText, &WorldText::shadowColour>);
+		Add("Crucible.WorldText::GetShadowOffsetInternal", &GetVec2<WorldText, &WorldText::shadowOffset>);
+		Add("Crucible.WorldText::SetShadowOffsetInternal", &SetVec2<WorldText, &WorldText::shadowOffset>);
+		Add("Crucible.WorldText::GetShadowSoftnessInternal", &GetFloat<WorldText, &WorldText::shadowSoftness>);
+		Add("Crucible.WorldText::SetShadowSoftnessInternal", &SetFloat<WorldText, &WorldText::shadowSoftness, false>);
 
 		// UI (static)
 		Add("Crucible.UI::GetMenuOpenInternal", &ManagedUIGetMenuOpen);
