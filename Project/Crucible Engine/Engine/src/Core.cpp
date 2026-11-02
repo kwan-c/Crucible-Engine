@@ -278,6 +278,7 @@ namespace Crucible {
                 .particles    = m_systems.FindSystem<ParticleSystem>(),      // ParticleEmitter Emit / Restart / ParticleCount
                 .events       = &m_events,                                   // UI and collision callbacks
                 .core         = this,                                        // Screen (window mode; ignored in the editor)
+                .resources    = m_resources.get(),                           // MeshRenderer material slots
             });
         }
     }

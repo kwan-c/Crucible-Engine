@@ -382,12 +382,43 @@ step 5b, `ScriptRuntime::DispatchPhysicsEvent`.
 - `SetEnabled<Collider>(false)` removes the body (no collisions at all).
 - `GetComponent<MeshRenderer>()` (or `Entity.MeshRenderer`): `Visible` hides
   only the mesh - collider, scripts and children carry on. Drawn the same frame.
-  `SetEnabled<MeshRenderer>(false)` works too. Mesh / material swapping is not
-  exposed yet (it would need Mesh / Material asset field types).
+  `SetEnabled<MeshRenderer>(false)` works too. Materials and models: see below.
 
-C++ side: `Bindings/ColliderBindings.cpp` (both classes). Collider (Hugo's
-`Physics/PhysicsComponents.h`) and MeshRenderer are unchanged. Test:
+C++ side: `Bindings/ColliderBindings.cpp`. Collider (Hugo's
+`Physics/PhysicsComponents.h`) is unchanged. Test:
 `Assets/Scripts/ColliderTest.cs`.
+
+### Materials, models and glow (MeshRenderer, MaterialParams)
+
+- New field types `Material` (a .mat) and `Model` (a model file): public
+  fields picked in the Inspector, saved as asset guids, with `.Name`.
+- `MeshRenderer.Material`: the material for the whole object (null = the
+  default material, or a model's own imported ones). `MeshRenderer.Model`: the
+  model (setting it clears the plain mesh, part root and slot overrides, as the
+  Inspector does; an AnimatedModel starts over). `MaterialCount`,
+  `GetMaterial(slot)` / `SetMaterial(slot, material)` override one model slot
+  (wins over Material; null = back to the model's own; false for a slot the
+  model doesn't have). Drawn the same frame.
+- Only the material the object USES changes; the .mat and other objects using
+  it are untouched. A model's imported materials can't be picked - make a .mat.
+- `GetComponent<MaterialParams>()` (add the component in the Inspector):
+  `EmissiveScale` (glow multiplier, 0 = off, 1 = as the material) and `Custom`
+  (three spare shader numbers). Per object, without breaking batching.
+- Built-in meshes, code only: `MeshRenderer.Mesh = Mesh.Sphere` (`Mesh.Cube`,
+  `Sphere`, `Capsule`, `Cylinder`, `Cone`, `Pyramid`, `Plane`, `Disc`; `.Name`).
+  Setting a mesh clears the Model (a model always wins), via
+  `ResourceManager::AssignMesh`, as the Inspector's Mesh picker. Their ids are
+  `ResourceManager::BuiltinId(name)` - fixed hashes of the renderer's primitive
+  names, so renaming one breaks saved references. A `null` Mesh.X means the
+  renderer has no primitive by that name.
+- Not done: a `public Mesh` field picked in the Inspector (would need a field
+  type validated through the ResourceManager, not the AssetManager); a
+  per-object colour tint - needs a shader change (`MeshRenderer::colour` is
+  not drawn).
+
+C++ side: `Bindings/MeshRendererBindings.cpp` (uses the ResourceManager from
+`ScriptEngineConnection::resources` for slot counts). Test:
+`Assets/Scripts/MeshRendererTest.cs`.
 
 ### Keybinds (InputSettings) and PlayerController
 

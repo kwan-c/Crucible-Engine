@@ -4,21 +4,19 @@
 * \par:          Email: chunkwangxavier.tan@digipen.edu
 * \date          2 November 2026
 * \version       1.0
-* \brief         Internal calls behind the C# Collider and MeshRenderer
-*                classes (ManagedScripts/Runtime/Collider.cs,
-*                MeshRenderer.cs).
+* \brief         Internal calls behind the C# Collider class
+*                (ManagedScripts/Runtime/Collider.cs). MeshRenderer moved
+*                to MeshRendererBindings.cpp.
 *
 * \details
-*    Bindings only: Collider (Physics/PhysicsComponents.h, Hugo's) and
-*    MeshRenderer (Components.h) are unchanged.
+*    Bindings only: Collider (Physics/PhysicsComponents.h, Hugo's) is
+*    unchanged.
 *
 *    Collider: ECSPhysicsSystem compares every Collider with the body it
 *    built each frame and rebuilds the body when a setting changed (keeping
 *    a dynamic body's velocity), so a change made in OnUpdate takes effect
 *    in that frame's physics step. Sizes are FULL sizes and are multiplied
 *    by the Transform's scale, as in the Inspector.
-*
-*    MeshRenderer: RenderExtractSystem reads `visible` every frame.
 *
 *    Vectors cross as ScriptVec3, enums and bools as int.
 *
@@ -328,41 +326,6 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
-		// ======================================================================
-		// MeshRenderer
-		// ======================================================================
-
-		int32_t ManagedMeshRendererGetVisible(int32_t index, int32_t generation, int32_t* out) noexcept
-		{
-			try
-			{
-				const MeshRenderer* renderer = out ? ReadComponent<MeshRenderer>(index, generation) : nullptr;
-				if (!renderer)
-					return 0;
-				*out = renderer->visible ? 1 : 0;
-				return 1;
-			}
-			catch (...)
-			{
-				return 0;
-			}
-		}
-
-		int32_t ManagedMeshRendererSetVisible(int32_t index, int32_t generation, int32_t value) noexcept
-		{
-			try
-			{
-				MeshRenderer* renderer = WriteComponent<MeshRenderer>(index, generation);
-				if (!renderer)
-					return 0;
-				renderer->visible = value != 0;
-				return 1;
-			}
-			catch (...)
-			{
-				return 0;
-			}
-		}
 
 		template <typename Fn>
 		void Add(const char* name, Fn* function)
@@ -392,9 +355,6 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Collider::GetIsTriggerInternal", &ManagedColliderGetIsTrigger);
 		Add("Crucible.Collider::SetIsTriggerInternal", &ManagedColliderSetIsTrigger);
 		Add("Crucible.Collider::GetScaledInternal", &ManagedColliderGetScaled);
-
-		Add("Crucible.MeshRenderer::GetVisibleInternal", &ManagedMeshRendererGetVisible);
-		Add("Crucible.MeshRenderer::SetVisibleInternal", &ManagedMeshRendererSetVisible);
 	}
 }
 #endif

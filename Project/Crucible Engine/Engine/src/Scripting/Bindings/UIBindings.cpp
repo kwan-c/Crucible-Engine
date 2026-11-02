@@ -693,6 +693,8 @@ namespace Crucible::ScriptBindings
 		// Texture / Font assets
 		Add("Crucible.Texture::GetNameInternal", &ManagedAssetGetName);
 		Add("Crucible.Font::GetNameInternal", &ManagedAssetGetName);
+		Add("Crucible.Material::GetNameInternal", &ManagedAssetGetName);   // MeshRenderer's asset types share it
+		Add("Crucible.Model::GetNameInternal", &ManagedAssetGetName);
 
 		// UISlider
 		Add("Crucible.UISlider::GetValueInternal", &GetFloat<UISlider, &UISlider::value>);

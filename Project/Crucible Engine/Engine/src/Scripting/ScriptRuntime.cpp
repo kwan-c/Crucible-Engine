@@ -626,7 +626,7 @@ namespace Crucible
 
 		/*********************************************************************
 		 \brief  Reads `assetId` out of a managed asset reference
-		         (Crucible.Prefab, AudioClip, Texture, Font).
+		         (Crucible.Prefab, AudioClip, Texture, Font, Material, Model).
 		 *********************************************************************/
 		uint64_t ReadAssetId(MonoObject* asset)
 		{
@@ -638,7 +638,7 @@ namespace Crucible
 		}
 
 		/*********************************************************************
-		 \brief  Creates a managed asset reference (Prefab, AudioClip, Texture, Font) for an
+		 \brief  Creates a managed asset reference (Prefab, AudioClip, Texture, Font, Material, Model) for an
 		         asset guid, writing its `assetId` field directly (no
 		         constructor runs).
 		 *********************************************************************/
@@ -695,7 +695,7 @@ namespace Crucible
 		/*********************************************************************
 		 \brief  Lists the fields the Inspector can show: public, non-static, not
 		         readonly/const, not [NonSerialized], of type bool/int/float/double/
-		         string/Crucible.Entity/Prefab/AudioClip/Texture/Font. Includes fields inherited from base classes.
+		         string/Crucible.Entity/Prefab/AudioClip/Texture/Font/Material/Model. Includes fields inherited from base classes.
 		 *********************************************************************/
 		std::vector<InspectableField> InspectableFields(MonoClass* type)
 		{
@@ -722,6 +722,10 @@ namespace Crucible
 						value.type = ScriptFieldType::Texture;
 					else if (IsScriptCoreClass(fieldType, "Font"))
 						value.type = ScriptFieldType::Font;
+					else if (IsScriptCoreClass(fieldType, "Material"))
+						value.type = ScriptFieldType::Material;
+					else if (IsScriptCoreClass(fieldType, "Model"))
+						value.type = ScriptFieldType::Model;
 					else switch (ManagedKind(fieldType))
 					{
 					case ValueKind::Boolean:
@@ -811,6 +815,8 @@ namespace Crucible
 				case ScriptFieldType::AudioClip:
 				case ScriptFieldType::Texture:
 				case ScriptFieldType::Font:
+				case ScriptFieldType::Material:
+				case ScriptFieldType::Model:
 				{
 					MonoObject* asset = nullptr;
 					mono_field_get_value(owner.Get(), entry.field, &asset);
@@ -919,17 +925,23 @@ namespace Crucible
 				case ScriptFieldType::AudioClip:
 				case ScriptFieldType::Texture:
 				case ScriptFieldType::Font:
+				case ScriptFieldType::Material:
+				case ScriptFieldType::Model:
 				{
-					// Asset guid -> new managed Prefab / AudioClip / Texture / Font;
+					// Asset guid -> new managed Prefab / AudioClip / Texture / Font / Material / Model;
 					// unassigned or missing -> null.
 					namespace Ctx = ScriptBindings::EntityContext;
 					const bool exists = value.type == ScriptFieldType::Prefab    ? Ctx::IsPrefabAsset(value.assetId)
 					                    : value.type == ScriptFieldType::AudioClip ? Ctx::IsAudioAsset(value.assetId)
 					                    : value.type == ScriptFieldType::Texture   ? Ctx::IsTextureAsset(value.assetId)
+					                    : value.type == ScriptFieldType::Material  ? Ctx::IsMaterialAsset(value.assetId)
+					                    : value.type == ScriptFieldType::Model     ? Ctx::IsModelAsset(value.assetId)
 					                                                               : Ctx::IsFontAsset(value.assetId);
 					const char* kind = value.type == ScriptFieldType::Prefab      ? "a prefab"
 					                   : value.type == ScriptFieldType::AudioClip ? "an audio clip"
 					                   : value.type == ScriptFieldType::Texture   ? "a texture"
+					                   : value.type == ScriptFieldType::Material  ? "a material"
+					                   : value.type == ScriptFieldType::Model     ? "a model"
 					                                                              : "a font";
 					GcRoot asset;
 					if (value.assetId != 0)
@@ -2457,6 +2469,7 @@ namespace Crucible
 		ScriptBindings::SetParticleSystem(engine.particles);
 		ScriptBindings::SetEvents(engine.events);
 		ScriptBindings::SetCore(engine.core);
+		ScriptBindings::SetResources(engine.resources);
 		return true;
 #else
 		(void)engine;

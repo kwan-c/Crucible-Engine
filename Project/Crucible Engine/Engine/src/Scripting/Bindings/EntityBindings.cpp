@@ -150,6 +150,7 @@ namespace Crucible::ScriptBindings
 			MeshRenderer = 17,
 			PlayerController = 18,
 			WorldText = 19,
+			MaterialParams = 20,
 		};
 
 		/*********************************************************************
@@ -229,6 +230,9 @@ namespace Crucible::ScriptBindings
 					return 1;
 				case ScriptComponentKind::WorldText:
 					*out = world.HasComponent<Crucible::WorldText>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::MaterialParams:
+					*out = world.HasComponent<MaterialParams>(entity) ? 1 : 0;
 					return 1;
 				}
 				return 0;

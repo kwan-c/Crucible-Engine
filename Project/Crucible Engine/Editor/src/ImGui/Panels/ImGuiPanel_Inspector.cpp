@@ -544,7 +544,7 @@ namespace {
 		return changed;
 	}
 
-	// Picker for a script's `public Prefab` / `AudioClip` / `Texture` / `Font` field: the asset's
+	// Picker for a script's `public Prefab` / `AudioClip` / `Texture` / `Font` / `Material` / `Model` field: the asset's
 	// guid. Drawn as the file name - drop a matching file from the Asset Browser onto it to set it,
 	// X clears it. The guid (not the path) is stored, so renaming or moving the file keeps the link.
 	bool AssetRefField(char const* label, std::uint64_t& id, Crucible::ScriptFieldType fieldType) {
@@ -558,12 +558,16 @@ namespace {
 		char const* const kind = fieldType == FT::AudioClip ? "audio clip"
 		                       : fieldType == FT::Texture   ? "texture"
 		                       : fieldType == FT::Font      ? "font"
+		                       : fieldType == FT::Material  ? "material"
+		                       : fieldType == FT::Model     ? "model"
 		                                                    : "prefab";
 		auto const accepts = [fieldType](Crucible::AssetEntry const& entry) {
 			switch (fieldType) {
 			case FT::AudioClip: return entry.type == Crucible::AssetType::Audio;
 			case FT::Texture:   return entry.type == Crucible::AssetType::Texture;
 			case FT::Font:      return entry.type == Crucible::AssetType::Font;
+			case FT::Material:  return entry.type == Crucible::AssetType::Material;
+			case FT::Model:     return entry.type == Crucible::AssetType::Model;
 			default:            return std::filesystem::path(entry.virtualPath).extension() == ".cprefab";
 			}
 		};
@@ -2110,7 +2114,9 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
         case ScriptFieldType::Prefab:
         case ScriptFieldType::AudioClip:
         case ScriptFieldType::Texture:
-        case ScriptFieldType::Font: {
+        case ScriptFieldType::Font:
+        case ScriptFieldType::Material:
+        case ScriptFieldType::Model: {
             const std::string shown = label.substr(0, label.find("###"));
             edited = AssetRefField(shown.c_str(), field.assetId, field.type);
             break;

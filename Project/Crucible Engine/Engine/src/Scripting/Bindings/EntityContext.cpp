@@ -122,6 +122,22 @@ namespace Crucible::ScriptBindings
 			return entry && entry->type == AssetType::Font;
 		}
 
+		bool IsMaterialAsset(uint64_t assetId)
+		{
+			if (!assets || assetId == 0)
+				return false;
+			const AssetEntry* entry = assets->FindByGuid(xresource::instance_guid{assetId});
+			return entry && entry->type == AssetType::Material;
+		}
+
+		bool IsModelAsset(uint64_t assetId)
+		{
+			if (!assets || assetId == 0)
+				return false;
+			const AssetEntry* entry = assets->FindByGuid(xresource::instance_guid{assetId});
+			return entry && entry->type == AssetType::Model;
+		}
+
 		void QueueDestroy(Entity entity, float delaySeconds)
 		{
 			const auto existing = std::find_if(pendingDestroys.begin(), pendingDestroys.end(),

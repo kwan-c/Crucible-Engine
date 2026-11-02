@@ -38,6 +38,7 @@ namespace Crucible
 	class Core;
 	class ParticleSystem;
 	struct EventBuses;
+	class ResourceManager;
 
 	namespace ScriptBindings
 	{
@@ -112,6 +113,13 @@ namespace Crucible
 		void SetCore(Core* core);
 
 		/*********************************************************************
+		 \brief  Gives the C# MeshRenderer the resource manager (a model's
+		         material slots). nullptr clears it. Non-owning; main thread
+		         only. Defined in Bindings/MeshRendererBindings.cpp.
+		 *********************************************************************/
+		void SetResources(ResourceManager* resources);
+
+		/*********************************************************************
 		 \brief  Gives the C# ParticleEmitter class the particle system (Emit,
 		         Restart, ParticleCount). nullptr clears it. Non-owning; main
 		         thread only. Called through ScriptRuntime::SetParticleSystemBinding.
@@ -151,7 +159,8 @@ namespace Crucible
 		void RegisterParticleBindings();  // Bindings/ParticleBindings.cpp  (C# ParticleEmitter)
 		void RegisterUIBindings();        // Bindings/UIBindings.cpp        (C# UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, UI)
 		void RegisterEnableBindings();    // Bindings/EnableBindings.cpp    (C# SetEnabled<T>, SetActive, EntityScript.Enabled)
-		void RegisterColliderBindings();  // Bindings/ColliderBindings.cpp  (C# Collider, MeshRenderer)
+		void RegisterColliderBindings();  // Bindings/ColliderBindings.cpp  (C# Collider)
+		void RegisterMeshRendererBindings(); // Bindings/MeshRendererBindings.cpp (C# MeshRenderer, MaterialParams, Material, Model)
 		void RegisterPlayerControllerBindings(); // Bindings/PlayerControllerBindings.cpp (C# PlayerController)
 		void RegisterInputSettingsBindings();  // Bindings/InputSettingsBindings.cpp (C# InputSettings: keybinds, look sensitivity)
 		void RegisterScreenBindings();         // Bindings/ScreenBindings.cpp         (C# Screen: window mode)

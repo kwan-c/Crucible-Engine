@@ -31,6 +31,7 @@ namespace Crucible::ScriptBindings
 		RegisterUIBindings();
 		RegisterEnableBindings();
 		RegisterColliderBindings();
+		RegisterMeshRendererBindings();
 		RegisterPlayerControllerBindings();
 		RegisterInputSettingsBindings();
 		RegisterScreenBindings();
@@ -46,6 +47,7 @@ namespace Crucible::ScriptBindings
 		SetParticleSystem(nullptr);
 		SetEvents(nullptr);
 		SetCore(nullptr);
+		SetResources(nullptr);
 		// Clear new adapters here.
 	}
 }

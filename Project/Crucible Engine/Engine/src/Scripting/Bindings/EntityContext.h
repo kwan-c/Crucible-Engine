@@ -69,6 +69,12 @@ namespace Crucible
 		 *********************************************************************/
 		bool IsFontAsset(uint64_t assetId);
 
+		/// true if `assetId` is an indexed material (AssetType::Material: .mat).
+		bool IsMaterialAsset(uint64_t assetId);
+
+		/// true if `assetId` is an indexed model (AssetType::Model).
+		bool IsModelAsset(uint64_t assetId);
+
 		// --- Destroy queue (C# Entity.Destroy) ----------------------------- //
 		// Destroys are queued, not done on the spot: the entity stays valid for
 		// the rest of the frame, like Unity. EntityScriptSystem applies them at

@@ -49,6 +49,7 @@ namespace Crucible
 	class Core;
 	class ParticleSystem;
 	struct EventBuses;
+	class ResourceManager;
 
 	/*********************************************************************
 	 \brief  The engine objects the C# bindings use, for
@@ -68,6 +69,7 @@ namespace Crucible
 		ParticleSystem*         particles    = nullptr; // ParticleEmitter Emit / Restart / ParticleCount
 		EventBuses*             events       = nullptr; // UI and collision callbacks
 		Core*                   core         = nullptr; // Screen (window mode)
+		ResourceManager*        resources    = nullptr; // MeshRenderer material slots (model definitions)
 	};
 
 	/*********************************************************************
