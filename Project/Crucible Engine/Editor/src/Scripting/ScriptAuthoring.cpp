@@ -58,7 +58,7 @@ namespace Crucible::ScriptAuthoring {
                                            "Crucible.Physics", "Crucible.RaycastHit", "Crucible.CharacterController", "Crucible.Time", "Crucible.Scene",
                                            "Crucible.Camera", "Crucible.CameraOrbit", "Crucible.Ray", "Crucible.Light", "Crucible.LightType", "Crucible.Color", "Crucible.ParticleEmitter",
                                            "Crucible.UI", "Crucible.UIText", "Crucible.UIImage", "Crucible.UISlider", "Crucible.UIButton",
-                                           "Crucible.UIRect", "Crucible.UICanvas", "Crucible.UIState", "Crucible.Texture", "Crucible.Font"}) {
+                                           "Crucible.UIRect", "Crucible.UICanvas", "Crucible.UIState", "Crucible.Texture", "Crucible.Font", "Crucible.Collision"}) {
             if (nameSpace + "." + name == reserved || nameSpace == reserved || nameSpace.starts_with(reserved + ".")) {
                 error = "That name is reserved by ScriptCore. Use a namespace such as Crucible.Scripts."; return false;
             }

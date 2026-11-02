@@ -155,6 +155,37 @@ namespace Crucible
 		 *********************************************************************/
 		void ClearUIEvents();
 
+		// --- Physics events (C# OnCollisionEnter/Exit, OnTriggerEnter/Exit) -- //
+
+		/*********************************************************************
+		 \brief  One PhysicsEvents event (Physics/PhysicsEvents.h), as sent.
+		 *********************************************************************/
+		struct ContactEvent
+		{
+			enum class Kind : int32_t
+			{
+				CollisionEnter = 0, // a, b = the two bodies; point / normal (a -> b) / speed set
+				CollisionExit = 1,  // a, b
+				TriggerEnter = 2,   // a = the trigger, b = what entered
+				TriggerExit = 3,    // a = the trigger, b = what left
+			};
+			Kind kind = Kind::CollisionEnter;
+			Entity a{}, b{};
+			float point[3] = {0.0f, 0.0f, 0.0f};
+			float normal[3] = {0.0f, 1.0f, 0.0f};
+			float impactSpeed = 0.0f;
+		};
+
+		/*********************************************************************
+		 \brief  Physics events received since scripts last ran. ECSPhysicsSystem
+		         sends them after its step (PostUpdate, after scripts), so
+		         EntityScriptSystem hands them out at the start of the next
+		         frame's Update and then clears them (ClearCollisionEvents).
+		         Defined in Bindings/PhysicsBindings.cpp, next to the listeners.
+		 *********************************************************************/
+		const std::vector<ContactEvent>& CollisionEvents();
+		void ClearCollisionEvents();
+
 		// --- Entity.SetActive records ------------------------------------- //
 
 		/*********************************************************************

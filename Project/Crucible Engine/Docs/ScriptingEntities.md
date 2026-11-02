@@ -316,6 +316,26 @@ C++ side: `Bindings/UIBindings.cpp`. `UI/` is unchanged.
 
 C++ side: `Bindings/SceneBindings.cpp`.
 
+### Collisions and triggers
+
+Override on `EntityScript` (Unity's names):
+
+- `OnCollisionEnter(Collision c)`: `c.Other`, `c.Point`, `c.Normal` (from this
+  entity toward Other), `c.ImpactSpeed` (m/s, for damage / volume).
+- `OnCollisionExit(Collision c)`: only `c.Other` is set.
+- `OnTriggerEnter(Entity other)` / `OnTriggerExit(Entity other)`: a Collider
+  with Is Trigger ticked; called on the trigger's script AND the entering one's.
+
+From Hugo's `Physics/PhysicsEvents.h`. Physics steps after scripts, so the
+callbacks arrive at the start of the next frame, before OnUpdate (like Unity,
+after the physics step). Both entities' scripts are called. The other entity
+may have been destroyed since: check `other.IsAlive`. There is no
+OnCollisionStay. Only scripts that override one are called; a throwing callback
+faults the script like OnUpdate.
+
+C++ side: listeners in `Bindings/PhysicsBindings.cpp`, `EntityScriptSystem`
+step 5b, `ScriptRuntime::DispatchPhysicsEvent`.
+
 ### Movement, raycasts and time
 
 - `GetComponent<CharacterController>()` (or `CharacterController`): Unity's

@@ -29,8 +29,11 @@
 #include "ECS/World.h"
 #include "Physics/PhysicsComponents.h"
 #include "Physics/PhysicsSystem.h"
+#include "Physics/PhysicsEvents.h"
+#include "ECS/Systems/EventBus/EventBuses.h"
 #if CRUCIBLE_WITH_MONO
 #include <cmath>
+#include <vector>
 #include <mono/metadata/loader.h>
 
 namespace Crucible::ScriptBindings
@@ -270,6 +273,66 @@ namespace Crucible::ScriptBindings
 	void SetPhysics(Physics* world)
 	{
 		physics = world;
+	}
+
+	// ======================================================================
+	// Physics events -> scripts' OnCollision* / OnTrigger*
+	// ======================================================================
+
+	namespace
+	{
+		using ContactEvent = EntityContext::ContactEvent;
+
+		std::vector<ContactEvent> contactEvents; // since scripts last ran (main thread)
+		// The listeners; a Subscription only holds a weak link to its bus, so
+		// releasing these after the bus is gone is safe.
+		Subscription onCollisionEnter, onCollisionExit, onTriggerEnter, onTriggerExit;
+	}
+
+	void SetPhysicsEvents(EventBuses* events)
+	{
+		onCollisionEnter = {};
+		onCollisionExit = {};
+		onTriggerEnter = {};
+		onTriggerExit = {};
+		contactEvents.clear();
+		if (!events)
+			return;
+		onCollisionEnter = events->engine.Subscribe<PhysicsEvents::CollisionEnter>(
+		    [](const PhysicsEvents::CollisionEnter& e)
+		    {
+			    ContactEvent event{ContactEvent::Kind::CollisionEnter, e.a, e.b};
+			    event.point[0] = e.point.x;
+			    event.point[1] = e.point.y;
+			    event.point[2] = e.point.z;
+			    event.normal[0] = e.normal.x;
+			    event.normal[1] = e.normal.y;
+			    event.normal[2] = e.normal.z;
+			    event.impactSpeed = e.impactSpeed;
+			    contactEvents.push_back(event);
+		    });
+		onCollisionExit = events->engine.Subscribe<PhysicsEvents::CollisionExit>(
+		    [](const PhysicsEvents::CollisionExit& e)
+		    { contactEvents.push_back({ContactEvent::Kind::CollisionExit, e.a, e.b}); });
+		onTriggerEnter = events->engine.Subscribe<PhysicsEvents::TriggerEnter>(
+		    [](const PhysicsEvents::TriggerEnter& e)
+		    { contactEvents.push_back({ContactEvent::Kind::TriggerEnter, e.trigger, e.other}); });
+		onTriggerExit = events->engine.Subscribe<PhysicsEvents::TriggerExit>(
+		    [](const PhysicsEvents::TriggerExit& e)
+		    { contactEvents.push_back({ContactEvent::Kind::TriggerExit, e.trigger, e.other}); });
+	}
+
+	namespace EntityContext
+	{
+		const std::vector<ContactEvent>& CollisionEvents()
+		{
+			return contactEvents;
+		}
+
+		void ClearCollisionEvents()
+		{
+			contactEvents.clear();
+		}
 	}
 
 	void RegisterPhysicsBindings()

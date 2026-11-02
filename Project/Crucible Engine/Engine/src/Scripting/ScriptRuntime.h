@@ -327,6 +327,18 @@ namespace Crucible
 		                     float value, const std::string& actionId);
 
 		/*********************************************************************
+		 \brief  Hands one physics event to an entity script: OnCollisionEnter
+		         (kind 0, with point, normal from this entity toward the other,
+		         impact speed), OnCollisionExit (1), OnTriggerEnter (2) or
+		         OnTriggerExit (3); `other` is the other entity. Same rules as
+		         DispatchUIEvent (skipped if not overridden / not running; a
+		         throwing callback faults the script and returns false).
+		 *********************************************************************/
+		bool DispatchPhysicsEvent(ScriptInstanceHandle instance, int32_t kind, uint32_t otherIndex,
+		                          uint32_t otherGeneration, const float point[3], const float normal[3],
+		                          float impactSpeed);
+
+		/*********************************************************************
 		 \brief  Reads the current public field values of a live entity script
 		         (shown in the Inspector during Play).
 		 *********************************************************************/

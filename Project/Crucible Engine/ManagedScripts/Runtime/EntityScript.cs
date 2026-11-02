@@ -132,6 +132,40 @@ namespace Crucible
         /// <summary>A button whose On Click is Custom was clicked; actionId is its Action Id.</summary>
         public virtual void OnUIAction(string actionId) {}
 
+        // --- physics callbacks ----------------------------------------------------
+        // Called on the scripts of BOTH entities involved (Unity's rule), at the start of
+        // the frame after the physics step that saw it, before OnUpdate. The entity may
+        // have been destroyed since: check other.IsAlive before using it.
+        // Needs a Collider (and RigidBody / CharacterController) on the entities; a
+        // Collider with Is Trigger ticked gives trigger events instead of collisions.
+
+        /// <summary>This entity started touching another solid collider.</summary>
+        public virtual void OnCollisionEnter(Collision collision) {}
+        /// <summary>It stopped touching it (or the other was destroyed). Only Other is set.</summary>
+        public virtual void OnCollisionExit(Collision collision) {}
+        /// <summary>Something entered this trigger - or this entered another's trigger.</summary>
+        public virtual void OnTriggerEnter(Entity other) {}
+        /// <summary>Something left this trigger - or this left another's trigger.</summary>
+        public virtual void OnTriggerExit(Entity other) {}
+
+        /// <summary>
+        /// Called by the engine (ScriptRuntime::DispatchPhysicsEvent) with plain values.
+        /// kind: 0 collision enter, 1 collision exit, 2 trigger enter, 3 trigger exit.
+        /// The normal points from this entity toward the other.
+        /// </summary>
+        internal void DispatchPhysicsEvent(int kind, int index, int generation, float px, float py, float pz,
+                                           float nx, float ny, float nz, float impactSpeed)
+        {
+            var other = new global::Crucible.Entity(unchecked((uint)index), unchecked((uint)generation));
+            switch (kind)
+            {
+                case 0: OnCollisionEnter(new Collision(other, new Vector3(px, py, pz), new Vector3(nx, ny, nz), impactSpeed)); break;
+                case 1: OnCollisionExit(new Collision(other, Vector3.Zero, Vector3.Zero, 0f)); break;
+                case 2: OnTriggerEnter(other); break;
+                case 3: OnTriggerExit(other); break;
+            }
+        }
+
         /// <summary>
         /// Called by the engine (ScriptRuntime::DispatchUIEvent) with plain values; builds
         /// the Entity and calls the matching virtual above. kind: 0 click, 1 slider, 2 action.

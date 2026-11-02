@@ -1088,6 +1088,8 @@ namespace Crucible
 		// Per script class: EntityScript.DispatchUIEvent if the class overrides a UI
 		// callback (OnButtonClicked / OnSliderChanged / OnUIAction), else nullptr.
 		std::map<MonoClass*, MonoMethod*> uiListeners;
+		// Same for the physics callbacks (OnCollisionEnter/Exit, OnTriggerEnter/Exit).
+		std::map<MonoClass*, MonoMethod*> physicsListeners;
 
 		// A script instance: its object plus the three cached callbacks.
 		struct Instance
@@ -1356,6 +1358,7 @@ namespace Crucible
 			objects.clear();
 			fieldDefaults.clear();
 			uiListeners.clear();
+			physicsListeners.clear();
 			validatedClasses.clear();
 			assemblies.clear(); // metadata/images are owned by Mono until final cleanup
 		}
@@ -2141,6 +2144,41 @@ namespace Crucible
 #endif
 	}
 
+#if CRUCIBLE_WITH_MONO
+	namespace
+	{
+		/*********************************************************************
+		 \brief  EntityScript's internal dispatcher `dispatchName` if `type`
+		         overrides any of `callbacks` ({name, parameter count}), else
+		         nullptr. Cached per class in `cache`.
+		 *********************************************************************/
+		MonoMethod* FindListener(std::map<MonoClass*, MonoMethod*>& cache, MonoClass* type, const char* dispatchName,
+		                         int dispatchParameters,
+		                         std::initializer_list<std::pair<const char*, int>> callbacks)
+		{
+			const auto cached = cache.find(type);
+			if (cached != cache.end())
+				return cached->second;
+			bool listens = false;
+			MonoMethod* dispatch = nullptr;
+			for (auto* klass = type; klass; klass = mono_class_get_parent(klass))
+			{
+				if (std::strcmp(mono_class_get_name(klass), "EntityScript") == 0 &&
+				    std::strcmp(mono_class_get_namespace(klass), "Crucible") == 0)
+				{
+					dispatch = mono_class_get_method_from_name(klass, dispatchName, dispatchParameters);
+					break;
+				}
+				// Only this class's own methods - an override is declared in the user's class.
+				for (const auto& [name, parameters] : callbacks)
+					if (mono_class_get_method_from_name(klass, name, parameters))
+						listens = true;
+			}
+			return cache.emplace(type, listens ? dispatch : nullptr).first->second;
+		}
+	}
+#endif
+
 	/*********************************************************************
 	 \brief  See ScriptRuntime.h. Calls EntityScript.DispatchUIEvent, which
 	         builds the Entity and calls the right virtual callback.
@@ -2163,35 +2201,15 @@ namespace Crucible
 			return true;
 
 		// Does this class override a UI callback? Worked out once per class.
-		MonoClass* type = object->second.type;
-		auto cached = data.uiListeners.find(type);
-		if (cached == data.uiListeners.end())
-		{
-			bool listens = false;
-			MonoMethod* dispatch = nullptr;
-			for (auto* klass = type; klass; klass = mono_class_get_parent(klass))
-			{
-				if (std::strcmp(mono_class_get_name(klass), "EntityScript") == 0 &&
-				    std::strcmp(mono_class_get_namespace(klass), "Crucible") == 0)
-				{
-					dispatch = mono_class_get_method_from_name(klass, "DispatchUIEvent", 5);
-					break;
-				}
-				// Only this class's own methods - an override is declared in the user's class.
-				if (mono_class_get_method_from_name(klass, "OnButtonClicked", 1) ||
-				    mono_class_get_method_from_name(klass, "OnSliderChanged", 2) ||
-				    mono_class_get_method_from_name(klass, "OnUIAction", 1))
-					listens = true;
-			}
-			cached = data.uiListeners.emplace(type, listens ? dispatch : nullptr).first;
-		}
-		if (!cached->second)
+		MonoMethod* const dispatch = FindListener(data.uiListeners, object->second.type, "DispatchUIEvent", 5,
+		                                          {{"OnButtonClicked", 1}, {"OnSliderChanged", 2}, {"OnUIAction", 1}});
+		if (!dispatch)
 			return true; // nothing to call
 
 		const std::vector<ScriptValue> arguments{kind, std::bit_cast<int32_t>(index), std::bit_cast<int32_t>(generation),
 		                                         value, actionId};
 		std::string failure;
-		if (!data.Callback(*owned, cached->second, "UI callback", arguments, failure))
+		if (!data.Callback(*owned, dispatch, "UI callback", arguments, failure))
 		{
 			// Same as an OnUpdate that throws: the script faults and is cleaned up.
 			owned->info.state = ScriptInstanceState::Faulted;
@@ -2210,6 +2228,64 @@ namespace Crucible
 		(void)generation;
 		(void)value;
 		(void)actionId;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Calls EntityScript.DispatchPhysicsEvent,
+	         which builds the Entity / Collision and calls the callback.
+	 *********************************************************************/
+	bool ScriptRuntime::DispatchPhysicsEvent(ScriptInstanceHandle instance, int32_t kind, uint32_t otherIndex,
+	                                         uint32_t otherGeneration, const float point[3], const float normal[3],
+	                                         float impactSpeed)
+	{
+		auto& data = *m_impl;
+		if (!data.Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		auto* owned = data.GetInstance(instance);
+		if (!owned)
+			return false;
+		if (!owned->info.entityOwned || !owned->started || owned->info.state != ScriptInstanceState::Running)
+			return true;
+		const auto object = data.objects.find(owned->object.value);
+		if (object == data.objects.end())
+			return true;
+
+		MonoMethod* const dispatch =
+		    FindListener(data.physicsListeners, object->second.type, "DispatchPhysicsEvent", 10,
+		                 {{"OnCollisionEnter", 1}, {"OnCollisionExit", 1}, {"OnTriggerEnter", 1}, {"OnTriggerExit", 1}});
+		if (!dispatch)
+			return true; // nothing to call
+
+		const std::vector<ScriptValue> arguments{kind,      std::bit_cast<int32_t>(otherIndex),
+		                                         std::bit_cast<int32_t>(otherGeneration),
+		                                         point[0],  point[1],
+		                                         point[2],  normal[0],
+		                                         normal[1], normal[2],
+		                                         impactSpeed};
+		std::string failure;
+		if (!data.Callback(*owned, dispatch, "physics callback", arguments, failure))
+		{
+			// Same as an OnUpdate that throws: the script faults and is cleaned up.
+			owned->info.state = ScriptInstanceState::Faulted;
+			std::string cleanup;
+			if (!data.Dispose(*owned, cleanup))
+				failure += "\nCleanup also failed: " + cleanup;
+			owned->info.lastError = failure;
+			return data.Fail(failure);
+		}
+		data.error.clear();
+		return true;
+#else
+		(void)instance;
+		(void)kind;
+		(void)otherIndex;
+		(void)otherGeneration;
+		(void)point;
+		(void)normal;
+		(void)impactSpeed;
 		return false;
 #endif
 	}

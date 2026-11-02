@@ -112,6 +112,13 @@ namespace Crucible
 		 *********************************************************************/
 		void SetEvents(EventBuses* events);
 
+		/*********************************************************************
+		 \brief  Subscribes the scripts' OnCollision* / OnTrigger* callbacks to
+		         PhysicsEvents on the engine bus; nullptr unsubscribes. Called by
+		         SetEvents. Defined in Bindings/PhysicsBindings.cpp.
+		 *********************************************************************/
+		void SetPhysicsEvents(EventBuses* events);
+
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
 		void RegisterAnimatorBindings(); // Bindings/AnimatorBindings.cpp (C# Animator)

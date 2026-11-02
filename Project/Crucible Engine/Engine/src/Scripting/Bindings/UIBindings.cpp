@@ -534,6 +534,7 @@ namespace Crucible::ScriptBindings
 
 	void SetEvents(EventBuses* events)
 	{
+		SetPhysicsEvents(events); // the scripts' OnCollision* / OnTrigger* (PhysicsBindings.cpp)
 		onClick = {};
 		onSlider = {};
 		onAction = {};

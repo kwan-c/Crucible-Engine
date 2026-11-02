@@ -105,6 +105,7 @@ namespace Crucible
 			ScriptBindings::EntityContext::ClearDestroyQueue(); // destroys belong to the session that asked
 			ScriptBindings::EntityContext::ClearOneShotAudio();
 			ScriptBindings::EntityContext::ClearUIEvents();
+			ScriptBindings::EntityContext::ClearCollisionEvents();
 			ScriptBindings::EntityContext::ClearActiveStates();
 			// Time.ElapsedTime keeps counting across a level switch (Scene.Load), like
 			// Unity's Time.time; only a new session or Stop starts it again.
@@ -247,11 +248,37 @@ namespace Crucible
 		}
 
 #if CRUCIBLE_WITH_MONO
-		// --- Step 5b: this frame's UI events (clicks, slider drags, custom actions) to every
+		// --- Step 5b: last frame's physics events (to the two entities' scripts), then this frame's UI events (clicks, slider drags, custom actions) to every
 		// running script's OnButtonClicked / OnSliderChanged / OnUIAction, before OnUpdate.
 		// UISystem sent them at the end of PreUpdate; only while Playing.
 		if (m_play.State() == PlayState::Playing)
 		{
+			// Physics events from last frame's step (ECSPhysicsSystem runs after scripts): to the
+			// scripts on BOTH entities, Unity's rule. The normal is flipped for `b` so it always
+			// points from the receiving entity toward the other.
+			for (const auto& contact : ScriptBindings::EntityContext::CollisionEvents())
+			{
+				const float flipped[3] = {-contact.normal[0], -contact.normal[1], -contact.normal[2]};
+				const std::pair<Entity, Entity> receivers[2] = {{contact.a, contact.b}, {contact.b, contact.a}};
+				for (int side = 0; side < 2; ++side)
+				{
+					const auto [self, other] = receivers[side];
+					const auto found = m_records.find(Key(self));
+					if (found == m_records.end() || !found->second.instance || !found->second.definition.enabled)
+						continue;
+					auto& record = found->second;
+					if (!m_runtime.DispatchPhysicsEvent(record.instance, static_cast<int32_t>(contact.kind), other.index,
+					                                    other.generation, contact.point,
+					                                    side == 0 ? contact.normal : flipped, contact.impactSpeed))
+					{
+						record.error = m_runtime.LastError();
+						CRU_USER_ERROR("Script {}.{} stopped in a physics callback: {}", record.definition.nameSpace,
+						               record.definition.className, record.error);
+					}
+				}
+			}
+			ScriptBindings::EntityContext::ClearCollisionEvents();
+
 			for (const auto& event : ScriptBindings::EntityContext::UIEvents())
 			{
 				for ([[maybe_unused]] auto& [key, record] : m_records)

@@ -1,11 +1,11 @@
 /*************************************************************************
-* \file:         TransformBindings.cpp
+* \file:         ComponentBindings.cpp
 * \author:       <author>
 * \par:          Email: <email>
 * \date          30 October 2026
 * \version       1.0
-* \brief         Internal calls behind the C# Transform class
-*                (ManagedScripts/Runtime/Transform.cs).
+* \brief         Internal calls behind the C# Transform and RigidBody APIs. 
+*				 Getters write through a pointer to a ScriptVec3 / ScriptQuat; setters read from it.
 *
 * \details
 *    C# passes `out Vector3` / `ref Quaternion` as a pointer to a
@@ -19,7 +19,11 @@
 *      4. copy the values, return 1
 *    Values are LOCAL space (relative to the parent), like the Inspector.
 *
-*    TODO: Scale and Rotation are still placeholders that return 0.
+*    RigidBody setters write the component; ECSPhysicsSystem (PostUpdate,
+*    after scripts) pushes a changed velocity into the body, rebuilds the
+*    body when mass / useGravity / drag / angularDrag / isKinematic change,
+*    and consumes force / torque / impulse each step. Setters reject NaN,
+*    mass <= 0 and negative drag, which would upset the physics body.
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -271,7 +275,8 @@ namespace Crucible::ScriptBindings
 			try
 			{
 				Entity entity;
-				if (!value || !ResolveEntity(index, generation, entity))
+				// Mass must be a positive, finite number: 0, negative or NaN would upset the physics body.
+				if (!value || !std::isfinite(*value) || !(*value > 0.0f) || !ResolveEntity(index, generation, entity))
 					return 0;
 				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
 				if (!rigidbody)
@@ -345,7 +350,8 @@ namespace Crucible::ScriptBindings
 			try
 			{
 				Entity entity;
-				if (!value || !ResolveEntity(index, generation, entity))
+				// Drag (1/s) must be finite and not negative.
+				if (!value || !std::isfinite(*value) || *value < 0.0f || !ResolveEntity(index, generation, entity))
 					return 0;
 				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
 				if (!rigidbody)
@@ -382,7 +388,8 @@ namespace Crucible::ScriptBindings
 			try
 			{
 				Entity entity;
-				if (!value || !ResolveEntity(index, generation, entity))
+				// Angular drag (1/s) must be finite and not negative.
+				if (!value || !std::isfinite(*value) || *value < 0.0f || !ResolveEntity(index, generation, entity))
 					return 0;
 				RigidBody* rigidbody = world()->Write<RigidBody>(entity);
 				if (!rigidbody)
