@@ -336,6 +336,29 @@ faults the script like OnUpdate.
 C++ side: listeners in `Bindings/PhysicsBindings.cpp`, `EntityScriptSystem`
 step 5b, `ScriptRuntime::DispatchPhysicsEvent`.
 
+### Collider and MeshRenderer
+
+- `GetComponent<Collider>()` (or `Entity.Collider`): `Shape`
+  (`ColliderShape.Box` / `Sphere` / `Capsule`), `Size` (Box, full size),
+  `Radius` (Sphere / Capsule), `Height` (Capsule, total), `Center`, `Friction`,
+  `Bounciness`, `Layer` (`PhysicsLayer.NonMoving` / `Moving` / `Player` /
+  `Enemy` / `Projectile`), `IsTrigger`; read-only `WorldSize` / `WorldRadius` /
+  `WorldHeight` (after the Transform's scale, what physics uses).
+- Sizes are before scale, as in the Inspector. Size axes, Radius and Height
+  must be above 0; Friction and Bounciness not negative. Bad values are refused.
+- Every change rebuilds the physics body in that frame's step (a moving body
+  keeps its velocity); setting the same value again does nothing. Fine once in
+  a while, not every frame on many bodies.
+- `SetEnabled<Collider>(false)` removes the body (no collisions at all).
+- `GetComponent<MeshRenderer>()` (or `Entity.MeshRenderer`): `Visible` hides
+  only the mesh - collider, scripts and children carry on. Drawn the same frame.
+  `SetEnabled<MeshRenderer>(false)` works too. Mesh / material swapping is not
+  exposed yet (it would need Mesh / Material asset field types).
+
+C++ side: `Bindings/ColliderBindings.cpp` (both classes). Collider (Hugo's
+`Physics/PhysicsComponents.h`) and MeshRenderer are unchanged. Test:
+`Assets/Scripts/ColliderTest.cs`.
+
 ### Movement, raycasts and time
 
 - `GetComponent<CharacterController>()` (or `CharacterController`): Unity's

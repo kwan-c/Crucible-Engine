@@ -146,6 +146,8 @@ namespace Crucible::ScriptBindings
 			UIButton = 13,
 			UIRect = 14,
 			UICanvas = 15,
+			Collider = 16,
+			MeshRenderer = 17,
 		};
 
 		/*********************************************************************
@@ -213,6 +215,12 @@ namespace Crucible::ScriptBindings
 					return 1;
 				case ScriptComponentKind::AudioSource:
 					*out = world.HasComponent<Crucible::AudioSource>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::Collider:
+					*out = world.HasComponent<Crucible::Collider>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::MeshRenderer:
+					*out = world.HasComponent<MeshRenderer>(entity) ? 1 : 0;
 					return 1;
 				}
 				return 0;
