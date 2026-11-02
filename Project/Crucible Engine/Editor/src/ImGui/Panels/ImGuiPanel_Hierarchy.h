@@ -108,7 +108,8 @@ namespace Crucible {
 
 		// One copied entity: its component snapshot, and the index of its parent in the same list
 		// (-1 for the top entity). Parents always come before their children.
-		struct ClipNode { int parent; std::string snapshot; };
+		// sceneId: the original's scene id (0 if it had none), so references inside the copy can be pointed at the copies.
+		struct ClipNode { int parent; std::string snapshot; std::uint64_t sceneId = 0; };
 		// One subtree per copied entity (several when a multi-selection was copied).
 		std::vector<std::vector<ClipNode>> m_clipboard;
 

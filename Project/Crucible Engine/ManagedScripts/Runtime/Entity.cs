@@ -1,7 +1,7 @@
 /*************************************************************************
 * \file:         Entity.cs
-* \author:       <author>
-* \par:          Email: <email>
+* \author:       Tan Chun Kwang Xavier
+* \par:          Email: chunkwangxavier.tan@digipen.edu
 * \date          1 November 2026
 * \version       1.0
 * \brief         A reference to an entity in the scene, with access to its

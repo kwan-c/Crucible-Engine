@@ -1,7 +1,7 @@
 /*************************************************************************
 * \file:         ScriptTypes.h
-* \author:       <author>
-* \par:          Email: <email>
+* \author:       Tan Chun Kwang Xavier
+* \par:          Email: chunkwangxavier.tan@digipen.edu
 * \date          30 October 2026
 * \version       1.0
 * \brief         Plain data types shared by the scripting system.

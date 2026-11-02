@@ -31,6 +31,8 @@
 #include <memory>
 #include <algorithm>
 #include <unordered_set>
+#include <unordered_map>
+#include <Scene/EntityRefs.h>
 
 namespace {
 	// Drag-and-drop payload for a Hierarchy row (the dragged Entity, by value). Shared through
@@ -855,7 +857,7 @@ std::vector<Crucible::Hierarchy::ClipNode> Crucible::Hierarchy::CopySubtree(Enti
 	// to an already-created parent in the original sibling order.
 	auto visit = [&](auto&& self, Entity node, int parent) -> void {
 		int const index = static_cast<int>(nodes.size());
-		nodes.push_back({ parent, EntityState::Capture(m_world, node) });
+		nodes.push_back({ parent, EntityState::Capture(m_world, node), m_scenes.Current().IdOf(node).m_Value });
 		m_world.ForEachChild(node, [&](Entity child) { self(self, child, index); });
 	};
 	visit(visit, root, -1);
@@ -882,6 +884,21 @@ Crucible::Entity Crucible::Hierarchy::PasteSubtree(std::vector<ClipNode> const& 
 			}
 		}
 		created.push_back(entity);
+	}
+
+	// References inside the copied subtree (script Entity fields, joint connected bodies) still hold
+	// the originals' scene ids - point them at the copies, like Unity. References to entities outside
+	// the subtree stay as they are.
+	std::unordered_map<std::uint64_t, Entity> copyOf;
+	for (std::size_t i = 0; i < nodes.size(); ++i) {
+		if (nodes[i].sceneId != 0) { copyOf[nodes[i].sceneId] = created[i]; }
+	}
+	if (!copyOf.empty()) {
+		EntityRefs::Map const map = [&](std::uint64_t id) -> std::uint64_t {
+			auto const found = copyOf.find(id);
+			return found != copyOf.end() ? m_scenes.EnsureId(found->second).m_Value : id;
+		};
+		for (Entity const entity : created) { EntityRefs::RemapEntity(m_world, entity, map); }
 	}
 
 	Entity const root = created.front();
