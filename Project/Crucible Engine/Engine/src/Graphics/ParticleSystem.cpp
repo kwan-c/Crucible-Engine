@@ -93,10 +93,28 @@ namespace Crucible {
             }
             state.seenFrame = m_frame;
 
+            // Emit / Restart asked for since the last update (gameplay runs before PreRender).
+            const Request* request = nullptr;
+            for (const Request& r : m_requests) {
+                if (r.entity == entity) { request = &r; break; }
+            }
+            if (request && request->restart) {
+                state.time       = 0.0f;
+                state.spawnDebt  = 0.0f;
+                state.burstDone  = false;              // Simulate fires the burst this frame (if playing)
+                state.wasPlaying = settings.playing;   // so Simulate does not see a second "start"
+            }
+
             Simulate(state, settings, worldTransform.matrix, dt);
+            if (request && request->emit > 0) {
+                Spawn(state, settings, worldTransform.matrix, request->emit);   // playing or not; maxParticles still applies
+            }
             Submit(state, settings, worldTransform.matrix);
             m_liveParticles += static_cast<std::uint32_t>(state.particles.size());
         });
+
+        // Requests are for this frame only: any for an entity not updated above are dropped.
+        m_requests.clear();
 
         // Emitters whose entity is gone (destroyed, or lost its component): free their particles.
         for (size_t i = m_active.size(); i-- > 0;) {
@@ -116,6 +134,39 @@ namespace Crucible {
         for (const LightCandidate& candidate : m_lights) { m_renderer.SubmitLight(candidate.light); }
 
     }   // ParticleSystem::Update()
+
+    ParticleSystem::Request& ParticleSystem::RequestFor(Entity entity) {
+
+        for (Request& r : m_requests) {
+            if (r.entity == entity) { return r; }
+        }
+        m_requests.push_back(Request{ entity });
+        return m_requests.back();
+
+    }   // ParticleSystem::RequestFor()
+
+    void ParticleSystem::Emit(Entity entity, int count) {
+
+        if (count <= 0) { return; }
+        Request& r = RequestFor(entity);
+        r.emit = static_cast<int>(std::min<long long>(static_cast<long long>(r.emit) + count, kMaxParticlesPerEmitter));
+
+    }   // ParticleSystem::Emit()
+
+    void ParticleSystem::Restart(Entity entity) {
+
+        RequestFor(entity).restart = true;
+
+    }   // ParticleSystem::Restart()
+
+    std::uint32_t ParticleSystem::GetParticleCount(Entity entity) const {
+
+        if (entity.index >= m_emitters.size()) { return 0; }
+        const Emitter& state = m_emitters[entity.index];
+        if (!state.inUse || state.generation != entity.generation) { return 0; }
+        return static_cast<std::uint32_t>(state.particles.size());
+
+    }   // ParticleSystem::GetParticleCount()
 
     void ParticleSystem::Spawn(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, int count) {
 

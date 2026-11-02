@@ -238,6 +238,7 @@ namespace Crucible {
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
+        if (m_scriptRuntime->IsRunning()) if (auto* particles = m_systems.FindSystem<ParticleSystem>()) m_scriptRuntime->SetParticleSystemBinding(particles);   // C# ParticleEmitter Emit / Restart / ParticleCount
         m_systems.RegisterSystem<VineSystem>(*m_renderer, m_resources.get());            // PreRender: grows/simulates Vines (proof of concept), submits their meshes
         m_systems.RegisterSystem<WorldTextSystem>(*m_renderer, m_resources.get());       // PreRender, Edit mode too: lays out WorldText components and submits their glyphs
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
@@ -255,6 +256,7 @@ namespace Crucible {
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetUserSettingsBinding(nullptr);
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetPhysicsBinding(nullptr);
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetRendererBinding(nullptr);
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetParticleSystemBinding(nullptr);
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }

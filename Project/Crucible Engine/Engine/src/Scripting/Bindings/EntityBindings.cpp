@@ -139,6 +139,7 @@ namespace Crucible::ScriptBindings
 			Camera = 6,       // the CameraComponent
 			CameraOrbit = 7,
 			Light = 8,
+			ParticleEmitter = 9,
 		};
 
 		/*********************************************************************
@@ -170,6 +171,9 @@ namespace Crucible::ScriptBindings
 					return 1;
 				case ScriptComponentKind::Script:
 					*out = world.HasComponent<ScriptComponent>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::ParticleEmitter:
+					*out = world.HasComponent<Crucible::ParticleEmitter>(entity) ? 1 : 0;
 					return 1;
 				case ScriptComponentKind::Light:
 					*out = world.HasComponent<Crucible::Light>(entity) ? 1 : 0;

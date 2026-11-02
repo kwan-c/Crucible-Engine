@@ -46,6 +46,7 @@ namespace Crucible
 	struct UserSettings;
 	class Physics;
 	class Renderer;
+	class ParticleSystem;
 
 	/*********************************************************************
 	 \brief  NotStarted  = Initialize() not called yet.
@@ -389,6 +390,13 @@ namespace Crucible
 		         before shutdown).
 		 *********************************************************************/
 		bool SetRendererBinding(const Renderer* renderer);
+
+		/*********************************************************************
+		 \brief  Gives the C# ParticleEmitter class the particle system (Emit,
+		         Restart, ParticleCount). Pass nullptr to disconnect (Core does
+		         this before shutdown).
+		 *********************************************************************/
+		bool SetParticleSystemBinding(ParticleSystem* system);
 
 	private:
 		/*********************************************************************

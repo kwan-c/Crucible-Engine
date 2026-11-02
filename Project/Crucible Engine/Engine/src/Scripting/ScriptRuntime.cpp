@@ -2359,6 +2359,22 @@ namespace Crucible
 #endif
 	}
 
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetParticleSystem.
+	 *********************************************************************/
+	bool ScriptRuntime::SetParticleSystemBinding(ParticleSystem* system)
+	{
+		if (!m_impl->Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::SetParticleSystem(system);
+		return true;
+#else
+		(void)system;
+		return false;
+#endif
+	}
+
 	bool ScriptRuntime::DiscoverEntityClasses(ScriptAssemblyHandle assembly,
 	                                          std::vector<ScriptClassInfo>& classes)
 	{

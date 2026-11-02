@@ -36,7 +36,9 @@ namespace Crucible::ScriptingDetail
 	struct ScriptVec2 { float x, y; };        // Crucible.Vector2
 	struct ScriptVec3 { float x, y, z; };     // Crucible.Vector3
 	struct ScriptQuat { float x, y, z, w; };  // Crucible.Quaternion (X, Y, Z, W order)
-	static_assert(sizeof(ScriptVec2) == 8 && sizeof(ScriptVec3) == 12 && sizeof(ScriptQuat) == 16,
+	struct ScriptColor { float r, g, b, a; }; // Crucible.Color (R, G, B, A order)
+	static_assert(sizeof(ScriptVec2) == 8 && sizeof(ScriptVec3) == 12 && sizeof(ScriptQuat) == 16 &&
+	                  sizeof(ScriptColor) == 16,
 	              "must match the C# structs");
 
 	/*********************************************************************

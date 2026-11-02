@@ -4,7 +4,7 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          05 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                ECS system that simulates every ParticleEmitter and hands
 *                the live particles (and their light) to the Renderer.
@@ -34,6 +34,8 @@
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       Emit / Restart requests and per-emitter GetParticleCount,
+*                for C# scripting (ParticleEmitter.Emit / Restart / ParticleCount)
 **************************************************************************/
 
 #include "ECS/Systems/IECSSystems.h"
@@ -87,6 +89,33 @@ namespace Crucible {
         /// Live particles over all emitters after the last Update().
         std::uint32_t GetLiveParticleCount() const { return m_liveParticles; }
 
+        // --- Requests from gameplay (C# ParticleEmitter) --------------------- //
+        // Applied at this system's next Update. It runs in PreRender, after
+        // gameplay, so a request made during Update lands in the same frame.
+        // Main thread only. A request for an entity without a (valid) emitter
+        // that frame is dropped.
+
+        /*********************************************************************
+         \brief  Unity's ParticleSystem.Emit: spawn `count` particles from the
+                 entity's emitter now, whether or not it is playing. They use
+                 the emitter's usual settings and still respect maxParticles.
+         *********************************************************************/
+        void Emit(Entity entity, int count);
+
+        /*********************************************************************
+         \brief  Start a fresh run (time 0, the burst fires again) at the next
+                 update, even if the emitter is already playing. Does not
+                 change ParticleEmitter::playing - a stopped emitter only
+                 restarts once it is playing.
+         *********************************************************************/
+        void Restart(Entity entity);
+
+        /*********************************************************************
+         \brief  Live particles of one emitter after the last Update(); 0 for
+                 an entity with no emitter (or a different generation).
+         *********************************************************************/
+        std::uint32_t GetParticleCount(Entity entity) const;
+
     private:
         struct Particle {
             glm::vec3 position{ 0.0f };   // world space, or emitter-local when !worldSpace
@@ -113,6 +142,13 @@ namespace Crucible {
 
         struct LightCandidate { LightData light; float score = 0.0f; };
 
+        // An Emit / Restart waiting for the entity's next update.
+        struct Request {
+            Entity entity{};
+            int    emit = 0;          // extra particles to spawn
+            bool   restart = false;   // begin a fresh run first
+        };
+
         using EmitterQuery = Query<const WorldTransform, const ParticleEmitter>;
 
         void Simulate(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, float dt);
@@ -126,6 +162,9 @@ namespace Crucible {
         std::vector<std::uint32_t>  m_active;           // indices into m_emitters that are in use
         std::vector<GpuParticle>    m_gpuScratch;
         std::vector<LightCandidate> m_lights;
+        std::vector<Request>        m_requests;         // Emit / Restart for the next Update
+
+        Request& RequestFor(Entity entity);
         std::uint64_t               m_frame = 0;
         std::uint32_t               m_liveParticles = 0;
     };

@@ -215,6 +215,32 @@ are unchanged; Core passes the Renderer (`SetRendererBinding`).
 
 C++ side: `Bindings/LightBindings.cpp`. The Light component is unchanged.
 
+### Particles
+
+- `GetComponent<ParticleEmitter>()` (or `Entity.ParticleEmitter`):
+  - `Play()` (a stopped emitter starts a fresh run, burst included), `Stop()`
+    (no new particles; live ones finish), `Restart()` (a fresh run this frame,
+    even while playing), `Emit(count)` (extra particles this frame, playing or
+    not; `MaxParticles` still caps), `IsEmitting`, `ParticleCount` (alive as of
+    last frame), `IsAlive` (emitting or particles alive - false once a finished
+    effect has faded, so it is safe to `Destroy`).
+  - Spawning: `Loop`, `Duration`, `Rate`, `BurstCount`, `MaxParticles`,
+    `Spread`, `WorldSpace`.
+  - Each particle: `LifetimeMin/Max`, `SpeedMin/Max`, `SizeMin/Max`,
+    `EndSizeScale`, `GravityScale`, `Drag`.
+  - Look: `StartColor`, `EndColor` (`Color`, alpha = opacity), `Brightness`.
+  - Light: `EmitLight`, `LightColor`, `LightIntensity`, `LightRange`.
+  - Shape, texture, flipbook and blend stay Inspector-only.
+- Particles fire around local **+Y** (not Forward): rotate the entity to aim.
+- `Restart` and `Emit` are requests to `ParticleSystem` (v1.1:
+  `ParticleSystem::Restart`, `Emit`, `GetParticleCount`), applied at its next
+  update - PreRender, after scripts, so the same frame. A request for an entity
+  without a valid emitter that frame is dropped.
+
+C++ side: `Bindings/ParticleBindings.cpp`, and `Graphics/ParticleSystem.*`
+(the request list and per-emitter count; Core passes the system with
+`SetParticleSystemBinding`). The component is unchanged.
+
 ### Scene loading
 
 - `Scene.Load("Scenes/Level2.scene")` (a path inside Assets), `Scene.Reload()`,

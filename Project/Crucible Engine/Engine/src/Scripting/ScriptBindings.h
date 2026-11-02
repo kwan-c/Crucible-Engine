@@ -35,6 +35,7 @@ namespace Crucible
 	struct UserSettings;
 	class Physics;
 	class Renderer;
+	class ParticleSystem;
 
 	namespace ScriptBindings
 	{
@@ -94,6 +95,14 @@ namespace Crucible
 		 *********************************************************************/
 		void SetRenderer(const Renderer* renderer);
 
+		/*********************************************************************
+		 \brief  Gives the C# ParticleEmitter class the particle system (Emit,
+		         Restart, ParticleCount). nullptr clears it. Non-owning; main
+		         thread only. Called through ScriptRuntime::SetParticleSystemBinding.
+		         Defined in Bindings/ParticleBindings.cpp.
+		 *********************************************************************/
+		void SetParticleSystem(ParticleSystem* system);
+
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
 		void RegisterAnimatorBindings(); // Bindings/AnimatorBindings.cpp (C# Animator)
@@ -108,5 +117,6 @@ namespace Crucible
 		void RegisterSceneBindings();     // Bindings/SceneBindings.cpp     (C# Scene)
 		void RegisterCameraBindings();    // Bindings/CameraBindings.cpp    (C# Camera, CameraOrbit)
 		void RegisterLightBindings();     // Bindings/LightBindings.cpp     (C# Light)
+		void RegisterParticleBindings();  // Bindings/ParticleBindings.cpp  (C# ParticleEmitter)
 	}
 }
