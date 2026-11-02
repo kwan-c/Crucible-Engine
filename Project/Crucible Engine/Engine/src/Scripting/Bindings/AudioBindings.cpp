@@ -455,6 +455,11 @@ namespace Crucible::ScriptBindings
 		userSettings = settings;
 	}
 
+	UserSettings* GetUserSettings()
+	{
+		return userSettings;
+	}
+
 	void RegisterAudioBindings()
 	{
 		Add("Crucible.Audio::GetBusVolumeInternal", &ManagedAudioGetBusVolume);

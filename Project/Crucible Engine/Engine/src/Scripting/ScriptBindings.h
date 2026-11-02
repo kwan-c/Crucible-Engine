@@ -80,6 +80,12 @@ namespace Crucible
 		void SetUserSettings(UserSettings* settings);
 
 		/*********************************************************************
+		 brief  The player's settings given to SetUserSettings, or nullptr.
+		         For other bindings that edit them (InputSettingsBindings.cpp).
+		 *********************************************************************/
+		UserSettings* GetUserSettings();
+
+		/*********************************************************************
 		 \brief  Gives C# Physics.Raycast the physics world (ECSPhysicsSystem's).
 		         nullptr clears it. Non-owning; main thread only. Called through
 		         ScriptRuntime::SetPhysicsBinding. Defined in
@@ -137,5 +143,7 @@ namespace Crucible
 		void RegisterUIBindings();        // Bindings/UIBindings.cpp        (C# UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, UI)
 		void RegisterEnableBindings();    // Bindings/EnableBindings.cpp    (C# SetEnabled<T>, SetActive, EntityScript.Enabled)
 		void RegisterColliderBindings();  // Bindings/ColliderBindings.cpp  (C# Collider, MeshRenderer)
+		void RegisterPlayerControllerBindings(); // Bindings/PlayerControllerBindings.cpp (C# PlayerController)
+		void RegisterInputSettingsBindings();  // Bindings/InputSettingsBindings.cpp (C# InputSettings: keybinds, look sensitivity)
 	}
 }

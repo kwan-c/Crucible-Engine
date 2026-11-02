@@ -359,6 +359,34 @@ C++ side: `Bindings/ColliderBindings.cpp` (both classes). Collider (Hugo's
 `Physics/PhysicsComponents.h`) and MeshRenderer are unchanged. Test:
 `Assets/Scripts/ColliderTest.cs`.
 
+### Keybinds (InputSettings) and PlayerController
+
+- The mech's keys are the PLAYER'S settings, not the scene's: `UserSettings.json`
+  (next to Editor.exe / the game .exe, never in git), under `"input/keys"`,
+  saved by key name:
+  `{ "forward": "W", "back": "S", "left": "A", "right": "D", "jump": "Space", "jumpButton": "GamepadA" }`.
+  Every scene and every mech uses them. A missing or misspelled key keeps its
+  default; delete the file to reset everything. The gamepad's left stick always
+  walks.
+- Static `InputSettings`: `ForwardKey`, `BackKey`, `LeftKey`, `RightKey`,
+  `JumpKey`, `JumpButton` (any `KeyCode`, mouse / gamepad buttons too;
+  `KeyCode.Unknown` = unbound), `ResetKeys()`, plus `MouseSensitivity`,
+  `StickSensitivity` (0.1 .. 10) and `InvertY`. A change applies at once;
+  `InputSettings.Save()` writes the file (`Audio.SaveSettings()` writes the
+  same file). Like the volumes, changes are NOT undone by Stop and are lost on
+  exit unless saved.
+- `GetComponent<PlayerController>()` (or `Entity.PlayerController`):
+  `MoveSpeed`, `JumpHeight` (0 = no jumping), `FaceCamera` - designer values,
+  saved in the scene. `SetEnabled<PlayerController>(false)` stops the mech.
+- Changed in Hugo's files (tell Hugo): `Configuration/UserSettings.h/.cpp`
+  v1.1 (the key fields, load / save by name), `ECS/ECSPlayerControllerSystem.cpp`
+  v1.7 (reads them instead of hardcoded WASD / Space / A). The PlayerController
+  component itself is unchanged.
+
+C++ side: `Bindings/InputSettingsBindings.cpp` (uses `GetUserSettings()` from
+`AudioBindings.cpp`), `Bindings/PlayerControllerBindings.cpp`. Test:
+`Assets/Scripts/KeybindTest.cs`.
+
 ### Movement, raycasts and time
 
 - `GetComponent<CharacterController>()` (or `CharacterController`): Unity's

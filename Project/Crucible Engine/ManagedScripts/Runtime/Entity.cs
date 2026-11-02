@@ -57,6 +57,7 @@ namespace Crucible
         private ParticleEmitter particleEmitter;
         private Collider collider;
         private MeshRenderer meshRenderer;
+        private PlayerController playerController;
 
         internal Entity(uint index, uint generation)
         {
@@ -93,6 +94,8 @@ namespace Crucible
         public Collider Collider { get { return collider ?? (collider = new Collider(Identity)); } }
         /// <summary>This entity's MeshRenderer (needs a MeshRenderer component).</summary>
         public MeshRenderer MeshRenderer { get { return meshRenderer ?? (meshRenderer = new MeshRenderer(Identity)); } }
+        /// <summary>This entity's PlayerController: move speed, jump, facing (keys: InputSettings).</summary>
+        public PlayerController PlayerController { get { return playerController ?? (playerController = new PlayerController(Identity)); } }
 
         /// <summary>False once the entity has been destroyed (and outside Play).</summary>
         public bool IsAlive
@@ -150,7 +153,7 @@ namespace Crucible
 
         /// <summary>
         /// The entity's component or script of type T, or null if it has none.
-        /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, or a script class (e.g. GetComponent&lt;Door&gt;()).
+        /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, or a script class (e.g. GetComponent&lt;Door&gt;()).
         /// A script found during OnCreate may not have run its own OnCreate yet.
         /// </summary>
         public T GetComponent<T>() where T : class
@@ -178,6 +181,8 @@ namespace Crucible
                 return Has(ComponentKind.Collider) ? (T)(object)Collider : null;
             if (type == typeof(MeshRenderer))
                 return Has(ComponentKind.MeshRenderer) ? (T)(object)MeshRenderer : null;
+            if (type == typeof(PlayerController))
+                return Has(ComponentKind.PlayerController) ? (T)(object)PlayerController : null;
             if (type == typeof(UIText))   return Has(ComponentKind.UIText)   ? (T)(object)new UIText(Identity)   : null;
             if (type == typeof(UIImage))  return Has(ComponentKind.UIImage)  ? (T)(object)new UIImage(Identity)  : null;
             if (type == typeof(UISlider)) return Has(ComponentKind.UISlider) ? (T)(object)new UISlider(Identity) : null;
@@ -187,7 +192,7 @@ namespace Crucible
             if (typeof(EntityScript).IsAssignableFrom(type))
                 return GetScriptInternal((int)index, (int)generation) as T;
             throw new ArgumentException("GetComponent<" + type.Name +
-                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, a UI component or a script class.");
+                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, a UI component or a script class.");
         }
 
         /// <summary>Does the entity have a component or script of type T? See GetComponent.</summary>
@@ -252,6 +257,7 @@ namespace Crucible
             if (type == typeof(ParticleEmitter)) return (int)ComponentKind.ParticleEmitter;
             if (type == typeof(Collider)) return (int)ComponentKind.Collider;
             if (type == typeof(MeshRenderer)) return (int)ComponentKind.MeshRenderer;
+            if (type == typeof(PlayerController)) return (int)ComponentKind.PlayerController;
             if (type == typeof(UIText)) return (int)ComponentKind.UIText;
             if (type == typeof(UIImage)) return (int)ComponentKind.UIImage;
             if (type == typeof(UISlider)) return (int)ComponentKind.UISlider;
@@ -283,6 +289,7 @@ namespace Crucible
             UICanvas = 15,
             Collider = 16,
             MeshRenderer = 17,
+            PlayerController = 18,
         }
 
         private bool Has(ComponentKind kind)

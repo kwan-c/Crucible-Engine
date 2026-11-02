@@ -71,6 +71,7 @@ namespace Crucible::ScriptBindings
 			case 15: return ComponentTypeId<UICanvas>();
 			case 16: return ComponentTypeId<Collider>();
 			case 17: return ComponentTypeId<MeshRenderer>();
+			case 18: return ComponentTypeId<PlayerController>();
 			default: return kInvalid; // 0 = Transform: mandatory
 			}
 		}

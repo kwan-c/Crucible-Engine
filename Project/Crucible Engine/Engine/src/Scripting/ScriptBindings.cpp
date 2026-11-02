@@ -31,6 +31,8 @@ namespace Crucible::ScriptBindings
 		RegisterUIBindings();
 		RegisterEnableBindings();
 		RegisterColliderBindings();
+		RegisterPlayerControllerBindings();
+		RegisterInputSettingsBindings();
 	}
 
 	void ClearAll()
