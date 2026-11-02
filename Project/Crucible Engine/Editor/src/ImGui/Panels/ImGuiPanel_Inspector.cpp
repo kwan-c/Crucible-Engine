@@ -805,9 +805,10 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 		bool any = false;
 
 		// Same X-macro as the inspector loop. Skips mandatory components (Transform,
-		// WorldTransform, HierarchyNode), World-managed ones, and ones already present.
+		// WorldTransform, HierarchyNode), World-managed ones, runtime-only ones (never saved,
+		// so an added one would vanish on save), and ones already present.
 #define CRU_ADD_COMPONENT_ITEM(T)																			    \
-		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !std::is_same_v<T, ScriptComponent> && !std::is_same_v<T, PrefabInstance>) { \
+		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !RuntimeOnly<T>::value && !std::is_same_v<T, ScriptComponent> && !std::is_same_v<T, PrefabInstance>) { \
 			std::string_view const name = ComponentTraits<T>::name;											        \
 			if (!m_world.HasComponent<T>(entity) &&															        \
 				m_addComponentFilter.PassFilter(name.data(), name.data() + name.size())) {					        \
