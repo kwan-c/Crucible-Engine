@@ -5,7 +5,7 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          22 September 2026
-* \version       1.6
+* \version       1.9
 * \brief
 *                Crucible::Physics: the public face of the Jolt physics
 *                world. Bodies, characters, joints, raycasts and forces,
@@ -28,6 +28,12 @@
 *    -v1.5       joints: Fixed, Hinge, Ball, Character and Spring, with
 *                limits and breaking
 *    -v1.6       GetGroundVelocity, so a character rides what it stands on
+*    -v1.7       contacts: sensors (BodyDesc::m_isSensor), contact events
+*                after each Step, and ForEachContact
+*    -v1.8       queries: QueryFilter (layer mask, triggers, ignore) on
+*                Raycast, plus RaycastAll, SphereCast, CapsuleCast,
+*                OverlapSphere, OverlapBox and OverlapCapsule
+*    -v1.9       GetCenterOfMass and ClosestPointOnBody (for explosions)
 *
 **************************************************************************/
 #pragma once
@@ -35,6 +41,8 @@
 // STL
 #include <cstdint>
 #include <cstddef>
+#include <functional>   // ForEachContact
+#include <vector>       // RaycastAll, Overlap*
 
 // Crucible engine
 #include "EngineExport.h"
@@ -170,9 +178,46 @@ namespace Crucible {
         float         m_linearDamping  = 0.0f; // Unity's drag: speed lost per second. 0 matches Unity's default
         float         m_angularDamping = 0.05f;// Unity's angularDrag: spin lost per second (Unity and Jolt both default to 0.05)
         std::uint8_t  m_lockedAxes     = AxisLock::None; // AxisLock bits. Dynamic bodies only; locking ALL of them is refused (make it Static)
+        bool          m_isSensor    = false;   // Unity's isTrigger: reports what enters and leaves, blocks nothing
         std::uint64_t m_userData    = 0;       // yours. The ECS binding puts the Entity in here
 
     };  // BODYDESC STRUCT
+
+    // Two bodies started or stopped touching during the last Step.
+    // Unity's OnCollisionEnter/Exit and OnTriggerEnter/Exit, as a list (GetContactEvent).
+    enum class ContactEventType : std::uint8_t { Began, Ended };
+
+    struct ContactEvent {
+
+        ContactEventType m_type        = ContactEventType::Began;
+        BodyHandle       m_body1       {};
+        BodyHandle       m_body2       {};
+        std::uint64_t    m_userData1   = 0;
+        std::uint64_t    m_userData2   = 0;
+        bool             m_isSensor1   = false;     // either one a sensor: a trigger event, not a collision
+        bool             m_isSensor2   = false;
+        Math::vec3       m_point       = Math::vec3(0.0f, 0.0f, 0.0f);   // Began only: where they touched first
+        Math::vec3       m_normal      = Math::vec3(0.0f, 1.0f, 0.0f);   // Began only: from body 1 toward body 2
+        float            m_impactSpeed = 0.0f;      // Began only: how fast they closed in along the normal, m/s
+
+    };  // CONTACTEVENT STRUCT
+
+    // One body that a given body is touching right now (ForEachContact), with
+    // the latest contact points - what Unity's Collision.contacts holds.
+    struct BodyContact {
+
+        static constexpr std::uint32_t kMaxPoints = 4;
+
+        BodyHandle    m_other         {};
+        std::uint64_t m_otherUserData = 0;
+        bool          m_otherIsSensor = false;
+        bool          m_selfIsSensor  = false;
+        Math::vec3    m_normal        = Math::vec3(0.0f, 1.0f, 0.0f);   // from the body asked about toward the other
+        Math::vec3    m_points[kMaxPoints] {};
+        std::uint32_t m_pointCount    = 0;
+        bool          m_resting       = false;   // asleep: still touching, the points are from before it slept
+
+    };  // BODYCONTACT STRUCT
 
     // Unity's RaycastHit. Only filled in when Raycast returns true.
     struct RaycastHit {
@@ -184,6 +229,24 @@ namespace Crucible {
         float         m_distance = 0.0f;
 
     };  // RAYCASTHIT STRUCT
+
+    // What every query may hit: Unity's layerMask and QueryTriggerInteraction,
+    // plus the one body to see through (a shooter's own, or a mech's hidden body).
+    struct QueryFilter {
+
+        LayerMask  m_layers      = LayerMask::All();
+        bool       m_hitTriggers = false;   // false: sensors are invisible to it - a shot is never stopped by a pickup zone
+        BodyHandle m_ignore      {};
+
+    };  // QUERYFILTER STRUCT
+
+    // One body an Overlap query found.
+    struct OverlapHit {
+
+        BodyHandle    m_body     {};
+        std::uint64_t m_userData = 0;
+
+    };  // OVERLAPHIT STRUCT
 
     /*
         Unity's CharacterController, as a description. A capsule that walks: it
@@ -377,6 +440,10 @@ namespace Crucible {
         // sync; see GetMovedBody below for the one that skips sleeping bodies.
         void GetTransform(const BodyHandle& body, Math::vec3& outPosition, Math::quat& outRotation) const;
 
+        // Where the body's mass is centred, in the world. Not always its position: a
+        // collider with an offset centre moves it. What a push "at the centre" means.
+        Math::vec3 GetCenterOfMass(const BodyHandle& body) const;
+
         // Moves a kinematic body toward a target over one step by giving it the
         // velocity that gets it there. That velocity is what lets it push dynamic
         // bodies; SetTransform would slide it straight through them.
@@ -472,18 +539,51 @@ namespace Crucible {
         std::uint32_t GetBrokenJointCount() const;
         bool          GetBrokenJoint(std::uint32_t index, JointHandle& outJoint, std::uint64_t& outUserData) const;
 
-        // --- queries ---
+        // --- queries (Unity's Physics.Raycast, SphereCast, OverlapSphere...) ---
+        //
+        // Argument order matches Unity's on purpose, so this is the one place
+        // out-parameters are not last. Directions need not be normalised - that
+        // is done for you, the way Unity does it. Distances are in metres. Each
+        // takes a QueryFilter: which layers, whether triggers count, and one body
+        // to see through. A query that STARTS inside a shape hits it at distance
+        // 0 - pass the shooter's own body as m_ignore, or the mech shoots itself
+        // in the foot on frame one.
+        // Between steps, on the main thread (where all gameplay runs).
 
         // The weapon. True if the ray hit something, with the closest hit in
-        // outHit; false leaves outHit untouched. Argument order matches Unity's
-        // Physics.Raycast(origin, direction, out hit, maxDistance) on purpose,
-        // so this is the one place out-parameters are not last.
-        // Pass the shooter's own body as 'ignore' or the mech shoots itself in
-        // the foot on frame one.
-        // The direction need not be normalised - it is normalised for you, the
-        // way Unity does it. Distance is in metres.
+        // outHit; false leaves outHit untouched.
         bool Raycast(const Math::vec3& origin, const Math::vec3& direction, RaycastHit& outHit, float maxDistance,
-                     const BodyHandle& ignore = BodyHandle{}) const;
+                     const QueryFilter& filter = QueryFilter{}) const;
+
+        // Everything along the ray, nearest first - a piercing shot. Fills `out`
+        // (cleared first; reuse the vector and it never reallocates).
+        void RaycastAll(const Math::vec3& origin, const Math::vec3& direction, float maxDistance, std::vector<RaycastHit>& out,
+                        const QueryFilter& filter = QueryFilter{}) const;
+
+        // A ball of `radius` swept along a line: the first thing it would hit. A
+        // thick shot, a melee swing, a camera that must not poke into walls.
+        bool SphereCast(const Math::vec3& origin, float radius, const Math::vec3& direction, RaycastHit& outHit, float maxDistance,
+                        const QueryFilter& filter = QueryFilter{}) const;
+
+        // A capsule swept along a line. point1 and point2 are the centres of its
+        // two rounded ends, as in Unity - "would a mech this size get through?".
+        bool CapsuleCast(const Math::vec3& point1, const Math::vec3& point2, float radius, const Math::vec3& direction,
+                         RaycastHit& outHit, float maxDistance, const QueryFilter& filter = QueryFilter{}) const;
+
+        // Everything inside a shape right now, each body once. Explosions, area
+        // damage, "what is around me". Fill `out`, cleared first.
+        void OverlapSphere(const Math::vec3& center, float radius, std::vector<OverlapHit>& out,
+                           const QueryFilter& filter = QueryFilter{}) const;
+        void OverlapBox(const Math::vec3& center, const Math::vec3& halfExtents, const Math::quat& orientation, std::vector<OverlapHit>& out,
+                        const QueryFilter& filter = QueryFilter{}) const;
+        void OverlapCapsule(const Math::vec3& point0, const Math::vec3& point1, float radius, std::vector<OverlapHit>& out,
+                            const QueryFilter& filter = QueryFilter{}) const;
+
+        // The point on ONE body's surface nearest to `point`, if within maxDistance -
+        // "where does a blast here hit this crate". A point inside the body is
+        // distance 0. False if the body is further than maxDistance, or gone.
+        bool ClosestPointOnBody(const BodyHandle& body, const Math::vec3& point, float maxDistance,
+                                Math::vec3& outPoint, float& outDistance) const;
 
         // --- reading results back ---
 
@@ -493,6 +593,21 @@ namespace Crucible {
         // binding with GetTransform per body, and switch when the profiler says to.
         std::uint32_t GetMovedBodyCount() const;
         bool          GetMovedBody(std::uint32_t index, std::uint64_t& outUserData, Math::vec3& outPosition, Math::quat& outRotation) const;
+
+        // --- contacts (Unity's collision and trigger messages) ---
+
+        // After Step: the pairs that started or stopped touching in it, the same
+        // list pattern as GetMovedBody. A body going to SLEEP is not an Ended:
+        // a settled crate is still lying on the floor. Ended does come for a
+        // destroyed body, one step after it is destroyed.
+        std::uint32_t GetContactEventCount() const;
+        bool          GetContactEvent(std::uint32_t index, ContactEvent& outEvent) const;
+
+        // Everything a body is touching right now, sleepers included - for
+        // "who is inside this trigger" and Unity's OnCollisionStay contacts.
+        // Visits nothing for a stale handle. Costs one pass over the touching
+        // pairs, and only when called.
+        void ForEachContact(const BodyHandle& body, const std::function<void(const BodyContact&)>& visit) const;
 
     private:
 

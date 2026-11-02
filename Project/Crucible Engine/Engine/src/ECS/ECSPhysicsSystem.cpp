@@ -5,7 +5,7 @@
 * \par:          Email: a.patchamuthu@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       2.6
+* \version       3.0
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -52,6 +52,16 @@
 *                frame's steps; a static collider moved frame after frame
 *                is reported (kWarnMovingStatic). Characters ride the
 *                ground's velocity and now move after the step, not before
+*    -v2.7       Collider::m_isTrigger; collision and trigger events sent
+*                on the engine bus after each frame's steps;
+*                GetTriggerOccupants and GetContacts
+*    -v2.8       the queries in entities (Raycast ... OverlapCapsule), with
+*                EntityFilter turned into Physics' QueryFilter (ToQuery)
+*    -v2.9       AddExplosionForce and Explode; Force-mode explosions join
+*                the frame's forces through explosionPushes (TakeForces)
+*    -v3.0       explosions match Unity's documented rules: a blast inside
+*                the body pushes at its centre of mass; upwardsModifier
+*                also lowers the point the push lands on
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -67,7 +77,9 @@
 #include "Diagnostics/Logger.h"
 #include "Physics/PhysicsComponents.h"
 #include "Scene/SceneManager.h"
+#include "ECS/Systems/EventBus/EventWriter.h"   // ctx.events.EmitEngine (SystemContext only forward-declares it)
 #include "Systems/Query.h"
+#include "Systems/SystemContext.h"
 #include "World.h"
 
 namespace {
@@ -124,7 +136,7 @@ namespace {
             && a.m_friction == b.m_friction && a.m_restitution == b.m_restitution
             && a.m_gravityFactor == b.m_gravityFactor
             && a.m_linearDamping == b.m_linearDamping && a.m_angularDamping == b.m_angularDamping
-            && a.m_lockedAxes == b.m_lockedAxes;
+            && a.m_lockedAxes == b.m_lockedAxes && a.m_isSensor == b.m_isSensor;
 
     }   // SameRecipe()
 
@@ -351,6 +363,27 @@ namespace Crucible {
         std::uint32_t stepOfFrame    = 0;                       // which of this frame's steps is running (DriveKinematic)
         float         frameTime      = 0.0f;                    // this frame's time, as the clock counted it
         float         owedBefore     = 0.0f;                    // the accumulator before this frame's time was added
+
+        // This frame's collision and trigger events, gathered after every step and
+        // sent at the end of Update (the event writer only exists during Update).
+        std::vector<PhysicsEvents::CollisionEnter> collisionEnters;
+        std::vector<PhysicsEvents::CollisionExit>  collisionExits;
+        std::vector<PhysicsEvents::TriggerEnter>   triggerEnters;
+        std::vector<PhysicsEvents::TriggerExit>    triggerExits;
+
+        // Reused by the entity queries, so asking every frame never allocates.
+        // Mutable: the queries are const, and this is scratch, not state.
+        mutable std::vector<RaycastHit> scratchHits;
+        mutable std::vector<OverlapHit> scratchOverlaps;
+        std::vector<Entity>             scratchEntities;     // Explode's sphere
+
+        // Force-mode explosions asked for since the last Sync, keyed like records.
+        // TakeForces adds them to the frame's forces - the same path AddForce takes,
+        // so they last this frame's steps and no longer. (Not written onto the
+        // RigidBody component: a gameplay system would then need to declare
+        // RigidBody access just to set off an explosion.)
+        struct PendingPush { Math::vec3 force{ 0.0f, 0.0f, 0.0f }; Math::vec3 torque{ 0.0f, 0.0f, 0.0f }; };
+        std::unordered_map<std::uint64_t, PendingPush> explosionPushes;
         bool          inSession      = false;                   // between BeginSession and EndSession
 
         void BindWorld(World& ecs);
@@ -362,6 +395,10 @@ namespace Crucible {
         void TakeForces(World& ecs, Record& record, const RigidBody* rigidbody);
         void PushForces(Record& record);
         void DriveKinematic(Record& record);
+        void CollectContacts();
+        bool PushFromBlast(const Entity& entity, float force, const Math::vec3& position, float radius, float upwards, ForceMode mode);
+        BodyHandle BodyOf(const Entity& entity) const;
+        QueryFilter ToQuery(const EntityFilter& filter) const;
         void SyncJoints(World& ecs);
         void SyncJoint(World& ecs, JointRecord& record, const PhysicsJoint& joint);
         void DropJoint(JointRecord& record);
@@ -461,13 +498,269 @@ namespace Crucible {
     Physics&      ECSPhysicsSystem::GetPhysics()              { return m_state->physics; }
     std::uint32_t ECSPhysicsSystem::GetStepsLastFrame() const { return m_state->stepsLastFrame; }
 
+    // Only the pairs where the entity's own body is the sensor: a crate inside
+    // a trigger is not "occupying" the crate.
+    void ECSPhysicsSystem::GetTriggerOccupants(const Entity& trigger, std::vector<Entity>& out) const {
+
+        out.clear();
+        const State& s = *m_state;
+        s.physics.ForEachContact(s.BodyOf(trigger), [&](const BodyContact& contact) {
+            if (contact.m_selfIsSensor) out.push_back(UserDataToEntity(contact.m_otherUserData));
+        });
+
+    }   // ECSPhysicsSystem::GetTriggerOccupants()
+
+    void ECSPhysicsSystem::GetContacts(const Entity& entity, std::vector<EntityContact>& out) const {
+
+        out.clear();
+        const State& s = *m_state;
+        s.physics.ForEachContact(s.BodyOf(entity), [&](const BodyContact& contact) {
+            EntityContact entry;
+            entry.other      = UserDataToEntity(contact.m_otherUserData);
+            entry.isTrigger  = contact.m_selfIsSensor || contact.m_otherIsSensor;
+            entry.normal     = contact.m_normal;
+            entry.pointCount = std::min(contact.m_pointCount, EntityContact::kMaxPoints);
+            for (std::uint32_t i = 0; i < entry.pointCount; ++i) entry.points[i] = contact.m_points[i];
+            entry.resting    = contact.m_resting;
+            out.push_back(entry);
+        });
+
+    }   // ECSPhysicsSystem::GetContacts()
+
+    // ------------------------------------------------------------------- //
+    // QUERIES, IN ENTITIES
+    // ------------------------------------------------------------------- //
+    // Each turns the EntityFilter into Physics' QueryFilter (the ignored entity
+    // becomes its body, a mech's hidden one included), asks Physics, and turns
+    // the bodies it found back into entities.
+
+    static EntityHit ToEntityHit(const RaycastHit& hit) {
+        EntityHit entry;
+        entry.entity   = UserDataToEntity(hit.m_userData);
+        entry.point    = hit.m_point;
+        entry.normal   = hit.m_normal;
+        entry.distance = hit.m_distance;
+        return entry;
+    }
+
+    QueryFilter ECSPhysicsSystem::State::ToQuery(const EntityFilter& filter) const {
+        QueryFilter query;
+        query.m_layers      = filter.layers;
+        query.m_hitTriggers = filter.hitTriggers;
+        // A default Entity (index 0) is "no entity", never looked up: it would
+        // otherwise ignore whichever body happened to be stored under it.
+        if (filter.ignore.IsValid()) query.m_ignore = BodyOf(filter.ignore);
+        return query;
+    }
+
+    bool ECSPhysicsSystem::Raycast(const Math::vec3& origin, const Math::vec3& direction, EntityHit& outHit, float maxDistance,
+                                   const EntityFilter& filter) const {
+        RaycastHit hit;
+        if (!m_state->physics.Raycast(origin, direction, hit, maxDistance, m_state->ToQuery(filter))) return false;
+        outHit = ToEntityHit(hit);
+        return true;
+    }
+
+    void ECSPhysicsSystem::RaycastAll(const Math::vec3& origin, const Math::vec3& direction, float maxDistance, std::vector<EntityHit>& out,
+                                      const EntityFilter& filter) const {
+        out.clear();
+        std::vector<RaycastHit>& hits = m_state->scratchHits;
+        m_state->physics.RaycastAll(origin, direction, maxDistance, hits, m_state->ToQuery(filter));
+        for (const RaycastHit& hit : hits) out.push_back(ToEntityHit(hit));
+    }
+
+    bool ECSPhysicsSystem::SphereCast(const Math::vec3& origin, float radius, const Math::vec3& direction, EntityHit& outHit, float maxDistance,
+                                      const EntityFilter& filter) const {
+        RaycastHit hit;
+        if (!m_state->physics.SphereCast(origin, radius, direction, hit, maxDistance, m_state->ToQuery(filter))) return false;
+        outHit = ToEntityHit(hit);
+        return true;
+    }
+
+    bool ECSPhysicsSystem::CapsuleCast(const Math::vec3& point1, const Math::vec3& point2, float radius, const Math::vec3& direction,
+                                       EntityHit& outHit, float maxDistance, const EntityFilter& filter) const {
+        RaycastHit hit;
+        if (!m_state->physics.CapsuleCast(point1, point2, radius, direction, hit, maxDistance, m_state->ToQuery(filter))) return false;
+        outHit = ToEntityHit(hit);
+        return true;
+    }
+
+    void ECSPhysicsSystem::OverlapSphere(const Math::vec3& center, float radius, std::vector<Entity>& out, const EntityFilter& filter) const {
+        out.clear();
+        std::vector<OverlapHit>& hits = m_state->scratchOverlaps;
+        m_state->physics.OverlapSphere(center, radius, hits, m_state->ToQuery(filter));
+        for (const OverlapHit& hit : hits) out.push_back(UserDataToEntity(hit.m_userData));
+    }
+
+    void ECSPhysicsSystem::OverlapBox(const Math::vec3& center, const Math::vec3& halfExtents, const Math::quat& orientation, std::vector<Entity>& out,
+                                      const EntityFilter& filter) const {
+        out.clear();
+        std::vector<OverlapHit>& hits = m_state->scratchOverlaps;
+        m_state->physics.OverlapBox(center, halfExtents, orientation, hits, m_state->ToQuery(filter));
+        for (const OverlapHit& hit : hits) out.push_back(UserDataToEntity(hit.m_userData));
+    }
+
+    void ECSPhysicsSystem::OverlapCapsule(const Math::vec3& point0, const Math::vec3& point1, float radius, std::vector<Entity>& out,
+                                          const EntityFilter& filter) const {
+        out.clear();
+        std::vector<OverlapHit>& hits = m_state->scratchOverlaps;
+        m_state->physics.OverlapCapsule(point0, point1, radius, hits, m_state->ToQuery(filter));
+        for (const OverlapHit& hit : hits) out.push_back(UserDataToEntity(hit.m_userData));
+    }
+
+    // ------------------------------------------------------------------- //
+    // EXPLOSIONS
+    // ------------------------------------------------------------------- //
+
+    /*!
+        \brief
+        One body pushed away from a blast. Unity's AddExplosionForce.
+        \details
+        1. Where: the point on the body's surface nearest the blast. A push there,
+           not at the centre, is what makes things tumble (a blast by a crate's
+           corner spins it); and measuring to the surface means a big crate
+           beside the blast gets the full hit. A blast inside the body pushes at
+           its centre of mass instead, as in Unity.
+        2. How hard: linear fade from the centre to the radius.
+        3. Which way: from the blast as if it were `upwards` metres lower, so
+           things are lifted as well as thrown out.
+        4. The push lands on that point lowered by `upwards` (Unity's rule, so
+           lifted things also flip), except inside the body. Impulse lands now;
+           Force waits for this frame's steps, like AddForce.
+    */
+    bool ECSPhysicsSystem::State::PushFromBlast(const Entity& entity, float force, const Math::vec3& position, float radius,
+                                                float upwards, ForceMode mode) {
+
+        const std::uint64_t key   = EntityToUserData(entity);
+        const auto          found = records.find(key);
+        if (found == records.end() || !found->second.body.IsValid() || found->second.recipe.m_motion != BodyMotion::Dynamic) return false;
+        if (!Finite(position) || !std::isfinite(force) || !std::isfinite(radius) || !std::isfinite(upwards)) return false;
+
+        const BodyHandle body   = found->second.body;
+        const Math::vec3 centre = physics.GetCenterOfMass(body);
+
+        // 1. WHERE ------------------------------------------------------------ //
+        // Searched only as far as the radius: anything further is not pushed. A
+        // radius of 0 (no fading, as in Unity) searches as far as the centre is.
+        const float reach = radius > 0.0f ? radius : glm::length(centre - position) + 1.0f;
+        Math::vec3 point    = centre;
+        float      distance = 0.0f;
+        if (!physics.ClosestPointOnBody(body, position, reach, point, distance)) return false;
+
+        // A blast INSIDE the body (distance 0) has no surface between it and the
+        // body, so it pushes at the centre of mass: straight out, no spin - Unity's
+        // rule. Pushing at the blast point instead would spin a crate depending on
+        // where inside it the grenade happened to be. Outside, the surface point
+        // stays, so off-centre hits still tumble.
+        const bool inside = distance <= 0.0f;
+        if (inside) point = centre;
+
+        // 2. HOW HARD --------------------------------------------------------- //
+        float strength = force;
+        if (radius > 0.0f) {
+            if (distance >= radius) return false;
+            strength *= 1.0f - distance / radius;
+        }
+
+        // 3. WHICH WAY -------------------------------------------------------- //
+        // Falls back to the centre, then to straight up, when the point and the
+        // (lowered) blast coincide.
+        const Math::vec3 blast = position - Math::vec3(0.0f, upwards, 0.0f);
+        Math::vec3 direction = point - blast;
+        if (glm::dot(direction, direction) < 1.0e-8f) direction = centre - blast;
+        if (glm::dot(direction, direction) < 1.0e-8f) direction = Math::vec3(0.0f, 1.0f, 0.0f);
+        const Math::vec3 push = glm::normalize(direction) * strength;
+
+        // 4. PUSH ------------------------------------------------------------- //
+        // Unity also lowers the point the push lands on by upwardsModifier: pushed
+        // low, a crate flips over as it flies - the "thrown into the air" look.
+        // Not for a blast inside the body: that one stays at the centre, no spin.
+        Math::vec3 pushAt = point;
+        if (!inside) pushAt.y -= upwards;
+
+        if (mode == ForceMode::Impulse) {
+            physics.ApplyImpulseAtPosition(body, push, pushAt);
+        }
+        else {
+            // A force off-centre is that force at the centre plus a twist, which is
+            // what the frame's force pipeline takes (force and torque, world axes).
+            PendingPush& pending = explosionPushes[key];
+            pending.force  += push;
+            pending.torque += glm::cross(pushAt - centre, push);
+        }
+        return true;
+
+    }   // ECSPhysicsSystem::State::PushFromBlast()
+
+    bool ECSPhysicsSystem::AddExplosionForce(const Entity& entity, float explosionForce, const Math::vec3& explosionPosition,
+                                             float explosionRadius, float upwardsModifier, ForceMode mode) {
+        return m_state->PushFromBlast(entity, explosionForce, explosionPosition, explosionRadius, upwardsModifier, mode);
+    }
+
+    /*!
+        \brief
+        A whole explosion: OverlapSphere, the wall check, then a push for each.
+        \details
+        The wall check is one ray from the blast to the thing, against the arena
+        (NonMoving) only, seeing through the thing itself: anything in between
+        shields it, and it is neither pushed nor listed.
+    */
+    void ECSPhysicsSystem::Explode(const Explosion& explosion, std::vector<Entity>& outHit) {
+
+        outHit.clear();
+        State& s = *m_state;
+        if (!(explosion.radius > 0.0f)) return;
+
+        EntityFilter reach = explosion.filter;
+        reach.hitTriggers  = false;                 // a trigger zone is not something a blast throws
+        OverlapSphere(explosion.position, explosion.radius, s.scratchEntities, reach);
+
+        for (const Entity& entity : s.scratchEntities) {
+
+            if (explosion.blockedByWalls) {
+                // Aim at the body's centre of mass, or a mech's capsule position.
+                const std::uint64_t key       = EntityToUserData(entity);
+                const auto          record    = s.records.find(key);
+                const auto          character = s.characterRecords.find(key);
+                Math::vec3 target = explosion.position;
+                if (record != s.records.end())                 target = s.physics.GetCenterOfMass(record->second.body);
+                else if (character != s.characterRecords.end()) target = s.physics.GetCharacterPosition(character->second.character);
+
+                QueryFilter walls;
+                walls.m_layers = LayerMask(PhysicsLayer::NonMoving);
+                walls.m_ignore = s.BodyOf(entity);
+                RaycastHit wall;
+                const Math::vec3 toTarget = target - explosion.position;
+                if (s.physics.Raycast(explosion.position, toTarget, wall, glm::length(toTarget), walls)) continue;   // shielded
+            }
+
+            outHit.push_back(entity);
+            s.PushFromBlast(entity, explosion.force, explosion.position, explosion.radius, explosion.upwardsModifier, explosion.mode);
+        }
+
+    }   // ECSPhysicsSystem::Explode()
+
     // ------------------------------------------------------------------- //
     // THE FRAME
     // ------------------------------------------------------------------- //
 
-    void ECSPhysicsSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
+    /*!
+        \brief
+        One frame of physics, then this frame's collision and trigger events out
+        onto the engine bus. They are delivered after the PostUpdate stage, so
+        gameplay hears about a hit in the same frame it happened.
+    */
+    void ECSPhysicsSystem::Update(World& world, SystemContext& ctx) {
+
         Advance(world, world.DeltaTime());
-    }
+
+        State& s = *m_state;
+        for (const PhysicsEvents::CollisionEnter& e : s.collisionEnters) ctx.events.EmitEngine(e);
+        for (const PhysicsEvents::CollisionExit&  e : s.collisionExits)  ctx.events.EmitEngine(e);
+        for (const PhysicsEvents::TriggerEnter&   e : s.triggerEnters)   ctx.events.EmitEngine(e);
+        for (const PhysicsEvents::TriggerExit&    e : s.triggerExits)    ctx.events.EmitEngine(e);
+
+    }   // ECSPhysicsSystem::Update()
 
     /*!
         \brief
@@ -478,6 +771,10 @@ namespace Crucible {
 
         State& s = *m_state;
         s.stepsLastFrame = 0;
+        s.collisionEnters.clear();      // last frame's were sent (or, from a test harness, dropped)
+        s.collisionExits.clear();
+        s.triggerEnters.clear();
+        s.triggerExits.clear();
         if (!s.physics.IsInitialised()) return;
 
         s.BindWorld(world);
@@ -573,6 +870,7 @@ namespace Crucible {
             // After SyncBody, which may have just (re)built the body.
             TakeForces(ecs, record, rigidbody);
         });
+        explosionPushes.clear();    // any left were for entities that lost their body since: nothing to push
 
         characters->ForEach([&](Entity entity, const Transform& transform, CharacterController& controller) {
             CharacterRecord& record = TouchCharacter(entity);
@@ -844,6 +1142,7 @@ namespace Crucible {
         desc.m_layer       = collider.m_layer;
         desc.m_friction    = collider.m_friction;
         desc.m_restitution = collider.m_bounciness;
+        desc.m_isSensor    = collider.m_isTrigger;
         desc.m_userData    = EntityToUserData(record.entity);
         // Only for dynamic bodies: a kinematic one ignores mass, drag and gravity anyway, and
         // freezing axes on it would make no sense - its Transform decides every axis.
@@ -1067,6 +1366,7 @@ namespace Crucible {
 
         PullBodies(ecs);
         PullBrokenJoints(ecs);      // every step: Physics refills its broken list each Step
+        CollectContacts();          // likewise its contact events
 
     }   // ECSPhysicsSystem::State::Step()
 
@@ -1090,6 +1390,13 @@ namespace Crucible {
         record.relativeForce  = constant != nullptr ? constant->m_relativeForce  : zero;
         record.relativeTorque = constant != nullptr ? constant->m_relativeTorque : zero;
         record.impulse        = zero;
+
+        // Force-mode explosions since the last Sync (AddExplosionForce), on top.
+        if (const auto pending = explosionPushes.find(EntityToUserData(record.entity)); pending != explosionPushes.end()) {
+            record.force  += pending->second.force;
+            record.torque += pending->second.torque;
+            explosionPushes.erase(pending);
+        }
 
         if (rigidbody == nullptr) {
             // A static body ignores forces, so without this the designer just sees nothing happen.
@@ -1190,6 +1497,55 @@ namespace Crucible {
         physics.MoveKinematic(record.body, position, rotation, kFixedDeltaTime);
 
     }   // ECSPhysicsSystem::State::DriveKinematic()
+
+    /*!
+        \brief
+        This step's contact events, turned into PhysicsEvents for Update to send.
+        \details
+        Either side a sensor (Collider::m_isTrigger) makes it a trigger event,
+        and the sensor is the `trigger`. Entities come straight out of the
+        bodies' user values, so an Exit for a destroyed entity still names it -
+        the listener checks IsAlive.
+    */
+    void ECSPhysicsSystem::State::CollectContacts() {
+
+        const std::uint32_t count = physics.GetContactEventCount();
+        for (std::uint32_t i = 0; i < count; ++i) {
+
+            ContactEvent event;
+            if (!physics.GetContactEvent(i, event)) continue;
+
+            const Entity one = UserDataToEntity(event.m_userData1);
+            const Entity two = UserDataToEntity(event.m_userData2);
+            const bool   began = event.m_type == ContactEventType::Began;
+
+            if (event.m_isSensor1 || event.m_isSensor2) {
+                const Entity trigger = event.m_isSensor1 ? one : two;
+                const Entity other   = event.m_isSensor1 ? two : one;
+                if (began) triggerEnters.push_back(PhysicsEvents::TriggerEnter{ trigger, other });
+                else       triggerExits.push_back(PhysicsEvents::TriggerExit{ trigger, other });
+            }
+            else if (began) {
+                collisionEnters.push_back(PhysicsEvents::CollisionEnter{ one, two, event.m_point, event.m_normal, event.m_impactSpeed });
+            }
+            else {
+                collisionExits.push_back(PhysicsEvents::CollisionExit{ one, two });
+            }
+        }
+
+    }   // ECSPhysicsSystem::State::CollectContacts()
+
+    // The body that stands for an entity: its Collider's body, or the hidden
+    // body of its CharacterController. Invalid if it has neither (yet).
+    BodyHandle ECSPhysicsSystem::State::BodyOf(const Entity& entity) const {
+
+        const std::uint64_t key = EntityToUserData(entity);
+        if (const auto found = records.find(key); found != records.end()) return found->second.body;
+        if (const auto found = characterRecords.find(key); found != characterRecords.end())
+            return physics.GetCharacterBody(found->second.character);
+        return BodyHandle{};
+
+    }   // ECSPhysicsSystem::State::BodyOf()
 
     /*!
         \brief

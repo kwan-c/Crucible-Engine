@@ -30,6 +30,7 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # ------------------------------------------------------------
 add_subdirectory(Extern)
 add_subdirectory(Tools/ModelCompiler)
+add_subdirectory(Tools/TextureCompiler)
 
 # ------------------------------------------------------------
 # Engine Projects
@@ -38,6 +39,7 @@ add_subdirectory(Engine)
 add_subdirectory(ManagedScripts)
 add_subdirectory(Editor)
 add_subdirectory(Game)
+add_subdirectory(Tools/Cook)   # after Engine: the Cook target waits for its Shaders target
 
 # Set startup project for Visual Studio
 if(MSVC)

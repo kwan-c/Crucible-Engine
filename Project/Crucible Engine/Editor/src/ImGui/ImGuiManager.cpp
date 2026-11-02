@@ -37,6 +37,8 @@
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/Panels/ImGuiPanel_Console.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
+#include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
+#include "ImGui/Panels/ImGuiPanel_Resources.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
 
@@ -197,7 +199,9 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Core& core)
 	initInfo.Queue = context.graphicsQueue;
 
 	initInfo.DescriptorPool = context.descriptorPool;
-	initInfo.DescriptorPoolSize = IMGUI_IMPL_VULKAN_MINIMUM_SAMPLED_IMAGE_POOL_SIZE;   // let ImGui create+own its own pool
+	// Let ImGui create+own its own pool. One slot per texture ImGui draws at once (its font, the
+	// viewports, Asset Browser thumbnails, importer previews...): the minimum (8) ran out.
+	initInfo.DescriptorPoolSize = 64;
     initInfo.MinImageCount = context.minImageCount;
     initInfo.ImageCount = context.imageCount;
 	initInfo.PipelineInfoMain.MSAASamples = context.msaaSamples;
@@ -396,9 +400,11 @@ void Crucible::EditorManager::Init(Core& core)
 	// system's edit/pause modes on Play, Pause, Resume and Stop. Asset previews always work.
 	ECSAudioSystem* audio = core.Systems().FindSystem<ECSAudioSystem>();   // null if audio is not registered
 	m_panels[ImguiPanels::ASSETBROWSER] = std::make_shared<AssetBrowser>(core.GetAssets(), core.GetScenes(), audio);   // audio may be null: previews just do nothing
+	m_panels[ImguiPanels::RESOURCES] = std::make_shared<ResourcesPanel>(core.GetResources(), core.GetScenes());   // what is loaded in memory (next to the Asset Browser)
 	m_panels[ImguiPanels::CONSOLE] = std::make_shared<Console>();
 	m_panels[ImguiPanels::PLAYPAUSE] = std::make_shared<PlayPause>(core);   // queues Play/Pause/Resume/Stop on Core
 	m_panels[ImguiPanels::FONTIMPORTER] = std::make_shared<FontImporter>(core.GetAssets(), core.GetRenderer(), core);   // .ttf -> .cfont (Editor/src/Fonts)
+	m_panels[ImguiPanels::TEXTUREIMPORTER] = std::make_shared<TextureImporter>(core.GetAssets(), core.GetRenderer(), core);   // image -> .bill / .sky (Tools/Common/TextureImport)
 	m_panels[ImguiPanels::ANIMATOR] = std::make_shared<AnimatorPanel>(core);
 
 	for (auto& panel : m_panels)

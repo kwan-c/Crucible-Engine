@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          27 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Engine-private: struct Physics::Impl, every Jolt object
 *                the physics system owns.
@@ -19,6 +19,9 @@
 *    -v1.1       maths types moved to glm
 *    -v1.2       joints: slots, broken list, and the contact filter that
 *                lets jointed bodies pass through each other
+*    -v1.3       the contact filter became PhysicsContactListener: it also
+*                records contacts for collision and trigger messages;
+*                m_touching and m_contactEvents
 *
 **************************************************************************/
 #pragma once
@@ -37,8 +40,10 @@
 #include <Jolt/Physics/Constraints/TwoBodyConstraint.h>
 
 // STL
+#include <algorithm>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -62,20 +67,28 @@
 namespace Crucible {
 
     /*
-        Unity's enableCollision = false: two bodies joined by a joint pass
+        Jolt has room for exactly one contact listener, so this one does two jobs.
+
+        1. Unity's enableCollision = false: two bodies joined by a joint pass
         through each other. Without it a ragdoll explodes on frame one - the
         capsules of a shin and a thigh overlap at the knee, so they shove each
         other apart as hard as the joint pulls them together.
-
         Jolt asks this object about every pair of bodies about to touch.
         Answering "reject all contacts for this pair" makes Jolt skip the pair
         for the rest of the step, so it costs one lookup per touching pair.
 
-        Threads: Jolt calls OnContactValidate from its worker threads during
-        Step, and they only read. Ignore and Unignore write, and are only called
-        between Steps (CreateJoint / DestroyJoint), so the two never overlap.
+        2. Collision and trigger messages: it writes down every pair that starts
+        touching, keeps touching, or stops touching (RawContact). Nothing is
+        decided here - Impl::ProcessContacts turns the notes into events after
+        the step, on the main thread.
+
+        Threads: Jolt calls all of these from its worker threads during Step,
+        several at once. OnContactValidate only reads; Ignore and Unignore
+        write, but only between Steps (CreateJoint / DestroyJoint), so the two
+        never overlap. The notes are written under m_rawMutex, and read after
+        the step, when no worker is running.
     */
-    class JointContactFilter final : public JPH::ContactListener {
+    class PhysicsContactListener final : public JPH::ContactListener {
 
     public:
 
@@ -106,11 +119,98 @@ namespace Crucible {
                                          : JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
         }
 
+        // --- the notes for collision and trigger messages --------------------- //
+
+        // One thing Jolt said about one pair, as it said it. Jolt reports per
+        // SUB-SHAPE pair; with our single-shape bodies that is one per body pair.
+        struct RawContact {
+
+            enum class Kind : std::uint8_t { Added, Persisted, Removed };
+
+            Kind          kind        = Kind::Added;
+            std::uint32_t body1       = 0;          // index and sequence number, as BodyHandle::m_id
+            std::uint32_t body2       = 0;
+            // The rest is filled for Added and Persisted only: by Removed, a body
+            // may already be destroyed, and Jolt hands over nothing but the ids.
+            std::uint64_t userData1   = 0;
+            std::uint64_t userData2   = 0;
+            bool          sensor1     = false;
+            bool          sensor2     = false;
+            Math::vec3    normal      = Math::vec3(0.0f, 1.0f, 0.0f);   // from body 1 toward body 2
+            Math::vec3    points[BodyContact::kMaxPoints] {};
+            std::uint32_t pointCount  = 0;
+            float         impactSpeed = 0.0f;       // Added only
+
+        };  // RAWCONTACT STRUCT
+
+        // Two bodies started touching. The velocities are still the ones from
+        // before the hit - the solver has not run yet - which is what makes the
+        // impact speed measurable here and nowhere later.
+        void OnContactAdded(const JPH::Body& body1, const JPH::Body& body2, const JPH::ContactManifold& manifold,
+                            JPH::ContactSettings&) override {
+            RawContact raw = Describe(RawContact::Kind::Added, body1, body2, manifold);
+            const JPH::RVec3 at = manifold.GetWorldSpaceContactPointOn1(0);
+            const JPH::Vec3  closing = body1.GetPointVelocity(at) - body2.GetPointVelocity(at);
+            raw.impactSpeed = std::max(closing.Dot(manifold.mWorldSpaceNormal), 0.0f);   // the normal points 1 -> 2
+            Record(raw);
+        }
+
+        // Still touching: only the contact points are new. Once per touching pair
+        // per step - which is why this does nothing but write them down.
+        void OnContactPersisted(const JPH::Body& body1, const JPH::Body& body2, const JPH::ContactManifold& manifold,
+                                JPH::ContactSettings&) override {
+            Record(Describe(RawContact::Kind::Persisted, body1, body2, manifold));
+        }
+
+        // Stopped touching - or one of them fell asleep, or was destroyed. Which
+        // one it was can only be told after the step (ProcessContacts).
+        void OnContactRemoved(const JPH::SubShapeIDPair& pair) override {
+            RawContact raw;
+            raw.kind  = RawContact::Kind::Removed;
+            raw.body1 = pair.GetBody1ID().GetIndexAndSequenceNumber();
+            raw.body2 = pair.GetBody2ID().GetIndexAndSequenceNumber();
+            Record(raw);
+        }
+
+        // The step's notes, for ProcessContacts. Swapped out, not copied: the
+        // vector keeps its memory for the next step.
+        void TakeRaw(std::vector<RawContact>& out) {
+            std::lock_guard<std::mutex> lock(m_rawMutex);
+            out.swap(m_raw);
+            m_raw.clear();
+        }
+
     private:
+
+        static RawContact Describe(RawContact::Kind kind, const JPH::Body& body1, const JPH::Body& body2, const JPH::ContactManifold& manifold) {
+            RawContact raw;
+            raw.kind       = kind;
+            raw.body1      = body1.GetID().GetIndexAndSequenceNumber();
+            raw.body2      = body2.GetID().GetIndexAndSequenceNumber();
+            raw.userData1  = body1.GetUserData();
+            raw.userData2  = body2.GetUserData();
+            raw.sensor1    = body1.IsSensor();
+            raw.sensor2    = body2.IsSensor();
+            raw.normal     = Math::vec3(manifold.mWorldSpaceNormal.GetX(), manifold.mWorldSpaceNormal.GetY(), manifold.mWorldSpaceNormal.GetZ());
+            raw.pointCount = std::min<std::uint32_t>(static_cast<std::uint32_t>(manifold.mRelativeContactPointsOn1.size()), BodyContact::kMaxPoints);
+            for (std::uint32_t i = 0; i < raw.pointCount; ++i) {
+                const JPH::RVec3 point = manifold.GetWorldSpaceContactPointOn1(i);
+                raw.points[i] = Math::vec3(static_cast<float>(point.GetX()), static_cast<float>(point.GetY()), static_cast<float>(point.GetZ()));
+            }
+            return raw;
+        }
+
+        void Record(const RawContact& raw) {
+            std::lock_guard<std::mutex> lock(m_rawMutex);
+            m_raw.push_back(raw);
+        }
 
         std::unordered_map<std::uint64_t, std::uint32_t> m_pairs;   // pair key -> how many joints ignore it
 
-    };  // JOINTCONTACTFILTER CLASS
+        std::mutex              m_rawMutex;
+        std::vector<RawContact> m_raw;          // this step's notes, in whatever order the workers wrote them
+
+    };  // PHYSICSCONTACTLISTENER CLASS
 
     struct Physics::Impl {
 
@@ -126,7 +226,7 @@ namespace Crucible {
         std::unique_ptr<JPH::ObjectVsBroadPhaseLayerFilterTable>  m_layerVsTree;      // which trees a layer must search
         std::unique_ptr<JPH::TempAllocatorImpl>                   m_tempAllocator;    // the per-step scratch stack
         std::unique_ptr<JPH::JobSystemThreadPool>                 m_jobSystem;        // the worker threads
-        std::unique_ptr<JointContactFilter>                       m_contactFilter;    // the world holds a pointer to it, so it is declared before
+        std::unique_ptr<PhysicsContactListener>                   m_contactFilter;    // the world holds a pointer to it, so it is declared before
         std::unique_ptr<JPH::PhysicsSystem>                       m_world;            // Jolt's world itself
 
         bool m_initialised = false;
@@ -235,6 +335,31 @@ namespace Crucible {
         };  // MOVED STRUCT
 
         std::vector<Moved> m_movedBodies;
+
+        // --- CONTACTS (PhysicsContacts.cpp) ---------------------------------- //
+
+        // Every pair touching right now, keyed by PairKey of the two body ids.
+        // Kept across steps: it is what "who is inside this trigger" reads, and
+        // the only place a pair's user values survive until its Removed, when
+        // Jolt hands over bare ids. A pair whose moving body fell asleep stays,
+        // marked resting - the crate is still on the floor.
+        struct Touch {
+
+            PhysicsContactListener::RawContact latest {};   // the last Added/Persisted: ids, user values, sensors, points
+            std::uint32_t subShapes = 0;     // Added minus Removed; 1 for our single-shape bodies
+            bool          resting   = false; // contacts dropped because a body fell asleep
+            std::uint64_t seenStep  = 0;     // the last step Jolt said anything about it
+
+        };  // TOUCH STRUCT
+
+        std::unordered_map<std::uint64_t, Touch>                m_touching;
+        std::vector<ContactEvent>                               m_contactEvents;   // the last Step's, refilled every Step
+        std::vector<PhysicsContactListener::RawContact>         m_rawContacts;     // scratch, reused every Step
+        std::uint64_t                                           m_stepCount = 0;
+
+        // Turns the step's notes into m_touching changes and m_contactEvents.
+        // After every Step, on the main thread.
+        void ProcessContacts();
 
         // --- HELPERS THE .CPP FILES SHARE ----------------------------------- //
 

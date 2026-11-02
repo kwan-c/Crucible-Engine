@@ -165,6 +165,23 @@ namespace Crucible {
         return Validate("text", "Prefab");
     }
 
+    bool Prefab::LoadFromAsset(const std::string& json, std::uint64_t assetGuid,
+                               std::uint64_t contentHash, const std::string& source)
+    {
+        m_valid = false;
+
+        if (!m_doc.ReadFromString(json))
+        {
+            return false;   // ReadFromString logged the parse error
+        }
+
+        // The caller read this from a registered asset, so it knows what Load
+        // would have found next to the file: the guid and the content hash.
+        m_asset = assetGuid;
+        m_hash  = contentHash;
+        return Validate(source, fs::path(source).stem().string());
+    }
+
     bool Prefab::Validate(const std::string& source, const std::string& fallbackName)
     {
         m_valid = false;

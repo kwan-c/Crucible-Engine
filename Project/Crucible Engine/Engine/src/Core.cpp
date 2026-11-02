@@ -105,6 +105,13 @@ namespace Crucible {
         if (!m_assets->Init()) { CRU_ERROR("[Core] AssetManager found no asset root - cannot start"); return false; }
         m_resources = std::make_unique<ResourceManager>(*m_assets, *m_renderer);
         m_resources->Init();
+        m_scenes->SetResources(m_resources.get());   // scenes by GUID load through the ResourceManager
+        // After every scene change (new, open, a game's LoadScene button) free what the new scene
+        // no longer uses. It reads the scene as it is in memory, so unsaved edits count too.
+        m_scenes->OnSceneChanged([this] {
+            SceneManager::Snapshot snapshot;
+            if (m_scenes->CaptureSnapshot(snapshot)) { m_resources->UnloadUnused(snapshot.scene.document); }
+        });
 
         // ======== asset debugging (Removable) ==========
         // On the shared index. A second AssetManager here used to run its own reconcile -
@@ -120,8 +127,15 @@ namespace Crucible {
 
         // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
         // and the Game open the same one. Empty = start with no scene.
+        // The config names the file (a path is what people edit by hand); it is turned into the
+        // scene's GUID here and loaded through the ResourceManager, like every other scene load.
+        // A file not in the asset index yet (no .meta) is still opened by path.
         if (!m_config.project.startupScene.empty())
-            m_scenes->RequestLoad(m_assets->Resolve(m_config.project.startupScene));
+        {
+            const AssetId startup = m_resources->GetIdForPath(m_config.project.startupScene);
+            if (startup == 0 || !m_scenes->RequestLoadAsset(startup))
+                m_scenes->RequestLoad(m_assets->Resolve(m_config.project.startupScene));
+        }
 
 
         // Event buses: report listener failures through the engine log, and let the
@@ -207,7 +221,7 @@ namespace Crucible {
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
-        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get(), m_assets.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
+        m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
             .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
         m_systems.RegisterSystem<ECSPlayerControllerSystem>(m_userSettings.input)                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
@@ -229,7 +243,7 @@ namespace Crucible {
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
         m_systems.RegisterSystem<UIRenderSystem>(*m_renderer, m_resources.get());        // PreRender, Edit mode too: lays out screen-space UICanvases against the game screen and SubmitUI()s them
         m_systems.RegisterSystem<WorldCanvasSystem>(*m_renderer, m_resources.get());     // PreRender, Edit mode too: lays out world-space UICanvases and submits each as a world UI panel
-        m_systems.RegisterSystem<ECSAudioSystem>(*m_assets, m_userSettings.audio, m_renderer);                // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
+        m_systems.RegisterSystem<ECSAudioSystem>(*m_resources, m_userSettings.audio, m_renderer);                // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
     }
 
     void Core::CleanUp() {

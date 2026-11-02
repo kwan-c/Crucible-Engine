@@ -287,7 +287,7 @@ namespace Crucible {
 
     vk::DescriptorSet WorldUIPass::EnsureTextureSet(TextureHandle texture) {
 
-        if (!texture.IsValid() || texture.id >= m_resources.Textures().size()) { texture = m_resources.DefaultWhiteTexture(); }
+        if (!m_resources.IsTextureUsable(texture)) { texture = m_resources.DefaultWhiteTexture(); }   // also destroyed ones
 
         if (auto it = m_textureSets.find(texture.id); it != m_textureSets.end()) { return *it->second; }
 
@@ -338,7 +338,7 @@ namespace Crucible {
             if (draw.firstVertex + draw.vertexCount > m_uploadedCount) { continue; }
 
             // Upload() made every set; an invalid texture (underlines) or a full pool gets white.
-            const bool valid = draw.texture.IsValid() && draw.texture.id < m_resources.Textures().size();
+            const bool valid = m_resources.IsTextureUsable(draw.texture);
             auto it = valid ? m_textureSets.find(draw.texture.id) : whiteSet;
             if (it == m_textureSets.end()) { it = whiteSet; }
             if (it == m_textureSets.end()) { continue; }

@@ -51,6 +51,7 @@
 namespace Crucible {
 
     class World;
+    class JsonWrapper;
 
     /*************************************************************************
      \brief  An in-memory copy of a scene, taken by Scene::CaptureSnapshot.
@@ -146,6 +147,27 @@ namespace Crucible {
 
         /*********************************************************************
          \brief
+            Replace the world's contents with a scene document already in
+            memory - the text of a .scene file.
+
+         \param[in,out] world  The world to fill.
+         \param[in]     text   The .scene file's contents.
+         \param[in]     source Where the text came from, for log messages
+                               (normally the file's path). Its stem is the
+                               scene's name when the document has none.
+         \return true if the text parsed and the world was rebuilt.
+
+         \details
+            Load(world, file) without the file read: the same checks, and on
+            failure the world is left exactly as it was. This is how scenes
+            load through the ResourceManager (SceneManager::RequestLoadAsset):
+            the ResourceManager reads the file through the AssetManager by
+            the scene's GUID, and the world is built from that text.
+         *********************************************************************/
+        bool LoadFromText(World& world, const std::string& text, const std::filesystem::path& source);
+
+        /*********************************************************************
+         \brief
             Save the world into memory instead of a file.
 
          \param[in]  world The world to copy. Non-const for the same reason
@@ -232,6 +254,13 @@ namespace Crucible {
         std::size_t TrackedCount() const { return m_ids.size(); }
 
     private:
+        /*********************************************************************
+         \brief  The shared part of Load and LoadFromText: everything after
+                 the document has been read.
+         \param[in] source For log messages and the fallback scene name.
+         *********************************************************************/
+        bool LoadDocument(World& world, const JsonWrapper& doc, const std::filesystem::path& source);
+
         /*********************************************************************
          \brief  Hashes an Entity by both its index and its generation.
          \note

@@ -102,6 +102,7 @@ namespace Crucible {
 
 		// Preview
 		TextureHandle   m_previewTexture{};
+		std::uint64_t   m_previewFontId = 0;              // pinned with ResourceManager::KeepLoaded while previewed
 		VkDescriptorSet m_previewSet = nullptr;
 		int             m_previewDrawableFrame = 0;     // ImGui frame from which the texture is on the GPU
 		std::uint32_t   m_previewWidth = 0, m_previewHeight = 0;

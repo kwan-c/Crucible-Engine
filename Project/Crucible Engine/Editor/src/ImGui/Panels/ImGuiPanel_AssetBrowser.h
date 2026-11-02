@@ -161,6 +161,7 @@ namespace Crucible {
 		AssetManager&   m_assets;               // Core's shared index (core.GetAssets())
 		SceneManager&   m_scenes;               // to open scenes, and to follow a rename of the open one
 		bool            m_ready = false;
+		bool            m_appWasFocused = true;   // the editor window had the focus last frame (refresh when it comes back)
 		ECSAudioSystem* m_audio = nullptr;      // not owned; Core owns it and outlives every panel
 		bool            m_audioInInspector = false;   // the Inspector is showing our clip preview
 		bool            m_autoPlay = false;           // Unity's Auto Play toggle: play on select. Off, as in Unity

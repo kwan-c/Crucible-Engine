@@ -6,7 +6,7 @@
     diffuse light (image-based lighting).
   \details
     Moved out of the Renderer class. Game and editor code still uses the
-    Renderer's CreateCubemap / CreateCubemapFromEquirect / GetDefaultSkybox,
+    Renderer's CreateCubemapCompiled / CreateCubemapFromEquirect / GetDefaultSkybox,
     which forward here.
 *************************************************************************/
 #pragma once
@@ -24,6 +24,8 @@
 #include <vector>
 
 namespace Crucible {
+
+    struct CompiledSky;
 
     // Direction TOWARDS the sun of the built-in sky, and of the light used when a scene has no
     // lights of its own. Shared so the painted sun and the light it casts agree.
@@ -45,6 +47,7 @@ namespace Crucible {
         vk::raii::ImageView      envView = nullptr;
         uint32_t                 envMipCount = 1;
         std::array<glm::vec4, 9> sh{};
+        bool                     destroyed = false;   // DestroyCubemap: the slot stays (never reused) but is empty
     };
 
     /// The diffuse light a surface facing `normal` (unit length) gets from a sky, from its nine
@@ -73,18 +76,37 @@ namespace Crucible {
         void Init(vk::DescriptorSetLayout skySetLayout);
 
         // See the Renderer functions of the same names for the full notes.
-        CubemapHandle CreateCubemap(const std::array<std::string, 6>& facePaths, bool isSRGB);
-        CubemapHandle CreateCubemapFromEquirect(const std::string& path, uint32_t faceSize);
+        CubemapHandle CreateCubemapFromEquirect(const float* rgba, uint32_t width, uint32_t height, uint32_t faceSize, const std::string& name);
+        CubemapHandle CreateCubemapCompiled(const CompiledSky& sky, const std::string& debugName);
 
         CubemapHandle DefaultSkybox() const { return m_defaultSkybox; }   ///< The built-in procedural sky.
 
         /// Every cubemap, indexed by CubemapHandle::id.
         const std::vector<GpuCubemap>& Cubemaps() const { return m_cubemaps; }
-        /// The cubemap behind `wanted`, or the built-in sky when that handle is not one of ours.
+        /// Whether a cubemap can be drawn with: valid, ours, and not destroyed.
+        bool IsUsable(CubemapHandle handle) const {
+            return handle.IsValid() && handle.id < m_cubemaps.size() && !m_cubemaps[handle.id].destroyed;
+        }
+        /// The cubemap behind `wanted`, or the built-in sky when that handle is not one of ours
+        /// (or was destroyed).
         const GpuCubemap& Resolve(CubemapHandle wanted) const {
-            if (wanted.IsValid() && wanted.id < m_cubemaps.size()) { return m_cubemaps[wanted.id]; }
+            if (IsUsable(wanted)) { return m_cubemaps[wanted.id]; }
             return m_cubemaps[m_defaultSkybox.id];
         }
+
+        /*********************************************************************
+         \brief  Frees a skybox (its cubemap, environment map and descriptor
+                 set). The slot is emptied at once and never reused, so a
+                 handle still held anywhere shows the built-in sky; the
+                 Vulkan objects go in ReleaseDestroyed() once no frame in
+                 flight can use them.
+         \return false for the built-in sky, an unknown handle, or one
+                 already destroyed.
+         *********************************************************************/
+        bool DestroyCubemap(CubemapHandle handle);
+
+        /// Frees destroyed cubemaps no frame in flight can still use. Once a frame, after the fence wait.
+        void ReleaseDestroyed();
         /// Sampler for GpuCubemap::envView: blends between its mip levels.
         const vk::raii::Sampler& EnvSampler() const { return m_envSampler; }
 
@@ -99,6 +121,10 @@ namespace Crucible {
                                          uint32_t bytesPerTexel, const std::string& debugName);
         /// Builds a cubemap's envImage and sh from its faces (called by UploadCubemapFaces).
         void BuildEnvironmentLighting(GpuCubemap& cube, const void* faceData, uint32_t faceSize, vk::Format format);
+        /// Throws if another cubemap would not fit in the descriptor pool.
+        void CheckCubemapLimit(const char* caller) const;
+        /// Gives a finished cube (image, view, environment map) its descriptor set and a handle.
+        CubemapHandle RegisterCubemap(GpuCubemap cube);
 
         VulkanContext&     m_context;
         VulkanUploadQueue& m_uploads;
@@ -113,6 +139,12 @@ namespace Crucible {
         std::vector<GpuCubemap>                     m_cubemaps;
         std::unordered_map<std::string, uint32_t>   m_cubemapCacheByKey;   // joined paths / path+size -> CubemapHandle::id
         CubemapHandle                               m_defaultSkybox;
+
+        // Destroyed cubemaps waiting for the GPU to finish with them, with the ReleaseDestroyed()
+        // count at which each was destroyed. Declared after the pool, so they are freed before it.
+        struct RetiredCubemap { uint64_t frame = 0; GpuCubemap cubemap; };
+        std::vector<RetiredCubemap>                 m_retiredCubemaps;
+        uint64_t                                    m_releaseCount = 0;
     };
 
 }   // NAMESPACE CRUCIBLE

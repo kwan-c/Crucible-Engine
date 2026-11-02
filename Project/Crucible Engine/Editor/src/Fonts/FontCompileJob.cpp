@@ -121,7 +121,10 @@ namespace Crucible {
 
 			std::vector<std::string> ignored;
 			const std::vector<std::string> texts = ReadSampleTexts(assets, savedSettings, ignored);
-			if (status.info.sourceHash != source->contentHash) {
+			if (status.info.encoding == FontAtlasEncoding::Png) {
+				status.state  = FontState::OutOfDate;
+				status.detail = "its atlas is a PNG, which the game cannot read - compile it again";
+			} else if (status.info.sourceHash != source->contentHash) {
 				status.state  = FontState::OutOfDate;
 				status.detail = "the font file changed since it was compiled";
 			} else if (status.info.settingsHash != ComputeFontSettingsHash(savedSettings, texts)) {
@@ -168,7 +171,7 @@ namespace Crucible {
 				out.result.warnings.insert(out.result.warnings.begin(), readWarnings.begin(), readWarnings.end());
 				if (out.ok) {
 					out.result.font.m_sourceHash = sourceHash;
-					out.ok = WriteFont(out.result.font, out.file, out.error);   // PNG-encodes the atlas: keep it off the main thread too
+					out.ok = WriteFont(out.result.font, out.file, out.error);   // Billet-packs the atlas: keep it off the main thread too
 				}
 				out.result.font.m_atlas.pixels.clear();   // written; the report doesn't need them
 				out.result.font.m_atlas.pixels.shrink_to_fit();
@@ -201,8 +204,8 @@ namespace Crucible {
 			report.atlasHeight = font.m_atlas.height;
 			report.fileBytes   = out.file.size();
 
-			// WriteText writes the bytes as they are (binary), whatever is in them.
-			if (!assets.WriteText(report.compiledPath, std::string(out.file.begin(), out.file.end()))) {
+			// Compiled files go into the Resources folder (same virtual path as next to the font).
+			if (!assets.WriteCompiled(report.compiledPath, std::vector<unsigned char>(out.file.begin(), out.file.end()))) {
 				report.ok    = false;
 				report.error = "could not write '" + report.compiledPath + "' (is it open in another program?)";
 			}

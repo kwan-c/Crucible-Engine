@@ -279,7 +279,7 @@ namespace Crucible {
 
     vk::DescriptorSet UIPass::EnsureTextureSet(TextureHandle texture) {
 
-        if (!texture.IsValid() || texture.id >= m_resources.Textures().size()) { texture = m_resources.DefaultWhiteTexture(); }
+        if (!m_resources.IsTextureUsable(texture)) { texture = m_resources.DefaultWhiteTexture(); }   // also destroyed ones
 
         if (auto it = m_textureSets.find(texture.id); it != m_textureSets.end()) { return *it->second; }
 

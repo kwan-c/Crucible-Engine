@@ -1859,7 +1859,7 @@ bool Crucible::Inspector::DrawTextExtras(T& text, bool world) {
 		}
 		if (font == nullptr) { font = rm->GetDefaultFont(); }
 		if (font == nullptr) {
-			ImGui::TextColored(EditorTheme::GetPalette().error, "No font: compile %s in the Font Importer", ResourceManager::m_defaultFontPath);
+			ImGui::TextColored(EditorTheme::GetPalette().error, "No font: %s is missing - compile its .ttf in the Font Importer", ResourceManager::m_defaultFontPath);
 		} else if (font->data.m_outputType == FontOutputType::Bitmap) {
 			std::string sizes;
 			for (FontSizeGroup const& group : font->data.m_groups) {

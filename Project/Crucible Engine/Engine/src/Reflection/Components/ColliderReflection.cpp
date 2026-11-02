@@ -74,5 +74,6 @@ RTTR_REGISTRATION
         .property("friction",   &Collider::m_friction)
         .property("bounciness", &Collider::m_bounciness)
         .property("layer",      &Collider::m_layer)
+        .property("isTrigger",  &Collider::m_isTrigger)   // scenes saved before it load as false
     ;
 }

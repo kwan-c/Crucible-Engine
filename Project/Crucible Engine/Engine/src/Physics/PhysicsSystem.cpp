@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          22 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Physics::Init, Shutdown and Step: starting the Jolt
 *                world, stopping it in reverse order, and running one
@@ -22,6 +22,8 @@
 *                at /W4
 *    -v1.2       joints: the contact filter, joints removed first at
 *                Shutdown, and breaking checked after each Step
+*    -v1.3       contacts processed after each Step (collision and
+*                trigger messages)
 *
 **************************************************************************/
 #include "PhysicsSystem.h"
@@ -180,11 +182,15 @@ namespace Crucible {
                            *impl.m_layerToTree, *impl.m_layerVsTree, *impl.m_layerPairs);
         impl.m_world->SetGravity(ToJolt(settings.m_gravity));
 
-        // Lets jointed bodies pass through each other (JointContactFilter). It
-        // must outlive the world, which holds a pointer to it: Shutdown resets
-        // the world first, and the member is declared before m_world.
-        impl.m_contactFilter = std::make_unique<JointContactFilter>();
+        // Lets jointed bodies pass through each other, and records contacts for
+        // collision and trigger messages (PhysicsContactListener). It must
+        // outlive the world, which holds a pointer to it: Shutdown resets the
+        // world first, and the member is declared before m_world.
+        impl.m_contactFilter = std::make_unique<PhysicsContactListener>();
         impl.m_world->SetContactListener(impl.m_contactFilter.get());
+        impl.m_touching.clear();
+        impl.m_contactEvents.clear();
+        impl.m_stepCount = 0;
 
         // Characters live beside the bodies. Slot 0 stays empty so that index 0
         // can mean "no character", the same trick BodyHandle plays with 0xFFFFFFFF.
@@ -244,6 +250,8 @@ namespace Crucible {
         }
         impl.m_bodies.clear();
         impl.m_movedBodies.clear();
+        impl.m_touching.clear();        // no Ended for these: the whole world is going
+        impl.m_contactEvents.clear();
 
         // Reverse of Init. The layer tables go last because the world holds
         // references to them.
@@ -280,6 +288,7 @@ namespace Crucible {
         Impl& impl = *m_impl;
         impl.m_movedBodies.clear();
         impl.m_brokenJoints.clear();
+        impl.m_contactEvents.clear();
         if (!impl.m_initialised || !(fixedDt > 0.0f)) return;
 
         const JPH::EPhysicsUpdateError errors =
@@ -287,6 +296,11 @@ namespace Crucible {
 
         if (errors != JPH::EPhysicsUpdateError::None)
             CRU_ERROR("Physics::Step: a buffer filled up and contacts were dropped - raise the limits in PhysicsSettings");
+
+        // The workers are done: what they wrote down about contacts becomes
+        // this step's Began / Ended list (PhysicsContacts.cpp).
+        ++impl.m_stepCount;
+        impl.ProcessContacts();
 
         // Right after the solve, while each joint's "how hard did I push" is
         // still this step's number. Breaking wakes the bodies, so a crate that

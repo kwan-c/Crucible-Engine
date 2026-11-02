@@ -4,7 +4,8 @@
 #include <span>
 
 namespace Crucible {
-    inline constexpr uint32_t CompiledModelVersion = 1;
+    // 2: images are stored GPU-compressed (CompiledTextureMimeType) instead of PNG/JPEG.
+    inline constexpr uint32_t CompiledModelVersion = 2;
     // Limits apply to both compiler output and runtime input, before allocation.
     inline constexpr size_t MaxCompiledModelBytes = 1024ull * 1024 * 1024;
 

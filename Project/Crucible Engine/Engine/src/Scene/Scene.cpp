@@ -162,6 +162,24 @@ namespace Crucible {
             return false;   // ReadFromFile already logged why
         }
 
+        return LoadDocument(world, doc, file);
+    }
+
+    bool Scene::LoadFromText(World& world, const std::string& text, const fs::path& source)
+    {
+        // Same as Load: parse first, so a bad document costs nothing.
+        JsonWrapper doc;
+        if (!doc.ReadFromString(text))
+        {
+            CRU_ERROR("Scene: '{}' could not be parsed - not loading it", source.string());
+            return false;   // ReadFromString logged the parse error itself
+        }
+
+        return LoadDocument(world, doc, source);
+    }
+
+    bool Scene::LoadDocument(World& world, const JsonWrapper& doc, const fs::path& file)
+    {
         const int version = doc.Get<int>("version", 0);
         if (version > kSceneVersion)
         {

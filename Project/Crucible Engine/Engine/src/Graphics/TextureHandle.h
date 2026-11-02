@@ -10,7 +10,7 @@
 *
 * \details
 *                Declares TextureHandle, a cheap-to-copy integer handle
-*                returned by Renderer::CreateTexture()/CreateTextureFromMemory()/
+*                returned by Renderer::CreateTextureCompressed()/
 *                CreateTextureFromPixels() (see RenderSystem.h), and the
 *                TexturePixelFormat the last one takes. Mirrors MeshHandle.h's pattern
 *                exactly, including why it's split into its own zero-
@@ -30,7 +30,7 @@ namespace Crucible {
     /*************************************************************************
      \brief
         Opaque handle to a 2D texture living on the GPU (see RenderSystem.h's
-        Renderer::CreateTexture()).
+        Renderer::CreateTextureCompressed()).
 
      \details
         Cheap to copy; this is what MaterialData (RenderTypes.h) stores for
