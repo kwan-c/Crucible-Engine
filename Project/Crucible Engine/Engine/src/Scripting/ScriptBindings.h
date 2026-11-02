@@ -81,7 +81,7 @@ namespace Crucible
 		void SetUserSettings(UserSettings* settings);
 
 		/*********************************************************************
-		 brief  The player's settings given to SetUserSettings, or nullptr.
+		 \brief  The player's settings given to SetUserSettings, or nullptr.
 		         For other bindings that edit them (InputSettingsBindings.cpp).
 		 *********************************************************************/
 		UserSettings* GetUserSettings();
@@ -104,7 +104,7 @@ namespace Crucible
 		void SetRenderer(const Renderer* renderer);
 
 		/*********************************************************************
-		 brief  Gives the C# Screen class the engine (window mode; editor or
+		 \brief  Gives the C# Screen class the engine (window mode; editor or
 		         game). nullptr clears it. Non-owning; main thread only. Called
 		         through ScriptRuntime::SetCoreBinding. Defined in
 		         Bindings/ScreenBindings.cpp.

@@ -2442,6 +2442,44 @@ namespace Crucible
 	// --- Bindings
 
 	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Hands each binding its engine object.
+	 *********************************************************************/
+	bool ScriptRuntime::ConnectEngine(const ScriptEngineConnection& engine)
+	{
+		if (!m_impl->Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::SetAnimator(engine.animator);
+		ScriptBindings::SetWorld(engine.world, engine.play, engine.scenes, engine.assets);
+		ScriptBindings::SetUserSettings(engine.userSettings);
+		ScriptBindings::SetPhysics(engine.physics);
+		ScriptBindings::SetRenderer(engine.renderer);
+		ScriptBindings::SetParticleSystem(engine.particles);
+		ScriptBindings::SetEvents(engine.events);
+		ScriptBindings::SetCore(engine.core);
+		return true;
+#else
+		(void)engine;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. ScriptBindings::ClearAll nulls every one.
+	 *********************************************************************/
+	bool ScriptRuntime::DisconnectEngine()
+	{
+		if (!m_impl->Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::ClearAll();
+		return true;
+#else
+		return false;
+#endif
+	}
+
+	/*********************************************************************
 	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetAnimator.
 	 *********************************************************************/
 	bool ScriptRuntime::SetAnimatorBinding(IScriptAnimatorBinding* binding)

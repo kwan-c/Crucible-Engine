@@ -243,7 +243,6 @@ namespace Crucible {
     void Core::RegisterEngineSystems()
     {
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
-        //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
             .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
@@ -254,37 +253,40 @@ namespace Crucible {
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
-        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(&animator);
-        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetWorldBinding(m_world.get(), m_playMode.get(), m_scenes.get(), m_assets.get());   // Transform & other entity bindings
-        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetUserSettingsBinding(&m_userSettings);   // C# Audio bus volumes
-        if (m_scriptRuntime->IsRunning()) if (auto* physics = m_systems.FindSystem<ECSPhysicsSystem>()) m_scriptRuntime->SetPhysicsBinding(&physics->GetPhysics());   // C# Physics.Raycast
-        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetRendererBinding(m_renderer);   // C# Camera screen maths
-        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetEventsBinding(&m_events);   // C# UIButton.WasClicked / UISlider.WasChanged
-        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetCoreBinding(this);   // C# Screen: window mode (ignored in the editor)
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
-        if (m_scriptRuntime->IsRunning()) if (auto* particles = m_systems.FindSystem<ParticleSystem>()) m_scriptRuntime->SetParticleSystemBinding(particles);   // C# ParticleEmitter Emit / Restart / ParticleCount
         m_systems.RegisterSystem<VineSystem>(*m_renderer, m_resources.get());            // PreRender: grows/simulates Vines (proof of concept), submits their meshes
         m_systems.RegisterSystem<WorldTextSystem>(*m_renderer, m_resources.get());       // PreRender, Edit mode too: lays out WorldText components and submits their glyphs
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
         m_systems.RegisterSystem<UIRenderSystem>(*m_renderer, m_resources.get());        // PreRender, Edit mode too: lays out screen-space UICanvases against the game screen and SubmitUI()s them
         m_systems.RegisterSystem<WorldCanvasSystem>(*m_renderer, m_resources.get());     // PreRender, Edit mode too: lays out world-space UICanvases and submits each as a world UI panel
         m_systems.RegisterSystem<ECSAudioSystem>(*m_resources, m_userSettings.audio, m_renderer);                // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
+
+        // The C# bindings' engine objects, all at once now every system exists. A new binding is one line here.
+        if (m_scriptRuntime->IsRunning()) {
+            auto* physics = m_systems.FindSystem<ECSPhysicsSystem>();
+            m_scriptRuntime->ConnectEngine({
+                .animator     = &animator,                                   // C# Animator
+                .world        = m_world.get(),                               // Transform, Entity, Prefab, components
+                .play         = m_playMode.get(),
+                .scenes       = m_scenes.get(),
+                .assets       = m_assets.get(),
+                .userSettings = &m_userSettings,                             // Audio bus volumes, InputSettings
+                .physics      = physics ? &physics->GetPhysics() : nullptr,  // Physics.Raycast, CharacterController
+                .renderer     = m_renderer,                                  // Camera screen maths
+                .particles    = m_systems.FindSystem<ParticleSystem>(),      // ParticleEmitter Emit / Restart / ParticleCount
+                .events       = &m_events,                                   // UI and collision callbacks
+                .core         = this,                                        // Screen (window mode; ignored in the editor)
+            });
+        }
     }
 
     void Core::CleanUp() {
         if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
         // Run managed teardown while Core's resources/systems are still alive.
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(nullptr);
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetWorldBinding(nullptr, nullptr, nullptr, nullptr);
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetUserSettingsBinding(nullptr);
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetPhysicsBinding(nullptr);
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetRendererBinding(nullptr);
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetParticleSystemBinding(nullptr);
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetEventsBinding(nullptr);
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetCoreBinding(nullptr);
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DisconnectEngine();   // every C# binding
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }

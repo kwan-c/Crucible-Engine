@@ -51,6 +51,26 @@ namespace Crucible
 	struct EventBuses;
 
 	/*********************************************************************
+	 \brief  The engine objects the C# bindings use, for
+	         ScriptRuntime::ConnectEngine. All non-owning; null = that C# API
+	         does nothing.
+	 *********************************************************************/
+	struct ScriptEngineConnection
+	{
+		IScriptAnimatorBinding* animator     = nullptr; // C# Animator
+		World*                  world        = nullptr; // Transform, Entity, Prefab, components
+		PlayMode*               play         = nullptr; // Play state (entity bindings work in Play only)
+		SceneManager*           scenes       = nullptr; // scene ids, Scene.Load
+		AssetManager*           assets       = nullptr; // asset fields (Prefab, AudioClip, Texture, Font)
+		UserSettings*           userSettings = nullptr; // Audio bus volumes, InputSettings
+		Physics*                physics      = nullptr; // Physics.Raycast, CharacterController
+		const Renderer*         renderer     = nullptr; // Camera screen maths
+		ParticleSystem*         particles    = nullptr; // ParticleEmitter Emit / Restart / ParticleCount
+		EventBuses*             events       = nullptr; // UI and collision callbacks
+		Core*                   core         = nullptr; // Screen (window mode)
+	};
+
+	/*********************************************************************
 	 \brief  NotStarted  = Initialize() not called yet.
 	         Unavailable = engine was built without Mono (CRUCIBLE_ENABLE_MONO=OFF).
 	         Disabled    = scripting.enabled is false in the config.
@@ -381,6 +401,25 @@ namespace Crucible
 		// ==================================================================
 
 		/*********************************************************************
+		 \brief  Gives every C# binding its engine object in one call (Core
+		         does this once its systems exist). A null member leaves that
+		         C# API inert (calls fail and getters return defaults).
+		         Adding a binding: a member in ScriptEngineConnection, one line
+		         here in ConnectEngine, one in ScriptBindings::ClearAll, and one
+		         line where Core fills the struct.
+		 \return false if the runtime is not Ready (nothing is connected).
+		 *********************************************************************/
+		bool ConnectEngine(const ScriptEngineConnection& engine);
+
+		/*********************************************************************
+		 \brief  Clears every binding (ScriptBindings::ClearAll). Core calls it
+		         before shutdown, after DestroyAllInstances.
+		 *********************************************************************/
+		bool DisconnectEngine();
+
+		// The single setters below do the same for one binding at a time.
+
+		/*********************************************************************
 		 \brief  Connects the C# Animator API to the animation system. Pass
 		         nullptr to disconnect (Core does this before shutdown).
 		 *********************************************************************/
@@ -417,7 +456,7 @@ namespace Crucible
 		bool SetRendererBinding(const Renderer* renderer);
 
 		/*********************************************************************
-		 brief  Gives the C# Screen class the engine (fullscreen / maximize,
+		 \brief  Gives the C# Screen class the engine (fullscreen / maximize,
 		         and whether this is the editor, where Screen changes are
 		         ignored). Pass nullptr to disconnect (Core does this before
 		         shutdown).
