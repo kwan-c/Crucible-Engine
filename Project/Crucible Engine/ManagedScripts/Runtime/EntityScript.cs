@@ -91,6 +91,16 @@ namespace Crucible
         public static void Destroy(Entity entity, float delay = 0f) { global::Crucible.Entity.Destroy(entity, delay); }
 
         /// <summary>
+        /// This script on or off (Unity's MonoBehaviour.enabled). While off it gets no OnUpdate
+        /// or UI callbacks but keeps its fields; switch it back on from another script.
+        /// </summary>
+        public bool Enabled
+        {
+            get { return Entity.IsEnabled<EntityScript>(); }
+            set { Entity.SetEnabled<EntityScript>(value); }
+        }
+
+        /// <summary>
         /// Called by the engine (ScriptRuntime) right after construction and
         /// before OnCreate. Gives the script its entity. Can only happen once.
         /// </summary>

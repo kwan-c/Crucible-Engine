@@ -241,6 +241,13 @@ namespace Crucible::ScriptBindings
 			return scenes->Current().IdOf(entity).m_Value;
 		}
 
+		uint64_t EnsureSceneId(Entity entity)
+		{
+			if (!world || !scenes || !world->IsAlive(entity))
+				return 0;
+			return scenes->EnsureId(entity).m_Value;
+		}
+
 		void SetScriptLookup(ScriptLookup lookup, void* context)
 		{
 			scriptLookup = lookup;

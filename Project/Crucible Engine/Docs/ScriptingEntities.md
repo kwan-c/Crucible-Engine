@@ -139,6 +139,26 @@ field in the Inspector (X clears it). This is Unity's `public GameObject door;`.
   Any other T throws.
 - Not yet: more component types.
 
+### Switching things on and off
+
+- `entity.SetEnabled<T>(bool)` / `IsEnabled<T>()` (Unity's `.enabled`) for any
+  type `GetComponent` accepts; a script class means the entity's script. Uses
+  World's per-component on/off (data kept; queries skip it, so it isn't drawn,
+  simulated, heard or updated). Transform can't be switched off. Returns false if
+  the entity has no such component.
+- `EntityScript.Enabled`: this script on / off (no OnUpdate or UI callbacks
+  while off; switch it back on from another script).
+- `entity.SetActive(bool)`, `IsActive` (it and every parent - Unity's
+  activeInHierarchy), `IsActiveSelf`. The engine has no entity-level active, so
+  SetActive(false) switches off every component that is on, on the entity and
+  all its children, and remembers which; SetActive(true) turns exactly those back
+  on (anything switched off separately stays off; a child deactivated on its own
+  stays inactive). On your own entity it pauses your script too. The records are
+  Play-only and are cleared on Stop / scene change.
+
+C++ side: `Bindings/EnableBindings.cpp` (World's `TrySetComponentEnabled` /
+`IsComponentEnabled` by ComponentId).
+
 ### Spawning and destroying
 
 Declare `public Prefab bulletPrefab;` and drag a `.cprefab` from the Asset
@@ -158,9 +178,12 @@ Browser onto it (saved as the prefab's asset guid, so renames keep the link).
   OnDestroy first, children before parents. Stop discards pending destroys.
 - Everything spawned during Play is removed on Stop (the scene snapshot is
   restored).
-- **Limitation:** `public Entity` fields inside a prefab that point at another
-  entity of the same prefab are not remapped to the new copy - they still name
-  the entity the prefab was made from. Use `FindChild` until this is fixed.
+- `public Entity` fields (and physics joint connected bodies) between parts of
+  a prefab point at the copy's own parts in every copy - placed in the editor
+  or spawned with `Instantiate`. The prefab file stores them by part (entry id);
+  references to entities outside the prefab are cleared when it is saved (with
+  a warning), like Unity. Prefabs saved before this change need saving again.
+  See `Scene/EntityRefs.h`.
 
 ### Transform: world space and hierarchy
 

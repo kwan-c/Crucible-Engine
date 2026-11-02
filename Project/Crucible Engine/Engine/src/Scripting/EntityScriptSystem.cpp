@@ -105,6 +105,7 @@ namespace Crucible
 			ScriptBindings::EntityContext::ClearDestroyQueue(); // destroys belong to the session that asked
 			ScriptBindings::EntityContext::ClearOneShotAudio();
 			ScriptBindings::EntityContext::ClearUIEvents();
+			ScriptBindings::EntityContext::ClearActiveStates();
 			// Time.ElapsedTime keeps counting across a level switch (Scene.Load), like
 			// Unity's Time.time; only a new session or Stop starts it again.
 			if (m_session != m_play.SessionRevision() || !m_play.InSession())

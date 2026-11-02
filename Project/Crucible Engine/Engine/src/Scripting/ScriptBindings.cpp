@@ -29,6 +29,7 @@ namespace Crucible::ScriptBindings
 		RegisterLightBindings();
 		RegisterParticleBindings();
 		RegisterUIBindings();
+		RegisterEnableBindings();
 	}
 
 	void ClearAll()

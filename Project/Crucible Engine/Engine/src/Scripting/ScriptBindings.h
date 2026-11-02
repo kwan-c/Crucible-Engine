@@ -128,5 +128,6 @@ namespace Crucible
 		void RegisterLightBindings();     // Bindings/LightBindings.cpp     (C# Light)
 		void RegisterParticleBindings();  // Bindings/ParticleBindings.cpp  (C# ParticleEmitter)
 		void RegisterUIBindings();        // Bindings/UIBindings.cpp        (C# UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, UI)
+		void RegisterEnableBindings();    // Bindings/EnableBindings.cpp    (C# SetEnabled<T>, SetActive, EntityScript.Enabled)
 	}
 }

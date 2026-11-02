@@ -155,6 +155,15 @@ namespace Crucible
 		 *********************************************************************/
 		void ClearUIEvents();
 
+		// --- Entity.SetActive records ------------------------------------- //
+
+		/*********************************************************************
+		 \brief  Forgets every SetActive(false) record (Play stopped, scene
+		         changed - the snapshot / new scene has the real on/off state).
+		         Defined in Bindings/EnableBindings.cpp.
+		 *********************************************************************/
+		void ClearActiveStates();
+
 		// --- One-shot audio (C# Audio.PlayClipAtPoint) ---------------------- //
 
 		/*********************************************************************
@@ -199,6 +208,13 @@ namespace Crucible
 		         has none yet (e.g. spawned during Play). Never issues a new id.
 		 *********************************************************************/
 		uint64_t SceneIdOf(Entity entity);
+
+		/*********************************************************************
+		 \brief  The entity's scene id, issuing one if it has none yet
+		         (SceneManager::EnsureId) - for spawned prefab parts whose
+		         script fields must point at each other. 0 for a dead entity.
+		 *********************************************************************/
+		uint64_t EnsureSceneId(Entity entity);
 
 		/*********************************************************************
 		 \brief  Finds the GC handle of the C# script running on an entity

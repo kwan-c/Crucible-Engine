@@ -186,6 +186,70 @@ namespace Crucible
             return GetComponent<T>() != null;
         }
 
+        // --- switching on and off ------------------------------------------------- //
+
+        /// <summary>
+        /// Switches one component on or off (Unity's .enabled). Its data is kept; while off,
+        /// it does nothing (not drawn, no physics, silent, script paused...). T is any type
+        /// GetComponent accepts; a script class means this entity's script. Transform can't
+        /// be switched off. Returns false if the entity has no such component.
+        /// </summary>
+        public bool SetEnabled<T>(bool enabled) where T : class
+        {
+            return SetComponentEnabledInternal((int)index, (int)generation, KindOf(typeof(T)), enabled ? 1 : 0) != 0;
+        }
+
+        /// <summary>Is the component switched on (its own choice)? False if the entity has none.</summary>
+        public bool IsEnabled<T>() where T : class
+        {
+            int on;
+            return IsComponentEnabledInternal((int)index, (int)generation, KindOf(typeof(T)), out on) != 0 && on != 0;
+        }
+
+        /// <summary>
+        /// Unity's SetActive: false switches off every component on this entity and all its
+        /// children (remembering which), true switches exactly those back on - anything you
+        /// had switched off yourself stays off. On your own entity this pauses your script too.
+        /// </summary>
+        public void SetActive(bool active)
+        {
+            SetActiveInternal((int)index, (int)generation, active ? 1 : 0);
+        }
+
+        /// <summary>Is this entity itself active - SetActive(false) not called on it? (Unity's activeSelf.)</summary>
+        public bool IsActiveSelf
+        {
+            get { int v; return IsActiveInternal((int)index, (int)generation, 1, out v) != 0 && v != 0; }
+        }
+
+        /// <summary>Active, and so are all its parents (Unity's activeInHierarchy).</summary>
+        public bool IsActive
+        {
+            get { int v; return IsActiveInternal((int)index, (int)generation, 0, out v) != 0 && v != 0; }
+        }
+
+        // The ComponentKind number for a GetComponent type; throws for anything else.
+        private static int KindOf(Type type)
+        {
+            if (type == typeof(Transform)) return (int)ComponentKind.Transform;
+            if (type == typeof(RigidBody)) return (int)ComponentKind.RigidBody;
+            if (type == typeof(Animator)) return (int)ComponentKind.Animator;
+            if (type == typeof(AudioSource)) return (int)ComponentKind.AudioSource;
+            if (type == typeof(CharacterController)) return (int)ComponentKind.CharacterController;
+            if (type == typeof(Camera)) return (int)ComponentKind.Camera;
+            if (type == typeof(CameraOrbit)) return (int)ComponentKind.CameraOrbit;
+            if (type == typeof(Light)) return (int)ComponentKind.Light;
+            if (type == typeof(ParticleEmitter)) return (int)ComponentKind.ParticleEmitter;
+            if (type == typeof(UIText)) return (int)ComponentKind.UIText;
+            if (type == typeof(UIImage)) return (int)ComponentKind.UIImage;
+            if (type == typeof(UISlider)) return (int)ComponentKind.UISlider;
+            if (type == typeof(UIButton)) return (int)ComponentKind.UIButton;
+            if (type == typeof(UIRect)) return (int)ComponentKind.UIRect;
+            if (type == typeof(UICanvas)) return (int)ComponentKind.UICanvas;
+            if (typeof(EntityScript).IsAssignableFrom(type)) return (int)ComponentKind.Script;
+            throw new ArgumentException(type.Name + ": use a type GetComponent accepts.");
+        }
+
         // Native component kinds. Must match ScriptComponentKind in Bindings/EntityBindings.cpp.
         private enum ComponentKind
         {
@@ -265,5 +329,13 @@ namespace Crucible
                                                     out int childGeneration);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int DestroyInternal(int index, int generation, float delay);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetComponentEnabledInternal(int index, int generation, int kind, int enabled);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int IsComponentEnabledInternal(int index, int generation, int kind, out int enabled);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetActiveInternal(int index, int generation, int active);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int IsActiveInternal(int index, int generation, int self, out int active);
     }
 }

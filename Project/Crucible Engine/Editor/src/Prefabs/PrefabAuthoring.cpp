@@ -23,6 +23,7 @@
 #include "ECS/World.h"
 #include "ECS/Components/Components.h"
 #include "Scene/EntityIO.h"
+#include "Scene/EntityRefs.h"
 #include "Scene/Prefab.h"
 #include "Scene/Scene.h"
 #include "Scene/SceneManager.h"
@@ -173,6 +174,10 @@ namespace Crucible::PrefabAuthoring {
 		};
 		std::vector<Saved> saved;
 
+		// Entity references are saved as the prefab entry they point at (see Scene/EntityRefs.h).
+		SceneManager& scenes = EditorManager::GetInstance().GetCore()->GetScenes();
+		auto const sceneIdOf = [&scenes](Entity e) { return scenes.Current().IdOf(e).m_Value; };
+
 		for (Entity const root : roots) {
 			std::string const stem = SafeFileStem(NameOf(world, root));
 
@@ -183,7 +188,7 @@ namespace Crucible::PrefabAuthoring {
 			}
 
 			Saved entry{ root, JoinVirtual(folder, fileName), {} };
-			if (Prefab::SaveFrom(world, root, dir / fileName, stem, &entry.ids)) {
+			if (Prefab::SaveFrom(world, root, dir / fileName, stem, &entry.ids, sceneIdOf)) {
 				// Shown in the Console (CRU_USER_*: front-facing, unlike the engine's own log line).
 				CRU_USER_INFO("Created prefab {} from '{}' ({} entit{})", entry.virtualPath, NameOf(world, root),
 				              entry.ids.size(), entry.ids.size() == 1 ? "y" : "ies");
@@ -279,7 +284,9 @@ namespace Crucible::PrefabAuthoring {
 
 		if (!(parent == kNullEntity) && !world.IsAlive(parent)) { parent = kNullEntity; }
 
-		Entity const root = prefab.Instantiate(world, parent);
+		// Parts that reference each other point at the new copy's parts, not the original's.
+		Entity const root = prefab.Instantiate(world, parent,
+			[core](Entity e) { return core->GetScenes().EnsureId(e).m_Value; });
 		if (!world.IsAlive(root)) { return kNullEntity; }
 
 		if (position) {
@@ -435,6 +442,65 @@ namespace Crucible::PrefabAuthoring {
 			bool          isRoot = false;
 		};
 
+		// ---- entity references (Scene/EntityRefs.h) --------------------------------------
+		// In a scene, script Entity fields and PhysicsJoint connected bodies hold SCENE ids; in a
+		// .cprefab they hold the ENTRY id of the part they point at. Everything that copies
+		// components between an instance and its file translates them with these.
+
+		// Whose scene ids: the open scene's, or (while UpdateOtherScenes rewrites another scene
+		// file in a scratch world) that file's Scene. Set only by SceneIdsFrom below.
+		Scene* g_idScene = nullptr;
+
+		struct SceneIdsFrom {   // RAII: scene ids come from `scene` until this goes away
+			explicit SceneIdsFrom(Scene& scene) : m_previous(std::exchange(g_idScene, &scene)) {}
+			~SceneIdsFrom() { g_idScene = m_previous; }
+			SceneIdsFrom(SceneIdsFrom const&) = delete;
+			SceneIdsFrom& operator=(SceneIdsFrom const&) = delete;
+			Scene* m_previous;
+		};
+
+		// An entity's scene id, or 0 if it has none yet.
+		std::uint64_t SceneIdOf(Entity e) {
+			if (g_idScene != nullptr) { return g_idScene->IdOf(e).m_Value; }
+			Core* core = EditorManager::GetInstance().GetCore();
+			return core != nullptr ? core->GetScenes().Current().IdOf(e).m_Value : 0;
+		}
+
+		// An entity's scene id, issuing one if it has none (so a reference to it can be stored).
+		std::uint64_t EnsureSceneIdOf(Entity e) {
+			if (g_idScene != nullptr) { return g_idScene->EnsureId(e).m_Value; }
+			Core* core = EditorManager::GetInstance().GetCore();
+			return core != nullptr ? core->GetScenes().EnsureId(e).m_Value : 0;
+		}
+
+		// The instance root above (or at) a part.
+		Entity PartRoot(World const& world, Entity part) {
+			for (Entity e = part; world.IsAlive(e); e = world.GetParent(e)) {
+				PrefabInstance const* link = world.Read<PrefabInstance>(e);
+				if (link == nullptr) { return kNullEntity; }
+				if (link->isRoot) { return e; }
+			}
+			return kNullEntity;
+		}
+
+		// entry id (in `prefab`) -> the scene id of the matching part of the instance `part`
+		// belongs to; ids that aren't entries of `prefab` come back unchanged. `ensure` issues
+		// scene ids (writing into the instance); without it, read-only (for comparing).
+		EntityRefs::Map EntryToInstance(World const& world, Entity part, Prefab const& prefab, bool ensure) {
+			Entity const root = PartRoot(world, part);
+			std::unordered_map<std::uint64_t, Entity> byEntry;   // entry id -> part
+			if (world.IsAlive(root)) {
+				std::uint64_t const asset = world.Read<PrefabInstance>(root)->prefabAsset;
+				for (Entity const m : InstanceMembers(world, root, asset)) { byEntry[world.Read<PrefabInstance>(m)->fileId] = m; }
+			}
+			return prefab.EntryToSceneMap(
+				[&prefab, byEntry](std::size_t index) {
+					auto const found = byEntry.find(prefab.IdAt(index));
+					return found != byEntry.end() ? found->second : kNullEntity;
+				},
+				[ensure](Entity e) { return ensure ? EnsureSceneIdOf(e) : SceneIdOf(e); });
+		}
+
 		// The entity's entry in `prefab` (a particular version of its file), or false.
 		bool FindEntryIn(World const& world, Entity entity, Prefab const* prefab, EntryRef& out) {
 			PrefabInstance const* link = world.IsAlive(entity) ? world.Read<PrefabInstance>(entity) : nullptr;
@@ -489,6 +555,10 @@ namespace Crucible::PrefabAuthoring {
 				// prefab) compares as its default - exactly what an instance of it would get.
 				T theirs{};
 				if (inPrefab) { doc.GetObject(path, theirs); }
+				if constexpr (std::is_same_v<T, ScriptComponent> || std::is_same_v<T, PhysicsJoint>) {
+					// The file names parts by entry id, the instance by scene id: compare like with like.
+					if (inPrefab) { EntityRefs::Remap(theirs, EntryToInstance(world, entity, *entry.prefab, false)); }
+				}
 				rapidjson::Document scratch;
 				rapidjson::Value a, b;
 				Reflection::ToJsonValue(*mine, a, scratch.GetAllocator());
@@ -529,6 +599,7 @@ namespace Crucible::PrefabAuthoring {
 						if (world.HasComponent<T>(item.entity) || !doc.Has(path)) { return false; }
 						T restored{};
 						doc.GetObject(path, restored);
+						EntityRefs::Remap(restored, EntryToInstance(world, item.entity, *entry.prefab, true));   // entry ids -> this instance's parts
 						if constexpr (ToggleableComponent<T>) {
 							world.AddComponent<T>(item.entity, std::move(restored), doc.Get<bool>(path + "/" + kComponentEnabledKey, true));
 						}
@@ -567,6 +638,7 @@ namespace Crucible::PrefabAuthoring {
 				T current = *mine;
 				T theirs{};
 				if (doc.Has(path)) { doc.GetObject(path, theirs); }
+				EntityRefs::Remap(theirs, EntryToInstance(world, item.entity, *entry.prefab, true));   // entry ids -> this instance's parts
 				for (auto const& prop : rttr::type::get<T>().get_properties()) {
 					if (prop.get_metadata(MetaDataTypes::DO_NOT_SERIALIZE).to_bool()) { continue; }
 					std::string const property = prop.get_name().to_string();
@@ -1215,6 +1287,26 @@ namespace Crucible::PrefabAuthoring {
 				if (!parentIsNew) { createdTops.push_back(e); }
 			}
 
+			// References between parts: values that came from the file name parts by ENTRY id; point
+			// them at this instance's parts (scene ids). New parts are captured whole further down, so
+			// only changes to existing parts are recorded here (after their update, so undo/redo order holds).
+			{
+				EntityRefs::Map const toScene = prefab.EntryToSceneMap(
+					[&byIndex](std::size_t index) { return index < byIndex.size() ? byIndex[index] : kNullEntity; },
+					&EnsureSceneIdOf);
+				for (Entity const e : byIndex) {
+					if (!world.IsAlive(e)) { continue; }
+					if (std::find(created.begin(), created.end(), e) != created.end()) {
+						EntityRefs::RemapEntity(world, e, toScene);
+						continue;
+					}
+					std::string before = EntityState::Capture(world, e);
+					if (EntityRefs::RemapEntity(world, e, toScene) && g_recording) {
+						parts.push_back(std::make_unique<EntityStateCommand>(history.KeyOf(e), std::move(before), EntityState::Capture(world, e), label));
+					}
+				}
+			}
+
 			// Parts whose entry the prefab no longer has. Only the top-most of a removed branch is
 			// deleted (the rest goes with it); children the user added under them are detached as
 			// roots first, so nothing they built is lost (the same rule as Revert / Detach).
@@ -1354,6 +1446,38 @@ namespace Crucible::PrefabAuthoring {
 		if (applied == 0) {
 			CRU_USER_WARN("Nothing to apply to '{}'", path);
 			return false;
+		}
+
+		// Entity references written from the instance hold its scene ids; the file must hold entry
+		// ids. A part of this instance (or an entity just added to the prefab) -> its entry id;
+		// a value that already is an entry id -> kept; anything else (an outside entity, or an
+		// older file's leftover scene id) -> cleared.
+		{
+			std::unordered_map<std::uint64_t, std::uint64_t> entryOfScene;   // scene id -> entry id
+			for (Entity const m : InstanceMembers(world, root, prefab)) {
+				if (std::uint64_t const sceneId = SceneIdOf(m); sceneId != 0) { entryOfScene[sceneId] = world.Read<PrefabInstance>(m)->fileId; }
+			}
+			std::unordered_set<std::uint64_t> entryIds;
+			for (std::size_t i = 0; i < old->EntityCount(); ++i) { entryIds.insert(old->IdAt(i)); }
+			for (auto const& [entity, id] : added) {
+				entryIds.insert(id);
+				if (std::uint64_t const sceneId = SceneIdOf(entity); sceneId != 0) { entryOfScene[sceneId] = id; }
+			}
+			std::size_t cleared = 0;
+			EntityRefs::Map const toEntry = [&](std::uint64_t id) -> std::uint64_t {
+				if (entryIds.count(id) != 0) { return id; }
+				auto const found = entryOfScene.find(id);
+				if (found != entryOfScene.end()) { return found->second; }
+				++cleared;
+				return 0;
+			};
+			for (std::size_t i = 0; i < doc.GetListSize("entities"); ++i) {
+				EntityRefs::RemapDocument(doc, "entities/" + std::to_string(i) + "/components", toEntry);
+			}
+			if (cleared > 0) {
+				CRU_USER_WARN("{}: {} reference{} to entities outside the prefab {} cleared - a prefab can only point at its own parts",
+				              path, cleared, cleared == 1 ? "" : "s", cleared == 1 ? "was" : "were");
+			}
 		}
 
 		if (!doc.SaveToFile(file)) {
@@ -1523,6 +1647,7 @@ namespace Crucible::PrefabAuthoring {
 			std::size_t updated = 0;
 			{
 				NotRecorded const quiet;
+				SceneIdsFrom const ids(scene);   // entity references in this file use ITS scene ids
 				std::vector<std::unique_ptr<EditorCommand>> unused;
 				std::size_t fromSavedList = 0;
 				updated = UpdateInstancesIn(scratch, prefabAsset, unused, "Update", fromSavedList);

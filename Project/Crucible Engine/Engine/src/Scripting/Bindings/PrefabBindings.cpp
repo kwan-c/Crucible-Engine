@@ -118,7 +118,7 @@ namespace Crucible::ScriptBindings
 				if (!prefab || !world)
 					return 0;
 
-				const Entity root = prefab->Instantiate(*world, parent);
+				const Entity root = prefab->Instantiate(*world, parent, &EntityContext::EnsureSceneId); // parts that reference each other point at the new copy
 				// ResolveEntity also confirms this is a Play session.
 				Entity checked;
 				if (!EntityContext::ResolveEntity(static_cast<int32_t>(root.index), static_cast<int32_t>(root.generation),
