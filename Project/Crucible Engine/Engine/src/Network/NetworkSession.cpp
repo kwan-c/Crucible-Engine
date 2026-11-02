@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts.
@@ -12,6 +12,7 @@
 *    -v1.0       Networking Guide PR 4 (see the header)
 *    -v1.1       review fixes: refused Start changes nothing, FreeSlot
 *                guarded, per-message receive budget, client join deadline
+*    -v1.2       LastStartError, LastEndReason
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -81,6 +82,15 @@ namespace Crucible
 	// ---- lifecycle -------------------------------------------------------------------------
 
 	bool NetworkSession::Start(const NetworkSettings& settings, std::string& error)
+	{
+		// A refusal because a session is already running must not touch that session at all.
+		const bool running = m_state != SessionState::Offline || m_transport != nullptr;
+		const bool started = TryStart(settings, error);
+		if (!running) m_lastStartError = started ? std::string() : error;
+		return started;
+	}
+
+	bool NetworkSession::TryStart(const NetworkSettings& settings, std::string& error)
 	{
 		// Every check comes before any member changes, so a refused Start leaves the session,
 		// its settings and its connections exactly as they were. `settings` may BE m_settings
@@ -159,6 +169,7 @@ namespace Crucible
 			m_carry.clear();
 			m_transport.reset();
 			CRU_INFO("[Net] {} session ended: {}", RoleName(m_role), text);
+			m_lastEndReason = text;
 			Post(NetworkEvents::SessionEnded{ .reason = text });
 		}
 		catch (...)

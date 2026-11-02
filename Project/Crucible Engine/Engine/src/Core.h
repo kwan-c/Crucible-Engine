@@ -100,8 +100,8 @@ namespace Crucible
 
         // The multiplayer session (Network/NetworkSession.h). Offline unless this instance's
         // NetworkSettings say Host or Client; then it starts when Play starts and stops at Stop.
-        // Settings come from CRUCIBLE_NET and --net-* (Network/NetworkSettings.h); a later editor
-        // panel sets them with GetNetwork().SetSettings(...) before Play.
+        // The settings start as EngineConfig.json's "network" defaults; the editor's Network panel
+        // changes them for this instance only with GetNetwork().SetSettings(...), before Play.
         NetworkSession& GetNetwork() noexcept { return *m_network; }
 
         // Opt-in entity/component events on the gameplay bus, e.g. EcsBridge().OnRemoved<MeshRenderer>(...).

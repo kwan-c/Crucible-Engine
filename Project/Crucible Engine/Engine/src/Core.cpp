@@ -155,12 +155,15 @@ namespace Crucible {
         // when Play stops; Pause keeps it running.
         m_network = std::make_unique<NetworkSession>(m_events);
         {
-            std::string overrideError;
-            m_network->SetSettings(ResolveStartupSettings(overrideError));
-            if (!overrideError.empty()) CRU_WARN("[Net] network override ignored - {}", overrideError);
+            // The shared defaults from EngineConfig.json; the editor's Network panel may change them
+            // for this instance (in memory) before Play.
+            std::string configWarning;
+            m_network->SetSettings(FromEngineConfig(m_config.network, configWarning));
+            if (!configWarning.empty()) CRU_WARN("[Net] EngineConfig.json: {}", configWarning);
             const NetworkSettings& net = m_network->Settings();
-            if (net.mode == NetMode::Host)        CRU_INFO("[Net] mode host: listening on port {} when Play starts", net.hostPort);
-            else if (net.mode == NetMode::Client) CRU_INFO("[Net] mode client: joining {}:{} when Play starts", net.connectAddress, net.connectPort);
+            CRU_INFO("[Net] defaults from EngineConfig.json: mode {}, host port {}, listen on {}, client joins {}:{}, max clients {}",
+                ToString(net.mode), net.hostPort, net.listenAddress.empty() ? "all interfaces" : net.listenAddress,
+                net.connectAddress, net.connectPort, net.maxClients);
         }
         m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this](const EngineEvents::PlayStateChanged& e) {
             if (e.from == PlayState::Edit && e.to == PlayState::Playing)

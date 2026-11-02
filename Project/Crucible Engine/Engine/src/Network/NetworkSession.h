@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -72,6 +72,7 @@
 *                Update calls RequestStop, which the next Update performs.
 *
 * \history
+*    -v1.2       LastStartError and LastEndReason for the editor's panel
 *    -v1.1       review fixes: a refused Start changes nothing (validated
 *                first; the running session uses ActiveSettings()); FreeSlot
 *                guarded; per-message receive budget with a bounded carry-
@@ -219,7 +220,14 @@ namespace Crucible
 		/// The transport while a session runs, otherwise null (diagnostics).
 		const GnsTransport* Transport() const noexcept { return m_transport.get(); }
 
+		/// Why the latest Start failed (empty after a successful one): for the editor's panel.
+		const std::string& LastStartError() const noexcept { return m_lastStartError; }
+
+		/// Why the latest session ended (kept until the next one ends): for the editor's panel.
+		const std::string& LastEndReason() const noexcept { return m_lastEndReason; }
+
 	private:
+		bool TryStart(const NetworkSettings& settings, std::string& error);
 		void HandleServerEvent(const ConnectionEvent& event);
 		void HandleClientEvent(const ConnectionEvent& event);
 		void HandleServerMessage(const ReceivedMessage& message);
@@ -251,6 +259,8 @@ namespace Crucible
 		std::uint32_t                  m_generation = 0;
 		bool                           m_stopRequested = false;
 		std::string                    m_stopReason;
+		std::string                    m_lastStartError;
+		std::string                    m_lastEndReason;
 
 		// Client
 		ClientPhase                    m_clientPhase = ClientPhase::None;

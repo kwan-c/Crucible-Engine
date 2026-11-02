@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                The thin adapter between Crucible and GameNetworkingSockets
 *                (GNS): listen, connect, accept or refuse, send bytes on a
@@ -61,6 +61,7 @@
 *                only accepts a not-yet-accepted incoming connection and
 *                never frees anything else; Receive grows its output
 *                geometrically; IsKnownToGns for leak checks
+*    -v1.2       IsIpAddress, so settings can be validated before Play
 *
 **************************************************************************/
 #pragma once
@@ -70,6 +71,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "Network/ConnectionSpec.h"
@@ -227,6 +229,11 @@ namespace Crucible
 		/// Diagnostics: true if GNS still knows this handle, whichever transport (if any) owns
 		/// it. Leak checks use it to prove a freed handle is really gone from GNS.
 		static bool IsKnownToGns(NetConnection connection) noexcept;
+
+		/// True if `text` is an IPv4 or IPv6 address literal with no port ("192.168.1.20",
+		/// "::1"), exactly what Listen and Connect accept. Host names are not addresses.
+		/// Works before InitLibrary (pure parsing).
+		static bool IsIpAddress(std::string_view text);
 
 		GnsTransport();
 		~GnsTransport();   // CloseAll(SessionEnded, no linger)

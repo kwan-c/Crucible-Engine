@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                GnsTransport on GameNetworkingSockets v1.6.1: the only
 *                file in the engine that includes GNS headers.
@@ -12,6 +12,7 @@
 *    -v1.0       Networking Guide 7.5, 19.4, 18.3 issues 10 and 14
 *    -v1.1       review fixes: ownership checks on every connection-
 *                specific call, safe Accept, geometric Receive growth
+*    -v1.2       IsIpAddress
 *
 **************************************************************************/
 #include "Network/GnsTransport.h"
@@ -22,6 +23,7 @@
 #include <steam/isteamnetworkingutils.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cstring>
 #include <iterator>
 
@@ -453,6 +455,17 @@ namespace Crucible
 	{
 		SteamNetConnectionInfo_t info;
 		return g_libraryInitialized && SteamNetworkingSockets()->GetConnectionInfo(connection, &info);
+	}
+
+	bool GnsTransport::IsIpAddress(std::string_view text)
+	{
+		if (text.empty() || text.size() >= SteamNetworkingIPAddr::k_cchMaxString) return false;
+		// GNS's parser tolerates surrounding spaces ("1.2.3.4 "); a stray space in a settings
+		// field should be reported, not silently accepted.
+		if (std::ranges::any_of(text, [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; })) return false;
+		const std::string copy(text);   // ParseString needs a terminated string
+		SteamNetworkingIPAddr address;
+		return address.ParseString(copy.c_str()) && address.m_port == 0;   // the same rule as ParseIp
 	}
 
 	bool GnsTransport::Status(NetConnection connection, ConnectionStatus& out) const
