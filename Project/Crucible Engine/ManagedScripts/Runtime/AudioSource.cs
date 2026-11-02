@@ -19,6 +19,7 @@
 *    Play / Stop / PlayOneShot happen later in the same frame. Volume and
 *    Pitch also change a sound that is already playing; Loop, SpatialBlend,
 *    MinDistance, MaxDistance and Clip apply from the next Play.
+*    PlayOneShot(clip, volumeScale) plays another clip once without changing Clip.
 *
 *    C++ side: Engine/src/Scripting/Bindings/AudioBindings.cpp.
 *
@@ -51,14 +52,20 @@ namespace Crucible
         public void PlayOneShot() { RequestInternal(I, G, 2); }
 
         /// <summary>
-        /// Plays <paramref name="clip"/> once on top of whatever is playing. This also makes it
-        /// the source's Clip. All one-shots in one frame use the last clip set that frame.
+        /// Plays <paramref name="clip"/> once on top of whatever is playing, without changing
+        /// this source's Clip (Unity's PlayOneShot(clip, volumeScale)) - e.g. a reload click from
+        /// the gun's source. volumeScale multiplies Volume. Several different clips in one frame
+        /// each play (up to 8 a frame). Returns false if it couldn't be queued.
         /// </summary>
-        public void PlayOneShot(AudioClip clip)
+        public bool PlayOneShot(AudioClip clip, float volumeScale = 1f)
         {
-            Clip = clip;
-            PlayOneShot();
+            if (clip == null)
+                return false;
+            return PlayOneShotClipInternal(I, G, clip.IdLow, clip.IdHigh, volumeScale) != 0;
         }
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int PlayOneShotClipInternal(int index, int generation, int low, int high, float volumeScale);
 
         /// <summary>
         /// Is the Play() sound playing? One-shots do not count. Updated once per frame,

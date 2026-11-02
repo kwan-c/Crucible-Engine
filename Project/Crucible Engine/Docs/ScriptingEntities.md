@@ -370,9 +370,12 @@ fields take an audio file dragged from the Asset Browser (saved as its guid).
   `IsPlaying` is updated once per frame, so it is still false right after
   `Play()`. Volume and Pitch change a sound already playing; the other
   settings apply from the next Play.
-- `PlayOneShot(clip)` also sets `Clip`; every one-shot in a frame uses the last
-  clip set that frame. Use separate AudioSources for different simultaneous
-  sounds.
+- `PlayOneShot(clip, volumeScale = 1)` plays another clip once on top, WITHOUT
+  changing `Clip` (Unity's), e.g. a reload click from the gun's source. Different
+  clips in one frame each play (up to 8 a frame; returns false past that).
+  `volumeScale` multiplies `Volume`; changing `Volume` while it plays resets it to
+  the source volume. Uses `AudioSource::PlayOneShot(clip, scale)` (Audio/
+  AudioComponents.h v1.3) and ECSAudioSystem v1.6.
 - Static `Audio` class:
   - `Audio.MasterVolume`, `MusicVolume`, `SfxVolume`, or
     `GetBusVolume(AudioBus)` / `SetBusVolume(AudioBus, v)` (0..1). These are the

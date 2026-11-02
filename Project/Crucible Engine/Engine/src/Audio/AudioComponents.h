@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          2 October 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                The audio components the designer and gameplay touch:
 *                AudioSource and AudioListener.
@@ -18,11 +18,15 @@
 *    -v1.0       AudioSource
 *    -v1.1       AudioListener
 *    -v1.2       rolloff mode: logarithmic or linear
+*    -v1.3       PlayOneShot(clip, volumeScale): a one-shot of any clip,
+*                without changing m_clip (Unity's PlayOneShot(clip)),
+*                for C# scripting
 *
 **************************************************************************/
 #pragma once
 
 // STL
+#include <array>
 #include <cstdint>
 
 // Crucible engine
@@ -91,11 +95,30 @@ namespace Crucible {
         // gunshot. Never loops. Each call is one shot, even several a frame.
         void PlayOneShot() { if (m_pendingOneShots < 255) ++m_pendingOneShots; }
 
+        // Unity's PlayOneShot(clip, volumeScale): plays another clip once on
+        // top, WITHOUT changing m_clip - the gun's reload click from the same
+        // source as its shots. clip is an audio asset id (0 is ignored);
+        // volumeScale multiplies m_volume. Up to kMaxClipShots a frame; more
+        // are dropped. Note: changing m_volume while one plays resets it to
+        // m_volume (the live change goes to every voice, scale not kept).
+        static constexpr std::uint8_t kMaxClipShots = 8;
+        void PlayOneShot(const std::uint64_t& clip, const float& volumeScale = 1.0f) {
+            if (clip == 0 || m_pendingClipShotCount >= kMaxClipShots) return;
+            m_pendingClipShots[m_pendingClipShotCount]       = clip;
+            m_pendingClipShotVolumes[m_pendingClipShotCount] = volumeScale > 0.0f ? volumeScale : 0.0f;
+            ++m_pendingClipShotCount;
+        }
+
         // --- pending requests: ECSAudioSystem reads and clears these ---
         // Not registered for reflection, so never saved and never shown.
 
         AudioRequest      m_request         = AudioRequest::None;
         std::uint8_t      m_pendingOneShots = 0;
+
+        // PlayOneShot(clip, volumeScale) requests, in order.
+        std::array<std::uint64_t, kMaxClipShots> m_pendingClipShots{};
+        std::array<float, kMaxClipShots>         m_pendingClipShotVolumes{};
+        std::uint8_t                             m_pendingClipShotCount = 0;
 
     };  // AUDIOSOURCE STRUCT
 

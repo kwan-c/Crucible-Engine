@@ -100,6 +100,34 @@ namespace Crucible::ScriptBindings
 		}
 
 		/*********************************************************************
+		 \brief  C# AudioSource.PlayOneShot(clip, volumeScale): queues another
+		         clip on the component (AudioSource::PlayOneShot(clip, scale)),
+		         without changing its Clip.
+		 \return 0 if the clip isn't an audio asset, the scale is NaN, or
+		         the frame's queue (AudioSource::kMaxClipShots) is full.
+		 *********************************************************************/
+		int32_t ManagedAudioPlayOneShotClip(int32_t index, int32_t generation, int32_t low, int32_t high,
+		                                    float volumeScale) noexcept
+		{
+			try
+			{
+				const uint64_t clip =
+				    (static_cast<uint64_t>(static_cast<uint32_t>(high)) << 32) | static_cast<uint32_t>(low);
+				if (!std::isfinite(volumeScale) || !EntityContext::IsAudioAsset(clip))
+					return 0;
+				AudioSource* source = WriteSource(index, generation);
+				if (!source || source->m_pendingClipShotCount >= AudioSource::kMaxClipShots)
+					return 0;
+				source->PlayOneShot(clip, volumeScale);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
 		 \brief  C# AudioSource.IsPlaying: the Play() voice (not one-shots),
 		         as ECSAudioSystem last reported it.
 		 *********************************************************************/
@@ -435,6 +463,7 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Audio::PlayClipAtPointInternal", &ManagedAudioPlayClipAtPoint);
 
 		Add("Crucible.AudioSource::RequestInternal", &ManagedAudioRequest);
+		Add("Crucible.AudioSource::PlayOneShotClipInternal", &ManagedAudioPlayOneShotClip);
 		Add("Crucible.AudioSource::IsPlayingInternal", &ManagedAudioIsPlaying);
 
 		Add("Crucible.AudioSource::GetVolumeInternal", &GetFloat<&AudioSource::m_volume>);

@@ -8,7 +8,8 @@ namespace Crucible.Scripts
     //   2. Optional: drag a second audio file onto "Other Clip".
     //   3. Press Play, then:
     //        P  Play / Stop            O  PlayOneShot (overlapping)
-    //        I  PlayOneShot(Other Clip)
+    //        I  PlayOneShot(Other Clip) - the source's own Clip must stay the same
+    //        U  own clip AND Other Clip (at half volume) in the same frame - both must play
     //        1 / 2  volume down / up   3 / 4  pitch down / up
     //        L  toggle Loop (applies from the next Play)
     public sealed class AudioTest : EntityScript
@@ -46,7 +47,18 @@ namespace Crucible.Scripts
             if (Input.IsPressed(KeyCode.I))
             {
                 if (otherClip == null) Log.Warning("[AudioTest] Other Clip is not set.");
-                else source.PlayOneShot(otherClip);
+                else
+                {
+                    bool queued = source.PlayOneShot(otherClip);
+                    Log.Info("[AudioTest] PlayOneShot(" + otherClip.Name + ") queued " + queued + "; Clip is still " +
+                             (source.Clip != null ? source.Clip.Name : "none"));
+                }
+            }
+            if (Input.IsPressed(KeyCode.U) && otherClip != null)
+            {
+                source.PlayOneShot();                 // own clip
+                source.PlayOneShot(otherClip, 0.5f);  // another clip, half volume, same frame
+                Log.Info("[AudioTest] Own clip + " + otherClip.Name + " (half volume) in one frame");
             }
 
             if (Input.IsPressed(KeyCode.Num1)) { source.Volume -= 0.1f; Log.Info("[AudioTest] Volume " + source.Volume.ToString("0.0")); }
