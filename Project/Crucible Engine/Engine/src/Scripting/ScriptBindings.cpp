@@ -33,6 +33,7 @@ namespace Crucible::ScriptBindings
 		RegisterColliderBindings();
 		RegisterPlayerControllerBindings();
 		RegisterInputSettingsBindings();
+		RegisterScreenBindings();
 	}
 
 	void ClearAll()
@@ -44,6 +45,7 @@ namespace Crucible::ScriptBindings
 		SetRenderer(nullptr);
 		SetParticleSystem(nullptr);
 		SetEvents(nullptr);
+		SetCore(nullptr);
 		// Clear new adapters here.
 	}
 }

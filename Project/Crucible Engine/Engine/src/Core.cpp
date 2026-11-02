@@ -1,4 +1,5 @@
 #include "Core.h"
+#include <algorithm>
 #include "AssetPipe/Assetmanager.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Diagnostics/Logger.h"
@@ -43,7 +44,9 @@ namespace Crucible {
         m_config{ config },
         m_userSettings{ UserSettingsLoader::Load() },
         m_window{ new WindowManager(static_cast<int>(m_config.graphics.windowWidth), static_cast<int>(m_config.graphics.windowHeight),
-                                    m_config.graphics.windowTitle, m_config.graphics.fullScreen, m_config.graphics.maximized) },
+                                    m_config.graphics.windowTitle, m_config.graphics.fullScreen, m_config.graphics.maximized,
+                                    static_cast<int>(m_config.graphics.fullscreenWidth), static_cast<int>(m_config.graphics.fullscreenHeight),
+                                    static_cast<int>(m_config.graphics.fullscreenRefreshRate)) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() },
         m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
@@ -80,8 +83,29 @@ namespace Crucible {
     void Core::MaximizeWindow() { m_window->Maximize(); SaveWindowState(); }
     void Core::RestoreWindow()  { m_window->Restore();  SaveWindowState(); }
 
+    void Core::SetWindowedSize(int width, int height) {
+        m_window->SetWindowedSize(width, height);
+        SaveWindowState();
+    }
+
+    bool Core::SetFullscreenResolution(int width, int height, int refreshRate) {
+        if (!m_window->SetFullscreenResolution(width, height, refreshRate)) { return false; }
+        SaveWindowState();
+        return true;
+    }
+
+    std::vector<WindowResolution> Core::GetScreenResolutions() const { return m_window->GetResolutions(); }
+
     void Core::SaveWindowState() const {
-        EngineConfigLoader::SaveWindowState(m_config.app, m_window->IsFullscreen(), m_window->IsMaximized());
+        SavedWindowState state;
+        state.fullScreen            = m_window->IsFullscreen();
+        state.maximized             = m_window->IsMaximized();
+        state.windowWidth           = static_cast<std::uint32_t>(std::max(m_window->GetWindowedWidth(), 0));
+        state.windowHeight          = static_cast<std::uint32_t>(std::max(m_window->GetWindowedHeight(), 0));
+        state.fullscreenWidth       = static_cast<std::uint32_t>(m_window->GetFullscreenWidth());
+        state.fullscreenHeight      = static_cast<std::uint32_t>(m_window->GetFullscreenHeight());
+        state.fullscreenRefreshRate = static_cast<std::uint32_t>(m_window->GetFullscreenRefreshRate());
+        EngineConfigLoader::SaveWindowState(m_config.app, state);
     }
 
     bool Core::Init()
@@ -236,6 +260,7 @@ namespace Crucible {
         if (m_scriptRuntime->IsRunning()) if (auto* physics = m_systems.FindSystem<ECSPhysicsSystem>()) m_scriptRuntime->SetPhysicsBinding(&physics->GetPhysics());   // C# Physics.Raycast
         if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetRendererBinding(m_renderer);   // C# Camera screen maths
         if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetEventsBinding(&m_events);   // C# UIButton.WasClicked / UISlider.WasChanged
+        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetCoreBinding(this);   // C# Screen: window mode (ignored in the editor)
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
@@ -259,6 +284,7 @@ namespace Crucible {
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetRendererBinding(nullptr);
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetParticleSystemBinding(nullptr);
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetEventsBinding(nullptr);
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetCoreBinding(nullptr);
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }

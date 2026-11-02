@@ -46,6 +46,7 @@ namespace Crucible
 	struct UserSettings;
 	class Physics;
 	class Renderer;
+	class Core;
 	class ParticleSystem;
 	struct EventBuses;
 
@@ -414,6 +415,14 @@ namespace Crucible
 		         before shutdown).
 		 *********************************************************************/
 		bool SetRendererBinding(const Renderer* renderer);
+
+		/*********************************************************************
+		 brief  Gives the C# Screen class the engine (fullscreen / maximize,
+		         and whether this is the editor, where Screen changes are
+		         ignored). Pass nullptr to disconnect (Core does this before
+		         shutdown).
+		 *********************************************************************/
+		bool SetCoreBinding(Core* core);
 
 		/*********************************************************************
 		 \brief  Gives the C# ParticleEmitter class the particle system (Emit,

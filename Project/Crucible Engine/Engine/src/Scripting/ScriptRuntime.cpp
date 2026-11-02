@@ -2545,6 +2545,22 @@ namespace Crucible
 	}
 
 	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetCore.
+	 *********************************************************************/
+	bool ScriptRuntime::SetCoreBinding(Core* core)
+	{
+		if (!m_impl->Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::SetCore(core);
+		return true;
+#else
+		(void)core;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
 	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetEvents.
 	 *********************************************************************/
 	bool ScriptRuntime::SetEventsBinding(EventBuses* events)

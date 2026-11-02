@@ -387,6 +387,43 @@ C++ side: `Bindings/InputSettingsBindings.cpp` (uses `GetUserSettings()` from
 `AudioBindings.cpp`), `Bindings/PlayerControllerBindings.cpp`. Test:
 `Assets/Scripts/KeybindTest.cs`.
 
+### Window mode and resolution (Screen)
+
+- Static `Screen` (Unity's): `Mode` (`WindowMode.Windowed` / `Maximized` /
+  `Fullscreen`), `FullScreen` (on / off; off goes back to maximized or
+  windowed, whichever it was), read-only `Width` / `Height` (the game screen,
+  same as `Camera.ScreenSize`), `AspectRatioLock` (the game locks the window to
+  the project's shape; 0 = free), `IsEditor`.
+- Resolution: `Screen.Resolutions` (the monitor's fullscreen sizes, smallest
+  first, `Resolution` = Width / Height / RefreshRate),
+  `Screen.SetResolution(w, h, mode, refreshRate = 0)`:
+  - `Fullscreen` = EXCLUSIVE: the monitor switches to w x h (must be in
+    Resolutions; refresh 0 = the highest). The screen blinks on the switch and
+    alt-tab minimizes the game so the desktop gets its resolution back.
+  - `Windowed` / `Maximized` = the window's size (Maximized uses it when
+    restored). Kept inside the monitor's work area; with the aspect lock the
+    width is kept and the height follows.
+  - `SetBorderlessFullscreen()` = fullscreen at the monitor's own resolution
+    (the default, quick alt-tab). `Mode = Fullscreen` uses whichever was chosen
+    last. Read back: `WindowedWidth` / `Height`, `FullscreenWidth` / `Height` /
+    `RefreshRate` (0 = borderless), `IsExclusiveFullscreen`.
+- Everything is saved to `UserSettings.json` at once (Core, the F11 path):
+  `"game": { "graphics": { "fullScreen", "maximized", "windowWidth",
+  "windowHeight", "fullscreenWidth", "fullscreenHeight", "fullscreenRefreshRate" } }`.
+  A saved resolution the monitor no longer offers falls back to borderless. The
+  editor's section now remembers its windowed size too (it overrides
+  EngineConfig.json's windowWidth / windowHeight on the next launch).
+- Not done: Windows' strict exclusive mode (`VK_EXT_full_screen_exclusive`, a
+  renderer change) and a render scale (draw smaller, upscale).
+- IGNORED IN THE EDITOR, as in Unity: the window there is the editor. The
+  first ignored change logs once. Reading works in both apps. Test in the game.
+
+C++ side: `Bindings/ScreenBindings.cpp` (Core through
+`ScriptRuntime::SetCoreBinding`); `WindowManager::SetWindowedSize` /
+`SetFullscreenResolution` / `GetResolutions`; `Core` wrappers;
+`EngineConfigLoader::SaveWindowState(app, SavedWindowState)`. Test:
+`Assets/Scripts/ScreenTest.cs`.
+
 ### Movement, raycasts and time
 
 - `GetComponent<CharacterController>()` (or `CharacterController`): Unity's

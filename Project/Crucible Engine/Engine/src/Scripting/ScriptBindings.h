@@ -35,6 +35,7 @@ namespace Crucible
 	struct UserSettings;
 	class Physics;
 	class Renderer;
+	class Core;
 	class ParticleSystem;
 	struct EventBuses;
 
@@ -103,6 +104,14 @@ namespace Crucible
 		void SetRenderer(const Renderer* renderer);
 
 		/*********************************************************************
+		 brief  Gives the C# Screen class the engine (window mode; editor or
+		         game). nullptr clears it. Non-owning; main thread only. Called
+		         through ScriptRuntime::SetCoreBinding. Defined in
+		         Bindings/ScreenBindings.cpp.
+		 *********************************************************************/
+		void SetCore(Core* core);
+
+		/*********************************************************************
 		 \brief  Gives the C# ParticleEmitter class the particle system (Emit,
 		         Restart, ParticleCount). nullptr clears it. Non-owning; main
 		         thread only. Called through ScriptRuntime::SetParticleSystemBinding.
@@ -145,5 +154,6 @@ namespace Crucible
 		void RegisterColliderBindings();  // Bindings/ColliderBindings.cpp  (C# Collider, MeshRenderer)
 		void RegisterPlayerControllerBindings(); // Bindings/PlayerControllerBindings.cpp (C# PlayerController)
 		void RegisterInputSettingsBindings();  // Bindings/InputSettingsBindings.cpp (C# InputSettings: keybinds, look sensitivity)
+		void RegisterScreenBindings();         // Bindings/ScreenBindings.cpp         (C# Screen: window mode)
 	}
 }

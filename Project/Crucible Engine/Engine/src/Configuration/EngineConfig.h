@@ -27,6 +27,12 @@ namespace Crucible
 		// the .exe and wins over these - see EngineConfigLoader::SaveWindowState.
 		bool        fullScreen   = false;
 		bool        maximized    = false;
+		// The resolution fullscreen switches the monitor to ("exclusive"); 0 = the monitor's own
+		// ("borderless", the default). Only ever set by the player (C# Screen.SetResolution),
+		// so it is read from UserSettings.json alone, never from EngineConfig.json.
+		uint32_t    fullscreenWidth       = 0;
+		uint32_t    fullscreenHeight      = 0;
+		uint32_t    fullscreenRefreshRate = 0;   // Hz; 0 = the highest at that size
 		uint32_t    targetFPS = 60;
 	};
 
