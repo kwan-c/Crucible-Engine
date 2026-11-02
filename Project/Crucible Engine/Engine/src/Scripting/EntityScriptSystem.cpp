@@ -104,6 +104,7 @@ namespace Crucible
 #if CRUCIBLE_WITH_MONO
 			ScriptBindings::EntityContext::ClearDestroyQueue(); // destroys belong to the session that asked
 			ScriptBindings::EntityContext::ClearOneShotAudio();
+			ScriptBindings::EntityContext::ResetPlayClock();
 #endif
 			m_sceneChanged = false;
 			m_session = m_play.SessionRevision();
@@ -124,6 +125,12 @@ namespace Crucible
 		// Nothing runs in Edit mode.
 		if (!m_play.InSession())
 			return;
+
+#if CRUCIBLE_WITH_MONO
+		// C# Time: count this frame before any OnCreate / OnUpdate sees the clock.
+		if (m_play.State() == PlayState::Playing)
+			ScriptBindings::EntityContext::AdvancePlayClock(world.DeltaTime());
+#endif
 
 		// --- Step 3: copy every ScriptComponent out of the ECS.
 		// Copy before callbacks: no managed execution while a query pins columns.

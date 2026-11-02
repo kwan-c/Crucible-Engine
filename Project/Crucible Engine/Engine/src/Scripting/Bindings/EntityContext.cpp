@@ -17,6 +17,7 @@
 #include "Audio/AudioComponents.h"
 #if CRUCIBLE_WITH_MONO
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 
 namespace Crucible::ScriptBindings
@@ -46,6 +47,10 @@ namespace Crucible::ScriptBindings
 		};
 		thread_local std::vector<OneShotAudio> oneShots;
 
+		// C# Time: Playing time and frames since Play started.
+		thread_local double playTime = 0.0;
+		thread_local int32_t playFrames = 0;
+
 		// A one-shot that has not started after this long never will (missing clip).
 		constexpr float OneShotStartTimeout = 2.0f;
 
@@ -64,6 +69,8 @@ namespace Crucible::ScriptBindings
 		assets = newAssets;
 		pendingDestroys.clear();
 		oneShots.clear();
+		playTime = 0.0;
+		playFrames = 0;
 	}
 
 	namespace EntityContext
@@ -127,6 +134,29 @@ namespace Crucible::ScriptBindings
 		bool InPlaySession()
 		{
 			return play && play->InSession();
+		}
+
+		void AdvancePlayClock(float deltaTime)
+		{
+			if (std::isfinite(deltaTime) && deltaTime > 0.0f)
+				playTime += deltaTime;
+			++playFrames;
+		}
+
+		void ResetPlayClock()
+		{
+			playTime = 0.0;
+			playFrames = 0;
+		}
+
+		double PlayTime()
+		{
+			return playTime;
+		}
+
+		int32_t PlayFrameCount()
+		{
+			return playFrames;
 		}
 
 		void TrackOneShotAudio(Entity entity)

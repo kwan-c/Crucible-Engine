@@ -2327,6 +2327,22 @@ namespace Crucible
 #endif
 	}
 
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetPhysics.
+	 *********************************************************************/
+	bool ScriptRuntime::SetPhysicsBinding(Physics* physics)
+	{
+		if (!m_impl->Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptBindings::SetPhysics(physics);
+		return true;
+#else
+		(void)physics;
+		return false;
+#endif
+	}
+
 	bool ScriptRuntime::DiscoverEntityClasses(ScriptAssemblyHandle assembly,
 	                                          std::vector<ScriptClassInfo>& classes)
 	{

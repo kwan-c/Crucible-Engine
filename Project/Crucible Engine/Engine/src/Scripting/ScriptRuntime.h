@@ -44,6 +44,7 @@ namespace Crucible
 	class SceneManager;
 	class AssetManager;
 	struct UserSettings;
+	class Physics;
 
 	/*********************************************************************
 	 \brief  NotStarted  = Initialize() not called yet.
@@ -374,6 +375,12 @@ namespace Crucible
 		         disconnect (Core does this before shutdown).
 		 *********************************************************************/
 		bool SetUserSettingsBinding(UserSettings* settings);
+
+		/*********************************************************************
+		 \brief  Gives C# Physics.Raycast the physics world. Pass nullptr to
+		         disconnect (Core does this before shutdown).
+		 *********************************************************************/
+		bool SetPhysicsBinding(Physics* physics);
 
 	private:
 		/*********************************************************************

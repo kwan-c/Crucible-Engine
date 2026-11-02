@@ -21,6 +21,8 @@ namespace Crucible::ScriptBindings
 		RegisterEntityBindings();
 		RegisterPrefabBindings();
 		RegisterAudioBindings();
+		RegisterPhysicsBindings();
+		RegisterTimeBindings();
 	}
 
 	void ClearAll()
@@ -28,6 +30,7 @@ namespace Crucible::ScriptBindings
 		SetAnimator(nullptr);
 		SetWorld(nullptr, nullptr, nullptr, nullptr);
 		SetUserSettings(nullptr);
+		SetPhysics(nullptr);
 		// Clear new adapters here.
 	}
 }

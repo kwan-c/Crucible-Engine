@@ -79,6 +79,30 @@ namespace Crucible
 		 *********************************************************************/
 		bool InPlaySession();
 
+		// --- Play clock (C# Time) ------------------------------------------ //
+
+		/*********************************************************************
+		 \brief  Adds one Playing frame of `deltaTime` seconds to the play
+		         clock. EntityScriptSystem calls it once per Playing frame,
+		         before any OnUpdate, so Time.ElapsedTime includes the current frame.
+		 *********************************************************************/
+		void AdvancePlayClock(float deltaTime);
+
+		/*********************************************************************
+		 \brief  Back to zero (a new Play session, Stop, scene change).
+		 *********************************************************************/
+		void ResetPlayClock();
+
+		/*********************************************************************
+		 \brief  Seconds of Playing time since Play started (Pause excluded).
+		 *********************************************************************/
+		double PlayTime();
+
+		/*********************************************************************
+		 \brief  Playing frames since Play started.
+		 *********************************************************************/
+		int32_t PlayFrameCount();
+
 		// --- One-shot audio (C# Audio.PlayClipAtPoint) ---------------------- //
 
 		/*********************************************************************

@@ -162,6 +162,26 @@ Browser onto it (saved as the prefab's asset guid, so renames keep the link).
   entity of the same prefab are not remapped to the new copy - they still name
   the entity the prefab was made from. Use `FindChild` until this is fixed.
 
+### Movement, raycasts and time
+
+- `GetComponent<CharacterController>()` (or `CharacterController`): Unity's
+  CharacterController. `SimpleMove(velocity)` walks at m/s until changed (do not
+  multiply by deltaTime; `SimpleMove(Vector3.Zero)` stops), `Jump(height)` in
+  metres, `IsGrounded`, `Velocity`, and `Height` / `Radius` / `SlopeLimit` /
+  `StepOffset`. Physics (PostUpdate) uses requests in the same frame. Don't put
+  a script-driven controller on an entity that also has a PlayerController -
+  both would call SimpleMove.
+- `Physics.Raycast(origin, direction, out RaycastHit hit, maxDistance, ignore)`
+  returns the first collider hit: `hit.Entity`, `Point`, `Normal`, `Distance`.
+  `ignore` (usually the shooter) is seen through by re-casting past it. Rays hit
+  Collider bodies, not CharacterControllers. Play only.
+- `Time.DeltaTime`, `Time.ElapsedTime` (Playing seconds since Play; Pause
+  excluded; `ElapsedTimeAsDouble` too) and `Time.FrameCount`. Reset on Stop.
+
+C++ side: `Bindings/PhysicsBindings.cpp`, `Bindings/TimeBindings.cpp` (play
+clock in `EntityContext`, advanced by `EntityScriptSystem`). Physics/ and
+ECSPhysicsSystem are unchanged.
+
 ### Audio
 
 `GetComponent<AudioSource>()` (or `Entity.AudioSource`) gives Unity's

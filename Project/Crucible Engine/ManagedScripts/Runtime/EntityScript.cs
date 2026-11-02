@@ -75,6 +75,9 @@ namespace Crucible
         /// <summary>This entity's AudioSource (needs an AudioSource component).</summary>
         public AudioSource AudioSource { get { return Entity.AudioSource; } }
 
+        /// <summary>This entity's CharacterController (needs a CharacterController component).</summary>
+        public CharacterController CharacterController { get { return Entity.CharacterController; } }
+
         /// <summary>This entity's component or script of type T, or null. See Entity.GetComponent.</summary>
         public T GetComponent<T>() where T : class { return Entity.GetComponent<T>(); }
 

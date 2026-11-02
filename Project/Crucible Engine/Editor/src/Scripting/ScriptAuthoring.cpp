@@ -54,7 +54,8 @@ namespace Crucible::ScriptAuthoring {
         }
         for (const std::string reserved : {"Crucible.EntityScript", "Crucible.EntityIdentity", "Crucible.Entity", "Crucible.Log", "Crucible.Animator",
                                            "Crucible.Transform", "Crucible.RigidBody", "Crucible.Input", "Crucible.KeyCode", "Crucible.Prefab",
-                                           "Crucible.AudioSource", "Crucible.AudioClip", "Crucible.Audio", "Crucible.AudioBus"}) {
+                                           "Crucible.AudioSource", "Crucible.AudioClip", "Crucible.Audio", "Crucible.AudioBus",
+                                           "Crucible.Physics", "Crucible.RaycastHit", "Crucible.CharacterController", "Crucible.Time"}) {
             if (nameSpace + "." + name == reserved || nameSpace == reserved || nameSpace.starts_with(reserved + ".")) {
                 error = "That name is reserved by ScriptCore. Use a namespace such as Crucible.Scripts."; return false;
             }

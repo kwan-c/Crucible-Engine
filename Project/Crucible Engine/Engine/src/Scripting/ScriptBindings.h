@@ -33,6 +33,7 @@ namespace Crucible
 	class SceneManager;
 	class AssetManager;
 	struct UserSettings;
+	class Physics;
 
 	namespace ScriptBindings
 	{
@@ -75,6 +76,14 @@ namespace Crucible
 		 *********************************************************************/
 		void SetUserSettings(UserSettings* settings);
 
+		/*********************************************************************
+		 \brief  Gives C# Physics.Raycast the physics world (ECSPhysicsSystem's).
+		         nullptr clears it. Non-owning; main thread only. Called through
+		         ScriptRuntime::SetPhysicsBinding. Defined in
+		         Bindings/PhysicsBindings.cpp.
+		 *********************************************************************/
+		void SetPhysics(Physics* physics);
+
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
 		void RegisterAnimatorBindings(); // Bindings/AnimatorBindings.cpp (C# Animator)
@@ -83,5 +92,7 @@ namespace Crucible
 		void RegisterEntityBindings();    // Bindings/EntityBindings.cpp    (C# Entity)
 		void RegisterPrefabBindings();    // Bindings/PrefabBindings.cpp    (C# Prefab, Entity.Destroy)
 		void RegisterAudioBindings();     // Bindings/AudioBindings.cpp     (C# AudioSource)
+		void RegisterPhysicsBindings();   // Bindings/PhysicsBindings.cpp   (C# Physics, CharacterController)
+		void RegisterTimeBindings();      // Bindings/TimeBindings.cpp      (C# Time)
 	}
 }
