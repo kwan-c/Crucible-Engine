@@ -343,6 +343,10 @@ SceneOutput fragMain(VSOutput inVert, bool frontFacing : SV_IsFrontFace) {
     float4 albedoSample = albedoTex.Sample(inVert.uv);
     if (kCutout && albedoSample.a * pc.albedoTint.a < pc.alphaCutoff) { discard; }
     float3 albedo = albedoSample.rgb * pc.albedoTint.rgb * inVert.color;
+    // Per-object colour tint: MaterialParams::custom (InstanceData::params.yzw). All zero (the
+    // default, and objects without MaterialParams) = no tint, so existing objects are unchanged.
+    float3 objectTint = inVert.instanceParams.yzw;
+    if (any(objectTint != float3(0.0, 0.0, 0.0))) { albedo *= objectTint; }
 
     float3 mrSample  = metallicRoughnessTex.Sample(inVert.uv).rgb;
     float  roughness = saturate(mrSample.g * pc.roughnessFactor);

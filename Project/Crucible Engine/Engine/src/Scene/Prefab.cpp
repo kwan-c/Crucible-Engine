@@ -35,6 +35,9 @@
 #include "ECS/Components/Components.h"
 #include "ECS/World.h"
 #include "Scene/EntityIO.h"
+#include "Scene/EntityRefs.h"
+
+#include <unordered_map>
 
 namespace fs = std::filesystem;
 
@@ -65,7 +68,8 @@ namespace Crucible {
                           Entity root,
                           const fs::path& file,
                           const std::string& name,
-                          std::vector<std::pair<Entity, std::uint64_t>>* outIds)
+                          std::vector<std::pair<Entity, std::uint64_t>>* outIds,
+                          const std::function<std::uint64_t(Entity)>& sceneIdOf)
     {
         if (!world.IsAlive(root))
         {
@@ -83,6 +87,7 @@ namespace Crucible {
         // same order Hierarchy::CopySubtree uses). Instantiate relies on it:
         // every parent index is smaller than its child's, and appending
         // children in file order restores the sibling order.
+        std::vector<std::pair<Entity, std::uint64_t>> entries;   // every saved entity with its entry id
         auto visit = [&](auto&& self, Entity entity, int parentIndex) -> void
         {
             const std::size_t index = doc.PushObject(PREFAB_ENTITIES);
@@ -92,6 +97,7 @@ namespace Crucible {
             const std::uint64_t id = xresource::instance_guid::GenerateGUIDCopy().m_Value;
             doc.Set(base + "/id", AssetRegistry::GuidToString(xresource::instance_guid{ id }));
             if (outIds != nullptr) outIds->emplace_back(entity, id);
+            entries.emplace_back(entity, id);
 
             doc.Set(base + "/parent", parentIndex);
             EntityIO::WriteComponents(world, entity, doc, base + "/components");
@@ -102,6 +108,37 @@ namespace Crucible {
             world.ForEachChild(entity, [&](Entity child) { self(self, child, self_index); });
         };
         visit(visit, root, -1);
+
+        // Entity references (EntityRefs.h): a scene id means nothing in a template. One to an
+        // entity inside the subtree becomes that entity's entry id (Instantiate turns it back
+        // into the copy's); one to anything outside is cleared.
+        if (sceneIdOf)
+        {
+            std::unordered_map<std::uint64_t, std::uint64_t> entryOfScene;   // scene id -> entry id
+            for (const auto& [entity, entryId] : entries)
+            {
+                if (const std::uint64_t sceneId = sceneIdOf(entity); sceneId != 0) entryOfScene[sceneId] = entryId;
+            }
+            std::size_t cleared = 0;
+            const EntityRefs::Map toEntry = [&](std::uint64_t sceneId) -> std::uint64_t
+            {
+                const auto found = entryOfScene.find(sceneId);
+                if (found != entryOfScene.end()) return found->second;
+                ++cleared;
+                return 0;
+            };
+            for (std::size_t i = 0; i < entries.size(); ++i)
+            {
+                EntityRefs::RemapDocument(doc, EntityBase(i) + "/components", toEntry);
+            }
+            if (cleared > 0)
+            {
+                CRU_USER_WARN("Prefab '{}': {} reference{} to entities outside the prefab {} cleared - a prefab "
+                              "can only point at its own parts",
+                              name.empty() ? file.stem().string() : name, cleared, cleared == 1 ? "" : "s",
+                              cleared == 1 ? "was" : "were");
+            }
+        }
 
         // Zero the root's position (rotation and scale stay), so an instance
         // lands at the origin, or exactly on the parent it is given.
@@ -269,7 +306,21 @@ namespace Crucible {
     //  Instantiating
     // =======================================================================
 
-    Entity Prefab::Instantiate(World& world, Entity parent) const
+    std::function<std::uint64_t(std::uint64_t)> Prefab::EntryToSceneMap(
+        const std::function<Entity(std::size_t)>& entityForEntry,
+        const std::function<std::uint64_t(Entity)>& sceneIdOf) const
+    {
+        return [this, entityForEntry, sceneIdOf](std::uint64_t id) -> std::uint64_t
+        {
+            const int index = IndexOf(id);
+            if (index < 0) return id;   // not one of ours: a scene id (older file) - leave it
+            const Entity target = entityForEntry(static_cast<std::size_t>(index));
+            return target == kNullEntity ? 0 : sceneIdOf(target);
+        };
+    }
+
+    Entity Prefab::Instantiate(World& world, Entity parent,
+                               const std::function<std::uint64_t(Entity)>& ensureSceneId) const
     {
         if (!m_valid)
         {
@@ -318,6 +369,15 @@ namespace Crucible {
             }
 
             created.push_back(entity);
+        }
+
+        // References between the copy's parts: entry ids -> the new entities' scene ids.
+        if (ensureSceneId)
+        {
+            const auto toScene = EntryToSceneMap(
+                [&](std::size_t index) { return index < created.size() ? created[index] : kNullEntity; },
+                ensureSceneId);
+            for (const Entity entity : created) EntityRefs::RemapEntity(world, entity, toScene);
         }
 
         return created.front();

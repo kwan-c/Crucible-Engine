@@ -7,11 +7,12 @@ param(
 $ErrorActionPreference = 'Stop'
 $appPath = [IO.Path]::GetFullPath($ApplicationPath)
 $appName = [IO.Path]::GetFileNameWithoutExtension($appPath)
-foreach ($process in @(Get-Process -Name $appName -ErrorAction SilentlyContinue)) {
-    if (!$process.Path -or [IO.Path]::GetFullPath($process.Path) -eq $appPath) {
-        throw "Save your work and close $appName before deployment (PID $($process.Id)). Managed assemblies require an application restart. No files were changed."
-    }
-}
+# The app loads script DLLs from an in-memory copy (ScriptRuntime::LoadAssembly), so the
+# files are not locked and can be replaced while it runs. It keeps using the copy it
+# loaded until it restarts (no hot reload yet), so just say so.
+$running = @(Get-Process -Name $appName -ErrorAction SilentlyContinue | Where-Object {
+    !$_.Path -or [IO.Path]::GetFullPath($_.Path) -eq $appPath })
+if ($running.Count) { Write-Output "$appName is running (PID $($running[0].Id)): deploying anyway; restart it to use the new scripts." }
 $destinationPath = [IO.Path]::GetFullPath($Destination)
 $ownedManifest = Join-Path $destinationPath 'Crucible.ManagedFiles.txt'
 $files = @{}
@@ -36,7 +37,15 @@ New-Item -ItemType Directory -Path $destinationPath -Force | Out-Null
 foreach ($name in @($files.Keys | Sort-Object)) {
     $target = Join-Path $destinationPath $name
     if (!(Test-Path -LiteralPath $target) -or (Get-FileHash -LiteralPath $target).Hash -ne (Get-FileHash -LiteralPath $files[$name]).Hash) {
-        Copy-Item -LiteralPath $files[$name] -Destination $target
+        # Copy beside it, then swap: an app reading the DLL at that moment never sees half a file.
+        $partial = "$target.partial"
+        try {
+            Copy-Item -LiteralPath $files[$name] -Destination $partial -Force
+            Move-Item -LiteralPath $partial -Destination $target -Force
+        } catch {
+            if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -ErrorAction SilentlyContinue }
+            throw "Could not replace $name ($($_.Exception.Message)). If $appName was built before scripts were loaded from memory, it still locks them: close it, rebuild it once, and retry."
+        }
     }
 }
 # Remove only filenames recorded by this tool; unrelated hand-deployed files

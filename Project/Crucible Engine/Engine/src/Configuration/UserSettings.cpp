@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          27 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Reads and writes the player's settings in
 *                UserSettings.json (see UserSettings.h).
@@ -13,6 +13,11 @@
 *                for a missing key or a wrong type. That is the behaviour a
 *                player's file needs: a half-broken file loads with
 *                defaults for the broken parts instead of refusing to load.
+*
+* \history
+*    -v1.0       volumes, look sensitivity, invert Y
+*    -v1.1       keybinds under "input/keys", by key name
+*                (Tan Chun Kwang Xavier)
 *
 **************************************************************************/
 #include "UserSettings.h"
@@ -27,6 +32,7 @@
 #include "AssetPipe/AssetPaths.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Diagnostics/Logger.h"
+#include "Input/KeyChord.h"     // KeyCodeFromString
 #include "Json/JsonWrapper.h"
 
 namespace Crucible {
@@ -44,6 +50,19 @@ namespace Crucible {
         // to double writes). std::format gives a float's shortest exact text.
         double Tidy(float value) {
             return std::stod(std::format("{}", value));
+        }
+
+        // A keybind saved by name ("W", "Space", "Unknown" = unbound). A missing key
+        // or a name that is no key (a typo in a hand-edited file) keeps the default.
+        KeyCode ReadKey(const JsonWrapper& doc, const std::string& path, KeyCode fallback) {
+            const std::string name = doc.Get<std::string>(path, std::string{});
+            if (name.empty()) return fallback;
+            const KeyCode key = KeyCodeFromString(name);
+            if (key == KeyCode::Unknown && name != KeyCodeToString(KeyCode::Unknown)) {
+                CRU_WARN("[UserSettings] '{}' is '{}', which is not a key - keeping {}", path, name, KeyCodeToString(fallback));
+                return fallback;
+            }
+            return key;
         }
 
     }   // ANONYMOUS NAMESPACE
@@ -84,6 +103,12 @@ namespace Crucible {
         input.mouseSensitivity = std::clamp(doc.Get("input/mouseSensitivity", input.mouseSensitivity), kMinSensitivity, kMaxSensitivity);
         input.stickSensitivity = std::clamp(doc.Get("input/stickSensitivity", input.stickSensitivity), kMinSensitivity, kMaxSensitivity);
         input.invertY          = doc.Get("input/invertY", input.invertY);
+        input.forwardKey       = ReadKey(doc, "input/keys/forward",    input.forwardKey);
+        input.backKey          = ReadKey(doc, "input/keys/back",       input.backKey);
+        input.leftKey          = ReadKey(doc, "input/keys/left",       input.leftKey);
+        input.rightKey         = ReadKey(doc, "input/keys/right",      input.rightKey);
+        input.jumpKey          = ReadKey(doc, "input/keys/jump",       input.jumpKey);
+        input.jumpButton       = ReadKey(doc, "input/keys/jumpButton", input.jumpButton);
 
         CRU_INFO("[UserSettings] loaded '{}'", PathToUtf8(path));
         return settings;
@@ -115,6 +140,12 @@ namespace Crucible {
         doc.Set("input/mouseSensitivity", Tidy(settings.input.mouseSensitivity));
         doc.Set("input/stickSensitivity", Tidy(settings.input.stickSensitivity));
         doc.Set("input/invertY",          settings.input.invertY);
+        doc.Set("input/keys/forward",    std::string(KeyCodeToString(settings.input.forwardKey)));
+        doc.Set("input/keys/back",       std::string(KeyCodeToString(settings.input.backKey)));
+        doc.Set("input/keys/left",       std::string(KeyCodeToString(settings.input.leftKey)));
+        doc.Set("input/keys/right",      std::string(KeyCodeToString(settings.input.rightKey)));
+        doc.Set("input/keys/jump",       std::string(KeyCodeToString(settings.input.jumpKey)));
+        doc.Set("input/keys/jumpButton", std::string(KeyCodeToString(settings.input.jumpButton)));
 
         if (!doc.SaveToFile(path)) {
             CRU_WARN("[UserSettings] could not write '{}'", PathToUtf8(path));

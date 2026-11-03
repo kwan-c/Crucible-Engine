@@ -1,4 +1,5 @@
 #include "Core.h"
+#include <algorithm>
 #include "AssetPipe/Assetmanager.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Diagnostics/Logger.h"
@@ -43,7 +44,9 @@ namespace Crucible {
         m_config{ config },
         m_userSettings{ UserSettingsLoader::Load() },
         m_window{ new WindowManager(static_cast<int>(m_config.graphics.windowWidth), static_cast<int>(m_config.graphics.windowHeight),
-                                    m_config.graphics.windowTitle, m_config.graphics.fullScreen, m_config.graphics.maximized) },
+                                    m_config.graphics.windowTitle, m_config.graphics.fullScreen, m_config.graphics.maximized,
+                                    static_cast<int>(m_config.graphics.fullscreenWidth), static_cast<int>(m_config.graphics.fullscreenHeight),
+                                    static_cast<int>(m_config.graphics.fullscreenRefreshRate)) },
         m_renderer{ new Renderer(*m_window) },
         m_world{ std::make_unique<World>() },
         m_ecsEvents{ std::make_unique<EcsEventBridge>(*m_world, m_events.gameplay) },
@@ -80,8 +83,29 @@ namespace Crucible {
     void Core::MaximizeWindow() { m_window->Maximize(); SaveWindowState(); }
     void Core::RestoreWindow()  { m_window->Restore();  SaveWindowState(); }
 
+    void Core::SetWindowedSize(int width, int height) {
+        m_window->SetWindowedSize(width, height);
+        SaveWindowState();
+    }
+
+    bool Core::SetFullscreenResolution(int width, int height, int refreshRate) {
+        if (!m_window->SetFullscreenResolution(width, height, refreshRate)) { return false; }
+        SaveWindowState();
+        return true;
+    }
+
+    std::vector<WindowResolution> Core::GetScreenResolutions() const { return m_window->GetResolutions(); }
+
     void Core::SaveWindowState() const {
-        EngineConfigLoader::SaveWindowState(m_config.app, m_window->IsFullscreen(), m_window->IsMaximized());
+        SavedWindowState state;
+        state.fullScreen            = m_window->IsFullscreen();
+        state.maximized             = m_window->IsMaximized();
+        state.windowWidth           = static_cast<std::uint32_t>(std::max(m_window->GetWindowedWidth(), 0));
+        state.windowHeight          = static_cast<std::uint32_t>(std::max(m_window->GetWindowedHeight(), 0));
+        state.fullscreenWidth       = static_cast<std::uint32_t>(m_window->GetFullscreenWidth());
+        state.fullscreenHeight      = static_cast<std::uint32_t>(m_window->GetFullscreenHeight());
+        state.fullscreenRefreshRate = static_cast<std::uint32_t>(m_window->GetFullscreenRefreshRate());
+        EngineConfigLoader::SaveWindowState(m_config.app, state);
     }
 
     bool Core::Init()
@@ -219,7 +243,6 @@ namespace Crucible {
     void Core::RegisterEngineSystems()
     {
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
-        //sample system registeration
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
             .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
@@ -230,23 +253,41 @@ namespace Crucible {
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
-        if (m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(&animator);
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
-        m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get());        // PreRender: simulates ParticleEmitters, submits their particles and lights
+        m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get(), &m_systems);   // PreRender: simulates ParticleEmitters, submits their particles and lights; m_systems: Play vs Edit
         m_systems.RegisterSystem<VineSystem>(*m_renderer, m_resources.get());            // PreRender: grows/simulates Vines (proof of concept), submits their meshes
         m_systems.RegisterSystem<WorldTextSystem>(*m_renderer, m_resources.get());       // PreRender, Edit mode too: lays out WorldText components and submits their glyphs
         m_systems.RegisterSystem<DebugDrawSystem>(*m_renderer, m_resources.get());       // PreRender: colliders, velocities, light gizmos, grid, selection
         m_systems.RegisterSystem<UIRenderSystem>(*m_renderer, m_resources.get());        // PreRender, Edit mode too: lays out screen-space UICanvases against the game screen and SubmitUI()s them
         m_systems.RegisterSystem<WorldCanvasSystem>(*m_renderer, m_resources.get());     // PreRender, Edit mode too: lays out world-space UICanvases and submits each as a world UI panel
         m_systems.RegisterSystem<ECSAudioSystem>(*m_resources, m_userSettings.audio, m_renderer);                // PreRender: owns the FMOD audio engine (editor previews too); m_assets resolves clips, the renderer's camera is the listener until the camera is an entity. PlayMode switches its edit/pause modes
+
+        // The C# bindings' engine objects, all at once now every system exists. A new binding is one line here.
+        if (m_scriptRuntime->IsRunning()) {
+            auto* physics = m_systems.FindSystem<ECSPhysicsSystem>();
+            m_scriptRuntime->ConnectEngine({
+                .animator     = &animator,                                   // C# Animator
+                .world        = m_world.get(),                               // Transform, Entity, Prefab, components
+                .play         = m_playMode.get(),
+                .scenes       = m_scenes.get(),
+                .assets       = m_assets.get(),
+                .userSettings = &m_userSettings,                             // Audio bus volumes, InputSettings
+                .physics      = physics,                                     // Physics.Raycast (entity queries: ignores the shooter properly)
+                .renderer     = m_renderer,                                  // Camera screen maths
+                .particles    = m_systems.FindSystem<ParticleSystem>(),      // ParticleEmitter Emit / Restart / ParticleCount
+                .events       = &m_events,                                   // UI and collision callbacks
+                .core         = this,                                        // Screen (window mode; ignored in the editor)
+                .resources    = m_resources.get(),                           // MeshRenderer material slots
+            });
+        }
     }
 
     void Core::CleanUp() {
         if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
         // Run managed teardown while Core's resources/systems are still alive.
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
-        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->SetAnimatorBinding(nullptr);
+        if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DisconnectEngine();   // every C# binding
         // Destroy entities while systems are still alive, so resource-owning
         // OnComponentRemoved/OnEntityDestroyed hooks can still run.
         try { m_world->DestroyAllEntities(); }
