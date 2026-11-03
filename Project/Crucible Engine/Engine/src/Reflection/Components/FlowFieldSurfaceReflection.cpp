@@ -36,5 +36,8 @@ RTTR_REGISTRATION
         .property("bodyRadiusPadding", &FlowFieldSurface::m_bodyRadiusPadding)
         .property("stepHeight",        &FlowFieldSurface::m_stepHeight)
         .property("shoulderHeight",    &FlowFieldSurface::m_shoulderHeight)
+        .property("floodRadius",       &FlowFieldSurface::m_floodRadius)
+        .property("rebuildDistance",   &FlowFieldSurface::m_rebuildDistance)
+        .property("wallAdjacencyCost", &FlowFieldSurface::m_wallAdjacencyCost)
     ;
 }

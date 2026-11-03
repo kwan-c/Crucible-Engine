@@ -169,6 +169,10 @@ namespace Crucible {
 		// Spawns a new entity with a Camera component (the Game view looks through it).
 		void CreateCameraObject();
 
+		// "Create Player": the third-person player rig in one click (see Player/PlayerComponents.h) -
+		// Player (capsule, CharacterController, PlayerController) > Camera Pivot (CameraOrbit) > Player Camera.
+		void CreatePlayerObject();
+
 		// A root entity with a UICanvas: where screen-space UI elements go (as its children).
 		void CreateCanvasObject();
 

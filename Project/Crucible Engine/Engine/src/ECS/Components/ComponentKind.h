@@ -93,8 +93,9 @@ namespace Crucible
 		WorldText = 31,          // Graphics: text placed in the 3D world by its Transform (Text/WorldText.h)
 		Vine = 32,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
 		FlowFieldSurface = 33,   // Navigation: where enemies can walk, Unity's NavMeshSurface (Navigation/NavigationComponents.h)
+		FlowFieldAgent = 34,     // Navigation: one enemy's legs, Unity's NavMeshAgent (Navigation/NavigationComponents.h)
 
-		MAXCOMPONENT = 34
+		MAXCOMPONENT = 35
 	};
 
 
@@ -273,5 +274,6 @@ namespace Crucible
  X(PhysicsJoint)                                                               \
  X(WorldText)                                                                  \
  X(FlowFieldSurface)                                                           \
+ X(FlowFieldAgent)                                                             \
 
 }

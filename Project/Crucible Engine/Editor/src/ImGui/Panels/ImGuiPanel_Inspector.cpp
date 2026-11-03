@@ -690,7 +690,7 @@ void Crucible::Inspector::Update(float) {
 					if (ECSNavigationSystem* navigation = core ? core->Systems().FindSystem<ECSNavigationSystem>() : nullptr) navigation->Bake(m_world);
 				}
 				ImGui::SetItemTooltip("Builds the navigation grid from this surface and every static collider,\n"
-				                      "and draws the blocked cells in red (Gizmos > Gameplay).\n"
+				                      "and draws the blocked cells in red (Gizmos > Nav grid).\n"
 				                      "Pressing Play bakes again on its own, so this is only a preview.");
 			}
 			DrawAddComponentButton(m_selected);

@@ -226,7 +226,7 @@ namespace Crucible {
             .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
         m_systems.RegisterSystem<ECSPlayerControllerSystem>(m_userSettings.input)                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
-        m_systems.RegisterSystem<ECSNavigationSystem>(*m_playMode);                     // Update, Edit too: bakes the FlowFieldSurface's grid (Inspector Bake, and on Play) and draws it
+        m_systems.RegisterSystem<ECSNavigationSystem>(*m_playMode, m_systems);          // Update, Edit too: bakes the FlowFieldSurface's grid (Inspector Bake, and on Play) and draws it; Playing: flow field + agents (finds physics in m_systems for collision)
         m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get())                      // the scene turns a PhysicsJoint's saved connected body back into an entity
             .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)

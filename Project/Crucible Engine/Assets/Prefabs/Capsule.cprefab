@@ -1,0 +1,102 @@
+{
+    "version": 3,
+    "name": "Capsule",
+    "entities": [
+        {
+            "id": "9758E0DCA680000B",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                }
+            }
+        }
+    ]
+}

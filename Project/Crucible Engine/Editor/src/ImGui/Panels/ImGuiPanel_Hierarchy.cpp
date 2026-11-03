@@ -90,6 +90,7 @@ void Crucible::Hierarchy::Update(float dt) {
 					CreateEmptyObject();
 				}
 			if (ImGui::MenuItem("Create Animated Model")) { CreateAnimatedModel(); }
+			if (ImGui::MenuItem("Create Player")) { CreatePlayerObject(); }
 			if (ImGui::BeginMenu("3D Objects")) {
 					if (ImGui::MenuItem("Create Cube")) {
 						CreatePrimitive("Cube");
@@ -1105,6 +1106,54 @@ void Crucible::Hierarchy::CreateLightObject(const std::string& lightType) {
 
 	m_scenes.MarkDirty();   // records that there are unsaved changes
 
+}
+
+void Crucible::Hierarchy::CreatePlayerObject() {
+
+	// The third-person rig documented in Player/PlayerComponents.h, in one click:
+	//   Player              capsule mesh, CharacterController, PlayerController
+	//   '- Camera Pivot     CameraOrbit, (0, 1.5, 0): shoulder height
+	//      '- Player Camera Camera, (0, 0, 5): 5 m behind, looking down -Z at the pivot
+	Entity const player = m_world.CreateNamedEntity("Player");
+
+	// The capsule mesh and the CharacterController are both 2 m tall and centred on the
+	// entity, so standing it at y = 1 puts its feet on y = 0 instead of half in the floor.
+	if (Transform* t = m_world.Write<Transform>(player)) { t->positions = { 0.f, 1.f, 0.f }; }
+	MeshRenderer mr{};
+	m_resource.AssignMesh(mr, m_resource.BuiltinId("Capsule"));   // sets meshAsset too, so it survives a save
+	mr.colour = { .5f, .5f, .5f, .5f };                           // default colour is (0,0,0,0)
+	m_world.AddComponent<MeshRenderer>(player, mr);
+	m_world.AddComponent<CharacterController>(player, CharacterController{});   // before PlayerController, which requires it
+	m_world.AddComponent<PlayerController>(player, PlayerController{});
+
+	// worldPositionStays = false: the positions below are LOCAL (relative to the parent),
+	// which is what the rig is defined in.
+	Entity const pivot = m_world.CreateNamedEntity("Camera Pivot");
+	m_world.AddComponent<CameraOrbit>(pivot, CameraOrbit{});
+	m_world.TrySetParent(pivot, player, false);
+	if (Transform* t = m_world.Write<Transform>(pivot)) { t->positions = { 0.f, 1.5f, 0.f }; }
+
+	// Priority 1: the highest enabled camera wins, and a scene usually already has a
+	// priority-0 camera - so without this the Game view could keep looking through that one.
+	Entity const camera = m_world.CreateNamedEntity("Player Camera");
+	CameraComponent view{};
+	view.priority = 1;
+	m_world.AddComponent<CameraComponent>(camera, view);
+	m_world.TrySetParent(camera, pivot, false);
+	if (Transform* t = m_world.Write<Transform>(camera)) { t->positions = { 0.f, 0.f, 5.f }; }
+
+	// Select first, for the same history-ordering reason as CreateLightObject.
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+		inspector->SetSelectedEntity(player);
+	m_revealEntity = player;
+
+	// Three entities in one undo step, the way a paste is recorded: a delete of the new
+	// subtree, run backwards. Undo removes the whole rig; redo rebuilds it, parents intact.
+	std::string const label = "Create Player";
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<InvertedCommand>(DeleteEntityCommand::Capture(history, player, label), label));
+
+	m_scenes.MarkDirty();   // records that there are unsaved changes
 }
 
 void Crucible::Hierarchy::CreateCameraObject() {
