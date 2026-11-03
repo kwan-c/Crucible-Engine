@@ -12,6 +12,8 @@ namespace Crucible.Scripts
     //        U  own clip AND Other Clip (at half volume) in the same frame - both must play
     //        1 / 2  volume down / up   3 / 4  pitch down / up
     //        L  toggle Loop (applies from the next Play)
+    //        K  next Bus (Master -> Music -> SFX, applies from the next Play); then turn
+    //           that bus down with AudioBusTest's keys or the options menu to hear it
     public sealed class AudioTest : EntityScript
     {
         public AudioClip otherClip;
@@ -28,7 +30,7 @@ namespace Crucible.Scripts
                 return;
             }
             Log.Info("[AudioTest] Clip: " + (source.Clip != null ? source.Clip.Name : "none") +
-                     ", volume " + source.Volume + ", pitch " + source.Pitch + ", loop " + source.Loop +
+                     ", volume " + source.Volume + ", pitch " + source.Pitch + ", loop " + source.Loop + ", bus " + source.Bus +
                      ", other clip: " + (otherClip != null ? otherClip.Name : "none"));
         }
 
@@ -66,6 +68,11 @@ namespace Crucible.Scripts
             if (Input.IsPressed(KeyCode.Num3)) { source.Pitch -= 0.1f;  Log.Info("[AudioTest] Pitch " + source.Pitch.ToString("0.0")); }
             if (Input.IsPressed(KeyCode.Num4)) { source.Pitch += 0.1f;  Log.Info("[AudioTest] Pitch " + source.Pitch.ToString("0.0")); }
             if (Input.IsPressed(KeyCode.L))    { source.Loop = !source.Loop; Log.Info("[AudioTest] Loop " + source.Loop + " (from the next Play)"); }
+            if (Input.IsPressed(KeyCode.K))
+            {
+                source.Bus = (AudioBus)(((int)source.Bus + 1) % 3);
+                Log.Info("[AudioTest] Bus " + source.Bus + " (from the next Play)");
+            }
 
             // IsPlaying is updated by the audio system once a frame.
             bool playing = source.IsPlaying;

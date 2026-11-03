@@ -2,8 +2,8 @@
 * \file:         AudioBindings.cpp
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
-* \date          1 November 2026
-* \version       1.0
+* \date          3 November 2026
+* \version       1.1
 * \brief         Internal calls behind the C# AudioSource class
 *                (ManagedScripts/Runtime/AudioSource.cs).
 *
@@ -13,7 +13,8 @@
 *    Play / Stop / PlayOneShot leave a request on the component that
 *    ECSAudioSystem carries out later in the same frame (it runs in
 *    PreRender, after scripts). Volume and pitch changes reach a sound that
-*    is already playing; the other settings apply from the next Play.
+*    is already playing; the other settings (Bus included) apply from the
+*    next Play.
 *
 *    Same shape as TransformBindings: ResolveEntity, then Read (getters) or
 *    Write (setters) the component, return 1 on success, 0 on failure.
@@ -233,6 +234,59 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		// ======================================================================
+		// Bus (Unity's "Output")
+		// ======================================================================
+
+		/*********************************************************************
+		 \brief  True for a real bus number (0 Master, 1 Music, 2 SFX).
+		 *********************************************************************/
+		bool IsBus(int32_t bus)
+		{
+			return bus >= 0 && bus < static_cast<int32_t>(kAudioBusCount);
+		}
+
+		/*********************************************************************
+		 \brief  C# AudioSource.Bus (get).
+		 *********************************************************************/
+		int32_t ManagedAudioGetBus(int32_t index, int32_t generation, int32_t* out) noexcept
+		{
+			try
+			{
+				const AudioSource* source = out ? ReadSource(index, generation) : nullptr;
+				if (!source)
+					return 0;
+				*out = static_cast<int32_t>(source->m_bus);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# AudioSource.Bus (set). Used from the next Play / PlayOneShot;
+		         a sound already playing stays on its old bus.
+		 *********************************************************************/
+		int32_t ManagedAudioSetBus(int32_t index, int32_t generation, int32_t bus) noexcept
+		{
+			try
+			{
+				if (!IsBus(bus))
+					return 0;
+				AudioSource* source = WriteSource(index, generation);
+				if (!source)
+					return 0;
+				source->m_bus = static_cast<AudioBus>(bus);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		/*********************************************************************
 		 \brief  C# AudioSource.Clip (get): the clip's asset guid as two halves.
 		 *********************************************************************/
@@ -398,15 +452,17 @@ namespace Crucible::ScriptBindings
 		         at the position, destroyed once the sound has finished
 		         (EntityContext::UpdateOneShotAudio). ECSAudioSystem plays it
 		         later this frame, so pause, Stop and the bus volumes all apply
-		         as for any other AudioSource.
+		         as for any other AudioSource. `bus` picks the bus (SFX by
+		         default on the C# side).
 		 \return 1 with the temporary entity's (index, generation), else 0.
 		 *********************************************************************/
 		int32_t ManagedAudioPlayClipAtPoint(int32_t low, int32_t high, const ScriptingDetail::ScriptVec3* position,
-		                                    float volume, int32_t* outIndex, int32_t* outGeneration) noexcept
+		                                    float volume, int32_t bus, int32_t* outIndex,
+		                                    int32_t* outGeneration) noexcept
 		{
 			try
 			{
-				if (!position || !outIndex || !outGeneration || !std::isfinite(volume) || !std::isfinite(position->x) ||
+				if (!IsBus(bus) || !position || !outIndex || !outGeneration || !std::isfinite(volume) || !std::isfinite(position->x) ||
 				    !std::isfinite(position->y) || !std::isfinite(position->z))
 					return 0;
 				*outIndex = 0;
@@ -422,7 +478,7 @@ namespace Crucible::ScriptBindings
 					transform->positions = {position->x, position->y, position->z};
 				AudioSource source;
 				source.m_clip = clip;
-				source.m_bus = AudioBus::SFX;
+				source.m_bus = static_cast<AudioBus>(bus);
 				source.m_playOnAwake = true;
 				source.m_loop = false;
 				source.m_volume = std::clamp(volume, 0.0f, 1.0f);
@@ -484,6 +540,8 @@ namespace Crucible::ScriptBindings
 
 		Add("Crucible.AudioSource::GetLoopInternal", &ManagedAudioGetLoop);
 		Add("Crucible.AudioSource::SetLoopInternal", &ManagedAudioSetLoop);
+		Add("Crucible.AudioSource::GetBusInternal", &ManagedAudioGetBus);
+		Add("Crucible.AudioSource::SetBusInternal", &ManagedAudioSetBus);
 		Add("Crucible.AudioSource::GetClipInternal", &ManagedAudioGetClip);
 		Add("Crucible.AudioSource::SetClipInternal", &ManagedAudioSetClip);
 		Add("Crucible.AudioClip::GetNameInternal", &ManagedAudioClipGetName);

@@ -2,8 +2,8 @@
 * \file:         AudioSource.cs
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
-* \date          1 November 2026
-* \version       1.0
+* \date          3 November 2026
+* \version       1.1
 * \brief         Script access to an entity's AudioSource component.
 *                Part of Crucible.ScriptCore.dll.
 *
@@ -17,8 +17,10 @@
 *        if (Input.IsPressed(KeyCode.MouseLeft)) gun.PlayOneShot();
 *
 *    Play / Stop / PlayOneShot happen later in the same frame. Volume and
-*    Pitch also change a sound that is already playing; Loop, SpatialBlend,
-*    MinDistance, MaxDistance and Clip apply from the next Play.
+*    Pitch also change a sound that is already playing; Loop, Bus,
+*    SpatialBlend, MinDistance, MaxDistance and Clip apply from the next Play.
+*
+*        music.Bus = AudioBus.Music;     // the Music slider now controls it
 *    PlayOneShot(clip, volumeScale) plays another clip once without changing Clip.
 *
 *    C++ side: Engine/src/Scripting/Bindings/AudioBindings.cpp.
@@ -106,6 +108,17 @@ namespace Crucible
             set { SetLoopInternal(I, G, value ? 1 : 0); }
         }
 
+        /// <summary>
+        /// The bus this source plays through (Unity's "Output"): its clip, PlayOneShot and
+        /// PlayOneShot(clip) all use it. Applies from the next Play; a sound already playing
+        /// stays on its old bus.
+        /// </summary>
+        public AudioBus Bus
+        {
+            get { int v; return GetBusInternal(I, G, out v) != 0 ? (AudioBus)v : AudioBus.SFX; }
+            set { SetBusInternal(I, G, (int)value); }
+        }
+
         /// <summary>0 = 2D (same in both ears), 1 = 3D from this entity's position. Applies from the next Play.</summary>
         public float SpatialBlend
         {
@@ -159,6 +172,10 @@ namespace Crucible
         private static extern int GetLoopInternal(int index, int generation, out int value);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SetLoopInternal(int index, int generation, int value);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetBusInternal(int index, int generation, out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetBusInternal(int index, int generation, int value);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int GetClipInternal(int index, int generation, out int low, out int high);
         [MethodImpl(MethodImplOptions.InternalCall)]

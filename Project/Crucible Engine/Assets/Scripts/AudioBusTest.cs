@@ -7,6 +7,7 @@ namespace Crucible.Scripts
     //   2. Press Play, then:
     //        J      PlayClipAtPoint(Clip) a few units to this entity's right (watch the
     //               Hierarchy: a "One Shot Audio" entity appears and goes away when it ends)
+    //        H      the same on the Music bus: 7/8 should change its volume, 9/0 should not
     //        5 / 6  Master volume down / up
     //        7 / 8  Music volume down / up
     //        9 / 0  SFX volume down / up
@@ -26,11 +27,13 @@ namespace Crucible.Scripts
 
         public override void OnUpdate(float deltaTime)
         {
-            if (Input.IsPressed(KeyCode.J))
+            bool music = Input.IsPressed(KeyCode.H);
+            if (Input.IsPressed(KeyCode.J) || music)
             {
                 Vector3 where = Transform.Position + new Vector3(offset, 0f, 0f);
-                Entity oneShot = Audio.PlayClipAtPoint(clip, where);
-                Log.Info(oneShot != null ? "[AudioBusTest] Playing " + clip.Name + " at " + where + " on " + oneShot
+                AudioBus bus = music ? AudioBus.Music : AudioBus.SFX;
+                Entity oneShot = Audio.PlayClipAtPoint(clip, where, 1f, bus);
+                Log.Info(oneShot != null ? "[AudioBusTest] Playing " + clip.Name + " at " + where + " on " + oneShot + " (" + bus + " bus)"
                                          : "[AudioBusTest] PlayClipAtPoint returned null - is Clip set?");
             }
 

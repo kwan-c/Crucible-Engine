@@ -513,12 +513,12 @@ AudioSource for an entity with an AudioSource component. `public AudioClip`
 fields take an audio file dragged from the Asset Browser (saved as its guid).
 
 - `Play()`, `Stop()`, `PlayOneShot()`, `PlayOneShot(clip)`, `IsPlaying`.
-- `Clip`, `Volume` (0..1), `Pitch`, `Loop`, `SpatialBlend` (0 = 2D, 1 = 3D),
+- `Clip`, `Volume` (0..1), `Pitch`, `Loop`, `Bus` (`AudioBus.Master` / `Music` / `SFX`, Unity's "Output"), `SpatialBlend` (0 = 2D, 1 = 3D),
   `MinDistance`, `MaxDistance`.
 - Requests are carried out by ECSAudioSystem later in the same frame.
   `IsPlaying` is updated once per frame, so it is still false right after
-  `Play()`. Volume and Pitch change a sound already playing; the other
-  settings apply from the next Play.
+  `Play()`. Volume and Pitch change a sound already playing; the other settings (Bus included)
+  apply from the next Play: a sound already playing stays on its old bus (moving a live voice would need an Audio/ change).
 - `PlayOneShot(clip, volumeScale = 1)` plays another clip once on top, WITHOUT
   changing `Clip` (Unity's), e.g. a reload click from the gun's source. Different
   clips in one frame each play (up to 8 a frame; returns false past that).
@@ -531,8 +531,8 @@ fields take an audio file dragged from the Asset Browser (saved as its guid).
     player's settings (Core's UserSettings, which ECSAudioSystem reads every
     frame), heard next frame. `Audio.SaveSettings()` writes UserSettings.json.
     They are not scene data, so Stop does not undo them.
-  - `Audio.PlayClipAtPoint(clip, position, volume = 1)` plays a clip once in 3D
-    on the SFX bus, Unity-style: a temporary "One Shot Audio" entity with a Play
+  - `Audio.PlayClipAtPoint(clip, position, volume = 1, bus = AudioBus.SFX)` plays a clip once in 3D
+    on that bus (SFX unless given), Unity-style: a temporary "One Shot Audio" entity with a Play
     On Awake AudioSource, destroyed once the sound ends (or after 2 s if it
     never starts). Returns that entity, or null. Pause and Stop apply as for
     any AudioSource.

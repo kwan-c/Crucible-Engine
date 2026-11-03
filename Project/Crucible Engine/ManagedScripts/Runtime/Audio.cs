@@ -2,8 +2,8 @@
 * \file:         Audio.cs
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
-* \date          1 November 2026
-* \version       1.0
+* \date          3 November 2026
+* \version       1.1
 * \brief         Game-wide audio for scripts: the player's bus volumes and
 *                one-off sounds at a point. Part of Crucible.ScriptCore.dll.
 *
@@ -20,6 +20,7 @@
 *    AudioSource of your own (Unity's AudioSource.PlayClipAtPoint):
 *
 *        Audio.PlayClipAtPoint(explosionClip, hitPosition);
+*        Audio.PlayClipAtPoint(stinger, pos, 1f, AudioBus.Music); // another bus
 *
 *    It creates a temporary "One Shot Audio" entity (visible in the Hierarchy
 *    during Play) that is destroyed when the sound ends.
@@ -93,16 +94,19 @@ namespace Crucible
         // --- one-off sounds ---------------------------------------------------- //
 
         /// <summary>
-        /// Plays <paramref name="clip"/> once, in 3D at <paramref name="position"/>, on the SFX bus.
+        /// Plays <paramref name="clip"/> once, in 3D at <paramref name="position"/>, on
+        /// <paramref name="bus"/> (SFX unless given).
         /// Returns the temporary entity playing it (move it to make the sound follow
         /// something), or null if the clip is missing or it is not Play.
         /// </summary>
-        public static Entity PlayClipAtPoint(AudioClip clip, Vector3 position, float volume = 1f)
+        public static Entity PlayClipAtPoint(AudioClip clip, Vector3 position, float volume = 1f,
+                                             AudioBus bus = AudioBus.SFX)
         {
             if (clip == null)
                 return null;
             int index, generation;
-            if (PlayClipAtPointInternal(clip.IdLow, clip.IdHigh, ref position, volume, out index, out generation) == 0)
+            if (PlayClipAtPointInternal(clip.IdLow, clip.IdHigh, ref position, volume, (int)bus,
+                                        out index, out generation) == 0)
                 return null;
             return new Entity(unchecked((uint)index), unchecked((uint)generation));
         }
@@ -117,6 +121,6 @@ namespace Crucible
         private static extern int SaveSettingsInternal();
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int PlayClipAtPointInternal(int idLow, int idHigh, ref Vector3 position, float volume,
-                                                          out int index, out int generation);
+                                                          int bus, out int index, out int generation);
     }
 }
