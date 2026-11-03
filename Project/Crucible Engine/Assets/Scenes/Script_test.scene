@@ -238,13 +238,88 @@
             }
         },
         {
-            "id": "6DE7D0DD467EC001",
+            "id": "549408DD5340C001",
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
+                        "y": 3.230177402496338,
+                        "z": -2.3366246223449707
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Cube"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "MeshRendererTest",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.MeshRendererTest",
+                            "name": "altMaterial",
+                            "type": "Material",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 2114766385531944983
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MeshRendererTest",
+                            "name": "altModel",
+                            "type": "Model",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 573453398223863809
+                        }
+                    ],
+                    "$enabled": false
+                }
+            }
+        },
+        {
+            "id": "6DE7D0DD467EC001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -7.431329727172852,
                         "y": 4.47072172164917,
-                        "z": -2.213474750518799
+                        "z": 8.587813377380371
                     },
                     "rotation": {
                         "x": 0.0,
@@ -319,7 +394,8 @@
                     "assembly": "Managed/Crucible.Scripts.dll",
                     "namespace": "Crucible.Scripts",
                     "class": "ColliderTest",
-                    "fields": []
+                    "fields": [],
+                    "$enabled": false
                 }
             }
         },
@@ -572,14 +648,17 @@
                     "assembly": "Managed/Crucible.Scripts.dll",
                     "namespace": "Crucible.Scripts",
                     "class": "CollisionTest",
-                    "fields": []
+                    "fields": [],
+                    "$enabled": false
                 },
                 "PrefabInstance": {
                     "prefabAsset": 2158236722649923597,
                     "fileId": 6769922741077311499,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "ScriptComponent/$enabled"
+                    ]
                 }
             }
         },
@@ -827,6 +906,39 @@
             }
         },
         {
+            "id": "B14B10DD54DD0001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 2.4025590419769287,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Screen"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "ScreenTest",
+                    "fields": []
+                }
+            }
+        },
+        {
             "id": "B18998DD2EBF8003",
             "components": {
                 "Transform": {
@@ -1008,14 +1120,17 @@
                     "assembly": "Managed/Crucible.Scripts.dll",
                     "namespace": "Crucible.Scripts",
                     "class": "CollisionTest",
-                    "fields": []
+                    "fields": [],
+                    "$enabled": false
                 },
                 "PrefabInstance": {
                     "prefabAsset": 2158236722649923597,
                     "fileId": 13110991016414969865,
                     "isRoot": false,
                     "prefabHash": 0,
-                    "overrides": []
+                    "overrides": [
+                        "ScriptComponent/$enabled"
+                    ]
                 }
             }
         },
@@ -1174,13 +1289,6 @@
                 },
                 "EntityName": {
                     "name": "Player"
-                },
-                "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "ColliderTest",
-                    "fields": []
                 }
             }
         },

@@ -176,9 +176,9 @@ physics debug draw. Press Play.
 Setup: entity with a MeshRenderer showing a model; "Alt Material" = a .mat, "Alt Model" =
 another model. Add a MaterialParams and give the material some emissive. Press Play.
 
-- [ ] V hides / shows the mesh.
-- [ ] M swaps the whole-object material and back.
-- [ ] N swaps the model and back (slot overrides are cleared).
+- [y] V hides / shows the mesh.
+- [y] M swaps the whole-object material and back.
+- [y] N swaps the model and back (slot overrides are cleared).
 - [ ] S puts Alt Material on the next slot, one slot at a time; X clears them all.
 - [ ] X also logs that a bad slot (999) was refused.
 - [ ] E pulses the glow; E again goes back to normal.
@@ -215,7 +215,7 @@ In the game build (`Mekanomachia.exe`, scene with this script):
 - [ ] 1 / 2 set a 1280 x 720 / 1600 x 900 window (height kept to the aspect lock).
 - [ ] 3 goes exclusive fullscreen at a listed resolution (screen blinks); 3 again steps on.
 - [ ] In exclusive fullscreen, alt-tab minimizes the game and the desktop is at its normal resolution.
-- [ ] 4 goes back to borderless fullscreen.
+- [ ] 4 goes back to borderless fullscreen. Alt-tab from borderless: the other window comes in front (the game is NOT always on top) and the game does not minimize; clicking it brings it back fullscreen.
 - [ ] Close and restart the game: same mode, window size and resolution as when it closed.
 
 ## 19. World text and world canvases - `WorldTextTest`
