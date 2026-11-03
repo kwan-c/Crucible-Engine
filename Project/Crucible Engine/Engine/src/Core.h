@@ -28,6 +28,7 @@ namespace Crucible
 {
     class ScriptRuntime;
     class NetworkSession;
+    class NetContent;
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -103,6 +104,11 @@ namespace Crucible
         // The settings start as EngineConfig.json's "network" defaults; the editor's Network panel
         // changes them for this instance only with GetNetwork().SetSettings(...), before Play.
         NetworkSession& GetNetwork() noexcept { return *m_network; }
+
+        // What two machines must agree on to play together: the serializers and the network
+        // prefabs (Network/NetContent.h). The game registers its prefabs in Network/GamePrefabs.h;
+        // the table is validated and hashed again before every Host or Client start.
+        NetContent& GetNetContent() noexcept { return *m_netContent; }
 
         // Opt-in entity/component events on the gameplay bus, e.g. EcsBridge().OnRemoved<MeshRenderer>(...).
         // (Not called "EcsEvents()" - that would hide the EcsEvents namespace inside Core.)
@@ -186,6 +192,7 @@ namespace Crucible
         // Created in Init(); declared after the buses it posts to and before the systems that
         // hold a reference to it, so it outlives them. m_networkPlayState starts and stops it.
         std::unique_ptr<NetworkSession> m_network;
+        std::unique_ptr<NetContent>     m_netContent;   // created in Init(), next to the session
         Subscription m_networkPlayState;
 
         std::unique_ptr<World> m_world;

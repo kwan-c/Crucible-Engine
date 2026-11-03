@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts.
@@ -13,6 +13,8 @@
 *    -v1.1       review fixes: refused Start changes nothing, FreeSlot
 *                guarded, per-message receive budget, client join deadline
 *    -v1.2       LastStartError, LastEndReason
+*    -v1.4       invalid network content refuses Start; client logs its
+*                content hash (PR 7)
 *    -v1.3       identity hooks, rejection, despawn ownership (PR 6);
 *                review fix: oversized messages count towards the frame's
 *                message limit and their sender's quota, released at once
@@ -102,6 +104,7 @@ namespace Crucible
 		const NetworkSettings proposed = settings;
 		if (!Validate(proposed, error)) return false;
 		if (proposed.mode == NetMode::Offline) { m_settings = proposed; return true; }
+		if (!m_contentError.empty()) { error = "network content is invalid: " + m_contentError; return false; }
 		if (!GnsTransport::InitLibrary(error)) return false;   // once per process; kept until Core shuts down
 
 		auto transport = std::make_unique<GnsTransport>();
@@ -144,7 +147,7 @@ namespace Crucible
 			m_role = Net::NetRole::Client;
 			m_serverConnection = server;
 			m_clientPhase = ClientPhase::Connecting;
-			CRU_INFO("[Net] joining {}:{} as '{}'", m_active.connectAddress, m_active.connectPort, m_active.playerName);
+			CRU_INFO("[Net] joining {}:{} as '{}' (content hash {:016x})", m_active.connectAddress, m_active.connectPort, m_active.playerName, m_contentHash);
 		}
 		return true;
 	}

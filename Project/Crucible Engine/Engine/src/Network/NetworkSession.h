@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -95,6 +95,8 @@
 *                Update calls RequestStop, which the next Update performs.
 *
 * \history
+*    -v1.4       SetContentError: invalid network content refuses Start
+*                (Networking Guide PR 7)
 *    -v1.3       identity map and hooks: rejection, despawn ownership,
 *                per-client cleanup ids (Networking Guide PR 6); oversized
 *                messages count towards the frame limit and peer quota
@@ -192,10 +194,15 @@ namespace Crucible
 		/// The settings the running session started with (meaningless while Offline).
 		const NetworkSettings& ActiveSettings() const noexcept { return m_active; }
 
-		/// The hash both sides must agree on (JoinRequest). Default: DefaultContentHash();
-		/// the network prefab table extends it in Phase 7.
+		/// The hash both sides must agree on (JoinRequest). Default: DefaultContentHash(); Core
+		/// sets NetContent's full hash (serializers and network prefabs) before every Start.
 		void          SetContentHash(std::uint64_t hash) noexcept { m_contentHash = hash; }
 		std::uint64_t ContentHash() const noexcept { return m_contentHash; }
+
+		/// Why the network content (prefabs, serializers) is unusable, or empty when it is fine.
+		/// While set, Start refuses Host and Client with this reason (Offline still starts).
+		void               SetContentError(std::string error) { m_contentError = std::move(error); }
+		const std::string& ContentError() const noexcept { return m_contentError; }
 
 		/// Protocol version, tick rate and snapshot interval, canonically hashed.
 		static std::uint64_t DefaultContentHash() noexcept;
@@ -314,6 +321,7 @@ namespace Crucible
 		NetworkSettings                m_settings;    // for the next Start
 		NetworkSettings                m_active;      // the running session's own copy
 		std::uint64_t                  m_contentHash;
+		std::string                    m_contentError;   // non-empty: Host/Client may not start
 		std::unique_ptr<GnsTransport>  m_transport;   // null while Offline
 
 		Net::NetRole                   m_role = Net::NetRole::Offline;

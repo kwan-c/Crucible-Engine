@@ -25,7 +25,9 @@
 #include "UI/UISystem.h"
 #include "Scripting/ScriptRuntime.h"
 #include "Scripting/EntityScriptSystem.h"
+#include "Network/GamePrefabs.h"
 #include "Network/GnsTransport.h"
+#include "Network/NetContent.h"
 #include "Network/NetIdentityHooks.h"
 #include "Network/NetworkSession.h"
 #include "Network/NetworkSettings.h"
@@ -170,11 +172,27 @@ namespace Crucible {
         // hooks, registered once; the session outlives every entity of the World).
         RegisterIdentityHooks(*m_world, *m_network);
 
+        // What both machines must agree on: the serializers and the game's network prefabs
+        // (GamePrefabs.h). A registration mistake is reported now and refuses every session.
+        m_netContent = std::make_unique<NetContent>();
+        std::string netRegistrationError;
+        if (!RegisterGameNetPrefabs(m_netContent->Prefabs(), netRegistrationError))
+            CRU_ERROR("[Net] network prefab registration: {}", netRegistrationError);
+
         // Play starts the session; Stop ends it BEFORE the world is restored (OnBeforeStop), so
-        // tearing down the play world announces nothing to the other players.
-        m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this](const EngineEvents::PlayStateChanged& e) {
+        // tearing down the play world announces nothing to the other players. Before a Host or
+        // Client start, the prefab files are read and validated again and the content hash is
+        // recomputed: an invalid table refuses the start (the editor's Network panel shows why).
+        m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this, netRegistrationError](const EngineEvents::PlayStateChanged& e) {
             if (e.from == PlayState::Edit && e.to == PlayState::Playing)
             {
+                if (m_network->Settings().mode != NetMode::Offline)
+                {
+                    std::string contentError = netRegistrationError;
+                    if (contentError.empty() && m_netContent->Prepare(*m_world, *m_assets, *m_resources, contentError))
+                        m_network->SetContentHash(m_netContent->Hash());
+                    m_network->SetContentError(contentError);
+                }
                 std::string error;
                 if (!m_network->Start(error)) CRU_ERROR("[Net] could not start the {} session: {}", ToString(m_network->Settings().mode), error);
             }
