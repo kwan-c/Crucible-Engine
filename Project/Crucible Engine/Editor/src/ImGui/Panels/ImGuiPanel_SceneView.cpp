@@ -37,6 +37,12 @@
 
 #include <algorithm>
 
+namespace {
+	// Range of the editor fly camera's speed (Camera popup and scroll-while-flying), in m/s.
+	constexpr float kMinFlySpeed = 0.1f;
+	constexpr float kMaxFlySpeed = 200.0f;
+}
+
 void Crucible::SceneView::Init() {
 	m_panelName = "Scene";
 
@@ -180,7 +186,12 @@ void Crucible::SceneView::UpdateEditorCamera(float dt) {
 
 		ImGuiIO const& io = ImGui::GetIO();
 		input.look = { io.MouseDelta.x, io.MouseDelta.y };
-		input.zoom = io.MouseWheel;
+		// Scroll while flying changes the fly speed (like Unity), not the zoom: each notch is 20%
+		// faster or slower. Field of view is in the Camera popup instead.
+		if (io.MouseWheel != 0.0f) {
+			m_flyController.moveSpeed = std::clamp(m_flyController.moveSpeed * std::pow(1.2f, io.MouseWheel),
+				kMinFlySpeed, kMaxFlySpeed);
+		}
 		input.boost = ImGui::IsKeyDown(ImGuiKey_LeftShift) || ImGui::IsKeyDown(ImGuiKey_RightShift);
 
 		glm::vec3 move{ 0.0f };
@@ -305,6 +316,14 @@ void Crucible::SceneView::DrawToolbar() {
 	}
 
 	ImGui::SameLine();
+	if (ToolbarToggle("Camera", false)) { ImGui::OpenPopup("##SceneCamera"); }
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Fly speed: %.2f m/s (scroll while flying to change)", m_flyController.moveSpeed); }
+	if (ImGui::BeginPopup("##SceneCamera")) {
+		DrawCameraMenu();
+		ImGui::EndPopup();
+	}
+
+	ImGui::SameLine();
 	if (ToolbarToggle("Rendering", false)) { ImGui::OpenPopup("##SceneRendering"); }
 	if (ImGui::BeginPopup("##SceneRendering")) {
 		DrawRenderingMenu();
@@ -343,7 +362,7 @@ void Crucible::SceneView::DrawToolbar() {
 
 	if (m_flying) {
 		ImGui::SameLine();
-		ImGui::TextDisabled("|  Flying (RMB + WASD/QE, Shift to boost)");
+		ImGui::TextDisabled("|  Flying %.2f m/s (RMB + WASD/QE, Shift to boost, scroll for speed)", m_flyController.moveSpeed);
 	}
 
 	EditorWidgets::EndToolbarRow();
@@ -794,6 +813,35 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	ImGui::Checkbox("Icons (lights, cameras, audio, sky, empties)", &m_showIcons);
 	bool outline = m_viewport.GetOutline();
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
+}
+
+// This view's fly camera. Not saved: each start of the editor begins from FlyCameraController's defaults.
+void Crucible::SceneView::DrawCameraMenu() {
+	FlyCameraController& fly = m_flyController;
+
+	ImGui::SeparatorText("Movement");
+	ImGui::SetNextItemWidth(160.0f);
+	ImGui::SliderFloat("Speed", &fly.moveSpeed, kMinFlySpeed, kMaxFlySpeed, "%.2f m/s", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
+	if (ImGui::IsItemHovered()) { ImGui::SetTooltip("Also: scroll the mouse wheel while flying (right mouse held)."); }
+	ImGui::SetNextItemWidth(160.0f);
+	ImGui::SliderFloat("Shift boost", &fly.boostMultiplier, 1.0f, 10.0f, "x%.1f", ImGuiSliderFlags_AlwaysClamp);
+	ImGui::SetNextItemWidth(160.0f);
+	ImGui::SliderFloat("Look sensitivity", &fly.lookSensitivity, 0.01f, 0.5f, "%.2f deg/px", ImGuiSliderFlags_AlwaysClamp);
+
+	ImGui::SeparatorText("View");
+	if (m_viewport.IsValid()) {
+		Camera& camera = m_viewport.GetCamera();
+		ImGui::SetNextItemWidth(160.0f);
+		ImGui::SliderFloat("Field of view", &camera.fovY, fly.minFov, fly.maxFov, "%.0f deg", ImGuiSliderFlags_AlwaysClamp);
+	}
+
+	ImGui::Separator();
+	if (ImGui::Button("Reset to defaults")) {
+		FlyCameraController const defaults;
+		fly.moveSpeed = defaults.moveSpeed;
+		fly.boostMultiplier = defaults.boostMultiplier;
+		fly.lookSensitivity = defaults.lookSensitivity;
+	}
 }
 
 // Renderer-wide settings: unlike the Gizmos menu these change the picture itself, in the Game

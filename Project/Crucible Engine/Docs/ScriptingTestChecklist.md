@@ -120,8 +120,8 @@ Setup: entity with a ParticleEmitter (Burst Count > 0, Loop off). Press Play.
 - [y] R fires the burst again straight away.
 - [y] T emits 30 extra particles, even while stopped.
 - [y] X toggles red / original colour; 1 / 2 rate; 3 / 4 gravity; L the light.
-- [ ] Once everything has faded (Duration up, last particles gone), it logs once that the effect is no longer alive; the Inspector's Playing unticks itself at the end of Duration.
-- [ ] After that, Q (Play) runs it again with its burst - no R needed. After Stop, Playing in the edit-mode Inspector is ticked as it was saved.
+- [y] Once everything has faded (Duration up, last particles gone), it logs once that the effect is no longer alive; the Inspector's Playing unticks itself at the end of Duration.
+- [y] After that, Q (Play) runs it again with its burst - no R needed. After Stop, Playing in the edit-mode Inspector is ticked as it was saved.
 
 ## 12. Screen UI - `UITest`
 
