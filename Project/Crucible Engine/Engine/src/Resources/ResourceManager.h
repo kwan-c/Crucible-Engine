@@ -329,8 +329,8 @@ namespace Crucible {
                  reads its .cfont again - call after the editor recompiles
                  it. Pointers from earlier GetFont() calls become invalid.
          \param[in] id Same ids as GetFont().
-         \note   The old atlas stays on the GPU until shutdown (the Renderer
-                 has no DestroyTexture yet).
+         \note   The old atlas is freed (Renderer::DestroyTexture, a few
+                 frames later).
          *********************************************************************/
         void ReloadFont(AssetId id);
 
@@ -352,8 +352,9 @@ namespace Crucible {
          \details
             Textures: reloaded; materials using them switch over.
             .mat materials: updated in place, so every object using one
-            changes at once. Fonts, prefabs, animator controllers, skyboxes:
-            forgotten, so the next use loads the new file. Models: only
+            changes at once. Fonts, prefabs, animator controllers, skyboxes,
+            audio clips: forgotten, so the next use loads the new file (a
+            sound still playing the old clip stops). Models: only
             reported - their meshes are held by the objects using them, so
             the scene must be opened again.
          *********************************************************************/
@@ -369,7 +370,9 @@ namespace Crucible {
          \return What was freed.
          \details
             Kept: every asset id the scene mentions anywhere (any component
-            field), the model behind a kept model material, the compiled
+            field), every id a kept prefab file mentions (nested prefabs
+            too - a script may spawn it later), the model behind a kept
+            model material, the compiled
             font behind a kept .ttf, built-ins, the default font, ids pinned
             with KeepLoaded(), and any texture a live material still uses
             (including materials made in the Inspector). Everything else is
@@ -593,6 +596,7 @@ namespace Crucible {
         MaterialHandle LoadMaterialFile(AssetId id);             // .mat (JSON)
         bool ReloadMaterialFile(AssetId id);                     // .mat read again into its existing handle
         void ForgetFailures();                                   // every remembered failed load may be tried again
+        bool ReloadAudioClip(AssetId id);                        // unloads every load type of the file; false if none loaded
         std::string SerializeMaterial(const MaterialData& data) const;
         AssetId ResolveFontId(AssetId id) const;                 // .ttf/.otf -> its .cfont; .cfont -> itself; else 0
         std::unique_ptr<FontAsset> LoadFont(AssetId fontId);    // .cfont -> FontData + uploaded atlas
