@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -18,6 +18,7 @@
 * \history
 *    -v1.0       connection, receive and rejection counters (Phase 4)
 *    -v1.1       carriedOver and oversized (receive budget review fix)
+*    -v1.2       identityRejected, despawnsQueued, lastFrameOversized (Phase 6)
 *
 **************************************************************************/
 #pragma once
@@ -35,6 +36,7 @@ namespace Crucible
 		std::uint32_t lastFrameBytes = 0;      // processed in the latest frame (budget: 256 KB)
 		std::uint32_t carriedOver = 0;         // received but over the budget: first in the next frame
 		std::uint64_t oversized = 0;           // bigger than any protocol message: rejected unprocessed
+		std::uint32_t lastFrameOversized = 0;  // of those, taken in the latest frame (with lastFrameMessages: at most 256)
 		std::int64_t  receiveMicros = 0;       // time spent in NetworkSession::Update, latest frame
 
 		// Rejected input
@@ -55,5 +57,9 @@ namespace Crucible
 
 		// Sending
 		std::uint32_t sendFailed = 0;
+
+		// Networked entities
+		std::uint32_t identityRejected = 0;    // NetworkIdentity with no id, or an id already in use
+		std::uint32_t despawnsQueued = 0;      // server: mapped entities destroyed while running
 	};
 }

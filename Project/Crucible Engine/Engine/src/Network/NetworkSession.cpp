@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts.
@@ -13,6 +13,9 @@
 *    -v1.1       review fixes: refused Start changes nothing, FreeSlot
 *                guarded, per-message receive budget, client join deadline
 *    -v1.2       LastStartError, LastEndReason
+*    -v1.3       identity hooks, rejection, despawn ownership (PR 6);
+*                review fix: oversized messages count towards the frame's
+*                message limit and their sender's quota, released at once
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -120,6 +123,7 @@ namespace Crucible
 		m_messages.reserve(kMaxMessagesPerFrame);   // so moving messages in never reallocates mid-frame
 		m_peers = {};
 		m_stats = {};
+		ClearEntityState();
 		m_clock.Reset();
 		m_stopRequested = false;
 		m_stopReason.clear();
@@ -181,6 +185,7 @@ namespace Crucible
 		}
 		m_frameEvents.clear();
 		m_peers = {};
+		ClearEntityState();   // entities keep their NetworkIdentity; their later removal finds no mapping
 		m_role = Net::NetRole::Offline;
 		m_clientPhase = ClientPhase::None;
 		m_serverConnection = kInvalidConnection;
@@ -190,6 +195,67 @@ namespace Crucible
 		m_joinDeadline = {};
 		++m_generation;
 		m_state = SessionState::Offline;
+	}
+
+	// ---- networked entities ----------------------------------------------------------------
+
+	void NetworkSession::OnIdentityAdded(Entity entity, const NetworkIdentity& identity, const std::function<bool(Entity)>& isAlive)
+	{
+		if (m_state != SessionState::Running) return;   // no session to name entities in
+		if (m_entities.TryAdd(identity.id, entity, isAlive)) return;
+
+		m_rejected.push_back(entity);
+		++m_stats.identityRejected;
+		if (identity.id == Net::kInvalidNetworkId)
+		{
+			CRU_ERROR("[Net] entity {}:{} was given a NetworkIdentity with no id - rejected, destroyed next frame",
+				entity.index, entity.generation);
+		}
+		else
+		{
+			const Entity holder = m_entities.Find(identity.id);
+			CRU_ERROR("[Net] NetworkIdentity {} on entity {}:{} rejected: the id already names entity {}:{} - destroyed next frame",
+				identity.id, entity.index, entity.generation, holder.index, holder.generation);
+		}
+	}
+
+	void NetworkSession::OnIdentityRemoved(Entity entity, const NetworkIdentity& identity)
+	{
+		// Not the mapped entity (a rejected duplicate, or an entity from before this session):
+		// nothing to announce, and the original keeps its mapping.
+		if (!m_entities.RemoveIfMapped(identity.id, entity)) return;
+		m_destroyedThisFrame.push_back(identity.id);
+		if (m_role == Net::NetRole::Server && m_state == SessionState::Running)
+		{
+			m_pendingDespawns.push_back(identity.id);
+			++m_stats.despawnsQueued;
+		}
+	}
+
+	void NetworkSession::TakeRejected(std::vector<Entity>& out)
+	{
+		out.clear();
+		out.swap(m_rejected);
+	}
+
+	void NetworkSession::TakePendingDespawns(std::vector<Net::NetworkId>& out)
+	{
+		out.clear();
+		out.swap(m_pendingDespawns);
+	}
+
+	void NetworkSession::TakeDestroyedThisFrame(std::vector<Net::NetworkId>& out)
+	{
+		out.clear();
+		out.swap(m_destroyedThisFrame);
+	}
+
+	void NetworkSession::ClearEntityState() noexcept
+	{
+		m_entities.Clear();
+		m_rejected.clear();
+		m_pendingDespawns.clear();
+		m_destroyedThisFrame.clear();
 	}
 
 	void NetworkSession::RequestStop(std::string_view reason)
@@ -269,20 +335,30 @@ namespace Crucible
 			m_carry.pop_front();
 		}
 
-		while (m_carry.empty() && m_messages.size() < kMaxMessagesPerFrame && bytes < kMaxBytesPerFrame)
+		// Every message taken from GNS is a message of work, valid or not: oversized ones count
+		// towards the frame's message limit too, so a flood of them cannot keep this loop going.
+		std::size_t rejected = 0;
+		while (m_carry.empty() && m_messages.size() + rejected < kMaxMessagesPerFrame && bytes < kMaxBytesPerFrame)
 		{
 			m_batch.clear();
-			const std::size_t wanted = std::min<std::size_t>(64, kMaxMessagesPerFrame - m_messages.size());
+			const std::size_t wanted = std::min<std::size_t>(64, kMaxMessagesPerFrame - m_messages.size() - rejected);
 			if (m_transport->Receive(m_batch, wanted) == 0) break;
 			for (ReceivedMessage& message : m_batch)
 			{
-				if (message.Data().size() > kMaxReliableBytes) { RejectOversized(message); continue; }   // released with m_batch
+				if (message.Data().size() > kMaxReliableBytes)
+				{
+					RejectOversized(message);
+					message = ReceivedMessage(nullptr);   // its buffer goes back to GNS now
+					++rejected;
+					continue;
+				}
 				if (m_carry.empty() && fits(message)) take(std::move(message));
 				else m_carry.push_back(std::move(message));   // order kept: everything after an overflow waits too
 			}
 		}
 		m_batch.clear();
 
+		m_stats.lastFrameOversized = static_cast<std::uint32_t>(rejected);
 		m_stats.lastFrameMessages = static_cast<std::uint32_t>(m_messages.size());
 		m_stats.lastFrameBytes = static_cast<std::uint32_t>(bytes);
 		m_stats.carriedOver = static_cast<std::uint32_t>(m_carry.size());
@@ -290,15 +366,25 @@ namespace Crucible
 		m_stats.bytesReceived += bytes;
 	}
 
-	// Bigger than any message of our protocol can be: never valid, so it is counted against its
-	// sender at once and released, without using the frame's budget or being carried over.
+	// Bigger than any message of our protocol can be: never valid, never read and never carried
+	// over. It costs one of the frame's 256 messages (CollectFrameMessages) and one of its sender's
+	// 64 a frame, and counts as malformed. Its bytes are not billed to the 256 KB decode budget:
+	// they are never decoded, and billing them would let one huge message a frame starve every
+	// other peer's valid traffic.
 	void NetworkSession::RejectOversized(const ReceivedMessage& message)
 	{
 		++m_stats.oversized;
 		if (IsServer())
 		{
-			if (PeerState* peer = PeerByConnection(message.Connection())) Malformed(*peer, "a message bigger than any protocol message");
-			else ++m_stats.unknownSender;
+			if (PeerState* peer = PeerByConnection(message.Connection()))
+			{
+				++peer->messagesThisFrame;   // first: Malformed may close (and reset) the peer
+				Malformed(*peer, "a message bigger than any protocol message");
+			}
+			else
+			{
+				++m_stats.unknownSender;
+			}
 		}
 		else
 		{

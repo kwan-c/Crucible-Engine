@@ -26,6 +26,7 @@
 #include "Scripting/ScriptRuntime.h"
 #include "Scripting/EntityScriptSystem.h"
 #include "Network/GnsTransport.h"
+#include "Network/NetIdentityHooks.h"
 #include "Network/NetworkSession.h"
 #include "Network/NetworkSettings.h"
 #include "Network/Systems/NetReceiveSystem.h"
@@ -165,16 +166,25 @@ namespace Crucible {
                 ToString(net.mode), net.hostPort, net.listenAddress.empty() ? "all interfaces" : net.listenAddress,
                 net.connectAddress, net.connectPort, net.maxClients);
         }
+        // The session's NetworkId -> entity map follows every NetworkIdentity add and remove (World
+        // hooks, registered once; the session outlives every entity of the World).
+        RegisterIdentityHooks(*m_world, *m_network);
+
+        // Play starts the session; Stop ends it BEFORE the world is restored (OnBeforeStop), so
+        // tearing down the play world announces nothing to the other players.
         m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this](const EngineEvents::PlayStateChanged& e) {
             if (e.from == PlayState::Edit && e.to == PlayState::Playing)
             {
                 std::string error;
                 if (!m_network->Start(error)) CRU_ERROR("[Net] could not start the {} session: {}", ToString(m_network->Settings().mode), error);
             }
-            else if (e.to == PlayState::Edit)
-            {
-                m_network->Stop("Play stopped");
-            }
+        });
+        m_playMode->OnBeforeStop([this] { m_network->Stop("Play stopped"); });
+
+        // v1 rule: a scene change during a session ends it (clients cannot follow a level switch
+        // yet). This runs inside SceneManager::ApplyPending, before any system of the frame.
+        m_scenes->OnSceneChanged([this] {
+            if (m_network->IsActive()) m_network->Stop("the scene changed during the session");
         });
 
         RegisterEngineSystems();

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -57,14 +57,37 @@
 *                    (64 messages of at most 16 KB each, so at most 1 MB);
 *                    while it is not empty nothing new is taken from GNS, which
 *                    keeps the rest queued.
+*                  - The 256-message limit counts every message taken from
+*                    GNS, valid or not, so no kind of traffic can keep one
+*                    frame receiving.
 *                  - A message bigger than the largest valid protocol message
-*                    (16 KB) is malformed: released at once, counted against
-*                    its sender, never carried and never billed to the budget.
-*                  - At most 64 messages per client per frame; a client over
-*                    it for 30 frames in a row is closed (Malformed).
+*                    (16 KB) is malformed: never read, released at once, never
+*                    carried. It uses one of the frame's 256 messages and one
+*                    of its sender's 64, but not the 256 KB decode budget (its
+*                    bytes are never decoded; billing them would let one huge
+*                    message a frame starve everyone else's valid traffic).
+*                  - At most 64 messages per client per frame, oversized ones
+*                    included; a client over it for 30 frames in a row is
+*                    closed (Malformed).
 *                  - Every message: size within MaxMessageBytes, lane 0, a
 *                    type the client may send. More than 50 bad messages from
 *                    one client closes it.
+*
+*                Networked entities (Networking Guide 9.2, issues 8, 9)
+*                  Entities() maps each NetworkId to its local entity. Only
+*                  the NetworkIdentity hooks write it (NetIdentityHooks.h),
+*                  so every add, remove and destroy path keeps it right:
+*                  - an identity with no id, or with an id that already
+*                    names another live entity, is rejected: logged,
+*                    counted, and destroyed by NetReceiveSystem next frame;
+*                  - only removing a mapping the map held counts. Its id
+*                    goes to DestroyedThisFrame() (per-client cleanup) and,
+*                    on a running server, to PendingDespawns(). A rejected
+*                    duplicate dying never despawns the original, and
+*                    nothing is announced while Stopping or Offline.
+*                  Start and Stop clear all of it. Core stops the session
+*                  before Stop restores the world (PlayMode::OnBeforeStop),
+*                  so tearing down the play world announces nothing.
 *
 *                Threading and call rules: main thread only. Start and Stop
 *                at a safe point (Core calls them from the PlayStateChanged
@@ -72,6 +95,9 @@
 *                Update calls RequestStop, which the next Update performs.
 *
 * \history
+*    -v1.3       identity map and hooks: rejection, despawn ownership,
+*                per-client cleanup ids (Networking Guide PR 6); oversized
+*                messages count towards the frame limit and peer quota
 *    -v1.2       LastStartError and LastEndReason for the editor's panel
 *    -v1.1       review fixes: a refused Start changes nothing (validated
 *                first; the running session uses ActiveSettings()); FreeSlot
@@ -89,6 +115,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <functional>
 #include <memory>
 #include <span>
 #include <string>
@@ -96,8 +123,11 @@
 #include <vector>
 
 #include "EngineExport.h"
+#include "ECS/Core/ECSCore.h"
 #include "Network/GnsTransport.h"
 #include "Network/NetClock.h"
+#include "Network/NetComponents.h"
+#include "Network/NetEntityMap.h"
 #include "Network/NetStats.h"
 #include "Network/NetTypes.h"
 #include "Network/NetworkSettings.h"
@@ -226,6 +256,37 @@ namespace Crucible
 		/// Why the latest session ended (kept until the next one ends): for the editor's panel.
 		const std::string& LastEndReason() const noexcept { return m_lastEndReason; }
 
+		// ---- networked entities -------------------------------------------------------------
+
+		/// NetworkId -> local entity for the running session (empty while Offline).
+		const NetEntityMap& Entities() const noexcept { return m_entities; }
+
+		/// The NetworkIdentity add hook (registered by RegisterIdentityHooks). While Running: maps
+		/// identity.id -> entity, or rejects the entity when the id is invalid or already names
+		/// another entity that isAlive says is alive. A rejected entity is logged, counted and
+		/// queued in Rejected(). Offline or Stopping: ignored.
+		void OnIdentityAdded(Entity entity, const NetworkIdentity& identity, const std::function<bool(Entity)>& isAlive);
+
+		/// The NetworkIdentity remove hook (fires on every remove and destroy path). Acts only if
+		/// the map held exactly (identity.id -> entity): unmaps it, adds the id to
+		/// DestroyedThisFrame() and, on a running server, to PendingDespawns().
+		void OnIdentityRemoved(Entity entity, const NetworkIdentity& identity);
+
+		/// Entities whose identity was rejected, waiting for NetReceiveSystem to destroy them (a
+		/// hook may not change the World's structure). TakeRejected moves them into `out`.
+		std::span<const Entity> Rejected() const noexcept { return m_rejected; }
+		void TakeRejected(std::vector<Entity>& out);
+
+		/// Server: ids whose entity was destroyed while the session ran. The send system (Phase 8)
+		/// takes them each frame and broadcasts them as despawns.
+		std::span<const Net::NetworkId> PendingDespawns() const noexcept { return m_pendingDespawns; }
+		void TakePendingDespawns(std::vector<Net::NetworkId>& out);
+
+		/// Every role: ids unmapped since they were last taken, so per-client replication state
+		/// for them can be dropped (issue 9). The send system (Phase 8) takes them each frame.
+		std::span<const Net::NetworkId> DestroyedThisFrame() const noexcept { return m_destroyedThisFrame; }
+		void TakeDestroyedThisFrame(std::vector<Net::NetworkId>& out);
+
 	private:
 		bool TryStart(const NetworkSettings& settings, std::string& error);
 		void HandleServerEvent(const ConnectionEvent& event);
@@ -243,6 +304,7 @@ namespace Crucible
 		void       Malformed(PeerState& peer, const char* what);
 		void       ClosePeer(PeerState& peer, CloseReason reason, const std::string& debug);
 		void       CloseAndStop(CloseReason reason, const std::string& debug);   // client
+		void       ClearEntityState() noexcept;   // map, rejected, despawns, destroyed ids
 		void       Post(auto event);
 
 		template <typename Msg>
@@ -279,6 +341,12 @@ namespace Crucible
 		std::vector<ReceivedMessage>   m_messages;      // this frame's messages; released at the end of it
 		std::vector<ReceivedMessage>   m_batch;         // one receive from GNS, before it is sorted
 		std::deque<ReceivedMessage>    m_carry;         // taken from GNS but over this frame's budget: first next frame
+
+		// Networked entities (written only by the identity hooks)
+		NetEntityMap                   m_entities;
+		std::vector<Entity>            m_rejected;            // destroyed by NetReceiveSystem next frame
+		std::vector<Net::NetworkId>    m_pendingDespawns;     // server, while Running
+		std::vector<Net::NetworkId>    m_destroyedThisFrame;  // every role: per-client cleanup
 	};
 
 #ifdef _MSC_VER
