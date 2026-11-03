@@ -15,6 +15,7 @@
 #include "Diagnostics/Logger.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
+#include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
@@ -168,6 +169,11 @@ void Crucible::Menu::Update(float) {
 		if (ImGui::BeginMenu("View"))
 		{
 			if (ImGui::MenuItem("Animator")) { if (animator) animator->Show(); }
+			if (auto behavior = EditorManager::GetInstance().GetPanel<BehaviorGraphPanel>(ImguiPanels::BEHAVIORGRAPH)) {
+				if (ImGui::MenuItem("Behavior Graph", nullptr, behavior->IsOpen())) {
+					if (behavior->IsOpen()) { behavior->SetOpen(false); } else { behavior->Show(); }
+				}
+			}
 			// The third argument is a bool* that MenuItem toggles for us (shows a tick).
 			ImGui::MenuItem("ImGui Demo Window", nullptr, &m_showDemoWindow);
 			ImGui::MenuItem("FPS Counter", nullptr, &m_showFps);

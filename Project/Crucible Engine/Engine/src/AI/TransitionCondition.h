@@ -71,6 +71,8 @@ namespace Crucible {
     using ConditionRegistry  = TypeRegistry<TransitionCondition>;
     using ConditionTypeEntry = TypeEntry<TransitionCondition>;
 
+    template <> ENGINE_API ConditionRegistry& ConditionRegistry::Instance();   // the one copy, in Engine.dll (NodeRegistry.cpp)
+
 }   // NAMESPACE CRUCIBLE
 
 // Gives a condition class its Clone() and Description() - the node macro's twin.
@@ -81,4 +83,4 @@ namespace Crucible {
 
 // Registers a condition type when the engine loads. In its .cpp, once, inside namespace Crucible.
 #define CRUCIBLE_REGISTER_TRANSITION_CONDITION(Type) \
-    namespace { [[maybe_unused]] const bool kRegistered_##Type = ::Crucible::ConditionRegistry::Instance().Register<Type>(); }
+    namespace { [[maybe_unused]] const bool kRegistered_##Type = ::Crucible::ConditionRegistry::Instance().Register<Type>(__FILE__); }

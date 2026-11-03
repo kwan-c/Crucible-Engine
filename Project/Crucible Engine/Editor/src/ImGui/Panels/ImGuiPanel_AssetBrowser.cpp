@@ -21,6 +21,7 @@
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
 #include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
+#include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 #include "Prefabs/PrefabAuthoring.h"
@@ -1070,6 +1071,11 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	case AssetType::AnimatorController:
 		if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) {
 			if (const auto* entry = m_assets.Find(item.virtualPath)) animator->RequestOpen(entry->guid.m_Value);
+		}
+		return;
+	case AssetType::BehaviorGraph:
+		if (auto behavior = EditorManager::GetInstance().GetPanel<BehaviorGraphPanel>(ImguiPanels::BEHAVIORGRAPH)) {
+			if (const auto* entry = m_assets.Find(item.virtualPath)) behavior->RequestOpen(entry->guid.m_Value);
 		}
 		return;
 	case AssetType::Scene: {

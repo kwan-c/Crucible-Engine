@@ -280,6 +280,46 @@ namespace Crucible {
         return graph;
     }
 
+    AssetId ResourceManager::SaveTextAsset(const std::string& path, const std::string& text, bool createNew, std::string* error) {
+        // WriteAnimatorControllerFile's steps, for any text asset: stay inside Assets,
+        // never half-write (temporary file, then an atomic rename), then re-index.
+        namespace fs = std::filesystem;
+        const auto fail = [&](const std::string& reason) -> AssetId { if (error) *error = reason; return 0; };
+        const fs::path relative(path);
+        if (relative.empty() || relative.is_absolute() || relative.has_root_name() || relative.extension().empty())
+            return fail("Choose a relative path with an extension, inside Assets");
+        for (const auto& part : relative) if (part == "..") return fail("The path cannot leave Assets");
+        std::error_code ec;
+        const auto root = fs::weakly_canonical(m_assets.GetAssetRoot(), ec);
+        if (ec) return fail("Could not resolve Assets root");
+        const auto target = fs::weakly_canonical(root / relative, ec);
+        if (ec) return fail("Could not resolve the path");
+        auto inRoot = target.lexically_relative(root);
+        if (inRoot.empty() || inRoot.is_absolute()) return fail("The path cannot leave Assets");
+        for (const auto& part : inRoot) if (part == "..") return fail("The path cannot leave Assets");
+        const bool exists = fs::exists(target, ec);
+        if (ec) return fail("Could not check the destination");
+        if (createNew && (exists || fs::exists(fs::path(target.string() + ".meta")))) return fail("Save As needs a new filename; existing assets are not overwritten");
+        if (!createNew && !exists) return fail("The file disappeared from disk; use Save As");
+        fs::create_directories(target.parent_path(), ec);   // Save As into a folder that doesn't exist yet
+        const std::string temporary = path + ".write.tmp";
+        const auto temporaryFile = fs::path(target.string() + ".write.tmp");
+        if (fs::exists(temporaryFile, ec) || ec) return fail("The temporary save path is already in use");
+        if (!m_assets.WriteText(temporary, text)) {
+            fs::remove(temporaryFile, ec); return fail("Could not write the temporary file");
+        }
+        fs::rename(temporaryFile, target, ec);
+        if (ec) { fs::remove(temporaryFile, ec); return fail("Could not replace the file"); }
+        if (!m_assets.Refresh()) return fail("Written, but the Assets refresh failed");
+        RefreshCatalog();
+        const auto id = GetIdForPath(path);
+        if (!id) return fail("Written, but missing from the refreshed index");
+        m_stateGraphs.erase(id);   // an enemy picking it next reads the saved version
+        m_warned.erase(id);
+        if (error) error->clear();
+        return id;
+    }
+
     bool ResourceManager::SaveAnimatorController(AssetId id, const std::string& json, std::string* error) {
         const auto* entry = m_assets.FindByGuid(ToGuid(id));
         if (!entry || entry->type != AssetType::AnimatorController) {

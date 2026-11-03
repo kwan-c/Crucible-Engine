@@ -39,8 +39,10 @@ namespace Crucible {
     public:
 
         // The tree's root: normally an On Start node. The graph owns it.
-        void                SetRoot(std::unique_ptr<BehaviorNode> root) { m_root = std::move(root); }
-        const BehaviorNode* Root() const { return m_root.get(); }
+        void                          SetRoot(std::unique_ptr<BehaviorNode> root) { m_root = std::move(root); }
+        const BehaviorNode*           Root() const { return m_root.get(); }
+        BehaviorNode*                 Root()       { return m_root.get(); }
+        std::unique_ptr<BehaviorNode> ReleaseRoot() { return std::move(m_root); }   // the editor taking it out
 
         // Nodes on the canvas that aren't connected to the tree (yet). Editor-only:
         // kept and saved so half-built work isn't lost, never run.

@@ -40,6 +40,7 @@
 #include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
 #include "ImGui/Panels/ImGuiPanel_Resources.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
+#include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
 
 
@@ -406,6 +407,7 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::FONTIMPORTER] = std::make_shared<FontImporter>(core.GetAssets(), core.GetRenderer(), core);   // .ttf -> .cfont (Editor/src/Fonts)
 	m_panels[ImguiPanels::TEXTUREIMPORTER] = std::make_shared<TextureImporter>(core.GetAssets(), core.GetRenderer(), core);   // image -> .bill / .sky (Tools/Common/TextureImport)
 	m_panels[ImguiPanels::ANIMATOR] = std::make_shared<AnimatorPanel>(core);
+	m_panels[ImguiPanels::BEHAVIORGRAPH] = std::make_shared<BehaviorGraphPanel>(core);   // floating: edit .behaviorgraph files (AI)
 
 	for (auto& panel : m_panels)
 		panel.second->Init();

@@ -39,6 +39,7 @@
 
 // Crucible engine
 #include "Diagnostics/Logger.h"
+#include "EngineExport.h"
 
 namespace Crucible {
 
@@ -61,6 +62,7 @@ namespace Crucible {
         std::unique_ptr<Base> (*create)() = nullptr;      // a new one with default settings
         rttr::instance (*reflect)(Base& object) = nullptr; // the object as its real type, so RTTR sees its fields
         rttr::type type;                                  // its RTTR type: the fields to save and edit
+        const char* sourceFile = "";                      // the .cpp it was registered in (__FILE__): the editor's "Inspect Script"
 
     };  // TYPEENTRY STRUCT
 
@@ -69,13 +71,13 @@ namespace Crucible {
 
     public:
 
-        // The one registry of this kind. A function-local static, so it exists
-        // the first time anyone asks - even from another file's static
-        // registration, whose order against this one C++ leaves unspecified.
-        static TypeRegistry& Instance() {
-            static TypeRegistry registry;
-            return registry;
-        }
+        // The one registry of this kind. Defined in NodeRegistry.cpp, inside
+        // Engine.dll, and exported (the specialisations below): if it lived in
+        // this header, the Editor's .exe would get its own empty copy of the
+        // static, and its "Add Node" menu would list nothing. A function-local
+        // static there, so it exists the first time anyone asks - even from
+        // another file's static registration, whose order C++ leaves unspecified.
+        static TypeRegistry& Instance();
 
         /*!
             \brief
@@ -87,7 +89,7 @@ namespace Crucible {
             id - two types with one id would make saved graphs ambiguous.
         */
         template <typename T>
-        bool Register() {
+        bool Register(const char* sourceFile = "") {
             if (Find(T::kDescription.id)) {
                 CRU_ERROR("Behavior: two types share the id '{}' - '{}' was not registered", T::kDescription.id, T::kDescription.name);
                 return false;
@@ -96,7 +98,8 @@ namespace Crucible {
                 &T::kDescription,
                 [] () -> std::unique_ptr<Base> { return std::make_unique<T>(); },
                 [] (Base& object) { return rttr::instance(static_cast<T&>(object)); },
-                rttr::type::get<T>()
+                rttr::type::get<T>(),
+                sourceFile
             });
             return true;
         }
@@ -123,10 +126,12 @@ namespace Crucible {
     using NodeRegistry  = TypeRegistry<BehaviorNode>;
     using NodeTypeEntry = TypeEntry<BehaviorNode>;
 
+    template <> ENGINE_API NodeRegistry& NodeRegistry::Instance();
+
 }   // NAMESPACE CRUCIBLE
 
 // Registers a node type when the engine loads: a file-scope constant whose
 // initialiser does the registering. Put it in the node's .cpp, once, inside
 // namespace Crucible (where the node's name is visible).
 #define CRUCIBLE_REGISTER_BEHAVIOR_NODE(Type) \
-    namespace { [[maybe_unused]] const bool kRegistered_##Type = ::Crucible::NodeRegistry::Instance().Register<Type>(); }
+    namespace { [[maybe_unused]] const bool kRegistered_##Type = ::Crucible::NodeRegistry::Instance().Register<Type>(__FILE__); }

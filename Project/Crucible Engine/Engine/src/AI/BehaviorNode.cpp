@@ -14,6 +14,9 @@
 **************************************************************************/
 #include "BehaviorNode.h"
 
+// STL
+#include <algorithm>    // std::stable_sort
+
 namespace Crucible {
 
     BehaviorStatus BehaviorNode::Tick(float deltaTime) {
@@ -77,6 +80,13 @@ namespace Crucible {
 
     }   // Modifier::AddChild()
 
+    std::unique_ptr<BehaviorNode> Modifier::DetachChild(BehaviorNode* child) {
+
+        if (!child || m_child.get() != child) return nullptr;
+        return std::move(m_child);
+
+    }   // Modifier::DetachChild()
+
     // --- Composite --------------------------------------------------------- //
 
     Composite::Composite(const Composite& other) : BehaviorNode(other) {
@@ -100,6 +110,27 @@ namespace Crucible {
         return true;
 
     }   // Composite::AddChild()
+
+    std::unique_ptr<BehaviorNode> Composite::DetachChild(BehaviorNode* child) {
+
+        for (auto it = m_children.begin(); it != m_children.end(); ++it) {
+            if (it->get() != child) continue;
+            std::unique_ptr<BehaviorNode> detached = std::move(*it);
+            m_children.erase(it);
+            return detached;
+        }
+        return nullptr;
+
+    }   // Composite::DetachChild()
+
+    void Composite::SortChildrenByEditorX() {
+
+        // stable_sort: two children at exactly the same x keep their current
+        // order instead of swapping back and forth from one frame to the next.
+        std::stable_sort(m_children.begin(), m_children.end(),
+            [](const std::unique_ptr<BehaviorNode>& a, const std::unique_ptr<BehaviorNode>& b) { return a->m_editorPosition.x < b->m_editorPosition.x; });
+
+    }   // Composite::SortChildrenByEditorX()
 
     void Composite::AbortChildren() {
 

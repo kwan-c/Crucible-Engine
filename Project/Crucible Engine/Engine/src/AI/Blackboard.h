@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Blackboard: an enemy's named memory - Self, Target,
 *                PatrolPoints, DetectRadius - that its graph's nodes read
@@ -19,8 +19,12 @@
 *                and lets shared blackboards - one copy for many enemies -
 *                slot in later behind the same lookup.
 *
+*                Header-only: the Editor (outside Engine.dll) edits graph
+*                variables too, and inline functions need no DLL export.
+*
 * \history
 *    -v1.0       first version
+*    -v1.1       header-only, so the Editor can use it
 *
 **************************************************************************/
 #pragma once
@@ -37,8 +41,9 @@
 
 namespace Crucible {
 
-    // The kinds of value a variable can hold. The order is the variant's index,
-    // so new kinds go at the END - saved graphs will store it.
+    // The kinds of value a variable can hold. Files store the kind by NAME
+    // (BehaviorGraphIO's kKindNames, same order), so the order here only
+    // matters to code - but keep new kinds at the end anyway.
     using BlackboardValue = std::variant<
         Entity,                 // an enemy, the player, a waypoint entity
         Math::vec3,             // a point: home, last known position
@@ -63,7 +68,18 @@ namespace Crucible {
         // Sets a variable, adding it if it doesn't exist. Setting an existing
         // one to a different kind of value changes its kind - it is the
         // graph's job to declare each variable with the kind it means.
-        void Set(std::string_view name, BlackboardValue value);
+        void Set(std::string_view name, BlackboardValue value) {
+            if (BlackboardVariable* variable = Find(name)) { variable->value = std::move(value); return; }
+            m_variables.push_back({ std::string(name), std::move(value) });
+        }
+
+        // Removes a variable (the editor's delete). False if there was none.
+        bool Remove(std::string_view name) {
+            for (auto it = m_variables.begin(); it != m_variables.end(); ++it) {
+                if (it->name == name) { m_variables.erase(it); return true; }
+            }
+            return false;
+        }
 
         bool Has(std::string_view name) const { return Find(name) != nullptr; }
 
@@ -84,14 +100,23 @@ namespace Crucible {
 
         // Every variable, in the order they were declared (the editor lists them so).
         const std::vector<BlackboardVariable>& Variables() const { return m_variables; }
+        std::vector<BlackboardVariable>&       Variables()       { return m_variables; }   // the editor renames and retypes in place
 
     private:
-
-        const BlackboardVariable* Find(std::string_view name) const;
 
         // A vector searched by name, not a map: a graph has a handful of
         // variables, and a short linear search over contiguous memory beats a
         // hash at that size.
+        const BlackboardVariable* Find(std::string_view name) const {
+            for (const BlackboardVariable& variable : m_variables) {
+                if (variable.name == name) return &variable;
+            }
+            return nullptr;
+        }
+        BlackboardVariable* Find(std::string_view name) {
+            return const_cast<BlackboardVariable*>(static_cast<const Blackboard&>(*this).Find(name));
+        }
+
         std::vector<BlackboardVariable> m_variables;
 
     };  // BLACKBOARD CLASS

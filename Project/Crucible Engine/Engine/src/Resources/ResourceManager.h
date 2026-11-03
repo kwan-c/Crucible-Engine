@@ -234,6 +234,13 @@ namespace Crucible {
         // once and are cached). Own the shared_ptr while using it: an enemy's running
         // copy keeps its graph alive even if the cache drops it.
         std::shared_ptr<const StateGraph> GetStateGraph(AssetId id);
+        // Saves an engine-owned text asset (.behaviorgraph, .stategraph) the safe way
+        // WriteAnimatorControllerFile does: a temporary file swapped in, then the index
+        // refreshed. createNew refuses to overwrite (Save As); otherwise the file must
+        // already exist (Save). The caller checks the contents are valid first. Drops any
+        // cached state graph for it, so the next GetStateGraph reads the new file.
+        // Returns the asset id, or 0 with the reason in `error`.
+        AssetId SaveTextAsset(const std::string& virtualPath, const std::string& text, bool createNew, std::string* error = nullptr);
         // Editor asset saves preserve GUIDs and publish a new immutable definition.
         // Existing instances retain the previous definition until their next reset.
         bool SaveAnimatorController(AssetId id, const std::string& json, std::string* error = nullptr);

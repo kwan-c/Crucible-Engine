@@ -34,6 +34,7 @@
 
 // STL
 #include <cstdint>
+#include <limits>       // Composite's unlimited MaxChildren
 #include <memory>
 #include <vector>
 
@@ -111,6 +112,11 @@ namespace Crucible {
         // Its name, category, description and id (NodeRegistry.h).
         virtual const NodeDescription& Description() const = 0;
 
+        // How many children this kind of node can take: 0 (Action), 1
+        // (Modifier) or no limit (Composite). The editor asks this to know when
+        // a new connection needs Branch Options instead.
+        virtual std::size_t MaxChildren() const { return 0; }
+
         // Children, for the graph, saving and the editor. None by default.
         virtual std::size_t   ChildCount() const { return 0; }
         virtual BehaviorNode* ChildAt(std::size_t) const { return nullptr; }
@@ -118,6 +124,17 @@ namespace Crucible {
         // Adds a child at the end. False if this kind of node can't take one
         // (an Action never can; a Modifier only one).
         virtual bool AddChild(std::unique_ptr<BehaviorNode>) { return false; }
+
+        // Takes `child` back out (the editor disconnecting or deleting it).
+        // Null if it isn't one of this node's children.
+        virtual std::unique_ptr<BehaviorNode> DetachChild(BehaviorNode*) { return nullptr; }
+
+        // Puts the children in left-to-right order of their editor position -
+        // the order they run in, as in Unity Behavior. Only Composites have an
+        // order to change. The editor calls it after a node is moved or
+        // connected, so where a node sits IS when it runs. (Virtual partly so
+        // the Editor, outside Engine.dll, can call it without an export.)
+        virtual void SortChildrenByEditorX() {}
 
         // Where the node sits in the graph editor. Editor-only: saved with the
         // graph so the layout survives, never read while the graph runs.
@@ -176,9 +193,11 @@ namespace Crucible {
     public:
 
         void          Bind(BehaviorContext* context) override;
+        std::size_t   MaxChildren() const override { return 1; }
         std::size_t   ChildCount() const override { return m_child ? 1u : 0u; }
         BehaviorNode* ChildAt(std::size_t index) const override { return index == 0 ? m_child.get() : nullptr; }
         bool          AddChild(std::unique_ptr<BehaviorNode> child) override;
+        std::unique_ptr<BehaviorNode> DetachChild(BehaviorNode* child) override;
 
     protected:
 
@@ -201,9 +220,12 @@ namespace Crucible {
     public:
 
         void          Bind(BehaviorContext* context) override;
+        std::size_t   MaxChildren() const override { return std::numeric_limits<std::size_t>::max(); }
         std::size_t   ChildCount() const override { return m_children.size(); }
         BehaviorNode* ChildAt(std::size_t index) const override { return index < m_children.size() ? m_children[index].get() : nullptr; }
         bool          AddChild(std::unique_ptr<BehaviorNode> child) override;
+        std::unique_ptr<BehaviorNode> DetachChild(BehaviorNode* child) override;
+        void                          SortChildrenByEditorX() override;
 
     protected:
 
