@@ -3,13 +3,15 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          05 October 2026
-* \version       1.0
+* \version       1.2
 * \brief
 *                See ParticleSystem.h for what this system does and why
 *                particles are not entities.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.2       a finished non-looping run sets ParticleEmitter::playing
+*                to false during Play (Tan Chun Kwang Xavier)
 **************************************************************************/
 
 #include "ParticleSystem.h"
@@ -20,6 +22,7 @@
 
 #include "ECS/World.h"
 #include "ECS/HierarchyTransformSystem.h"
+#include "ECS/Systems/ECSSystemManager.h"
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
 
@@ -61,6 +64,7 @@ namespace Crucible {
     void ParticleSystem::Describe(SystemDesc& desc) const {
 
         desc.Uses<EmitterQuery>()                    // reads WorldTransform + ParticleEmitter
+            .Writes<ParticleEmitter>()               // playing = false when a run finishes, after the query
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer/ResourceManager
 
@@ -74,6 +78,7 @@ namespace Crucible {
         m_liveParticles = 0;
         m_lights.clear();
         const float dt = std::max(world.DeltaTime(), 0.0f);
+        const bool  simulating = m_systems && m_systems->IsSimulationActive();   // Play, not Edit / Pause
 
         m_query->ForEach([&](Entity entity, const WorldTransform& worldTransform, const ParticleEmitter& settings) {
 
@@ -111,7 +116,22 @@ namespace Crucible {
             }
             Submit(state, settings, worldTransform.matrix);
             m_liveParticles += static_cast<std::uint32_t>(state.particles.size());
+
+            // A non-looping run past its Duration spawns nothing more: switch it off (Unity's
+            // isPlaying). Checked every frame, so a run that ended while Paused is switched off
+            // on resume. The write waits until the query is done.
+            const float duration = std::max(settings.duration, 0.05f);   // as Simulate
+            if (simulating && settings.playing && !settings.loop && state.time >= duration) {
+                m_finished.push_back(entity);
+            }
         });
+
+        // Finished runs: playing -> false. The particles already out keep fading; Simulate sees
+        // the flag drop, so a later Play() (playing -> true) begins a fresh run with its burst.
+        for (const Entity entity : m_finished) {
+            if (ParticleEmitter* emitter = world.Write<ParticleEmitter>(entity)) { emitter->playing = false; }
+        }
+        m_finished.clear();
 
         // Requests are for this frame only: any for an entity not updated above are dropped.
         m_requests.clear();

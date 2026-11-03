@@ -91,36 +91,37 @@ Setup: on an entity; "Target" = another entity; "Next Scene" = e.g. `Scenes/Fog_
 - [y] Y turns 45 degrees.
 - [y] O logs world position / rotation / directions / parent / children.
 - [y] P parents it to Target without it moving on screen; P again un-parents, still in place.
-- [?] N loads Next Scene; M reloads the current one. No errors, scripts start again.
+- [y] N loads Next Scene; M reloads the current one. No errors, scripts start again.
 
 ## 9. Camera - `CameraTest`
 
 Setup: in a scene with a Camera. Optional "Target", and "Other Camera" (an entity with a Camera). Press Play.
 
-- [ ] Left click logs what is under the mouse (or the screen centre with the cursor locked).
-- [ ] Holding Z zooms in (field of view 30); releasing goes back.
-- [ ] C switches the Game view to Other Camera and back.
-- [ ] V kicks the view up (CameraOrbit pitch), if the camera hangs under a CameraOrbit.
-- [ ] Every second it logs Target's screen position; it changes as Target moves on screen.
+- [y] Left click logs what is under the mouse (or the screen centre with the cursor locked).
+- [y] Holding Z zooms in (field of view 30); releasing goes back.
+- [y] C switches the Game view to Other Camera and back.
+- [y] V kicks the view up (CameraOrbit pitch), if the camera hangs under a CameraOrbit.
+- [y] Every second it logs Target's screen position; it changes as Target moves on screen.
 
 ## 10. Light - `LightTest`
 
 Setup: entity with a Point or Spot Light. Optional "Target". Press Play.
 
-- [ ] F flickers, G pulses white / red, H switches it off / on.
-- [ ] B cycles Point -> Spot -> Directional.
-- [ ] 9 / 0 shrink / grow the range (Point / Spot).
-- [ ] As a Spot light it keeps aiming at Target.
+- [y] F flickers, G pulses white / red, H switches it off / on.
+- [y] B cycles Point -> Spot -> Directional.
+- [y] 9 / 0 shrink / grow the range (Point / Spot).
+- [y] As a Spot light it keeps aiming at Target.
 
 ## 11. Particles - `ParticleTest`
 
 Setup: entity with a ParticleEmitter (Burst Count > 0, Loop off). Press Play.
 
-- [ ] Q plays, E stops (live particles fade out normally).
-- [ ] R fires the burst again straight away.
-- [ ] T emits 30 extra particles, even while stopped.
-- [ ] X toggles red / original colour; 1 / 2 rate; 3 / 4 gravity; L the light.
-- [ ] Once everything has faded, it logs once that the effect is no longer alive.
+- [y] Q plays, E stops (live particles fade out normally).
+- [y] R fires the burst again straight away.
+- [y] T emits 30 extra particles, even while stopped.
+- [y] X toggles red / original colour; 1 / 2 rate; 3 / 4 gravity; L the light.
+- [ ] Once everything has faded (Duration up, last particles gone), it logs once that the effect is no longer alive; the Inspector's Playing unticks itself at the end of Duration.
+- [ ] After that, Q (Play) runs it again with its burst - no R needed. After Stop, Playing in the edit-mode Inspector is ticked as it was saved.
 
 ## 12. Screen UI - `UITest`
 
@@ -141,11 +142,11 @@ Swap Texture, Swap Font as available. Press Play.
 Setup: on any entity; "Target" = an entity with a mesh, children, a Light, a ParticleEmitter
 and / or a script. Press Play.
 
-- [ ] F6 hides Target and all its children; F6 again brings them back.
-- [ ] F7 switches Target's Light off / on, F8 its ParticleEmitter.
-- [ ] F9 stops Target's script (its OnUpdate stops), F9 again resumes it.
-- [ ] F7 (light off), then F6, F6: the light STAYS off.
-- [ ] Stop: everything is back as it was in the scene.
+- [y] F6 hides Target and all its children; F6 again brings them back.
+- [y] F7 switches Target's Light off / on, F8 its ParticleEmitter.
+- [y] F9 stops Target's script (its OnUpdate stops), F9 again resumes it.
+- [y] F7 (light off), then F6, F6: the light STAYS off.
+- [y] Stop: everything is back as it was in the scene.
 
 ## 14. Physics callbacks - `CollisionTest`
 

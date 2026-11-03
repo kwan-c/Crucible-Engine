@@ -58,7 +58,7 @@ namespace Crucible.Scripts
             if (Input.IsPressed(KeyCode.Num2)) { fx.Rate += 10f; Log.Info("[ParticleTest] Rate " + fx.Rate); }
             if (Input.IsPressed(KeyCode.Num3)) { fx.GravityScale -= 0.5f; Log.Info("[ParticleTest] Gravity " + fx.GravityScale); }
             if (Input.IsPressed(KeyCode.Num4)) { fx.GravityScale += 0.5f; Log.Info("[ParticleTest] Gravity " + fx.GravityScale); }
-            if (Input.IsPressed(KeyCode.L)) { fx.EmitLight = !fx.EmitLight; Log.Info("[ParticleTest] Emit light " + fx.EmitLight); }
+            if (Input.IsPressed(KeyCode.L)) { fx.Loop = !fx.Loop; Log.Info("[ParticleTest] Looping " + fx.Loop); }
         }
     }
 }

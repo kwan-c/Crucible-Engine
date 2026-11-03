@@ -2,8 +2,8 @@
 * \file:         ParticleEmitter.cs
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
-* \date          2 November 2026
-* \version       1.0
+* \date          3 November 2026
+* \version       1.1
 * \brief         Script access to an entity's ParticleEmitter component.
 *                Part of Crucible.ScriptCore.dll.
 *
@@ -24,7 +24,10 @@
 *    Play starts a stopped emitter with a fresh run (its burst fires). Stop
 *    stops new particles; live ones finish their lives. Restart starts a
 *    fresh run even while playing. Emit spawns extra particles whether or not
-*    it is playing.
+*    it is playing. A non-looping emitter switches itself off when its
+*    Duration is up (IsEmitting false; Play() runs it again), so IsAlive
+*    turns false once its last particles fade. (Play mode only: in the editor
+*    the preview leaves the Inspector's Playing ticked.)
 *
 *    Shape, texture, flipbook and blend mode are left to the Inspector.
 *
@@ -68,7 +71,10 @@ namespace Crucible
         /// </summary>
         public void Emit(int count) { EmitInternal(I, G, count); }
 
-        /// <summary>Is it set to emit? (Particles may still be alive after Stop.)</summary>
+        /// <summary>
+        /// Is it emitting? False after Stop, and once a non-looping run's Duration is up.
+        /// (Particles may still be alive - see IsAlive.)
+        /// </summary>
         public bool IsEmitting
         {
             get { int v; return GetPlayingInternal(I, G, out v) != 0 && v != 0; }
