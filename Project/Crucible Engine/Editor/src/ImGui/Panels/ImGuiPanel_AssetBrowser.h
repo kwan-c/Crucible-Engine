@@ -27,7 +27,8 @@
 *	drop entity    a Hierarchy entity dropped on the grid is saved as a .cprefab in the folder
 *	               being viewed; dropped on a folder tile, in that folder (Prefabs/PrefabAuthoring.h)
 *	right-click    context menu (Rename, Delete, Show in Explorer, Copy Path, Copy GUID, New Folder,
-*	               Create Scene - inside Scenes/ only - and Refresh)
+*	               Create Scene - inside Scenes/ only - Create C# Script - inside Scripts/ only -
+*	               and Refresh)
 *	Del            delete the selected file or folder. Asks first, listing any other asset that
 *	               still uses it; on Windows it goes to the Recycle Bin, .meta and all
 *	F2             rename the selection (a file's .meta moves with it, so its guid is kept)
@@ -122,6 +123,13 @@ namespace Crucible {
 		bool IsInScenesFolder(std::string const& folder) const;
 		void CreateScene();
 
+		// ---- Create C# Script (only enabled inside Scripts/, the folder the build compiles) ----
+		// Asks for the class name in a modal, then writes <name>.cs from the EntityScript
+		// template into the folder being viewed (Scripting/ScriptAuthoring.h).
+		bool IsInScriptsFolder(std::string const& folder) const;
+		void BeginCreateScript();
+		void DrawCreateScriptModal();
+
 		// ---- Rename (F2 / right-click) ----
 		// The field is drawn over the tile's label; the rename itself happens after the frame's
 		// drawing (ApplyPendingRename), so the item list never changes mid-loop.
@@ -183,6 +191,12 @@ namespace Crucible {
 			std::vector<std::string> usedBy;          // other assets that still reference them
 		};
 		DeleteInfo                 m_deleteInfo;
+
+		bool        m_openCreateScript = false;   // open the Create C# Script modal next time it is drawn
+		std::string m_createScriptFolder;         // virtual path the script will be created in
+		char        m_createScriptName[128] = {};
+		char        m_createScriptNamespace[128] = "Crucible.Scripts";
+		std::string m_createScriptError;          // shown in the modal until the next attempt
 
 		char  m_search[128] = {};
 		float m_tileSize = 72.0f;   // wide enough for ~12 characters a line

@@ -613,7 +613,11 @@ namespace Crucible {
 
         const AssetId fontId = ResolveFontId(id);
         if (fontId != 0) {
-            m_fonts.erase(fontId);
+            // Free the old atlas (a few frames later - text drawn this frame still has it).
+            if (auto it = m_fonts.find(fontId); it != m_fonts.end()) {
+                if (it->second) { m_renderer.DestroyTexture(it->second->texture); }
+                m_fonts.erase(it);
+            }
             m_warned.erase(fontId);
         }
         m_warned.erase(id);
@@ -678,6 +682,7 @@ namespace Crucible {
             if (m_prefabs.count(id) != 0)     { ReloadPrefab(id); ++reloaded; }
             if (m_controllers.erase(id) != 0) { m_warned.erase(id); ++reloaded; }
             if (m_stateGraphs.erase(id) != 0) { m_warned.erase(id); ++reloaded; }   // next GetStateGraph reads the new file
+            if (ReloadAudioClip(id))          { ++reloaded; }
             if (auto it = m_cubemaps.find(id); it != m_cubemaps.end()) {
                 // Skybox components ask by id every frame: the next frame loads the new one.
                 if (it->second.IsValid()) { m_renderer.DestroyCubemap(it->second); }
@@ -720,6 +725,8 @@ namespace Crucible {
         std::erase_if(m_materials,   [](const auto& e) { return !e.second.IsValid(); });
         std::erase_if(m_cubemaps,    [](const auto& e) { return !e.second.IsValid(); });
         std::erase_if(m_models,      [](const auto& e) { return !e.second; });
+        std::erase_if(m_renderedModels, [](const auto& e) { return !e.second; });   // else GetRenderedModel/GetMesh never retry
+        std::erase_if(m_modelRestPoses, [](const auto& e) { return !e.second; });
         std::erase_if(m_fonts,       [](const auto& e) { return !e.second; });
         std::erase_if(m_prefabs,     [](const auto& e) { return !e.second; });
         std::erase_if(m_controllers, [](const auto& e) { return !e.second; });
@@ -764,6 +771,22 @@ namespace Crucible {
 
     }   // ResourceManager::GetAudioClip()
 
+    bool ResourceManager::ReloadAudioClip(AssetId id) {
+
+        // Unload every load type of the file: the next GetAudioClip (each Play asks again) opens
+        // the new one. A voice still playing the old clip stops.
+        bool any = false;
+        for (auto it = m_audioClips.begin(); it != m_audioClips.end();) {
+            if (it->first.first != id) { ++it; continue; }
+            if (m_audio && it->second.IsValid()) { m_audio->UnloadClip(it->second); }
+            it = m_audioClips.erase(it);
+            any = true;
+        }
+        if (any) { m_warned.erase(id); }
+        return any;
+
+    }   // ResourceManager::ReloadAudioClip()
+
     // ------------------------------------------------------------------------------------------------------------- //
     //  UNLOADING
     // ------------------------------------------------------------------------------------------------------------- //
@@ -807,6 +830,27 @@ namespace Crucible {
         for (const auto& [id, name] : m_builtinNames) { keep.insert(id); }
         for (const auto& [id, count] : m_pins)        { keep.insert(id); }
         if (const AssetId font = GetIdForPath(m_defaultFontPath); font != 0) { keep.insert(font); }
+
+        // A kept prefab keeps what it uses too - a script may spawn it later, and its meshes,
+        // materials and sounds are nowhere in the scene document. Prefabs inside prefabs as well.
+        std::vector<AssetId> prefabsToRead(keep.begin(), keep.end());
+        std::unordered_set<AssetId> prefabsRead;
+        while (!prefabsToRead.empty()) {
+            const AssetId id = prefabsToRead.back();
+            prefabsToRead.pop_back();
+            const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+            if (!entry || entry->type != AssetType::Prefab || !prefabsRead.insert(id).second) { continue; }
+            std::string text;
+            rapidjson::Document prefab;
+            if (!m_assets.ReadText(entry->virtualPath, text)) { continue; }
+            prefab.Parse(text.c_str(), text.size());
+            if (prefab.HasParseError()) { continue; }
+            std::unordered_set<AssetId> uses;
+            CollectIds(prefab, uses);
+            for (const AssetId used : uses) {
+                if (keep.insert(used).second) { prefabsToRead.push_back(used); }
+            }
+        }
 
         std::vector<AssetId> implied;
         for (const AssetId id : keep) {
@@ -1263,7 +1307,7 @@ namespace Crucible {
                     // GetMesh caches failures, and WarnOnce only reports the FIRST failure, so
                     // picking a broken asset a second time would otherwise be completely silent.
                     CRU_USER_WARN("[Resources] Resolve: mesh {} has no usable mesh, entity will not draw "
-                             "(failed to load earlier; failures are cached until restart)",
+                             "(failed to load earlier; fix the file, then Refresh the Asset Browser to retry)",
                              GetName(renderer.meshAsset));
                 }
             }
@@ -1274,7 +1318,7 @@ namespace Crucible {
             const MaterialHandle material = GetMaterial(renderer.materialAsset);
             if (material.id != renderer.material.id && !material.IsValid()) {
                 CRU_USER_WARN("[Resources] Resolve: material {} is not usable, drawing with the default "
-                         "material (failed to load earlier; failures are cached until restart)",
+                         "material (failed to load earlier; fix the file, then Refresh the Asset Browser to retry)",
                          GetName(renderer.materialAsset));
             }
             renderer.material = material;

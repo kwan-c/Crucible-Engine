@@ -1,0 +1,291 @@
+{
+    "version": 3,
+    "name": "Collision Test",
+    "entities": [
+        {
+            "id": "8DF398DD4AC08005",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Collision Test"
+                }
+            }
+        },
+        {
+            "id": "8DF398DD4AC08007",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -2.747650146484375,
+                        "z": -1.2994834184646606
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 7.369409561157227,
+                        "y": 0.17667140066623688,
+                        "z": 7.383288383483887
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 2759871849510436903
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Falling_Platform"
+                }
+            }
+        },
+        {
+            "id": "B5F398DD4AC08009",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -2.528046131134033,
+                        "y": -2.3243722915649414,
+                        "z": -6.528042316436768
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": true
+                },
+                "EntityName": {
+                    "name": "Cube"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "CollisionTest",
+                    "fields": []
+                }
+            }
+        },
+        {
+            "id": "5DF398DD4AC0800B",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.214583158493042,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 50.18205261230469,
+                        "y": 30.072500228881836,
+                        "z": 30.072500228881836
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Crate"
+                },
+                "Water": {
+                    "shallowColour": {
+                        "x": 0.545098066329956,
+                        "y": 0.05882352963089943,
+                        "z": 0.22745098173618317
+                    },
+                    "deepColour": {
+                        "x": 0.05098039284348488,
+                        "y": 0.1568627506494522,
+                        "z": 0.10196078568696976
+                    },
+                    "deepDepth": 2.5,
+                    "clarity": 3.0,
+                    "refraction": 0.4000000059604645,
+                    "foamColour": {
+                        "x": 0.35800492763519287,
+                        "y": 0.8755555748939514,
+                        "z": 0.7720454335212708
+                    },
+                    "foamWidth": 0.5,
+                    "foamBreakup": 0.36800000071525574,
+                    "rippleSize": 3.009999990463257,
+                    "rippleSpeed": 0.9319999814033508,
+                    "rippleStrength": 0.25,
+                    "rippleFoam": true,
+                    "rippleLines": 0.30000001192092896,
+                    "rippleLineColour": {
+                        "x": 0.6512592434883118,
+                        "y": 0.8994845151901245,
+                        "z": 0.9333333373069763
+                    },
+                    "glints": 1.0,
+                    "glintColour": {
+                        "x": 0.1675061583518982,
+                        "y": 0.9422222375869751,
+                        "z": 0.456733375787735
+                    },
+                    "reflection": 0.5,
+                    "reflectionColour": {
+                        "x": 0.36977773904800415,
+                        "y": 0.9244444370269775,
+                        "z": 0.7987199425697327
+                    }
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "CollisionTest",
+                    "fields": []
+                }
+            }
+        }
+    ]
+}

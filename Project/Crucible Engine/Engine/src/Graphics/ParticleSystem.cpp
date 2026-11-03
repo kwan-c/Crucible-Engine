@@ -3,13 +3,15 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          05 October 2026
-* \version       1.0
+* \version       1.2
 * \brief
 *                See ParticleSystem.h for what this system does and why
 *                particles are not entities.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.2       a finished non-looping run sets ParticleEmitter::playing
+*                to false during Play (Tan Chun Kwang Xavier)
 **************************************************************************/
 
 #include "ParticleSystem.h"
@@ -20,6 +22,7 @@
 
 #include "ECS/World.h"
 #include "ECS/HierarchyTransformSystem.h"
+#include "ECS/Systems/ECSSystemManager.h"
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
 
@@ -61,6 +64,7 @@ namespace Crucible {
     void ParticleSystem::Describe(SystemDesc& desc) const {
 
         desc.Uses<EmitterQuery>()                    // reads WorldTransform + ParticleEmitter
+            .Writes<ParticleEmitter>()               // playing = false when a run finishes, after the query
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer/ResourceManager
 
@@ -74,6 +78,7 @@ namespace Crucible {
         m_liveParticles = 0;
         m_lights.clear();
         const float dt = std::max(world.DeltaTime(), 0.0f);
+        const bool  simulating = m_systems && m_systems->IsSimulationActive();   // Play, not Edit / Pause
 
         m_query->ForEach([&](Entity entity, const WorldTransform& worldTransform, const ParticleEmitter& settings) {
 
@@ -93,10 +98,43 @@ namespace Crucible {
             }
             state.seenFrame = m_frame;
 
+            // Emit / Restart asked for since the last update (gameplay runs before PreRender).
+            const Request* request = nullptr;
+            for (const Request& r : m_requests) {
+                if (r.entity == entity) { request = &r; break; }
+            }
+            if (request && request->restart) {
+                state.time       = 0.0f;
+                state.spawnDebt  = 0.0f;
+                state.burstDone  = false;              // Simulate fires the burst this frame (if playing)
+                state.wasPlaying = settings.playing;   // so Simulate does not see a second "start"
+            }
+
             Simulate(state, settings, worldTransform.matrix, dt);
+            if (request && request->emit > 0) {
+                Spawn(state, settings, worldTransform.matrix, request->emit);   // playing or not; maxParticles still applies
+            }
             Submit(state, settings, worldTransform.matrix);
             m_liveParticles += static_cast<std::uint32_t>(state.particles.size());
+
+            // A non-looping run past its Duration spawns nothing more: switch it off (Unity's
+            // isPlaying). Checked every frame, so a run that ended while Paused is switched off
+            // on resume. The write waits until the query is done.
+            const float duration = std::max(settings.duration, 0.05f);   // as Simulate
+            if (simulating && settings.playing && !settings.loop && state.time >= duration) {
+                m_finished.push_back(entity);
+            }
         });
+
+        // Finished runs: playing -> false. The particles already out keep fading; Simulate sees
+        // the flag drop, so a later Play() (playing -> true) begins a fresh run with its burst.
+        for (const Entity entity : m_finished) {
+            if (ParticleEmitter* emitter = world.Write<ParticleEmitter>(entity)) { emitter->playing = false; }
+        }
+        m_finished.clear();
+
+        // Requests are for this frame only: any for an entity not updated above are dropped.
+        m_requests.clear();
 
         // Emitters whose entity is gone (destroyed, or lost its component): free their particles.
         for (size_t i = m_active.size(); i-- > 0;) {
@@ -116,6 +154,39 @@ namespace Crucible {
         for (const LightCandidate& candidate : m_lights) { m_renderer.SubmitLight(candidate.light); }
 
     }   // ParticleSystem::Update()
+
+    ParticleSystem::Request& ParticleSystem::RequestFor(Entity entity) {
+
+        for (Request& r : m_requests) {
+            if (r.entity == entity) { return r; }
+        }
+        m_requests.push_back(Request{ entity });
+        return m_requests.back();
+
+    }   // ParticleSystem::RequestFor()
+
+    void ParticleSystem::Emit(Entity entity, int count) {
+
+        if (count <= 0) { return; }
+        Request& r = RequestFor(entity);
+        r.emit = static_cast<int>(std::min<long long>(static_cast<long long>(r.emit) + count, kMaxParticlesPerEmitter));
+
+    }   // ParticleSystem::Emit()
+
+    void ParticleSystem::Restart(Entity entity) {
+
+        RequestFor(entity).restart = true;
+
+    }   // ParticleSystem::Restart()
+
+    std::uint32_t ParticleSystem::GetParticleCount(Entity entity) const {
+
+        if (entity.index >= m_emitters.size()) { return 0; }
+        const Emitter& state = m_emitters[entity.index];
+        if (!state.inUse || state.generation != entity.generation) { return 0; }
+        return static_cast<std::uint32_t>(state.particles.size());
+
+    }   // ParticleSystem::GetParticleCount()
 
     void ParticleSystem::Spawn(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, int count) {
 

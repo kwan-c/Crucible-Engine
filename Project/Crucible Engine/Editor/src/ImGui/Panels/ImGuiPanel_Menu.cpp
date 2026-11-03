@@ -30,6 +30,7 @@
 #include <filesystem>
 
 #include "Core.h"
+#include "Scripting/ScriptRuntime.h"
 
 namespace {
 	GLFWwindow* MainWindow() {
@@ -63,6 +64,27 @@ void Crucible::Menu::Update(float) {
 
 	// Scene files are edit-mode only: the world holds runtime state until Stop.
 	bool const playing = m_scenes.IsPlaySessionActive();
+
+	// C# hot reload: watch Assets/Scripts, compile on save, reload (after Stop if playing).
+	if (Core* core = EditorManager::GetInstance().GetCore(); core && core->GetScriptRuntime().IsRunning()) {
+		if (!m_scriptHotReload.IsConfigured()) {
+			ScriptCompiler::Paths paths;
+			paths.projectRoot = std::filesystem::path(core->GetAssets().GetAssetRoot()).parent_path();
+			paths.managedDir = ScriptCompiler::ExecutableDirectory() / "Managed";
+#ifdef CRUCIBLE_MONO_SDK
+			paths.monoSdk = std::filesystem::path(CRUCIBLE_MONO_SDK);   // set by Editor/CMakeLists.txt
+#else
+			paths.monoSdk = paths.projectRoot / "Extern/mono";
+#endif
+#ifdef _DEBUG
+			paths.debug = true;
+#else
+			paths.debug = false;
+#endif
+			m_scriptHotReload.Configure(paths);
+		}
+		m_scriptHotReload.Tick(core->GetScriptRuntime(), playing);
+	}
 
 	// Keyboard shortcuts. Checked here every frame, NOT inside BeginMenu("File"),
 	// which only runs while the File menu is open. Skipped while any popup is up,
@@ -165,6 +187,33 @@ void Crucible::Menu::Update(float) {
 			ImGui::EndMenu();
 		}
 
+		// ---------------- Scripts ----------------
+		if (ImGui::BeginMenu("Scripts"))
+		{
+			// Saved .cs files compile and reload by themselves (ScriptHotReload); these
+			// items do it by hand, or pick up a DLL built in Visual Studio.
+			Core* core = EditorManager::GetInstance().GetCore();
+			ScriptRuntime* runtime = core && core->GetScriptRuntime().IsRunning() ? &core->GetScriptRuntime() : nullptr;
+			bool const compiling = m_scriptHotReload.GetStatus() == ScriptHotReload::Status::Compiling;
+			// Compile Assets/Scripts now, then reload (after Stop if playing).
+			if (ImGui::MenuItem("Recompile Scripts", nullptr, false, runtime != nullptr && m_scriptHotReload.IsConfigured() && !compiling))
+				m_scriptHotReload.RequestRecompile();
+			// Reload whatever Crucible.Scripts.dll is in Managed/ now, e.g. after a Visual Studio build.
+			if (ImGui::MenuItem("Reload Scripts", nullptr, false, runtime != nullptr && !playing && !compiling)) {
+				if (runtime->ReloadScripts())
+					CRU_USER_INFO("Scripts reloaded. New and changed scripts are available in Add Component.");
+				else
+					CRU_USER_WARN("Script reload: {}", runtime->LastError());
+			}
+			ImGui::Separator();
+			ImGui::MenuItem("Auto Recompile on Save", nullptr, &m_scriptHotReload.autoRecompile, runtime != nullptr);
+			if (!runtime)
+				ImGui::TextDisabled("Needs a Mono-enabled Editor build");
+			else if (std::string const status = m_scriptHotReload.StatusText(); !status.empty())
+				ImGui::TextDisabled("%s", status.c_str());
+			ImGui::EndMenu();
+		}
+
 		// ---------------- View ----------------
 		if (ImGui::BeginMenu("View"))
 		{
@@ -213,6 +262,23 @@ void Crucible::Menu::Update(float) {
 			if (ImGui::MenuItem("About Crucible Editor"))
 				m_showAbout = true;
 			ImGui::EndMenu();
+		}
+
+		// Script compile status, after the menus. Nothing is shown while up to date.
+		switch (m_scriptHotReload.GetStatus()) {
+		case ScriptHotReload::Status::Compiling:
+		case ScriptHotReload::Status::Waiting:
+			ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f), "%s", m_scriptHotReload.StatusText().c_str());
+			break;
+		case ScriptHotReload::Status::ReloadPending:
+			ImGui::TextColored(ImVec4(1.0f, 0.65f, 0.3f, 1.0f), "%s", m_scriptHotReload.StatusText().c_str());
+			break;
+		case ScriptHotReload::Status::Errors:
+			ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.4f, 1.0f), "%s", m_scriptHotReload.StatusText().c_str());
+			ImGui::SetItemTooltip("%s\n(all errors are in the Console)", m_scriptHotReload.FirstError().c_str());
+			break;
+		default:
+			break;
 		}
 
 		// FPS readout, right-aligned inside the menu bar.

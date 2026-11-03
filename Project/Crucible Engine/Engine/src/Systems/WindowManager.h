@@ -4,8 +4,16 @@
 #include <GLFW/glfw3.h>
 
 #include <string>
+#include <vector>
 
 namespace Crucible {
+
+    // One size a monitor can show fullscreen (GLFW's video modes, deduplicated).
+    struct WindowResolution {
+        int width       = 0;
+        int height      = 0;
+        int refreshRate = 0;    // Hz; the highest the monitor offers at this size
+    };
 
     /*
         Manager for application window.
@@ -36,16 +44,47 @@ namespace Crucible {
         int GetWidth() const { return m_width; }
         int GetHeight() const { return m_height; }
 
+        // `fullscreenWidth` x `fullscreenHeight` @ `fullscreenRefresh` is the resolution fullscreen
+        // uses (see SetFullscreenResolution); 0 = the monitor's own (borderless). Set before the
+        // window opens fullscreen, so it starts at that resolution.
+        WindowManager(int w, int h, const std::string& title, bool fullscreen, bool maximized,
+                      int fullscreenWidth, int fullscreenHeight, int fullscreenRefresh);
+
         // ---- Fullscreen ------------------------------------------------------------------------ //
         //
-        // Fullscreen covers the whole monitor the window is mostly on, at that monitor's current
-        // resolution and refresh rate (no video-mode switch, so it's quick and alt-tab friendly).
+        // Fullscreen covers the whole monitor the window is mostly on. By default at that
+        // monitor's current resolution and refresh rate ("borderless": no video-mode switch, so
+        // it's quick and alt-tab friendly). With SetFullscreenResolution it switches the monitor
+        // to another resolution instead ("exclusive": the screen blinks on the switch, and the
+        // window minimizes on alt-tab so the desktop gets its own resolution back).
         // Leaving it puts the window back exactly where it was: same position, same size, and
         // maximized again if it was maximized. The swapchain is rebuilt through the usual
         // framebuffer-resize path, nothing else needs to know.
         void SetFullscreen(bool fullscreen);
         void ToggleFullscreen() { SetFullscreen(!m_fullscreen); }
         bool IsFullscreen() const { return m_fullscreen; }
+
+        // The resolution fullscreen uses: one of GetResolutions() (refreshRate 0 = the highest at
+        // that size), or 0 x 0 for the monitor's own (borderless). Applied at once if fullscreen
+        // now. Returns false (and changes nothing) for a size the monitor does not offer.
+        bool SetFullscreenResolution(int width, int height, int refreshRate = 0);
+        // 0 when borderless (the monitor's own resolution).
+        int  GetFullscreenWidth() const { return m_fullscreenW; }
+        int  GetFullscreenHeight() const { return m_fullscreenH; }
+        int  GetFullscreenRefreshRate() const { return m_fullscreenRefresh; }
+        bool IsExclusiveFullscreen() const { return m_fullscreenW > 0; }
+
+        // The sizes the window's monitor can show fullscreen, smallest first, one per size
+        // (the highest refresh rate at each). For an options menu's resolution list.
+        std::vector<WindowResolution> GetResolutions() const;
+
+        // ---- Windowed size --------------------------------------------------------------------- //
+        //
+        // Sets the client area for windowed mode (1280 x 720 ...). Kept inside the monitor's work
+        // area; with an aspect lock the width is kept and the height follows. Applied now when
+        // windowed; while maximized or fullscreen it is remembered and used when the window comes
+        // back to normal.
+        void SetWindowedSize(int width, int height);
 
         // ---- Maximize -------------------------------------------------------------------------- //
         //
@@ -95,8 +134,20 @@ namespace Crucible {
         int m_windowedX = 100, m_windowedY = 100;
         int m_windowedW = 1,   m_windowedH = 1;
 
+        // SetWindowedSize while maximized: the size to apply on Restore (0 = none). Separate from
+        // m_windowedW/H because restoring fires a size event with the OS's old normal size.
+        int m_pendingW = 0, m_pendingH = 0;
+
+        // Fullscreen resolution; 0 = the monitor's own (borderless).
+        int m_fullscreenW = 0, m_fullscreenH = 0, m_fullscreenRefresh = 0;
+
         // The monitor the window's centre is on (primary monitor if none).
         GLFWmonitor* FindCurrentMonitor() const;
+        // The video mode fullscreen should use on `monitor`: the chosen resolution, or the
+        // monitor's current mode. Fills `out` and returns false if there is none.
+        bool PickFullscreenMode(GLFWmonitor* monitor, GLFWvidmode& out) const;
+        // Applies the pending windowed size (after Restore / the title bar's un-maximize).
+        void ApplyPendingSize();
         // Re-fits the window to the locked aspect ratio (no-op while fullscreen / maximized).
         void FitToAspectRatio();
 
@@ -106,4 +157,4 @@ namespace Crucible {
         static void WindowMaximizeCallback(GLFWwindow* window, int maximized);
     };
 
-}
+}

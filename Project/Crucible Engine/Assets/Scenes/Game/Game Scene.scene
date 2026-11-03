@@ -1,0 +1,503 @@
+{
+    "version": 1,
+    "name": "Game Scene",
+    "entities": [
+        {
+            "id": "022AB8DD3FBF4013",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Player UI"
+                },
+                "UICanvas": {
+                    "enabled": true,
+                    "renderMode": "ScreenSpace",
+                    "referenceResolution": {
+                        "x": 1920.0,
+                        "y": 1080.0
+                    },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 0,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
+                }
+            }
+        },
+        {
+            "id": "2A2AB8DD4036401D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -2.450000047683716,
+                        "y": 1.0,
+                        "z": 8.76286506652832
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 573453398223863809,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.5,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 0,
+                    "clip": 4294967295,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                }
+            }
+        },
+        {
+            "id": "3A2AB8DD3FBF400F",
+            "parent": "022AB8DD3FBF4013",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Hp bar"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -650.0,
+                        "y": 350.0
+                    },
+                    "size": {
+                        "x": 360.0,
+                        "y": 44.81327819824219
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 16297041461981233163
+                }
+            }
+        },
+        {
+            "id": "422AB8DD40364019",
+            "parent": "2A2AB8DD4036401D",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.75,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Player Collision"
+                }
+            }
+        },
+        {
+            "id": "A22AB8DD3FBF400D",
+            "parent": "022AB8DD3FBF4013",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Cursor"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 700.0,
+                        "y": 700.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 0.3529411852359772
+                    },
+                    "textureAsset": 14567659205070962695
+                }
+            }
+        },
+        {
+            "id": "D22AB8DD4036401B",
+            "parent": "422AB8DD40364019",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.34999990463256836,
+                        "z": 2.450000047683716
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 0
+                },
+                "EntityName": {
+                    "name": "Game Camera"
+                }
+            }
+        },
+        {
+            "id": "E22AB8DD3ED94003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 100.0,
+                        "y": 100.0,
+                        "z": 100.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": -0.0,
+                        "z": -0.0,
+                        "w": 0.9063077569007874
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 1.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Directional Light"
+                }
+            }
+        },
+        {
+            "id": "F22AB8DD3ED94001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 30.0,
+                        "y": 0.5,
+                        "z": 30.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 4225546827863954955
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Ground"
+                }
+            }
+        },
+        {
+            "id": "FA2AB8DD3FBF4011",
+            "parent": "022AB8DD3FBF4013",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Energy bar"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -650.0,
+                        "y": 450.0
+                    },
+                    "size": {
+                        "x": 360.0,
+                        "y": 38.83818054199219
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 17449962966588080137
+                }
+            }
+        }
+    ]
+}

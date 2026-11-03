@@ -3,7 +3,7 @@
   \author     Tok Duan Jie Nelson, Tan Chun Kwang Xavier
   \par        Email: t.duanjienelson@digipen.edu, chunkwangxavier.tan@digipen.edu
   \date       29 September 2026
-  \version    3.0
+  \version    3.1
   \brief
     A saved entity template - one entity and all its children - that can be
     stamped into a world repeatedly.
@@ -54,6 +54,14 @@
       links each new entity to the file (PrefabInstance, when the file was
       loaded from a registered asset); SaveFrom never writes that link into
       a file. Version 1 and 2 files still load, with positions as ids.
+    - 3.1 (2 November 2026): Entity references inside a prefab (script
+      Entity fields, PhysicsJoint connected body - see EntityRefs.h) are
+      stored as the prefab ENTRY id they point at, not the source's scene
+      id. SaveFrom translates them (given sceneIdOf) and clears references
+      to entities outside the subtree; Instantiate translates them back to
+      the new copies (given ensureSceneId). Both callbacks are optional, so
+      older callers behave as before. Prefabs saved earlier keep scene ids
+      until saved again.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -64,6 +72,7 @@
 #include <string>
 #include <vector>
 #include <cstdint>
+#include <functional>
 #include <utility>
 
 #include "ECS/Core/ECSCore.h"     // Entity, kNullEntity
@@ -140,6 +149,12 @@ namespace Crucible {
                            filename without its extension.
          \param[out] outIds Optional: receives every saved entity with the
                            id its entry got, parents first.
+         \param[in] sceneIdOf Optional: an entity's scene id (Scene::IdOf).
+                           Given, entity references inside the subtree are
+                           saved as the entry id of their target, and ones to
+                           entities outside it are cleared (with a warning) -
+                           a template can't point at one scene's objects.
+                           Not given, references are saved as they are.
          \return true if the file was written.
 
          \details
@@ -155,7 +170,8 @@ namespace Crucible {
                              Entity root,
                              const std::filesystem::path& file,
                              const std::string& name = std::string{},
-                             std::vector<std::pair<Entity, std::uint64_t>>* outIds = nullptr);
+                             std::vector<std::pair<Entity, std::uint64_t>>* outIds = nullptr,
+                             const std::function<std::uint64_t(Entity)>& sceneIdOf = {});
 
         /*********************************************************************
          \brief  Read a prefab file into memory, ready to instantiate.
@@ -209,12 +225,34 @@ namespace Crucible {
             .meta), every new entity gets a PrefabInstance linking it back to
             this file and entry - that is what makes it an instance.
 
+            ensureSceneId (optional, e.g. SceneManager::EnsureId): given, every
+            entity reference that names one of this prefab's entries is
+            pointed at the matching new copy (by that copy's scene id), so a
+            copy's parts refer to each other, not to the original's. Not
+            given, references are left as stored.
+
          \note
             Each component added is a structural change, so every new entity
             moves archetype once per component. Do not call this from inside
             a Query - use a CommandBuffer instead.
          *********************************************************************/
-        Entity Instantiate(World& world, Entity parent = kNullEntity) const;
+        Entity Instantiate(World& world, Entity parent = kNullEntity,
+                           const std::function<std::uint64_t(Entity)>& ensureSceneId = {}) const;
+
+        /*********************************************************************
+         \brief  Points entity references that name one of this prefab's
+                 entries at the matching entity of an instance.
+         \param[in] entityForEntry  Entry index -> the instance's entity for
+                                    it (kNullEntity if it has none).
+         \param[in] sceneIdOf       That entity's scene id (EnsureId).
+         \details
+            The shared step behind Instantiate; the editor's prefab updates
+            use it too. Returns a map for EntityRefs::Remap* - ids that are
+            not this prefab's entry ids are returned unchanged.
+         *********************************************************************/
+        std::function<std::uint64_t(std::uint64_t)> EntryToSceneMap(
+            const std::function<Entity(std::size_t)>& entityForEntry,
+            const std::function<std::uint64_t(Entity)>& sceneIdOf) const;
 
         /*********************************************************************
          \brief  Whether a prefab has been successfully loaded.

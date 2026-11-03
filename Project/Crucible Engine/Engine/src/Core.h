@@ -80,6 +80,19 @@ namespace Crucible
         void MaximizeWindow();
         void RestoreWindow();      // un-maximize
         bool IsWindowMaximized() const { return m_window->IsMaximized(); }
+
+        // Windowed size and fullscreen resolution (both saved to UserSettings.json, like the mode).
+        // See WindowManager::SetWindowedSize / SetFullscreenResolution.
+        void SetWindowedSize(int width, int height);
+        int  GetWindowedWidth() const { return m_window->GetWindowedWidth(); }
+        int  GetWindowedHeight() const { return m_window->GetWindowedHeight(); }
+        // 0 x 0 = borderless (the monitor's own). False for a size the monitor does not offer.
+        bool SetFullscreenResolution(int width, int height, int refreshRate = 0);
+        int  GetFullscreenWidth() const { return m_window->GetFullscreenWidth(); }
+        int  GetFullscreenHeight() const { return m_window->GetFullscreenHeight(); }
+        int  GetFullscreenRefreshRate() const { return m_window->GetFullscreenRefreshRate(); }
+        // The window's monitor's fullscreen sizes, smallest first.
+        std::vector<WindowResolution> GetScreenResolutions() const;
         // Both valid only after Init(). The engine's shared asset index (AssetManager) and the
         // GUID -> Renderer-handle cache built on top of it (ResourceManager).
         AssetManager&    GetAssets() const { return *m_assets; }
