@@ -273,7 +273,7 @@ namespace Crucible {
                 .scenes       = m_scenes.get(),
                 .assets       = m_assets.get(),
                 .userSettings = &m_userSettings,                             // Audio bus volumes, InputSettings
-                .physics      = physics ? &physics->GetPhysics() : nullptr,  // Physics.Raycast, CharacterController
+                .physics      = physics,                                     // Physics.Raycast (entity queries: ignores the shooter properly)
                 .renderer     = m_renderer,                                  // Camera screen maths
                 .particles    = m_systems.FindSystem<ParticleSystem>(),      // ParticleEmitter Emit / Restart / ParticleCount
                 .events       = &m_events,                                   // UI and collision callbacks

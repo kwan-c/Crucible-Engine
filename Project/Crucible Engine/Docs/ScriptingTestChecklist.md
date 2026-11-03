@@ -60,7 +60,7 @@ Setup: entity with an AudioSource that has a clip (Play On Awake off). Optional 
 - [y] I plays Other Clip, and the log says the source's own Clip is unchanged.
 - [y] U plays both clips in the same frame (Other Clip at half volume).
 - [y] 1 / 2 change the volume, 3 / 4 the pitch, of a sound already playing.
-- [ ] K cycles Bus Master -> Music -> SFX (logged; also shown in the start-up line). After K, press P: turning that bus down (AudioBusTest 5-0, or the options menu) quiets it, the other buses do not.
+- [y] K cycles Bus Master -> Music -> SFX (logged; also shown in the start-up line). After K, press P: turning that bus down (AudioBusTest 5-0, or the options menu) quiets it, the other buses do not.
 - [y] L toggles Loop; it applies from the next P.
 
 ## 6. Audio buses - `AudioBusTest`
@@ -69,29 +69,29 @@ Setup: any entity; "Clip" = an audio file. Press Play.
 
 - [y] J plays the clip to the right of the entity; a "One Shot Audio" entity appears in the
       Hierarchy and goes away when it ends.
-- [ ] H plays it on the Music bus (log says "Music bus"): 7 / 8 change its volume, 9 / 0 do not.
-- [ ] 5 / 6 Master, 7 / 8 Music, 9 / 0 SFX volume change what you hear.
-- [ ] V saves; after restarting the editor the volumes are as saved (`UserSettings.json` "audio").
-- [ ] Put the volumes back to 1 (6 / 8 / 0) and save.
+- [y] H plays it on the Music bus (log says "Music bus"): 7 / 8 change its volume, 9 / 0 do not.
+- [y] 5 / 6 Master, 7 / 8 Music, 9 / 0 SFX volume change what you hear.
+- [y] V saves; after restarting the editor the volumes are as saved (`UserSettings.json` "audio").
+- [y] Put the volumes back to 1 (6 / 8 / 0) and save.
 
 ## 7. Movement, raycasts, time - `MoveTest`
 
 Setup: entity with a CharacterController (no Collider) above a floor with a Collider. Press Play.
 
-- [ ] I J K L walk along the world axes; it stays on the floor and climbs small steps.
-- [ ] Space jumps only when grounded.
-- [ ] R logs the raycast hits down and along +Z (the floor's name and distance).
-- [ ] Every 2 s it logs ElapsedTime and FrameCount; Pause stops them, Resume continues.
+- [y] I J K L walk along the world axes; it stays on the floor and climbs small steps.
+- [y] Space jumps only when grounded.
+- [y] R logs the raycast hits down and along +Z (the floor's name and distance).
+- [y] Every 2 s it logs ElapsedTime and FrameCount; Pause stops them, Resume continues.
 
 ## 8. Transform and scenes - `TransformSceneTest`
 
 Setup: on an entity; "Target" = another entity; "Next Scene" = e.g. `Scenes/Fog_Lighting_Effects.scene`. Press Play.
 
-- [ ] T turns to face Target; U then steps 1 m forward (toward it).
-- [ ] Y turns 45 degrees.
-- [ ] O logs world position / rotation / directions / parent / children.
-- [ ] P parents it to Target without it moving on screen; P again un-parents, still in place.
-- [ ] N loads Next Scene; M reloads the current one. No errors, scripts start again.
+- [y] T turns to face Target; U then steps 1 m forward (toward it).
+- [y] Y turns 45 degrees.
+- [y] O logs world position / rotation / directions / parent / children.
+- [y] P parents it to Target without it moving on screen; P again un-parents, still in place.
+- [?] N loads Next Scene; M reloads the current one. No errors, scripts start again.
 
 ## 9. Camera - `CameraTest`
 

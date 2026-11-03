@@ -33,7 +33,7 @@ namespace Crucible
 	class SceneManager;
 	class AssetManager;
 	struct UserSettings;
-	class Physics;
+	class ECSPhysicsSystem;
 	class Renderer;
 	class Core;
 	class ParticleSystem;
@@ -88,12 +88,12 @@ namespace Crucible
 		UserSettings* GetUserSettings();
 
 		/*********************************************************************
-		 \brief  Gives C# Physics.Raycast the physics world (ECSPhysicsSystem's).
+		 \brief  Gives C# Physics.Raycast the physics system (its entity queries).
 		         nullptr clears it. Non-owning; main thread only. Called through
 		         ScriptRuntime::SetPhysicsBinding. Defined in
 		         Bindings/PhysicsBindings.cpp.
 		 *********************************************************************/
-		void SetPhysics(Physics* physics);
+		void SetPhysics(ECSPhysicsSystem* physics);
 
 		/*********************************************************************
 		 \brief  Gives the C# Camera class the renderer (game screen size, and

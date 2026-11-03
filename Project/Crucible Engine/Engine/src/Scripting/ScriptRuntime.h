@@ -44,7 +44,7 @@ namespace Crucible
 	class SceneManager;
 	class AssetManager;
 	struct UserSettings;
-	class Physics;
+	class ECSPhysicsSystem;
 	class Renderer;
 	class Core;
 	class ParticleSystem;
@@ -64,7 +64,7 @@ namespace Crucible
 		SceneManager*           scenes       = nullptr; // scene ids, Scene.Load
 		AssetManager*           assets       = nullptr; // asset fields (Prefab, AudioClip, Texture, Font)
 		UserSettings*           userSettings = nullptr; // Audio bus volumes, InputSettings
-		Physics*                physics      = nullptr; // Physics.Raycast, CharacterController
+		ECSPhysicsSystem*       physics      = nullptr; // Physics.Raycast
 		const Renderer*         renderer     = nullptr; // Camera screen maths
 		ParticleSystem*         particles    = nullptr; // ParticleEmitter Emit / Restart / ParticleCount
 		EventBuses*             events       = nullptr; // UI and collision callbacks
@@ -448,7 +448,7 @@ namespace Crucible
 		 \brief  Gives C# Physics.Raycast the physics world. Pass nullptr to
 		         disconnect (Core does this before shutdown).
 		 *********************************************************************/
-		bool SetPhysicsBinding(Physics* physics);
+		bool SetPhysicsBinding(ECSPhysicsSystem* physics);
 
 		/*********************************************************************
 		 \brief  Gives the C# Camera class the renderer (game screen size and

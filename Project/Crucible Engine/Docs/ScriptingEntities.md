@@ -496,8 +496,8 @@ C++ side: `Bindings/ScreenBindings.cpp` (Core through
   both would call SimpleMove.
 - `Physics.Raycast(origin, direction, out RaycastHit hit, maxDistance, ignore)`
   returns the first collider hit: `hit.Entity`, `Point`, `Normal`, `Distance`.
-  `ignore` (usually the shooter) is seen through by re-casting past it. Rays hit
-  Collider bodies, not CharacterControllers. Play only.
+  `ignore` (usually the shooter) is skipped inside the physics query (ECSPhysicsSystem::Raycast's EntityFilter), so a ray may start inside it. Rays
+  hit Colliders and CharacterControllers (their hidden capsule), not triggers. Play only.
 - `Time.DeltaTime`, `Time.ElapsedTime` (Playing seconds since Play; Pause
   excluded; `ElapsedTimeAsDouble` too) and `Time.FrameCount`. Reset on Stop,
   not on `Scene.Load`.

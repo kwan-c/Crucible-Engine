@@ -2,8 +2,8 @@
 * \file:         PhysicsBindings.cpp
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
-* \date          2 November 2026
-* \version       1.0
+* \date          3 November 2026
+* \version       1.1
 * \brief         Internal calls behind C# Physics.Raycast
 *                (ManagedScripts/Runtime/Physics.cs) and the C#
 *                CharacterController class (CharacterController.cs).
@@ -11,10 +11,11 @@
 * \details
 *    Bindings only - Physics/ and ECSPhysicsSystem (Hugo's) are unchanged.
 *
-*    Raycast calls Physics::Raycast. Every body carries its entity
-*    (EntityToUserData), so a hit names an entity directly. Physics has no
-*    "ignore this entity" option, so to skip one (usually the shooter) the
-*    ray is cast again from just past that hit, a few times at most.
+*    Raycast calls ECSPhysicsSystem::Raycast (the entity version), whose
+*    EntityFilter::ignore skips the shooter's body - a CharacterController's
+*    hidden capsule included - inside Jolt. (v1.0 re-cast from 1 cm past
+*    each hit instead, which never got out of a capsule the ray started in,
+*    so a CharacterController's own rays always reported "nothing".)
 *
 *    CharacterController goes through the component, as gameplay C++ does:
 *    SimpleMove / Jump leave a request that ECSPhysicsSystem (PostUpdate,
@@ -30,6 +31,8 @@
 #include "Physics/PhysicsComponents.h"
 #include "Physics/PhysicsSystem.h"
 #include "Physics/PhysicsEvents.h"
+#include "Physics/EntityQueries.h"
+#include "ECS/ECSPhysicsSystem.h"
 #include "ECS/Systems/EventBus/EventBuses.h"
 #if CRUCIBLE_WITH_MONO
 #include <cmath>
@@ -42,8 +45,8 @@ namespace Crucible::ScriptBindings
 	{
 		using namespace ScriptingDetail;
 
-		// The physics world (SetPhysics, from Core). Main thread only.
-		thread_local Physics* physics = nullptr;
+		// The physics system (SetPhysics, from Core). Main thread only.
+		thread_local ECSPhysicsSystem* physics = nullptr;
 
 		bool IsFinite(const ScriptVec3& v)
 		{
@@ -54,10 +57,10 @@ namespace Crucible::ScriptBindings
 		// Physics.Raycast
 		// ======================================================================
 
-		// How many times a ray may be re-cast past the ignored entity (a shooter
-		// with several colliders, or a ray starting inside it).
-		constexpr int MaxIgnoredHits = 8;
-		// How far past an ignored hit the next cast starts, in metres.
+		// How many times a ray may be re-cast past a body whose entity is already
+		// destroyed (physics removes it on its next step).
+		constexpr int MaxDeadHits = 4;
+		// How far past such a hit the next cast starts, in metres.
 		constexpr float SkipDistance = 0.01f;
 
 		/*********************************************************************
@@ -87,33 +90,34 @@ namespace Crucible::ScriptBindings
 				if (!(length > 1e-6f))
 					return 0;
 				const Math::vec3 unit = heading / length;
-				const Entity ignore{static_cast<uint32_t>(ignoreIndex), static_cast<uint32_t>(ignoreGeneration)};
+
+				// The shooter is skipped inside Jolt (all of its body, wherever the ray starts).
+				EntityFilter filter;
+				if (ignoreIndex != 0)
+					filter.ignore = Entity{static_cast<uint32_t>(ignoreIndex), static_cast<uint32_t>(ignoreGeneration)};
 
 				Math::vec3 start(origin->x, origin->y, origin->z);
 				float travelled = 0.0f;
-				for (int attempt = 0; attempt <= MaxIgnoredHits; ++attempt)
+				for (int attempt = 0; attempt <= MaxDeadHits; ++attempt)
 				{
 					const float remaining = maxDistance - travelled;
-					RaycastHit hit;
-					if (!(remaining > 0.0f) || !physics->Raycast(start, unit, hit, remaining))
+					EntityHit hit;
+					if (!(remaining > 0.0f) || !physics->Raycast(start, unit, hit, remaining, filter))
 						return 0;
-					const Entity hitEntity = UserDataToEntity(hit.m_userData);
 					Entity alive;
-					const bool skip = (ignoreIndex != 0 && hitEntity == ignore) ||
-					                  !EntityContext::ResolveEntity(static_cast<int32_t>(hitEntity.index),
-					                                                static_cast<int32_t>(hitEntity.generation), alive);
-					if (!skip)
+					if (EntityContext::ResolveEntity(static_cast<int32_t>(hit.entity.index),
+					                                 static_cast<int32_t>(hit.entity.generation), alive))
 					{
-						*outIndex = static_cast<int32_t>(hitEntity.index);
-						*outGeneration = static_cast<int32_t>(hitEntity.generation);
-						*outPoint = {hit.m_point.x, hit.m_point.y, hit.m_point.z};
-						*outNormal = {hit.m_normal.x, hit.m_normal.y, hit.m_normal.z};
-						*outDistance = travelled + hit.m_distance;
+						*outIndex = static_cast<int32_t>(hit.entity.index);
+						*outGeneration = static_cast<int32_t>(hit.entity.generation);
+						*outPoint = {hit.point.x, hit.point.y, hit.point.z};
+						*outNormal = {hit.normal.x, hit.normal.y, hit.normal.z};
+						*outDistance = travelled + hit.distance;
 						return 1;
 					}
-					// The ignored entity (or a body whose entity is already gone): go on past it.
-					travelled += hit.m_distance + SkipDistance;
-					start = hit.m_point + unit * SkipDistance;
+					// A body whose entity was destroyed this frame (physics drops it next step): go on past it.
+					travelled += hit.distance + SkipDistance;
+					start = hit.point + unit * SkipDistance;
 				}
 				return 0;
 			}
@@ -270,9 +274,9 @@ namespace Crucible::ScriptBindings
 		}
 	}
 
-	void SetPhysics(Physics* world)
+	void SetPhysics(ECSPhysicsSystem* system)
 	{
-		physics = world;
+		physics = system;
 	}
 
 	// ======================================================================

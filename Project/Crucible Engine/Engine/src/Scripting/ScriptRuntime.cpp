@@ -2550,7 +2550,7 @@ namespace Crucible
 	/*********************************************************************
 	 \brief  See ScriptRuntime.h. Forwards to ScriptBindings::SetPhysics.
 	 *********************************************************************/
-	bool ScriptRuntime::SetPhysicsBinding(Physics* physics)
+	bool ScriptRuntime::SetPhysicsBinding(ECSPhysicsSystem* physics)
 	{
 		if (!m_impl->Ready())
 			return false;
