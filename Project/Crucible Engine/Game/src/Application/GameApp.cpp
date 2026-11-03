@@ -49,7 +49,7 @@ void GameApp::SubscribeToUI()
     m_onQuit = bus.Subscribe<Crucible::UIEvents::QuitRequested>([this](const Crucible::UIEvents::QuitRequested&) {
         CRU_INFO("[Game] Quit button pressed - closing");
         m_engine->RequestQuit();
-    });5
+    });
 
     // A "Custom" button: run the action registered under its actionId.
     m_onCustom = bus.Subscribe<Crucible::UIEvents::CustomAction>([this](const Crucible::UIEvents::CustomAction& click) {

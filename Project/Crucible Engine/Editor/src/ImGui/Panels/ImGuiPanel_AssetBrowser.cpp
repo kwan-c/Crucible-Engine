@@ -22,6 +22,7 @@
 #include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
+#include "Graph/GraphAssets.h"   // Create State Graph / Behavior Graph
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 #include "Prefabs/PrefabAuthoring.h"
@@ -819,6 +820,10 @@ void Crucible::AssetBrowser::DrawGrid() {
 			if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) animator->RequestNew();
 		}
 		if (IsInScenesFolder(m_currentFolder) && ImGui::MenuItem("Create Scene", nullptr, false, !searching && IsRefreshAllowed())) CreateScene();
+		if (ImGui::MenuItem("Create State Graph", nullptr, false, !searching && IsRefreshAllowed())) CreateGraphAsset(true);
+		ImGui::SetItemTooltip("An enemy's state machine (Idle, Patrol, Chase...). Pick it on a StateGraphAgent.");
+		if (ImGui::MenuItem("Create Behavior Graph", nullptr, false, !searching && IsRefreshAllowed())) CreateGraphAsset(false);
+		ImGui::SetItemTooltip("A behaviour tree. Double-click it to edit in the Behavior Graph window.");
 		// Always listed so it can be found, but only enabled where the build will compile it.
 		bool const inScripts = IsInScriptsFolder(m_currentFolder);
 		if (ImGui::MenuItem("Create C# Script", nullptr, false, inScripts && !searching && IsRefreshAllowed())) BeginCreateScript();
@@ -1143,6 +1148,35 @@ void Crucible::AssetBrowser::CreateScene() {
 
 	Refresh();
 	CRU_USER_INFO("Created scene {}", virtualPath);
+	BeginRename(virtualPath);   // Unity: type its name straight away
+}
+
+// ------------------------------------------------------------------ create state / behavior graph
+
+void Crucible::AssetBrowser::CreateGraphAsset(bool stateGraph) {
+	if (!IsRefreshAllowed()) return;
+
+	// "New State Graph", "New State Graph 1", ... - the first name not taken in this folder.
+	std::string const extension = stateGraph ? ".stategraph" : ".behaviorgraph";
+	std::string const name      = stateGraph ? "New State Graph" : "New Behavior Graph";
+	std::string const base      = m_currentFolder.empty() ? name : m_currentFolder + "/" + name;
+	std::string stem = base;
+	std::error_code ec;
+	for (int i = 1; fs::exists(AbsolutePathOf(stem + extension), ec) && i < 1000; ++i)
+		stem = base + " " + std::to_string(i);
+	std::string const virtualPath = stem + extension;
+
+	// Through ResourceManager::SaveTextAsset: the same safe write the graph editor saves with.
+	ResourceManager* resources = EditorManager::GetInstance().GetResources();
+	std::string error;
+	std::string const contents = stateGraph ? GraphAssets::NewStateGraphJson() : GraphAssets::NewBehaviorGraphJson();
+	if (!resources || !resources->SaveTextAsset(virtualPath, contents, true, &error)) {
+		CRU_USER_WARN("Could not create '{}': {}", virtualPath, error);
+		return;
+	}
+
+	Refresh();
+	CRU_USER_INFO("Created {}", virtualPath);
 	BeginRename(virtualPath);   // Unity: type its name straight away
 }
 

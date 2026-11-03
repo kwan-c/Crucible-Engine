@@ -184,13 +184,25 @@ namespace Crucible {
 
         // Keys, while this canvas has focus and no text box is being typed in:
         // Delete, Ctrl+C, Ctrl+V (pasted under the mouse when it's over the
-        // canvas, otherwise just offset from the copied nodes).
+        // canvas, otherwise just offset from the copied nodes), Ctrl+D.
+        //
+        // Through ImGui::Shortcut, NOT IsKeyPressed: the Hierarchy registers
+        // these same keys as GLOBAL shortcuts (they work whatever has focus),
+        // and only a focused window that claims a key with Shortcut takes it
+        // away from them. Reading the key directly let both fire - Delete on a
+        // node also deleted the entity selected in the Hierarchy.
         if (!readOnly && ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows) && !io.WantTextInput) {
-            if (ImGui::IsKeyPressed(ImGuiKey_Delete, false) && DeleteSelection(graph)) changed = true;
-            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) CopySelection(graph);
-            if (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_V, false) && !m_clipboard.empty()) {
+            if (ImGui::Shortcut(ImGuiKey_Delete) && DeleteSelection(graph)) changed = true;
+            if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_C)) CopySelection(graph);
+            if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_V) && !m_clipboard.empty()) {
                 const Math::vec2 at = m_canvas.Hovered() ? m_canvas.MouseGraph() : m_clipboard.front()->m_editorPosition + Math::vec2(30.0f);
                 if (Paste(graph, at)) changed = true;
+            }
+            if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D) && !m_selection.empty()) {
+                std::vector<BehaviorNode*> copies;
+                for (BehaviorNode* top : SelectionTops(graph)) copies.push_back(BehaviorTreeEdit::Duplicate(graph, *top, { 30.0f, 30.0f }));
+                m_selection = std::move(copies);
+                changed = true;
             }
         }
 
@@ -286,7 +298,7 @@ namespace Crucible {
                 const bool hasParent = BehaviorTreeEdit::ParentOf(graph, node) != nullptr;
                 const bool isRoot    = graph.Root() == node;
 
-                if (ImGui::MenuItem("Duplicate")) {
+                if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
                     // Copy + paste 30 units down-right, without touching the clipboard.
                     std::vector<BehaviorNode*> copies;
                     for (BehaviorNode* top : SelectionTops(graph)) copies.push_back(BehaviorTreeEdit::Duplicate(graph, *top, { 30.0f, 30.0f }));

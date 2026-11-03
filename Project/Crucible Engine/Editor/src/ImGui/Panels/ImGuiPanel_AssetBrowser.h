@@ -123,6 +123,11 @@ namespace Crucible {
 		bool IsInScenesFolder(std::string const& folder) const;
 		void CreateScene();
 
+		// ---- Create State Graph / Behavior Graph (AI, any folder) ----
+		// Writes a starter graph (Graph/GraphAssets.h) into the folder being viewed, then
+		// starts a rename, as Create Scene does.
+		void CreateGraphAsset(bool stateGraph);
+
 		// ---- Create C# Script (only enabled inside Scripts/, the folder the build compiles) ----
 		// Asks for the class name in a modal, then writes <name>.cs from the EntityScript
 		// template into the folder being viewed (Scripting/ScriptAuthoring.h).
