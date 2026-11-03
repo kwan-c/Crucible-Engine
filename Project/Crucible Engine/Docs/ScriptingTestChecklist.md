@@ -153,23 +153,23 @@ and / or a script. Press Play.
 Setup A: on a falling crate (Collider + RigidBody) above a floor with a Collider.
 Setup B: on an entity with an Is Trigger Collider; move a crate or the mech through it.
 
-- [ ] A: OnCollisionEnter on landing (point, normal, impact speed); hard hits are called out.
-- [ ] A: "Mass" from the field is applied (log at start).
-- [ ] A: lifting it off (or rolling away) logs OnCollisionExit.
-- [ ] B: OnTriggerEnter / OnTriggerExit when something goes in and out; nothing is blocked.
+- [y] A: OnCollisionEnter on landing (point, normal, impact speed); hard hits are called out.
+- [y] A: "Mass" from the field is applied (log at start).
+- [y] A: lifting it off (or rolling away) logs OnCollisionExit.
+- [y] B: OnTriggerEnter / OnTriggerExit when something goes in and out; nothing is blocked.
 
 ## 15. Collider - `ColliderTest`
 
 Setup: crate with Collider (layer Moving), MeshRenderer and RigidBody above a floor. Turn on
 physics debug draw. Press Play.
 
-- [ ] T: Is Trigger on -> it falls through the floor and logs trigger events; off -> collisions.
-- [ ] V hides the mesh; it still collides.
-- [ ] K switches the Collider off (falls through, no events) and on.
-- [ ] J cycles Box -> Sphere -> Capsule (debug draw shows it); it keeps falling smoothly.
-- [ ] 9 / 0 shrink / grow the collider.
-- [ ] Y toggles bounciness; R puts it back to drop again and it bounces.
-- [ ] B tries bad sizes: the log says they were refused.
+- [y] T: Is Trigger on -> it falls through the floor and logs trigger events; off -> collisions.
+- [y] V hides the mesh; it still collides.
+- [custom behavior] K switches the Collider off (falls through, no events) and on.
+- [y] J cycles Box -> Sphere -> Capsule (debug draw shows it); it keeps falling smoothly.
+- [y] 9 / 0 shrink / grow the collider.
+- [y] Y toggles bounciness; R puts it back to drop again and it bounces.
+- [y] B tries bad sizes: the log says they were refused.
 
 ## 16. Mesh renderer - `MeshRendererTest`
 
@@ -182,6 +182,7 @@ another model. Add a MaterialParams and give the material some emissive. Press P
 - [ ] S puts Alt Material on the next slot, one slot at a time; X clears them all.
 - [ ] X also logs that a bad slot (999) was refused.
 - [ ] E pulses the glow; E again goes back to normal.
+- [ ] C tints the object red -> green -> blue -> back to normal (needs MaterialParams); other objects with the same material keep their colour, and shadows are unchanged.
 - [ ] B steps through the 8 built-in meshes (Cube ... Disc) and clears the model; N brings the model back.
 - [ ] L's log matches what you see (model, mesh, material, slots, glow).
 - [ ] On an animated model: after N, the animation starts over without errors.
@@ -190,14 +191,14 @@ another model. Add a MaterialParams and give the material some emissive. Press P
 
 Setup: on the mech (PlayerController + CharacterController). Press Play.
 
-- [ ] F1 swaps WASD / arrow keys; the mech walks with the new keys only.
-- [ ] F2 then a key rebinds jump (Esc cancels); the new key jumps, Space no longer does.
-- [ ] F3 doubles the walk speed and back.
-- [ ] F4 stops the mech and it ignores keys; F4 again gives control back.
-- [ ] Stop and Play: the changed keys are still in use (player settings, not the scene).
-- [ ] F6 saves; close and reopen the editor: the keys are as saved
+- [y] F1 swaps WASD / arrow keys; the mech walks with the new keys only.
+- [y] F2 then a key rebinds jump (Esc cancels); the new key jumps, Space no longer does.
+- [y] F3 doubles the walk speed and back.
+- [y] F4 stops the mech and it ignores keys; F4 again gives control back.
+- [y] Stop and Play: the changed keys are still in use (player settings, not the scene).
+- [y] F6 saves; close and reopen the editor: the keys are as saved
       (`UserSettings.json` "input" / "keys" next to Editor.exe).
-- [ ] F7 resets to W A S D / Space / GamepadA; F6 to save that.
+- [y] F7 resets to W A S D / Space / GamepadA; F6 to save that.
 
 ## 18. Window - `ScreenTest`
 

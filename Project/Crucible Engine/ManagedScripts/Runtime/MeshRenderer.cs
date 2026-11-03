@@ -34,6 +34,11 @@
 *    object its own glow strength without its own material:
 *
 *        GetComponent<MaterialParams>().EmissiveScale = charged ? 4f : 1f;
+*        GetComponent<MaterialParams>().Tint = Color.Red;   // hit flash; ClearTint() after
+*
+*    Tint multiplies the base colour (DefaultShader.slang reads
+*    MaterialParams::custom; all zero = no tint). Shadows and the selection
+*    outline are unaffected.
 *
 *    C++ side: Engine/src/Scripting/Bindings/MeshRendererBindings.cpp.
 *
@@ -165,7 +170,26 @@ namespace Crucible
             set { SetEmissiveScaleInternal(I, G, ref value); }
         }
 
-        /// <summary>Three spare numbers passed to the shader as they are, for effects to come.</summary>
+        /// <summary>
+        /// A colour multiplied into this object's base colour - red when hit, team colours - with
+        /// no new material. Color.White or "none" = as the material says. Alpha is ignored.
+        /// Stored in Custom (the Inspector's "custom"): (0, 0, 0) there means no tint, so pure
+        /// black is drawn as no tint - use something like (0.01, 0.01, 0.01) for near-black.
+        /// </summary>
+        public Color Tint
+        {
+            get
+            {
+                Vector3 c = Custom;
+                return (c.X == 0f && c.Y == 0f && c.Z == 0f) ? Color.White : new Color(c.X, c.Y, c.Z);
+            }
+            set { Custom = new Vector3(value.R, value.G, value.B); }
+        }
+
+        /// <summary>Goes back to the material's own colour (Custom = 0, 0, 0).</summary>
+        public void ClearTint() { Custom = new Vector3(0f, 0f, 0f); }
+
+        /// <summary>The raw shader numbers behind Tint (x, y, z = r, g, b; all 0 = no tint).</summary>
         public Vector3 Custom
         {
             get { Vector3 v; return GetCustomInternal(I, G, out v) != 0 ? v : new Vector3(0f, 0f, 0f); }

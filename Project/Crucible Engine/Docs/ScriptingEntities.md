@@ -402,8 +402,8 @@ C++ side: `Bindings/ColliderBindings.cpp`. Collider (Hugo's
 - Only the material the object USES changes; the .mat and other objects using
   it are untouched. A model's imported materials can't be picked - make a .mat.
 - `GetComponent<MaterialParams>()` (add the component in the Inspector):
-  `EmissiveScale` (glow multiplier, 0 = off, 1 = as the material) and `Custom`
-  (three spare shader numbers). Per object, without breaking batching.
+  `EmissiveScale` (glow multiplier, 0 = off, 1 = as the material), `Tint` (a
+  Color multiplied into the base colour; `ClearTint()`) and `Custom` (the raw numbers behind Tint). Per object, without breaking batching. Tint is MaterialParams::custom read by `DefaultShader.slang` (InstanceData::params.yzw); all zero (the default) = no tint, so pure black can't be a tint. Shadows and the selection outline ignore it.
 - Built-in meshes, code only: `MeshRenderer.Mesh = Mesh.Sphere` (`Mesh.Cube`,
   `Sphere`, `Capsule`, `Cylinder`, `Cone`, `Pyramid`, `Plane`, `Disc`; `.Name`).
   Setting a mesh clears the Model (a model always wins), via
@@ -412,9 +412,7 @@ C++ side: `Bindings/ColliderBindings.cpp`. Collider (Hugo's
   names, so renaming one breaks saved references. A `null` Mesh.X means the
   renderer has no primitive by that name.
 - Not done: a `public Mesh` field picked in the Inspector (would need a field
-  type validated through the ResourceManager, not the AssetManager); a
-  per-object colour tint - needs a shader change (`MeshRenderer::colour` is
-  not drawn).
+  type validated through the ResourceManager, not the AssetManager). `MeshRenderer::colour` is still not drawn - use Tint.
 
 C++ side: `Bindings/MeshRendererBindings.cpp` (uses the ResourceManager from
 `ScriptEngineConnection::resources` for slot counts). Test:

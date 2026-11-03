@@ -13,6 +13,7 @@ namespace Crucible.Scripts
     //        S  put Alt Material on the next material slot (wraps; logs which slot)
     //        X  clear every slot override
     //        E  toggle a glow pulse (MaterialParams.EmissiveScale 0 .. 4)
+    //        C  cycle the tint (MaterialParams.Tint): red -> green -> blue -> none
     //        B  cycle built-in meshes: Cube -> Sphere -> ... -> Disc (clears the model; N brings it back)
     //        L  log the current state
     public sealed class MeshRendererTest : EntityScript
@@ -22,6 +23,7 @@ namespace Crucible.Scripts
 
         MeshRenderer mesh;
         MaterialParams glow;
+        int nextTint;
         Material originalMaterial;
         Model originalModel;
         int nextSlot;
@@ -98,6 +100,15 @@ namespace Crucible.Scripts
             {
                 if (Input.IsPressed(KeyCode.E)) { pulsing = !pulsing; if (!pulsing) glow.EmissiveScale = 1f; Log.Info("[MeshRendererTest] pulse " + pulsing); }
                 if (pulsing) glow.EmissiveScale = 2f + 2f * (float)Math.Sin(Time.ElapsedTime * 4.0);
+
+                if (Input.IsPressed(KeyCode.C))
+                {
+                    Color[] tints = { Color.Red, Color.Green, Color.Blue };
+                    if (nextTint < tints.Length) glow.Tint = tints[nextTint];
+                    else glow.ClearTint();
+                    nextTint = (nextTint + 1) % (tints.Length + 1);
+                    Log.Info("[MeshRendererTest] tint " + glow.Tint + " (Custom " + glow.Custom + ")");
+                }
             }
 
             if (Input.IsPressed(KeyCode.B))
