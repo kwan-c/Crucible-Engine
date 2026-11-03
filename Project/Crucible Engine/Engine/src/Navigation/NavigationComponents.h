@@ -155,10 +155,14 @@ namespace Crucible {
 
         // TELLING IT WHAT TO DO ---------------------------------------------- //
 
-        void FollowField()                    { m_movement = AgentMovement::FollowField; }
-        void MoveTo(const Math::vec3& point)  { m_movement = AgentMovement::MoveTo; m_destination = point; }
-        void Arrive(Entity target)            { m_movement = AgentMovement::Arrive; m_target = target; }
-        void Stop()                           { m_movement = AgentMovement::None; }
+        // A new order is "not arrived" until ECSNavigationSystem has measured it
+        // (next frame at the latest). Without the reset, HasArrived() would
+        // still say true from standing still, and a behaviour waiting for it
+        // would think a brand-new MoveTo had finished instantly.
+        void FollowField()                    { m_movement = AgentMovement::FollowField; m_arrived = false; }
+        void MoveTo(const Math::vec3& point)  { m_movement = AgentMovement::MoveTo; m_destination = point; m_arrived = false; }
+        void Arrive(Entity target)            { m_movement = AgentMovement::Arrive; m_target = target; m_arrived = false; }
+        void Stop()                           { m_movement = AgentMovement::None; m_arrived = true; }
 
         // ASKING HOW IT'S GOING (written by ECSNavigationSystem every frame) - //
 

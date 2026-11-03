@@ -118,6 +118,8 @@ namespace Crucible {
         case AssetType::Script:   return "Script";
         case AssetType::Text:     return "Text";
         case AssetType::AnimatorController: return "AnimatorController";
+        case AssetType::StateGraph:    return "StateGraph";
+        case AssetType::BehaviorGraph: return "BehaviorGraph";
         case AssetType::Unknown:  return "Unknown";
         case AssetType::Count:    break;
         }
@@ -194,7 +196,13 @@ namespace Crucible {
 
         if (e == ".animcontroller")
             return AssetType::AnimatorController;
- 
+
+        if (e == ".stategraph")
+            return AssetType::StateGraph;
+
+        if (e == ".behaviorgraph")
+            return AssetType::BehaviorGraph;
+
         if (e == ".ttf" || e == ".otf" || e == ".cfont")   // .cfont = compiled by the editor (Text/FontData.h)
             return AssetType::Font;
  

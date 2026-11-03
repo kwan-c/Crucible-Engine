@@ -34,6 +34,8 @@
 #include "Resources/CompiledSky.h"
 #include "Resources/ImageDecoders.h"
 #include "Resources/AnimatorControllerIO.h"
+#include "AI/BehaviorGraphIO.h"        // kMaxBehaviorGraphBytes (GetStateGraph)
+#include "AI/StateGraphIO.h"           // DecodeStateGraph (GetStateGraph)
 #include "AssetPipe/AssetRegistry.h"   // HashFileContents (which version of a prefab file this is)
 #include "Scene/Prefab.h"
 #include "ECS/Components/Components.h"
@@ -257,6 +259,25 @@ namespace Crucible {
         auto definition = std::make_shared<AnimatorController>(std::move(decoded.controller));
         m_controllers[id] = definition;
         return definition;
+    }
+
+    std::shared_ptr<const StateGraph> ResourceManager::GetStateGraph(AssetId id) {
+        // The same shape as GetAnimatorController: cache first, a failure is cached
+        // as null (and warned once) so a broken file isn't re-read every frame.
+        if (!id) return {};
+        if (auto found = m_stateGraphs.find(id); found != m_stateGraphs.end()) return found->second;
+        m_stateGraphs[id] = nullptr;
+        const auto* entry = m_assets.FindByGuid(ToGuid(id));
+        std::vector<unsigned char> bytes;
+        if (!entry || entry->type != AssetType::StateGraph || entry->sizeBytes > kMaxBehaviorGraphBytes ||
+            !m_assets.ReadBytes(entry->virtualPath, bytes)) {
+            WarnOnce(id, "Could not read State Graph (limit 4 MiB)"); return {};
+        }
+        auto decoded = DecodeStateGraph(bytes);
+        if (!decoded.ok) { WarnOnce(id, "State Graph load failed: " + decoded.error); return {}; }
+        std::shared_ptr<const StateGraph> graph = std::move(decoded.graph);
+        m_stateGraphs[id] = graph;
+        return graph;
     }
 
     bool ResourceManager::SaveAnimatorController(AssetId id, const std::string& json, std::string* error) {
@@ -616,6 +637,7 @@ namespace Crucible {
             if (m_fonts.count(id) != 0)       { ReloadFont(id); ++reloaded; }
             if (m_prefabs.count(id) != 0)     { ReloadPrefab(id); ++reloaded; }
             if (m_controllers.erase(id) != 0) { m_warned.erase(id); ++reloaded; }
+            if (m_stateGraphs.erase(id) != 0) { m_warned.erase(id); ++reloaded; }   // next GetStateGraph reads the new file
             if (auto it = m_cubemaps.find(id); it != m_cubemaps.end()) {
                 // Skybox components ask by id every frame: the next frame loads the new one.
                 if (it->second.IsValid()) { m_renderer.DestroyCubemap(it->second); }
@@ -661,6 +683,7 @@ namespace Crucible {
         std::erase_if(m_fonts,       [](const auto& e) { return !e.second; });
         std::erase_if(m_prefabs,     [](const auto& e) { return !e.second; });
         std::erase_if(m_controllers, [](const auto& e) { return !e.second; });
+        std::erase_if(m_stateGraphs, [](const auto& e) { return !e.second; });
         std::erase_if(m_audioClips,  [](const auto& e) { return !e.second.IsValid(); });
 
     }   // ResourceManager::ForgetFailures()
@@ -786,6 +809,7 @@ namespace Crucible {
         dropUnkept(m_models);
         dropUnkept(m_modelRestPoses);
         dropUnkept(m_controllers);
+        dropUnkept(m_stateGraphs);
         dropUnkept(m_prefabs);
 
         // 3. Material files (.mat). Built-ins and model materials are handled above.
@@ -1099,6 +1123,7 @@ namespace Crucible {
                 case ResourceKind::Font:     { auto it = m_fonts.find(id);     return it != m_fonts.end()     && it->second != nullptr; }
                 case ResourceKind::Model:    { auto it = m_models.find(id); return it != m_models.end() && bool(it->second); }
                 case ResourceKind::AnimatorController: { auto it = m_controllers.find(id); return it != m_controllers.end() && bool(it->second); }
+                case ResourceKind::StateGraph:         { auto it = m_stateGraphs.find(id); return it != m_stateGraphs.end() && bool(it->second); }
                 default:                    { auto it = m_textures.find(id);  return it != m_textures.end()  && (it->second.srgb.IsValid() || it->second.linear.IsValid()); }
             }
         };
@@ -1125,6 +1150,9 @@ namespace Crucible {
         switch (kind) {
             case ResourceKind::AnimatorController:
                 addAssets(AssetType::AnimatorController, "", false);
+                break;
+            case ResourceKind::StateGraph:
+                addAssets(AssetType::StateGraph, "", false);
                 break;
             case ResourceKind::Model:
                 addAssets(AssetType::Model, "", false);

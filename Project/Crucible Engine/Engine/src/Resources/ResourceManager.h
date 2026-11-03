@@ -85,6 +85,7 @@ namespace Crucible {
     struct ModelPose;
     struct RenderedModel;
     struct AnimatorController;
+    struct StateGraph;
     class Prefab;
 
 #ifdef _MSC_VER
@@ -108,7 +109,8 @@ namespace Crucible {
         Audio,     // audio files - see GetAudioClip()
         Font,       // compiled fonts (.cfont) - see GetFont()
         Model,     // complete CPU model definition; GetModel does not upload GPU resources
-        AnimatorController
+        AnimatorController,
+        StateGraph // an enemy's state machine (.stategraph) - see GetStateGraph()
     };
 
     /*************************************************************************
@@ -228,6 +230,10 @@ namespace Crucible {
         std::shared_ptr<const ModelResource> GetModel(AssetId id);
         std::shared_ptr<const ModelPose> GetModelRestPose(AssetId id);
         std::shared_ptr<const AnimatorController> GetAnimatorController(AssetId id);
+        // A .stategraph, loaded and cached like an Animator Controller (failures warn
+        // once and are cached). Own the shared_ptr while using it: an enemy's running
+        // copy keeps its graph alive even if the cache drops it.
+        std::shared_ptr<const StateGraph> GetStateGraph(AssetId id);
         // Editor asset saves preserve GUIDs and publish a new immutable definition.
         // Existing instances retain the previous definition until their next reset.
         bool SaveAnimatorController(AssetId id, const std::string& json, std::string* error = nullptr);
@@ -610,6 +616,7 @@ namespace Crucible {
         std::unordered_map<AssetId, std::shared_ptr<const ModelResource>> m_models; // null = failed CPU import
         std::unordered_map<AssetId, std::shared_ptr<const ModelPose>> m_modelRestPoses;
         std::unordered_map<AssetId, std::shared_ptr<const AnimatorController>> m_controllers;
+        std::unordered_map<AssetId, std::shared_ptr<const StateGraph>> m_stateGraphs;   // null = failed load
         std::unordered_map<AssetId, std::shared_ptr<const RenderedModel>> m_renderedModels;
         std::unordered_map<AssetId, MaterialHandle> m_materials;   // Invalid value = failed load
         std::unordered_map<AssetId, TextureSlots>   m_textures;

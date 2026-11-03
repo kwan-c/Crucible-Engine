@@ -396,6 +396,7 @@ namespace {
 			case Crucible::ResourceKind::Font:     return "font";
 			case Crucible::ResourceKind::Model:    return "model";
 			case Crucible::ResourceKind::AnimatorController: return "animator controller";
+			case Crucible::ResourceKind::StateGraph: return "state graph";
 		}
 		return "unknown";
 	}

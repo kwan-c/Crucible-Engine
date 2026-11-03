@@ -94,8 +94,9 @@ namespace Crucible
 		Vine = 32,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
 		FlowFieldSurface = 33,   // Navigation: where enemies can walk, Unity's NavMeshSurface (Navigation/NavigationComponents.h)
 		FlowFieldAgent = 34,     // Navigation: one enemy's legs, Unity's NavMeshAgent (Navigation/NavigationComponents.h)
+		StateGraphAgent = 35,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
 
-		MAXCOMPONENT = 35
+		MAXCOMPONENT = 36
 	};
 
 
@@ -275,5 +276,6 @@ namespace Crucible
  X(WorldText)                                                                  \
  X(FlowFieldSurface)                                                           \
  X(FlowFieldAgent)                                                             \
+ X(StateGraphAgent)                                                            \
 
 }
