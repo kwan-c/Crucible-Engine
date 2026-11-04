@@ -33,6 +33,7 @@
 #include "Network/NetworkSession.h"
 #include "Network/NetworkSettings.h"
 #include "Network/Systems/NetReceiveSystem.h"
+#include "Network/Systems/NetReplicationSendSystem.h"
 
 // STL
 #include <algorithm>
@@ -199,6 +200,7 @@ namespace Crucible {
         // What both machines must agree on: the serializers and the game's network prefabs
         // (GamePrefabs.h). A registration mistake is reported now and refuses every session.
         m_netContent = std::make_unique<NetContent>();
+        m_network->SetPrefabCheck([content = m_netContent.get()](Net::NetPrefabId id) { return content->Prefabs().Desc(id) != nullptr; });   // for RequestSpawn
         std::string netRegistrationError;
         if (!RegisterGameNetPrefabs(m_netContent->Prefabs(), netRegistrationError))
             CRU_ERROR("[Net] network prefab registration: {}", netRegistrationError);
@@ -301,7 +303,7 @@ namespace Crucible {
 
     void Core::RegisterEngineSystems()
     {
-        m_systems.RegisterSystem<NetReceiveSystem>(*m_network);                           // PreUpdate, first, every state: runs the network session (Offline: nothing)
+        m_systems.RegisterSystem<NetReceiveSystem>(*m_network, *m_netContent, *m_scenes);            // PreUpdate, first, every state: runs the network session, host spawns, client proxies (Offline: nothing)
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
@@ -310,6 +312,7 @@ namespace Crucible {
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
         m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get())                      // the scene turns a PhysicsJoint's saved connected body back into an entity
             .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
+        m_systems.RegisterSystem<NetReplicationSendSystem>(*m_network, *m_netContent);    // PostUpdate, after physics, every state: the host's world, spawn and despawn messages
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());

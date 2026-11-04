@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -22,12 +22,31 @@
 *                    Free -> Connecting (accepted, handshake running)
 *                         -> AwaitingJoin (connected; JoinRequest due within
 *                            joinTimeoutMs)
-*                         -> Synchronizing (JoinAccepted sent; the world
-*                            stream and ClientReady arrive in Phase 8)
-*                         -> InGame (Phase 8)          -> Free when it leaves
+*                         -> Synchronizing (JoinAccepted sent; the send
+*                            system streams the world the same frame;
+*                            ClientReady due within kSynchronizeTimeout)
+*                         -> InGame (ClientReady echoed the WorldEnd's
+*                            sequence)                 -> Free when it leaves
 *                  Client (ClientPhase):
 *                    Connecting -> Joining (JoinRequest sent; JoinAccepted due
 *                    within joinTimeoutMs, else Close(Timeout)) -> Joined
+*                  Client world (ClientWorld, after joining):
+*                    AwaitingWorld -> Receiving (WorldBegin) -> Ready
+*                    (WorldEnd applied, ClientReady sent)
+*
+*                The lifecycle stream (Networking Guide 8.4, 9.3, 9.4)
+*                  Every reliable lane-0 message to a client carries the
+*                  next number of one per-client counter (JoinAccepted is 1).
+*                  Server: SendLifecycle stamps and sends; a failed send
+*                  closes the peer (SendFailed). Client: the session hands
+*                  lifecycle messages to NetReceiveSystem (they need the
+*                  World), which applies each whole message or leaves.
+*
+*                Spawning (server): RequestSpawn allocates the id and queues
+*                the spawn; NetReceiveSystem performs it next frame and
+*                reports it (NotifySpawned / NotifySpawnFailed); the send
+*                system announces it. Destroying a mapped entity queues its
+*                despawn (identity hooks).
 *
 *                Settings: Settings() is what the NEXT Start uses (SetSettings
 *                may change it at any time). A running session works only from
@@ -95,6 +114,9 @@
 *                Update calls RequestStop, which the next Update performs.
 *
 * \history
+*    -v1.5       spawn requests, the lifecycle stream (send, apply, world
+*                state), ClientReady and the Synchronizing timeout
+*                (Networking Guide 9.3, 18.3 issues 3, 4, 13, PR 8)
 *    -v1.4       SetContentError: invalid network content refuses Start
 *                (Networking Guide PR 7)
 *    -v1.3       identity map and hooks: rejection, despawn ownership,
@@ -158,10 +180,32 @@ namespace Crucible
 		std::uint32_t messagesThisFrame = 0;   // quota
 		std::uint32_t quotaStrikes = 0;        // consecutive frames over the quota
 		std::uint32_t malformed = 0;
-		std::uint32_t nextLifecycleSeq = kFirstLifecycleSeq;   // stamped on the next lane-0 message (Phase 8)
-		std::uint32_t appliedLifecycle = 0;                    // reported by the client (Phase 8)
+		std::uint32_t nextLifecycleSeq = kFirstLifecycleSeq;   // stamped on the next lane-0 message
+		std::uint32_t appliedLifecycle = 0;                    // reported by the client (snapshots, Phase 9)
+		bool          needsWorld = false;   // Synchronizing: the world stream has not been sent yet
+		std::uint32_t worldEndSeq = 0;      // the WorldEnd's lifecycleSeq; ClientReady must echo it
+		std::chrono::steady_clock::time_point syncDeadline{};   // Synchronizing: ClientReady due by then
 
 		bool IsJoined() const noexcept { return phase == Phase::Synchronizing || phase == Phase::InGame; }
+	};
+
+	/// Server: a spawn requested this frame, performed by NetReceiveSystem at the start of the
+	/// next frame (structural changes are not allowed inside declared gameplay systems).
+	struct PendingSpawn
+	{
+		Net::NetworkId   id = Net::kInvalidNetworkId;
+		Net::NetPrefabId prefab = Net::kInvalidNetPrefab;
+		Net::PeerId      owner = Net::kServerPeer;
+		Math::vec3       position{ 0.f };
+		Math::quat       rotation{ 1.f, 0.f, 0.f, 0.f };
+	};
+
+	/// Client: where it is in the host's lifecycle stream (Networking Guide 9.3).
+	enum class ClientWorld : std::uint8_t
+	{
+		AwaitingWorld,   // joined; only WorldBegin may come next
+		Receiving,       // after WorldBegin: SpawnBatch messages, then WorldEnd
+		Ready,           // after WorldEnd (ClientReady sent): spawns, despawns, events
 	};
 
 #ifdef _MSC_VER
@@ -294,13 +338,87 @@ namespace Crucible
 		std::span<const Net::NetworkId> DestroyedThisFrame() const noexcept { return m_destroyedThisFrame; }
 		void TakeDestroyedThisFrame(std::vector<Net::NetworkId>& out);
 
+		// ---- spawning (server) --------------------------------------------------------------
+
+		/// Which ids are network prefabs (Core asks its NetContent). A function, so the session
+		/// itself stays free of the ECS and prefab code (the standalone session tests link it alone).
+		/// Unset: nothing can be spawned.
+		void SetPrefabCheck(std::function<bool(Net::NetPrefabId)> isNetworkPrefab) { m_isNetworkPrefab = std::move(isNetworkPrefab); }
+
+		/// Server, while Running: allocates an id now (never reused this session) and queues the
+		/// spawn; NetReceiveSystem performs it at the start of the next frame and the send system
+		/// then announces it. kInvalidNetworkId if this is not a running server, the prefab is not
+		/// a network prefab, or owner is not 0..kMaxClients. Spawning never needs anything else:
+		/// destroy the entity normally to despawn it.
+		Net::NetworkId RequestSpawn(Net::NetPrefabId prefab, Net::PeerId owner, const Math::vec3& position,
+			const Math::quat& rotation = Math::quat(1.f, 0.f, 0.f, 0.f));
+
+		std::span<const PendingSpawn> PendingSpawns() const noexcept { return m_pendingSpawns; }
+		void TakePendingSpawns(std::vector<PendingSpawn>& out);
+
+		/// NetReceiveSystem: the spawn of `id` was performed (its entity is mapped). The send system
+		/// takes these with TakeSpawned and announces them.
+		void NotifySpawned(Net::NetworkId id);
+		void TakeSpawned(std::vector<Net::NetworkId>& out);
+
+		/// A spawn was not performed, or its record could not be written: logged, counted, and
+		/// posted as NetworkEvents::SpawnFailed.
+		void NotifySpawnFailed(Net::NetworkId id, Net::NetPrefabId prefab, std::string reason);
+
+		// ---- the lifecycle stream (server) ----------------------------------------------------
+
+		/// The lifecycleSeq the next lane-0 message to `peer` must carry; 0 if it is not joined.
+		std::uint32_t NextLifecycleSeq(Net::PeerId peer) const noexcept;
+
+		/// Sends one encoded lifecycle message (WorldBegin, SpawnBatch, DespawnBatch, WorldEnd,
+		/// GameplayEvent) reliably on lane 0. Its lifecycleSeq must be NextLifecycleSeq(peer),
+		/// which then moves on. If GNS does not take it the peer is closed with SendFailed, so a
+		/// client can never miss a message and carry on. False if not sent (peer gone or closed,
+		/// or a message that is not the next one).
+		bool SendLifecycle(Net::PeerId peer, std::span<const std::byte> message);
+
+		/// The send system streamed the world to `peer`, ending with WorldEnd `worldEndSeq`.
+		void MarkWorldSent(Net::PeerId peer, std::uint32_t worldEndSeq);
+
+		/// Closes a joined or joining peer (for example after an encoding bug).
+		void DropPeer(Net::PeerId peer, CloseReason reason, const std::string& debug);
+
+		/// How long a peer may stay Synchronizing before it is closed with Timeout.
+		static constexpr std::chrono::milliseconds kSynchronizeTimeout{ 10000 };
+
+		// ---- the lifecycle stream (client) ----------------------------------------------------
+
+		/// Newest lifecycle message fully applied (1 after JoinAccepted).
+		std::uint32_t AppliedLifecycle() const noexcept { return m_appliedLifecycle; }
+		ClientWorld   WorldState() const noexcept { return m_clientWorld; }
+		void          SetWorldState(ClientWorld state) noexcept { m_clientWorld = state; }
+
+		/// After a lifecycle message was applied completely. seq must be AppliedLifecycle() + 1.
+		void MarkLifecycleApplied(std::uint32_t seq) noexcept;
+
+		/// Lifecycle (and snapshot) messages from the host, in arrival order, for NetReceiveSystem
+		/// to apply right after Update() in the same frame (they need the World). Their buffers
+		/// go back to GNS when `out` is cleared, so clear it before the frame ends.
+		void TakeWorldMessages(std::vector<ReceivedMessage>& out);
+
+		/// The world arrived (WorldEnd `worldEndSeq` applied): sends ClientReady and posts
+		/// WorldReady. False (and leaving) if ClientReady could not be sent.
+		bool CompleteWorld(std::uint32_t worldEndSeq, std::size_t entities);
+
+		/// Client: closes the connection with `reason` (the host sees it) and stops next Update.
+		void CloseAndStop(CloseReason reason, const std::string& debug);
+
+		/// Counters, for the network systems to add to.
+		NetStats& MutableStats() noexcept { return m_stats; }
+
 	private:
 		bool TryStart(const NetworkSettings& settings, std::string& error);
 		void HandleServerEvent(const ConnectionEvent& event);
 		void HandleClientEvent(const ConnectionEvent& event);
 		void HandleServerMessage(const ReceivedMessage& message);
-		void HandleClientMessage(const ReceivedMessage& message);
+		void HandleClientMessage(ReceivedMessage& message);
 		void HandleJoinRequest(PeerState& peer, ByteReader& reader);
+		void HandleClientReady(PeerState& peer, ByteReader& reader);
 		void CollectFrameMessages();
 		void RejectOversized(const ReceivedMessage& message);
 		void EnforceQuotas();
@@ -308,10 +426,10 @@ namespace Crucible
 
 		PeerState* FreeSlot() noexcept;
 		PeerState* PeerByConnection(NetConnection connection) noexcept;
+		PeerState* PeerById(Net::PeerId peer) noexcept;   // a slot that is not Free, or null
 		void       Malformed(PeerState& peer, const char* what);
 		void       ClosePeer(PeerState& peer, CloseReason reason, const std::string& debug);
-		void       CloseAndStop(CloseReason reason, const std::string& debug);   // client
-		void       ClearEntityState() noexcept;   // map, rejected, despawns, destroyed ids
+		void       ClearEntityState() noexcept;   // map, rejected, spawns, despawns, ids, world messages
 		void       Post(auto event);
 
 		template <typename Msg>
@@ -337,6 +455,8 @@ namespace Crucible
 		NetConnection                  m_serverConnection = kInvalidConnection;
 		Net::PeerId                    m_localPeer = Net::kInvalidPeer;
 		std::uint32_t                  m_appliedLifecycle = 0;
+		ClientWorld                    m_clientWorld = ClientWorld::AwaitingWorld;
+		std::vector<ReceivedMessage>   m_worldMessages;   // for NetReceiveSystem, this frame only
 		Net::NetTick                   m_serverTickAtJoin = 0;
 		std::chrono::steady_clock::time_point m_joinDeadline{};   // Joining: JoinAccepted due by then
 
@@ -355,6 +475,12 @@ namespace Crucible
 		std::vector<Entity>            m_rejected;            // destroyed by NetReceiveSystem next frame
 		std::vector<Net::NetworkId>    m_pendingDespawns;     // server, while Running
 		std::vector<Net::NetworkId>    m_destroyedThisFrame;  // every role: per-client cleanup
+
+		// Spawning (server)
+		std::function<bool(Net::NetPrefabId)> m_isNetworkPrefab;
+		Net::NetworkId                 m_nextId = 1;          // never reused within a session
+		std::vector<PendingSpawn>      m_pendingSpawns;       // performed by NetReceiveSystem next frame
+		std::vector<Net::NetworkId>    m_spawned;             // performed, for the send system to announce
 	};
 
 #ifdef _MSC_VER

@@ -3,21 +3,25 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                NetworkSession: start/stop, connection events, the join
-*                handshake, bounded receive, quotas and timeouts.
+*                handshake, bounded receive, quotas and timeouts, spawn
+*                requests and the lifecycle stream.
 *
 * \history
 *    -v1.0       Networking Guide PR 4 (see the header)
 *    -v1.1       review fixes: refused Start changes nothing, FreeSlot
 *                guarded, per-message receive budget, client join deadline
 *    -v1.2       LastStartError, LastEndReason
-*    -v1.4       invalid network content refuses Start; client logs its
-*                content hash (PR 7)
 *    -v1.3       identity hooks, rejection, despawn ownership (PR 6);
 *                review fix: oversized messages count towards the frame's
 *                message limit and their sender's quota, released at once
+*    -v1.4       invalid network content refuses Start; client logs its
+*                content hash (PR 7)
+*    -v1.5       RequestSpawn, SendLifecycle, ClientReady, Synchronizing
+*                timeout; the client hands lifecycle messages to
+*                NetReceiveSystem (PR 8)
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -124,6 +128,7 @@ namespace Crucible
 		m_transport = std::move(transport);
 		m_carry.clear();
 		m_messages.reserve(kMaxMessagesPerFrame);   // so moving messages in never reallocates mid-frame
+		m_worldMessages.reserve(kMaxMessagesPerFrame);
 		m_peers = {};
 		m_stats = {};
 		ClearEntityState();
@@ -172,6 +177,7 @@ namespace Crucible
 				m_transport->CloseAll(CloseReason::SessionEnded, false);
 			}
 			m_messages.clear();      // release received messages while GNS is certainly alive
+			m_worldMessages.clear();
 			m_batch.clear();
 			m_carry.clear();
 			m_transport.reset();
@@ -182,6 +188,7 @@ namespace Crucible
 		catch (...)
 		{
 			m_messages.clear();
+			m_worldMessages.clear();
 			m_batch.clear();
 			m_carry.clear();
 			m_transport.reset();
@@ -259,6 +266,156 @@ namespace Crucible
 		m_rejected.clear();
 		m_pendingDespawns.clear();
 		m_destroyedThisFrame.clear();
+		m_pendingSpawns.clear();
+		m_spawned.clear();
+		m_worldMessages.clear();
+		m_nextId = 1;
+		m_clientWorld = ClientWorld::AwaitingWorld;
+	}
+
+	// ---- spawning (server) -------------------------------------------------------------------
+
+	Net::NetworkId NetworkSession::RequestSpawn(Net::NetPrefabId prefab, Net::PeerId owner, const Math::vec3& position,
+		const Math::quat& rotation)
+	{
+		if (m_role != Net::NetRole::Server || m_state != SessionState::Running) return Net::kInvalidNetworkId;
+		if (!m_isNetworkPrefab || !m_isNetworkPrefab(prefab))
+		{
+			CRU_ERROR("[Net] RequestSpawn: prefab {} is not a registered network prefab", prefab);
+			return Net::kInvalidNetworkId;
+		}
+		if (owner > Net::kMaxClients)
+		{
+			CRU_ERROR("[Net] RequestSpawn: owner {} is not a peer (0 = host, 1..{} = clients)", owner, Net::kMaxClients);
+			return Net::kInvalidNetworkId;
+		}
+		if (m_nextId == Net::kInvalidNetworkId) return Net::kInvalidNetworkId;   // 4 billion spawns: wrapped
+		PendingSpawn spawn;
+		spawn.id = m_nextId;
+		spawn.prefab = prefab;
+		spawn.owner = owner;
+		spawn.position = position;
+		spawn.rotation = rotation;
+		m_pendingSpawns.push_back(spawn);   // before the id is used up: a throw here allocates nothing
+		++m_nextId;
+		return spawn.id;
+	}
+
+	void NetworkSession::TakePendingSpawns(std::vector<PendingSpawn>& out)
+	{
+		out.clear();
+		out.swap(m_pendingSpawns);
+	}
+
+	void NetworkSession::NotifySpawned(Net::NetworkId id)
+	{
+		m_spawned.push_back(id);
+		++m_stats.spawnsPerformed;
+	}
+
+	void NetworkSession::TakeSpawned(std::vector<Net::NetworkId>& out)
+	{
+		out.clear();
+		out.swap(m_spawned);
+	}
+
+	void NetworkSession::NotifySpawnFailed(Net::NetworkId id, Net::NetPrefabId prefab, std::string reason)
+	{
+		++m_stats.spawnsFailed;
+		CRU_ERROR("[Net] spawn {} (prefab {}) failed: {}", id, prefab, reason);
+		Post(NetworkEvents::SpawnFailed{ .id = id, .prefab = prefab, .reason = std::move(reason) });
+	}
+
+	// ---- the lifecycle stream ----------------------------------------------------------------
+
+	PeerState* NetworkSession::PeerById(Net::PeerId peer) noexcept
+	{
+		if (peer < 1 || peer > Net::kMaxClients) return nullptr;
+		PeerState& slot = m_peers[peer - 1];
+		return slot.phase == PeerState::Phase::Free ? nullptr : &slot;
+	}
+
+	std::uint32_t NetworkSession::NextLifecycleSeq(Net::PeerId peer) const noexcept
+	{
+		if (peer < 1 || peer > Net::kMaxClients) return 0;
+		const PeerState& slot = m_peers[peer - 1];
+		return slot.IsJoined() ? slot.nextLifecycleSeq : 0;
+	}
+
+	bool NetworkSession::SendLifecycle(Net::PeerId peerId, std::span<const std::byte> message)
+	{
+		PeerState* peer = PeerById(peerId);
+		if (peer == nullptr || !peer->IsJoined() || m_transport == nullptr) return false;
+
+		// Every lifecycle message starts u8 type, u32 lifecycleSeq.
+		ByteReader reader(message);
+		MessageType type{};
+		const bool known = ReadMessageType(reader, type);
+		const std::uint32_t seq = reader.U32();
+		const bool lifecycle = type == MessageType::WorldBegin || type == MessageType::SpawnBatch || type == MessageType::DespawnBatch
+			|| type == MessageType::WorldEnd || type == MessageType::GameplayEvent;
+		if (!known || !reader.Ok() || !lifecycle)
+		{
+			CRU_ERROR("[Net] SendLifecycle for peer {}: not a lifecycle message - not sent", peerId);
+			return false;
+		}
+		if (seq != peer->nextLifecycleSeq)
+		{
+			CRU_ERROR("[Net] lifecycle message {} for peer {} is not the next one ({}) - not sent", seq, peerId, peer->nextLifecycleSeq);
+			return false;
+		}
+		if (m_transport->Send(peer->connection, message, Delivery::Reliable, Lane::Gameplay) != SendResult::Ok)
+		{
+			++m_stats.sendFailed;
+			ClosePeer(*peer, CloseReason::SendFailed, std::format("could not send lifecycle message {}", seq));
+			return false;
+		}
+		++peer->nextLifecycleSeq;
+		++m_stats.lifecycleMessagesSent;
+		return true;
+	}
+
+	void NetworkSession::MarkWorldSent(Net::PeerId peerId, std::uint32_t worldEndSeq)
+	{
+		PeerState* peer = PeerById(peerId);
+		if (peer == nullptr || peer->phase != PeerState::Phase::Synchronizing) return;
+		peer->needsWorld = false;
+		peer->worldEndSeq = worldEndSeq;
+		++m_stats.worldsSent;
+	}
+
+	void NetworkSession::DropPeer(Net::PeerId peerId, CloseReason reason, const std::string& debug)
+	{
+		if (PeerState* peer = PeerById(peerId); peer != nullptr && m_transport != nullptr) ClosePeer(*peer, reason, debug);
+	}
+
+	void NetworkSession::MarkLifecycleApplied(std::uint32_t seq) noexcept
+	{
+		m_appliedLifecycle = seq;
+		++m_stats.lifecycleApplied;
+	}
+
+	void NetworkSession::TakeWorldMessages(std::vector<ReceivedMessage>& out)
+	{
+		out.clear();
+		out.swap(m_worldMessages);
+		// The capacities swap too; keep this side able to take a whole frame without reallocating.
+		if (m_worldMessages.capacity() < kMaxMessagesPerFrame) m_worldMessages.reserve(kMaxMessagesPerFrame);
+	}
+
+	bool NetworkSession::CompleteWorld(std::uint32_t worldEndSeq, std::size_t entities)
+	{
+		if (!IsClient() || m_transport == nullptr) return false;
+		ClientReady ready;
+		ready.worldEndSeq = worldEndSeq;
+		if (SendReliable(m_serverConnection, ready) != SendResult::Ok)
+		{
+			CloseAndStop(CloseReason::SendFailed, "could not send ClientReady");
+			return false;
+		}
+		CRU_INFO("[Net] world received: {} networked entities", entities);
+		Post(NetworkEvents::WorldReady{ .entities = entities });
+		return true;
 	}
 
 	void NetworkSession::RequestStop(std::string_view reason)
@@ -290,7 +447,7 @@ namespace Crucible
 		}
 
 		CollectFrameMessages();
-		for (const ReceivedMessage& message : m_messages)
+		for (ReceivedMessage& message : m_messages)   // the client moves lifecycle messages out
 		{
 			if (IsServer()) HandleServerMessage(message);
 			else HandleClientMessage(message);
@@ -496,10 +653,12 @@ namespace Crucible
 			if (peer->phase != PeerState::Phase::AwaitingJoin) { Malformed(*peer, "a JoinRequest outside the handshake"); return; }
 			HandleJoinRequest(*peer, reader);
 			return;
-		case MessageType::Input:
 		case MessageType::ClientReady:
-			// Valid client messages that later phases handle (input: Phase 11, ClientReady: 8).
-			if (peer->IsJoined()) ++m_stats.unhandled;
+			HandleClientReady(*peer, reader);
+			return;
+		case MessageType::Input:
+			// Commands and acknowledgements: Phases 9 and 11. Ignored before InGame (issue 13).
+			if (peer->phase == PeerState::Phase::InGame) ++m_stats.unhandled;
 			else ++m_stats.unexpected;
 			return;
 		default:
@@ -545,10 +704,34 @@ namespace Crucible
 
 		peer.name = std::string(request.Name());
 		peer.nextLifecycleSeq = kFirstLifecycleSeq + 1;
-		peer.phase = PeerState::Phase::Synchronizing;   // the world stream and ClientReady: Phase 8
+		peer.phase = PeerState::Phase::Synchronizing;
+		peer.needsWorld = true;   // the send system streams the world to it this frame
+		peer.worldEndSeq = 0;
+		peer.syncDeadline = SteadyClock::now() + kSynchronizeTimeout;
+		++m_stats.lifecycleMessagesSent;
 		++m_stats.joined;
 		CRU_INFO("[Net] peer {} '{}' joined from {}", peer.peer, peer.name, peer.remoteAddress);
 		Post(NetworkEvents::PeerJoined{ .peer = peer.peer, .name = peer.name });
+	}
+
+	// The client's receipt for the world (issue 13): accepted only from a Synchronizing peer, and
+	// only if it echoes the sequence of the WorldEnd it was sent. Sending a GNS message reliably
+	// says nothing about whether the client's World holds the entities; this does.
+	void NetworkSession::HandleClientReady(PeerState& peer, ByteReader& reader)
+	{
+		ClientReady ready;
+		if (!Decode(reader, ready)) { Malformed(peer, "an unreadable ClientReady"); return; }
+		if (peer.phase == PeerState::Phase::InGame) { ++m_stats.unexpected; return; }   // a duplicate
+		if (peer.phase != PeerState::Phase::Synchronizing) { Malformed(peer, "a ClientReady before joining"); return; }
+		if (peer.worldEndSeq == 0 || ready.worldEndSeq != peer.worldEndSeq)
+		{
+			Malformed(peer, "a ClientReady for a WorldEnd that was not sent");
+			return;
+		}
+		peer.phase = PeerState::Phase::InGame;
+		++m_stats.peersReady;
+		CRU_INFO("[Net] peer {} '{}' is in the game", peer.peer, peer.name);
+		Post(NetworkEvents::PeerReady{ .peer = peer.peer });
 	}
 
 	void NetworkSession::Malformed(PeerState& peer, const char* what)
@@ -587,9 +770,16 @@ namespace Crucible
 	{
 		for (PeerState& peer : m_peers)
 		{
-			if (peer.phase != PeerState::Phase::AwaitingJoin || now < peer.joinDeadline) continue;
-			++m_stats.joinTimeouts;
-			ClosePeer(peer, CloseReason::Timeout, std::format("no JoinRequest within {} ms", m_active.joinTimeoutMs));
+			if (peer.phase == PeerState::Phase::AwaitingJoin && now >= peer.joinDeadline)
+			{
+				++m_stats.joinTimeouts;
+				ClosePeer(peer, CloseReason::Timeout, std::format("no JoinRequest within {} ms", m_active.joinTimeoutMs));
+			}
+			else if (peer.phase == PeerState::Phase::Synchronizing && now >= peer.syncDeadline)
+			{
+				++m_stats.syncTimeouts;
+				ClosePeer(peer, CloseReason::Timeout, std::format("no ClientReady within {} ms", kSynchronizeTimeout.count()));
+			}
 		}
 	}
 
@@ -627,7 +817,7 @@ namespace Crucible
 		}
 	}
 
-	void NetworkSession::HandleClientMessage(const ReceivedMessage& message)
+	void NetworkSession::HandleClientMessage(ReceivedMessage& message)
 	{
 		if (message.Connection() != m_serverConnection) { ++m_stats.unknownSender; return; }
 		const std::span<const std::byte> data = message.Data();
@@ -651,6 +841,7 @@ namespace Crucible
 			m_appliedLifecycle = accepted.lifecycleSeq;
 			m_serverTickAtJoin = accepted.serverTick;
 			m_clientPhase = ClientPhase::Joined;
+			m_clientWorld = ClientWorld::AwaitingWorld;
 			CRU_INFO("[Net] joined {}:{} as peer {}", m_active.connectAddress, m_active.connectPort, m_localPeer);
 			Post(NetworkEvents::SessionStarted{ .role = Net::NetRole::Client, .localPeer = m_localPeer });
 			return;
@@ -661,17 +852,21 @@ namespace Crucible
 			++m_stats.malformed;   // client-to-host types never come from the host
 			return;
 		default:
-			// World stream, spawns, snapshots and events arrive in Phases 8-12.
-			if (m_clientPhase == ClientPhase::Joined) ++m_stats.unhandled;
-			else ++m_stats.unexpected;
+			// The world stream, spawns, despawns, events and snapshots need the World:
+			// NetReceiveSystem applies them, in this order, right after Update. Nothing is
+			// applied once the session is leaving.
+			if (m_clientPhase != ClientPhase::Joined) { ++m_stats.unexpected; return; }
+			if (m_stopRequested) return;
+			m_worldMessages.push_back(std::move(message));   // capacity: a whole frame (reserved)
 			return;
 		}
 	}
 
 	void NetworkSession::CloseAndStop(CloseReason reason, const std::string& debug)
 	{
+		if (!IsClient()) return;
 		CRU_WARN("[Net] leaving the session: {}", debug);
-		if (m_serverConnection != kInvalidConnection) m_transport->Close(m_serverConnection, reason, debug.c_str(), true);
+		if (m_serverConnection != kInvalidConnection && m_transport != nullptr) m_transport->Close(m_serverConnection, reason, debug.c_str(), true);
 		m_serverConnection = kInvalidConnection;
 		RequestStop(debug);
 	}

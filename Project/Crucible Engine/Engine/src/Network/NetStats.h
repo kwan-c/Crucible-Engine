@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -19,6 +19,7 @@
 *    -v1.0       connection, receive and rejection counters (Phase 4)
 *    -v1.1       carriedOver and oversized (receive budget review fix)
 *    -v1.2       identityRejected, despawnsQueued, lastFrameOversized (Phase 6)
+*    -v1.3       spawn, despawn, world stream and proxy counters (Phase 8)
 *
 **************************************************************************/
 #pragma once
@@ -61,5 +62,20 @@ namespace Crucible
 		// Networked entities
 		std::uint32_t identityRejected = 0;    // NetworkIdentity with no id, or an id already in use
 		std::uint32_t despawnsQueued = 0;      // server: mapped entities destroyed while running
+
+		// Spawning and the lifecycle stream
+		std::uint32_t spawnsPerformed = 0;     // server: requested spawns that now exist
+		std::uint32_t spawnsFailed = 0;        // server: spawns not performed or not writable (SpawnFailed event)
+		std::uint32_t spawnRecordsSent = 0;    // server: spawn records sent, all clients, world batches included
+		std::uint32_t despawnIdsSent = 0;      // server: despawn ids sent, all clients
+		std::uint32_t lifecycleMessagesSent = 0;   // server: reliable lane-0 messages (JoinAccepted included)
+		std::uint32_t worldsSent = 0;          // server: WorldBegin..WorldEnd streams
+		std::uint32_t peersReady = 0;          // server: ClientReady accepted (peer InGame)
+		std::uint32_t syncTimeouts = 0;        // server: Synchronizing for too long
+		std::uint32_t lifecycleApplied = 0;    // client: lifecycle messages applied
+		std::uint32_t proxiesCreated = 0;      // client
+		std::uint32_t proxiesDestroyed = 0;    // client: by a DespawnBatch
+		std::uint32_t duplicateSpawns = 0;     // client: spawn for an id it already has (ignored)
+		std::uint32_t unknownDespawns = 0;     // client: despawn for an id it does not have (ignored)
 	};
 }

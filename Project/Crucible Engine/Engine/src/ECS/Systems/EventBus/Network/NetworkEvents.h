@@ -3,11 +3,12 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 September 2026
-* \version       1.2
+* \version       1.3
 * \brief
-*                Connection-level events on the network bus
+*                Session-level events on the network bus
 *                (Core::Events().network): a session started or ended, a
-*                player joined or left, a join was refused.
+*                player joined, became ready or left, a join was refused,
+*                the world arrived, a spawn failed.
 *
 * \details
 *                NetworkSession posts them (EventBus::Enqueue, main thread);
@@ -27,10 +28,13 @@
 *                design is left for later
 *    -v1.2       SessionStarted, SessionEnded, PeerJoined, PeerLeft,
 *                JoinRefused (Networking Guide Milestone 1.3)
+*    -v1.3       PeerReady, WorldReady, SpawnFailed (Networking Guide 9.3,
+*                18.3 issue 4, PR 8)
 *
 **************************************************************************/
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 #include "Network/NetTypes.h"
@@ -72,5 +76,27 @@ namespace Crucible::NetworkEvents
 	{
 		int         reason = 0;
 		std::string debug;
+	};
+
+	/// Host: a joining client has applied the whole world (its ClientReady arrived) and is now
+	/// in the game. The place to spawn its player.
+	struct PeerReady
+	{
+		Net::PeerId peer = Net::kInvalidPeer;
+	};
+
+	/// Client: the host's world has been applied (WorldEnd processed, ClientReady sent).
+	struct WorldReady
+	{
+		std::size_t entities = 0;   // networked entities once the world was applied
+	};
+
+	/// Host: a requested spawn was not performed, or its spawn record could not be written; no
+	/// client ever receives it (or, if clients had it, they get its despawn). The id is never reused.
+	struct SpawnFailed
+	{
+		Net::NetworkId   id = Net::kInvalidNetworkId;
+		Net::NetPrefabId prefab = Net::kInvalidNetPrefab;
+		std::string      reason;
 	};
 }
