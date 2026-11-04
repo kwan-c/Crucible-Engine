@@ -3,11 +3,11 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
-*                on clients.
+*                and snapshots on clients.
 *
 * \history
 *    -v1.0       connection handling (Networking Guide PR 4)
@@ -15,6 +15,9 @@
 *    -v1.2       host spawns; client WorldBegin/SpawnBatch/WorldEnd/
 *                DespawnBatch, validated whole before applying; proxies
 *                made in a fixed order and destroyed on failure (PR 8)
+*    -v1.3       snapshots validated whole, applied with a per-entity stale
+*                check, acknowledged only once applied; 30 Hz heartbeat
+*                Input with acks and appliedLifecycle (PR 9)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -28,6 +31,7 @@
 #include "Scene/Prefab.h"
 #include "Scene/SceneManager.h"
 
+#include <algorithm>
 #include <format>
 #include <stdexcept>
 
@@ -88,8 +92,18 @@ namespace Crucible
 			ctx.commands.DestroyEntity(e);
 		}
 
+		if (m_session.Generation() != m_generation)
+		{
+			m_acks.Reset();   // acks name another session's snapshots
+			m_generation = m_session.Generation();
+		}
+
 		if (m_session.IsServer()) PerformPendingSpawns(world);
-		else if (m_session.IsClient()) ApplyWorldMessages(world);
+		else if (m_session.IsClient())
+		{
+			ApplyWorldMessages(world);
+			SendHeartbeat(world.DeltaTime());
+		}
 
 #ifndef NDEBUG
 		if (m_session.IsActive()) CheckIdentityMap(world, m_session);   // reports identities overwritten after spawn
@@ -216,9 +230,10 @@ namespace Crucible
 			return true;
 		}
 		case MessageType::Snapshot:
-			// Unreliable and lane 1: snapshots are applied in a later phase.
-			if (state == ClientWorld::Ready) ++m_session.MutableStats().unhandled;
-			else ++m_session.MutableStats().unexpected;
+			// Unreliable (lane 1): a bad one is dropped, never fatal. The host sends them only once
+			// ClientReady was accepted, so one before the world is complete is merely early.
+			if (state != ClientWorld::Ready) { ++m_session.MutableStats().unexpected; return true; }
+			ApplySnapshot(world, reader);
 			return true;
 		default:
 			Leave(CloseReason::Malformed, "a client-to-host message type from the host");
@@ -335,5 +350,80 @@ namespace Crucible
 		}
 		m_session.MarkLifecycleApplied(m_despawnBatch.lifecycleSeq);
 		return true;
+	}
+
+	// ---- snapshots ---------------------------------------------------------------------------
+
+	// One snapshot (Networking Guide 6.2, client steps 1-4; 9.5). All or nothing: the whole message
+	// is decoded and every record for a live entity validated before anything is written. Then each
+	// record is applied unless the entity already holds something as new (the per-entity tick,
+	// NetInterpolation::lastApplied, so a late or reordered snapshot never moves anything back).
+	// The snapshot is acknowledged only if every record was applied or deliberately skipped (stale,
+	// or an entity despawned since): delivery alone acknowledges nothing (issues 1, 12).
+	void NetReceiveSystem::ApplySnapshot(World& world, ByteReader& reader)
+	{
+		NetStats& stats = m_session.MutableStats();
+		if (!Decode(reader, m_snapshot)) { ++stats.malformed; ++stats.snapshotsRejected; return; }
+
+		m_resolved.clear();
+		for (const RecordView& record : m_snapshot.Records())
+		{
+			const Entity e = m_session.Entities().Find(record.id);
+			const NetworkIdentity* identity = world.IsAlive(e) ? world.Read<NetworkIdentity>(e) : nullptr;
+			if (identity == nullptr) { m_resolved.push_back(kNullEntity); continue; }   // despawned since: skipped
+			const NetPrefabDesc* desc = m_content.Prefabs().Desc(identity->prefab);
+			// Whole-entity records only: a newer record must never carry less than an older one, or
+			// the per-entity tick would block state it did not carry (9.5).
+			const bool valid = desc != nullptr && record.mask == FullMask(*desc)
+				&& m_content.Serializers().ValidateRecord(record.mask, record.body, ReplicationContext{ .desc = desc, .tick = m_snapshot.serverTick });
+			if (!valid)
+			{
+				++stats.malformed;
+				++stats.snapshotsRejected;   // nothing applied, not acknowledged
+				return;
+			}
+			m_resolved.push_back(e);
+		}
+
+		bool complete = true;
+		for (std::size_t i = 0; i < m_resolved.size(); ++i)
+		{
+			const Entity e = m_resolved[i];
+			if (e == kNullEntity) { ++stats.unknownEntity; continue; }
+			NetInterpolation* interpolation = world.Write<NetInterpolation>(e);
+			if (interpolation != nullptr && m_snapshot.serverTick <= interpolation->lastApplied) { ++stats.staleRecords; continue; }
+
+			const RecordView& record = m_snapshot.Records()[i];
+			const NetworkIdentity* identity = world.Read<NetworkIdentity>(e);
+			const ReplicationContext context{ .desc = m_content.Prefabs().Desc(identity->prefab), .tick = m_snapshot.serverTick };
+			std::string error;
+			if (!m_content.Serializers().ApplyRecord(world, e, record.mask, record.body, context, &error))
+			{
+				// Validated, so only a commit can refuse; the entity is unchanged (a transaction).
+				CRU_WARN("[Net] snapshot {} record for id {} not applied: {}", m_snapshot.sequence, record.id, error);
+				complete = false;
+				continue;
+			}
+			if (interpolation != nullptr) interpolation->lastApplied = m_snapshot.serverTick;
+		}
+		if (!complete) { ++stats.snapshotsRejected; return; }
+
+		m_acks.Received(m_snapshot.sequence);   // reported in the next Input
+		++stats.snapshotsApplied;
+		stats.lastSnapshotTick = std::max(stats.lastSnapshotTick, m_snapshot.serverTick);
+	}
+
+	// The client's Input message at 30 Hz from frame time, in every play state: the heartbeat, the
+	// snapshot acks and the lifecycle confirmation (commands join it in a later phase). It runs
+	// after this frame's messages were applied, so appliedLifecycle describes the World as it is.
+	void NetReceiveSystem::SendHeartbeat(float dt)
+	{
+		if (!m_session.IsJoined() || m_session.IsStopRequested()) return;
+		if (!m_session.Clock().InputDue(dt)) return;
+		InputMessage input;   // fields by name (guide issue 2); count = 0: no commands yet
+		input.ackedSnapshot = m_acks.Latest();
+		input.ackBits = m_acks.Bits();
+		input.appliedLifecycle = m_session.AppliedLifecycle();
+		m_session.SendInput(input);   // a lost one is replaced by the next
 	}
 }

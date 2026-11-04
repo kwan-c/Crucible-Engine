@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -22,6 +22,8 @@
 *    -v1.5       RequestSpawn, SendLifecycle, ClientReady, Synchronizing
 *                timeout; the client hands lifecycle messages to
 *                NetReceiveSystem (PR 8)
+*    -v1.6       SendSnapshot, SendInput, HandleInput; ClientReady counts as
+*                confirming the world (PR 9)
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -657,9 +659,7 @@ namespace Crucible
 			HandleClientReady(*peer, reader);
 			return;
 		case MessageType::Input:
-			// Commands and acknowledgements: Phases 9 and 11. Ignored before InGame (issue 13).
-			if (peer->phase == PeerState::Phase::InGame) ++m_stats.unhandled;
-			else ++m_stats.unexpected;
+			HandleInput(*peer, reader);
 			return;
 		default:
 			Malformed(*peer, "a host-to-client message type");
@@ -729,9 +729,72 @@ namespace Crucible
 			return;
 		}
 		peer.phase = PeerState::Phase::InGame;
+		peer.appliedLifecycle = std::max(peer.appliedLifecycle, peer.worldEndSeq);   // it applied everything up to WorldEnd
 		++m_stats.peersReady;
 		CRU_INFO("[Net] peer {} '{}' is in the game", peer.peer, peer.name);
 		Post(NetworkEvents::PeerReady{ .peer = peer.peer });
+	}
+
+	// Input is the client's heartbeat and carries both acknowledgements (Networking Guide 6.2,
+	// issues 1 and 12). appliedLifecycle is accepted while Synchronizing too, only forwards, and
+	// never for a message that was not sent. Snapshot acks only matter once InGame; an ack for a
+	// snapshot never sent is dropped. A newer newest replaces the window; the same newest with
+	// more bits (an older snapshot arrived late) is merged.
+	void NetworkSession::HandleInput(PeerState& peer, ByteReader& reader)
+	{
+		InputMessage input;
+		if (!Decode(reader, input)) { Malformed(peer, "an unreadable Input"); return; }
+		if (!peer.IsJoined()) { ++m_stats.unexpected; return; }
+		++m_stats.inputsReceived;
+		if (input.appliedLifecycle >= peer.nextLifecycleSeq)
+		{
+			Malformed(peer, "an Input confirming a lifecycle message that was not sent");
+			return;
+		}
+		if (input.appliedLifecycle > peer.appliedLifecycle) peer.appliedLifecycle = input.appliedLifecycle;
+		if (peer.phase != PeerState::Phase::InGame) return;   // no snapshots or control yet
+		if (input.count > 0) ++m_stats.unhandled;              // commands: a later phase
+
+		if (input.ackedSnapshot == 0 || !peer.snapshotSent) return;   // nothing received yet
+		if (SequenceGreater(input.ackedSnapshot, peer.lastSentSnapshot)) { ++m_stats.acksDropped; return; }
+		if (!peer.hasAck || SequenceGreater(input.ackedSnapshot, peer.newestAckedSnapshot))
+		{
+			peer.hasAck = true;
+			peer.newestAckedSnapshot = input.ackedSnapshot;
+			peer.ackBits = input.ackBits;
+		}
+		else if (input.ackedSnapshot == peer.newestAckedSnapshot)
+		{
+			peer.ackBits |= input.ackBits;
+		}
+	}
+
+	SendResult NetworkSession::SendSnapshot(Net::PeerId peerId, std::span<const std::byte> message, std::uint16_t sequence)
+	{
+		PeerState* peer = PeerById(peerId);
+		if (peer == nullptr || peer->phase != PeerState::Phase::InGame || m_transport == nullptr || sequence == 0) return SendResult::Failed;
+		const SendResult result = m_transport->Send(peer->connection, message, Delivery::Unreliable, Lane::Snapshot);
+		if (result != SendResult::Ok) { ++m_stats.snapshotSendFailed; return result; }
+		peer->snapshotSent = true;
+		peer->lastSentSnapshot = sequence;
+		++m_stats.snapshotsSent;
+		m_stats.snapshotBytesSent += message.size();
+		return result;
+	}
+
+	bool NetworkSession::SendInput(const InputMessage& message)
+	{
+		if (!IsClient() || !IsJoined() || m_transport == nullptr) return false;
+		std::array<std::byte, 64> buffer;   // 51 bytes at most
+		ByteWriter writer(buffer);
+		if (!Encode(writer, message)) return false;
+		if (m_transport->Send(m_serverConnection, writer.Written(), Delivery::UnreliableNoDelay, Lane::Gameplay) != SendResult::Ok)
+		{
+			++m_stats.inputSendFailed;
+			return false;
+		}
+		++m_stats.inputsSent;
+		return true;
 	}
 
 	void NetworkSession::Malformed(PeerState& peer, const char* what)

@@ -312,7 +312,13 @@ namespace Crucible {
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
         m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get())                      // the scene turns a PhysicsJoint's saved connected body back into an entity
             .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
-        m_systems.RegisterSystem<NetReplicationSendSystem>(*m_network, *m_netContent);    // PostUpdate, after physics, every state: the host's world, spawn and despawn messages
+        // PostUpdate, after physics, every state: the host's world, spawn, despawn and snapshot messages. The
+        // network tick counts the fixed steps physics really ran: only while Playing, because physics is
+        // SimulationOnly and its GetStepsLastFrame() keeps the last playing frame's value while paused.
+        m_systems.RegisterSystem<NetReplicationSendSystem>(*m_network, *m_netContent,
+            [physics = m_systems.FindSystem<ECSPhysicsSystem>(), play = m_playMode.get()]() -> std::uint32_t {
+                return physics != nullptr && play->State() == PlayState::Playing ? physics->GetStepsLastFrame() : 0u;
+            });
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());

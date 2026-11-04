@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -20,6 +20,7 @@
 *    -v1.1       carriedOver and oversized (receive budget review fix)
 *    -v1.2       identityRejected, despawnsQueued, lastFrameOversized (Phase 6)
 *    -v1.3       spawn, despawn, world stream and proxy counters (Phase 8)
+*    -v1.4       snapshot, ack and input counters (Phase 9)
 *
 **************************************************************************/
 #pragma once
@@ -77,5 +78,23 @@ namespace Crucible
 		std::uint32_t proxiesDestroyed = 0;    // client: by a DespawnBatch
 		std::uint32_t duplicateSpawns = 0;     // client: spawn for an id it already has (ignored)
 		std::uint32_t unknownDespawns = 0;     // client: despawn for an id it does not have (ignored)
+
+		// Snapshots and acknowledgements
+		std::uint64_t snapshotsSent = 0;       // server: snapshot messages GNS accepted, all clients
+		std::uint64_t snapshotBytesSent = 0;
+		std::uint64_t snapshotRecordsSent = 0;
+		std::uint32_t snapshotSendFailed = 0;  // server: not accepted by GNS (never remembered, never acked)
+		std::uint32_t recordsDeferred = 0;     // server: left for the next snapshot (per-client message cap)
+		std::uint32_t recordWriteFailed = 0;   // server: an entity's record could not be written (left out)
+		std::uint64_t snapshotsAcked = 0;      // server: sent snapshots a client acknowledged
+		std::uint64_t inputsReceived = 0;      // server: Input messages from joined peers
+		std::uint32_t acksDropped = 0;         // server: an ack for a snapshot never sent
+		std::uint64_t inputsSent = 0;          // client
+		std::uint32_t inputSendFailed = 0;     // client
+		std::uint64_t snapshotsApplied = 0;    // client: validated, applied and acknowledged
+		std::uint32_t snapshotsRejected = 0;   // client: a record failed validation: nothing applied, not acked
+		std::uint64_t staleRecords = 0;        // client: a record no newer than what the entity has
+		std::uint64_t unknownEntity = 0;       // client: a record for an id it does not have (despawned since)
+		std::uint32_t lastSnapshotTick = 0;    // client: server tick of the newest snapshot applied
 	};
 }

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -114,6 +114,8 @@
 *                Update calls RequestStop, which the next Update performs.
 *
 * \history
+*    -v1.6       snapshots: SendSnapshot, SendInput, the Input handler
+*                (appliedLifecycle and snapshot acks, validated) (PR 9)
 *    -v1.5       spawn requests, the lifecycle stream (send, apply, world
 *                state), ClientReady and the Synchronizing timeout
 *                (Networking Guide 9.3, 18.3 issues 3, 4, 13, PR 8)
@@ -185,6 +187,13 @@ namespace Crucible
 		bool          needsWorld = false;   // Synchronizing: the world stream has not been sent yet
 		std::uint32_t worldEndSeq = 0;      // the WorldEnd's lifecycleSeq; ClientReady must echo it
 		std::chrono::steady_clock::time_point syncDeadline{};   // Synchronizing: ClientReady due by then
+
+		// Snapshots (sequence 0 is never used: an ack of 0 means "none received yet")
+		bool          snapshotSent = false;        // lastSentSnapshot is meaningful
+		std::uint16_t lastSentSnapshot = 0;        // newest sequence GNS accepted: acks beyond it are dropped
+		bool          hasAck = false;              // newestAckedSnapshot is meaningful
+		std::uint16_t newestAckedSnapshot = 0;     // from Input: newest snapshot the client applied
+		std::uint32_t ackBits = 0;                 // bit i: (newestAckedSnapshot - 1 - i) applied too
 
 		bool IsJoined() const noexcept { return phase == Phase::Synchronizing || phase == Phase::InGame; }
 	};
@@ -386,6 +395,18 @@ namespace Crucible
 		/// How long a peer may stay Synchronizing before it is closed with Timeout.
 		static constexpr std::chrono::milliseconds kSynchronizeTimeout{ 10000 };
 
+		// ---- snapshots and acknowledgements -----------------------------------------------------
+
+		/// Server: sends one encoded Snapshot (its own `sequence`, never 0) to an InGame peer,
+		/// unreliably on lane 1. On Ok the sequence becomes the newest one an ack may name. A
+		/// failure is only counted: the next snapshot supersedes it, and a snapshot that was not
+		/// sent must never be remembered as sent.
+		SendResult SendSnapshot(Net::PeerId peer, std::span<const std::byte> message, std::uint16_t sequence);
+
+		/// Client: sends an Input message (heartbeat, snapshot acks, appliedLifecycle; commands
+		/// arrive in a later phase) unreliably on lane 0, now or never. False if not sent.
+		bool SendInput(const InputMessage& message);
+
 		// ---- the lifecycle stream (client) ----------------------------------------------------
 
 		/// Newest lifecycle message fully applied (1 after JoinAccepted).
@@ -419,6 +440,7 @@ namespace Crucible
 		void HandleClientMessage(ReceivedMessage& message);
 		void HandleJoinRequest(PeerState& peer, ByteReader& reader);
 		void HandleClientReady(PeerState& peer, ByteReader& reader);
+		void HandleInput(PeerState& peer, ByteReader& reader);
 		void CollectFrameMessages();
 		void RejectOversized(const ReceivedMessage& message);
 		void EnforceQuotas();
