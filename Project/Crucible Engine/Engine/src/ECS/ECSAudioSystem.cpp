@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          1 October 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                Implementation of ECSAudioSystem. See the header for
 *                what happens each frame.
@@ -32,6 +32,7 @@
 *    -v1.4       fix: file paths reach FMOD as UTF-8, so an accented
 *                folder name no longer hides every sound under it
 *    -v1.5       the player's bus volumes (UserSettings) reach the buses
+*    -v1.6       PlayOneShot(clip, volumeScale): AudioSource's queued per-shot clips
 *
 **************************************************************************/
 #include "ECSAudioSystem.h"
@@ -314,6 +315,7 @@ namespace Crucible {
                 source->m_isPlaying       = write.isPlaying;
                 source->m_request         = AudioRequest::None;
                 source->m_pendingOneShots = 0;
+                source->m_pendingClipShotCount = 0;
             }
         }
 
@@ -322,7 +324,7 @@ namespace Crucible {
         // what is asked for while off - otherwise it would fire the moment it is switched on.
         s.offWrites.clear();
         s.offSources->ForEach([&](Entity entity, const AudioSource& source) {
-            if (source.m_request != AudioRequest::None || source.m_pendingOneShots != 0 || source.m_isPlaying)
+            if (source.m_request != AudioRequest::None || source.m_pendingOneShots != 0 || source.m_pendingClipShotCount != 0 || source.m_isPlaying)
                 s.offWrites.push_back(entity);
         });
         for (const Entity entity : s.offWrites) {
@@ -330,6 +332,7 @@ namespace Crucible {
                 source->m_isPlaying       = false;
                 source->m_request         = AudioRequest::None;
                 source->m_pendingOneShots = 0;
+                source->m_pendingClipShotCount = 0;
             }
         }
 
@@ -434,6 +437,7 @@ namespace Crucible {
         const Math::vec3 position = PositionOf(transform);
         AudioRequest     request  = source.m_request;
         std::uint8_t     oneShots = source.m_pendingOneShots;
+        std::uint8_t     clipShots = source.m_pendingClipShotCount;
 
         // AWAKE ------------------------------------------------------------------ //
         // The first frame a source exists is its Awake, as when Unity enables
@@ -449,6 +453,7 @@ namespace Crucible {
         if (editMode) {
             request  = AudioRequest::None;
             oneShots = 0;
+            clipShots = 0;
         }
 
         // REQUESTS --------------------------------------------------------------- //
@@ -469,8 +474,20 @@ namespace Crucible {
             }
         }
 
+        // PlayOneShot(clip, volumeScale): another clip, through this source's settings. Always
+        // loaded decompressed - a streamed clip plays one voice at a time, wrong for one-shots.
+        // Kept with the other one-shots, so Stop and pausing reach them too.
+        for (std::uint8_t i = 0; i < clipShots && i < AudioSource::kMaxClipShots; ++i) {
+            const AudioClip clip = resources.GetAudioClip(source.m_pendingClipShots[i], AudioClipLoadType::DecompressOnLoad);
+            if (!clip.IsValid()) continue;
+            AudioPlayDesc desc = ToPlayDesc(source, position, false);
+            desc.m_volume *= source.m_pendingClipShotVolumes[i];
+            const AudioVoice shot = audio.Play(clip, desc);
+            if (shot.IsValid()) record.oneShots.push_back(shot);
+        }
+
         // Anything just started has the component's current values.
-        if (request == AudioRequest::Play || oneShots > 0) {
+        if (request == AudioRequest::Play || oneShots > 0 || clipShots > 0) {
             record.volume   = source.m_volume;
             record.pitch    = source.m_pitch;
             record.position = position;
@@ -507,7 +524,8 @@ namespace Crucible {
         // WRITE BACK -------------------------------------------------------------- //
         // Only when something changed, so a silent source is never stamped as
         // changed. Requests are cleared even in edit mode, so they are spent.
-        const bool requested = source.m_request != AudioRequest::None || source.m_pendingOneShots != 0;
+        const bool requested = source.m_request != AudioRequest::None || source.m_pendingOneShots != 0
+                             || source.m_pendingClipShotCount != 0;
         if (requested || source.m_isPlaying != playing)
             writeBacks.push_back(WriteBack{ record.entity, playing });
 

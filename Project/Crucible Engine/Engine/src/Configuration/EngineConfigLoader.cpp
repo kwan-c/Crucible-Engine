@@ -283,9 +283,10 @@ namespace Crucible
 		// Next to the .exe.
 		constexpr const char* USER_SETTINGS_FILE = "UserSettings.json";
 
-		// Layers `app`'s section of UserSettings.json onto `config`. Only the window mode is
-		// taken from it - it is machine-written and must not quietly override project settings
-		// such as the startup scene. A missing file is normal; a broken one is ignored.
+		// Layers `app`'s section of UserSettings.json onto `config`. Only the window (mode,
+		// windowed size, fullscreen resolution) is taken from it - it is machine-written and must
+		// not quietly override project settings such as the startup scene. A missing file is
+		// normal; a broken one is ignored.
 		void ApplyUserSettings(AppKind app, EngineConfig& config)
 		{
 			const std::filesystem::path path = EngineConfigLoader::UserSettingsFile();
@@ -301,6 +302,20 @@ namespace Crucible
 				{
 					ReadBool(*graphics, "fullScreen", config.graphics.fullScreen);
 					ReadBool(*graphics, "maximized",  config.graphics.maximized);
+
+					// A zero size would be no window at all: keep the project's then.
+					std::uint32_t width = 0, height = 0;
+					ReadUInt(*graphics, "windowWidth",  width);
+					ReadUInt(*graphics, "windowHeight", height);
+					if (width > 0 && height > 0)
+					{
+						config.graphics.windowWidth  = width;
+						config.graphics.windowHeight = height;
+					}
+					// 0 x 0 (or missing) = borderless. WindowManager checks the monitor offers it.
+					ReadUInt(*graphics, "fullscreenWidth",       config.graphics.fullscreenWidth);
+					ReadUInt(*graphics, "fullscreenHeight",      config.graphics.fullscreenHeight);
+					ReadUInt(*graphics, "fullscreenRefreshRate", config.graphics.fullscreenRefreshRate);
 				}
 			}
 			catch (const std::exception& e)
@@ -452,7 +467,7 @@ namespace Crucible
 		return dir / USER_SETTINGS_FILE;
 	}
 
-	bool EngineConfigLoader::SaveWindowState(AppKind app, bool fullScreen, bool maximized)
+	bool EngineConfigLoader::SaveWindowState(AppKind app, const SavedWindowState& state)
 	{
 		const std::filesystem::path path = UserSettingsFile();
 		if (path.empty())
@@ -471,8 +486,16 @@ namespace Crucible
 		}
 
 		const std::string section = AppSectionName(app);
-		doc.Set(section + "/graphics/fullScreen", fullScreen);
-		doc.Set(section + "/graphics/maximized",  maximized);
+		doc.Set(section + "/graphics/fullScreen", state.fullScreen);
+		doc.Set(section + "/graphics/maximized",  state.maximized);
+		if (state.windowWidth > 0 && state.windowHeight > 0)
+		{
+			doc.Set(section + "/graphics/windowWidth",  state.windowWidth);
+			doc.Set(section + "/graphics/windowHeight", state.windowHeight);
+		}
+		doc.Set(section + "/graphics/fullscreenWidth",       state.fullscreenWidth);
+		doc.Set(section + "/graphics/fullscreenHeight",      state.fullscreenHeight);
+		doc.Set(section + "/graphics/fullscreenRefreshRate", state.fullscreenRefreshRate);
 
 		if (!doc.SaveToFile(path))
 		{

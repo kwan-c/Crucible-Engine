@@ -11,6 +11,42 @@ namespace Crucible {
         }
     }
 
+    WindowManager::WindowManager(int w, int h, const std::string& title, bool fullscreen, bool maximized,
+                                 int fullscreenWidth, int fullscreenHeight, int fullscreenRefresh) {
+        // Only stored here: GLFW is not up yet, so SetFullscreen checks the monitor offers it
+        // (and falls back to borderless if it does not).
+        if (fullscreenWidth > 0 && fullscreenHeight > 0) {
+            m_fullscreenW       = fullscreenWidth;
+            m_fullscreenH       = fullscreenHeight;
+            m_fullscreenRefresh = std::max(fullscreenRefresh, 0);
+        }
+        if (!Init(title, w, h, fullscreen, maximized)) {
+            throw std::runtime_error("[WindowManager] Initialization failed.");
+        }
+    }
+
+    namespace {
+        // `monitor`'s video mode at width x height: that refresh rate exactly, or (refresh 0)
+        // the highest one. nullptr if the monitor has no such mode.
+        const GLFWvidmode* FindMode(GLFWmonitor* monitor, int width, int height, int refreshRate) {
+            if (!monitor) { return nullptr; }
+            int count = 0;
+            const GLFWvidmode* modes = glfwGetVideoModes(monitor, &count);
+            const GLFWvidmode* best = nullptr;
+            for (int i = 0; i < count; ++i) {
+                const GLFWvidmode& mode = modes[i];
+                if (mode.width != width || mode.height != height) { continue; }
+                if (refreshRate > 0) {
+                    if (mode.refreshRate == refreshRate) { return &mode; }
+                }
+                else if (!best || mode.refreshRate > best->refreshRate) {
+                    best = &mode;
+                }
+            }
+            return best;
+        }
+    }
+
     bool WindowManager::Init(const std::string& title, int width, int height, bool fullscreen, bool maximized) {
 
         // Set up GLFW ------------------------------------------------------------------------- //
@@ -89,11 +125,23 @@ namespace Crucible {
 
         if (fullscreen) {
             GLFWmonitor* monitor = FindCurrentMonitor();
-            const GLFWvidmode* mode = monitor ? glfwGetVideoMode(monitor) : nullptr;
-            if (!mode) {
-                std::cout << "[WindowManager] No monitor to go fullscreen on." << std::endl;
-                return;
+            GLFWvidmode chosen{};
+            if (!PickFullscreenMode(monitor, chosen)) {
+                if (!monitor || !glfwGetVideoMode(monitor)) {
+                    std::cout << "[WindowManager] No monitor to go fullscreen on." << std::endl;
+                    return;
+                }
+                // A saved resolution this monitor does not offer (another monitor, a driver
+                // change): fall back to borderless rather than fail.
+                std::cout << "[WindowManager] Fullscreen resolution " << m_fullscreenW << "x" << m_fullscreenH
+                          << " is not available on this monitor - using its own resolution." << std::endl;
+                m_fullscreenW = m_fullscreenH = m_fullscreenRefresh = 0;
+                chosen = *glfwGetVideoMode(monitor);
             }
+            const GLFWvidmode* mode = &chosen;
+            // Exclusive (another resolution): minimize on alt-tab, so the desktop gets its own
+            // resolution back. Borderless: stay put, alt-tab is instant.
+            glfwSetWindowAttrib(m_pWindow, GLFW_AUTO_ICONIFY, IsExclusiveFullscreen() ? GLFW_TRUE : GLFW_FALSE);
             // m_windowedX/Y/W/H already hold the last normal rect (the callbacks skip
             // maximized sizes), so leaving fullscreen can put the window back there.
             // Set the flag first: the size/pos callbacks fired by the switch must not
@@ -136,7 +184,112 @@ namespace Crucible {
         if (m_fullscreen) { m_maximized = false; return; }  // applied when fullscreen ends
         glfwRestoreWindow(m_pWindow);
         m_maximized = false;
+        ApplyPendingSize();
         FitToAspectRatio();
+    }
+
+    // ---- Fullscreen resolution / windowed size ----------------------------------------------- //
+
+    bool WindowManager::PickFullscreenMode(GLFWmonitor* monitor, GLFWvidmode& out) const {
+
+        const GLFWvidmode* current = monitor ? glfwGetVideoMode(monitor) : nullptr;
+        if (!current) { return false; }
+        if (!IsExclusiveFullscreen()) { out = *current; return true; }
+        const GLFWvidmode* mode = FindMode(monitor, m_fullscreenW, m_fullscreenH, m_fullscreenRefresh);
+        if (!mode) { return false; }
+        out = *mode;
+        return true;
+    }
+
+    bool WindowManager::SetFullscreenResolution(int width, int height, int refreshRate) {
+
+        if (!m_pWindow) { return false; }
+        GLFWmonitor* monitor = m_fullscreen && glfwGetWindowMonitor(m_pWindow) ? glfwGetWindowMonitor(m_pWindow) : FindCurrentMonitor();
+
+        if (width <= 0 || height <= 0) {
+            m_fullscreenW = m_fullscreenH = m_fullscreenRefresh = 0;     // borderless
+        }
+        else {
+            if (!FindMode(monitor, width, height, std::max(refreshRate, 0))) { return false; }
+            m_fullscreenW       = width;
+            m_fullscreenH       = height;
+            m_fullscreenRefresh = std::max(refreshRate, 0);
+        }
+
+        // Already fullscreen: switch the monitor now. Not fullscreen: used by the next SetFullscreen.
+        if (m_fullscreen) {
+            GLFWvidmode mode{};
+            if (!PickFullscreenMode(monitor, mode)) { return false; }
+            glfwSetWindowAttrib(m_pWindow, GLFW_AUTO_ICONIFY, IsExclusiveFullscreen() ? GLFW_TRUE : GLFW_FALSE);
+            glfwSetWindowMonitor(m_pWindow, monitor, 0, 0, mode.width, mode.height, mode.refreshRate);
+            glfwGetWindowSize(m_pWindow, &m_width, &m_height);
+            m_framebufferResized = true;
+        }
+        return true;
+    }
+
+    std::vector<WindowResolution> WindowManager::GetResolutions() const {
+
+        std::vector<WindowResolution> list;
+        if (!m_pWindow) { return list; }
+        GLFWmonitor* monitor = m_fullscreen && glfwGetWindowMonitor(m_pWindow) ? glfwGetWindowMonitor(m_pWindow) : FindCurrentMonitor();
+        if (!monitor) { return list; }
+
+        int count = 0;
+        const GLFWvidmode* modes = glfwGetVideoModes(monitor, &count);
+        for (int i = 0; i < count; ++i) {
+            const GLFWvidmode& mode = modes[i];
+            auto same = std::find_if(list.begin(), list.end(), [&](const WindowResolution& r) {
+                return r.width == mode.width && r.height == mode.height; });
+            if (same == list.end()) { list.push_back({ mode.width, mode.height, mode.refreshRate }); }
+            else if (mode.refreshRate > same->refreshRate) { same->refreshRate = mode.refreshRate; }
+        }
+        std::sort(list.begin(), list.end(), [](const WindowResolution& a, const WindowResolution& b) {
+            return a.width != b.width ? a.width < b.width : a.height < b.height; });
+        return list;
+    }
+
+    void WindowManager::SetWindowedSize(int width, int height) {
+
+        if (!m_pWindow || width <= 0 || height <= 0) { return; }
+
+        // The aspect lock wins: keep the width, the height follows (as FitToAspectRatio does).
+        if (IsAspectRatioLocked()) {
+            height = std::max(1, static_cast<int>(static_cast<long long>(width) * m_aspectHeight / m_aspectWidth));
+        }
+
+        // Keep the whole window, title bar and borders included, inside the monitor's work area
+        // (not while fullscreen: an exclusive mode shrinks the work area until it ends).
+        if (!m_fullscreen) {
+            int areaX = 0, areaY = 0, areaW = 0, areaH = 0;
+            if (GLFWmonitor* monitor = FindCurrentMonitor()) { glfwGetMonitorWorkarea(monitor, &areaX, &areaY, &areaW, &areaH); }
+            int left = 0, top = 0, right = 0, bottom = 0;
+            glfwGetWindowFrameSize(m_pWindow, &left, &top, &right, &bottom);
+            const int maxW = areaW - left - right;
+            const int maxH = areaH - top - bottom;
+            if (maxW > 0 && maxH > 0 && (width > maxW || height > maxH)) {
+                const double scale = std::min(static_cast<double>(maxW) / width, static_cast<double>(maxH) / height);
+                width  = std::max(1, static_cast<int>(width * scale));
+                height = std::max(1, static_cast<int>(height * scale));
+            }
+        }
+
+        m_windowedW = width;
+        m_windowedH = height;
+
+        if (m_fullscreen) { m_pendingW = m_pendingH = 0; return; }        // SetFullscreen(false) uses m_windowedW/H
+        if (m_maximized)  { m_pendingW = width; m_pendingH = height; return; }   // applied on Restore
+        glfwSetWindowSize(m_pWindow, width, height);
+    }
+
+    void WindowManager::ApplyPendingSize() {
+
+        if (m_pendingW <= 0 || m_fullscreen || m_maximized) { return; }
+        const int width = m_pendingW, height = m_pendingH;
+        m_pendingW = m_pendingH = 0;
+        glfwSetWindowSize(m_pWindow, width, height);
+        m_windowedW = width;
+        m_windowedH = height;
     }
 
     // ---- Aspect ratio ------------------------------------------------------------------------ //
@@ -175,7 +328,7 @@ namespace Crucible {
 
     void WindowManager::PollEvents() {
         glfwPollEvents();
-        if (m_refitPending) { m_refitPending = false; FitToAspectRatio(); }
+        if (m_refitPending) { m_refitPending = false; ApplyPendingSize(); FitToAspectRatio(); }
     }
     bool WindowManager::ShouldClose() const { return glfwWindowShouldClose(m_pWindow); }
 

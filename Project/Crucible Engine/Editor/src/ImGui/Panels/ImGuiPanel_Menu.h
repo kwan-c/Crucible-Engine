@@ -21,6 +21,7 @@
 #include "ImGui/ImGuiManager.h"
 #include "AssetPipe/Assetmanager.h"
 #include "Configuration/EngineConfig.h"
+#include "Scripting/ScriptHotReload.h"
 
 namespace Crucible {
 	class SceneManager;
@@ -75,6 +76,10 @@ namespace Crucible {
 		bool m_showFps = true;			// View > FPS Counter
 		bool m_showAbout = false;		// Help > About (opened as a popup)
 		bool m_showThemeEditor = false;	// View > Theme > Theme Editor...
+
+		// Compiles and reloads C# scripts when a .cs file under Assets/Scripts is saved
+		// (Scripts menu). Ticked every frame from the menu, which is always drawn.
+		ScriptHotReload m_scriptHotReload;
 
 		// ---- File > Project Settings (Assets/Config/EngineConfig.json) ----
 		void EditConfigSettings();          // loads the shared settings and opens the popup

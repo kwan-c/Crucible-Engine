@@ -69,6 +69,8 @@ namespace Crucible {
 		void DrawGizmoMenu();
 		// Rendering popup: renderer-wide settings (bloom, anti-aliasing, sun shadows).
 		void DrawRenderingMenu();
+		// Camera popup: fly speed, Shift boost, look sensitivity and field of view of this view's camera.
+		void DrawCameraMenu();
 		// Timings in the corner of the view: frame time, CPU stages, GPU passes, draw counts.
 		void DrawStatsOverlay(ImVec2 viewMin);
 		// Screen-space icons for lights, the skybox and mesh-less entities, drawn with ImGui over

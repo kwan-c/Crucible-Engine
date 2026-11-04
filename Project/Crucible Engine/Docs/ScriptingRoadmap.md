@@ -21,7 +21,7 @@ no competing gameplay framework or visual scripting editor is introduced.
 - Both executables use EngineConfigLoader, including shared settings and per-app
   overrides. Existing logging can report native and managed-host failures.
 - AssetManager recognizes .cs as Script assets; compilation uses
-  ManagedScripts/Scripts. Add Component searches compiled C# entity classes and
+  Assets/Scripts. Add Component searches compiled C# entity classes and
   offers creation for new names. The unused legacy script-creation path is removed.
 - There was no Mono SDK, C# runtime host, managed project or script-instance
   manager. Commented ManagedScripts entries were placeholders, not working code.
@@ -85,15 +85,17 @@ instances follow Core's lifetime/frame loop, independent of scene and PlayMode
 state. Failed updates stop only that instance and release its managed root after
 one cleanup attempt. See ScriptingLifecycle.md for the contract and verification.
 
-S4 now builds project scripts under ManagedScripts/Scripts automatically, supports
+S4 now builds project scripts under Assets/Scripts automatically, supports
 explicit additional managed libraries/references, and deploys them using the same
 Editor/Game dependency graph. Tools/NewScript.ps1 creates a lifecycle class;
 Tools/BuildScripts.ps1 builds/deploys without rebuilding the native applications.
 Compiler errors preserve the previous successful library outputs and block
 dependent deployment. See ScriptingDevelopment.md for workflows and verification.
 
-Close-build-restart is the supported reload policy. Deployment refuses to replace
-managed files in a running application. Any future domain reload must account for
+Script DLLs load from in-memory copies into a separate script domain, so
+deployment can replace them while an application runs and the Editor's Scripts >
+Reload Scripts swaps them in between Play sessions (ScriptRuntime::ReloadScripts;
+see ScriptingDevelopment.md). Reload during Play would additionally have to account for
 S2 raw objects, S3 cached methods/classes and GC handles, plus managed threads,
 delegates and native callbacks. Stopping S3 instances alone is insufficient.
 Preserve the single root runtime. The S5 EntityScriptSystem now connects component

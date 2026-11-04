@@ -1,10 +1,10 @@
 {
   "version": 1,
-  "albedoTint": [1.0, 1.0, 1.0, 1.0],
+  "albedoTint": [0.7372549176216125, 1.0, 1.0, 1.0],
   "emissiveFactor": [0.0, 0.0, 0.0],
   "metallic": 1.0,
   "roughness": 1.0,
-  "shading": "Toon",
+  "shading": "Scene",
   "alphaCutoff": 0.0,
   "doubleSided": false,
   "toon": {

@@ -7,6 +7,18 @@
 
 namespace Crucible
 {
+	// What SaveWindowState writes into an app's section of UserSettings.json.
+	struct SavedWindowState
+	{
+		bool          fullScreen            = false;
+		bool          maximized             = false;
+		std::uint32_t windowWidth           = 0;   // the windowed size; 0 = leave the file's as it is
+		std::uint32_t windowHeight          = 0;
+		std::uint32_t fullscreenWidth       = 0;   // 0 = borderless (the monitor's own resolution)
+		std::uint32_t fullscreenHeight      = 0;
+		std::uint32_t fullscreenRefreshRate = 0;
+	};
+
 	class ENGINE_API EngineConfigLoader
 	{
 	public:
@@ -48,8 +60,9 @@ namespace Crucible
 		// to the project defaults.
 		static std::filesystem::path UserSettingsFile();
 
-		// Writes `app`'s window mode into UserSettings.json (other apps' sections and unknown keys
-		// are kept). Core calls this when the mode is toggled and at shutdown.
-		static bool SaveWindowState(AppKind app, bool fullScreen, bool maximized);
+		// Writes `app`'s window mode, windowed size and fullscreen resolution into
+		// UserSettings.json (other apps' sections and unknown keys are kept). Core calls this when
+		// any of them changes and at shutdown.
+		static bool SaveWindowState(AppKind app, const SavedWindowState& state);
 	};
-}
+}

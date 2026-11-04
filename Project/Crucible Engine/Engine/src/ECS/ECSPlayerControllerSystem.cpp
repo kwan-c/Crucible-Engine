@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          2 October 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Implementation of ECSPlayerControllerSystem. See the
 *                header for what happens each frame.
@@ -19,6 +19,9 @@
 *    -v1.5       gamepad: left stick walks (analog), right stick turns the
 *                camera (CameraOrbit::m_stickSpeed), A jumps
 *    -v1.6       the player's look sensitivity and invert Y (UserSettings)
+*    -v1.7       the keys come from the player's keybinds (InputSettings::
+*                forwardKey .. jumpButton) instead of hardcoded WASD /
+*                Space / A (Tan Chun Kwang Xavier)
 *
 **************************************************************************/
 #include "ECSPlayerControllerSystem.h"
@@ -191,14 +194,16 @@ namespace Crucible {
             });
 
         // THE KEYS ---------------------------------------------------------------- //
-        // Each axis is -1, 0 or +1. Holding both A and D cancels out to 0, which
+        // The player's keybinds (UserSettings.json, "input/keys"; W A S D / Space by
+        // default - an options menu or a script can change them).
+        // Each axis is -1, 0 or +1. Holding both left and right cancels out to 0, which
         // is what Unity's Input.GetAxisRaw("Horizontal") does too.
         float right   = 0.0f;
         float forward = 0.0f;
-        if (Input::IsDown(KeyCode::D)) right   += 1.0f;
-        if (Input::IsDown(KeyCode::A)) right   -= 1.0f;
-        if (Input::IsDown(KeyCode::W)) forward += 1.0f;
-        if (Input::IsDown(KeyCode::S)) forward -= 1.0f;
+        if (Input::IsDown(m_settings.rightKey))   right   += 1.0f;
+        if (Input::IsDown(m_settings.leftKey))    right   -= 1.0f;
+        if (Input::IsDown(m_settings.forwardKey)) forward += 1.0f;
+        if (Input::IsDown(m_settings.backKey))    forward -= 1.0f;
 
         // The left stick adds to the keys rather than replacing them, so either works
         // and neither has to be "switched to". It is analog: half tilt walks at half
@@ -209,7 +214,7 @@ namespace Crucible {
 
         // IsPressed, not IsDown: one jump per press. Holding Space would
         // otherwise jump again the moment the mech lands - a pogo stick.
-        const bool jump = Input::IsPressed(KeyCode::Space) || Input::IsPressed(KeyCode::GamepadA);
+        const bool jump = Input::IsPressed(m_settings.jumpKey) || Input::IsPressed(m_settings.jumpButton);
 
         // THE CAMERA -------------------------------------------------------------- //
         // Unity's Camera.main: the enabled camera with the highest priority, the

@@ -12,7 +12,7 @@ foreach ($reserved in @('Crucible.EntityScript','Crucible.EntityIdentity','Cruci
         throw 'That name is reserved by ScriptCore. Use a namespace such as Crucible.Scripts.'
     }
 }
-$directory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../ManagedScripts/Scripts'))
+$directory = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../Assets/Scripts'))
 $path = Join-Path $directory ($Name + '.cs')
 if (Test-Path -LiteralPath $path) { throw "Script already exists: $path" }
 $escapedNamespace = (($Namespace.Split('.') | ForEach-Object { '@' + $_ }) -join '.')

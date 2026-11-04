@@ -16,6 +16,8 @@
 #include "ImGui/EditorTheme.h"
 #include "Diagnostics/Logger.h"
 #include "Scene/SceneManager.h"
+#include "AssetPipe/Assetmanager.h"   // AssetRefField
+#include <filesystem>
 #include <ECS/World.h>
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"   // UI::MaxTextEffectWidth, for the text effects
@@ -542,6 +544,71 @@ namespace {
 		return changed;
 	}
 
+	// Picker for a script's `public Prefab` / `AudioClip` / `Texture` / `Font` / `Material` / `Model` field: the asset's
+	// guid. Drawn as the file name - drop a matching file from the Asset Browser onto it to set it,
+	// X clears it. The guid (not the path) is stored, so renaming or moving the file keeps the link.
+	bool AssetRefField(char const* label, std::uint64_t& id, Crucible::ScriptFieldType fieldType) {
+		Crucible::Core* core = Crucible::EditorManager::GetInstance().GetCore();
+		if (!core) {
+			ImGui::TextDisabled("%s: (no Core)", label);
+			return false;
+		}
+		Crucible::AssetManager& assets = core->GetAssets();
+		using FT = Crucible::ScriptFieldType;
+		char const* const kind = fieldType == FT::AudioClip ? "audio clip"
+		                       : fieldType == FT::Texture   ? "texture"
+		                       : fieldType == FT::Font      ? "font"
+		                       : fieldType == FT::Material  ? "material"
+		                       : fieldType == FT::Model     ? "model"
+		                                                    : "prefab";
+		auto const accepts = [fieldType](Crucible::AssetEntry const& entry) {
+			switch (fieldType) {
+			case FT::AudioClip: return entry.type == Crucible::AssetType::Audio;
+			case FT::Texture:   return entry.type == Crucible::AssetType::Texture;
+			case FT::Font:      return entry.type == Crucible::AssetType::Font;
+			case FT::Material:  return entry.type == Crucible::AssetType::Material;
+			case FT::Model:     return entry.type == Crucible::AssetType::Model;
+			default:            return std::filesystem::path(entry.virtualPath).extension() == ".cprefab";
+			}
+		};
+
+		std::string text;
+		if (id == 0) text = "None";
+		else if (Crucible::AssetEntry const* entry = assets.FindByGuid(xresource::instance_guid{ id }))
+			text = std::filesystem::path(entry->virtualPath).filename().string();
+		else text = std::string("Missing ") + kind;   // deleted, or its .meta was regenerated
+
+		bool changed = false;
+		ImGui::PushID(label);
+
+		float const spacing    = ImGui::GetStyle().ItemInnerSpacing.x;
+		float const clearWidth = ImGui::GetFrameHeight();
+		ImGui::Button(text.c_str(), ImVec2(ImGui::CalcItemWidth() - clearWidth - spacing, 0.0f));
+		if (ImGui::IsItemHovered())
+			ImGui::SetTooltip("Drag a %s here from the Asset Browser", kind);
+
+		if (ImGui::BeginDragDropTarget()) {
+			if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(Crucible::EditorWidgets::kAssetPayload)) {
+				std::string const virtualPath = static_cast<char const*>(payload->Data);
+				std::uint64_t const droppedId = assets.GetGuid(virtualPath).m_Value;
+				Crucible::AssetEntry const* entry = droppedId ? assets.FindByGuid(xresource::instance_guid{ droppedId }) : nullptr;
+				if (!entry) CRU_USER_WARN("[Inspector] {}: '{}' has no asset id yet - refresh the Asset Browser", label, virtualPath);
+				else if (!accepts(*entry)) CRU_USER_WARN("[Inspector] {}: '{}' is not a {}", label, virtualPath, kind);
+				else if (droppedId != id) { id = droppedId; changed = true; }
+			}
+			ImGui::EndDragDropTarget();
+		}
+
+		ImGui::SameLine(0.0f, spacing);
+		if (ImGui::Button("X", ImVec2(clearWidth, 0.0f)) && id != 0) { id = 0; changed = true; }
+		if (ImGui::IsItemHovered()) ImGui::SetTooltip("Clear");
+
+		ImGui::SameLine(0.0f, spacing);
+		ImGui::TextUnformatted(label);
+		ImGui::PopID();
+		return changed;
+	}
+
 }
 
 std::size_t Crucible::Inspector::SaveUnsavedMaterials() {
@@ -852,12 +919,12 @@ CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 			if (!scriptHeading) ImGui::SeparatorText("C# scripts");
 			any = true;
 			std::error_code ec;
-			const auto source = std::filesystem::path(m_assets.GetAssetRoot()).parent_path() /
-				"ManagedScripts/Scripts" / (search + ".cs");
+			const auto source = std::filesystem::path(m_assets.GetAssetRoot()) /
+				"Scripts" / (search + ".cs");
 			// Never suggest creating a duplicate source file just because its assembly is stale.
 			if (ScriptAuthoring::IsIdentifier(search) && std::filesystem::exists(source, ec)) {
 				ImGui::TextDisabled("Source file already exists.");
-				ImGui::TextDisabled("Close, build scripts and restart to attach it.");
+				ImGui::TextDisabled("It is compiling (see the menu bar); attach it once scripts reload.");
 			} else {
 				const bool validName = ScriptAuthoring::IsIdentifier(search);
 				ImGui::BeginDisabled(blocked != nullptr || !validName);
@@ -866,7 +933,7 @@ CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 				ImGui::EndDisabled();
 				ImGui::SetItemTooltip("%s", blocked ? blocked : !validName ?
 					"Use letters, digits and underscores, starting with a letter or underscore." :
-					"Create and attach a new C# script. Save the scene, close, build and restart before Play.");
+					"Create and attach a new C# script. It compiles and reloads by itself before Play.");
 			}
 		}
 		if (!m_scriptPickerError.empty()) {
@@ -1986,8 +2053,12 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
     auto* core = EditorManager::GetInstance().GetCore();
     const bool inSession = core && core->IsInPlaySession();
     auto* runtime = core && core->GetScriptRuntime().IsRunning() ? &core->GetScriptRuntime() : nullptr;
-    if (m_scriptFieldAssembly != script.assembly || m_scriptFieldNamespace != script.nameSpace || m_scriptFieldClass != script.className) {
+    // Re-read after Scripts > Reload Scripts too: fields may have been added, removed or re-defaulted.
+    const uint64_t reload = runtime ? runtime->ReloadCount() : 0;
+    if (m_scriptFieldAssembly != script.assembly || m_scriptFieldNamespace != script.nameSpace || m_scriptFieldClass != script.className ||
+        m_scriptFieldReload != reload) {
         m_scriptFieldAssembly = script.assembly; m_scriptFieldNamespace = script.nameSpace; m_scriptFieldClass = script.className;
+        m_scriptFieldReload = reload;
         m_scriptFieldDefaults.clear(); m_scriptFieldError.clear();
         ScriptAssemblyHandle assembly;
         if (!runtime) m_scriptFieldError = "A Mono-enabled Editor is needed to inspect compiled public fields.";
@@ -2035,6 +2106,22 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
             edited = ImGui::InputText(label.c_str(), &field.text);
             if (edited) field.stringIsNull = false;
             break;
+        case ScriptFieldType::Entity: {
+            // Same drag-from-Hierarchy picker as a PhysicsJoint's connected body; stores the scene id.
+            const std::string shown = label.substr(0, label.find("###"));
+            edited = EntityRefField(shown.c_str(), field.entityId);
+            break;
+        }
+        case ScriptFieldType::Prefab:
+        case ScriptFieldType::AudioClip:
+        case ScriptFieldType::Texture:
+        case ScriptFieldType::Font:
+        case ScriptFieldType::Material:
+        case ScriptFieldType::Model: {
+            const std::string shown = label.substr(0, label.find("###"));
+            edited = AssetRefField(shown.c_str(), field.assetId, field.type);
+            break;
+        }
         }
         if (edited && ((field.type == ScriptFieldType::Single && !std::isfinite(field.single)) ||
                        (field.type == ScriptFieldType::Double && !std::isfinite(field.real)))) edited = false;
@@ -2065,7 +2152,7 @@ void Crucible::Inspector::DrawCreateScriptModal() {
     if (!ImGui::BeginPopupModal("Create C# script", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) return;
     ImGui::InputText("Class name", &m_scriptNewName);
     ImGui::InputText("Namespace", &m_scriptNewNamespace);
-    ImGui::TextUnformatted("Creates C# source and attaches it to the selected entity.\nSave the scene, close Editor, build scripts, then restart.");
+    ImGui::TextUnformatted("Creates C# source and attaches it to the selected entity.\nIt compiles and reloads by itself (see the menu bar).");
     auto* core = EditorManager::GetInstance().GetCore();
     const auto* existing = m_world.IsAlive(m_scriptCreateTarget) ? m_world.Read<ScriptComponent>(m_scriptCreateTarget) : nullptr;
     const bool valid = m_scriptCreateTarget == m_selected && m_world.IsAlive(m_scriptCreateTarget) &&
@@ -2078,7 +2165,7 @@ void Crucible::Inspector::DrawCreateScriptModal() {
         if (ScriptAuthoring::Create(projectRoot, m_scriptNewName, m_scriptNewNamespace, output, m_scriptCreateError)) {
             AssignScript(m_selected, ProjectScriptAssembly, m_scriptNewNamespace, m_scriptNewName);
             m_scriptNoticeTarget = m_selected;
-            m_scriptNotice = "Source created. Save the scene, close Editor, build scripts and restart before Play.";
+            m_scriptNotice = "Source created. It compiles and reloads by itself; wait for the Console before Play.";
             CRU_USER_INFO("Created entity script: {}", output.string());
             ImGui::CloseCurrentPopup();
         }

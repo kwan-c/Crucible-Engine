@@ -3,10 +3,10 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          27 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                UserSettings: what the PLAYER can change from an options
-*                menu (volumes, look sensitivity, invert Y), and
+*                menu (volumes, look sensitivity, invert Y, keybinds), and
 *                UserSettingsLoader, which reads and writes them.
 *
 * \details
@@ -24,7 +24,9 @@
 *
 *                    {
 *                        "audio": { "masterVolume": 1.0, "musicVolume": 1.0, "sfxVolume": 1.0 },
-*                        "input": { "mouseSensitivity": 1.0, "stickSensitivity": 1.0, "invertY": false },
+*                        "input": { "mouseSensitivity": 1.0, "stickSensitivity": 1.0, "invertY": false,
+*                                   "keys": { "forward": "W", "back": "S", "left": "A", "right": "D",
+*                                             "jump": "Space", "jumpButton": "GamepadA" } },
 *                        "game":  { "graphics": { "fullScreen": true, "maximized": false } }
 *                    }
 *
@@ -35,6 +37,13 @@
 *                Adding a setting: a field here, then one Get line in Load
 *                and one Set line in Save (UserSettings.cpp).
 *
+* \history
+*    -v1.0       volumes, look sensitivity, invert Y
+*    -v1.1       the mech's keybinds (InputSettings::forwardKey ..
+*                jumpButton), saved by key name; ECSPlayerControllerSystem
+*                reads them instead of hardcoded WASD / Space / A
+*                (Tan Chun Kwang Xavier)
+*
 **************************************************************************/
 #pragma once
 
@@ -43,6 +52,7 @@
 
 // Crucible engine
 #include "EngineExport.h"
+#include "Input/KeyCode.h"
 
 namespace Crucible {
 
@@ -64,6 +74,17 @@ namespace Crucible {
         float mouseSensitivity = 1.0f;
         float stickSensitivity = 1.0f;
         bool  invertY          = false;     // up on the mouse / right stick looks DOWN
+
+        // The mech's keybinds (ECSPlayerControllerSystem). Any KeyCode works, mouse
+        // and gamepad buttons included; Unknown = unbound. The gamepad's left stick
+        // always walks as well. Saved by name ("W"), so reordering KeyCode.h never
+        // changes what a saved file means.
+        KeyCode forwardKey = KeyCode::W;
+        KeyCode backKey    = KeyCode::S;
+        KeyCode leftKey    = KeyCode::A;
+        KeyCode rightKey   = KeyCode::D;
+        KeyCode jumpKey    = KeyCode::Space;
+        KeyCode jumpButton = KeyCode::GamepadA;     // a second jump binding, for the gamepad
     };  // INPUTSETTINGS STRUCT
 
     struct UserSettings {
