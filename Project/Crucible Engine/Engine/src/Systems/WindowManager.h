@@ -54,7 +54,8 @@ namespace Crucible {
         //
         // Fullscreen covers the whole monitor the window is mostly on. By default at that
         // monitor's current resolution and refresh rate ("borderless": no video-mode switch, so
-        // it's quick and alt-tab friendly). With SetFullscreenResolution it switches the monitor
+        // it's quick and alt-tab friendly - a normal window with no title bar, placed over the
+        // whole monitor, so other windows can go in front of it). With SetFullscreenResolution it switches the monitor
         // to another resolution instead ("exclusive": the screen blinks on the switch, and the
         // window minimizes on alt-tab so the desktop gets its own resolution back).
         // Leaving it puts the window back exactly where it was: same position, same size, and
@@ -146,6 +147,12 @@ namespace Crucible {
         // The video mode fullscreen should use on `monitor`: the chosen resolution, or the
         // monitor's current mode. Fills `out` and returns false if there is none.
         bool PickFullscreenMode(GLFWmonitor* monitor, GLFWvidmode& out) const;
+        // Puts the window into fullscreen on `monitor`, in the current kind: exclusive (a GLFW
+        // monitor window at the chosen video mode) or borderless (an undecorated, NOT monitor
+        // window covering the monitor - GLFW keeps monitor windows always-on-top on Windows,
+        // so a "borderless" monitor window would stay in front after alt-tab). Also switches
+        // between the two while fullscreen. False if the monitor has no usable mode.
+        bool ApplyFullscreen(GLFWmonitor* monitor);
         // Applies the pending windowed size (after Restore / the title bar's un-maximize).
         void ApplyPendingSize();
         // Re-fits the window to the locked aspect ratio (no-op while fullscreen / maximized).

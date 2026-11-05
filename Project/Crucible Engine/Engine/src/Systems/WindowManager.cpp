@@ -60,7 +60,8 @@ namespace Crucible {
         // Opening maximized via the hint (rather than maximizing after) avoids a visible jump.
         // When opening fullscreen it is applied after, so leaving fullscreen restores to maximized.
         glfwWindowHint(GLFW_MAXIMIZED, (maximized && !fullscreen) ? GLFW_TRUE : GLFW_FALSE);
-        // Fullscreen here is "borderless" style: alt-tabbing away must not minimize the window.
+        // Borderless fullscreen is a plain window (ApplyFullscreen), so this only matters for
+        // exclusive fullscreen, which turns it on when it starts.
         glfwWindowHint(GLFW_AUTO_ICONIFY, GLFW_FALSE);
 
         width  = std::max(width, 1);
@@ -125,23 +126,18 @@ namespace Crucible {
 
         if (fullscreen) {
             GLFWmonitor* monitor = FindCurrentMonitor();
+            if (!monitor || !glfwGetVideoMode(monitor)) {
+                std::cout << "[WindowManager] No monitor to go fullscreen on." << std::endl;
+                return;
+            }
             GLFWvidmode chosen{};
             if (!PickFullscreenMode(monitor, chosen)) {
-                if (!monitor || !glfwGetVideoMode(monitor)) {
-                    std::cout << "[WindowManager] No monitor to go fullscreen on." << std::endl;
-                    return;
-                }
                 // A saved resolution this monitor does not offer (another monitor, a driver
                 // change): fall back to borderless rather than fail.
                 std::cout << "[WindowManager] Fullscreen resolution " << m_fullscreenW << "x" << m_fullscreenH
                           << " is not available on this monitor - using its own resolution." << std::endl;
                 m_fullscreenW = m_fullscreenH = m_fullscreenRefresh = 0;
-                chosen = *glfwGetVideoMode(monitor);
             }
-            const GLFWvidmode* mode = &chosen;
-            // Exclusive (another resolution): minimize on alt-tab, so the desktop gets its own
-            // resolution back. Borderless: stay put, alt-tab is instant.
-            glfwSetWindowAttrib(m_pWindow, GLFW_AUTO_ICONIFY, IsExclusiveFullscreen() ? GLFW_TRUE : GLFW_FALSE);
             // m_windowedX/Y/W/H already hold the last normal rect (the callbacks skip
             // maximized sizes), so leaving fullscreen can put the window back there.
             // Set the flag first: the size/pos callbacks fired by the switch must not
@@ -153,13 +149,15 @@ namespace Crucible {
             // stays set (the callback ignores changes while m_fullscreen is true), so leaving
             // fullscreen maximizes it again.
             if (glfwGetWindowAttrib(m_pWindow, GLFW_MAXIMIZED) == GLFW_TRUE) { glfwRestoreWindow(m_pWindow); }
-            glfwSetWindowMonitor(m_pWindow, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+            ApplyFullscreen(monitor);
+            return;   // ApplyFullscreen read the size and flagged the swapchain
         }
         else {
             // Read before the switch, and keep m_fullscreen set during it: leaving the monitor
             // fires an un-maximize event that would otherwise clear m_maximized (and record
             // the fullscreen size as the windowed one) before we get to re-maximize.
             const bool restoreMaximized = m_maximized;
+            glfwSetWindowAttrib(m_pWindow, GLFW_DECORATED, GLFW_TRUE);   // borderless took the title bar away
             glfwSetWindowMonitor(m_pWindow, nullptr, m_windowedX, m_windowedY, m_windowedW, m_windowedH, 0);
             m_fullscreen = false;
             if (restoreMaximized) { glfwMaximizeWindow(m_pWindow); }
@@ -216,15 +214,44 @@ namespace Crucible {
             m_fullscreenRefresh = std::max(refreshRate, 0);
         }
 
-        // Already fullscreen: switch the monitor now. Not fullscreen: used by the next SetFullscreen.
-        if (m_fullscreen) {
+        // Already fullscreen: switch now (exclusive <-> borderless, or another resolution).
+        // Not fullscreen: used by the next SetFullscreen.
+        if (m_fullscreen) { return ApplyFullscreen(monitor); }
+        return true;
+    }
+
+    bool WindowManager::ApplyFullscreen(GLFWmonitor* monitor) {
+
+        if (!m_pWindow || !monitor) { return false; }
+
+        if (IsExclusiveFullscreen()) {
+            // A monitor window at the chosen video mode. It minimizes on alt-tab, so the desktop
+            // gets its own resolution back (and the always-on-top monitor window gets out of the way).
             GLFWvidmode mode{};
             if (!PickFullscreenMode(monitor, mode)) { return false; }
-            glfwSetWindowAttrib(m_pWindow, GLFW_AUTO_ICONIFY, IsExclusiveFullscreen() ? GLFW_TRUE : GLFW_FALSE);
+            glfwSetWindowAttrib(m_pWindow, GLFW_AUTO_ICONIFY, GLFW_TRUE);
             glfwSetWindowMonitor(m_pWindow, monitor, 0, 0, mode.width, mode.height, mode.refreshRate);
-            glfwGetWindowSize(m_pWindow, &m_width, &m_height);
-            m_framebufferResized = true;
         }
+        else {
+            // Borderless: a normal window with no title bar, exactly over the monitor. Not a
+            // monitor window - GLFW makes those always-on-top on Windows, so with no
+            // auto-minimize it would stay in front of whatever alt-tab switched to.
+            // Coming from exclusive: leave the monitor first, so it is back at its own resolution
+            // before that resolution is read.
+            if (glfwGetWindowMonitor(m_pWindow)) {
+                glfwSetWindowMonitor(m_pWindow, nullptr, m_windowedX, m_windowedY, m_windowedW, m_windowedH, 0);
+            }
+            const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+            if (!mode) { return false; }
+            int monitorX = 0, monitorY = 0;
+            glfwGetMonitorPos(monitor, &monitorX, &monitorY);
+            glfwSetWindowAttrib(m_pWindow, GLFW_AUTO_ICONIFY, GLFW_FALSE);
+            glfwSetWindowAttrib(m_pWindow, GLFW_DECORATED, GLFW_FALSE);
+            glfwSetWindowMonitor(m_pWindow, nullptr, monitorX, monitorY, mode->width, mode->height, 0);
+            glfwFocusWindow(m_pWindow);
+        }
+        glfwGetWindowSize(m_pWindow, &m_width, &m_height);
+        m_framebufferResized = true;
         return true;
     }
 
