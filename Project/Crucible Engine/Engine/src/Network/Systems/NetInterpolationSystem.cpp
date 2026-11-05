@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NetInterpolationSystem: proxies drawn 100 ms in the past,
 *                between snapshot samples; the key-to-motion measurement.
@@ -12,11 +12,13 @@
 *    -v1.0       Networking Guide 11.4, 11.7 (PR 12)
 *    -v1.1       review fix: the own rotation stays local only while Face
 *                Camera applies the local yaw
+*    -v1.2       NetStats::interpolateMicros (PR 13)
 *
 **************************************************************************/
 #include "Network/Systems/NetInterpolationSystem.h"
 
 #include <algorithm>
+#include <chrono>
 
 #include "ECS/Components/Components.h"
 #include "ECS/HierarchyTransformSystem.h"
@@ -75,6 +77,10 @@ namespace Crucible
 	void NetInterpolationSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands)
 	{
 		if (!m_session.IsClient() || m_session.State() != SessionState::Running) return;
+		const auto started = std::chrono::steady_clock::now();
+		struct Timer { NetworkSession& s; std::chrono::steady_clock::time_point t;
+			~Timer() { s.MutableStats().interpolateMicros = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - t).count(); } }
+			timer{ m_session, started };
 		ServerTimeEstimate& time = m_session.ServerTime();
 		time.Advance(world.DeltaTime());
 		if (!time.Valid()) return;   // no snapshot yet: proxies stay where their spawn put them

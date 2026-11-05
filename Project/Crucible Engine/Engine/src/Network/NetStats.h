@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -24,10 +24,13 @@
 *    -v1.5       command, input timeout and player spawn counters (PR 11)
 *    -v1.6       gameplay event, interpolation and input latency counters
 *                (PR 12)
+*    -v1.7       snapshot budget, change detection, update ages, bytes by
+*                message type, replication CPU time (PR 13)
 *
 **************************************************************************/
 #pragma once
 
+#include <array>
 #include <cstdint>
 
 namespace Crucible
@@ -87,7 +90,7 @@ namespace Crucible
 		std::uint64_t snapshotBytesSent = 0;
 		std::uint64_t snapshotRecordsSent = 0;
 		std::uint32_t snapshotSendFailed = 0;  // server: not accepted by GNS (never remembered, never acked)
-		std::uint32_t recordsDeferred = 0;     // server: left for the next snapshot (per-client message cap)
+		std::uint64_t recordsDeferred = 0;     // server: changed, but left for a later snapshot by the budget
 		std::uint32_t recordWriteFailed = 0;   // server: an entity's record could not be written (left out)
 		std::uint64_t snapshotsAcked = 0;      // server: sent snapshots a client acknowledged
 		std::uint64_t inputsReceived = 0;      // server: Input messages from joined peers
@@ -124,5 +127,37 @@ namespace Crucible
 		std::uint32_t maxInputLatencyMs = 0;
 		std::uint64_t totalInputLatencyMs = 0;      // / inputLatencySamples = the average
 		std::uint32_t inputLatencyAbandoned = 0;    // no visible motion within 2 s (blocked, or no player)
+
+		// The snapshot budget (server, Networking Guide 10.4 to 10.8, issues 11 and 14)
+		std::uint64_t recordsUnchanged = 0;         // the client already holds this state: not sent (0 bytes)
+		std::uint32_t budgetOverflow = 0;           // a message beyond the allowance, for urgent entities only
+		std::uint32_t urgentDeferred = 0;           // critical or overdue, but even the hard cap was full
+		std::uint32_t maxUrgentWaitTicks = 0;       // the longest an entity waited after becoming due (0: sent at once)
+		std::uint64_t emptySnapshots = 0;           // nothing changed: a header-only message (time and acks keep flowing)
+		std::uint32_t lastSnapshotBytes = 0;        // the latest snapshot message, bytes
+		std::uint32_t maxSnapshotBytes = 0;         // the largest so far (never above kMaxSnapshotBytes)
+		std::uint32_t allowanceShrinks = 0;         // lane 1 queued over 50 ms: a client's allowance cut by 25%
+		std::uint32_t allowanceGrows = 0;           // lane 1 under 10 ms for 2 s: raised by 10%
+
+		/// Update age per class (index = NetReplicationSendSystem::UpdateClass: critical, near,
+		/// mid, far): simulation steps between a client's copy going out of date (or its previous
+		/// update) and the snapshot that updated it. Bucket i counts ages of i steps; the last
+		/// bucket counts every age of kAgeBuckets - 1 or more.
+		static constexpr std::size_t kUpdateClasses = 4;
+		static constexpr std::size_t kAgeBuckets = 256;
+		std::array<std::array<std::uint32_t, kAgeBuckets>, kUpdateClasses> updateAges{};
+		std::array<std::uint32_t, kUpdateClasses> maxUpdateAge{};
+
+		// Bytes of our messages by MessageType (index = the type's value), both directions; GNS's
+		// own headers, encryption and acks are not included (GnsTransport::Status has those).
+		static constexpr std::size_t kMessageTypes = 11;   // MessageType::Count (checked in NetworkSession.cpp)
+		std::array<std::uint64_t, kMessageTypes> bytesSentByType{};
+		std::array<std::uint64_t, kMessageTypes> bytesReceivedByType{};
+
+		// Replication CPU time, microseconds, the latest frame (and the largest)
+		std::int64_t gatherMicros = 0;              // server: gathering and hashing records for a snapshot
+		std::int64_t sendMicros = 0;                // server: the whole send system, lifecycle and snapshots
+		std::int64_t maxSendMicros = 0;
+		std::int64_t interpolateMicros = 0;         // client: NetInterpolationSystem
 	};
 }

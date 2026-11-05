@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                The host's sending system: the lifecycle stream (the world
 *                for a joining client, then every spawn and despawn) and
@@ -41,24 +41,54 @@
 *                later incremental message", which lane 0's ordering then
 *                delivers in order.
 *
-*                Snapshots (this version: the correct baseline, Networking
-*                Guide PR 9, issues 1 and 12; the bandwidth budget comes
-*                later):
-*                  - Per client and entity the host remembers which lifecycle
-*                    message carried the spawn. The entity is CONFIRMED once
-*                    the client reports (Input.appliedLifecycle, or the
-*                    ClientReady for the world) that it applied that message.
-*                    Only confirmed entities go into that client's snapshots,
-*                    so a snapshot can never race ahead of the spawn it
-*                    depends on, and an ack can never name an unapplied record.
-*                  - Every 2 steps (30 Hz), every InGame client gets every
-*                    confirmed entity, whole-entity records (the full mask),
-*                    in id order, in messages of at most kMaxSnapshotBytes,
-*                    at most kMaxSnapshotMessagesPerClient of them. Entities
-*                    that do not fit go first in the next snapshot.
+*                Snapshots: a budget per client (Networking Guide 10.4 to
+*                10.8, issues 1, 9, 11, 12, 14). Every 2 steps (30 Hz), for
+*                every InGame client:
+*                  - Gating: only entities whose spawn that client APPLIED
+*                    (Input.appliedLifecycle, or ClientReady for the world)
+*                    are candidates, so a snapshot never races its spawn.
+*                  - Change detection: each record is hashed (64-bit) when it
+*                    is gathered. Per client and entity the host keeps the
+*                    hash of what that client holds: the spawn's record once
+*                    the spawn is confirmed, then the record of the newest
+*                    snapshot it ACKNOWLEDGED carrying it (the bytes sent
+*                    then, not today's). An entity whose record equals that
+*                    baseline costs nothing; one that changed is a candidate
+*                    until a snapshot carrying the new state is acked.
+*                  - Class and age: a prefab marked critical (NetPrefabDesc::
+*                    critical) is class Critical; any other by its distance
+*                    to the entity this client owns (its player, if any):
+*                    Near (< 20 m), Mid (< 50 m), Far. Each class has a
+*                    maximum update age (2, 6, 30, 120 steps). An entity's
+*                    age is the steps since its previous update or since the
+*                    client's copy went out of date, whichever is later.
+*                  - Order: critical entities first (oldest first), but at most
+*                    one message's worth (kMaxSnapshotBytes) of them per
+*                    client per snapshot; then every other entity at or past
+*                    its maximum age, furthest past it first; then the rest
+*                    by accumulated priority: each snapshot an entity waits
+*                    it gains sendPriority x a distance factor (1, 0.35,
+*                    0.08); being sent resets it. Critical entities beyond
+*                    that cap wait (oldest first next time), so the second
+*                    message is always left to the others: under any load
+*                    neither group starves the other. NetStats::
+*                    maxUrgentWaitTicks measures it: steps an entity waited
+*                    after it became due.
+*                  - Budget: the client's allowance (bytes per snapshot,
+*                    adaptive, below) spent in at most 2 messages of at most
+*                    kMaxSnapshotBytes. When it is spent, urgent entities may
+*                    still use one more message (budgetOverflow); the hard
+*                    cap of 2 messages per client per snapshot, and the
+*                    message size, hold for critical entities too. What does
+*                    not fit waits for the next snapshot (recordsDeferred).
+*                  - Nothing changed: one header-only message still goes out,
+*                    so the client's clock estimate and its acks keep going.
+*                  - Adaptive allowance (issue 14): from 1,100 bytes; if the
+*                    client's lane 1 (snapshots) queues more than 50 ms in
+*                    GNS it is cut by 25% (at least 300); after 2 s under
+*                    10 ms it grows by 10% (at most 2,200).
 *                  - A message is remembered (64-entry ring) only if GNS took
-*                    it. An acknowledged snapshot marks what it carried as
-*                    held by the client, at that snapshot's tick.
+*                    it, so no ack can name a message that was not sent.
 *                  - Despawned ids, closed peers and ended sessions leave no
 *                    per-client state behind.
 *
@@ -75,6 +105,10 @@
 *                state every snapshot, acks (PR 9)
 *    -v1.2       gameplay events after the frame's spawns and despawns
 *                (PR 12)
+*    -v1.3       per-client budget: priority and maximum age by class,
+*                change detection against confirmed and acknowledged
+*                baselines, adaptive allowance from lane 1, instrumentation
+*                (PR 13)
 *
 **************************************************************************/
 #pragma once
@@ -89,6 +123,7 @@
 #include <vector>
 
 #include "ECS/Systems/IECSSystems.h"
+#include "Math/Math.h"
 #include "EngineExport.h"
 #include "Network/GnsTransport.h"
 #include "Network/NetworkSession.h"   // QueuedGameplayEvent
@@ -111,18 +146,44 @@ namespace Crucible
 		/// The fixed simulation steps that really ran this frame (0 while paused or in Edit).
 		using StepSource = std::function<std::uint32_t()>;
 
-		/// Snapshot messages per client per snapshot, at most (about 8.8 KB, 264 KB/s at 30 Hz).
-		/// A safety limit for this baseline; the per-client budget replaces it later.
-		static constexpr std::size_t kMaxSnapshotMessagesPerClient = 8;
+		// ---- the budget (see the file notes) -------------------------------------------------
+		static constexpr std::size_t kMaxSnapshotMessagesPerClient = 2;          // per snapshot, a hard cap
+		static constexpr std::size_t kDefaultAllowanceBytes = kMaxSnapshotBytes;  // per client per snapshot
+		static constexpr std::size_t kMinAllowanceBytes = 300;
+		static constexpr std::size_t kMaxAllowanceBytes = 2 * kMaxSnapshotBytes;
+		static constexpr std::size_t kMinMessageBytes = 64;                      // less is not worth a message
+		static constexpr std::int64_t  kShrinkQueueMicros = 50000;               // lane 1 over this: cut by 25%
+		static constexpr std::int64_t  kGrowQueueMicros = 10000;                 // under this ...
+		static constexpr std::uint32_t kCalmSnapshotsToGrow = 60;                // ... for 2 s: raise by 10%
+		static constexpr float kNearMetres = 20.f;
+		static constexpr float kMidMetres = 50.f;
+
+		/// Update classes, each with a maximum age (simulation steps). NetStats indexes by them.
+		enum class UpdateClass : std::uint8_t { Critical = 0, Near = 1, Mid = 2, Far = 3 };
+		static constexpr Net::NetTick MaxAgeTicks(UpdateClass c) noexcept
+		{
+			switch (c)
+			{
+			case UpdateClass::Critical: return 2;     // every snapshot
+			case UpdateClass::Near:     return 6;     // 100 ms
+			case UpdateClass::Mid:      return 30;    // 0.5 s
+			default:                    return 120;   // 2 s
+			}
+		}
 
 		/// What the host knows about one client's copy of one entity.
 		struct ClientEntityState
 		{
 			std::uint32_t spawnSeq = 0;       // lifecycleSeq of the SpawnBatch that carried it to this client
 			bool          confirmed = false;  // the client applied that SpawnBatch: snapshots may carry it
-			bool          acked = false;      // some snapshot carrying it was acknowledged
+			bool          acked = false;      // baseline is what the client holds (confirmed spawn, or an acked snapshot)
 			Net::NetTick  ackedTick = 0;      // tick of the newest acknowledged snapshot carrying it
 			Net::NetTick  lastSentTick = 0;   // tick of the newest snapshot sent with it
+			std::uint64_t spawnHash = 0;      // hash of the record its SpawnBatch carried
+			std::uint64_t baseline = 0;       // hash of the record the client holds (when acked)
+			Net::NetTick  cleanTick = 0;      // newest snapshot tick at which it was up to date (or confirmed)
+			Net::NetTick  dueSince = 0;       // first snapshot tick it was urgent and not yet sent (0 = not due)
+			float         priority = 0.f;     // grows while it waits; reset when sent
 		};
 
 		/// `session` and `content` are owned by Core and outlive every system.
@@ -138,6 +199,16 @@ namespace Crucible
 		/// Diagnostics and tests: this host's record of `peer`'s copy of `id`, or null.
 		const ClientEntityState* ClientState(Net::PeerId peer, Net::NetworkId id) const;
 
+		/// Diagnostics and tests: `peer`'s current allowance (bytes per snapshot), 0 if no such slot.
+		std::size_t Allowance(Net::PeerId peer) const noexcept;
+
+		/// Tests and measurements: fixes `peer`'s allowance at `bytes` (clamped to [kMinAllowanceBytes,
+		/// kMaxAllowanceBytes]) until its slot is reset; 0 returns it to the adaptive rule.
+		void ForceAllowance(Net::PeerId peer, std::size_t bytes) noexcept;
+
+		/// Diagnostics (leak checks): per-client entity states held for all clients.
+		std::size_t TrackedStates() const noexcept;
+
 	private:
 		/// One record, its state bytes at [offset, offset + size) of m_state.
 		struct Record
@@ -148,6 +219,10 @@ namespace Crucible
 			std::uint8_t     mask = 0;
 			std::uint32_t    offset = 0;
 			std::uint8_t     size = 0;
+			std::uint64_t    hash = 0;              // of mask and state: change detection
+			Math::vec3       position{ 0.f };       // the root's, for distance
+			float            sendPriority = 1.f;    // from the prefab
+			bool             critical = false;
 		};
 
 		/// One snapshot message GNS accepted, until it is acknowledged or overwritten.
@@ -156,7 +231,8 @@ namespace Crucible
 			std::uint16_t               sequence = 0;
 			Net::NetTick                tick = 0;
 			bool                        valid = false;
-			std::vector<Net::NetworkId> ids;   // which entities it carried
+			struct Entry { Net::NetworkId id; std::uint64_t hash; };
+			std::vector<Entry>          entries;   // which entities it carried, and the state it carried
 		};
 
 		/// Everything the host keeps about one client slot.
@@ -167,7 +243,9 @@ namespace Crucible
 			std::array<SentSnapshot, 64> sent{};
 			std::uint16_t  lastSequence = 0;        // newest sequence sent (0 = none; 0 is never used)
 			std::uint32_t  confirmedUpTo = 0;       // the appliedLifecycle last turned into confirmations
-			Net::NetworkId resumeFrom = 0;          // the first id left over by the last snapshot (0 = start)
+			std::size_t    allowance = kDefaultAllowanceBytes;   // bytes per snapshot (adaptive)
+			std::uint32_t  calmSnapshots = 0;       // snapshots in a row with lane 1 under kGrowQueueMicros
+			bool           fixedAllowance = false;  // ForceAllowance
 			void Reset();
 		};
 
@@ -186,7 +264,25 @@ namespace Crucible
 		void SyncViews();
 		void RefreshConfirmations(const PeerState& peer, ClientView& view);
 		void ProcessAcks(const PeerState& peer, ClientView& view);
-		void SendSnapshotsTo(Net::PeerId peer, ClientView& view, Net::NetTick tick);
+		void AdaptAllowance(const PeerState& peer, ClientView& view);
+		void SendSnapshotsTo(const PeerState& peer, ClientView& view, Net::NetTick tick);
+
+		/// One candidate for one client's snapshot.
+		struct Candidate
+		{
+			std::uint32_t      record = 0;       // index into m_snapshotRecords
+			ClientEntityState* state = nullptr;
+			UpdateClass        cls = UpdateClass::Near;
+			Net::NetTick       age = 0;          // steps since its previous update or since it went out of date
+			std::int64_t       lateness = 0;     // age - MaxAgeTicks(cls)
+			bool               urgent = false;   // critical, or at or past its maximum age
+		};
+
+		/// Writes candidates from `next` into one message of at most `capacity` bytes and sends it
+		/// (an empty one if nothing is left). False if GNS refused it: nothing remembered, `next`
+		/// unchanged. `bytes` gets the message's size.
+		bool WriteAndSend(Net::PeerId peer, ClientView& view, Net::NetTick tick, std::size_t& next, std::size_t capacity,
+			bool urgentOnly, std::size_t& bytes);
 
 		NetworkSession&             m_session;
 		const NetContent&           m_content;
@@ -205,7 +301,7 @@ namespace Crucible
 		std::vector<Net::PeerId>    m_incremental;  // peers that get this frame's changes
 		std::vector<QueuedGameplayEvent> m_events;  // this frame's gameplay events
 		std::vector<std::byte>      m_eventBuffer;  // one encoded GameplayEvent
-		std::vector<std::size_t>    m_candidates;   // one client's snapshot entries (indices into m_snapshotRecords)
+		std::vector<Candidate>      m_candidates;   // one client's snapshot candidates, in send order
 		SpawnBatchView              m_spawnBatch;   // one message being encoded (reused)
 		DespawnBatchView            m_despawnBatch;
 		SnapshotView                m_snapshot;

@@ -3,13 +3,14 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NetPrefabTable (see the header).
 *
 * \history
 *    -v1.0       Networking Guide 5.4, 18.3 issues 4, 6, 7 (PR 7); review
 *                fixes: IsRegistered before metadata, record-size limit
+*    -v1.1       sendPriority checked (PR 13)
 *
 **************************************************************************/
 #include "Network/NetPrefabTable.h"
@@ -72,6 +73,11 @@ namespace Crucible
 		}
 		const std::string where = Where(id, desc);
 		if (desc.prefabPath.empty()) { error = where + ": no prefab path"; return false; }
+		if (!(desc.sendPriority > 0.f && desc.sendPriority <= kMaxSendPriority))   // also refuses NaN
+		{
+			error = std::format("{}: sendPriority {} is not in (0, {}]", where, desc.sendPriority, kMaxSendPriority);
+			return false;
+		}
 
 		if (desc.replicated.size() > kMaxListEntries || desc.enabledReplicated.size() > kMaxListEntries)
 		{

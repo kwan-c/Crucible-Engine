@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NetPrefabTable: which prefabs can be spawned over the
 *                network, under which explicit NetPrefabId, and what of each
@@ -40,6 +40,8 @@
 *    -v1.0       Networking Guide 5.4, 18.3 issues 4, 6, 7 (PR 7); review
 *                fixes: unregistered component ids reported, not thrown;
 *                a prefab's replicated state must fit one record
+*    -v1.1       sendPriority and critical: host-side snapshot scheduling,
+*                outside the content hash (PR 13)
 *
 **************************************************************************/
 #pragma once
@@ -76,7 +78,15 @@ namespace Crucible
 		std::vector<ComponentId>    serverOnly;          // switched off on client proxies (physics, AI)
 		std::vector<ComponentId>    ownerLocalOnly;      // switched off unless owned by this machine (camera)
 		std::vector<ComponentId>    enabledReplicated;   // whose on/off state EnabledMask carries, bit i = entry i
+
+		// Snapshot scheduling (host only: never on the wire, not in the content hash, so builds
+		// that differ only here still play together). See NetReplicationSendSystem.h.
+		float sendPriority = 1.f;   // weight while it waits for a snapshot slot; > 0, at most kMaxSendPriority
+		bool  critical = false;     // every snapshot, ahead of the budget (players, a boss, a ball...)
 	};
+
+	/// The largest NetPrefabDesc::sendPriority.
+	inline constexpr float kMaxSendPriority = 1000.f;
 
 #ifdef _MSC_VER
 #pragma warning(push)

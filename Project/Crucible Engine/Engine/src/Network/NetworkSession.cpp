@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.8
+* \version       1.9
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -30,6 +30,7 @@
 *    -v1.8       gameplay events, ServerTime(), the input latency probe
 *                (PR 12); review fix: a pending measurement is cancelled
 *                when its entity is removed and expires in Update
+*    -v1.9       bytes by message type, both directions (PR 13)
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -49,6 +50,16 @@ namespace Crucible
 	namespace
 	{
 		using SteadyClock = std::chrono::steady_clock;
+
+		static_assert(NetStats::kMessageTypes == static_cast<std::size_t>(MessageType::Count), "NetStats::kMessageTypes must follow MessageType");
+
+		// Our bytes by message type (the first byte), for NetStats.
+		void CountBytes(std::array<std::uint64_t, NetStats::kMessageTypes>& byType, std::span<const std::byte> message) noexcept
+		{
+			if (message.empty()) return;
+			const auto type = static_cast<std::size_t>(message[0]);
+			if (type < byType.size()) byType[type] += message.size();
+		}
 
 		const char* RoleName(Net::NetRole role) noexcept
 		{
@@ -94,6 +105,7 @@ namespace Crucible
 		if (!Encode(writer, message)) return SendResult::Failed;
 		const SendResult result = m_transport->Send(connection, writer.Written(), Delivery::Reliable, Lane::Gameplay);
 		if (result != SendResult::Ok) ++m_stats.sendFailed;
+		else CountBytes(m_stats.bytesSentByType, writer.Written());
 		return result;
 	}
 
@@ -389,6 +401,7 @@ namespace Crucible
 		}
 		++peer->nextLifecycleSeq;
 		++m_stats.lifecycleMessagesSent;
+		CountBytes(m_stats.bytesSentByType, message);
 		return true;
 	}
 
@@ -542,6 +555,7 @@ namespace Crucible
 		m_stats.carriedOver = static_cast<std::uint32_t>(m_carry.size());
 		m_stats.messagesReceived += m_messages.size();
 		m_stats.bytesReceived += bytes;
+		for (const ReceivedMessage& message : m_messages) CountBytes(m_stats.bytesReceivedByType, message.Data());
 	}
 
 	// Bigger than any message of our protocol can be: never valid, never read and never carried
@@ -808,6 +822,7 @@ namespace Crucible
 		peer->lastSentSnapshot = sequence;
 		++m_stats.snapshotsSent;
 		m_stats.snapshotBytesSent += message.size();
+		CountBytes(m_stats.bytesSentByType, message);
 		return result;
 	}
 
@@ -930,6 +945,7 @@ namespace Crucible
 			return false;
 		}
 		++m_stats.inputsSent;
+		CountBytes(m_stats.bytesSentByType, writer.Written());
 		return true;
 	}
 
