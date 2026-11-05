@@ -238,6 +238,67 @@
             }
         },
         {
+            "id": "489778DD5A36C00B",
+            "parent": "C89778DD5A36C009",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Image"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 100.0,
+                        "y": 100.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 3715637708821250059
+                }
+            }
+        },
+        {
             "id": "549408DD5340C001",
             "components": {
                 "Transform": {
@@ -906,13 +967,93 @@
             }
         },
         {
+            "id": "B09778DD5A84800D",
+            "parent": "C89778DD5A36C009",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Slider"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 34.28826141357422
+                    },
+                    "size": {
+                        "x": 240.0,
+                        "y": 24.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UISlider": {
+                    "minValue": 0.0,
+                    "maxValue": 1.0,
+                    "value": 0.5,
+                    "wholeNumbers": false,
+                    "interactable": true,
+                    "direction": "LeftToRight",
+                    "trackColour": {
+                        "x": 0.25,
+                        "y": 0.25,
+                        "z": 0.2800000011920929,
+                        "w": 1.0
+                    },
+                    "fillColour": {
+                        "x": 0.30000001192092896,
+                        "y": 0.6000000238418579,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "handleColour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "handleSize": 20.0,
+                    "trackThickness": 0.4000000059604645
+                }
+            }
+        },
+        {
             "id": "B14B10DD54DD0001",
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
                         "y": 2.4025590419769287,
-                        "z": 0.0
+                        "z": 12.369576454162598
                     },
                     "rotation": {
                         "x": 0.0,
@@ -934,7 +1075,8 @@
                     "assembly": "Managed/Crucible.Scripts.dll",
                     "namespace": "Crucible.Scripts",
                     "class": "ScreenTest",
-                    "fields": []
+                    "fields": [],
+                    "$enabled": false
                 }
             }
         },
@@ -1011,6 +1153,56 @@
                 },
                 "EntityName": {
                     "name": "Camera"
+                }
+            }
+        },
+        {
+            "id": "C89778DD5A36C009",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 5.115020275115967,
+                        "z": 2.872405767440796
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "World Canvas"
+                },
+                "UICanvas": {
+                    "enabled": true,
+                    "renderMode": "WorldSpace",
+                    "referenceResolution": {
+                        "x": 400.0,
+                        "y": 100.0
+                    },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 0,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
                 }
             }
         },
@@ -1190,6 +1382,120 @@
                 },
                 "EntityName": {
                     "name": "Cone"
+                }
+            }
+        },
+        {
+            "id": "F09778DD59DFC001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 4.604305744171143,
+                        "z": 5.901407241821289
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "World Text"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "WorldTextTest",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.WorldTextTest",
+                            "name": "damageNumber",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 7536625393521901575
+                        }
+                    ]
+                },
+                "WorldText": {
+                    "text": "New Text",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.5,
+                    "size": {
+                        "x": 4.0,
+                        "y": 1.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
                 }
             }
         },
