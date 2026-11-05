@@ -37,6 +37,7 @@
 #include <vector>
 
 // Crucible engine
+#include "AI/NodeHostBridge.h"
 #include "AI/StateGraph.h"
 #include "Math/Math.h"
 #include "Systems/IECSSystems.h"
@@ -45,6 +46,7 @@ namespace Crucible {
 
     class PlayMode;
     class ResourceManager;
+    class ScriptRuntime;
 
     // Not exported (like the other ECS systems): nothing outside the engine calls it yet.
     class ECSStateGraphSystem final : public IECSSystem {
@@ -52,8 +54,9 @@ namespace Crucible {
     public:
 
         // resources: where graphs are loaded from. playMode: its session number
-        // says when Play started again. Core owns both; they outlive this system.
-        ECSStateGraphSystem(ResourceManager& resources, const PlayMode& playMode);
+        // says when Play started again. scripts: runs the C# trees. Core owns
+        // all three; they outlive this system.
+        ECSStateGraphSystem(ResourceManager& resources, const PlayMode& playMode, ScriptRuntime& scripts);
         ~ECSStateGraphSystem() override;
 
         // --- For C# scripts (Scripting/Bindings/StateGraphBindings.cpp) ---- //
@@ -80,6 +83,10 @@ namespace Crucible {
         void Describe(SystemDesc& desc) const override;
 
         SystemStage Stage() const override { return SystemStage::Update; }
+
+        // Frees every enemy's C# trees NOW, while the script runtime still
+        // exists: Core destroys the runtime before it destroys the systems.
+        void Shutdown() noexcept override { m_running.clear(); }
 
     private:
 
@@ -119,6 +126,7 @@ namespace Crucible {
 
         ResourceManager&                            m_resources;
         const PlayMode&                             m_playMode;
+        NodeHostBridge                              m_host;              // before m_running: the instances free their C# trees through it as they go
         std::uint64_t                               m_session = ~0ull;   // play session the instances belong to (none yet)
         std::uint64_t                               m_frame   = 0;
         std::unordered_map<std::uint64_t, Running>  m_running;

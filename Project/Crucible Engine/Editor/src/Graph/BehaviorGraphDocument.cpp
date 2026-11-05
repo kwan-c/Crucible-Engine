@@ -18,7 +18,6 @@
 
 // Crucible engine
 #include "AI/BehaviorGraphIO.h"
-#include "AI/NodeRegistry.h"
 
 namespace Crucible {
 
@@ -34,7 +33,7 @@ namespace Crucible {
     void BehaviorGraphDocument::New() {
 
         m_graph = std::make_unique<BehaviorGraph>();
-        if (const NodeTypeEntry* start = NodeRegistry::Instance().Find("start")) m_graph->SetRoot(start->create());
+        m_graph->SetRoot(MakeNode("start"));   // On Start: every graph begins with one
 
         m_current = EncodeBehaviorGraph(*m_graph);
         m_saved.clear();    // never saved: Dirty until the first Save As

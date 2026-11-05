@@ -8,9 +8,10 @@
 *                "Inspect Script": opens the file a node type is written in.
 *
 * \details
-*                Built-in nodes are C++, so it's their .cpp (recorded by the
-*                registry from __FILE__). C# script nodes will open their
-*                .cs the same way. Shared by the tree and state graph views.
+*                Every node is a C# class, so it's that class's .cs - the
+*                path the C# compiler recorded in its [NodeDescription]
+*                (NodeCatalog's "file"), built-ins and designers' nodes
+*                alike. Shared by the tree and state graph views.
 *
 * \history
 *    -v1.0       first version (moved out of BehaviorTreeView)

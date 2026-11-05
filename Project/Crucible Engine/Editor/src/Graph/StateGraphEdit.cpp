@@ -18,8 +18,7 @@
 #include <functional>   // std::greater
 
 // Crucible engine
-#include "AI/NodeRegistry.h"
-#include "AI/TransitionCondition.h"   // Clone() on the copied arrows' conditions
+#include "AI/BehaviorNode.h"   // MakeNode; conditions are nodes too (Clone)
 
 namespace Crucible::StateGraphEdit {
 
@@ -83,6 +82,8 @@ namespace Crucible::StateGraphEdit {
         copy.m_subgraph       = state.m_subgraph;
         copy.m_editorPosition = state.m_editorPosition;
         if (state.m_behavior.Root()) copy.m_behavior.SetRoot(state.m_behavior.Root()->Clone());
+        if (state.m_onEnter) copy.m_onEnter = state.m_onEnter->Clone();
+        if (state.m_onExit)  copy.m_onExit  = state.m_onExit->Clone();
         for (const auto& detached : state.m_behavior.Detached()) copy.m_behavior.Detached().push_back(detached->Clone());
         return copy;
 
@@ -166,7 +167,8 @@ namespace Crucible::StateGraphEdit {
     int AddTransition(StateGraph& graph, int from, int to) {
 
         const int count = static_cast<int>(graph.m_states.size());
-        if (from == to || from < 0 || to < 0 || from >= count || to >= count) return -1;
+        const bool fromOk = from == kAnyState || (from >= 0 && from < count);   // Any State arrows start at no state
+        if (from == to || !fromOk || to < 0 || to >= count) return -1;
         for (const StateTransition& t : graph.m_transitions) {
             if (t.m_from == from && t.m_to == to) return -1;   // one arrow per pair: its conditions say everything
         }
@@ -222,18 +224,14 @@ namespace Crucible::StateGraphEdit {
                 state.m_subgraph = 0;
                 if (state.m_singleNode) clearNodes();   // a single node isn't the start of a tree
                 state.m_singleNode = false;
-                if (!state.m_behavior.Root()) {
-                    if (const NodeTypeEntry* start = NodeRegistry::Instance().Find("start")) state.m_behavior.SetRoot(start->create());
-                }
+                if (!state.m_behavior.Root()) state.m_behavior.SetRoot(MakeNode("start"));
                 break;
 
             case Content::SingleNode:
                 state.m_subgraph = 0;
                 if (!state.m_singleNode) clearNodes();
                 state.m_singleNode = true;
-                if (!state.m_behavior.Root()) {
-                    if (const NodeTypeEntry* follow = NodeRegistry::Instance().Find("follow_field")) state.m_behavior.SetRoot(follow->create());
-                }
+                if (!state.m_behavior.Root()) state.m_behavior.SetRoot(MakeNode("follow_field"));
                 break;
 
             case Content::Subgraph:

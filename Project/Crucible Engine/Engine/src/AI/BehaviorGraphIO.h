@@ -74,6 +74,10 @@ namespace Crucible {
         void WriteTree(const BehaviorGraph& tree, rapidjson::Value& out, Allocator& allocator);
         bool ReadTree(const rapidjson::Value& in, BehaviorGraph& tree, std::string& error);
 
+        // A node's (or condition's) "fields" object.
+        bool ReadFields(const rapidjson::Value& in, std::vector<NodeField>& fields);
+        void WriteFields(const std::vector<NodeField>& fields, rapidjson::Value& out, Allocator& allocator);
+
         // [ { "name", "type", "value" }, ... ]
         void WriteVariables(const Blackboard& variables, rapidjson::Value& out, Allocator& allocator);
         bool ReadVariables(const rapidjson::Value& in, Blackboard& variables, std::string& error);

@@ -14,7 +14,7 @@
 #include "BehaviorTreeEdit.h"
 
 // Crucible engine
-#include "AI/NodeRegistry.h"   // NodeDescription (names in the refusal messages)
+#include "AI/BehaviorNode.h"   // NodeDescription (names in the refusal messages)
 
 namespace Crucible::BehaviorTreeEdit {
 

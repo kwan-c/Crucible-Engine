@@ -25,8 +25,7 @@
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
 // Crucible engine
-#include "AI/NodeRegistry.h"
-#include "AI/TransitionCondition.h"
+#include "AI/NodeCatalog.h"   // the C# node and condition types
 #include "AssetPipe/Assetmanager.h"
 #include "Core.h"
 #include "Resources/ResourceManager.h"
@@ -34,6 +33,7 @@
 
 // Crucible editor
 #include "Graph/InspectScript.h"
+#include "Graph/NodeCatalogSync.h"
 #include "Graph/NodeFieldEditor.h"
 #include "Graph/StateGraphEdit.h"
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
@@ -82,6 +82,7 @@ namespace Crucible {
     void StateGraphPanel::Update(float) {
 
         if (!m_visible) return;
+        SyncNodeCatalog(m_core.GetScriptRuntime());   // the C# node and condition types, fresh after a script reload
 
         ImGui::SetNextWindowSize({ 1200.0f, 680.0f }, ImGuiCond_FirstUseEver);
         if (m_makeFocus) { ImGui::SetNextWindowFocus(); m_makeFocus = false; }
@@ -161,6 +162,21 @@ namespace Crucible {
                     ImGui::TextDisabled("Select a state or an arrow.");
                 }
                 ImGui::EndChild();
+
+                // A condition made with Create new: onto its arrow the first frame C#
+                // knows its type (or dropped, if that arrow is gone by then).
+                if (!m_pendingCondition.empty() && !readOnly) {
+                    if (const NodeTypeInfo* type = NodeCatalog::Instance().Find(m_pendingCondition)) {
+                        if (m_pendingArrow >= 0 && m_pendingArrow < static_cast<int>(graph.m_transitions.size())) {
+                            graph.m_transitions[static_cast<std::size_t>(m_pendingArrow)].m_conditions.push_back(MakeNode(*type));
+                            m_view.SelectTransition(m_pendingArrow);
+                            m_pendingCommit = true;
+                            SetMessage("Added " + type->name + " to the arrow.", false);
+                        }
+                        m_pendingCondition.clear();
+                        m_pendingArrow = -1;
+                    }
+                }
 
                 // One undo step per finished gesture.
                 const bool busy = m_treeState >= 0 ? m_treeView.IsBusy() : m_view.IsBusy();
@@ -266,27 +282,29 @@ namespace Crucible {
                 break;
 
             case Content::SingleNode: {
-                // Which node: every node type that takes no children (an action).
+                // Which node: every C# action (a node that takes no children).
                 BehaviorNode* node = state.m_behavior.Root();
                 ImGui::SetNextItemWidth(-1.0f);
                 if (ImGui::BeginCombo("##nodeType", std::string(node->Description().name).c_str())) {
-                    for (const NodeTypeEntry& entry : NodeRegistry::Instance().All()) {
-                        if (entry.create()->MaxChildren() != 0) continue;
-                        if (ImGui::Selectable(std::string(entry.description->name).c_str(), entry.description->id == node->Description().id)) {
-                            state.m_behavior.SetRoot(entry.create());
+                    for (const NodeTypeInfo& type : NodeCatalog::Instance().All()) {
+                        if (type.kind != "action") continue;
+                        if (ImGui::Selectable(type.name.c_str(), type.id == node->TypeId())) {
+                            state.m_behavior.SetRoot(MakeNode(type));
                             node = state.m_behavior.Root();
                             changed = true;
                         }
-                        ImGui::SetItemTooltip("%s", std::string(entry.description->description).c_str());
+                        ImGui::SetItemTooltip("%s", type.description.c_str());
                     }
                     ImGui::EndCombo();
                 }
                 ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
                 ImGui::TextWrapped("%s", std::string(node->Description().description).c_str());
                 ImGui::PopStyleColor();
-                if (const NodeTypeEntry* entry = NodeRegistry::Instance().Find(node->Description().id)) {
-                    if (NodeFieldEditor::Draw(entry->reflect(*node), graph.m_variables, readOnly)) changed = true;
-                }
+                if (NodeFieldEditor::Draw(*node, graph.m_variables, readOnly)) changed = true;
+                ImGui::EndDisabled();   // opening the script is fine during Play
+                if (ImGui::Button("Inspect Script", { -1.0f, 0.0f }) && !InspectScript::OpenNodeSource(*node)) SetMessage("C# doesn't know this node, so there's no script to open.", true);
+                ImGui::SetItemTooltip("Open the C# file this node is written in. Or double-click the state.");
+                ImGui::BeginDisabled(readOnly);
                 break;
             }
 
@@ -305,6 +323,11 @@ namespace Crucible {
         }
         ImGui::EndDisabled();
 
+        // On Enter / On Exit: one node each, run as the enemy enters and leaves.
+        ImGui::Separator();
+        if (DrawHook("On Enter", "Runs when the enemy enters this state, before its tree - which waits for it to finish.", state.m_onEnter, graph.m_variables, readOnly)) changed = true;
+        if (DrawHook("On Exit", "Runs when the enemy leaves this state. It gets one frame, so use instant nodes (Log, Stop).", state.m_onExit, graph.m_variables, readOnly)) changed = true;
+
         // The arrows out of it, in the order they're checked.
         ImGui::Separator();
         ImGui::TextUnformatted("Arrows out (checked in this order)");
@@ -322,28 +345,68 @@ namespace Crucible {
 
     }   // StateGraphPanel::DrawStateInspector()
 
+    /*!
+        \brief
+        A state's On Enter or On Exit: which action (or none), its fields, and
+        Inspect Script. True if anything changed.
+    */
+    bool StateGraphPanel::DrawHook(const char* label, const char* help, std::unique_ptr<BehaviorNode>& hook, const Blackboard& variables, bool readOnly) {
+
+        bool changed = false;
+        ImGui::PushID(label);
+        ImGui::TextUnformatted(label);
+        ImGui::SetItemTooltip("%s", help);
+        ImGui::SameLine();
+
+        ImGui::BeginDisabled(readOnly);
+        ImGui::SetNextItemWidth(-1.0f);
+        const std::string current = hook ? std::string(hook->Description().name) : std::string("(nothing)");
+        if (ImGui::BeginCombo("##hook", current.c_str())) {
+            if (ImGui::Selectable("(nothing)", !hook)) { hook.reset(); changed = true; }
+            for (const NodeTypeInfo& type : NodeCatalog::Instance().All()) {
+                if (type.kind != "action") continue;   // one node, no children: an action
+                if (ImGui::Selectable(type.name.c_str(), hook && hook->TypeId() == type.id)) { hook = MakeNode(type); changed = true; }
+                ImGui::SetItemTooltip("%s", type.description.c_str());
+            }
+            ImGui::EndCombo();
+        }
+        ImGui::EndDisabled();
+
+        if (hook) {
+            ImGui::Indent();
+            if (NodeFieldEditor::Draw(*hook, variables, readOnly)) changed = true;
+            if (ImGui::SmallButton("Inspect Script") && !InspectScript::OpenNodeSource(*hook)) SetMessage("C# doesn't know this node, so there's no script to open.", true);
+            ImGui::Unindent();
+        }
+        ImGui::PopID();
+        return changed;
+
+    }   // StateGraphPanel::DrawHook()
+
     bool StateGraphPanel::DrawTransitionInspector(int index, bool readOnly) {
 
         StateGraph& graph = m_document.Graph();
         StateTransition& transition = graph.m_transitions[static_cast<std::size_t>(index)];
         const int stateCount = static_cast<int>(graph.m_states.size());
-        if (transition.m_from < 0 || transition.m_to < 0 || transition.m_from >= stateCount || transition.m_to >= stateCount) {
+        const bool fromAny = transition.m_from == kAnyState;
+        if ((!fromAny && (transition.m_from < 0 || transition.m_from >= stateCount)) || transition.m_to < 0 || transition.m_to >= stateCount) {
             ImGui::TextDisabled("This arrow points at a missing state.");
             return false;
         }
         bool changed = false;
 
-        ImGui::Text("%s  ->  %s", graph.m_states[static_cast<std::size_t>(transition.m_from)].m_name.c_str(),
+        ImGui::Text("%s  ->  %s", fromAny ? "Any State" : graph.m_states[static_cast<std::size_t>(transition.m_from)].m_name.c_str(),
                                   graph.m_states[static_cast<std::size_t>(transition.m_to)].m_name.c_str());
 
-        // Its place among the arrows out of the same state.
+        // Its place among the arrows out of the same state (or out of Any State).
         int rank = 0, total = 0;
         for (int i = 0; i < static_cast<int>(graph.m_transitions.size()); ++i) {
             if (graph.m_transitions[static_cast<std::size_t>(i)].m_from != transition.m_from) continue;
             ++total;
             if (i == index) rank = total;
         }
-        ImGui::TextDisabled("Checked %d of %d arrows out of this state.", rank, total);
+        if (fromAny) ImGui::TextDisabled("Checked %d of %d Any State arrows - before the current state's own arrows.", rank, total);
+        else         ImGui::TextDisabled("Checked %d of %d arrows out of this state.", rank, total);
 
         ImGui::BeginDisabled(readOnly);
         if (ImGui::Button("Check Earlier")) { m_view.SelectTransition(StateGraphEdit::MovePriority(graph, index, -1)); changed = true; }
@@ -359,20 +422,21 @@ namespace Crucible {
         int removeAt = -1;
         for (int i = 0; i < static_cast<int>(transition.m_conditions.size()); ++i) {
 
-            TransitionCondition* condition = transition.m_conditions[static_cast<std::size_t>(i)].get();
+            BehaviorNode* condition = transition.m_conditions[static_cast<std::size_t>(i)].get();   // a condition is a node with no children
             if (!condition) continue;
             ImGui::PushID(i);
 
-            const NodeDescription& description = condition->Description();
+            const NodeDescription description = condition->Description();
             ImGui::TextUnformatted(std::string(description.name).c_str());
             ImGui::SameLine();
             if (ImGui::SmallButton("Remove")) removeAt = i;
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Script") && !InspectScript::OpenNodeSource(*condition)) SetMessage("C# doesn't know this condition, so there's no script to open.", true);
+            ImGui::SetItemTooltip("Open the C# file this condition is written in.");
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             ImGui::TextWrapped("%s", std::string(description.description).c_str());
             ImGui::PopStyleColor();
-            if (const ConditionTypeEntry* entry = ConditionRegistry::Instance().Find(description.id)) {
-                if (NodeFieldEditor::Draw(entry->reflect(*condition), graph.m_variables, readOnly)) changed = true;
-            }
+            if (NodeFieldEditor::Draw(*condition, graph.m_variables, readOnly)) changed = true;
             ImGui::Separator();
             ImGui::PopID();
 
@@ -381,13 +445,20 @@ namespace Crucible {
 
         if (ImGui::Button("Add Condition", { -1.0f, 0.0f })) ImGui::OpenPopup("AddCondition");
         if (ImGui::BeginPopup("AddCondition")) {
-            for (const ConditionTypeEntry& entry : ConditionRegistry::Instance().All()) {
-                if (ImGui::MenuItem(std::string(entry.description->name).c_str())) {
-                    transition.m_conditions.push_back(entry.create());
+            bool any = false;
+            for (const NodeTypeInfo& type : NodeCatalog::Instance().All()) {
+                if (!type.IsCondition()) continue;
+                any = true;
+                if (ImGui::MenuItem(type.name.c_str())) {
+                    transition.m_conditions.push_back(MakeNode(type));
                     changed = true;
                 }
-                ImGui::SetItemTooltip("%s", std::string(entry.description->description).c_str());
+                ImGui::SetItemTooltip("%s", type.description.c_str());
             }
+            if (!any) ImGui::TextDisabled("No conditions: C# scripting isn't running, or the scripts didn't build.");
+            ImGui::Separator();
+            if (ImGui::MenuItem("Create new Condition...")) { m_conditionDialog.Open(NodeScriptDialog::Kind::Condition); m_pendingArrow = index; }
+            ImGui::SetItemTooltip("Write a C# condition of your own; it goes on this arrow once the scripts compile.");
             ImGui::EndPopup();
         }
         ImGui::EndDisabled();
@@ -397,6 +468,12 @@ namespace Crucible {
     }   // StateGraphPanel::DrawTransitionInspector()
 
     void StateGraphPanel::DrawDialogs() {
+
+        // Create new Condition: once its script is written, wait for it to compile.
+        if (const std::string created = m_conditionDialog.Draw(); !created.empty()) {
+            m_pendingCondition = created;
+            SetMessage("Script written - the condition goes on the arrow once the scripts have compiled.", false);
+        }
 
         // Open: every .stategraph in Assets.
         if (m_openPicker) { ImGui::OpenPopup("Open State Graph"); m_openPicker = false; }

@@ -1,0 +1,34 @@
+using Crucible;
+using Crucible.AI;
+
+namespace Crucible.Scripts
+{
+    [NodeDescription("{{NAME}}", "{{DESCRIPTION}}", "{{CATEGORY}}", "{{ID}}")]
+    public sealed class {{CLASS}} : Composite
+    {
+        private int current;   // the child running now
+
+        protected override Status OnStart()
+        {
+            current = 0;
+            return Children.Count == 0 ? Status.Success : Status.Running;
+        }
+
+        // Decide which children run and in what order. This starts as a plain
+        // Sequence: each child in turn, stopping at the first that fails.
+        protected override Status OnUpdate()
+        {
+            while (current < Children.Count)
+            {
+                Status status = Children[current].Tick(DeltaTime);
+                if (status != Status.Success) return status;
+                ++current;
+            }
+            return Status.Success;
+        }
+
+        protected override void OnEnd()
+        {
+        }
+    }
+}

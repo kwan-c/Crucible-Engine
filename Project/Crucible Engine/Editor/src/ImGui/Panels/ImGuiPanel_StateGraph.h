@@ -36,6 +36,7 @@
 
 // Crucible editor
 #include "Graph/BehaviorTreeView.h"
+#include "Graph/NodeScriptDialog.h"
 #include "Graph/StateGraphDocument.h"
 #include "Graph/StateGraphView.h"
 #include "Graph/VariablesEditor.h"
@@ -81,6 +82,7 @@ namespace Crucible {
         void DrawToolbar(bool readOnly);
         bool DrawStateInspector(int index, bool readOnly);        // true if changed
         bool DrawTransitionInspector(int index, bool readOnly);   // true if changed
+        bool DrawHook(const char* label, const char* help, std::unique_ptr<BehaviorNode>& hook, const Blackboard& variables, bool readOnly);   // On Enter / On Exit
         void DrawDialogs();
 
         std::string AssetPath(std::uint64_t asset) const;          // "" if unknown
@@ -107,6 +109,12 @@ namespace Crucible {
         bool               m_openGuard        = false;
         bool               m_openSubgraphPick = false;
         int                m_subgraphState    = -1;    // the state the Subgraph picker is choosing for
+
+        // Add Condition > Create new Condition: the dialog, and the condition
+        // waiting for its script to compile before it goes on arrow m_pendingArrow.
+        NodeScriptDialog   m_conditionDialog;
+        std::string        m_pendingCondition;
+        int                m_pendingArrow     = -1;
         char               m_savePath[512]    = "AI/New State Graph.stategraph";
 
     };  // STATEGRAPHPANEL CLASS

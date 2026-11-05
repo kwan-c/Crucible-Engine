@@ -3,21 +3,19 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       2.0
 * \brief
-*                BehaviorGraph: a behaviour tree as an asset - its nodes and
-*                its blackboard variables. BehaviorGraphInstance: one
-*                enemy's private running copy of it.
+*                BehaviorGraph: a behaviour tree asset (.behaviorgraph) - its
+*                root, the editor's unconnected nodes, and its variables.
 *
 * \details
-*                The asset is shared: editing it changes every enemy that
-*                uses it. At Play each enemy calls Instantiate() and gets
-*                its own copy of the nodes and the blackboard, so each
-*                tracks its own progress (Unity Behavior does the same).
-*                The copy is never saved and goes away at Stop.
+*                Plain data, like BehaviorNode. It never runs by itself: a
+*                state graph's state runs it (its own tree, or a Subgraph
+*                state's .behaviorgraph), through NodeHostBridge, in C#.
 *
 * \history
-*    -v1.0       first version
+*    -v1.0       first version (with BehaviorGraphInstance, which ran C++ nodes)
+*    -v2.0       data only; trees run in C#
 *
 **************************************************************************/
 #pragma once
@@ -31,8 +29,6 @@
 #include "AI/Blackboard.h"
 
 namespace Crucible {
-
-    class BehaviorGraphInstance;
 
     class BehaviorGraph {
 
@@ -53,19 +49,6 @@ namespace Crucible {
         Blackboard&       Variables()       { return m_variables; }
         const Blackboard& Variables() const { return m_variables; }
 
-        /*!
-            \brief
-            One enemy's running copy: cloned nodes, a copy of the variables
-            (plus "Self" = the enemy), all pointed at that enemy.
-
-            \param world
-            The world the enemy lives in. Must outlive the instance.
-
-            \param self
-            The enemy running it.
-        */
-        std::unique_ptr<BehaviorGraphInstance> Instantiate(World& world, Entity self) const;
-
     private:
 
         std::unique_ptr<BehaviorNode>              m_root;
@@ -73,36 +56,5 @@ namespace Crucible {
         Blackboard                                 m_variables;
 
     };  // BEHAVIORGRAPH CLASS
-
-    class BehaviorGraphInstance {
-
-    public:
-
-        // Its nodes keep a pointer to m_context, so it must never move or copy:
-        // it only ever lives behind the unique_ptr Instantiate returns.
-        BehaviorGraphInstance(const BehaviorGraphInstance&)            = delete;
-        BehaviorGraphInstance& operator=(const BehaviorGraphInstance&) = delete;
-
-        // One frame of the tree. Failure if it has no root.
-        BehaviorStatus Tick(float deltaTime);
-
-        // Cuts the whole tree short (the enemy left this state, or was removed).
-        void Abort();
-
-        // This enemy's private blackboard (per-enemy overrides are written here).
-        Blackboard& Variables() { return m_variables; }
-
-        const BehaviorNode* Root() const { return m_root.get(); }
-
-    private:
-
-        friend class BehaviorGraph;
-        BehaviorGraphInstance() = default;
-
-        Blackboard                    m_variables;
-        BehaviorContext               m_context;
-        std::unique_ptr<BehaviorNode> m_root;
-
-    };  // BEHAVIORGRAPHINSTANCE CLASS
 
 }   // NAMESPACE CRUCIBLE

@@ -24,8 +24,8 @@
 
 namespace Crucible {
 
-    ECSStateGraphSystem::ECSStateGraphSystem(ResourceManager& resources, const PlayMode& playMode)
-        : m_resources(resources), m_playMode(playMode) {
+    ECSStateGraphSystem::ECSStateGraphSystem(ResourceManager& resources, const PlayMode& playMode, ScriptRuntime& scripts)
+        : m_resources(resources), m_playMode(playMode), m_host(scripts) {
 
         s_active = this;
 
@@ -84,7 +84,7 @@ namespace Crucible {
             running.instance.reset();
             if (asset != 0) {
                 if (std::shared_ptr<const StateGraph> graph = m_resources.GetStateGraph(asset)) {
-                    running.instance = StateGraphInstance::Create(std::move(graph), world, entity,
+                    running.instance = StateGraphInstance::Create(std::move(graph), m_host, entity,
                         [this](std::uint64_t id) { return m_resources.GetBehaviorGraph(id); });   // Subgraph states' .behaviorgraph files
                 }
             }

@@ -2,253 +2,224 @@
 * \file:         BehaviorNode.h
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
-* \date          3 November 2026
-* \version       1.0
+* \date          5 November 2026
+* \version       2.0
 * \brief
-*                BehaviorNode: the base of every behaviour-tree node, and
-*                the three kinds - Action (no children), Modifier (one
-*                child) and Composite (many children).
+*                BehaviorNode: one node of a behaviour tree (or one arrow
+*                condition) as DATA - its type id, its field values and its
+*                children. What the editor edits and the files store.
 *
 * \details
-*                The same shape as Unity Behavior's nodes. A node runs in
-*                three hooks:
-*                  OnStart()                 - a run begins
-*                  OnUpdate(float deltaTime) - every frame while it runs
-*                  OnEnd()                   - the run finished or was cut short
-*                and each frame it reports a BehaviorStatus: still Running,
-*                or done with Success or Failure.
+*                What a node DOES is written in C# (Crucible.AI.Node, and the
+*                built-ins in ManagedScripts/Runtime/AI/Nodes). At Play,
+*                NodeHostBridge turns this data into C# objects for each
+*                enemy, and C# runs them. So there is one class here for
+*                every kind of node: "wait" and "sequence" differ only in
+*                their type id, fields and children.
 *
-*                Built-in nodes are C++ classes (AI/Nodes/); designers'
-*                own nodes will be C# scripts with the same three hooks,
-*                once scripting can bind them.
+*                Field values are kept as TEXT, in the format the C# side
+*                reads (NodeHost.cs): "1.5", "true", "0,0,5". That keeps a
+*                node's values intact even when its C# class isn't known
+*                (C# not running, a script renamed) - nothing is lost by
+*                loading and saving such a graph.
 *
-*                Every enemy runs its OWN copy of a graph's nodes (Clone),
-*                as in Unity, so a node can keep its progress - a timer, a
-*                child index - in plain member variables.
+*                Header-only on purpose: the Editor (another module) uses all
+*                of it without anything having to be exported.
 *
 * \history
-*    -v1.0       first version
+*    -v1.0       C++ node classes with Tick / OnStart / OnUpdate / OnEnd
+*    -v2.0       plain data; the behaviour moved to C#
 *
 **************************************************************************/
 #pragma once
 
 // STL
+#include <algorithm>    // std::stable_sort, std::find_if
+#include <cstddef>
 #include <cstdint>
-#include <limits>       // Composite's unlimited MaxChildren
+#include <limits>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <utility>
 #include <vector>
 
 // Crucible engine
-#include "ECS/Core/ECSCore.h"   // Entity
+#include "AI/NodeCatalog.h"
 #include "Math/Math.h"          // vec2, for the editor position
 
 namespace Crucible {
 
-    class Blackboard;
-    class World;
-    struct NodeDescription;
-
-    // How a node is doing this frame.
+    // How a node did this frame. Same numbers as C#'s Node.Status: keep them in step.
     enum class BehaviorStatus : std::uint8_t {
 
-        Running,    // not finished: tick me again next frame
-        Success,    // finished, and it worked
-        Failure     // finished, and it didn't (or couldn't)
+        Running = 0,    // not finished: tick me again next frame
+        Success = 1,    // finished, and it worked
+        Failure = 2     // finished, and it didn't (or couldn't)
 
     };  // BEHAVIORSTATUS ENUM
 
-    // What a node can reach while it runs: the world, the enemy it belongs to,
-    // and that enemy's blackboard. One per enemy, owned by its graph instance.
-    struct BehaviorContext {
+    // How a field's value is written in the file. Only matters for saving: the
+    // text itself is what C# reads.
+    enum class FieldKind : std::uint8_t { None, Number, Integer, Bool, Text, Vector3 };
 
-        World*      world      = nullptr;
-        Entity      self{};
-        Blackboard* blackboard = nullptr;
+    // The kind a field of this catalog type ("float", "Vector3"...) is saved as.
+    inline FieldKind FieldKindOf(std::string_view catalogType) {
 
-    };  // BEHAVIORCONTEXT STRUCT
+        if (catalogType == "float")   return FieldKind::Number;
+        if (catalogType == "int")     return FieldKind::Integer;
+        if (catalogType == "bool")    return FieldKind::Bool;
+        if (catalogType == "Vector3") return FieldKind::Vector3;
+        if (catalogType == "string" || catalogType == "enum") return FieldKind::Text;
+        if (catalogType == "BehaviorGraph") return FieldKind::Text;   // an asset id as text: too big for a JSON number to keep exactly
+        return FieldKind::None;   // Entity: only ever a link, never a stored value
+
+    }   // FieldKindOf()
+
+    // One field's value on one node.
+    struct NodeField {
+
+        std::string name;               // the file key: "seconds"
+        std::string text;               // its own value, as text
+        std::string link;               // a graph variable it reads instead; "" = its own value
+        FieldKind   kind     = FieldKind::None;
+        bool        linkable = false;   // saved as { "value", "variable" } (a BlackboardVariable in C#)
+
+    };  // NODEFIELD STRUCT
+
+    // A node's name, category and description, for the editor.
+    struct NodeDescription {
+
+        std::string_view id;
+        std::string_view name;
+        std::string_view category;
+        std::string_view description;
+
+    };  // NODEDESCRIPTION STRUCT
 
     class BehaviorNode {
 
     public:
 
-        virtual ~BehaviorNode() = default;
+        explicit BehaviorNode(std::string type = {}) : m_type(std::move(type)) {}
 
-        // --- Driving it (parents and the graph call these) ------------------ //
-
-        /*!
-            \brief
-            Runs the node for one frame: starts it if it isn't running, updates
-            it, and ends it once it reports Success or Failure.
-
-            \details
-            OnStart and the first OnUpdate happen in the SAME frame. Otherwise
-            every node would cost a frame just to begin, and a Sequence of
-            instant nodes (Log, Stop, Log...) would crawl one node per frame.
-
-            \return
-            This frame's status. After Success or Failure the node is idle, and
-            the next Tick starts a fresh run.
-        */
-        BehaviorStatus Tick(float deltaTime);
-
-        // Cuts a running node short: its running children first, then its own
-        // OnEnd. Used when a parent stops early (a Sequence whose child failed,
-        // a state the enemy left). Does nothing if it isn't running.
-        void Abort();
-
-        bool           IsRunning() const { return m_running; }
-        BehaviorStatus LastStatus() const { return m_status; }
-
-        // Points this node (and its children) at its enemy's context. Called
-        // once, when the enemy's copy is made.
-        virtual void Bind(BehaviorContext* context) { m_context = context; }
+        BehaviorNode(const BehaviorNode&)            = delete;   // Clone() copies the children too
+        BehaviorNode& operator=(const BehaviorNode&) = delete;
 
         // --- What it is ------------------------------------------------------ //
 
-        // A deep copy: the node's settings and copies of all its children,
-        // with no run in progress. How each enemy gets its own copy of a graph.
-        virtual std::unique_ptr<BehaviorNode> Clone() const = 0;
+        const std::string& TypeId() const { return m_type; }
 
-        // Its name, category, description and id (NodeRegistry.h).
-        virtual const NodeDescription& Description() const = 0;
+        // Its C# type's description, or null if C# doesn't (yet) know the id.
+        const NodeTypeInfo* Info() const { return NodeCatalog::Instance().Find(m_type); }
 
-        // How many children this kind of node can take: 0 (Action), 1
-        // (Modifier) or no limit (Composite). The editor asks this to know when
-        // a new connection needs Branch Options instead.
-        virtual std::size_t MaxChildren() const { return 0; }
+        // Name, category and description - the id itself for an unknown type.
+        // The views point into the catalog: use them right away.
+        NodeDescription Description() const {
+            if (const NodeTypeInfo* info = Info()) return { info->id, info->name, info->category, info->description };
+            return { m_type, m_type, "Unknown", "No C# node has this id - its script was renamed or deleted, or C# isn't running." };
+        }
 
-        // Children, for the graph, saving and the editor. None by default.
-        virtual std::size_t   ChildCount() const { return 0; }
-        virtual BehaviorNode* ChildAt(std::size_t) const { return nullptr; }
+        // 0 (action, condition), 1 (modifier) or no limit (composite). An
+        // unknown type takes any number, so a graph's shape survives until its
+        // script is back.
+        std::size_t MaxChildren() const {
+            const NodeTypeInfo* info = Info();
+            return info ? info->MaxChildren() : std::numeric_limits<std::size_t>::max();
+        }
 
-        // Adds a child at the end. False if this kind of node can't take one
-        // (an Action never can; a Modifier only one).
-        virtual bool AddChild(std::unique_ptr<BehaviorNode>) { return false; }
+        // --- Children --------------------------------------------------------- //
 
-        // Takes `child` back out (the editor disconnecting or deleting it).
-        // Null if it isn't one of this node's children.
-        virtual std::unique_ptr<BehaviorNode> DetachChild(BehaviorNode*) { return nullptr; }
+        std::size_t   ChildCount() const { return m_children.size(); }
+        BehaviorNode* ChildAt(std::size_t index) const { return index < m_children.size() ? m_children[index].get() : nullptr; }
 
-        // Puts the children in left-to-right order of their editor position -
-        // the order they run in, as in Unity Behavior. Only Composites have an
-        // order to change. The editor calls it after a node is moved or
-        // connected, so where a node sits IS when it runs. (Virtual partly so
-        // the Editor, outside Engine.dll, can call it without an export.)
-        virtual void SortChildrenByEditorX() {}
+        // Adds a child at the end, if this kind of node can take another (the editor).
+        bool AddChild(std::unique_ptr<BehaviorNode> child) {
+            if (!child || m_children.size() >= MaxChildren()) return false;
+            m_children.push_back(std::move(child));
+            return true;
+        }
 
-        // Where the node sits in the graph editor. Editor-only: saved with the
-        // graph so the layout survives, never read while the graph runs.
+        // Adds a child whatever the catalog says: loading a file, which may
+        // be read before C# has said what any type is.
+        void AppendChild(std::unique_ptr<BehaviorNode> child) { if (child) m_children.push_back(std::move(child)); }
+
+        // Takes `child` back out; null if it isn't one of this node's children.
+        std::unique_ptr<BehaviorNode> DetachChild(BehaviorNode* child) {
+            const auto found = std::find_if(m_children.begin(), m_children.end(), [&](const auto& owned) { return owned.get() == child; });
+            if (found == m_children.end()) return nullptr;
+            std::unique_ptr<BehaviorNode> taken = std::move(*found);
+            m_children.erase(found);
+            return taken;
+        }
+
+        // Left-to-right order of their editor position: the order a composite
+        // runs them in, as in Unity Behavior. Only composites have an order.
+        void SortChildrenByEditorX() {
+            const NodeTypeInfo* info = Info();
+            if (!info || info->kind != "composite") return;
+            std::stable_sort(m_children.begin(), m_children.end(),
+                [](const auto& a, const auto& b) { return a->m_editorPosition.x < b->m_editorPosition.x; });
+        }
+
+        // A deep copy: type, fields, position and copies of all the children.
+        std::unique_ptr<BehaviorNode> Clone() const {
+            auto copy = std::make_unique<BehaviorNode>(m_type);
+            copy->m_fields         = m_fields;
+            copy->m_editorPosition = m_editorPosition;
+            for (const auto& child : m_children) copy->m_children.push_back(child->Clone());
+            return copy;
+        }
+
+        // --- Fields ----------------------------------------------------------- //
+
+        std::vector<NodeField>&       Fields()       { return m_fields; }
+        const std::vector<NodeField>& Fields() const { return m_fields; }
+
+        NodeField* FindField(std::string_view fieldName) {
+            for (NodeField& field : m_fields) if (field.name == fieldName) return &field;
+            return nullptr;
+        }
+        const NodeField* FindField(std::string_view fieldName) const {
+            return const_cast<BehaviorNode*>(this)->FindField(fieldName);
+        }
+
+        // The node's value for a catalog field, added with the C# default if
+        // it has none yet (a field added to the script after the graph was saved).
+        NodeField& FieldFor(const NodeFieldInfo& info) {
+            if (NodeField* field = FindField(info.name)) return *field;
+            m_fields.push_back({ info.name, info.value, info.link, FieldKindOf(info.type), info.linkable });
+            return m_fields.back();
+        }
+
+        // Where the node sits in the graph editor. Saved, never used at runtime.
         Math::vec2 m_editorPosition{ 0.0f };
-
-    protected:
-
-        BehaviorNode() = default;
-
-        // A copy keeps the settings but never a run in progress, or the
-        // context of whoever it was copied from.
-        BehaviorNode(const BehaviorNode& other)
-            : m_editorPosition(other.m_editorPosition), m_context(nullptr), m_status(BehaviorStatus::Success), m_running(false) {}
-        BehaviorNode& operator=(const BehaviorNode&) = delete;
-
-        // --- The three hooks ------------------------------------------------- //
-
-        // A run begins. Return Running to carry on into OnUpdate, or Success /
-        // Failure to finish straight away (a Log has nothing left to do).
-        virtual BehaviorStatus OnStart() { return BehaviorStatus::Running; }
-
-        // Every frame while it runs.
-        virtual BehaviorStatus OnUpdate(float deltaTime) = 0;
-
-        // The run is over: it finished, or it was aborted. Undo anything that
-        // must not outlive the run (Move To stops its agent here).
-        virtual void OnEnd() {}
-
-        // Kinds with children abort the running ones (Abort calls this first).
-        virtual void AbortChildren() {}
-
-        BehaviorContext& Context() const { return *m_context; }
 
     private:
 
-        BehaviorContext* m_context = nullptr;
-        BehaviorStatus   m_status  = BehaviorStatus::Success;
-        bool             m_running = false;
+        std::string                                m_type;
+        std::vector<NodeField>                     m_fields;
+        std::vector<std::unique_ptr<BehaviorNode>> m_children;
 
     };  // BEHAVIORNODE CLASS
 
-    // A leaf: does something itself (Wait, Move To, Log). No children.
-    class Action : public BehaviorNode {
+    // A new node of `type` with every field at its C# default.
+    inline std::unique_ptr<BehaviorNode> MakeNode(const NodeTypeInfo& type) {
 
-    protected:
+        auto node = std::make_unique<BehaviorNode>(type.id);
+        for (const NodeFieldInfo& field : type.fields) node->FieldFor(field);
+        return node;
 
-        Action() = default;
-        Action(const Action&) = default;
+    }   // MakeNode()
 
-    };  // ACTION CLASS
+    // The same by id - even one C# hasn't listed (yet): then it has no fields
+    // stored, and C# uses its defaults when it runs. How "start" is made for a
+    // new graph whether or not C# is running.
+    inline std::unique_ptr<BehaviorNode> MakeNode(std::string_view typeId) {
 
-    // Exactly one child, whose run it controls (On Start repeats it; later:
-    // Inverter, Cooldown...).
-    class Modifier : public BehaviorNode {
+        if (const NodeTypeInfo* type = NodeCatalog::Instance().Find(typeId)) return MakeNode(*type);
+        return std::make_unique<BehaviorNode>(std::string(typeId));
 
-    public:
-
-        void          Bind(BehaviorContext* context) override;
-        std::size_t   MaxChildren() const override { return 1; }
-        std::size_t   ChildCount() const override { return m_child ? 1u : 0u; }
-        BehaviorNode* ChildAt(std::size_t index) const override { return index == 0 ? m_child.get() : nullptr; }
-        bool          AddChild(std::unique_ptr<BehaviorNode> child) override;
-        std::unique_ptr<BehaviorNode> DetachChild(BehaviorNode* child) override;
-
-    protected:
-
-        Modifier() = default;
-        Modifier(const Modifier& other);   // copies the child too
-
-        void AbortChildren() override { if (m_child) m_child->Abort(); }
-
-        BehaviorNode* Child() const { return m_child.get(); }
-
-    private:
-
-        std::unique_ptr<BehaviorNode> m_child;
-
-    };  // MODIFIER CLASS
-
-    // Many children, run in an order it decides (Sequence, Try In Order...).
-    class Composite : public BehaviorNode {
-
-    public:
-
-        void          Bind(BehaviorContext* context) override;
-        std::size_t   MaxChildren() const override { return std::numeric_limits<std::size_t>::max(); }
-        std::size_t   ChildCount() const override { return m_children.size(); }
-        BehaviorNode* ChildAt(std::size_t index) const override { return index < m_children.size() ? m_children[index].get() : nullptr; }
-        bool          AddChild(std::unique_ptr<BehaviorNode> child) override;
-        std::unique_ptr<BehaviorNode> DetachChild(BehaviorNode* child) override;
-        void                          SortChildrenByEditorX() override;
-
-    protected:
-
-        Composite() = default;
-        Composite(const Composite& other);   // copies every child too
-
-        void AbortChildren() override;
-
-    private:
-
-        std::vector<std::unique_ptr<BehaviorNode>> m_children;
-
-    };  // COMPOSITE CLASS
+    }   // MakeNode()
 
 }   // NAMESPACE CRUCIBLE
-
-// Gives a node class its Clone() and Description(). Put it at the top of every
-// concrete node class, after declaring `static const NodeDescription kDescription;`.
-//
-// Clone works by the class's own copy constructor: plain fields copy as they
-// are, and Modifier's / Composite's copy constructors deep-copy the children,
-// so a new node type never has to write any copying code itself.
-#define CRUCIBLE_BEHAVIOR_NODE(Type)                                                                    \
-    public:                                                                                             \
-        std::unique_ptr<BehaviorNode> Clone() const override { return std::make_unique<Type>(*this); }  \
-        const NodeDescription& Description() const override { return kDescription; }

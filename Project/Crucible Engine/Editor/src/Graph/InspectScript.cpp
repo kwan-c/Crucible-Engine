@@ -29,8 +29,7 @@
 #endif
 
 // Crucible engine
-#include "AI/BehaviorNode.h"
-#include "AI/NodeRegistry.h"
+#include "AI/BehaviorNode.h"   // Info(): the node's catalog entry
 #include "Diagnostics/Logger.h"
 
 namespace Crucible::InspectScript {
@@ -50,9 +49,10 @@ namespace Crucible::InspectScript {
 
     bool OpenNodeSource(const BehaviorNode& node) {
 
-        const NodeTypeEntry* entry = NodeRegistry::Instance().Find(node.Description().id);
-        if (!entry || !entry->sourceFile || !*entry->sourceFile) return false;
-        OpenFile(entry->sourceFile);
+        // The .cs path C# recorded for the class ([CallerFilePath] in its [NodeDescription]).
+        const NodeTypeInfo* info = node.Info();
+        if (!info || info->file.empty()) return false;
+        OpenFile(info->file.c_str());
         return true;
 
     }   // OpenNodeSource()

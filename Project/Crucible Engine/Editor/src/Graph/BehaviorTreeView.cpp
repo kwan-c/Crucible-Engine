@@ -15,17 +15,24 @@
 
 // STL
 #include <algorithm>    // std::find, std::max
+#include <array>
 #include <cfloat>       // FLT_MAX
+#include <charconv>     // std::from_chars: a Run Subgraph's asset id
+#include <cstdint>
 #include <string_view>
+#include <utility>      // std::pair
 
 // Crucible engine
 #include "AI/Blackboard.h"
-#include "AI/NodeRegistry.h"
+#include "AI/NodeCatalog.h"     // the C# node types: Add Node, Branch Options
+#include "AI/NodeHostBridge.h"  // kRunSubgraphType / kRunSubgraphField
 #include "Diagnostics/Logger.h"
 
 // Crucible editor
 #include "Graph/InspectScript.h"
 #include "Graph/NodeFieldEditor.h"
+#include "ImGui/ImGuiManager.h"                     // EditorManager: the panels
+#include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"  // double-click a Run Subgraph: open its graph
 
 namespace Crucible {
 
@@ -44,12 +51,6 @@ namespace Crucible {
             return IM_COL32(85, 92, 105, 255);
 
         }   // HeaderColour()
-
-        const NodeTypeEntry* EntryOf(const BehaviorNode& node) {
-
-            return NodeRegistry::Instance().Find(node.Description().id);
-
-        }   // EntryOf()
 
     }   // ANONYMOUS NAMESPACE
 
@@ -108,6 +109,21 @@ namespace Crucible {
             }
             m_status.clear();
 
+        }
+
+        // Double-click a node: open its C# script (Unity's Inspect Script) - or,
+        // for a Run Subgraph with a graph chosen, that graph, as Unity does. Not
+        // on the output dot: a double-click there is just two tries at a link.
+        if (hovered && !hoveredPort && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+            const NodeField* graphField = hovered->TypeId() == kRunSubgraphType ? hovered->FindField(kRunSubgraphField) : nullptr;
+            std::uint64_t subgraph = 0;
+            if (graphField) std::from_chars(graphField->text.data(), graphField->text.data() + graphField->text.size(), subgraph);
+            if (subgraph != 0) {
+                if (auto panel = EditorManager::GetInstance().GetPanel<BehaviorGraphPanel>(ImguiPanels::BEHAVIORGRAPH)) panel->RequestOpen(subgraph);
+            }
+            else if (!InspectScript::OpenNodeSource(*hovered)) {
+                m_status = "No script to open: C# doesn't know the node \"" + hovered->TypeId() + "\".";
+            }
         }
 
         // Dragging moves every selected node. With Alt held their children come
@@ -180,6 +196,19 @@ namespace Crucible {
             }
         }
 
+        // A node made with Create new: placed the first frame C# knows its type
+        // (the Editor's hot reload compiles the new script, then the catalog refreshes).
+        if (!m_pendingType.empty() && !readOnly) {
+            if (const NodeTypeInfo* type = NodeCatalog::Instance().Find(m_pendingType)) {
+                std::unique_ptr<BehaviorNode> node = MakeNode(*type);
+                node->m_editorPosition = m_pendingPosition;
+                Select(BehaviorTreeEdit::AddDetached(graph, std::move(node)));
+                m_status = "Added " + type->name + ". Connect it into the tree to run it.";
+                m_pendingType.clear();
+                changed = true;
+            }
+        }
+
         // 3. Draw. Collected again: an edit above may have moved or removed nodes.
         BehaviorTreeEdit::Collect(graph, m_nodes);
         const BehaviorNode* root = graph.Root();
@@ -202,9 +231,8 @@ namespace Crucible {
 
         for (const BehaviorTreeEdit::NodeInfo& info : m_nodes) {
 
-            const NodeDescription& description = info.node->Description();
-            const NodeTypeEntry*   entry       = EntryOf(*info.node);
-            const std::string      summary     = entry ? NodeFieldEditor::Summary(entry->reflect(*info.node)) : std::string();
+            const NodeDescription description = info.node->Description();
+            const std::string     summary     = NodeFieldEditor::Summary(*info.node);
 
             m_canvas.DrawNode(topLeftOf(info.node), nodeSize, HeaderColour(description.category),
                               std::string(description.name).c_str(), summary.c_str(), IsSelected(info.node), !info.attached);
@@ -233,23 +261,39 @@ namespace Crucible {
         // Canvas: Add Node (one submenu per registry category), Paste, Frame All.
         if (ImGui::BeginPopup("BehaviorCanvasMenu")) {
 
+            // Every C# node type (not the conditions - those go on state graph arrows).
             if (ImGui::BeginMenu("Add Node")) {
+                const std::vector<NodeTypeInfo>& types = NodeCatalog::Instance().All();
                 std::vector<std::string_view> categories;
-                for (const NodeTypeEntry& entry : NodeRegistry::Instance().All()) {
-                    if (std::find(categories.begin(), categories.end(), entry.description->category) == categories.end()) categories.push_back(entry.description->category);
+                for (const NodeTypeInfo& type : types) {
+                    if (type.IsCondition()) continue;
+                    if (std::find(categories.begin(), categories.end(), type.category) == categories.end()) categories.push_back(type.category);
                 }
                 for (const std::string_view category : categories) {
                     if (!ImGui::BeginMenu(std::string(category).c_str())) continue;
-                    for (const NodeTypeEntry& entry : NodeRegistry::Instance().All()) {
-                        if (entry.description->category != category) continue;
-                        if (ImGui::MenuItem(std::string(entry.description->name).c_str())) {
-                            std::unique_ptr<BehaviorNode> node = entry.create();
+                    for (const NodeTypeInfo& type : types) {
+                        if (type.IsCondition() || type.category != category) continue;
+                        if (ImGui::MenuItem(type.name.c_str())) {
+                            std::unique_ptr<BehaviorNode> node = MakeNode(type);
                             node->m_editorPosition = m_menuPosition;
                             Select(BehaviorTreeEdit::AddDetached(graph, std::move(node)));
                             changed = true;
                         }
-                        ImGui::SetItemTooltip("%s", std::string(entry.description->description).c_str());
+                        ImGui::SetItemTooltip("%s", type.description.c_str());
                     }
+                    ImGui::EndMenu();
+                }
+                if (categories.empty()) ImGui::TextDisabled("No nodes: C# scripting isn't running, or the scripts didn't build.");
+
+                // Unity's "Create new": a script of your own, placed here once it compiles.
+                ImGui::Separator();
+                if (ImGui::BeginMenu("Create new")) {
+                    using Kind = NodeScriptDialog::Kind;
+                    const std::array<std::pair<const char*, Kind>, 3> kinds{ { { "Action...", Kind::Action }, { "Modifier...", Kind::Modifier }, { "Composite...", Kind::Composite } } };
+                    for (const auto& [label, kind] : kinds) {
+                        if (ImGui::MenuItem(label)) { m_scriptDialog.Open(kind); m_pendingPosition = m_menuPosition; }
+                    }
+                    ImGui::SetItemTooltip("Action: does something (no children). Modifier: one child, changes how it runs. Composite: many children, decides their order.");
                     ImGui::EndMenu();
                 }
                 ImGui::EndMenu();
@@ -271,10 +315,11 @@ namespace Crucible {
 
                 // Everything about `node` is read up front: Delete below frees
                 // it, and the items after Delete are still drawn that frame.
-                // (The registry entry lives on - it describes the type.)
-                const bool           hasParent = BehaviorTreeEdit::ParentOf(graph, node) != nullptr;
-                const bool           isRoot    = graph.Root() == node;
-                const NodeTypeEntry* entry     = EntryOf(*node);
+                // (The script path is copied: it belongs to the catalog, not the node.)
+                const bool          hasParent = BehaviorTreeEdit::ParentOf(graph, node) != nullptr;
+                const bool          isRoot    = graph.Root() == node;
+                const NodeTypeInfo* type      = node->Info();
+                const std::string   script    = type ? type->file : std::string();
 
                 if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
                     // Copy + paste 30 units down-right, without touching the clipboard.
@@ -290,11 +335,18 @@ namespace Crucible {
                 ImGui::Separator();
                 if (ImGui::MenuItem("Delete", "Del") && DeleteSelection(graph)) changed = true;   // `node` is gone after this
                 ImGui::Separator();
-                if (ImGui::MenuItem("Inspect Script", nullptr, false, entry && entry->sourceFile && *entry->sourceFile)) InspectScript::OpenFile(entry->sourceFile);
+                if (ImGui::MenuItem("Inspect Script", nullptr, false, !script.empty())) InspectScript::OpenFile(script.c_str());
+                ImGui::SetItemTooltip("Open the C# file this node is written in. Or double-click the node.");
 
             }
             ImGui::EndPopup();
 
+        }
+
+        // Create new: once the script is written, wait for it to compile (Draw places it).
+        if (const std::string created = m_scriptDialog.Draw(); !created.empty()) {
+            m_pendingType = created;
+            m_status      = "Script written - the node appears here once the scripts have compiled.";
         }
 
         // Branch Options: Unity's dialog for "this node can only have one child".
@@ -305,17 +357,16 @@ namespace Crucible {
             ImGui::TextWrapped("To connect to more than one node, pick a flow node to go in between. How should the branches run?");
             ImGui::Separator();
 
-            // Every node type that takes many children is a candidate - made
-            // once just to ask (registry types can't be asked without one).
-            for (const NodeTypeEntry& entry : NodeRegistry::Instance().All()) {
-                if (entry.create()->MaxChildren() <= 1) continue;
-                if (ImGui::Button(std::string(entry.description->name).c_str(), { 220.0f, 0.0f })) {
-                    if (BehaviorTreeEdit::InsertBranch(graph, m_branchParent, m_branchChild, entry.create())) changed = true;
+            // Every node type that takes many children (the C# composites) is a candidate.
+            for (const NodeTypeInfo& type : NodeCatalog::Instance().All()) {
+                if (type.MaxChildren() <= 1) continue;
+                if (ImGui::Button(type.name.c_str(), { 220.0f, 0.0f })) {
+                    if (BehaviorTreeEdit::InsertBranch(graph, m_branchParent, m_branchChild, MakeNode(type))) changed = true;
                     m_branchParent = m_branchChild = nullptr;
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::SameLine();
-                ImGui::TextDisabled("%s", std::string(entry.description->description).c_str());
+                ImGui::TextDisabled("%s", type.description.c_str());
             }
 
             ImGui::Separator();
@@ -404,7 +455,7 @@ namespace Crucible {
         }
 
         BehaviorNode* selected = m_selection.front();
-        const NodeDescription& description = selected->Description();
+        const NodeDescription description = selected->Description();
         ImGui::TextUnformatted(std::string(description.name).c_str());
         ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
         ImGui::TextWrapped("%s", std::string(description.description).c_str());
@@ -414,10 +465,9 @@ namespace Crucible {
         else if (!BehaviorTreeEdit::IsInSubtree(graph.Root(), selected)) ImGui::TextColored({ 1.0f, 0.75f, 0.4f, 1.0f }, "Not connected - it won't run.");
         ImGui::Separator();
 
-        const NodeTypeEntry* entry = EntryOf(*selected);
-        if (!entry) { ImGui::TextDisabled("Unknown node type."); return false; }
-        if (entry->type.get_properties().empty()) { ImGui::TextDisabled("This node has no settings."); return false; }
-        return NodeFieldEditor::Draw(entry->reflect(*selected), variables, readOnly);
+        const NodeTypeInfo* type = selected->Info();
+        if (type && type->fields.empty()) { ImGui::TextDisabled("This node has no settings."); return false; }
+        return NodeFieldEditor::Draw(*selected, variables, readOnly);   // an unknown type shows its stored values
 
     }   // BehaviorTreeView::DrawInspector()
 

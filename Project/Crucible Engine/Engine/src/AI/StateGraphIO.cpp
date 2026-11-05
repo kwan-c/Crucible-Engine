@@ -3,13 +3,14 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       2.0
 * \brief
 *                The .stategraph JSON format: states (each with its tree),
 *                arrows (each with its conditions), entry state, variables.
 *
 * \history
 *    -v1.0       first version
+*    -v2.0       condition fields as text (BehaviorJson::ReadFields), for the C# conditions
 *
 **************************************************************************/
 #include "StateGraphIO.h"
@@ -20,8 +21,7 @@
 #include <rapidjson/stringbuffer.h>
 
 // Crucible engine
-#include "AI/BehaviorGraphIO.h"         // BehaviorJson: trees, variables, vec2 - shared with .behaviorgraph
-#include "Reflection/Serialization.h"   // ToJsonValue / FromJsonValue: condition fields through RTTR
+#include "AI/BehaviorGraphIO.h"         // BehaviorJson: trees, fields, variables, vec2 - shared with .behaviorgraph
 
 namespace Crucible {
 
@@ -35,6 +35,33 @@ namespace Crucible {
 
         }   // Member()
 
+        // A state's On Enter / On Exit: { "type", "fields" }, like a condition. Missing = none.
+        bool ReadHook(const rapidjson::Value& state, const char* key, std::unique_ptr<BehaviorNode>& hook, std::string& error) {
+
+            const rapidjson::Value* in = Member(state, key);
+            if (!in) return true;
+            const rapidjson::Value* type = Member(*in, "type");
+            if (!type || !type->IsString()) { error = std::string("a state's \"") + key + "\" has no \"type\""; return false; }
+            hook = std::make_unique<BehaviorNode>(type->GetString());
+            if (const rapidjson::Value* fields = Member(*in, "fields"); fields && !BehaviorJson::ReadFields(*fields, hook->Fields())) {
+                error = std::string("the fields of a state's \"") + key + "\" could not be read";
+                return false;
+            }
+            return true;
+
+        }   // ReadHook()
+
+        void WriteHook(const std::unique_ptr<BehaviorNode>& hook, const char* key, rapidjson::Value& state, rapidjson::Document::AllocatorType& allocator) {
+
+            if (!hook) return;
+            rapidjson::Value out(rapidjson::kObjectType), fields;
+            out.AddMember("type", rapidjson::Value(hook->TypeId().c_str(), allocator), allocator);
+            BehaviorJson::WriteFields(hook->Fields(), fields, allocator);
+            out.AddMember("fields", fields, allocator);
+            state.AddMember(rapidjson::StringRef(key), out, allocator);
+
+        }   // WriteHook()
+
         bool ReadState(const rapidjson::Value& in, GraphState& state, std::string& error) {
 
             const rapidjson::Value* name = Member(in, "name");
@@ -44,6 +71,10 @@ namespace Crucible {
             if (const rapidjson::Value* single = Member(in, "singleNode"); single && single->IsBool()) state.m_singleNode = single->GetBool();
             if (const rapidjson::Value* subgraph = Member(in, "subgraph"); subgraph && subgraph->IsUint64()) state.m_subgraph = subgraph->GetUint64();
             if (const rapidjson::Value* editor = Member(in, "editor")) state.m_editorPosition = BehaviorJson::ReadVec2(*editor);
+            if (!ReadHook(in, "onEnter", state.m_onEnter, error) || !ReadHook(in, "onExit", state.m_onExit, error)) {
+                error = "state \"" + state.m_name + "\": " + error;
+                return false;
+            }
 
             // No tree is allowed: an empty state just waits for its arrows.
             if (const rapidjson::Value* tree = Member(in, "tree")) {
@@ -64,7 +95,8 @@ namespace Crucible {
 
             transition.m_from = from->GetInt();
             transition.m_to   = to->GetInt();
-            if (transition.m_from < 0 || transition.m_from >= stateCount || transition.m_to < 0 || transition.m_to >= stateCount) {
+            const bool fromOk = transition.m_from == kAnyState || (transition.m_from >= 0 && transition.m_from < stateCount);   // -1: Any State
+            if (!fromOk || transition.m_to < 0 || transition.m_to >= stateCount) {
                 error = "an arrow points at a state that doesn't exist (" + std::to_string(transition.m_from) + " -> " + std::to_string(transition.m_to) + ")";
                 return false;
             }
@@ -78,12 +110,10 @@ namespace Crucible {
                 const rapidjson::Value* type = Member(entry, "type");
                 if (!type || !type->IsString()) { error = "a condition has no \"type\""; return false; }
 
-                const ConditionTypeEntry* registered = ConditionRegistry::Instance().Find(type->GetString());
-                if (!registered) { error = std::string("unknown condition type \"") + type->GetString() + "\""; return false; }
-
-                std::unique_ptr<TransitionCondition> condition = registered->create();
+                // A condition is stored like a node with no children: its type id and fields.
+                auto condition = std::make_unique<BehaviorNode>(type->GetString());
                 if (const rapidjson::Value* fields = Member(entry, "fields")) {
-                    if (!Reflection::FromJsonValue(*fields, registered->reflect(*condition))) {
+                    if (!BehaviorJson::ReadFields(*fields, condition->Fields())) {
                         error = std::string("the fields of a \"") + type->GetString() + "\" condition could not be read";
                         return false;
                     }
@@ -138,6 +168,7 @@ namespace Crucible {
         }
 
         if (const rapidjson::Value* entry = Member(document, "entry"); entry && entry->IsInt()) graph->m_entryState = entry->GetInt();
+        if (const rapidjson::Value* anyState = Member(document, "anyState")) graph->m_anyStatePosition = BehaviorJson::ReadVec2(*anyState);
         if (stateCount > 0 && (graph->m_entryState < 0 || graph->m_entryState >= stateCount)) {
             result.error = "the entry state " + std::to_string(graph->m_entryState) + " doesn't exist";
             return result;
@@ -168,6 +199,8 @@ namespace Crucible {
             entry.AddMember("singleNode", state.m_singleNode, allocator);
             if (state.m_subgraph != 0) entry.AddMember("subgraph", state.m_subgraph, allocator);   // a .behaviorgraph's asset id
             entry.AddMember("editor", BehaviorJson::WriteVec2(state.m_editorPosition, allocator), allocator);
+            WriteHook(state.m_onEnter, "onEnter", entry, allocator);
+            WriteHook(state.m_onExit, "onExit", entry, allocator);
             entry.AddMember("tree", tree, allocator);
             states.PushBack(entry, allocator);
 
@@ -180,17 +213,11 @@ namespace Crucible {
             for (const auto& condition : transition.m_conditions) {
 
                 if (!condition) continue;
-                const NodeDescription& description = condition->Description();
                 rapidjson::Value entry(rapidjson::kObjectType);
-                entry.AddMember("type", rapidjson::Value(description.id.data(), static_cast<rapidjson::SizeType>(description.id.size()), allocator), allocator);
-
-                // reflect takes a non-const object only because rttr::instance
-                // also writes; nothing is changed here, so the cast is safe.
-                if (const ConditionTypeEntry* registered = ConditionRegistry::Instance().Find(description.id)) {
-                    rapidjson::Value fields;
-                    Reflection::ToJsonValue(registered->reflect(const_cast<TransitionCondition&>(*condition)), fields, allocator);
-                    entry.AddMember("fields", fields, allocator);
-                }
+                entry.AddMember("type", rapidjson::Value(condition->TypeId().c_str(), allocator), allocator);
+                rapidjson::Value fields;
+                BehaviorJson::WriteFields(condition->Fields(), fields, allocator);
+                entry.AddMember("fields", fields, allocator);
                 conditions.PushBack(entry, allocator);
 
             }
@@ -205,6 +232,7 @@ namespace Crucible {
 
         document.AddMember("version", 1, allocator);
         document.AddMember("entry", graph.m_entryState, allocator);
+        document.AddMember("anyState", BehaviorJson::WriteVec2(graph.m_anyStatePosition, allocator), allocator);   // the editor's Any State box
         document.AddMember("variables", variables, allocator);
         document.AddMember("states", states, allocator);
         document.AddMember("transitions", transitions, allocator);

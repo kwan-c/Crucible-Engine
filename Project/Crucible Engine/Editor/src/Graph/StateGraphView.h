@@ -77,7 +77,7 @@ namespace Crucible {
         void FrameAll(const StateGraph& graph);
 
         // Mid-gesture (moving states, drawing an arrow): wait before an undo step.
-        bool IsBusy() const { return m_dragging || m_connectFrom >= 0; }
+        bool IsBusy() const { return m_dragging || m_connectFrom >= 0 || m_draggingAny || m_connectAny; }
 
     private:
 
@@ -96,6 +96,8 @@ namespace Crucible {
         bool                           m_dragging    = false;
         bool                           m_moved       = false;
         int                            m_connectFrom = -1;    // drawing an arrow from this state
+        bool                           m_connectAny  = false; // drawing an arrow from the Any State box (kAnyState can't go in m_connectFrom: -1 there means none)
+        bool                           m_draggingAny = false; // moving the Any State box
 
         int                            m_menuState      = -1;
         int                            m_menuTransition = -1;

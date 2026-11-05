@@ -15,17 +15,16 @@
 
 // Crucible engine
 #include "AI/BehaviorGraphIO.h"
-#include "AI/NodeRegistry.h"
 #include "AI/StateGraphIO.h"
 
 namespace Crucible::GraphAssets {
 
     std::string NewBehaviorGraphJson() {
 
-        // The root comes from the registry: the node classes live in
-        // Engine.dll, and only its "make one" functions can build them.
+        // An On Start root. Made by id, so it works even before C# has listed
+        // the node types (C# fills in its defaults when it runs).
         BehaviorGraph graph;
-        if (const NodeTypeEntry* start = NodeRegistry::Instance().Find("start")) graph.SetRoot(start->create());
+        graph.SetRoot(MakeNode("start"));
         return EncodeBehaviorGraph(graph);
 
     }   // NewBehaviorGraphJson()

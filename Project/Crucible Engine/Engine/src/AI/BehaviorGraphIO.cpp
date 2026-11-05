@@ -3,20 +3,30 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       2.0
 * \brief
 *                The .behaviorgraph JSON format: writing a tree as a flat
 *                node list, and rebuilding the tree from one with every
 *                check a hand-edited file needs.
 *
+* \details
+*                Node fields are read and written without knowing the node's
+*                C# class: a plain field is a bare value ("repeat": true), a
+*                linkable one is { "value": ..., "variable": "Target" }. The
+*                value's JSON type says how to write it back, so a graph
+*                round-trips unchanged even with C# not running.
+*
 * \history
-*    -v1.0       first version
+*    -v1.0       first version (fields through RTTR and the C++ node classes)
+*    -v2.0       fields as text, for the C# nodes
 *
 **************************************************************************/
 #include "BehaviorGraphIO.h"
 
 // STL
 #include <array>
+#include <charconv>     // std::from_chars: text back to numbers
+#include <format>
 #include <string_view>
 #include <unordered_map>
 #include <unordered_set>
@@ -27,13 +37,80 @@
 #include <rapidjson/prettywriter.h>
 #include <rapidjson/stringbuffer.h>
 
-// Crucible engine
-#include "AI/NodeRegistry.h"
-#include "Reflection/Serialization.h"   // ToJsonValue / FromJsonValue: fields through RTTR
-
 namespace Crucible {
 
     namespace {
+
+        // --- Field values: JSON <-> the text C# reads ----------------------- //
+
+        std::string NumberText(double value) { return std::format("{}", static_cast<float>(value)); }   // shortest text that reads back the same float
+
+        // One plain value (not the {value, variable} wrapper) as text, and how
+        // to write it back. False for something a field can't hold.
+        bool ReadValue(const rapidjson::Value& in, std::string& text, FieldKind& kind) {
+
+            if (in.IsBool())   { text = in.GetBool() ? "true" : "false"; kind = FieldKind::Bool; return true; }
+            if (in.IsInt())    { text = std::to_string(in.GetInt());     kind = FieldKind::Integer; return true; }
+            if (in.IsNumber()) { text = NumberText(in.GetDouble());     kind = FieldKind::Number;  return true; }
+            if (in.IsString()) { text = in.GetString();                  kind = FieldKind::Text;    return true; }
+
+            // A Vector3: { "x", "y", "z" } (what the editor wrote) or [x, y, z] (hand-written).
+            float xyz[3]{};
+            if (in.IsArray() && in.Size() == 3 && in[0].IsNumber() && in[1].IsNumber() && in[2].IsNumber()) {
+                for (rapidjson::SizeType i = 0; i < 3; ++i) xyz[i] = in[i].GetFloat();
+            }
+            else if (in.IsObject() && in.HasMember("x") && in.HasMember("y") && in.HasMember("z")
+                     && in["x"].IsNumber() && in["y"].IsNumber() && in["z"].IsNumber()) {
+                xyz[0] = in["x"].GetFloat(); xyz[1] = in["y"].GetFloat(); xyz[2] = in["z"].GetFloat();
+            }
+            else return false;
+            text = NumberText(xyz[0]) + "," + NumberText(xyz[1]) + "," + NumberText(xyz[2]);
+            kind = FieldKind::Vector3;
+            return true;
+
+        }   // ReadValue()
+
+        float TextToFloat(std::string_view text) {
+
+            float value = 0.0f;
+            std::from_chars(text.data(), text.data() + text.size(), value);
+            return value;
+
+        }   // TextToFloat()
+
+        // The text back as a JSON value of its kind.
+        rapidjson::Value WriteValue(const NodeField& field, BehaviorJson::Allocator& allocator) {
+
+            switch (field.kind) {
+                case FieldKind::Bool:    return rapidjson::Value(field.text == "true");
+                case FieldKind::Number:  return rapidjson::Value(static_cast<double>(TextToFloat(field.text)));
+                case FieldKind::Integer: {
+                    int value = 0;
+                    std::from_chars(field.text.data(), field.text.data() + field.text.size(), value);
+                    return rapidjson::Value(value);
+                }
+                case FieldKind::Vector3: {
+                    // Split "x,y,z"; a malformed part reads as 0.
+                    float xyz[3]{};
+                    std::size_t start = 0;
+                    for (int i = 0; i < 3; ++i) {
+                        const std::size_t comma = field.text.find(',', start);
+                        xyz[i] = TextToFloat(std::string_view(field.text).substr(start, comma == std::string::npos ? std::string::npos : comma - start));
+                        if (comma == std::string::npos) break;
+                        start = comma + 1;
+                    }
+                    rapidjson::Value out(rapidjson::kObjectType);
+                    out.AddMember("x", static_cast<double>(xyz[0]), allocator)
+                       .AddMember("y", static_cast<double>(xyz[1]), allocator)
+                       .AddMember("z", static_cast<double>(xyz[2]), allocator);
+                    return out;
+                }
+                case FieldKind::Text:    return rapidjson::Value(field.text.c_str(), static_cast<rapidjson::SizeType>(field.text.size()), allocator);
+                case FieldKind::None:    break;
+            }
+            return rapidjson::Value();   // null: nothing stored (an Entity field)
+
+        }   // WriteValue()
 
         // The blackboard kinds by name, in BlackboardValue's variant order -
         // the name is what the file stores, so a reorder there can't corrupt files.
@@ -114,13 +191,12 @@ namespace Crucible {
                 if (!type || !type->IsString()) return Fail("node " + std::to_string(id->GetInt()) + " has no \"type\"");
                 if (m_made.contains(id->GetInt())) return Fail("two nodes share the id " + std::to_string(id->GetInt()));
 
-                const NodeTypeEntry* entry = NodeRegistry::Instance().Find(type->GetString());
-                if (!entry) return Fail(std::string("unknown node type \"") + type->GetString() + "\"");
-
-                std::unique_ptr<BehaviorNode> node = entry->create();
+                // Any type id is accepted: whether C# has such a node is only
+                // known (and warned about) when the graph runs.
+                auto node = std::make_unique<BehaviorNode>(type->GetString());
                 if (const rapidjson::Value* editor = Member(in, "editor")) node->m_editorPosition = BehaviorJson::ReadVec2(*editor);
                 if (const rapidjson::Value* fields = Member(in, "fields")) {
-                    if (!Reflection::FromJsonValue(*fields, entry->reflect(*node))) {
+                    if (!BehaviorJson::ReadFields(*fields, node->Fields())) {
                         return Fail("the fields of node " + std::to_string(id->GetInt()) + " (" + type->GetString() + ") could not be read");
                     }
                 }
@@ -161,13 +237,12 @@ namespace Crucible {
 
                 std::unique_ptr<BehaviorNode> node = std::move(m_made[id]);
                 m_built.insert(id);
+                // AppendChild, not AddChild: the file is loaded before C# may
+                // have said how many children each kind can take.
                 for (const int child : m_childrenOf[id]) {
                     std::unique_ptr<BehaviorNode> built = Build(child);
                     if (!built) return nullptr;
-                    if (!node->AddChild(std::move(built))) {
-                        Fail("node " + std::to_string(id) + " (" + std::string(node->Description().name) + ") can't have that many children");
-                        return nullptr;
-                    }
+                    node->AppendChild(std::move(built));
                 }
                 return node;
 
@@ -220,17 +295,12 @@ namespace Crucible {
 
                 rapidjson::Value entry(rapidjson::kObjectType);
                 entry.AddMember("id", ids[node], allocator);
-                entry.AddMember("type", Text(node->Description().id, allocator), allocator);
+                entry.AddMember("type", Text(node->TypeId(), allocator), allocator);
                 entry.AddMember("editor", WriteVec2(node->m_editorPosition, allocator), allocator);
 
-                // The fields through RTTR. reflect takes a non-const node only
-                // because rttr::instance is also used for writing; nothing is
-                // changed here, so the const_cast is safe.
-                if (const NodeTypeEntry* type = NodeRegistry::Instance().Find(node->Description().id)) {
-                    rapidjson::Value fields;
-                    Reflection::ToJsonValue(type->reflect(const_cast<BehaviorNode&>(*node)), fields, allocator);
-                    entry.AddMember("fields", fields, allocator);
-                }
+                rapidjson::Value fields;
+                WriteFields(node->Fields(), fields, allocator);
+                entry.AddMember("fields", fields, allocator);
 
                 rapidjson::Value children(rapidjson::kArrayType);
                 for (std::size_t i = 0; i < node->ChildCount(); ++i) children.PushBack(ids[node->ChildAt(i)], allocator);
@@ -245,6 +315,52 @@ namespace Crucible {
             out.AddMember("nodes", nodes, allocator);
 
         }   // BehaviorJson::WriteTree()
+
+        bool ReadFields(const rapidjson::Value& in, std::vector<NodeField>& fields) {
+
+            if (!in.IsObject()) return false;
+            for (const auto& member : in.GetObject()) {
+
+                NodeField field;
+                field.name = member.name.GetString();
+                const rapidjson::Value& value = member.value;
+
+                // { "value": ..., "variable": "Target" }: a linkable field. Either
+                // part may be missing (an Entity link has no value).
+                const bool wrapped = value.IsObject() && (value.HasMember("variable") || value.HasMember("value"));
+                if (wrapped) {
+                    field.linkable = true;
+                    if (const rapidjson::Value* variable = Member(value, "variable"); variable && variable->IsString()) field.link = variable->GetString();
+                    if (const rapidjson::Value* own = Member(value, "value"); own && !ReadValue(*own, field.text, field.kind)) return false;
+                }
+                else if (!ReadValue(value, field.text, field.kind)) return false;
+
+                fields.push_back(std::move(field));
+
+            }
+            return true;
+
+        }   // BehaviorJson::ReadFields()
+
+        void WriteFields(const std::vector<NodeField>& fields, rapidjson::Value& out, Allocator& allocator) {
+
+            out.SetObject();
+            for (const NodeField& field : fields) {
+
+                rapidjson::Value value;
+                if (field.linkable) {
+                    value.SetObject();
+                    if (field.kind != FieldKind::None) value.AddMember("value", WriteValue(field, allocator), allocator);
+                    value.AddMember("variable", Text(field.link, allocator), allocator);
+                }
+                else if (field.kind != FieldKind::None) value = WriteValue(field, allocator);
+                else continue;   // a plain field with nothing to store
+
+                out.AddMember(Text(field.name, allocator), value, allocator);
+
+            }
+
+        }   // BehaviorJson::WriteFields()
 
         bool ReadTree(const rapidjson::Value& in, BehaviorGraph& tree, std::string& error) {
 

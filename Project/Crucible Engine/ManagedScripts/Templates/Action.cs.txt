@@ -1,0 +1,33 @@
+using Crucible;
+using Crucible.AI;
+using Action = Crucible.AI.Action;   // System.Action has the same name
+
+namespace Crucible.Scripts
+{
+    [NodeDescription("{{NAME}}", "{{DESCRIPTION}}", "{{CATEGORY}}", "{{ID}}")]
+    public sealed class {{CLASS}} : Action
+    {
+        // Public fields show in the graph window. A BlackboardVariable can hold its own
+        // value or be linked to a graph variable, for example:
+        // public BlackboardVariable<Entity> Target = BlackboardVariable<Entity>.Link("Target");
+        // public BlackboardVariable<float> Seconds = new BlackboardVariable<float>(1f);
+
+        // Once, when the node begins. Return Running to carry on into OnUpdate,
+        // or Success / Failure to finish straight away.
+        protected override Status OnStart()
+        {
+            return Status.Running;
+        }
+
+        // Every frame while it runs. DeltaTime is the frame's seconds; Self is the enemy.
+        protected override Status OnUpdate()
+        {
+            return Status.Success;
+        }
+
+        // Once, when it finishes or is cut short (the enemy left the state).
+        protected override void OnEnd()
+        {
+        }
+    }
+}

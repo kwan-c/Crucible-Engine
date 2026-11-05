@@ -25,6 +25,7 @@
 #include "Scene/SceneManager.h"
 
 // Crucible editor
+#include "Graph/NodeCatalogSync.h"
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 
 namespace Crucible {
@@ -41,6 +42,7 @@ namespace Crucible {
     void BehaviorGraphPanel::Update(float) {
 
         if (!m_visible) return;
+        SyncNodeCatalog(m_core.GetScriptRuntime());   // the C# node types, fresh after a script reload
 
         ImGui::SetNextWindowSize({ 1150.0f, 650.0f }, ImGuiCond_FirstUseEver);
         if (m_makeFocus) { ImGui::SetNextWindowFocus(); m_makeFocus = false; }

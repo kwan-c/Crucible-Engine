@@ -1,0 +1,20 @@
+using Crucible;
+using Crucible.AI;
+
+namespace Crucible.Scripts
+{
+    [NodeDescription("{{NAME}}", "{{DESCRIPTION}}", "{{CATEGORY}}", "{{ID}}")]
+    public sealed class {{CLASS}} : Condition
+    {
+        // Public fields show on the arrow, like a node's. For example:
+        // public BlackboardVariable<Entity> Target = BlackboardVariable<Entity>.Link("Target");
+
+        // Checked every frame while the enemy is in the arrow's state. The arrow
+        // switches when ALL its conditions are true. TimeInState, StateFinished
+        // and Self are there to use.
+        public override bool IsTrue()
+        {
+            return false;
+        }
+    }
+}

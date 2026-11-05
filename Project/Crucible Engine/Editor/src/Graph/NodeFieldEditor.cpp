@@ -3,19 +3,22 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       2.0
 * \brief
-*                RTTR-driven field widgets and summaries.
+*                Field widgets and summaries for the C# nodes.
 *
 * \history
-*    -v1.0       first version
+*    -v1.0       first version (RTTR)
+*    -v2.0       driven by NodeCatalog; values as text
 *
 **************************************************************************/
 #include "NodeFieldEditor.h"
 
 // STL
-#include <cctype>       // std::toupper
-#include <cstdio>       // std::snprintf
+#include <charconv>     // std::from_chars
+#include <cstdint>
+#include <filesystem>
+#include <format>
 #include <string_view>
 #include <vector>
 
@@ -23,115 +26,183 @@
 #include <imgui.h>
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
-// RTTR
-#include <rttr/enumeration.h>
-#include <rttr/property.h>
-#include <rttr/type.h>
-
 // Crucible engine
+#include "AI/BehaviorNode.h"
 #include "AI/Blackboard.h"
+#include "AssetPipe/Assetmanager.h"
+#include "Core.h"
+
+// Crucible editor
+#include "ImGui/EditorWidgets.h"                    // kAssetPayload: an asset dragged from the Asset Browser
+#include "ImGui/ImGuiManager.h"                     // EditorManager: the Core and the panels
+#include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"  // Open: shows the chosen graph
 
 namespace Crucible::NodeFieldEditor {
 
     namespace {
 
-        // "seconds" -> "Seconds", for the row label.
-        std::string Label(std::string_view name) {
+        // Draw's readOnly, for the one widget (the graph picker's Open) that steps
+        // out of the read-only block and must step back into it the same way.
+        bool s_readOnly = false;
 
-            std::string label(name);
-            if (!label.empty()) label[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(label[0])));
-            return label;
+        // --- Text <-> values (the format NodeHost.cs reads) ----------------- //
 
-        }   // Label()
+        float ToFloat(std::string_view text) {
 
-        // Is this RTTR type one of our NodeValue<T>s? They're the classes with a "variable" property.
-        bool IsNodeValue(const rttr::type& type) {
+            float value = 0.0f;
+            std::from_chars(text.data(), text.data() + text.size(), value);
+            return value;
 
-            return type.is_class() && type.get_property("variable").is_valid();
+        }   // ToFloat()
 
-        }   // IsNodeValue()
+        int ToInt(std::string_view text) {
 
-        // Which blackboard kind (BlackboardValue's variant index) a NodeValue
-        // holds - so the variable list only offers variables of the right kind.
-        // NodeValue<Entity> has no "value" (entities can't be stored), so no
-        // value property means Entity.
-        std::size_t KindOf(const rttr::type& nodeValueType) {
+            int value = 0;
+            std::from_chars(text.data(), text.data() + text.size(), value);
+            return value;
 
-            const rttr::property value = nodeValueType.get_property("value");
-            if (!value.is_valid()) return 0;    // Entity
-            const rttr::type inner = value.get_type();
-            if (inner == rttr::type::get<Math::vec3>()) return 1;
-            if (inner == rttr::type::get<float>())      return 2;
-            if (inner == rttr::type::get<int>())        return 3;
-            if (inner == rttr::type::get<bool>())       return 4;
-            return 0;
+        }   // ToInt()
 
-        }   // KindOf()
+        Math::vec3 ToVec3(std::string_view text) {
 
-        // A plain value's widget. True if it changed (`value` then holds the new one).
-        bool DrawPlain(const char* label, rttr::variant& value) {
-
-            const rttr::type type = value.get_type();
-
-            if (type == rttr::type::get<bool>()) {
-                bool v = value.get_value<bool>();
-                if (ImGui::Checkbox(label, &v)) { value = v; return true; }
+            Math::vec3 value(0.0f);
+            for (int i = 0; i < 3; ++i) {
+                const std::size_t comma = text.find(',');
+                value[i] = ToFloat(text.substr(0, comma));
+                if (comma == std::string_view::npos) break;
+                text.remove_prefix(comma + 1);
             }
-            else if (type == rttr::type::get<int>()) {
-                int v = value.get_value<int>();
-                if (ImGui::DragInt(label, &v)) { value = v; return true; }
+            return value;
+
+        }   // ToVec3()
+
+        std::string FloatText(float value) { return std::format("{}", value); }
+        std::string Vec3Text(const Math::vec3& v) { return FloatText(v.x) + "," + FloatText(v.y) + "," + FloatText(v.z); }
+
+        // Which blackboard kind (BlackboardValue's variant index) a field of
+        // this type can link to, so the list only offers matching variables.
+        std::size_t VariableKindOf(std::string_view type) {
+
+            if (type == "Vector3") return 1;
+            if (type == "float")   return 2;
+            if (type == "int")     return 3;
+            if (type == "bool")    return 4;
+            return 0;   // Entity
+
+        }   // VariableKindOf()
+
+        // A .behaviorgraph's Assets path from its id (as text), or "" if there's none.
+        std::string GraphPath(const std::string& idText) {
+
+            std::uint64_t id = 0;
+            std::from_chars(idText.data(), idText.data() + idText.size(), id);
+            Core* core = EditorManager::GetInstance().GetCore();
+            const AssetEntry* entry = (core && id != 0) ? core->GetAssets().FindByGuid(xresource::instance_guid{ id }) : nullptr;
+            return entry ? entry->virtualPath : std::string();
+
+        }   // GraphPath()
+
+        // A .behaviorgraph field: a list of them, a drop target for one dragged
+        // from the Asset Browser, and Open. True if `text` (the asset id) changed.
+        bool DrawGraphPicker(const char* label, std::string& text) {
+
+            Core* core = EditorManager::GetInstance().GetCore();
+            if (!core) return false;
+            bool changed = false;
+
+            const std::string path = GraphPath(text);
+            ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 60.0f);
+            if (ImGui::BeginCombo(label, path.empty() ? "(choose a .behaviorgraph)" : path.c_str())) {
+                for (const AssetEntry& entry : core->GetAssets().GetAll()) {
+                    if (entry.type != AssetType::BehaviorGraph) continue;
+                    const std::string id = std::to_string(entry.guid.m_Value);
+                    if (ImGui::Selectable(entry.virtualPath.c_str(), id == text)) { text = id; changed = true; }
+                }
+                ImGui::EndCombo();
             }
-            else if (type == rttr::type::get<float>()) {
-                float v = value.get_value<float>();
-                if (ImGui::DragFloat(label, &v, 0.05f)) { value = v; return true; }
+            if (ImGui::BeginDragDropTarget()) {
+                const ImGuiPayload* payload = ImGui::GetDragDropPayload();
+                if (payload && payload->IsDataType(EditorWidgets::kAssetPayload)
+                    && std::string_view(static_cast<const char*>(payload->Data)).ends_with(".behaviorgraph")) {
+                    if (const ImGuiPayload* dropped = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) {
+                        if (const AssetEntry* entry = core->GetAssets().Find(static_cast<const char*>(dropped->Data))) {
+                            text = std::to_string(entry->guid.m_Value);
+                            changed = true;
+                        }
+                    }
+                }
+                ImGui::EndDragDropTarget();
             }
-            else if (type == rttr::type::get<std::string>()) {
-                std::string v = value.get_value<std::string>();
-                if (ImGui::InputText(label, &v)) { value = v; return true; }
+
+            // Open works read-only too (during Play), so it's drawn outside the disabled block.
+            ImGui::SameLine();
+            ImGui::EndDisabled();
+            ImGui::BeginDisabled(path.empty());
+            if (ImGui::SmallButton("Open")) {
+                if (auto panel = EditorManager::GetInstance().GetPanel<BehaviorGraphPanel>(ImguiPanels::BEHAVIORGRAPH)) {
+                    std::uint64_t id = 0;
+                    std::from_chars(text.data(), text.data() + text.size(), id);
+                    panel->RequestOpen(id);
+                }
             }
-            else if (type == rttr::type::get<Math::vec3>()) {
-                Math::vec3 v = value.get_value<Math::vec3>();
-                if (ImGui::DragFloat3(label, &v.x, 0.1f)) { value = v; return true; }
+            ImGui::EndDisabled();
+            ImGui::BeginDisabled(s_readOnly);
+            return changed;
+
+        }   // DrawGraphPicker()
+
+        // A plain value's widget. True if `text` changed.
+        bool DrawValue(const char* label, const NodeFieldInfo& info, std::string& text) {
+
+            if (info.type == "BehaviorGraph") return DrawGraphPicker(label, text);
+            if (info.type == "bool") {
+                bool v = text == "true";
+                if (ImGui::Checkbox(label, &v)) { text = v ? "true" : "false"; return true; }
             }
-            else if (type.is_enumeration()) {
-                const rttr::enumeration enumeration = type.get_enumeration();
-                const std::string current = enumeration.value_to_name(value).to_string();
-                if (ImGui::BeginCombo(label, current.c_str())) {
-                    bool changed = false;
-                    for (const rttr::string_view name : enumeration.get_names()) {
-                        if (ImGui::Selectable(name.data(), name == current)) { value = enumeration.name_to_value(name); changed = true; }
+            else if (info.type == "int") {
+                int v = ToInt(text);
+                if (ImGui::DragInt(label, &v)) { text = std::to_string(v); return true; }
+            }
+            else if (info.type == "float") {
+                float v = ToFloat(text);
+                if (ImGui::DragFloat(label, &v, 0.05f)) { text = FloatText(v); return true; }
+            }
+            else if (info.type == "string") {
+                return ImGui::InputText(label, &text);
+            }
+            else if (info.type == "Vector3") {
+                Math::vec3 v = ToVec3(text);
+                if (ImGui::DragFloat3(label, &v.x, 0.1f)) { text = Vec3Text(v); return true; }
+            }
+            else if (info.type == "enum") {
+                bool changed = false;
+                if (ImGui::BeginCombo(label, text.c_str())) {
+                    for (const std::string& option : info.options) {
+                        if (ImGui::Selectable(option.c_str(), option == text)) { text = option; changed = true; }
                     }
                     ImGui::EndCombo();
-                    return changed;
                 }
+                return changed;
             }
             else {
                 ImGui::TextDisabled("%s: (no editor for this kind of field)", label);
             }
             return false;
 
-        }   // DrawPlain()
+        }   // DrawValue()
 
         /*
-            A NodeValue: the typed value's widget, or - linked - a list of the
-            graph's variables of the matching kind. The "Var" button switches
-            between the two. Entity fields are always linked (an entity can't be
-            typed into a graph asset).
+            A BlackboardVariable: its own value's widget, or - linked - a list
+            of the graph's variables of the matching kind. The "Var" button
+            switches between the two. Entity fields are always linked.
         */
-        bool DrawNodeValue(const char* label, rttr::variant& value, const Blackboard& variables) {
+        bool DrawLinkable(const char* label, const NodeFieldInfo& info, NodeField& field, const Blackboard& variables) {
 
-            const rttr::type     type         = value.get_type();
-            const rttr::property variableProp = type.get_property("variable");
-            const rttr::property valueProp    = type.get_property("value");
-            rttr::instance       inner(value);
-
-            std::string variable = variableProp.get_value(inner).get_value<std::string>();
-            const std::size_t kind = KindOf(type);
-            const bool canType = valueProp.is_valid();
-            const bool linked  = !variable.empty() || !canType;
+            const std::size_t kind    = VariableKindOf(info.type);
+            const bool        canType = info.type != "Entity";
+            const bool        linked  = !field.link.empty() || !canType;
             bool changed = false;
 
-            // The variables this field could use.
             std::vector<const std::string*> matching;
             for (const BlackboardVariable& candidate : variables.Variables()) {
                 if (candidate.value.index() == kind) matching.push_back(&candidate.name);
@@ -140,67 +211,72 @@ namespace Crucible::NodeFieldEditor {
             // The link toggle, first on the row so it never moves.
             if (canType) {
                 if (ImGui::SmallButton(linked ? "Var" : "Val")) {
-                    if (linked) { variable.clear(); changed = true; }              // back to a typed value
-                    else if (!matching.empty()) { variable = *matching.front(); changed = true; }
+                    if (linked) { field.link.clear(); changed = true; }              // back to its own value
+                    else if (!matching.empty()) { field.link = *matching.front(); changed = true; }
                 }
-                ImGui::SetItemTooltip(linked ? "Using a blackboard variable. Click to type a value instead."
-                                             : matching.empty() ? "Typed value. Add a variable of this kind to link one."
-                                                                : "Typed value. Click to use a blackboard variable instead.");
+                ImGui::SetItemTooltip(linked ? "Using a graph variable. Click to give it its own value instead."
+                                             : matching.empty() ? "Its own value. Add a variable of this kind to link one."
+                                                                : "Its own value. Click to use a graph variable instead.");
                 ImGui::SameLine();
             }
 
             if (linked) {
-                const char* shown = variable.empty() ? "(choose a variable)" : variable.c_str();
+                const char* shown = field.link.empty() ? "(choose a variable)" : field.link.c_str();
                 if (ImGui::BeginCombo(label, shown)) {
                     for (const std::string* name : matching) {
-                        if (ImGui::Selectable(name->c_str(), *name == variable)) { variable = *name; changed = true; }
+                        if (ImGui::Selectable(name->c_str(), *name == field.link)) { field.link = *name; changed = true; }
                     }
                     if (matching.empty()) ImGui::TextDisabled("No variables of this kind yet");
                     ImGui::EndCombo();
                 }
-            } else {
-                rttr::variant typed = valueProp.get_value(inner);
-                if (DrawPlain(label, typed)) { valueProp.set_value(inner, typed); changed = true; }
             }
-
-            if (changed) variableProp.set_value(inner, variable);
+            else if (DrawValue(label, info, field.text)) {
+                changed = true;
+            }
             return changed;
 
-        }   // DrawNodeValue()
+        }   // DrawLinkable()
 
-        std::string PlainText(const rttr::variant& value) {
+        std::string ValueText(std::string_view type, const std::string& text) {
 
-            const rttr::type type = value.get_type();
-            char buffer[64];
-            if (type == rttr::type::get<bool>())   return value.get_value<bool>() ? "on" : "off";
-            if (type == rttr::type::get<int>())    return std::to_string(value.get_value<int>());
-            if (type == rttr::type::get<float>())  { std::snprintf(buffer, sizeof buffer, "%g", value.get_value<float>()); return buffer; }
-            if (type == rttr::type::get<std::string>()) return "\"" + value.get_value<std::string>() + "\"";
-            if (type == rttr::type::get<Math::vec3>()) {
-                const Math::vec3 v = value.get_value<Math::vec3>();
-                std::snprintf(buffer, sizeof buffer, "(%g, %g, %g)", v.x, v.y, v.z);
-                return buffer;
+            if (type == "bool")    return text == "true" ? "on" : "off";
+            if (type == "string")  return "\"" + text + "\"";
+            if (type == "Vector3") { const Math::vec3 v = ToVec3(text); return std::format("({}, {}, {})", v.x, v.y, v.z); }
+            if (type == "BehaviorGraph") {
+                const std::string path = GraphPath(text);
+                return path.empty() ? "(none)" : std::filesystem::path(path).stem().string();   // the file's name is enough on a node box
             }
-            if (type.is_enumeration()) return type.get_enumeration().value_to_name(value).to_string();
-            return "?";
+            return text;
 
-        }   // PlainText()
+        }   // ValueText()
 
     }   // ANONYMOUS NAMESPACE
 
-    bool Draw(rttr::instance object, const Blackboard& variables, bool readOnly) {
+    bool Draw(BehaviorNode& node, const Blackboard& variables, bool readOnly) {
+
+        const NodeTypeInfo* info = node.Info();
+        if (!info) {
+            // Unknown to C#: show what's stored so nothing seems lost, but don't
+            // guess at widgets for it.
+            ImGui::TextColored({ 1.0f, 0.7f, 0.4f, 1.0f }, "No C# node \"%s\" - its values are kept as they are.", node.TypeId().c_str());
+            for (const NodeField& field : node.Fields()) {
+                ImGui::TextDisabled("%s: %s", field.name.c_str(), field.link.empty() ? field.text.c_str() : ("-> " + field.link).c_str());
+            }
+            return false;
+        }
 
         bool changed = false;
+        s_readOnly = readOnly;
         ImGui::BeginDisabled(readOnly);
-        for (const rttr::property& property : object.get_type().get_properties()) {
+        for (const NodeFieldInfo& fieldInfo : info->fields) {
 
-            rttr::variant value = property.get_value(object);
-            const std::string label = Label(property.get_name().to_string());
+            NodeField& field = node.FieldFor(fieldInfo);   // adds the C# default if the graph predates the field
+            field.kind     = FieldKindOf(fieldInfo.type);   // the C# type decides how it's saved
+            field.linkable = fieldInfo.linkable;
 
-            ImGui::PushID(label.c_str());
-            const bool edited = IsNodeValue(value.get_type()) ? DrawNodeValue(label.c_str(), value, variables)
-                                                              : DrawPlain(label.c_str(), value);
-            if (edited) { property.set_value(object, value); changed = true; }
+            const std::string& label = fieldInfo.label.empty() ? fieldInfo.name : fieldInfo.label;
+            ImGui::PushID(fieldInfo.name.c_str());
+            if (fieldInfo.linkable ? DrawLinkable(label.c_str(), fieldInfo, field, variables) : DrawValue(label.c_str(), fieldInfo, field.text)) changed = true;
             ImGui::PopID();
 
         }
@@ -209,25 +285,21 @@ namespace Crucible::NodeFieldEditor {
 
     }   // Draw()
 
-    std::string Summary(rttr::instance object) {
+    std::string Summary(const BehaviorNode& node) {
+
+        const NodeTypeInfo* info = node.Info();
+        if (!info) return {};
 
         std::string summary;
-        for (const rttr::property& property : object.get_type().get_properties()) {
+        for (const NodeFieldInfo& fieldInfo : info->fields) {
 
-            const rttr::variant value = property.get_value(object);
-            std::string text;
-            if (IsNodeValue(value.get_type())) {
-                rttr::variant  copy = value;
-                rttr::instance inner(copy);
-                const std::string variable = value.get_type().get_property("variable").get_value(inner).get_value<std::string>();
-                const rttr::property typed = value.get_type().get_property("value");
-                text = !variable.empty() ? variable : typed.is_valid() ? PlainText(typed.get_value(inner)) : "(no variable)";
-            } else {
-                text = PlainText(value);
-            }
+            const NodeField* field = node.FindField(fieldInfo.name);
+            const std::string& link = field ? field->link : fieldInfo.link;
+            const std::string& text = field ? field->text : fieldInfo.value;
+            const std::string  shown = !link.empty() ? link : fieldInfo.type == "Entity" ? "(no variable)" : ValueText(fieldInfo.type, text);
 
             if (!summary.empty()) summary += ", ";
-            summary += property.get_name().to_string() + " " + text;
+            summary += (fieldInfo.label.empty() ? fieldInfo.name : fieldInfo.label) + " " + shown;
 
         }
         return summary;

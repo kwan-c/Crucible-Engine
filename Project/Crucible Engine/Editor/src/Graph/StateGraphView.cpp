@@ -89,7 +89,13 @@ namespace Crucible {
         const int    stateCount = static_cast<int>(graph.m_states.size());
         const ImVec2 size       = m_canvas.Scaled(kStateSize);
         const ImVec2 half{ size.x * 0.5f, size.y * 0.5f };
-        const auto topLeftOf = [&](int i) { return m_canvas.ToScreen(graph.m_states[static_cast<std::size_t>(i)].m_editorPosition); };
+        // kAnyState is the Any State box, so arrows from it draw like any other.
+        const auto topLeftOf = [&](int i) {
+            return m_canvas.ToScreen(i == kAnyState ? graph.m_anyStatePosition : graph.m_states[static_cast<std::size_t>(i)].m_editorPosition);
+        };
+        const auto arrowOk = [&](const StateTransition& t, int count) {
+            return (t.m_from == kAnyState || (t.m_from >= 0 && t.m_from < count)) && t.m_to >= 0 && t.m_to < count;
+        };
         const auto centreOf  = [&](int i) { const ImVec2 p = topLeftOf(i); return ImVec2{ p.x + half.x, p.y + half.y }; };
         const auto portOf    = [&](int i) { const ImVec2 p = topLeftOf(i); return ImVec2{ p.x + size.x, p.y + half.y }; };
 
@@ -118,10 +124,17 @@ namespace Crucible {
             const ImVec2 port = portOf(i);
             if ((mouse.x - port.x) * (mouse.x - port.x) + (mouse.y - port.y) * (mouse.y - port.y) <= portReach * portReach) hoveredPort = i;
         }
-        if (hoveredState < 0) {
+        // The Any State box: under the states, so a state on top of it wins.
+        bool hoveredAny = false, hoveredAnyPort = false;
+        {
+            const ImVec2 p = topLeftOf(kAnyState), port = portOf(kAnyState);
+            hoveredAny     = hoveredState < 0 && mouse.x >= p.x && mouse.y >= p.y && mouse.x <= p.x + size.x && mouse.y <= p.y + size.y;
+            hoveredAnyPort = hoveredPort < 0 && (mouse.x - port.x) * (mouse.x - port.x) + (mouse.y - port.y) * (mouse.y - port.y) <= portReach * portReach;
+        }
+        if (hoveredState < 0 && !hoveredAny) {
             for (int i = 0; i < static_cast<int>(graph.m_transitions.size()); ++i) {
                 const StateTransition& t = graph.m_transitions[static_cast<std::size_t>(i)];
-                if (t.m_from < 0 || t.m_to < 0 || t.m_from >= stateCount || t.m_to >= stateCount) continue;
+                if (!arrowOk(t, stateCount)) continue;
                 ImVec2 from, to;
                 arrowEnds(t, from, to);
                 if (DistanceToSegment(mouse, from, to) < 6.0f) hoveredArrow = i;
@@ -135,12 +148,14 @@ namespace Crucible {
             result.dropState    = hoveredState;
             result.dropPosition = m_canvas.MouseGraph() - kStateSize * 0.5f;   // a new state centred on the mouse
         }
-        if (!m_canvas.Hovered()) { hoveredState = hoveredPort = hoveredArrow = -1; }
+        if (!m_canvas.Hovered()) { hoveredState = hoveredPort = hoveredArrow = -1; hoveredAny = hoveredAnyPort = false; }
 
         // 2. The mouse, turned into edits.
         const ImGuiIO& io = ImGui::GetIO();
         if (m_canvas.LeftClicked()) {
             if (hoveredPort >= 0 && !readOnly) { m_connectFrom = hoveredPort; SelectState(hoveredPort); }
+            else if (hoveredAnyPort && !readOnly) { ClearSelection(); m_connectAny = true; }       // an arrow from Any State
+            else if (hoveredAny)                  { ClearSelection(); m_draggingAny = !readOnly; m_moved = false; }
             else if (hoveredState >= 0 && io.KeyShift) {
                 // Shift+click: add it to the selection, or take it back out.
                 // Adding also starts a drag, so Shift+click-and-drag moves the group.
@@ -172,9 +187,21 @@ namespace Crucible {
                 m_moved = true;
             }
         }
+        if (m_draggingAny && m_canvas.LeftHeld() && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f)) {
+            graph.m_anyStatePosition += Math::vec2(io.MouseDelta.x, io.MouseDelta.y) / m_canvas.Zoom();
+            m_moved = true;
+        }
 
         if (m_canvas.LeftReleased()) {
             if (m_dragging) { m_dragging = false; if (m_moved) result.changed = true; }
+            if (m_draggingAny) { m_draggingAny = false; if (m_moved) result.changed = true; }
+            if (m_connectAny) {
+                if (hoveredState >= 0) {
+                    const int added = StateGraphEdit::AddTransition(graph, kAnyState, hoveredState);
+                    if (added >= 0) { SelectTransition(added); result.changed = true; }
+                }
+                m_connectAny = false;
+            }
             if (m_connectFrom >= 0) {
                 if (hoveredState >= 0 && hoveredState != m_connectFrom) {
                     const int added = StateGraphEdit::AddTransition(graph, m_connectFrom, hoveredState);
@@ -214,7 +241,7 @@ namespace Crucible {
         const int drawCount = static_cast<int>(graph.m_states.size());   // an edit above may have changed it
         for (int i = 0; i < static_cast<int>(graph.m_transitions.size()); ++i) {
             const StateTransition& t = graph.m_transitions[static_cast<std::size_t>(i)];
-            if (t.m_from < 0 || t.m_to < 0 || t.m_from >= drawCount || t.m_to >= drawCount) continue;
+            if (!arrowOk(t, drawCount)) continue;
 
             ImVec2 from, to;
             arrowEnds(t, from, to);
@@ -236,6 +263,12 @@ namespace Crucible {
 
         // The arrow being drawn follows the mouse.
         if (m_connectFrom >= 0 && m_connectFrom < drawCount) m_canvas.DrawList()->AddLine(portOf(m_connectFrom), mouse, IM_COL32(255, 215, 110, 255), 2.0f);
+        if (m_connectAny) m_canvas.DrawList()->AddLine(portOf(kAnyState), mouse, IM_COL32(255, 215, 110, 255), 2.0f);
+
+        // Any State (Unity's): teal, drawn under the states. Its arrows are
+        // checked from whatever state the enemy is in, before that state's own.
+        m_canvas.DrawNode(topLeftOf(kAnyState), size, IM_COL32(30, 130, 140, 255), "Any State", "Checked from every state", false, false);
+        if (!readOnly) m_canvas.DrawPort(portOf(kAnyState), hoveredAnyPort);
 
         for (int i = 0; i < drawCount; ++i) {
             const GraphState& state = graph.m_states[static_cast<std::size_t>(i)];
@@ -244,6 +277,7 @@ namespace Crucible {
             if (const char* label = ContentLabel(state)) subtitle = label;
             else subtitle = std::string("Node: ") + std::string(state.m_behavior.Root()->Description().name);
             if (entry) subtitle += "  (entry)";
+            if (state.m_onEnter || state.m_onExit) subtitle += state.m_onEnter && state.m_onExit ? "  +enter +exit" : state.m_onEnter ? "  +enter" : "  +exit";
 
             m_canvas.DrawNode(topLeftOf(i), size, entry ? IM_COL32(40, 150, 90, 255) : IM_COL32(60, 95, 150, 255),
                               state.m_name.c_str(), subtitle.c_str(), IsSelected(i), false);
@@ -253,7 +287,12 @@ namespace Crucible {
         m_canvas.End();
 
         if (hoveredArrow >= 0 && graph.m_transitions[static_cast<std::size_t>(hoveredArrow)].m_conditions.empty()) {
-            ImGui::SetTooltip("No conditions: switches the moment the enemy enters this state.");
+            ImGui::SetTooltip(graph.m_transitions[static_cast<std::size_t>(hoveredArrow)].m_from == kAnyState
+                ? "No conditions: from Any State that switches every frame - give it a condition."
+                : "No conditions: switches the moment the enemy enters this state.");
+        }
+        else if (hoveredAny && !m_draggingAny) {
+            ImGui::SetTooltip("Any State: drag from its dot to a state. That arrow is checked whatever state the enemy is in, before the state's own arrows.");
         }
 
         if (!readOnly && DrawMenus(graph)) result.changed = true;
@@ -360,15 +399,15 @@ namespace Crucible {
         m_states.clear();
         m_transition = m_connectFrom = -1;
         m_menuState = m_menuTransition = -1;
-        m_dragging = false;
+        m_dragging = m_draggingAny = m_connectAny = false;
 
     }   // StateGraphView::ClearSelection()
 
     void StateGraphView::FrameAll(const StateGraph& graph) {
 
-        if (graph.m_states.empty()) return;
-        Math::vec2 min( FLT_MAX);
-        Math::vec2 max(-FLT_MAX);
+        // The Any State box counts too: it's always drawn.
+        Math::vec2 min = graph.m_anyStatePosition;
+        Math::vec2 max = graph.m_anyStatePosition + kStateSize;
         for (const GraphState& state : graph.m_states) {
             min = glm::min(min, state.m_editorPosition);
             max = glm::max(max, state.m_editorPosition + kStateSize);

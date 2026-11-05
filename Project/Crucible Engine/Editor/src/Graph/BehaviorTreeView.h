@@ -21,7 +21,11 @@
 *                Shift+click adds or removes a node from the selection, and
 *                dragging any selected node moves them all (Alt-drag brings
 *                their children too). Ctrl+C / Ctrl+V copy and paste the
-*                selection, Delete removes it.
+*                selection, Delete removes it. Double-click a node to open
+*                its C# script.
+*
+*                The node types in Add Node and Branch Options are the C#
+*                ones (NodeCatalog); their fields come from the C# class.
 *
 *                It edits the BehaviorGraph it is given and reports "changed";
 *                recording undo steps is the owner's job, so the same view
@@ -41,6 +45,7 @@
 // Crucible editor
 #include "Graph/BehaviorTreeEdit.h"
 #include "Graph/GraphCanvas.h"
+#include "Graph/NodeScriptDialog.h"
 
 namespace Crucible {
 
@@ -106,6 +111,12 @@ namespace Crucible {
 
         std::vector<std::unique_ptr<BehaviorNode>> m_clipboard;   // Copy keeps copies here; Paste copies them again
         std::string                             m_status;
+
+        // Add Node > Create new: the dialog, and the node waiting for its new
+        // script to compile before it can be placed (at m_pendingPosition).
+        NodeScriptDialog                        m_scriptDialog;
+        std::string                             m_pendingType;
+        Math::vec2                              m_pendingPosition{ 0.0f };
 
     };  // BEHAVIORTREEVIEW CLASS
 

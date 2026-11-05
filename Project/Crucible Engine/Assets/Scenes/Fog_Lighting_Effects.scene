@@ -2032,7 +2032,7 @@
                         "x": 24.0,
                         "y": 240.0
                     },
-                    "rotation": 0.0,
+                    "rotation": 90.34549713134766,
                     "raycastTarget": true
                 },
                 "UISlider": {
@@ -2308,7 +2308,7 @@
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 0.0,
+                        "y": -2.384185791015625e-7,
                         "z": -0.8219242095947266
                     },
                     "rotation": {
@@ -2719,7 +2719,9 @@
                     "fileId": 10905713735968489483,
                     "isRoot": true,
                     "prefabHash": 7306435685216836802,
-                    "overrides": []
+                    "overrides": [
+                        "+StateGraphAgent"
+                    ]
                 },
                 "FlowFieldAgent": {
                     "speed": 6.0,
@@ -2736,6 +2738,10 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 0,
+                    "logStateChanges": false
                 }
             }
         },
