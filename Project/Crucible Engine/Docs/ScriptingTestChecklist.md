@@ -176,9 +176,9 @@ physics debug draw. Press Play.
 Setup: entity with a MeshRenderer showing a model; "Alt Material" = a .mat, "Alt Model" =
 another model. Add a MaterialParams and give the material some emissive. Press Play.
 
-- [ ] V hides / shows the mesh.
-- [ ] M swaps the whole-object material and back.
-- [ ] N swaps the model and back (slot overrides are cleared).
+- [y] V hides / shows the mesh.
+- [y] M swaps the whole-object material and back.
+- [y] N swaps the model and back (slot overrides are cleared).
 - [ ] S puts Alt Material on the next slot, one slot at a time; X clears them all.
 - [ ] X also logs that a bad slot (999) was refused.
 - [ ] E pulses the glow; E again goes back to normal.
@@ -204,19 +204,19 @@ Setup: on the mech (PlayerController + CharacterController). Press Play.
 
 In the editor: on any entity, press Play.
 
-- [ ] F8 / F9 / F10 / G / 1 - 4 do NOT change the editor window.
-- [ ] "ignored in the editor" is logged once only.
-- [ ] H and L work (they only read).
+- [y] F8 / F9 / F10 / G / 1 - 4 do NOT change the editor window.
+- [y] "ignored in the editor" is logged once only.
+- [y] H and L work (they only read).
 
 In the game build (`Mekanomachia.exe`, scene with this script):
 
-- [ ] F8 windowed, F9 maximized, F10 fullscreen, G toggles fullscreen.
-- [ ] L lists the monitor's resolutions.
-- [ ] 1 / 2 set a 1280 x 720 / 1600 x 900 window (height kept to the aspect lock).
-- [ ] 3 goes exclusive fullscreen at a listed resolution (screen blinks); 3 again steps on.
-- [ ] In exclusive fullscreen, alt-tab minimizes the game and the desktop is at its normal resolution.
-- [ ] 4 goes back to borderless fullscreen.
-- [ ] Close and restart the game: same mode, window size and resolution as when it closed.
+- [y] F8 windowed, F9 maximized, F10 fullscreen, G toggles fullscreen.
+- [y] L lists the monitor's resolutions.
+- [y] 1 / 2 set a 1280 x 720 / 1600 x 900 window (height kept to the aspect lock).
+- [y] 3 goes exclusive fullscreen at a listed resolution (screen blinks); 3 again steps on.
+- [y] In exclusive fullscreen, alt-tab minimizes the game and the desktop is at its normal resolution.
+- [y] 4 goes back to borderless fullscreen. Alt-tab from borderless: the other window comes in front (the game is NOT always on top) and the game does not minimize; clicking it brings it back fullscreen.
+- [y] Close and restart the game: same mode, window size and resolution as when it closed.
 
 ## 19. World text and world canvases - `WorldTextTest`
 

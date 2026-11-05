@@ -78,7 +78,9 @@ namespace Crucible {
         Script,
         Text,
         AnimatorController,
- 
+        StateGraph,         // .stategraph: an enemy's state machine (AI/StateGraph.h)
+        BehaviorGraph,      // .behaviorgraph: a behaviour tree (AI/BehaviorGraph.h)
+
         Count
     };
  

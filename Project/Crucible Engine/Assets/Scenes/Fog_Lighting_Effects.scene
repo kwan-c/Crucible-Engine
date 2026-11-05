@@ -73,7 +73,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 1"
@@ -292,7 +293,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 2"
@@ -370,10 +372,116 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 3"
+                }
+            }
+        },
+        {
+            "id": "2758E0DCA6A38013",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.666518211364746,
+                        "y": 1.319037675857544,
+                        "z": 6.7076616287231445
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": [
+                        "FlowFieldAgent/stoppingDistance",
+                        "FlowFieldAgent/slowingDistance"
+                    ]
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 5.0,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
                 }
             }
         },
@@ -538,7 +646,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 4"
@@ -616,7 +725,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 5"
@@ -694,7 +804,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 6"
@@ -772,7 +883,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 7"
@@ -850,7 +962,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 8"
@@ -908,7 +1021,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 32"
@@ -1199,10 +1313,113 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 9"
+                }
+            }
+        },
+        {
+            "id": "5758E0DCA6A3801F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.666518211364746,
+                        "y": 1.319037675857544,
+                        "z": 10.789620399475098
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
                 }
             }
         },
@@ -1296,7 +1513,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 33"
@@ -1374,10 +1592,113 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 10"
+                }
+            }
+        },
+        {
+            "id": "6F58E0DCA6A3801D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -10.70705795288086,
+                        "y": 1.319037675857544,
+                        "z": 10.789620399475098
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
                 }
             }
         },
@@ -1513,7 +1834,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 11"
@@ -1710,7 +2032,7 @@
                         "x": 24.0,
                         "y": 240.0
                     },
-                    "rotation": 0.0,
+                    "rotation": 90.34549713134766,
                     "raycastTarget": true
                 },
                 "UISlider": {
@@ -1814,7 +2136,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 12"
@@ -1892,7 +2215,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 13"
@@ -1970,7 +2294,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 14"
@@ -1983,8 +2308,8 @@
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
+                        "y": -2.384185791015625e-7,
+                        "z": -0.8219242095947266
                     },
                     "rotation": {
                         "x": 0.0,
@@ -1993,9 +2318,9 @@
                         "w": 1.0
                     },
                     "scale": {
-                        "x": 29.33296775817871,
+                        "x": 30.0,
                         "y": 0.3844780921936035,
-                        "z": 32.562889099121094
+                        "z": 35.0
                     }
                 },
                 "MeshRenderer": {
@@ -2028,10 +2353,20 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 34"
+                },
+                "FlowFieldSurface": {
+                    "cellSize": 1.0,
+                    "bodyRadiusPadding": 0.6000000238418579,
+                    "stepHeight": 0.30000001192092896,
+                    "shoulderHeight": 1.600000023841858,
+                    "floodRadius": 100.0,
+                    "rebuildDistance": 3.0,
+                    "wallAdjacencyCost": 4.0
                 }
             }
         },
@@ -2136,7 +2471,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 35"
@@ -2214,7 +2550,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 15"
@@ -2292,10 +2629,221 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 16"
+                }
+            }
+        },
+        {
+            "id": "AF58E0DCA6A38011",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -10.70705795288086,
+                        "y": 1.319037675857544,
+                        "z": 6.7076616287231445
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": [
+                        "+StateGraphAgent"
+                    ]
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 0,
+                    "logStateChanges": false
+                }
+            }
+        },
+        {
+            "id": "AF58E0DCA6A38017",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -10.70705795288086,
+                        "y": 1.319037675857544,
+                        "z": 8.907022476196289
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
                 }
             }
         },
@@ -2370,7 +2918,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 17"
@@ -2532,7 +3081,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 36"
@@ -2590,7 +3140,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 37"
@@ -2668,7 +3219,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 18"
@@ -2712,6 +3264,108 @@
                 },
                 "EntityName": {
                     "name": "Entity 29"
+                }
+            }
+        },
+        {
+            "id": "BF58E0DCA6A38015",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -6.90365743637085,
+                        "y": 1.319037675857544,
+                        "z": 6.7076616287231445
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
                 }
             }
         },
@@ -2766,7 +3420,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 38"
@@ -2844,7 +3499,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 19"
@@ -2922,10 +3578,215 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 20"
+                }
+            }
+        },
+        {
+            "id": "D758E0DCA6A38019",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.666518211364746,
+                        "y": 1.319037675857544,
+                        "z": 8.907022476196289
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                }
+            }
+        },
+        {
+            "id": "D758E0DCA6A3801B",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -6.90365743637085,
+                        "y": 1.319037675857544,
+                        "z": 8.931533813476563
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
                 }
             }
         },
@@ -3078,14 +3939,14 @@
                 "Transform": {
                     "positions": {
                         "x": -2.285278081893921,
-                        "y": 10.036165237426758,
+                        "y": -0.11595869064331055,
                         "z": 0.0
                     },
                     "rotation": {
                         "x": 0.0,
                         "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
+                        "z": -0.709292471408844,
+                        "w": 0.7049143314361572
                     },
                     "scale": {
                         "x": 6.236123561859131,
@@ -3123,7 +3984,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 39"
@@ -3201,7 +4063,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 21"
@@ -3348,7 +4211,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 40"
@@ -3426,7 +4290,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 22"
@@ -3484,7 +4349,8 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "NonMoving"
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 41"
@@ -3562,10 +4428,113 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving"
+                    "layer": "Moving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Entity 23"
+                }
+            }
+        },
+        {
+            "id": "FF58E0DCA6A38021",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -6.90365743637085,
+                        "y": 1.319037675857544,
+                        "z": 10.789620399475098
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 1.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
                 }
             }
         }

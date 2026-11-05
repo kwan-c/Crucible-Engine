@@ -65,6 +65,8 @@ namespace Crucible {
         Bounds     = 1u << 6,   //!< every render proxy's culling box (off by default - can be thousands)
         WorldUI    = 1u << 7,   //!< world-space canvases' pages, and the selected element on one
         Audio      = 1u << 8,   //!< audio sources' ranges, audio listeners' facing
+        NavGrid    = 1u << 9,   //!< the FlowFieldSurface's outline, cells and blocked cells (ECSNavigationSystem)
+        FlowField  = 1u << 10,  //!< the flow field's arrows towards the player, in Play (ECSNavigationSystem)
         All        = 0xFFFFFFFFu
     };
 

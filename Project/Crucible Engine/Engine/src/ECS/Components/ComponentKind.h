@@ -97,8 +97,11 @@ namespace Crucible
 		NetworkIdentity = 33,    // Network: who this entity is on every peer (Network/NetComponents.h)
 		NetInterpolation = 34,   // Network: a client's recent snapshots of a remote entity (Network/NetComponents.h)
 		PlayerInput = 35,        // Network/Player: one tick of a player's intent (Network/NetComponents.h)
+		FlowFieldSurface = 36,   // Navigation: where enemies can walk, Unity's NavMeshSurface (Navigation/NavigationComponents.h)
+		FlowFieldAgent = 37,     // Navigation: one enemy's legs, Unity's NavMeshAgent (Navigation/NavigationComponents.h)
+		StateGraphAgent = 38,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
 
-		MAXCOMPONENT = 36
+		MAXCOMPONENT = 39
 	};
 
 
@@ -309,5 +312,8 @@ namespace Crucible
  X(NetworkIdentity)                                                            \
  X(NetInterpolation)                                                           \
  X(PlayerInput)                                                                \
+ X(FlowFieldSurface)                                                           \
+ X(FlowFieldAgent)                                                             \
+ X(StateGraphAgent)                                                            \
 
 }

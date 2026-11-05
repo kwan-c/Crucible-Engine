@@ -463,7 +463,7 @@ C++ side: `Bindings/InputSettingsBindings.cpp` (uses `GetUserSettings()` from
     restored). Kept inside the monitor's work area; with the aspect lock the
     width is kept and the height follows.
   - `SetBorderlessFullscreen()` = fullscreen at the monitor's own resolution
-    (the default, quick alt-tab). `Mode = Fullscreen` uses whichever was chosen
+    (the default, quick alt-tab: a plain window with no title bar over the whole monitor, so other windows go in front of it on alt-tab; WindowManager::ApplyFullscreen). `Mode = Fullscreen` uses whichever was chosen
     last. Read back: `WindowedWidth` / `Height`, `FullscreenWidth` / `Height` /
     `RefreshRate` (0 = borderless), `IsExclusiveFullscreen`.
 - Everything is saved to `UserSettings.json` at once (Core, the F11 path):

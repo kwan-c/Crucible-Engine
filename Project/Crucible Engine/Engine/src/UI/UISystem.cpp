@@ -510,7 +510,10 @@ namespace Crucible {
 	// ------------------------------------------------------------------------------------------- //
 
 	void WorldCanvasSystem::Describe(SystemDesc& desc) const {
-		desc.Reads<UICanvas, UIButton, UISlider, UIText, HierarchyNode, WorldTransform>()   // canvases, element states, text, the tree, placement
+		// UIRect: every element's layout box and its on/off state (ReadActive / IsComponentActive -
+		// also read when checking UIImage, UIText and UISlider, which require it). Left out, the first
+		// canvas with an element raised an access violation and the system was switched off.
+		desc.Reads<UICanvas, UIRect, UIButton, UISlider, UIText, HierarchyNode, WorldTransform>()   // canvases, layout, element states, text, the tree, placement
 			.Writes<UIImage>()                              // UIImage::texture (AppendDrawList resolves it)
 			.RunAfter<HierarchyTransformSystem>()           // the canvases' world matrices must be this frame's
 			.Affinity(SystemAffinity::MainThread);          // touches the Renderer

@@ -1,0 +1,26 @@
+using Crucible;
+using Crucible.AI;
+
+namespace Crucible.Scripts
+{
+    [NodeDescription("{{NAME}}", "{{DESCRIPTION}}", "{{CATEGORY}}", "{{ID}}")]
+    public sealed class {{CLASS}} : Modifier
+    {
+        // Public fields show in the graph window, like an Action's.
+
+        protected override Status OnStart()
+        {
+            return Child == null ? Status.Success : Status.Running;   // nothing connected: nothing to do
+        }
+
+        // Run the one child and decide what its result means (invert it, repeat it...).
+        protected override Status OnUpdate()
+        {
+            return Child.Tick(DeltaTime);
+        }
+
+        protected override void OnEnd()
+        {
+        }
+    }
+}

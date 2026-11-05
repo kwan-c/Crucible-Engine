@@ -27,6 +27,7 @@
 #include "Scripting/ScriptRuntime.h"
 #include "Scripting/EntityScriptSystem.h"
 #include "Scripting/ScriptAuthoring.h"
+#include "ECS/ECSNavigationSystem.h"   // the FlowFieldSurface Bake button
 #include "Core.h"
 #include "Undo/EntityCommands.h"
 #include "Prefabs/PrefabAuthoring.h"
@@ -397,6 +398,8 @@ namespace {
 			case Crucible::ResourceKind::Font:     return "font";
 			case Crucible::ResourceKind::Model:    return "model";
 			case Crucible::ResourceKind::AnimatorController: return "animator controller";
+			case Crucible::ResourceKind::StateGraph: return "state graph";
+			case Crucible::ResourceKind::BehaviorGraph: return "behavior graph";
 		}
 		return "unknown";
 	}
@@ -748,6 +751,16 @@ void Crucible::Inspector::Update(float) {
 					history.Push(std::make_unique<GroupCommand>(std::move(parts), "Detach socket"));
 					m_scenes.MarkDirty();
 				} else CRU_USER_WARN("Cannot detach socket: its world pose is unavailable or cannot be stored as Transform TRS.");
+			}
+			// Unity's NavMeshSurface Bake button: a preview of the blocked cells (Play bakes again on its own).
+			if (m_world.HasComponent<FlowFieldSurface>(m_selected)) {
+				if (ImGui::Button("Bake", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+					Crucible::Core* core = EditorManager::GetInstance().GetCore();
+					if (ECSNavigationSystem* navigation = core ? core->Systems().FindSystem<ECSNavigationSystem>() : nullptr) navigation->Bake(m_world);
+				}
+				ImGui::SetItemTooltip("Builds the navigation grid from this surface and every static collider,\n"
+				                      "and draws the blocked cells in red (Gizmos > Nav grid).\n"
+				                      "Pressing Play bakes again on its own, so this is only a preview.");
 			}
 			DrawAddComponentButton(m_selected);
 

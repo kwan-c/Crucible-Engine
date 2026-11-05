@@ -60,6 +60,9 @@ namespace Crucible
         private PlayerController playerController;
         private WorldText worldText;
         private MaterialParams materialParams;
+        private FlowFieldAgent flowFieldAgent;
+        private FlowFieldSurface flowFieldSurface;
+        private StateGraphAgent stateGraphAgent;
 
         internal Entity(uint index, uint generation)
         {
@@ -102,6 +105,12 @@ namespace Crucible
         public WorldText WorldText { get { return worldText ?? (worldText = new WorldText(Identity)); } }
         /// <summary>This entity's MaterialParams: per-object glow (needs a MaterialParams component).</summary>
         public MaterialParams MaterialParams { get { return materialParams ?? (materialParams = new MaterialParams(Identity)); } }
+        /// <summary>This entity's FlowFieldAgent: enemy movement - MoveTo, Arrive, FollowField (needs a FlowFieldAgent component).</summary>
+        public FlowFieldAgent FlowFieldAgent { get { return flowFieldAgent ?? (flowFieldAgent = new FlowFieldAgent(Identity)); } }
+        /// <summary>This entity's FlowFieldSurface: the ground enemies navigate (needs a FlowFieldSurface component).</summary>
+        public FlowFieldSurface FlowFieldSurface { get { return flowFieldSurface ?? (flowFieldSurface = new FlowFieldSurface(Identity)); } }
+        /// <summary>This entity's StateGraphAgent: its brain's variables and state (needs a StateGraphAgent component).</summary>
+        public StateGraphAgent StateGraphAgent { get { return stateGraphAgent ?? (stateGraphAgent = new StateGraphAgent(Identity)); } }
 
         /// <summary>False once the entity has been destroyed (and outside Play).</summary>
         public bool IsAlive
@@ -159,7 +168,7 @@ namespace Crucible
 
         /// <summary>
         /// The entity's component or script of type T, or null if it has none.
-        /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, or a script class (e.g. GetComponent&lt;Door&gt;()).
+        /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, FlowFieldAgent, FlowFieldSurface, StateGraphAgent, UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, or a script class (e.g. GetComponent&lt;Door&gt;()).
         /// A script found during OnCreate may not have run its own OnCreate yet.
         /// </summary>
         public T GetComponent<T>() where T : class
@@ -193,6 +202,12 @@ namespace Crucible
                 return Has(ComponentKind.WorldText) ? (T)(object)WorldText : null;
             if (type == typeof(MaterialParams))
                 return Has(ComponentKind.MaterialParams) ? (T)(object)MaterialParams : null;
+            if (type == typeof(FlowFieldAgent))
+                return Has(ComponentKind.FlowFieldAgent) ? (T)(object)FlowFieldAgent : null;
+            if (type == typeof(FlowFieldSurface))
+                return Has(ComponentKind.FlowFieldSurface) ? (T)(object)FlowFieldSurface : null;
+            if (type == typeof(StateGraphAgent))
+                return Has(ComponentKind.StateGraphAgent) ? (T)(object)StateGraphAgent : null;
             if (type == typeof(UIText))   return Has(ComponentKind.UIText)   ? (T)(object)new UIText(Identity)   : null;
             if (type == typeof(UIImage))  return Has(ComponentKind.UIImage)  ? (T)(object)new UIImage(Identity)  : null;
             if (type == typeof(UISlider)) return Has(ComponentKind.UISlider) ? (T)(object)new UISlider(Identity) : null;
@@ -202,7 +217,7 @@ namespace Crucible
             if (typeof(EntityScript).IsAssignableFrom(type))
                 return GetScriptInternal((int)index, (int)generation) as T;
             throw new ArgumentException("GetComponent<" + type.Name +
-                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, a UI component or a script class.");
+                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, FlowFieldAgent, FlowFieldSurface, StateGraphAgent, a UI component or a script class.");
         }
 
         /// <summary>Does the entity have a component or script of type T? See GetComponent.</summary>
@@ -304,6 +319,9 @@ namespace Crucible
             PlayerController = 18,
             WorldText = 19,
             MaterialParams = 20,
+            FlowFieldAgent = 21,
+            FlowFieldSurface = 22,
+            StateGraphAgent = 23,
         }
 
         private bool Has(ComponentKind kind)
