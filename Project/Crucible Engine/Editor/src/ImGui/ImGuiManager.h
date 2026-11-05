@@ -41,7 +41,7 @@ enum class ImguiPanels
 	RESOURCES,		// what the ResourceManager holds in memory (tab next to the Asset Browser)
 	FONTIMPORTER,	// floating window, opened from the Asset Browser or View > Font Importer
 	TEXTUREIMPORTER,	// floating window, opened from the Asset Browser or View > Texture Importer
-	NETWORK			// multiplayer Offline/Host/Client for this editor instance (Network/NetworkSession)
+	NETWORK,			// multiplayer Offline/Host/Client for this editor instance (Network/NetworkSession)
 	BEHAVIORGRAPH,	// floating window: edit a .behaviorgraph (View > Behavior Graph, or double-click one in the Asset Browser)
 	STATEGRAPH		// floating window: edit a .stategraph (View > State Graph, or double-click one in the Asset Browser)
 };
