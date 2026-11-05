@@ -164,5 +164,7 @@ namespace Crucible
 		void RegisterPlayerControllerBindings(); // Bindings/PlayerControllerBindings.cpp (C# PlayerController)
 		void RegisterInputSettingsBindings();  // Bindings/InputSettingsBindings.cpp (C# InputSettings: keybinds, look sensitivity)
 		void RegisterScreenBindings();         // Bindings/ScreenBindings.cpp         (C# Screen: window mode)
+		void RegisterNavigationBindings();     // Bindings/NavigationBindings.cpp     (C# FlowFieldAgent, FlowFieldSurface)
+		void RegisterStateGraphBindings();     // Bindings/StateGraphBindings.cpp     (C# StateGraphAgent: variables, current state)
 	}
 }

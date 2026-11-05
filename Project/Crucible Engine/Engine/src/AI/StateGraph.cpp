@@ -19,7 +19,8 @@
 
 namespace Crucible {
 
-    std::unique_ptr<StateGraphInstance> StateGraphInstance::Create(std::shared_ptr<const StateGraph> graph, World& world, Entity self) {
+    std::unique_ptr<StateGraphInstance> StateGraphInstance::Create(std::shared_ptr<const StateGraph> graph, World& world, Entity self,
+                                                                   const SubgraphLookup& subgraphs) {
 
         // new, not make_unique: the constructor is private.
         std::unique_ptr<StateGraphInstance> instance(new StateGraphInstance());
@@ -35,9 +36,27 @@ namespace Crucible {
         // from the same copy.
         instance->m_roots.reserve(instance->m_graph->m_states.size());
         for (const GraphState& state : instance->m_graph->m_states) {
-            std::unique_ptr<BehaviorNode> root = state.m_behavior.Root() ? state.m_behavior.Root()->Clone() : nullptr;
+
+            // A Subgraph state runs the shared .behaviorgraph instead of its own
+            // tree. Its variables join the enemy's - but a name the state graph
+            // already has stays the state graph's, so the subgraph reads and
+            // writes the same Target as everything else.
+            const BehaviorGraph* behavior = &state.m_behavior;
+            if (state.m_subgraph != 0) {
+                behavior = nullptr;
+                if (std::shared_ptr<const BehaviorGraph> subgraph = subgraphs ? subgraphs(state.m_subgraph) : nullptr) {
+                    for (const BlackboardVariable& variable : subgraph->Variables().Variables()) {
+                        if (!instance->m_variables.Has(variable.name)) instance->m_variables.Set(variable.name, variable.value);
+                    }
+                    behavior = subgraph.get();
+                    instance->m_subgraphs.push_back(std::move(subgraph));
+                }
+            }
+
+            std::unique_ptr<BehaviorNode> root = behavior && behavior->Root() ? behavior->Root()->Clone() : nullptr;
             if (root) root->Bind(&instance->m_context);
             instance->m_roots.push_back(std::move(root));
+
         }
         return instance;
 

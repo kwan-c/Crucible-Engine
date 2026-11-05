@@ -20,7 +20,8 @@
 *
 *                TEMPORARY until perception exists: before ticking, each
 *                enemy's "Target" variable is set to the nearest player -
-*                Jean David's "find the object tagged Player".
+*                Jean David's "find the object tagged Player". So a script
+*                that sets Target is overwritten the next frame, for now.
 *
 * \history
 *    -v1.0       first version
@@ -31,6 +32,7 @@
 // STL
 #include <cstdint>
 #include <memory>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -52,6 +54,22 @@ namespace Crucible {
         // resources: where graphs are loaded from. playMode: its session number
         // says when Play started again. Core owns both; they outlive this system.
         ECSStateGraphSystem(ResourceManager& resources, const PlayMode& playMode);
+        ~ECSStateGraphSystem() override;
+
+        // --- For C# scripts (Scripting/Bindings/StateGraphBindings.cpp) ---- //
+
+        // The one Core made, or null before it exists or after it's gone. The
+        // script bindings only get the World, not Core, so this is how they
+        // reach the enemies' copies (like Unity's agent finding its graph).
+        static ECSStateGraphSystem* Active() { return s_active; }
+
+        // An enemy's variables. Its copy is made here if this frame's Update
+        // hasn't made it yet, so a script's OnStart can set variables before
+        // the graph first runs. Null: no StateGraphAgent, or its graph didn't load.
+        Blackboard* VariablesOf(World& world, Entity entity);
+
+        // The name of the state it's in; "" before its first frame or without a copy.
+        std::string_view CurrentStateOf(Entity entity) const;
 
         // --- IECSSystem ---------------------------------------------------- //
 
@@ -89,6 +107,15 @@ namespace Crucible {
         }
 
         Entity NearestPlayer(const Math::vec3& from) const;
+
+        // A new play session started (Play after Stop): drop the old copies.
+        void SyncSession();
+
+        // An enemy's entry, with a fresh copy of `asset` made if it has none
+        // yet or its graph was changed. Shared by Update and VariablesOf.
+        Running& Prepare(World& world, Entity entity, std::uint64_t asset);
+
+        inline static ECSStateGraphSystem* s_active = nullptr;   // see Active()
 
         ResourceManager&                            m_resources;
         const PlayMode&                             m_playMode;

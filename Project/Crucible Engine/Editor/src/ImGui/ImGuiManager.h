@@ -41,7 +41,8 @@ enum class ImguiPanels
 	RESOURCES,		// what the ResourceManager holds in memory (tab next to the Asset Browser)
 	FONTIMPORTER,	// floating window, opened from the Asset Browser or View > Font Importer
 	TEXTUREIMPORTER,	// floating window, opened from the Asset Browser or View > Texture Importer
-	BEHAVIORGRAPH	// floating window: edit a .behaviorgraph (View > Behavior Graph, or double-click one in the Asset Browser)
+	BEHAVIORGRAPH,	// floating window: edit a .behaviorgraph (View > Behavior Graph, or double-click one in the Asset Browser)
+	STATEGRAPH		// floating window: edit a .stategraph (View > State Graph, or double-click one in the Asset Browser)
 };
 
 namespace Crucible {

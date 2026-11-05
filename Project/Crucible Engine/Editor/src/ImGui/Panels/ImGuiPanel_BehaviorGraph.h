@@ -30,6 +30,7 @@
 // Crucible editor
 #include "Graph/BehaviorGraphDocument.h"
 #include "Graph/BehaviorTreeView.h"
+#include "Graph/VariablesEditor.h"
 #include "ImGui/ImGuiManager.h"
 
 namespace Crucible {
@@ -88,7 +89,7 @@ namespace Crucible {
         bool                  m_openSaveAs    = false;
         bool                  m_openGuard     = false;
         char                  m_savePath[512] = "AI/New Behavior.behaviorgraph";
-        char                  m_newVariable[64] = "";
+        VariablesEditor       m_variablesEditor;
 
     };  // BEHAVIORGRAPHPANEL CLASS
 

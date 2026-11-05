@@ -16,19 +16,7 @@
 // STL
 #include <algorithm>    // std::find, std::max
 #include <cfloat>       // FLT_MAX
-#include <filesystem>
 #include <string_view>
-
-#ifdef _WIN32
-    #ifndef WIN32_LEAN_AND_MEAN
-        #define WIN32_LEAN_AND_MEAN
-    #endif
-    #ifndef NOMINMAX
-        #define NOMINMAX
-    #endif
-    #include <windows.h>
-    #include <shellapi.h>   // ShellExecuteW: Inspect Script
-#endif
 
 // Crucible engine
 #include "AI/Blackboard.h"
@@ -36,6 +24,7 @@
 #include "Diagnostics/Logger.h"
 
 // Crucible editor
+#include "Graph/InspectScript.h"
 #include "Graph/NodeFieldEditor.h"
 
 namespace Crucible {
@@ -61,21 +50,6 @@ namespace Crucible {
             return NodeRegistry::Instance().Find(node.Description().id);
 
         }   // EntryOf()
-
-        // Opens a node type's source file in the program Windows uses for it -
-        // "Inspect Script". Built-in nodes are C++, so it's their .cpp.
-        void OpenSourceFile(const char* path) {
-
-#ifdef _WIN32
-            const std::wstring file = std::filesystem::path(path).wstring();
-            if (reinterpret_cast<INT_PTR>(ShellExecuteW(nullptr, L"open", file.c_str(), nullptr, nullptr, SW_SHOWNORMAL)) <= 32) {
-                CRU_USER_WARN("Could not open {}", path);
-            }
-#else
-            CRU_USER_WARN("Inspect Script is only implemented on Windows ({})", path);
-#endif
-
-        }   // OpenSourceFile()
 
     }   // ANONYMOUS NAMESPACE
 
@@ -295,8 +269,12 @@ namespace Crucible {
             BehaviorNode* node = m_menuNode;
             if (node) {
 
-                const bool hasParent = BehaviorTreeEdit::ParentOf(graph, node) != nullptr;
-                const bool isRoot    = graph.Root() == node;
+                // Everything about `node` is read up front: Delete below frees
+                // it, and the items after Delete are still drawn that frame.
+                // (The registry entry lives on - it describes the type.)
+                const bool           hasParent = BehaviorTreeEdit::ParentOf(graph, node) != nullptr;
+                const bool           isRoot    = graph.Root() == node;
+                const NodeTypeEntry* entry     = EntryOf(*node);
 
                 if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
                     // Copy + paste 30 units down-right, without touching the clipboard.
@@ -310,10 +288,9 @@ namespace Crucible {
                 if (ImGui::MenuItem("Set as Root", nullptr, false, !hasParent && !isRoot)) { BehaviorTreeEdit::MakeRoot(graph, node); changed = true; }
                 ImGui::SetItemTooltip("The root is where the graph starts. Usually an On Start node.");
                 ImGui::Separator();
-                if (ImGui::MenuItem("Delete", "Del") && DeleteSelection(graph)) { m_menuNode = nullptr; changed = true; }
+                if (ImGui::MenuItem("Delete", "Del") && DeleteSelection(graph)) changed = true;   // `node` is gone after this
                 ImGui::Separator();
-                const NodeTypeEntry* entry = EntryOf(*node);
-                if (ImGui::MenuItem("Inspect Script", nullptr, false, entry && entry->sourceFile && *entry->sourceFile)) OpenSourceFile(entry->sourceFile);
+                if (ImGui::MenuItem("Inspect Script", nullptr, false, entry && entry->sourceFile && *entry->sourceFile)) InspectScript::OpenFile(entry->sourceFile);
 
             }
             ImGui::EndPopup();
@@ -406,6 +383,11 @@ namespace Crucible {
         // a selected child is still valid after its selected parent is gone.
         for (BehaviorNode* node : m_selection) BehaviorTreeEdit::Delete(graph, node);
         m_selection.clear();
+
+        // Any other pointer could be one of the freed nodes. They'd be used on a
+        // later frame (the menu's node, the link being drawn), so drop them all.
+        m_menuNode    = nullptr;
+        m_connectFrom = nullptr;
         return true;
 
     }   // BehaviorTreeView::DeleteSelection()

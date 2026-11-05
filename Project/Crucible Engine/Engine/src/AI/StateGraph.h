@@ -11,7 +11,9 @@
 *
 * \details
 *                Each state holds a behaviour tree, or just a single node
-*                (Follow Field) when a whole tree would be overkill. Arrows
+*                (Follow Field) when a whole tree would be overkill, or
+*                points at a separate .behaviorgraph file (a Subgraph) that
+*                several states or enemies can share. Arrows
 *                (StateTransition) lead from one state to another, each
 *                with conditions; every frame the first arrow out of the
 *                current state whose conditions all pass switches state.
@@ -27,6 +29,8 @@
 #pragma once
 
 // STL
+#include <cstdint>
+#include <functional>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -43,9 +47,15 @@ namespace Crucible {
         std::string   m_name;
         BehaviorGraph m_behavior;              // the tree - or the single node, as its root. Its own variables go unused: the state graph's are shared
         bool          m_singleNode = false;    // editor: drawn as one node rather than a tree. Runs the same either way
+        std::uint64_t m_subgraph   = 0;        // a .behaviorgraph's asset id: run that instead of m_behavior (0 = use m_behavior)
         Math::vec2    m_editorPosition{ 0.0f };
 
     };  // GRAPHSTATE STRUCT
+
+    // Finds a Subgraph state's .behaviorgraph by asset id (ResourceManager::GetBehaviorGraph
+    // in the game). A function, not a ResourceManager&, so this file stays free of the
+    // resource system - and a test can hand it graphs directly.
+    using SubgraphLookup = std::function<std::shared_ptr<const BehaviorGraph>(std::uint64_t)>;
 
     struct StateTransition {
 
@@ -76,8 +86,15 @@ namespace Crucible {
             One enemy's running copy: its own copy of every state's nodes and
             of the variables (plus "Self"). It keeps `graph` alive, so the
             asset can't vanish while the enemy uses it.
+
+            \param subgraphs
+            How Subgraph states find their .behaviorgraph. Each one's
+            variables are added to the enemy's (unless the state graph already
+            has one by that name), and the graph is kept alive like `graph`.
+            Empty: Subgraph states run nothing.
         */
-        static std::unique_ptr<StateGraphInstance> Create(std::shared_ptr<const StateGraph> graph, World& world, Entity self);
+        static std::unique_ptr<StateGraphInstance> Create(std::shared_ptr<const StateGraph> graph, World& world, Entity self,
+                                                          const SubgraphLookup& subgraphs = {});
 
         // Nodes keep a pointer to m_context: never moved or copied.
         StateGraphInstance(const StateGraphInstance&)            = delete;
@@ -108,8 +125,9 @@ namespace Crucible {
         // Leaves the current state (aborting its tree) and enters `state`.
         void Enter(int state);
 
-        std::shared_ptr<const StateGraph>          m_graph;
-        Blackboard                                 m_variables;
+        std::shared_ptr<const StateGraph>                 m_graph;
+        std::vector<std::shared_ptr<const BehaviorGraph>> m_subgraphs;   // kept alive while their nodes run
+        Blackboard                                        m_variables;
         BehaviorContext                            m_context;
         std::vector<std::unique_ptr<BehaviorNode>> m_roots;     // this enemy's copy of each state's root (null for an empty state)
         int                                        m_current = -1;

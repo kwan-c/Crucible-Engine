@@ -86,6 +86,7 @@ namespace Crucible {
     struct RenderedModel;
     struct AnimatorController;
     struct StateGraph;
+    class BehaviorGraph;
     class Prefab;
 
 #ifdef _MSC_VER
@@ -110,7 +111,8 @@ namespace Crucible {
         Font,       // compiled fonts (.cfont) - see GetFont()
         Model,     // complete CPU model definition; GetModel does not upload GPU resources
         AnimatorController,
-        StateGraph // an enemy's state machine (.stategraph) - see GetStateGraph()
+        StateGraph,     // an enemy's state machine (.stategraph) - see GetStateGraph()
+        BehaviorGraph   // a behaviour tree (.behaviorgraph), used by state graphs as a subgraph - see GetBehaviorGraph()
     };
 
     /*************************************************************************
@@ -234,11 +236,13 @@ namespace Crucible {
         // once and are cached). Own the shared_ptr while using it: an enemy's running
         // copy keeps its graph alive even if the cache drops it.
         std::shared_ptr<const StateGraph> GetStateGraph(AssetId id);
+        // A .behaviorgraph, the same way: what a state graph's Subgraph states run.
+        std::shared_ptr<const BehaviorGraph> GetBehaviorGraph(AssetId id);
         // Saves an engine-owned text asset (.behaviorgraph, .stategraph) the safe way
         // WriteAnimatorControllerFile does: a temporary file swapped in, then the index
         // refreshed. createNew refuses to overwrite (Save As); otherwise the file must
         // already exist (Save). The caller checks the contents are valid first. Drops any
-        // cached state graph for it, so the next GetStateGraph reads the new file.
+        // cached state or behaviour graph for it, so the next Get reads the new file.
         // Returns the asset id, or 0 with the reason in `error`.
         AssetId SaveTextAsset(const std::string& virtualPath, const std::string& text, bool createNew, std::string* error = nullptr);
         // Editor asset saves preserve GUIDs and publish a new immutable definition.
@@ -628,6 +632,7 @@ namespace Crucible {
         std::unordered_map<AssetId, std::shared_ptr<const ModelPose>> m_modelRestPoses;
         std::unordered_map<AssetId, std::shared_ptr<const AnimatorController>> m_controllers;
         std::unordered_map<AssetId, std::shared_ptr<const StateGraph>> m_stateGraphs;   // null = failed load
+        std::unordered_map<AssetId, std::shared_ptr<const BehaviorGraph>> m_behaviorGraphs;   // null = failed load
         std::unordered_map<AssetId, std::shared_ptr<const RenderedModel>> m_renderedModels;
         std::unordered_map<AssetId, MaterialHandle> m_materials;   // Invalid value = failed load
         std::unordered_map<AssetId, TextureSlots>   m_textures;

@@ -151,6 +151,9 @@ namespace Crucible::ScriptBindings
 			PlayerController = 18,
 			WorldText = 19,
 			MaterialParams = 20,
+			FlowFieldAgent = 21,
+			FlowFieldSurface = 22,
+			StateGraphAgent = 23,
 		};
 
 		/*********************************************************************
@@ -233,6 +236,15 @@ namespace Crucible::ScriptBindings
 					return 1;
 				case ScriptComponentKind::MaterialParams:
 					*out = world.HasComponent<MaterialParams>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::FlowFieldAgent:
+					*out = world.HasComponent<Crucible::FlowFieldAgent>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::FlowFieldSurface:
+					*out = world.HasComponent<Crucible::FlowFieldSurface>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::StateGraphAgent:
+					*out = world.HasComponent<Crucible::StateGraphAgent>(entity) ? 1 : 0;
 					return 1;
 				}
 				return 0;

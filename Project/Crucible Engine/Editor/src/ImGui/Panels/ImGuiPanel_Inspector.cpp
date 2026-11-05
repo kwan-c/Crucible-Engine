@@ -399,6 +399,7 @@ namespace {
 			case Crucible::ResourceKind::Model:    return "model";
 			case Crucible::ResourceKind::AnimatorController: return "animator controller";
 			case Crucible::ResourceKind::StateGraph: return "state graph";
+			case Crucible::ResourceKind::BehaviorGraph: return "behavior graph";
 		}
 		return "unknown";
 	}

@@ -23,6 +23,7 @@
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "Graph/GraphAssets.h"   // Create State Graph / Behavior Graph
+#include "ImGui/Panels/ImGuiPanel_StateGraph.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 #include "Prefabs/PrefabAuthoring.h"
@@ -1087,6 +1088,11 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	case AssetType::BehaviorGraph:
 		if (auto behavior = EditorManager::GetInstance().GetPanel<BehaviorGraphPanel>(ImguiPanels::BEHAVIORGRAPH)) {
 			if (const auto* entry = m_assets.Find(item.virtualPath)) behavior->RequestOpen(entry->guid.m_Value);
+		}
+		return;
+	case AssetType::StateGraph:
+		if (auto states = EditorManager::GetInstance().GetPanel<StateGraphPanel>(ImguiPanels::STATEGRAPH)) {
+			if (const auto* entry = m_assets.Find(item.virtualPath)) states->RequestOpen(entry->guid.m_Value);
 		}
 		return;
 	case AssetType::Scene: {

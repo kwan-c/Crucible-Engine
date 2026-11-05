@@ -42,6 +42,7 @@ namespace Crucible {
             state.m_name = name->GetString();
 
             if (const rapidjson::Value* single = Member(in, "singleNode"); single && single->IsBool()) state.m_singleNode = single->GetBool();
+            if (const rapidjson::Value* subgraph = Member(in, "subgraph"); subgraph && subgraph->IsUint64()) state.m_subgraph = subgraph->GetUint64();
             if (const rapidjson::Value* editor = Member(in, "editor")) state.m_editorPosition = BehaviorJson::ReadVec2(*editor);
 
             // No tree is allowed: an empty state just waits for its arrows.
@@ -165,6 +166,7 @@ namespace Crucible {
 
             entry.AddMember("name", rapidjson::Value(state.m_name.c_str(), allocator), allocator);
             entry.AddMember("singleNode", state.m_singleNode, allocator);
+            if (state.m_subgraph != 0) entry.AddMember("subgraph", state.m_subgraph, allocator);   // a .behaviorgraph's asset id
             entry.AddMember("editor", BehaviorJson::WriteVec2(state.m_editorPosition, allocator), allocator);
             entry.AddMember("tree", tree, allocator);
             states.PushBack(entry, allocator);

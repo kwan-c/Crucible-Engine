@@ -280,6 +280,24 @@ namespace Crucible {
         return graph;
     }
 
+    std::shared_ptr<const BehaviorGraph> ResourceManager::GetBehaviorGraph(AssetId id) {
+        // GetStateGraph's twin, for the .behaviorgraph files Subgraph states point at.
+        if (!id) return {};
+        if (auto found = m_behaviorGraphs.find(id); found != m_behaviorGraphs.end()) return found->second;
+        m_behaviorGraphs[id] = nullptr;
+        const auto* entry = m_assets.FindByGuid(ToGuid(id));
+        std::vector<unsigned char> bytes;
+        if (!entry || entry->type != AssetType::BehaviorGraph || entry->sizeBytes > kMaxBehaviorGraphBytes ||
+            !m_assets.ReadBytes(entry->virtualPath, bytes)) {
+            WarnOnce(id, "Could not read Behavior Graph (limit 4 MiB)"); return {};
+        }
+        auto decoded = DecodeBehaviorGraph(bytes);
+        if (!decoded.ok) { WarnOnce(id, "Behavior Graph load failed: " + decoded.error); return {}; }
+        std::shared_ptr<const BehaviorGraph> graph = std::move(decoded.graph);
+        m_behaviorGraphs[id] = graph;
+        return graph;
+    }
+
     AssetId ResourceManager::SaveTextAsset(const std::string& path, const std::string& text, bool createNew, std::string* error) {
         // WriteAnimatorControllerFile's steps, for any text asset: stay inside Assets,
         // never half-write (temporary file, then an atomic rename), then re-index.
@@ -315,6 +333,7 @@ namespace Crucible {
         const auto id = GetIdForPath(path);
         if (!id) return fail("Written, but missing from the refreshed index");
         m_stateGraphs.erase(id);   // an enemy picking it next reads the saved version
+        m_behaviorGraphs.erase(id);
         m_warned.erase(id);
         if (error) error->clear();
         return id;
@@ -682,6 +701,7 @@ namespace Crucible {
             if (m_prefabs.count(id) != 0)     { ReloadPrefab(id); ++reloaded; }
             if (m_controllers.erase(id) != 0) { m_warned.erase(id); ++reloaded; }
             if (m_stateGraphs.erase(id) != 0) { m_warned.erase(id); ++reloaded; }   // next GetStateGraph reads the new file
+            if (m_behaviorGraphs.erase(id) != 0) { m_warned.erase(id); ++reloaded; }
             if (ReloadAudioClip(id))          { ++reloaded; }
             if (auto it = m_cubemaps.find(id); it != m_cubemaps.end()) {
                 // Skybox components ask by id every frame: the next frame loads the new one.
@@ -731,6 +751,7 @@ namespace Crucible {
         std::erase_if(m_prefabs,     [](const auto& e) { return !e.second; });
         std::erase_if(m_controllers, [](const auto& e) { return !e.second; });
         std::erase_if(m_stateGraphs, [](const auto& e) { return !e.second; });
+        std::erase_if(m_behaviorGraphs, [](const auto& e) { return !e.second; });
         std::erase_if(m_audioClips,  [](const auto& e) { return !e.second.IsValid(); });
 
     }   // ResourceManager::ForgetFailures()
@@ -894,6 +915,7 @@ namespace Crucible {
         dropUnkept(m_modelRestPoses);
         dropUnkept(m_controllers);
         dropUnkept(m_stateGraphs);
+        dropUnkept(m_behaviorGraphs);
         dropUnkept(m_prefabs);
 
         // 3. Material files (.mat). Built-ins and model materials are handled above.
@@ -1208,6 +1230,7 @@ namespace Crucible {
                 case ResourceKind::Model:    { auto it = m_models.find(id); return it != m_models.end() && bool(it->second); }
                 case ResourceKind::AnimatorController: { auto it = m_controllers.find(id); return it != m_controllers.end() && bool(it->second); }
                 case ResourceKind::StateGraph:         { auto it = m_stateGraphs.find(id); return it != m_stateGraphs.end() && bool(it->second); }
+                case ResourceKind::BehaviorGraph:      { auto it = m_behaviorGraphs.find(id); return it != m_behaviorGraphs.end() && bool(it->second); }
                 default:                    { auto it = m_textures.find(id);  return it != m_textures.end()  && (it->second.srgb.IsValid() || it->second.linear.IsValid()); }
             }
         };
@@ -1237,6 +1260,9 @@ namespace Crucible {
                 break;
             case ResourceKind::StateGraph:
                 addAssets(AssetType::StateGraph, "", false);
+                break;
+            case ResourceKind::BehaviorGraph:
+                addAssets(AssetType::BehaviorGraph, "", false);
                 break;
             case ResourceKind::Model:
                 addAssets(AssetType::Model, "", false);

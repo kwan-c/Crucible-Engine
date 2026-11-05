@@ -16,6 +16,7 @@
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
+#include "ImGui/Panels/ImGuiPanel_StateGraph.h"
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
@@ -221,6 +222,11 @@ void Crucible::Menu::Update(float) {
 			if (auto behavior = EditorManager::GetInstance().GetPanel<BehaviorGraphPanel>(ImguiPanels::BEHAVIORGRAPH)) {
 				if (ImGui::MenuItem("Behavior Graph", nullptr, behavior->IsOpen())) {
 					if (behavior->IsOpen()) { behavior->SetOpen(false); } else { behavior->Show(); }
+				}
+			}
+			if (auto states = EditorManager::GetInstance().GetPanel<StateGraphPanel>(ImguiPanels::STATEGRAPH)) {
+				if (ImGui::MenuItem("State Graph", nullptr, states->IsOpen())) {
+					if (states->IsOpen()) { states->SetOpen(false); } else { states->Show(); }
 				}
 			}
 			// The third argument is a bool* that MenuItem toggles for us (shows a tick).

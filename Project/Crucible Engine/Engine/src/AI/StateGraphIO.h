@@ -12,7 +12,8 @@
 *                  { "version": 1, "entry": 0,
 *                    "variables": [ ... same as a .behaviorgraph's ... ],
 *                    "states": [ { "name": "Patrol", "singleNode": false, "editor": [0, 0],
-*                                  "tree": { "root": 0, "nodes": [ ... ] } } ],
+*                                  "tree": { "root": 0, "nodes": [ ... ] } },
+*                                { "name": "Search", "subgraph": 1234567890, ... } ],
 *                    "transitions": [ { "from": 0, "to": 1,
 *                                       "conditions": [ { "type": "target_within",
 *                                                         "fields": { "distance": { "value": 8 } } } ] } ] }

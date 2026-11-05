@@ -1,0 +1,44 @@
+{
+    "version": 1,
+    "variables": [
+        {
+            "name": "Timer",
+            "type": "Float",
+            "value": 1.0
+        }
+    ],
+    "tree": {
+        "root": 0,
+        "nodes": [
+            {
+                "id": 0,
+                "type": "start",
+                "editor": [
+                    -3.1506996154785156,
+                    21.483896255493164
+                ],
+                "fields": {
+                    "repeat": false
+                },
+                "children": [
+                    1
+                ]
+            },
+            {
+                "id": 1,
+                "type": "wait",
+                "editor": [
+                    -21.64922332763672,
+                    169.20518493652344
+                ],
+                "fields": {
+                    "seconds": {
+                        "value": 1.0,
+                        "variable": "Timer"
+                    }
+                },
+                "children": []
+            }
+        ]
+    }
+}

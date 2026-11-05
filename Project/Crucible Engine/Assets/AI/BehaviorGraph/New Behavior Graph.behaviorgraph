@@ -1,0 +1,21 @@
+{
+    "version": 1,
+    "variables": [],
+    "tree": {
+        "root": 0,
+        "nodes": [
+            {
+                "id": 0,
+                "type": "start",
+                "editor": [
+                    0.0,
+                    0.0
+                ],
+                "fields": {
+                    "repeat": true
+                },
+                "children": []
+            }
+        ]
+    }
+}
