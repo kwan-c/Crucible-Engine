@@ -36,6 +36,7 @@
 #include "Network/NetworkSettings.h"
 #include "Network/Systems/NetReceiveSystem.h"
 #include "Network/Systems/NetReplicationSendSystem.h"
+#include "Network/Systems/LocalPlayerInputSystem.h"
 
 // STL
 #include <algorithm>
@@ -310,7 +311,12 @@ namespace Crucible {
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
             .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
-        m_systems.RegisterSystem<ECSPlayerControllerSystem>(m_userSettings.input)                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
+        // PreUpdate, after the UI, every state: this machine's keys, mouse and pad -> its players' PlayerInput,
+        // cursor lock, camera pivot. Neutral input while Paused, and while the last argument says something
+        // else owns the input: the in-game menu (drop it to let players walk with the menu open).
+        m_systems.RegisterSystem<LocalPlayerInputSystem>(m_userSettings.input, m_network.get(), *m_playMode,
+            [] { return UI::IsMenuOpen(); });
+        m_systems.RegisterSystem<ECSPlayerControllerSystem>()                                               // Update, Playing only: PlayerInput -> CharacterController, before physics moves it; the mech faces its camera
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
         m_systems.RegisterSystem<ECSStateGraphSystem>(*m_resources, *m_playMode, *m_scriptRuntime);   // Update, Playing only, before navigation: each StateGraphAgent's state graph (its trees run in C#) gives its FlowFieldAgent orders
         m_systems.RegisterSystem<ECSNavigationSystem>(*m_playMode, m_systems);          // Update, Edit too: bakes the FlowFieldSurface's grid (Inspector Bake, and on Play) and draws it; Playing: flow field + agents (finds physics in m_systems for collision)

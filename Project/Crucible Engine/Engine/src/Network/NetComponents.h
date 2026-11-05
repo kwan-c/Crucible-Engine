@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                The networking ECS components: NetworkIdentity,
 *                NetInterpolation and PlayerInput, bound to their
@@ -24,6 +24,8 @@
 * \history
 *    -v1.0       NetworkIdentity, NetInterpolation, PlayerInput
 *                (Networking Guide 4.2)
+*    -v1.1       PlayerInput::hasYaw (the controller faces yawDegrees only
+*                when something set it) (PR 10)
 *
 **************************************************************************/
 #pragma once
@@ -90,7 +92,8 @@ namespace Crucible
 	struct PlayerInput
 	{
 		Math::vec3    moveDirection{ 0.f };   // world-space XZ, length <= 1
-		float         yawDegrees   = 0.f;     // where the player faces
+		float         yawDegrees   = 0.f;     // where the player faces (world yaw, degrees)
+		bool          hasYaw       = false;   // yawDegrees is meaningful: a camera orbit (or a command) set it
 		bool          jump         = false;   // edge: consumed once
 		Net::NetTick  tick         = 0;       // the tick this input belongs to
 		std::uint32_t sampleSerial = 0;       // bumped by the sampler each time it writes
