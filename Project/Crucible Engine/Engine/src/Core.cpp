@@ -37,6 +37,7 @@
 #include "Network/Systems/NetReceiveSystem.h"
 #include "Network/Systems/NetReplicationSendSystem.h"
 #include "Network/Systems/LocalPlayerInputSystem.h"
+#include "Network/Systems/NetInputSystem.h"
 
 // STL
 #include <algorithm>
@@ -316,6 +317,11 @@ namespace Crucible {
         // else owns the input: the in-game menu (drop it to let players walk with the menu open).
         m_systems.RegisterSystem<LocalPlayerInputSystem>(m_userSettings.input, m_network.get(), *m_playMode,
             [] { return UI::IsMenuOpen(); });
+        // PreUpdate, after the sampler, every state: a client's commands, acks and heartbeat to the host; on the
+        // host, each client's commands into its players' PlayerInput (neutral after ~270 ms without one), and a
+        // player spawned per peer once GamePrefab::Player is registered (GamePrefabs.h). Spawn points: the last
+        // argument (NetInputSystem::DefaultSpawnPoint: 3 m apart along +X).
+        m_systems.RegisterSystem<NetInputSystem>(*m_network, *m_netContent, Id(GamePrefab::Player));
         m_systems.RegisterSystem<ECSPlayerControllerSystem>()                                               // Update, Playing only: PlayerInput -> CharacterController, before physics moves it; the mech faces its camera
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
         m_systems.RegisterSystem<ECSStateGraphSystem>(*m_resources, *m_playMode, *m_scriptRuntime);   // Update, Playing only, before navigation: each StateGraphAgent's state graph (its trees run in C#) gives its FlowFieldAgent orders

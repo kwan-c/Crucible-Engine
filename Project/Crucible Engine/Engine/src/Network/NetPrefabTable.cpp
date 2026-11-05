@@ -198,15 +198,20 @@ namespace Crucible
 				total += serializer->maxBytes;
 			}
 
-			struct List { const std::vector<ComponentId>* ids; const char* name; };
-			for (const List& list : { List{ &desc.serverOnly, "serverOnly" }, List{ &desc.ownerLocalOnly, "ownerLocalOnly" }, List{ &desc.enabledReplicated, "enabledReplicated" } })
+			struct List { const std::vector<ComponentId>* ids; const char* name; bool rootOnly; };
+			for (const List& list : { List{ &desc.serverOnly, "serverOnly", false }, List{ &desc.ownerLocalOnly, "ownerLocalOnly", false }, List{ &desc.enabledReplicated, "enabledReplicated", true } })
 			{
 				for (const ComponentId c : *list.ids)
 				{
 					if (!components.IsRegistered(c)) { error = std::format("{}: {} names component id {}, which is not registered", where, list.name, c); return false; }
 					const std::string_view name = components.Get(c).name;
 					if (!components.Get(c).toggleable) { error = std::format("{}: '{}' (in {}) cannot be switched off", where, name, list.name); return false; }
-					if (!onRoot(c)) { error = std::format("{}: its root has no '{}' (listed in {})", where, name, list.name); return false; }
+					bool present = onRoot(c);
+					// Proxy policies apply to the whole subtree; EnabledMask addresses only the root.
+					if (!list.rootOnly)
+						for (std::size_t i = 0; !present && i < prefab->EntityCount(); ++i)
+							present = prefab->Document().Has(prefab->ComponentsPath(i) + "/" + std::string(name));
+					if (!present) { error = std::format("{}: its {} has no '{}' (listed in {})", where, list.rootOnly ? "root" : "hierarchy", name, list.name); return false; }
 				}
 			}
 		}

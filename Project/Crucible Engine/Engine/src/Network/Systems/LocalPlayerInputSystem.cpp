@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          5 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                LocalPlayerInputSystem: this machine's input into its
 *                players' PlayerInput, plus the cursor lock and the camera
@@ -17,6 +17,8 @@
 *
 * \history
 *    -v1.0       sampling split from ECSPlayerControllerSystem (PR 10)
+*    -v1.1       on a client, movement is sampled although the proxy's
+*                controller is switched off (the host applies it) (PR 11)
 *
 **************************************************************************/
 #include "Network/Systems/LocalPlayerInputSystem.h"
@@ -276,10 +278,13 @@ namespace Crucible
 			for (auto it = m_yaws.rbegin(); it != m_yaws.rend(); ++it) if (it->first == mech) { yaw = it->second; return true; }
 			return false;
 		};
+		// On a client the host's controller decides: here a proxy's PlayerController and
+		// CharacterController are switched off (server-only), so only sampling matters, and the
+		// host applies what NetInputSystem sends it.
+		const bool onClient = m_session != nullptr && m_session->IsClient();
 		const auto canAcceptMovement = [&](Entity entity) {
-			return sampling
-				&& world.IsComponentActive<PlayerController>(entity)
-				&& world.IsComponentActive<CharacterController>(entity);
+			return sampling && (onClient
+				|| (world.IsComponentActive<PlayerController>(entity) && world.IsComponentActive<CharacterController>(entity)));
 		};
 
 		// Players without a PlayerInput get one, already filled in, at the end of this stage

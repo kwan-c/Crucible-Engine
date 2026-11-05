@@ -24,8 +24,9 @@
 *                                  replicated id is registered, every
 *                                  component id is registered (checked before
 *                                  its metadata is read), every listed
-*                                  component exists on the prefab's root and
-*                                  can be switched off, and the replicated
+*                                  policy component exists in the hierarchy
+*                                  and can be switched off (enabledReplicated
+*                                  still requires the root), and the replicated
 *                                  serializers' maxBytes together fit one
 *                                  spawn record (kMaxRecordBytes). A session
 *                                  refuses to start while this fails (issue 4,

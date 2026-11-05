@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -21,6 +21,7 @@
 *    -v1.2       identityRejected, despawnsQueued, lastFrameOversized (Phase 6)
 *    -v1.3       spawn, despawn, world stream and proxy counters (Phase 8)
 *    -v1.4       snapshot, ack and input counters (Phase 9)
+*    -v1.5       command, input timeout and player spawn counters (PR 11)
 *
 **************************************************************************/
 #pragma once
@@ -96,5 +97,13 @@ namespace Crucible
 		std::uint64_t staleRecords = 0;        // client: a record no newer than what the entity has
 		std::uint64_t unknownEntity = 0;       // client: a record for an id it does not have (despawned since)
 		std::uint32_t lastSnapshotTick = 0;    // client: server tick of the newest snapshot applied
+
+		// Player input (Networking Guide 6.2)
+		std::uint64_t commandsAccepted = 0;    // server: new commands taken (newest wins)
+		std::uint64_t commandsDuplicate = 0;   // server: copies (redundancy) or older ones, skipped
+		std::uint32_t inputTimeouts = 0;       // server: a peer's commands stopped for kInputTimeoutTicks
+		std::uint64_t commandsSent = 0;        // client: commands built (each goes out in up to 3 packets)
+		std::uint32_t playersSpawned = 0;      // server: player prefabs NetInputSystem requested
+		std::uint32_t playersRemoved = 0;      // server: players of clients that left, destroyed
 	};
 }

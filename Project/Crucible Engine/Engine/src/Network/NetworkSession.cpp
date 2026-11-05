@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -24,6 +24,9 @@
 *                NetReceiveSystem (PR 8)
 *    -v1.6       SendSnapshot, SendInput, HandleInput; ClientReady counts as
 *                confirming the world (PR 9)
+*    -v1.7       HandleInput takes commands (by sequence, newest wins, jumps
+*                latched); TakePeerIntent with the input timeout; the
+*                client's SnapshotAcks() reset by Start and Stop (PR 11)
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -33,6 +36,7 @@
 #include "ECS/Systems/EventBus/Network/NetworkEvents.h"
 #include "Network/ByteStream.h"
 #include "Network/CanonicalHash.h"
+#include "Network/Quantize.h"
 
 #include <algorithm>
 #include <format>
@@ -135,6 +139,7 @@ namespace Crucible
 		m_stats = {};
 		ClearEntityState();
 		m_clock.Reset();
+		m_snapshotAcks.Reset();
 		m_stopRequested = false;
 		m_stopReason.clear();
 		m_state = SessionState::Running;
@@ -203,6 +208,7 @@ namespace Crucible
 		m_serverConnection = kInvalidConnection;
 		m_localPeer = Net::kInvalidPeer;
 		m_appliedLifecycle = 0;
+		m_snapshotAcks.Reset();
 		m_serverTickAtJoin = 0;
 		m_joinDeadline = {};
 		++m_generation;
@@ -736,10 +742,12 @@ namespace Crucible
 	}
 
 	// Input is the client's heartbeat and carries both acknowledgements (Networking Guide 6.2,
-	// issues 1 and 12). appliedLifecycle is accepted while Synchronizing too, only forwards, and
-	// never for a message that was not sent. Snapshot acks only matter once InGame; an ack for a
-	// snapshot never sent is dropped. A newer newest replaces the window; the same newest with
-	// more bits (an older snapshot arrived late) is merged.
+	// issues 1 and 12) and its commands. appliedLifecycle is accepted while Synchronizing too, only
+	// forwards, and never for a message that was not sent. Commands and snapshot acks only matter
+	// once InGame. Commands are taken by sequence: each of them arrives up to 3 times (redundancy),
+	// so a copy or an older one is skipped; the newest wins, and a jump in any new one is latched
+	// (never lost, never doubled). An ack for a snapshot never sent is dropped. A newer newest
+	// replaces the window; the same newest with more bits (an older snapshot arrived late) is merged.
 	void NetworkSession::HandleInput(PeerState& peer, ByteReader& reader)
 	{
 		InputMessage input;
@@ -753,7 +761,18 @@ namespace Crucible
 		}
 		if (input.appliedLifecycle > peer.appliedLifecycle) peer.appliedLifecycle = input.appliedLifecycle;
 		if (peer.phase != PeerState::Phase::InGame) return;   // no snapshots or control yet
-		if (input.count > 0) ++m_stats.unhandled;              // commands: a later phase
+
+		for (const InputCommand& command : input.Commands())   // oldest first; Decode checked the buttons
+		{
+			if (command.sequence <= peer.lastInputSequence) { ++m_stats.commandsDuplicate; continue; }   // 32 bits: never wraps
+			peer.lastInputSequence = command.sequence;
+			peer.lastInputTick = m_clock.Tick();
+			peer.latest = command;
+			peer.hasCommand = true;
+			peer.inputTimedOut = false;
+			peer.jumpLatched = peer.jumpLatched || (command.buttons & InputCommand::kJump) != 0;
+			++m_stats.commandsAccepted;
+		}
 
 		if (input.ackedSnapshot == 0 || !peer.snapshotSent) return;   // nothing received yet
 		if (SequenceGreater(input.ackedSnapshot, peer.lastSentSnapshot)) { ++m_stats.acksDropped; return; }
@@ -780,6 +799,36 @@ namespace Crucible
 		++m_stats.snapshotsSent;
 		m_stats.snapshotBytesSent += message.size();
 		return result;
+	}
+
+	// What a client's players do this frame (Networking Guide 6.2, server step 5). The intent stays
+	// in force over every step until a newer command replaces it - or until kInputTimeoutTicks steps
+	// pass without one (loss burst, frozen client, cable pulled): then it is neutral, so the mech
+	// stops within about 270 ms instead of walking for the ~10 s GNS takes to time the connection
+	// out, and a jump pressed before the gap is dropped, never replayed. The tick only counts
+	// simulation steps, so a paused host times nobody out.
+	bool NetworkSession::TakePeerIntent(Net::PeerId peerId, PeerIntent& out)
+	{
+		out = PeerIntent{};
+		PeerState* peer = PeerById(peerId);
+		if (peer == nullptr || peer->phase != PeerState::Phase::InGame) return false;
+		if (!peer->hasCommand) return true;   // nothing yet: neutral
+
+		out.yawDegrees = Quantize::U16ToAngle(peer->latest.yaw);   // facing is kept, even when timed out
+		out.hasYaw = true;
+		if (m_clock.Tick() - peer->lastInputTick > kInputTimeoutTicks)
+		{
+			out.timedOut = true;
+			peer->jumpLatched = false;
+			if (!peer->inputTimedOut) { peer->inputTimedOut = true; ++m_stats.inputTimeouts; }
+			return true;
+		}
+		Math::vec3 move(Quantize::I8ToSignedUnit(peer->latest.moveX), 0.f, Quantize::I8ToSignedUnit(peer->latest.moveZ));
+		if (glm::dot(move, move) > 1.f) move = glm::normalize(move);   // never faster than full speed
+		out.moveDirection = move;
+		out.jump = peer->jumpLatched;
+		peer->jumpLatched = false;
+		return true;
 	}
 
 	bool NetworkSession::SendInput(const InputMessage& message)

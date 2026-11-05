@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -71,9 +71,9 @@
 *                For now records write the Transform directly; interpolation
 *                arrives in a later phase.
 *
-*                Heartbeat (client): after the frame's messages, an Input
-*                message at 30 Hz from frame time, while Paused too, with the
-*                snapshot acks and appliedLifecycle (no commands yet).
+*                Each applied snapshot is marked in the session's
+*                SnapshotAcks(); NetInputSystem reports them in the client's
+*                Input message (it took over the Phase 9 heartbeat, PR 11).
 *
 * \history
 *    -v1.0       connection handling (Networking Guide PR 4)
@@ -81,6 +81,8 @@
 *    -v1.2       Exclusive; host spawns; client lifecycle stream and safe
 *                proxy creation (PR 8)
 *    -v1.3       snapshots, SnapshotAckWindow, heartbeat Input (PR 9)
+*    -v1.4       the heartbeat moved to NetInputSystem and the ack window
+*                into the session (SnapshotAckWindow.h) (PR 11)
 *
 **************************************************************************/
 #pragma once
@@ -91,6 +93,7 @@
 #include "ECS/Systems/IECSSystems.h"
 #include "EngineExport.h"
 #include "Network/NetworkSession.h"
+#include "Network/SnapshotAckWindow.h"   // moved out of this file in v1.4; still reachable from here
 
 namespace Crucible
 {
@@ -98,47 +101,6 @@ namespace Crucible
 	class SceneManager;
 	struct NetPrefabDesc;
 	class Prefab;
-
-	/*************************************************************************
-	 \brief
-		Client: which snapshots were applied, the way an Input message
-		reports them - the newest sequence, and bit i for (newest - 1 - i),
-		32 back (Networking Guide 6.2).
-	 \details
-		Sequence 0 is never sent, so Latest() == 0 means "none yet". A
-		sequence more than 32 behind the newest is too old to report and is
-		ignored; one far ahead (a gap of 33 or more) starts a fresh window.
-	 *************************************************************************/
-	class SnapshotAckWindow
-	{
-	public:
-		void Reset() noexcept { m_newest = 0; m_bits = 0; }
-
-		void Received(std::uint16_t sequence) noexcept
-		{
-			if (sequence == 0) return;
-			if (m_newest == 0) { m_newest = sequence; m_bits = 0; return; }
-			if (SequenceGreater(sequence, m_newest))
-			{
-				const std::uint16_t shift = static_cast<std::uint16_t>(sequence - m_newest);
-				// The old newest becomes bit shift-1; everything older moves up by shift (and out).
-				if (shift > 32) m_bits = 0;
-				else if (shift == 32) m_bits = 1u << 31;
-				else m_bits = (m_bits << shift) | (1u << (shift - 1));
-				m_newest = sequence;
-				return;
-			}
-			const std::uint16_t back = static_cast<std::uint16_t>(m_newest - sequence);
-			if (back >= 1 && back <= 32) m_bits |= 1u << (back - 1);   // a late arrival: merged
-		}
-
-		std::uint16_t Latest() const noexcept { return m_newest; }
-		std::uint32_t Bits() const noexcept { return m_bits; }
-
-	private:
-		std::uint16_t m_newest = 0;
-		std::uint32_t m_bits = 0;
-	};
 
 #ifdef _MSC_VER
 #pragma warning(push)
@@ -176,7 +138,6 @@ namespace Crucible
 		bool CreateProxy(World& world, const SpawnView& spawn, Net::NetTick tick, std::string& why);
 		void Leave(CloseReason reason, const std::string& why);
 		void ApplySnapshot(World& world, ByteReader& reader);
-		void SendHeartbeat(float dt);
 
 		NetworkSession&           m_session;
 		const NetContent&         m_content;
@@ -190,8 +151,6 @@ namespace Crucible
 		std::vector<Entity>       m_scratch;         // subtree walks
 		SnapshotView              m_snapshot;        // client: one snapshot, decoded (fixed size, no allocation)
 		std::vector<Entity>       m_resolved;        // client: its records' entities (null: despawned since)
-		SnapshotAckWindow         m_acks;            // client: what the next Input acknowledges
-		std::uint32_t             m_generation = 0;  // the session's, when m_acks was last valid
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -113,7 +113,21 @@
 *                listener), never from inside Update; code running inside
 *                Update calls RequestStop, which the next Update performs.
 *
+*                Player input (server, Networking Guide 6.2, 11.3): a
+*                client's Input carries up to 3 commands (each one is sent
+*                in 3 packets in a row). Only an InGame peer's commands
+*                count; each is taken once, by sequence (copies and old ones
+*                are skipped), the newest wins, and a jump in any of them is
+*                latched until TakePeerIntent hands it out - once. The
+*                commands reach only entities that peer owns: the peer comes
+*                from the connection, never from the packet. If no new
+*                command arrives for kInputTimeoutTicks simulation steps the
+*                intent goes neutral, so a frozen or cut-off client's mech
+*                stops instead of walking until GNS times it out.
+*
 * \history
+*    -v1.7       client commands: per-peer command state, TakePeerIntent and
+*                the input timeout; the client's SnapshotAcks() (PR 11)
 *    -v1.6       snapshots: SendSnapshot, SendInput, the Input handler
 *                (appliedLifecycle and snapshot acks, validated) (PR 9)
 *    -v1.5       spawn requests, the lifecycle stream (send, apply, world
@@ -158,6 +172,7 @@
 #include "Network/NetTypes.h"
 #include "Network/NetworkSettings.h"
 #include "Network/Protocol.h"
+#include "Network/SnapshotAckWindow.h"
 
 namespace Crucible
 {
@@ -195,6 +210,14 @@ namespace Crucible
 		std::uint16_t newestAckedSnapshot = 0;     // from Input: newest snapshot the client applied
 		std::uint32_t ackBits = 0;                 // bit i: (newestAckedSnapshot - 1 - i) applied too
 
+		// Input commands (InGame only; Networking Guide 6.2)
+		bool          hasCommand = false;          // latest is meaningful (a command was taken)
+		std::uint32_t lastInputSequence = 0;       // newest command taken; copies and older ones are skipped
+		Net::NetTick  lastInputTick = 0;           // Clock().Tick() when it was taken: the input timeout
+		InputCommand  latest{};                    // no prediction: the newest command wins
+		bool          jumpLatched = false;         // a jump arrived that TakePeerIntent has not handed out
+		bool          inputTimedOut = false;       // counted once per silence (NetStats::inputTimeouts)
+
 		bool IsJoined() const noexcept { return phase == Phase::Synchronizing || phase == Phase::InGame; }
 	};
 
@@ -207,6 +230,16 @@ namespace Crucible
 		Net::PeerId      owner = Net::kServerPeer;
 		Math::vec3       position{ 0.f };
 		Math::quat       rotation{ 1.f, 0.f, 0.f, 0.f };
+	};
+
+	/// Server: what one client's players should do now (NetworkSession::TakePeerIntent).
+	struct PeerIntent
+	{
+		Math::vec3 moveDirection{ 0.f };   // world XZ, length <= 1 (the command's, clamped)
+		float      yawDegrees = 0.f;
+		bool       hasYaw = false;         // a command arrived, so yawDegrees is the client's
+		bool       jump = false;           // once per jump the client pressed
+		bool       timedOut = false;       // no command for kInputTimeoutTicks: neutral
 	};
 
 	/// Client: where it is in the host's lifecycle stream (Networking Guide 9.3).
@@ -403,9 +436,26 @@ namespace Crucible
 		/// sent must never be remembered as sent.
 		SendResult SendSnapshot(Net::PeerId peer, std::span<const std::byte> message, std::uint16_t sequence);
 
-		/// Client: sends an Input message (heartbeat, snapshot acks, appliedLifecycle; commands
-		/// arrive in a later phase) unreliably on lane 0, now or never. False if not sent.
+		/// Client: sends an Input message (commands, heartbeat, snapshot acks, appliedLifecycle)
+		/// unreliably on lane 0, now or never. False if not sent.
 		bool SendInput(const InputMessage& message);
+
+		/// Client: the snapshots NetReceiveSystem applied, for NetInputSystem to acknowledge.
+		/// Reset by every Start and Stop.
+		SnapshotAckWindow&       SnapshotAcks() noexcept       { return m_snapshotAcks; }
+		const SnapshotAckWindow& SnapshotAcks() const noexcept { return m_snapshotAcks; }
+
+		// ---- player input (server) --------------------------------------------------------------
+
+		/// Simulation steps without a new command after which a client's intent goes neutral:
+		/// 16 steps at 60 Hz is about 270 ms, 8 input packets (Networking Guide 6.2).
+		static constexpr Net::NetTick kInputTimeoutTicks = 16;
+
+		/// Server: the intent of an InGame peer's players from its newest command, consuming its
+		/// latched jump (so call it once per frame per peer). Neutral (no walk, no jump, yaw kept)
+		/// before its first command and once kInputTimeoutTicks steps passed without one. False
+		/// (and `out` neutral) if `peer` is not InGame.
+		bool TakePeerIntent(Net::PeerId peer, PeerIntent& out);
 
 		// ---- the lifecycle stream (client) ----------------------------------------------------
 
@@ -479,6 +529,7 @@ namespace Crucible
 		std::uint32_t                  m_appliedLifecycle = 0;
 		ClientWorld                    m_clientWorld = ClientWorld::AwaitingWorld;
 		std::vector<ReceivedMessage>   m_worldMessages;   // for NetReceiveSystem, this frame only
+		SnapshotAckWindow              m_snapshotAcks;    // applied snapshots, for the next Input
 		Net::NetTick                   m_serverTickAtJoin = 0;
 		std::chrono::steady_clock::time_point m_joinDeadline{};   // Joining: JoinAccepted due by then
 

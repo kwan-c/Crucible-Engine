@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -18,6 +18,9 @@
 *    -v1.3       snapshots validated whole, applied with a per-entity stale
 *                check, acknowledged only once applied; 30 Hz heartbeat
 *                Input with acks and appliedLifecycle (PR 9)
+*    -v1.4       the heartbeat moved to NetInputSystem (it sends commands
+*                too); applied snapshots go to the session's SnapshotAcks()
+*                (PR 11)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -92,18 +95,8 @@ namespace Crucible
 			ctx.commands.DestroyEntity(e);
 		}
 
-		if (m_session.Generation() != m_generation)
-		{
-			m_acks.Reset();   // acks name another session's snapshots
-			m_generation = m_session.Generation();
-		}
-
 		if (m_session.IsServer()) PerformPendingSpawns(world);
-		else if (m_session.IsClient())
-		{
-			ApplyWorldMessages(world);
-			SendHeartbeat(world.DeltaTime());
-		}
+		else if (m_session.IsClient()) ApplyWorldMessages(world);   // NetInputSystem sends the Input later this stage
 
 #ifndef NDEBUG
 		if (m_session.IsActive()) CheckIdentityMap(world, m_session);   // reports identities overwritten after spawn
@@ -408,22 +401,8 @@ namespace Crucible
 		}
 		if (!complete) { ++stats.snapshotsRejected; return; }
 
-		m_acks.Received(m_snapshot.sequence);   // reported in the next Input
+		m_session.SnapshotAcks().Received(m_snapshot.sequence);   // NetInputSystem reports it in the next Input
 		++stats.snapshotsApplied;
 		stats.lastSnapshotTick = std::max(stats.lastSnapshotTick, m_snapshot.serverTick);
-	}
-
-	// The client's Input message at 30 Hz from frame time, in every play state: the heartbeat, the
-	// snapshot acks and the lifecycle confirmation (commands join it in a later phase). It runs
-	// after this frame's messages were applied, so appliedLifecycle describes the World as it is.
-	void NetReceiveSystem::SendHeartbeat(float dt)
-	{
-		if (!m_session.IsJoined() || m_session.IsStopRequested()) return;
-		if (!m_session.Clock().InputDue(dt)) return;
-		InputMessage input;   // fields by name (guide issue 2); count = 0: no commands yet
-		input.ackedSnapshot = m_acks.Latest();
-		input.ackBits = m_acks.Bits();
-		input.appliedLifecycle = m_session.AppliedLifecycle();
-		m_session.SendInput(input);   // a lost one is replaced by the next
 	}
 }
