@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                The wire protocol between the host and its clients:
 *                message types, their fields, and an Encode/Decode pair
@@ -71,6 +71,7 @@
 *                limits, views (Networking Guide 8.4, 8.7, 18.3 issues 2
 *                and 3). SpawnBatch decoding is split: structure here,
 *                prefab/state checks in the replication registry later.
+*    -v1.1       kMaxGameplayEventPayload (a constant; no wire change) (PR 12)
 *
 **************************************************************************/
 #pragma once
@@ -94,6 +95,7 @@ namespace Crucible
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message
 	inline constexpr std::size_t   kMaxReliableBytes      = 16 * 1024;   // spawn / despawn / event messages
+	inline constexpr std::size_t   kMaxGameplayEventPayload = kMaxReliableBytes - 7;   // after u8 type, u32 seq, u16 kind
 	inline constexpr std::uint16_t kMaxEntitiesPerMessage = 512;
 	inline constexpr std::size_t   kMaxRecordBytes        = 255;         // a record's length is one byte
 	inline constexpr std::size_t   kMaxPlayerNameBytes    = 32;

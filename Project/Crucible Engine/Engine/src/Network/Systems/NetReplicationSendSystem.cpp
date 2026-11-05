@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NetReplicationSendSystem: the host's lifecycle stream
 *                (world on join, spawns, despawns) and snapshots.
@@ -12,6 +12,7 @@
 *    -v1.0       lifecycle only (Networking Guide 9.3, 9.4, PR 8)
 *    -v1.1       step-stamped tick, per-client views, confirmed-spawn
 *                gating, full-state snapshots, acks (PR 9)
+*    -v1.2       gameplay events, after the spawns and despawns (PR 12)
 *
 **************************************************************************/
 #include "Network/Systems/NetReplicationSendSystem.h"
@@ -102,6 +103,8 @@ namespace Crucible
 			// A session that stopped mid-frame may leave these behind; they belong to no one now.
 			m_session.TakeSpawned(m_spawned);
 			m_spawned.clear();
+			m_session.TakeGameplayEvents(m_events);
+			m_events.clear();
 			return;
 		}
 		SyncViews();
@@ -138,6 +141,36 @@ namespace Crucible
 			for (const Net::PeerId peer : m_incremental)
 				if (SendSpawnBatches(peer, m_spawnRecords)) SendDespawnBatches(peer, m_despawned);
 		}
+
+		// Gameplay events, after this frame's spawns and despawns on the same lane: in order, each
+		// to everyone or to its one client. A client receiving its world this frame gets none of
+		// them: its world is already newer than they are (the events may name entities it never had).
+		m_session.TakeGameplayEvents(m_events);
+		for (const QueuedGameplayEvent& event : m_events)
+		{
+			for (const PeerState& peer : m_session.Peers())
+			{
+				if (!peer.IsJoined() || (event.to != NetworkSession::kEveryone && event.to != peer.peer)) continue;
+				if (std::ranges::find(m_incremental, peer.peer) == m_incremental.end())
+				{
+					++m_session.MutableStats().gameplayEventsSkipped;
+					continue;
+				}
+				const std::uint32_t seq = m_session.NextLifecycleSeq(peer.peer);
+				if (seq == 0) continue;   // closed by a failed send earlier this frame
+				m_eventBuffer.resize(kMaxReliableBytes);
+				ByteWriter writer(m_eventBuffer);
+				const GameplayEventView view{ .lifecycleSeq = seq, .kind = event.kind, .payload = event.payload };
+				if (!Encode(writer, view))
+				{
+					// SendGameplayEvent checked the kind and the size, so this cannot happen.
+					CRU_ERROR("[Net] gameplay event kind {} could not be encoded", event.kind);
+					continue;
+				}
+				if (Send(peer.peer, writer.Written())) ++m_session.MutableStats().gameplayEventsSent;
+			}
+		}
+		m_events.clear();
 
 		// Confirmations and acks for every client, every frame; snapshots when one is due.
 		const bool snapshotDue = m_session.Clock().SnapshotDue();

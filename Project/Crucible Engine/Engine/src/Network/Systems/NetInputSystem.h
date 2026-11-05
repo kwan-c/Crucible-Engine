@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Player input across the network: a client turns its own
 *                player's PlayerInput into commands; the host turns each
@@ -52,6 +52,8 @@
 *    -v1.0       client commands with redundancy, server intents with the
 *                input timeout, auto-spawned players (Networking Guide 6.2,
 *                6.3, 11.3, PR 11)
+*    -v1.1       client: the own player starting to move starts the
+*                session's key-to-motion measurement (PR 12)
 *
 **************************************************************************/
 #pragma once
@@ -126,6 +128,7 @@ namespace Crucible
 		std::uint32_t                              m_lastSentSerial = 0;   // PlayerInput::sampleSerial then
 		std::array<InputCommand, kMaxInputCommands> m_history{};           // oldest first
 		std::size_t                                m_historyCount = 0;
+		bool                                       m_wasMoving = false;    // the own player's input last frame
 
 		// Host
 		bool                                     m_hostSpawned = false;

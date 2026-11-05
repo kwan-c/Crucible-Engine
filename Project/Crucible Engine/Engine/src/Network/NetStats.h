@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -22,6 +22,8 @@
 *    -v1.3       spawn, despawn, world stream and proxy counters (Phase 8)
 *    -v1.4       snapshot, ack and input counters (Phase 9)
 *    -v1.5       command, input timeout and player spawn counters (PR 11)
+*    -v1.6       gameplay event, interpolation and input latency counters
+*                (PR 12)
 *
 **************************************************************************/
 #pragma once
@@ -105,5 +107,22 @@ namespace Crucible
 		std::uint64_t commandsSent = 0;        // client: commands built (each goes out in up to 3 packets)
 		std::uint32_t playersSpawned = 0;      // server: player prefabs NetInputSystem requested
 		std::uint32_t playersRemoved = 0;      // server: players of clients that left, destroyed
+
+		// Gameplay events (Networking Guide 9.5)
+		std::uint64_t gameplayEventsQueued = 0;     // server: events for clients (one per SendGameplayEvent)
+		std::uint64_t gameplayEventsSent = 0;       // server: event messages sent, all clients
+		std::uint32_t gameplayEventsRefused = 0;    // SendGameplayEvent said no (see its rules)
+		std::uint32_t gameplayEventsSkipped = 0;    // server: not sent to a client receiving the world that frame
+		std::uint64_t gameplayEventsReceived = 0;   // client
+
+		// Interpolation and responsiveness (client, Networking Guide 11.4, 11.7)
+		std::uint64_t interpolationSamples = 0;     // snapshot states buffered instead of written
+		std::uint32_t interpolationTeleports = 0;   // a jump of more than 5 m: snapped, not slid
+		std::uint32_t inputLatencySamples = 0;      // key-to-motion measurements
+		std::uint32_t lastInputLatencyMs = 0;
+		std::uint32_t minInputLatencyMs = 0;
+		std::uint32_t maxInputLatencyMs = 0;
+		std::uint64_t totalInputLatencyMs = 0;      // / inputLatencySamples = the average
+		std::uint32_t inputLatencyAbandoned = 0;    // no visible motion within 2 s (blocked, or no player)
 	};
 }

@@ -38,6 +38,7 @@
 #include "Network/Systems/NetReplicationSendSystem.h"
 #include "Network/Systems/LocalPlayerInputSystem.h"
 #include "Network/Systems/NetInputSystem.h"
+#include "Network/Systems/NetInterpolationSystem.h"
 
 // STL
 #include <algorithm>
@@ -336,6 +337,7 @@ namespace Crucible {
                 return physics != nullptr && play->State() == PlayState::Playing ? physics->GetStepsLastFrame() : 0u;
             });
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
+        m_systems.RegisterSystem<NetInterpolationSystem>(*m_network);   // PreRender, before the hierarchy, client only: proxies drawn 100 ms behind the host, between snapshots
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);

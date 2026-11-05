@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -46,7 +46,7 @@
 *                  SpawnBatch    one proxy per record (CreateProxy)
 *                  WorldEnd      the world is complete: ClientReady
 *                  DespawnBatch  destroys mapped proxies; unknown ids are fine
-*                  GameplayEvent counted (handled in a later phase)
+*                  GameplayEvent posted (NetworkEvents::GameplayEventReceived)
 *                Each proxy is made in a fixed order - instantiate, switch off
 *                server-only and (unless owned here) owner-local components,
 *                apply the initial state as one transaction, add
@@ -68,8 +68,10 @@
 *                least as new (NetInterpolation::lastApplied: no backwards
 *                motion from late or reordered snapshots). It is acknowledged
 *                only if every record was applied or deliberately skipped.
-*                For now records write the Transform directly; interpolation
-*                arrives in a later phase.
+*                A proxy's root position and rotation go into its
+*                NetInterpolation buffer (NetInterpolationSystem draws it
+*                100 ms behind) and the snapshot's tick into the session's
+*                ServerTime(); the rest of the record is applied as it is.
 *
 *                Each applied snapshot is marked in the session's
 *                SnapshotAcks(); NetInputSystem reports them in the client's
@@ -83,6 +85,8 @@
 *    -v1.3       snapshots, SnapshotAckWindow, heartbeat Input (PR 9)
 *    -v1.4       the heartbeat moved to NetInputSystem and the ack window
 *                into the session (SnapshotAckWindow.h) (PR 11)
+*    -v1.5       snapshots buffered for interpolation, server time fed;
+*                GameplayEvents delivered (PR 12)
 *
 **************************************************************************/
 #pragma once

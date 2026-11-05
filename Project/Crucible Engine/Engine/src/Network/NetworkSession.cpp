@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -27,6 +27,9 @@
 *    -v1.7       HandleInput takes commands (by sequence, newest wins, jumps
 *                latched); TakePeerIntent with the input timeout; the
 *                client's SnapshotAcks() reset by Start and Stop (PR 11)
+*    -v1.8       gameplay events, ServerTime(), the input latency probe
+*                (PR 12); review fix: a pending measurement is cancelled
+*                when its entity is removed and expires in Update
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -140,6 +143,8 @@ namespace Crucible
 		ClearEntityState();
 		m_clock.Reset();
 		m_snapshotAcks.Reset();
+		m_serverTime.Reset();
+		m_latency = {};
 		m_stopRequested = false;
 		m_stopReason.clear();
 		m_state = SessionState::Running;
@@ -209,6 +214,8 @@ namespace Crucible
 		m_localPeer = Net::kInvalidPeer;
 		m_appliedLifecycle = 0;
 		m_snapshotAcks.Reset();
+		m_serverTime.Reset();
+		m_latency = {};
 		m_serverTickAtJoin = 0;
 		m_joinDeadline = {};
 		++m_generation;
@@ -243,6 +250,7 @@ namespace Crucible
 		// nothing to announce, and the original keeps its mapping.
 		if (!m_entities.RemoveIfMapped(identity.id, entity)) return;
 		m_destroyedThisFrame.push_back(identity.id);
+		if (m_latency.pending && m_latency.player == identity.id) AbandonLatencyProbe();   // it can never move now
 		if (m_role == Net::NetRole::Server && m_state == SessionState::Running)
 		{
 			m_pendingDespawns.push_back(identity.id);
@@ -276,6 +284,7 @@ namespace Crucible
 		m_destroyedThisFrame.clear();
 		m_pendingSpawns.clear();
 		m_spawned.clear();
+		m_gameplayEvents.clear();
 		m_worldMessages.clear();
 		m_nextId = 1;
 		m_clientWorld = ClientWorld::AwaitingWorld;
@@ -445,6 +454,7 @@ namespace Crucible
 		}
 		if (m_transport == nullptr) return;
 		const SteadyClock::time_point start = SteadyClock::now();
+		if (m_latency.pending && start - m_latency.started > kLatencyProbeTimeout) AbandonLatencyProbe();   // whether or not it is drawn
 
 		m_frameEvents.clear();
 		m_transport->PollEvents(m_frameEvents);   // GNS callbacks run inside, on this thread
@@ -829,6 +839,83 @@ namespace Crucible
 		out.jump = peer->jumpLatched;
 		peer->jumpLatched = false;
 		return true;
+	}
+
+	// ---- gameplay events ------------------------------------------------------------------------
+
+	bool NetworkSession::SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to)
+	{
+		const char* refusal = nullptr;
+		if (kind == 0) refusal = "kind 0 is reserved";
+		else if (payload.size() > kMaxGameplayEventPayload) refusal = "the payload is too large";
+		else if (IsClient()) refusal = "only the host sends gameplay events";
+		else if (IsServer() && m_state != SessionState::Running) refusal = "the session is stopping";
+		else if (to != kEveryone && to > Net::kMaxClients) refusal = "the target is not a peer";
+		else if (IsServer() && m_gameplayEvents.size() >= kMaxQueuedGameplayEvents) refusal = "too many events this frame";
+		if (refusal != nullptr)
+		{
+			++m_stats.gameplayEventsRefused;
+			CRU_ERROR("[Net] SendGameplayEvent(kind {}, {} bytes, to {}): {}", kind, payload.size(), to, refusal);
+			return false;
+		}
+
+		// The host, and an offline game, hear their own events: one listener serves every role.
+		if (to == kEveryone || to == Net::kServerPeer || !IsServer())
+			Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = true });
+		if (IsServer() && to != Net::kServerPeer)
+		{
+			m_gameplayEvents.push_back(QueuedGameplayEvent{ .to = to, .kind = kind, .payload = { payload.begin(), payload.end() } });
+			++m_stats.gameplayEventsQueued;
+		}
+		return true;
+	}
+
+	void NetworkSession::TakeGameplayEvents(std::vector<QueuedGameplayEvent>& out)
+	{
+		out.clear();
+		out.swap(m_gameplayEvents);
+	}
+
+	void NetworkSession::DeliverGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload)
+	{
+		++m_stats.gameplayEventsReceived;
+		Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = false });
+	}
+
+	// ---- client time and responsiveness --------------------------------------------------------
+
+	// Networking Guide 11.7, the one instrument: key down to the first rendered frame in which the
+	// own player moved. Expected with v1 (no prediction): one input interval + delivery + one
+	// snapshot interval + the 100 ms interpolation delay, ~110 to 150 ms on a LAN.
+	void NetworkSession::AbandonLatencyProbe() noexcept
+	{
+		m_latency.pending = false;
+		++m_stats.inputLatencyAbandoned;
+	}
+
+	void NetworkSession::NoteMoveStarted(Net::NetworkId player, const Math::vec3& position)
+	{
+		if (m_latency.pending && SteadyClock::now() - m_latency.started > kLatencyProbeTimeout) AbandonLatencyProbe();
+		if (!IsClient() || m_latency.pending) return;
+		m_latency = LatencyProbe{ .pending = true, .started = SteadyClock::now(), .player = player, .from = position };
+	}
+
+	void NetworkSession::NoteRenderedPosition(Net::NetworkId player, const Math::vec3& position)
+	{
+		if (!m_latency.pending || player != m_latency.player) return;
+		const auto elapsed = SteadyClock::now() - m_latency.started;
+		if (elapsed > kLatencyProbeTimeout) { AbandonLatencyProbe(); return; }
+		const Math::vec3 moved = position - m_latency.from;
+		if (glm::dot(moved, moved) < 0.01f * 0.01f) return;
+		m_latency.pending = false;
+		const auto ms = static_cast<std::uint32_t>(std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count());
+		m_stats.lastInputLatencyMs = ms;
+		m_stats.minInputLatencyMs = m_stats.inputLatencySamples == 0 ? ms : std::min(m_stats.minInputLatencyMs, ms);
+		m_stats.maxInputLatencyMs = std::max(m_stats.maxInputLatencyMs, ms);
+		m_stats.totalInputLatencyMs += ms;
+		++m_stats.inputLatencySamples;
+		CRU_INFO("[Net] key-to-motion latency {} ms (min {}, max {}, average {} over {})", ms, m_stats.minInputLatencyMs,
+			m_stats.maxInputLatencyMs, m_stats.totalInputLatencyMs / m_stats.inputLatencySamples, m_stats.inputLatencySamples);
 	}
 
 	bool NetworkSession::SendInput(const InputMessage& message)

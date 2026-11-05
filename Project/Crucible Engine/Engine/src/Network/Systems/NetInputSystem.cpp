@@ -3,13 +3,14 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NetInputSystem: client commands and heartbeat, the host's
 *                per-client intents, and the auto-spawned players.
 *
 * \history
 *    -v1.0       Networking Guide 6.2, 6.3, 11.3, 18.3 issue 5 (PR 11)
+*    -v1.1       starts the key-to-motion measurement (PR 12)
 *
 **************************************************************************/
 #include "Network/Systems/NetInputSystem.h"
@@ -58,6 +59,7 @@ namespace Crucible
 		m_sequence = 0;
 		m_lastSentSerial = 0;
 		m_historyCount = 0;
+		m_wasMoving = false;
 		m_hostSpawned = false;
 		m_hostPlayer = Net::kInvalidNetworkId;
 		m_slots = {};
@@ -72,6 +74,18 @@ namespace Crucible
 	void NetInputSystem::UpdateClient(World& world)
 	{
 		if (!m_session.IsJoined() || m_session.IsStopRequested()) return;
+
+		// Every frame: the own player's input going from still to moving starts a key-to-motion
+		// measurement (Networking Guide 11.7); NetInterpolationSystem ends it when it draws the move.
+		bool moving = false;
+		world.CreateQuery<const NetworkIdentity, const PlayerInput>().ForEach([&](Entity e, const NetworkIdentity& identity, const PlayerInput& input) {
+			if (moving || identity.owner != m_session.LocalPeer() || input.moveDirection == Math::vec3(0.f)) return;
+			moving = true;
+			if (!m_wasMoving)
+				if (const Transform* t = world.Read<Transform>(e)) m_session.NoteMoveStarted(identity.id, t->positions);
+		});
+		m_wasMoving = moving;
+
 		if (!m_session.Clock().InputDue(world.DeltaTime())) return;   // 30 Hz from frame time
 
 		// 1. A command for the player this machine owns (the first, if it somehow owns several).

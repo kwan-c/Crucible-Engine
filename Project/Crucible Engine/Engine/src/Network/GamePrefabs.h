@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                The game's network prefabs: their explicit, permanent
 *                NetPrefabIds and their registration.
@@ -43,12 +43,41 @@
 *                  A network scene should not also contain a placed mech: on
 *                  every machine it would be a local player too.
 *
+*                Any other prefab works the same way - an AI enemy, a prop,
+*                a vehicle: nothing here knows what it is. An example for an
+*                enemy built in the editor (navigation, state graph, physics,
+*                scripts), once its .cprefab exists (pick the next free id):
+*
+*                  if (!table.Register(2, {
+*                      .name = "Grunt", .prefabPath = "Prefabs/Grunt.cprefab",
+*                      .replicated = { NetComponentId::TransformYawOnly },
+*                      .serverOnly = { ComponentTypeId<FlowFieldAgent>(),
+*                                      ComponentTypeId<StateGraphAgent>(),
+*                                      ComponentTypeId<ScriptComponent>(),
+*                                      ComponentTypeId<CharacterController>() } }, error))
+*                      return false;
+*
+*                  serverOnly: the host alone runs its AI, navigation, scripts
+*                    and physics; clients draw the replicated pose,
+*                    interpolated. List every component that decides or moves
+*                    anything (RigidBody and Collider for physics bodies), or
+*                    a client would run it too and fight the snapshots.
+*                  Spawning stays the game's: RequestSpawn(id, kServerPeer,
+*                    position) on the host (C#, later); destroying the entity
+*                    despawns it everywhere.
+*                  Values a script needs on clients (health, say) go into a
+*                    native component listed in .replicated, with a
+*                    serializer (NetComponentId::FirstGameId and up), until
+*                    script fields can be replicated directly.
+*
 *                Core calls RegisterGameNetPrefabs once at startup; a
 *                mistake here is reported then and refuses every session.
 *
 * \history
 *    -v1.0       Networking Guide 13.2, 18.3 issue 6 (PR 7)
 *    -v1.1       Player = 1 reserved for NetInputSystem's auto-spawn (PR 11)
+*    -v1.2       a generic example for any other prefab (an AI enemy); no id
+*                reserved for it (PR 12)
 *
 **************************************************************************/
 #pragma once

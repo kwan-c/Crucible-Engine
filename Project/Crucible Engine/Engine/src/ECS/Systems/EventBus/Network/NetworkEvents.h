@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 September 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Session-level events on the network bus
 *                (Core::Events().network): a session started or ended, a
@@ -30,12 +30,15 @@
 *                JoinRefused (Networking Guide Milestone 1.3)
 *    -v1.3       PeerReady, WorldReady, SpawnFailed (Networking Guide 9.3,
 *                18.3 issue 4, PR 8)
+*    -v1.4       GameplayEventReceived: generic gameplay events (PR 12)
 *
 **************************************************************************/
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include "Network/NetTypes.h"
 
@@ -98,5 +101,18 @@ namespace Crucible::NetworkEvents
 		Net::NetworkId   id = Net::kInvalidNetworkId;
 		Net::NetPrefabId prefab = Net::kInvalidNetPrefab;
 		std::string      reason;
+	};
+
+	/// A gameplay event the host sent (NetworkSession::SendGameplayEvent): a hit, a death, a
+	/// sound, a score - whatever `kind` means to the game; the engine never interprets it.
+	/// Delivered on clients in the order the host sent them (reliable, lane 0, after the spawns
+	/// and despawns of the same frame), and on the host itself (and offline) too, so one listener
+	/// serves every role. By delivery time an entity the payload names may already be gone in
+	/// this frame: look it up and check that it is alive.
+	struct GameplayEventReceived
+	{
+		std::uint16_t          kind = 0;      // non-zero; defined by the game
+		std::vector<std::byte> payload;       // the game's own format, at most kMaxGameplayEventPayload bytes
+		bool                   local = false; // posted on the machine that sent it (host, or offline)
 	};
 }

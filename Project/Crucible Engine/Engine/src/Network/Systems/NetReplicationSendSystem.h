@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                The host's sending system: the lifecycle stream (the world
 *                for a joining client, then every spawn and despawn) and
@@ -30,7 +30,10 @@
 *                     order, WorldEnd. The peer then waits for ClientReady.
 *                  2. Everyone else already Synchronizing or InGame: the
 *                     spawns performed this frame, then the despawns queued
-*                     since last frame.
+*                     since last frame, then this frame's gameplay events
+*                     (NetworkSession::SendGameplayEvent), each to everyone
+*                     or to its one client. So an event that names an entity
+*                     spawned this frame always arrives after that spawn.
 *                A joining client gets no incremental messages in its join
 *                frame, because its world already holds every change made up
 *                to now; from the next frame on it gets all of them. Every
@@ -70,6 +73,8 @@
 *                Guide 9.3, 9.4, PR 8)
 *    -v1.1       snapshots: step-stamped tick, confirmed-spawn gating, full
 *                state every snapshot, acks (PR 9)
+*    -v1.2       gameplay events after the frame's spawns and despawns
+*                (PR 12)
 *
 **************************************************************************/
 #pragma once
@@ -86,6 +91,7 @@
 #include "ECS/Systems/IECSSystems.h"
 #include "EngineExport.h"
 #include "Network/GnsTransport.h"
+#include "Network/NetworkSession.h"   // QueuedGameplayEvent
 #include "Network/NetTypes.h"
 #include "Network/Protocol.h"
 
@@ -197,6 +203,8 @@ namespace Crucible
 		std::vector<std::byte>      m_state;        // record bodies, back to back
 		std::vector<Net::PeerId>    m_joining;      // peers that get the world this frame
 		std::vector<Net::PeerId>    m_incremental;  // peers that get this frame's changes
+		std::vector<QueuedGameplayEvent> m_events;  // this frame's gameplay events
+		std::vector<std::byte>      m_eventBuffer;  // one encoded GameplayEvent
 		std::vector<std::size_t>    m_candidates;   // one client's snapshot entries (indices into m_snapshotRecords)
 		SpawnBatchView              m_spawnBatch;   // one message being encoded (reused)
 		DespawnBatchView            m_despawnBatch;

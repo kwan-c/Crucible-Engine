@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -21,6 +21,9 @@
 *    -v1.4       the heartbeat moved to NetInputSystem (it sends commands
 *                too); applied snapshots go to the session's SnapshotAcks()
 *                (PR 11)
+*    -v1.5       a snapshot's root pose goes into the proxy's interpolation
+*                buffer instead of its Transform, and feeds the server time
+*                estimate; GameplayEvents are delivered (PR 12)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -31,6 +34,7 @@
 #include "Network/NetComponents.h"
 #include "Network/NetContent.h"
 #include "Network/NetIdentityHooks.h"
+#include "Network/Systems/NetInterpolationSystem.h"
 #include "Scene/Prefab.h"
 #include "Scene/SceneManager.h"
 
@@ -218,7 +222,7 @@ namespace Crucible
 			if (!Decode(reader, event)) { Leave(CloseReason::Malformed, "malformed GameplayEvent"); return false; }
 			if (!CheckSequence(event.lifecycleSeq, "GameplayEvent")) return false;
 			if (state != ClientWorld::Ready) { Leave(CloseReason::Malformed, "GameplayEvent inside the world stream"); return false; }
-			++m_session.MutableStats().unhandled;   // gameplay events: a later phase
+			m_session.DeliverGameplayEvent(event.kind, event.payload);   // the payload is the game's to check
 			m_session.MarkLifecycleApplied(event.lifecycleSeq);
 			return true;
 		}
@@ -386,6 +390,14 @@ namespace Crucible
 			NetInterpolation* interpolation = world.Write<NetInterpolation>(e);
 			if (interpolation != nullptr && m_snapshot.serverTick <= interpolation->lastApplied) { ++stats.staleRecords; continue; }
 
+			// The record is applied whole (every replicated component), but a proxy's root pose goes
+			// into its interpolation buffer: NetInterpolationSystem draws it 100 ms behind, so the
+			// Transform is put back as it was right after the record wrote it (11.4).
+			const Transform* before = interpolation != nullptr ? world.Read<Transform>(e) : nullptr;
+			const bool buffered = before != nullptr;
+			const Math::vec3 drawnPosition = buffered ? before->positions : Math::vec3(0.f);
+			const Math::quat drawnRotation = buffered ? before->rotation : Math::quat(1.f, 0.f, 0.f, 0.f);
+
 			const RecordView& record = m_snapshot.Records()[i];
 			const NetworkIdentity* identity = world.Read<NetworkIdentity>(e);
 			const ReplicationContext context{ .desc = m_content.Prefabs().Desc(identity->prefab), .tick = m_snapshot.serverTick };
@@ -397,9 +409,33 @@ namespace Crucible
 				complete = false;
 				continue;
 			}
-			if (interpolation != nullptr) interpolation->lastApplied = m_snapshot.serverTick;
+			interpolation = world.Write<NetInterpolation>(e);
+			if (interpolation == nullptr) continue;
+			interpolation->lastApplied = m_snapshot.serverTick;
+			if (buffered)
+			{
+				const Transform* applied = world.Read<Transform>(e);
+				NetInterpolation::Sample sample;
+				sample.tick = m_snapshot.serverTick;
+				sample.position = applied->positions;
+				sample.rotation = applied->rotation;
+				if (NetInterpolationSystem::PushSample(*interpolation, sample)) ++stats.interpolationTeleports;
+				++stats.interpolationSamples;
+				if (applied->positions != drawnPosition || applied->rotation != drawnRotation)
+				{
+					Transform* t = world.GetComponent<Transform>(e);
+					t->positions = drawnPosition;
+					t->rotation = drawnRotation;
+				}
+			}
 		}
 		if (!complete) { ++stats.snapshotsRejected; return; }
+
+		// The host's clock as this client sees it: the snapshot's tick plus half the round trip.
+		ConnectionStatus link;
+		const GnsTransport* transport = m_session.Transport();
+		const int rttMs = transport != nullptr && transport->Status(m_session.ServerConnection(), link) ? link.pingMs : 0;
+		m_session.ServerTime().OnSnapshot(m_snapshot.serverTick, rttMs);
 
 		m_session.SnapshotAcks().Received(m_snapshot.sequence);   // NetInputSystem reports it in the next Input
 		++stats.snapshotsApplied;

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -125,7 +125,27 @@
 *                intent goes neutral, so a frozen or cut-off client's mech
 *                stops instead of walking until GNS times it out.
 *
+*                Gameplay events (Networking Guide 9.5, 13.3): the host
+*                sends a generic event - a game-defined kind and payload
+*                bytes - with SendGameplayEvent. The send system delivers it
+*                reliably on lane 0 after that frame's spawns and despawns,
+*                to every client in the game or synchronizing (not one that
+*                receives the world this frame: its world is already newer),
+*                or to one client. The host posts it to itself as well, and
+*                offline it is only posted locally, so gameplay listening on
+*                NetworkEvents::GameplayEventReceived works in every role.
+*                Clients cannot send events.
+*
+*                Client time (Networking Guide 11.4, 11.7): ServerTime() is
+*                the estimate interpolation renders behind; the latency
+*                probe measures key-down to the first rendered frame in
+*                which the own player moved.
+*
 * \history
+*    -v1.8       gameplay events (SendGameplayEvent, TakeGameplayEvents,
+*                DeliverGameplayEvent), ServerTime(), the input latency
+*                probe (PR 12); review fix: the probe is cancelled with its
+*                entity and expires on its own
 *    -v1.7       client commands: per-peer command state, TakePeerIntent and
 *                the input timeout; the client's SnapshotAcks() (PR 11)
 *    -v1.6       snapshots: SendSnapshot, SendInput, the Input handler
@@ -172,6 +192,7 @@
 #include "Network/NetTypes.h"
 #include "Network/NetworkSettings.h"
 #include "Network/Protocol.h"
+#include "Network/ServerTimeEstimate.h"
 #include "Network/SnapshotAckWindow.h"
 
 namespace Crucible
@@ -240,6 +261,14 @@ namespace Crucible
 		bool       hasYaw = false;         // a command arrived, so yawDegrees is the client's
 		bool       jump = false;           // once per jump the client pressed
 		bool       timedOut = false;       // no command for kInputTimeoutTicks: neutral
+	};
+
+	/// Host: a gameplay event waiting for the send system (NetworkSession::SendGameplayEvent).
+	struct QueuedGameplayEvent
+	{
+		Net::PeerId            to = Net::kInvalidPeer;   // a client, or NetworkSession::kEveryone
+		std::uint16_t          kind = 0;
+		std::vector<std::byte> payload;
 	};
 
 	/// Client: where it is in the host's lifecycle stream (Networking Guide 9.3).
@@ -457,6 +486,51 @@ namespace Crucible
 		/// (and `out` neutral) if `peer` is not InGame.
 		bool TakePeerIntent(Net::PeerId peer, PeerIntent& out);
 
+		// ---- gameplay events ----------------------------------------------------------------
+
+		static constexpr Net::PeerId kEveryone = Net::kInvalidPeer;          // SendGameplayEvent: all clients and the host
+		static constexpr std::size_t kMaxQueuedGameplayEvents = 1024;       // per frame; more are refused
+
+		/// Host or offline: sends a game-defined event. kind: non-zero, chosen by the game (the
+		/// engine never interprets it). payload: at most kMaxGameplayEventPayload bytes, in the
+		/// game's own format (its handler validates it). to: kEveryone, kServerPeer (the host
+		/// only), or one client's PeerId. The host (and offline, the only receiver) gets it as a
+		/// local NetworkEvents::GameplayEventReceived; clients get it reliably, in order, after the
+		/// spawns and despawns of this frame - so it may name entities that already exist, but
+		/// not one RequestSpawn'ed this frame (that spawn is performed and announced next frame:
+		/// send such an event a frame later). False (logged, counted) on a client, while
+		/// stopping, for kind 0, an oversized payload, an unknown target, or a full queue.
+		bool SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to = kEveryone);
+
+		/// The send system: this frame's events for clients (moved into `out`, in send order).
+		void TakeGameplayEvents(std::vector<QueuedGameplayEvent>& out);
+
+		/// Client, NetReceiveSystem: a GameplayEvent arrived and was validated; posts it.
+		void DeliverGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload);
+
+		// ---- client time and responsiveness ------------------------------------------------
+
+		/// Client: the host's clock as this client estimates it (reset by every Start and Stop).
+		ServerTimeEstimate&       ServerTime() noexcept       { return m_serverTime; }
+		const ServerTimeEstimate& ServerTime() const noexcept { return m_serverTime; }
+
+		/// Client, NetInputSystem: the own player `player`, at `position`, just started being
+		/// asked to move (a key went down). Ignored while a measurement is pending.
+		void NoteMoveStarted(Net::NetworkId player, const Math::vec3& position);
+
+		/// Client, NetInterpolationSystem: where `player` is drawn this frame. The first frame it
+		/// is more than 1 cm from where the move started completes the measurement: the latency
+		/// goes to NetStats (input latency fields) and the log. Abandoned (inputLatencyAbandoned)
+		/// when that entity is removed, after kLatencyProbeTimeout (checked every Update, so
+		/// with no position for it at all), and by Start and Stop. The next key-down then
+		/// starts a new one.
+		void NoteRenderedPosition(Net::NetworkId player, const Math::vec3& position);
+
+		static constexpr std::chrono::milliseconds kLatencyProbeTimeout{ 2000 };
+
+		/// Client: a key-to-motion measurement is waiting for its motion (diagnostics, tests).
+		bool LatencyMeasurementPending() const noexcept { return m_latency.pending; }
+
 		// ---- the lifecycle stream (client) ----------------------------------------------------
 
 		/// Newest lifecycle message fully applied (1 after JoinAccepted).
@@ -501,6 +575,7 @@ namespace Crucible
 		PeerState* PeerById(Net::PeerId peer) noexcept;   // a slot that is not Free, or null
 		void       Malformed(PeerState& peer, const char* what);
 		void       ClosePeer(PeerState& peer, CloseReason reason, const std::string& debug);
+		void       AbandonLatencyProbe() noexcept;
 		void       ClearEntityState() noexcept;   // map, rejected, spawns, despawns, ids, world messages
 		void       Post(auto event);
 
@@ -530,6 +605,14 @@ namespace Crucible
 		ClientWorld                    m_clientWorld = ClientWorld::AwaitingWorld;
 		std::vector<ReceivedMessage>   m_worldMessages;   // for NetReceiveSystem, this frame only
 		SnapshotAckWindow              m_snapshotAcks;    // applied snapshots, for the next Input
+		ServerTimeEstimate             m_serverTime;      // the host's clock, for interpolation
+		struct LatencyProbe
+		{
+			bool                                  pending = false;
+			std::chrono::steady_clock::time_point started{};
+			Net::NetworkId                        player = Net::kInvalidNetworkId;
+			Math::vec3                            from{ 0.f };
+		}                              m_latency;
 		Net::NetTick                   m_serverTickAtJoin = 0;
 		std::chrono::steady_clock::time_point m_joinDeadline{};   // Joining: JoinAccepted due by then
 
@@ -554,6 +637,9 @@ namespace Crucible
 		Net::NetworkId                 m_nextId = 1;          // never reused within a session
 		std::vector<PendingSpawn>      m_pendingSpawns;       // performed by NetReceiveSystem next frame
 		std::vector<Net::NetworkId>    m_spawned;             // performed, for the send system to announce
+
+		// Gameplay events (host): this frame's, for the send system
+		std::vector<QueuedGameplayEvent> m_gameplayEvents;
 	};
 
 #ifdef _MSC_VER
