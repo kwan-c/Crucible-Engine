@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NetReplicationSendSystem: the host's lifecycle stream
 *                (world on join, spawns, despawns) and snapshots.
@@ -15,6 +15,8 @@
 *    -v1.2       gameplay events, after the spawns and despawns (PR 12)
 *    -v1.3       the per-client budget: classes, maximum ages, priority,
 *                change detection, adaptive allowance, counters (PR 13)
+*    -v1.4       SceneObjectBatches in the world stream; the scene identity
+*                in WorldBegin (Networking Phase 14.5)
 *
 **************************************************************************/
 #include "Network/Systems/NetReplicationSendSystem.h"
@@ -323,15 +325,22 @@ namespace Crucible
 
 	bool NetReplicationSendSystem::SendWorld(Net::PeerId peer, std::span<const Record> records)
 	{
+		// Scene objects first (the client binds its own entities), then the spawned ones.
+		m_worldScene.clear();
+		m_worldDynamic.clear();
+		for (const Record& r : records) (m_session.SceneIdOf(r.id) != 0 ? m_worldScene : m_worldDynamic).push_back(r);
+
 		ByteWriter begin(m_message);
-		if (!Encode(begin, WorldBegin{ .lifecycleSeq = m_session.NextLifecycleSeq(peer) }) || !Send(peer, begin.Written())) return false;
-		if (!SendSpawnBatches(peer, records)) return false;
+		const WorldBegin message{ .lifecycleSeq = m_session.NextLifecycleSeq(peer), .sceneAsset = m_session.SceneAsset(), .sceneHash = m_session.SceneHash() };
+		if (!Encode(begin, message) || !Send(peer, begin.Written())) return false;
+		if (!SendSceneObjectBatches(peer, m_worldScene)) return false;
+		if (!SendSpawnBatches(peer, m_worldDynamic)) return false;
 
 		const std::uint32_t endSeq = m_session.NextLifecycleSeq(peer);
 		ByteWriter end(m_message);
 		if (!Encode(end, WorldEnd{ .lifecycleSeq = endSeq }) || !Send(peer, end.Written())) return false;
 		m_session.MarkWorldSent(peer, endSeq);
-		CRU_INFO("[Net] sent peer {} the world: {} entities", peer, records.size());
+		CRU_INFO("[Net] sent peer {} the world: {} entities ({} scene objects)", peer, records.size(), m_worldScene.size());
 		return true;
 	}
 
@@ -377,6 +386,51 @@ namespace Crucible
 			ClientView& view = ViewOf(peer);
 			for (std::size_t k = first; k < next; ++k)
 				view.states[records[k].id] = ClientEntityState{ .spawnSeq = m_spawnBatch.lifecycleSeq, .spawnHash = records[k].hash };
+		}
+		return true;
+	}
+
+	// SendSpawnBatches for adopted scene objects: each record also names its persistent scene id,
+	// and the client binds its own entity instead of instantiating one.
+	bool NetReplicationSendSystem::SendSceneObjectBatches(Net::PeerId peer, std::span<const Record> records)
+	{
+		std::size_t next = 0;
+		while (next < records.size())
+		{
+			const std::size_t first = next;
+			m_sceneBatch.objects.clear();
+			std::size_t bytes = kSpawnHeaderBytes;
+			while (next < records.size() && m_sceneBatch.objects.size() < kMaxEntitiesPerMessage)
+			{
+				const Record& r = records[next];
+				const std::size_t recordBytes = VarU32Bytes(r.id) + 8 + 2 + 1 + 1 + 1 + r.size;
+				if (!m_sceneBatch.objects.empty() && bytes + recordBytes > kMaxReliableBytes) break;
+				SceneObjectView view;
+				view.id = r.id;
+				view.sceneId = m_session.SceneIdOf(r.id);
+				view.profile = r.prefab;
+				view.owner = r.owner;
+				view.mask = r.mask;
+				view.state = std::span<const std::byte>(m_state).subspan(r.offset, r.size);
+				m_sceneBatch.objects.push_back(view);
+				bytes += recordBytes;
+				++next;
+			}
+
+			m_sceneBatch.lifecycleSeq = m_session.NextLifecycleSeq(peer);
+			m_sceneBatch.serverTick = m_session.Clock().Tick();
+			ByteWriter writer(m_message);
+			if (!Encode(writer, m_sceneBatch))
+			{
+				m_session.DropPeer(peer, CloseReason::Generic, std::format("could not encode a SceneObjectBatch of {} records", m_sceneBatch.objects.size()));
+				return false;
+			}
+			if (!Send(peer, writer.Written())) return false;
+			m_session.MutableStats().spawnRecordsSent += static_cast<std::uint32_t>(m_sceneBatch.objects.size());
+
+			ClientView& view = ViewOf(peer);
+			for (std::size_t k = first; k < next; ++k)
+				view.states[records[k].id] = ClientEntityState{ .spawnSeq = m_sceneBatch.lifecycleSeq, .spawnHash = records[k].hash };
 		}
 		return true;
 	}

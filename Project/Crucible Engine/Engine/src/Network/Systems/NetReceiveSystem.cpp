@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.5
+* \version       1.9
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -24,6 +24,12 @@
 *    -v1.5       a snapshot's root pose goes into the proxy's interpolation
 *                buffer instead of its Transform, and feeds the server time
 *                estimate; GameplayEvents are delivered (PR 12)
+*    -v1.6       SceneObjectBatch decoded and checked; binding comes in
+*                Networking Phase 14.5
+*    -v1.7       scene objects: adoption, lockdown, scene identity check,
+*                binding, removal of the host's destroyed ones (Phase 14.5)
+*    -v1.8       placed players removed as spawn points (Networking Phase 14.6)
+*    -v1.9       registers scene profiles (Networking Phase 14.7)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -34,6 +40,7 @@
 #include "Network/NetComponents.h"
 #include "Network/NetContent.h"
 #include "Network/NetIdentityHooks.h"
+#include "Network/NetSceneObjects.h"
 #include "Network/Systems/NetInterpolationSystem.h"
 #include "Scene/Prefab.h"
 #include "Scene/SceneManager.h"
@@ -97,6 +104,19 @@ namespace Crucible
 			const NetworkIdentity* identity = world.Read<NetworkIdentity>(e);
 			if (identity != nullptr && m_session.Entities().Find(identity->id) == e) continue;
 			ctx.commands.DestroyEntity(e);
+		}
+
+		// Scene objects: once per session, in its first frame, before anything has run on them.
+		if (m_session.Generation() != m_sceneGeneration)
+		{
+			m_sceneGeneration = m_session.Generation();
+			m_sceneStarted = false;
+			m_localSceneObjects.clear();
+		}
+		if (!m_sceneStarted && m_session.State() == SessionState::Running && m_session.IsActive())
+		{
+			m_sceneStarted = true;
+			StartSceneObjects(world);
 		}
 
 		if (m_session.IsServer()) PerformPendingSpawns(world);
@@ -196,6 +216,14 @@ namespace Crucible
 			if (!Decode(reader, begin)) { Leave(CloseReason::Malformed, "malformed WorldBegin"); return false; }
 			if (!CheckSequence(begin.lifecycleSeq, "WorldBegin")) return false;
 			if (state != ClientWorld::AwaitingWorld) { Leave(CloseReason::Malformed, "a second WorldBegin"); return false; }
+			if (begin.sceneAsset != m_session.SceneAsset() || begin.sceneHash != m_session.SceneHash())
+			{
+				// Different scene objects would be bound to different entities: refuse before anything is.
+				++m_session.MutableStats().sceneMismatches;
+				Leave(CloseReason::SceneMismatch, std::format("the host plays scene {:016X} (scene objects {:016X}); this machine loaded {:016X} ({:016X})",
+					begin.sceneAsset, begin.sceneHash, m_session.SceneAsset(), m_session.SceneHash()));
+				return false;
+			}
 			m_session.SetWorldState(ClientWorld::Receiving);
 			m_session.MarkLifecycleApplied(begin.lifecycleSeq);
 			return true;
@@ -206,6 +234,7 @@ namespace Crucible
 			if (!Decode(reader, end)) { Leave(CloseReason::Malformed, "malformed WorldEnd"); return false; }
 			if (!CheckSequence(end.lifecycleSeq, "WorldEnd")) return false;
 			if (state != ClientWorld::Receiving) { Leave(CloseReason::Malformed, "WorldEnd without WorldBegin"); return false; }
+			RemoveUnboundSceneObjects(world);   // the host's world no longer has them
 			m_session.SetWorldState(ClientWorld::Ready);
 			m_session.MarkLifecycleApplied(end.lifecycleSeq);
 			return m_session.CompleteWorld(end.lifecycleSeq, m_session.Entities().Count());   // ClientReady
@@ -216,6 +245,9 @@ namespace Crucible
 		case MessageType::DespawnBatch:
 			if (state != ClientWorld::Ready) { Leave(CloseReason::Malformed, "DespawnBatch inside the world stream"); return false; }
 			return ApplyDespawnBatch(world, reader);
+		case MessageType::SceneObjectBatch:
+			if (state != ClientWorld::Receiving) { Leave(CloseReason::Malformed, "a SceneObjectBatch outside the world stream"); return false; }
+			return ApplySceneObjectBatch(world, reader);
 		case MessageType::GameplayEvent:
 		{
 			GameplayEventView event;
@@ -347,6 +379,150 @@ namespace Crucible
 		}
 		m_session.MarkLifecycleApplied(m_despawnBatch.lifecycleSeq);
 		return true;
+	}
+
+	// ---- scene objects (Networking Phase 14.5) ------------------------------------------------
+
+	// The first frame of a session: the scene as it was loaded. Both sides record its identity; the
+	// host adopts its scene objects; a client makes its own inert until they are bound - server-only
+	// and owner-local components off (the host owns scene objects), before scripts, AI or physics
+	// ever see them (they run later this frame, in Update and PostUpdate).
+	void NetReceiveSystem::StartSceneObjects(World& world)
+	{
+		NetStats& stats = m_session.MutableStats();
+		m_content.ForgetSceneProfiles();   // the last session's: ids start above the prefabs again
+		SceneObjectScan scan = ScanSceneObjects(world, m_scenes.Current(), m_content);
+
+		// Scene profiles (Phase 14.7). Both machines run the same scan, so a profile one refuses the
+		// other refuses too: its objects stay local on both, and the hash (taken over the scan) agrees.
+		std::vector<Net::NetPrefabId> refused;
+		for (SceneProfile& profile : scan.profiles)
+		{
+			std::string error;
+			if (m_content.AddSceneProfile(profile.id, std::move(profile.desc), error)) { ++stats.sceneProfiles; continue; }
+			CRU_ERROR("[Net] scene profile {}: {}", profile.id, error);
+			refused.push_back(profile.id);
+		}
+		if (!refused.empty())
+			std::erase_if(scan.objects, [&](const SceneObject& o) { return std::ranges::find(refused, o.profile) != refused.end(); });
+		for (const std::string& line : scan.skipped)
+		{
+			++stats.sceneObjectsSkipped;
+			CRU_WARN("[Net] NetworkObjectAuthoring kept local: {}", line);
+		}
+		const std::uint64_t asset = m_scenes.HasPath() && m_sceneAssetOf ? m_sceneAssetOf(m_scenes.CurrentPath()) : 0;
+		m_session.SetSceneIdentity(asset, scan.hash);
+
+		for (const SceneObject& object : scan.objects)
+		{
+			const NetPrefabDesc* desc = m_content.Prefabs().Desc(object.profile);
+			if (m_session.IsServer())
+			{
+				const Net::NetworkId id = m_session.AdoptSceneObject(object.sceneId);
+				world.AddComponent(object.entity, NetworkIdentity{ .id = id, .prefab = object.profile, .owner = Net::kServerPeer });
+				if (!(m_session.Entities().Find(id) == object.entity)) CRU_ERROR("[Net] scene object {:016X} could not be adopted", object.sceneId);
+			}
+			else
+			{
+				SetComponentsEnabled(world, object.entity, desc->serverOnly, false, m_scratch);
+				SetComponentsEnabled(world, object.entity, desc->ownerLocalOnly, false, m_scratch);
+				m_localSceneObjects[object.sceneId] = LocalSceneObject{ .entity = object.entity, .profile = object.profile };
+			}
+		}
+		// Placed players: each peer gets a spawned one, so these only say where (world space).
+		std::vector<PlayerSpawnPoint> points;
+		for (const SceneObject& player : scan.players)
+		{
+			Math::mat4 m(1.f);
+			if (!world.TryGetWorldMatrix(player.entity, m)) continue;
+			const Math::mat3 basis(glm::normalize(Math::vec3(m[0])), glm::normalize(Math::vec3(m[1])), glm::normalize(Math::vec3(m[2])));
+			points.push_back(PlayerSpawnPoint{ .position = Math::vec3(m[3]), .rotation = glm::normalize(glm::quat_cast(basis)) });
+		}
+		for (const SceneObject& player : scan.players)
+		{
+			if (!world.IsAlive(player.entity)) continue;
+			world.DestroyEntity(player.entity);   // with its children
+			++stats.scenePlayersPlaced;
+		}
+		m_session.SetPlayerSpawnPoints(std::move(points));
+
+		if (!scan.objects.empty() || !scan.skipped.empty() || !scan.players.empty())
+			CRU_INFO("[Net] scene objects: {} {} ({} scene profiles, {} kept local, {} placed players as spawn points), scene {:016X}, hash {:016X}",
+				scan.objects.size(), m_session.IsServer() ? "adopted" : "waiting for the host", scan.profiles.size(), scan.skipped.size(),
+				scan.players.size(), asset, scan.hash);
+	}
+
+	// Binds the client's own scene entities to the host's network objects. All or nothing: every
+	// record is checked against this machine's scene first (the entity exists, is not bound yet, uses
+	// the same profile; its state is valid), then each is bound: state applied, interpolation seeded,
+	// NetworkIdentity added LAST (as for a proxy). Nothing is created: the scene's own entity stays,
+	// with every authored override, material and child it was loaded with.
+	bool NetReceiveSystem::ApplySceneObjectBatch(World& world, ByteReader& reader)
+	{
+		if (!Decode(reader, m_sceneBatch)) { Leave(CloseReason::Malformed, "malformed SceneObjectBatch"); return false; }
+		if (!CheckSequence(m_sceneBatch.lifecycleSeq, "SceneObjectBatch")) return false;
+		for (std::size_t i = 0; i < m_sceneBatch.objects.size(); ++i)
+		{
+			const SceneObjectView& o = m_sceneBatch.objects[i];
+			const auto local = m_localSceneObjects.find(o.sceneId);
+			const NetPrefabDesc* desc = m_content.Prefabs().Desc(o.profile);
+			std::string fault;
+			CloseReason reason = CloseReason::SceneMismatch;
+			if (local == m_localSceneObjects.end() || !world.IsAlive(local->second.entity)) fault = "this scene has no such network object";
+			else if (local->second.bound) fault = "bound twice";
+			else if (local->second.profile != o.profile) fault = std::format("it uses profile {} here", local->second.profile);
+			else if (world.IsAlive(m_session.Entities().Find(o.id))) { fault = "its NetworkId is already in use"; reason = CloseReason::Malformed; }
+			else if (desc == nullptr || o.owner > Net::kMaxClients || (o.mask & ~FullMask(*desc)) != 0
+				|| !m_content.Serializers().ValidateRecord(o.mask, o.state, ReplicationContext{ .desc = desc, .tick = m_sceneBatch.serverTick }))
+			{
+				fault = "invalid state";
+				reason = CloseReason::Malformed;
+			}
+			if (!fault.empty())
+			{
+				if (reason == CloseReason::SceneMismatch) ++m_session.MutableStats().sceneMismatches;
+				Leave(reason, std::format("SceneObjectBatch {} record {} of {} (scene object {:016X}, id {}, profile {}): {}",
+					m_sceneBatch.lifecycleSeq, i + 1, m_sceneBatch.objects.size(), o.sceneId, o.id, o.profile, fault));
+				return false;
+			}
+		}
+
+		for (const SceneObjectView& o : m_sceneBatch.objects)
+		{
+			LocalSceneObject& local = m_localSceneObjects[o.sceneId];
+			const NetPrefabDesc* desc = m_content.Prefabs().Desc(o.profile);
+			std::string error;
+			if (!m_content.Serializers().ApplyRecord(world, local.entity, o.mask, o.state, ReplicationContext{ .desc = desc, .tick = m_sceneBatch.serverTick }, &error))
+			{
+				Leave(CloseReason::SpawnFailed, std::format("scene object {:016X} (id {}): initial state: {}", o.sceneId, o.id, error));
+				return false;
+			}
+			if (o.owner == m_session.LocalPeer()) SetComponentsEnabled(world, local.entity, desc->ownerLocalOnly, true, m_scratch);
+			world.AddComponent(local.entity, SeededInterpolation(world, local.entity, m_sceneBatch.serverTick));
+			world.AddComponent(local.entity, NetworkIdentity{ .id = o.id, .prefab = o.profile, .owner = o.owner });
+			if (!(m_session.Entities().Find(o.id) == local.entity))
+			{
+				Leave(CloseReason::SpawnFailed, std::format("scene object {:016X}: its NetworkIdentity {} was rejected", o.sceneId, o.id));
+				return false;
+			}
+			local.bound = true;
+			++m_session.MutableStats().sceneObjectsBound;
+		}
+		m_session.MarkLifecycleApplied(m_sceneBatch.lifecycleSeq);
+		return true;
+	}
+
+	// WorldEnd: the host's world is complete, so a scene object of ours it did not name is one it
+	// destroyed before we joined. Destroyed here too, so both worlds hold the same objects.
+	void NetReceiveSystem::RemoveUnboundSceneObjects(World& world)
+	{
+		for (auto& [sceneId, local] : m_localSceneObjects)
+		{
+			if (local.bound || !world.IsAlive(local.entity)) continue;
+			world.DestroyEntity(local.entity);   // with its children
+			local.entity = kNullEntity;
+			++m_session.MutableStats().sceneObjectsRemoved;
+		}
 	}
 
 	// ---- snapshots ---------------------------------------------------------------------------

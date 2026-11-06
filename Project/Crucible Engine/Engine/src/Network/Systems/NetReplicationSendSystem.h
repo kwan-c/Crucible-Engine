@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                The host's sending system: the lifecycle stream (the world
 *                for a joining client, then every spawn and despawn) and
@@ -25,7 +25,10 @@
 *
 *                Each frame, on the host (Networking Guide 9.3, 9.4):
 *                  1. Joining clients (JoinAccepted sent this frame): their
-*                     whole world, from the World as it is now - WorldBegin,
+*                     whole world, from the World as it is now - WorldBegin
+*                     (with the host's scene identity), SceneObjectBatches
+*                     for the scene objects it adopted (Phase 14.5: bound on
+*                     the client, never spawned),
 *                     SpawnBatches for every mapped networked entity in id
 *                     order, WorldEnd. The peer then waits for ClientReady.
 *                  2. Everyone else already Synchronizing or InGame: the
@@ -109,6 +112,8 @@
 *                change detection against confirmed and acknowledged
 *                baselines, adaptive allowance from lane 1, instrumentation
 *                (PR 13)
+*    -v1.4       the world stream binds scene objects (SceneObjectBatch)
+*                and names the scene in WorldBegin (Networking Phase 14.5)
 *
 **************************************************************************/
 #pragma once
@@ -256,6 +261,7 @@ namespace Crucible
 		void BuildRecords(const World& world, std::span<const Net::NetworkId> ids, std::vector<Record>& out, OnWriteFailure onFailure);
 		bool SendWorld(Net::PeerId peer, std::span<const Record> records);
 		bool SendSpawnBatches(Net::PeerId peer, std::span<const Record> records);
+		bool SendSceneObjectBatches(Net::PeerId peer, std::span<const Record> records);
 		bool SendDespawnBatches(Net::PeerId peer, std::span<const Net::NetworkId> ids);
 		bool Send(Net::PeerId peer, std::span<const std::byte> message);
 		void DestroyFailed(World& world);
@@ -304,6 +310,9 @@ namespace Crucible
 		std::vector<Candidate>      m_candidates;   // one client's snapshot candidates, in send order
 		SpawnBatchView              m_spawnBatch;   // one message being encoded (reused)
 		DespawnBatchView            m_despawnBatch;
+		SceneObjectBatchView        m_sceneBatch;
+		std::vector<Record>         m_worldScene;      // the world's records split: adopted scene objects
+		std::vector<Record>         m_worldDynamic;    // and spawned entities
 		SnapshotView                m_snapshot;
 		std::vector<std::byte>      m_message;      // one encoded message (kMaxReliableBytes)
 		std::array<ClientView, Net::kMaxClients> m_views;

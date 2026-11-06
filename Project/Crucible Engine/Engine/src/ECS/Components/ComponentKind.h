@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -29,6 +29,8 @@
 *                (per-component on/off state and its dependencies)
 *    -v1.4       NetworkIdentity, NetInterpolation, PlayerInput kinds
 *                (33-35); NotToggleable and RuntimeOnly traits
+*    -v1.5       NetworkObjectAuthoring kind (39): persistent networking
+*                settings of an object (Networking Phase 14)
 *
 *
 **************************************************************************/
@@ -100,8 +102,9 @@ namespace Crucible
 		FlowFieldSurface = 36,   // Navigation: where enemies can walk, Unity's NavMeshSurface (Navigation/NavigationComponents.h)
 		FlowFieldAgent = 37,     // Navigation: one enemy's legs, Unity's NavMeshAgent (Navigation/NavigationComponents.h)
 		StateGraphAgent = 38,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
+		NetworkObjectAuthoring = 39,   // Network: an object's saved networking settings (Network/NetComponents.h)
 
-		MAXCOMPONENT = 39
+		MAXCOMPONENT = 40
 	};
 
 
@@ -315,5 +318,6 @@ namespace Crucible
  X(FlowFieldSurface)                                                           \
  X(FlowFieldAgent)                                                             \
  X(StateGraphAgent)                                                            \
+ X(NetworkObjectAuthoring)                                                     \
 
 }

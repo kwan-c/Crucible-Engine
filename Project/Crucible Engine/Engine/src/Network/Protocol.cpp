@@ -24,6 +24,7 @@ namespace Crucible
 		constexpr std::size_t kJoinRequestMax  = 1 + 4 + 8 + 1 + kMaxPlayerNameBytes;   // 46
 		constexpr std::size_t kJoinAcceptedMax = 1 + 4 + 1 + 4 + 2;                      // 12
 		constexpr std::size_t kSeqOnlyMax      = 1 + 4;                                  // 5
+		constexpr std::size_t kWorldBeginMax   = 1 + 4 + 8 + 8;                          // 21
 		constexpr std::size_t kInputCommandSize = 4 + 4 + 1 + 1 + 2 + 1;                 // 13
 		constexpr std::size_t kInputMax = 1 + 1 + kMaxInputCommands * kInputCommandSize + 2 + 4 + 4;   // 51
 
@@ -73,12 +74,13 @@ namespace Crucible
 		{
 		case MessageType::JoinRequest:   return kJoinRequestMax;
 		case MessageType::JoinAccepted:  return kJoinAcceptedMax;
-		case MessageType::WorldBegin:
+		case MessageType::WorldBegin:    return kWorldBeginMax;
 		case MessageType::WorldEnd:
 		case MessageType::ClientReady:   return kSeqOnlyMax;
 		case MessageType::Input:         return kInputMax;
 		case MessageType::Snapshot:      return kMaxSnapshotBytes;
 		case MessageType::SpawnBatch:
+		case MessageType::SceneObjectBatch:
 		case MessageType::DespawnBatch:
 		case MessageType::GameplayEvent: return kMaxReliableBytes;
 		default:                         return 0;
@@ -151,8 +153,24 @@ namespace Crucible
 		return r.Ok() && r.AtEnd() && m.lifecycleSeq == kFirstLifecycleSeq && IsClientPeer(m.peer) && m.tickRate != 0;
 	}
 
-	bool Encode(ByteWriter& w, const WorldBegin& m) noexcept  { return EncodeSeqOnly(w, MessageType::WorldBegin, m.lifecycleSeq); }
-	bool Decode(ByteReader& r, WorldBegin& m) noexcept        { return DecodeSeqOnly(r, m.lifecycleSeq); }
+	bool Encode(ByteWriter& w, const WorldBegin& m) noexcept
+	{
+		if (m.lifecycleSeq == 0) return false;
+		const std::size_t start = w.Size();
+		WriteType(w, MessageType::WorldBegin);
+		w.U32(m.lifecycleSeq);
+		w.U64(m.sceneAsset);
+		w.U64(m.sceneHash);
+		return Finished(w, start, MessageType::WorldBegin);
+	}
+
+	bool Decode(ByteReader& r, WorldBegin& m) noexcept
+	{
+		m.lifecycleSeq = r.U32();
+		m.sceneAsset = r.U64();
+		m.sceneHash = r.U64();
+		return r.Ok() && r.AtEnd() && m.lifecycleSeq != 0;
+	}
 	bool Encode(ByteWriter& w, const WorldEnd& m) noexcept    { return EncodeSeqOnly(w, MessageType::WorldEnd, m.lifecycleSeq); }
 	bool Decode(ByteReader& r, WorldEnd& m) noexcept          { return DecodeSeqOnly(r, m.lifecycleSeq); }
 	bool Encode(ByteWriter& w, const ClientReady& m) noexcept { return EncodeSeqOnly(w, MessageType::ClientReady, m.worldEndSeq); }
@@ -249,6 +267,71 @@ namespace Crucible
 		}
 		if (!r.AtEnd()) return false;   // trailing bytes
 		return IdsUniqueAndValid(m.spawns.size(), [&](std::size_t i) { return m.spawns[i].id; });
+	}
+
+	// ---- scene objects (protocol 4) -----------------------------------------------------------
+
+	namespace
+	{
+		// Every scene id non-zero and none twice (sorted copy, as for ids).
+		bool SceneIdsUniqueAndValid(const std::vector<SceneObjectView>& objects) noexcept
+		{
+			if (objects.size() > kMaxEntitiesPerMessage) return false;
+			std::array<std::uint64_t, kMaxEntitiesPerMessage> ids;
+			for (std::size_t i = 0; i < objects.size(); ++i) ids[i] = objects[i].sceneId;
+			const auto end = ids.begin() + static_cast<std::ptrdiff_t>(objects.size());
+			std::sort(ids.begin(), end);
+			if (!objects.empty() && ids[0] == 0) return false;
+			return std::adjacent_find(ids.begin(), end) == end;
+		}
+	}
+
+	bool Encode(ByteWriter& w, const SceneObjectBatchView& m) noexcept
+	{
+		const std::size_t count = m.objects.size();
+		if (m.lifecycleSeq == 0 || count == 0 || count > kMaxEntitiesPerMessage) return false;
+		if (!IdsUniqueAndValid(count, [&](std::size_t i) { return m.objects[i].id; }) || !SceneIdsUniqueAndValid(m.objects)) return false;
+		const std::size_t start = w.Size();
+		WriteType(w, MessageType::SceneObjectBatch);
+		w.U32(m.lifecycleSeq);
+		w.U32(m.serverTick);
+		w.U16(static_cast<std::uint16_t>(count));
+		for (const SceneObjectView& o : m.objects)
+		{
+			if (o.profile == Net::kInvalidNetPrefab || !IsValidOwner(o.owner) || o.state.size() > kMaxRecordBytes) return false;
+			w.VarU32(o.id);
+			w.U64(o.sceneId);
+			w.U16(o.profile);
+			w.U8(o.owner);
+			w.U8(o.mask);
+			w.U8(static_cast<std::uint8_t>(o.state.size()));
+			w.Bytes(o.state);
+		}
+		return Finished(w, start, MessageType::SceneObjectBatch);
+	}
+
+	bool Decode(ByteReader& r, SceneObjectBatchView& m)
+	{
+		m.objects.clear();
+		m.lifecycleSeq = r.U32();
+		m.serverTick = r.U32();
+		const std::uint16_t count = r.U16();
+		if (!r.Ok() || m.lifecycleSeq == 0 || count == 0 || count > kMaxEntitiesPerMessage) return false;
+		m.objects.reserve(count);   // bounded by the check above
+		for (std::uint16_t i = 0; i < count; ++i)
+		{
+			SceneObjectView o;
+			o.id = r.VarU32();
+			o.sceneId = r.U64();
+			o.profile = r.U16();
+			o.owner = r.U8();
+			o.mask = r.U8();
+			o.state = r.Sub(r.U8());
+			if (!r.Ok() || o.id == Net::kInvalidNetworkId || o.sceneId == 0 || o.profile == Net::kInvalidNetPrefab || !IsValidOwner(o.owner)) return false;
+			m.objects.push_back(o);
+		}
+		if (!r.AtEnd()) return false;   // trailing bytes
+		return IdsUniqueAndValid(m.objects.size(), [&](std::size_t i) { return m.objects[i].id; }) && SceneIdsUniqueAndValid(m.objects);
 	}
 
 	bool Encode(ByteWriter& w, const DespawnBatchView& m) noexcept

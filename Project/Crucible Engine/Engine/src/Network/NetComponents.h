@@ -3,18 +3,24 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                The networking ECS components: NetworkIdentity,
-*                NetInterpolation and PlayerInput, bound to their
-*                ComponentKind values (33-35).
+*                NetInterpolation and PlayerInput (ComponentKind 33-35),
+*                and NetworkObjectAuthoring (39).
 *
 * \details
-*                All three are session data: they are added while the
-*                game runs and mean nothing once it stops. So all three
-*                are RuntimeOnly (never in a scene, prefab, Play snapshot,
-*                undo step or copy/paste) and NotToggleable (the ECS never
+*                The first three are session data: they are added while
+*                the game runs and mean nothing once it stops. So they are
+*                RuntimeOnly (never in a scene, prefab, Play snapshot, undo
+*                step or copy/paste) and NotToggleable (the ECS never
 *                switches them off; see ComponentKind.h).
+*
+*                NetworkObjectAuthoring is the opposite: authored data,
+*                saved with scenes and prefabs like any component, and the
+*                one place an object's networking settings live. It holds
+*                no runtime identity (no NetworkId, no owner): those exist
+*                only in NetworkIdentity, while a session runs.
 *
 *                Plain data only: the systems that write them come in
 *                later phases (identity map, spawning, input,
@@ -26,13 +32,16 @@
 *                (Networking Guide 4.2)
 *    -v1.1       PlayerInput::hasYaw (the controller faces yawDegrees only
 *                when something set it) (PR 10)
+*    -v1.2       NetworkObjectAuthoring (Phase 14.1)
 *
 **************************************************************************/
 #pragma once
 
 #include <array>
 #include <cstdint>
+#include <string>
 #include <type_traits>
+#include <vector>
 
 #include "ECS/Components/ComponentKind.h"
 #include "Math/Math.h"
@@ -99,10 +108,55 @@ namespace Crucible
 		std::uint32_t sampleSerial = 0;       // bumped by the sampler each time it writes
 	};
 
+	/*************************************************************************
+	 \brief
+		An object's networking settings, authored in the editor and saved
+		with its scene or prefab (Networking Phase 14).
+	 \details
+		On the ROOT of a networked object - a prefab's root (a network
+		prefab, which gameplay can spawn) or an entity placed in a scene.
+		The networking backend reads it to build the object's replication
+		profile (NetPrefabDesc); it never writes it, and nothing here is a
+		runtime identity: NetworkIds and owners exist only in
+		NetworkIdentity, while a session runs.
+
+		Everything is stored by NAME, so engine numbering changes cannot
+		break a saved file:
+		  replicated         serializer names (ReplicationRegistry), in
+		                     record order: what each spawn and snapshot
+		                     carries ("Transform/YawOnly")
+		  serverOnly         component names switched off on clients, over
+		                     the object's whole hierarchy (AI, scripts,
+		                     physics)
+		  ownerLocalOnly     component names switched off except on the
+		                     owning machine (camera rig, HUD)
+		  enabledReplicated  root component names whose on/off state is
+		                     replicated (EnabledMask)
+		A component in none of the lists is Local: it keeps the value its
+		scene or prefab loaded on every machine and runs everywhere.
+
+		Which names and combinations are valid is checked when the profile
+		is built (NetPrefabTable's rules); this struct only stores them.
+	 *************************************************************************/
+	struct NetworkObjectAuthoring
+	{
+		std::vector<std::string> replicated;
+		std::vector<std::string> serverOnly;
+		std::vector<std::string> ownerLocalOnly;
+		std::vector<std::string> enabledReplicated;
+		float sendPriority = 1.f;          // snapshot scheduling weight, (0, 1000] (host only, not hashed)
+		bool  critical = false;            // every snapshot, ahead of the budget (host only, not hashed)
+		bool  allowScenePlacement = true;  // instances placed in scenes are networked scene objects
+		bool  spawnPerPlayer = false;      // the host spawns one for itself and one per joining client
+
+		bool operator==(const NetworkObjectAuthoring&) const = default;
+	};
+
 	// Bind each one to its ComponentKind (see ComponentKind.h).
 	CRUCIBLE_COMPONENT(NetworkIdentity, NetworkIdentity);
 	CRUCIBLE_COMPONENT(NetInterpolation, NetInterpolation);
 	CRUCIBLE_COMPONENT(PlayerInput, PlayerInput);
+	CRUCIBLE_COMPONENT(NetworkObjectAuthoring, NetworkObjectAuthoring);
 
 	// Session data: never saved, never switched off.
 	template <> struct RuntimeOnly<NetworkIdentity>  : std::true_type {};
@@ -112,6 +166,10 @@ namespace Crucible
 	template <> struct NotToggleable<NetworkIdentity>  : std::true_type {};
 	template <> struct NotToggleable<NetInterpolation> : std::true_type {};
 	template <> struct NotToggleable<PlayerInput>      : std::true_type {};
+
+	// Authored settings: saved (not RuntimeOnly), but never switched off - "networking off for
+	// now" is not a state an object can be in; remove the component instead.
+	template <> struct NotToggleable<NetworkObjectAuthoring> : std::true_type {};
 
 	// Plain values with no heap inside, so they are cheap to copy and to move between archetypes.
 	static_assert(std::is_trivially_copyable_v<NetworkIdentity>);

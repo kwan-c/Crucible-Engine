@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.8
+* \version       1.10
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -136,6 +136,13 @@
 *                NetworkEvents::GameplayEventReceived works in every role.
 *                Clients cannot send events.
 *
+*                Scene objects (Networking Phase 14.5): network objects the
+*                loaded scene already holds on every machine. The host
+*                adopts them when its session starts (AdoptSceneObject: an
+*                id, remembered with the entity's persistent scene id); the
+*                world stream binds them on each client instead of spawning
+*                them. SceneAsset()/SceneHash() name the loaded scene.
+*
 *                Client time (Networking Guide 11.4, 11.7): ServerTime() is
 *                the estimate interpolation renders behind; the latency
 *                probe measures key-down to the first rendered frame in
@@ -166,6 +173,9 @@
 *    -v1.0       Networking Guide 5.4, 8.7, 18.3 issues 10 and 13, PR 4:
 *                settings-driven Start, connection handling, join handshake
 *                with version/hash/full refusals, quotas, timeouts, events
+*    -v1.9       scene objects: AdoptSceneObject, SceneIdOf, the scene
+*                identity (Networking Phase 14.5)
+*    -v1.10      PlayerSpawnPoints (Networking Phase 14.6)
 *
 **************************************************************************/
 #pragma once
@@ -180,6 +190,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 #include <vector>
 
 #include "EngineExport.h"
@@ -244,6 +255,13 @@ namespace Crucible
 
 	/// Server: a spawn requested this frame, performed by NetReceiveSystem at the start of the
 	/// next frame (structural changes are not allowed inside declared gameplay systems).
+	/// Where a player is spawned: a placed instance of the player prefab (Networking Phase 14.6).
+	struct PlayerSpawnPoint
+	{
+		Math::vec3 position{ 0.f };
+		Math::quat rotation{ 1.f, 0.f, 0.f, 0.f };
+	};
+
 	struct PendingSpawn
 	{
 		Net::NetworkId   id = Net::kInvalidNetworkId;
@@ -480,6 +498,28 @@ namespace Crucible
 		/// 16 steps at 60 Hz is about 270 ms, 8 input packets (Networking Guide 6.2).
 		static constexpr Net::NetTick kInputTimeoutTicks = 16;
 
+		// ---- scene objects (Networking Phase 14.5) -----------------------------------------------
+
+		/// Host: a scene object of the loaded scene (NetSceneObjects.h) becomes a network object: a
+		/// new NetworkId (never reused), remembered with its persistent scene id so the world stream
+		/// binds it on clients instead of spawning it. NetReceiveSystem then gives the entity its
+		/// NetworkIdentity. kInvalidNetworkId unless a running server.
+		Net::NetworkId AdoptSceneObject(std::uint64_t sceneId);
+
+		/// The scene id a network object was adopted from, or 0 (a spawned one, or none).
+		std::uint64_t SceneIdOf(Net::NetworkId id) const noexcept;
+
+		/// The loaded scene this session plays: its asset GUID and its scene-object hash (0, 0: no
+		/// saved scene). The host sends its own in every WorldBegin; a client compares its own.
+		void          SetSceneIdentity(std::uint64_t asset, std::uint64_t hash) noexcept { m_sceneAsset = asset; m_sceneHash = hash; }
+		std::uint64_t SceneAsset() const noexcept { return m_sceneAsset; }
+		std::uint64_t SceneHash() const noexcept  { return m_sceneHash; }
+
+		/// The placed players of the loaded scene, in scene-id order (removed when the session
+		/// started; NetInputSystem spawns players there). Empty: none placed.
+		void SetPlayerSpawnPoints(std::vector<PlayerSpawnPoint> points) { m_playerSpawnPoints = std::move(points); }
+		std::span<const PlayerSpawnPoint> PlayerSpawnPoints() const noexcept { return m_playerSpawnPoints; }
+
 		/// Server: the intent of an InGame peer's players from its newest command, consuming its
 		/// latched jump (so call it once per frame per peer). Neutral (no walk, no jump, yaw kept)
 		/// before its first command and once kInputTimeoutTicks steps passed without one. False
@@ -640,6 +680,12 @@ namespace Crucible
 
 		// Gameplay events (host): this frame's, for the send system
 		std::vector<QueuedGameplayEvent> m_gameplayEvents;
+
+		// Scene objects (Phase 14.5)
+		std::unordered_map<Net::NetworkId, std::uint64_t> m_sceneObjects;   // host: NetworkId -> scene id, while mapped
+		std::uint64_t                  m_sceneAsset = 0;
+		std::uint64_t                  m_sceneHash = 0;
+		std::vector<PlayerSpawnPoint>  m_playerSpawnPoints;   // Phase 14.6
 	};
 
 #ifdef _MSC_VER

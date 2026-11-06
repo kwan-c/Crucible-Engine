@@ -118,6 +118,7 @@ namespace Crucible {
 		bool DrawComponentExtras(UIButton& button);         // scene dropdown for onClick = LoadScene
 		bool DrawComponentExtras(UISlider& slider);         // direction dropdown that also turns the UIRect
 		bool DrawComponentExtras(UIText& text);             // multi-line text box, 3 x 3 alignment grid, font status
+		bool DrawComponentExtras(NetworkObjectAuthoring& authoring);   // the networking policy table (Editor/src/Network/NetworkAuthoringInspector.h)
 		bool DrawComponentExtras(WorldText& text);          // the same as UIText, in metres, plus the distance fade
 		template <typename T> bool DrawTextExtras(T& text, bool world);   // UIText / WorldText shared part (Inspector.cpp)
 		bool DrawMaterialSection(MeshRenderer& renderer, bool importedDefault = false);

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NetPrefabTable: which prefabs can be spawned over the
 *                network, under which explicit NetPrefabId, and what of each
@@ -42,6 +42,9 @@
 *                a prefab's replicated state must fit one record
 *    -v1.1       sendPriority and critical: host-side snapshot scheduling,
 *                outside the content hash (PR 13)
+*    -v1.2       prefabGuid (found by asset GUID: renames and moves are
+*                harmless); Remove, FindByGuid, FindByName, HighestId for
+*                discovered network prefabs (Networking Phase 14.2)
 *
 **************************************************************************/
 #pragma once
@@ -52,6 +55,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "EngineExport.h"
@@ -74,6 +78,9 @@ namespace Crucible
 	{
 		std::string                 name;                // "Grunt": logs and the hash
 		std::string                 prefabPath;          // asset path, e.g. "Prefabs/Grunt.cprefab"
+		std::uint64_t               prefabGuid = 0;      // the asset's GUID if known (found by it, not the path)
+		std::uint64_t               contentHash = 0;     // when set, hashed instead of the file's content hash
+		                                                 // (authored prefabs: their scheduling fields left out)
 		std::vector<NetComponentId> replicated;          // record order: spawns and snapshots carry these
 		std::vector<ComponentId>    serverOnly;          // switched off on client proxies (physics, AI)
 		std::vector<ComponentId>    ownerLocalOnly;      // switched off unless owned by this machine (camera)
@@ -109,6 +116,17 @@ namespace Crucible
 
 		/// Uses an already loaded prefab for `id` instead (LoadPrefabs does this for each id).
 		bool Attach(Net::NetPrefabId id, std::shared_ptr<const Prefab> prefab, std::string& error);
+
+		/// Drops prefab `id` (discovered prefabs are found afresh before every session). False if
+		/// there was none.
+		bool Remove(Net::NetPrefabId id);
+
+		/// The id registered for an asset GUID or a name, or kInvalidNetPrefab.
+		Net::NetPrefabId FindByGuid(std::uint64_t prefabGuid) const noexcept;
+		Net::NetPrefabId FindByName(std::string_view name) const noexcept;
+
+		/// The highest registered id, 0 if none.
+		Net::NetPrefabId HighestId() const noexcept;
 
 		/// Everything a session needs before it may start (see the file notes). Never throws for a
 		/// configuration mistake: the message names the prefab, its id and the component or

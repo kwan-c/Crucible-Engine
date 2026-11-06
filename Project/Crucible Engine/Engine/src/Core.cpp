@@ -308,7 +308,12 @@ namespace Crucible {
 
     void Core::RegisterEngineSystems()
     {
-        m_systems.RegisterSystem<NetReceiveSystem>(*m_network, *m_netContent, *m_scenes);            // PreUpdate, first, every state: runs the network session, host spawns, client proxies (Offline: nothing)
+        m_systems.RegisterSystem<NetReceiveSystem>(*m_network, *m_netContent, *m_scenes)             // PreUpdate, first, every state: runs the network session, host spawns, client proxies (Offline: nothing)
+            .SetSceneAssetResolver([this](const std::filesystem::path& scene) -> std::uint64_t {    // scene objects: the loaded scene's asset GUID, compared on join
+                const std::filesystem::path relative = std::filesystem::absolute(scene).lexically_normal().lexically_relative(std::filesystem::absolute(m_assets->GetAssetRoot()).lexically_normal());
+                const std::u8string text = relative.generic_u8string();
+                return text.empty() ? 0 : m_assets->GetGuid(std::string(text.begin(), text.end())).m_Value;
+            });
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
@@ -320,9 +325,9 @@ namespace Crucible {
             [] { return UI::IsMenuOpen(); });
         // PreUpdate, after the sampler, every state: a client's commands, acks and heartbeat to the host; on the
         // host, each client's commands into its players' PlayerInput (neutral after ~270 ms without one), and a
-        // player spawned per peer once GamePrefab::Player is registered (GamePrefabs.h). Spawn points: the last
-        // argument (NetInputSystem::DefaultSpawnPoint: 3 m apart along +X).
-        m_systems.RegisterSystem<NetInputSystem>(*m_network, *m_netContent, Id(GamePrefab::Player));
+        // player spawned per peer: the network prefab whose NetworkObjectAuthoring has spawnPerPlayer (none: no
+        // auto-spawn). Spawn points: the last argument, else where the scene placed that prefab (removed in a session), else 3 m apart along +X.
+        m_systems.RegisterSystem<NetInputSystem>(*m_network, *m_netContent, Net::kInvalidNetPrefab);
         m_systems.RegisterSystem<ECSPlayerControllerSystem>()                                               // Update, Playing only: PlayerInput -> CharacterController, before physics moves it; the mech faces its camera
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
         m_systems.RegisterSystem<ECSStateGraphSystem>(*m_resources, *m_playMode, *m_scriptRuntime);   // Update, Playing only, before navigation: each StateGraphAgent's state graph (its trees run in C#) gives its FlowFieldAgent orders

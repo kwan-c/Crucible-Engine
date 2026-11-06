@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.9
+* \version       1.12
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -31,6 +31,11 @@
 *                (PR 12); review fix: a pending measurement is cancelled
 *                when its entity is removed and expires in Update
 *    -v1.9       bytes by message type, both directions (PR 13)
+*    -v1.10      SceneObjectBatch is a lifecycle message (protocol 4,
+*                Networking Phase 14.4)
+*    -v1.11      scene objects: AdoptSceneObject, SceneIdOf, the scene
+*                identity (Networking Phase 14.5)
+*    -v1.12      PlayerSpawnPoints cleared with the entity state (Phase 14.6)
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -262,6 +267,7 @@ namespace Crucible
 		// nothing to announce, and the original keeps its mapping.
 		if (!m_entities.RemoveIfMapped(identity.id, entity)) return;
 		m_destroyedThisFrame.push_back(identity.id);
+		m_sceneObjects.erase(identity.id);   // a destroyed scene object is not in later world streams
 		if (m_latency.pending && m_latency.player == identity.id) AbandonLatencyProbe();   // it can never move now
 		if (m_role == Net::NetRole::Server && m_state == SessionState::Running)
 		{
@@ -297,6 +303,10 @@ namespace Crucible
 		m_pendingSpawns.clear();
 		m_spawned.clear();
 		m_gameplayEvents.clear();
+		m_sceneObjects.clear();
+		m_sceneAsset = 0;
+		m_sceneHash = 0;
+		m_playerSpawnPoints.clear();
 		m_worldMessages.clear();
 		m_nextId = 1;
 		m_clientWorld = ClientWorld::AwaitingWorld;
@@ -382,7 +392,7 @@ namespace Crucible
 		const bool known = ReadMessageType(reader, type);
 		const std::uint32_t seq = reader.U32();
 		const bool lifecycle = type == MessageType::WorldBegin || type == MessageType::SpawnBatch || type == MessageType::DespawnBatch
-			|| type == MessageType::WorldEnd || type == MessageType::GameplayEvent;
+			|| type == MessageType::WorldEnd || type == MessageType::GameplayEvent || type == MessageType::SceneObjectBatch;
 		if (!known || !reader.Ok() || !lifecycle)
 		{
 			CRU_ERROR("[Net] SendLifecycle for peer {}: not a lifecycle message - not sent", peerId);
@@ -854,6 +864,23 @@ namespace Crucible
 		out.jump = peer->jumpLatched;
 		peer->jumpLatched = false;
 		return true;
+	}
+
+	// ---- scene objects ----------------------------------------------------------------------------
+
+	Net::NetworkId NetworkSession::AdoptSceneObject(std::uint64_t sceneId)
+	{
+		if (m_role != Net::NetRole::Server || m_state != SessionState::Running || sceneId == 0) return Net::kInvalidNetworkId;
+		const Net::NetworkId id = m_nextId++;   // the same counter as spawns: never reused
+		m_sceneObjects[id] = sceneId;
+		++m_stats.sceneObjectsAdopted;
+		return id;
+	}
+
+	std::uint64_t NetworkSession::SceneIdOf(Net::NetworkId id) const noexcept
+	{
+		const auto it = m_sceneObjects.find(id);
+		return it == m_sceneObjects.end() ? 0 : it->second;
 	}
 
 	// ---- gameplay events ------------------------------------------------------------------------

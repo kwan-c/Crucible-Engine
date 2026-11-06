@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.1
+* \version       1.3
 * \brief
 *                Player input across the network: a client turns its own
 *                player's PlayerInput into commands; the host turns each
@@ -32,8 +32,9 @@
 *                    there is no command, but the message still goes out.
 *
 *                Host, every frame:
-*                  - auto-spawn (only when the player network prefab is
-*                    registered, see GamePrefabs.h): one player for the
+*                  - auto-spawn (only when there is a player prefab: the
+*                    authored one with spawnPerPlayer, else the one given
+*                    to the constructor): one player for the
 *                    host (owner 0) when the session starts, one for each
 *                    client when it reaches InGame (owner = its peer id),
 *                    at SpawnPoint(peer); the player of a client that left
@@ -54,6 +55,9 @@
 *                6.3, 11.3, PR 11)
 *    -v1.1       client: the own player starting to move starts the
 *                session's key-to-motion measurement (PR 12)
+*    -v1.2       the player prefab: the discovered spawnPerPlayer one, else
+*                the constructor's (Networking Phase 14.2)
+*    -v1.3       players spawn at the scene's placed players (Phase 14.6)
 *
 **************************************************************************/
 #pragma once
@@ -78,7 +82,9 @@ namespace Crucible
 	class ENGINE_API NetInputSystem final : public IECSSystem
 	{
 	public:
-		/// Where peer `peer`'s player appears (0 = the host). Empty: DefaultSpawnPoint.
+		/// Where peer `peer`'s player appears (0 = the host). Empty: the scene's placed players
+		/// (NetworkSession::PlayerSpawnPoints, peer i at point i mod count, 3 m further along +X
+		/// per lap), else DefaultSpawnPoint.
 		using SpawnPointFn = std::function<Math::vec3(Net::PeerId peer)>;
 
 		/// 3 m apart along +X, 1 m up: peer 0 at (0, 1, 0), peer 1 at (3, 1, 0), ...
@@ -116,11 +122,14 @@ namespace Crucible
 		void SpawnAndRemovePlayers(World& world, CommandBuffer& commands);
 		void RemovePlayer(World& world, CommandBuffer& commands, Net::NetworkId player);
 		bool AutoSpawn() const;
+		Net::NetPrefabId PlayerPrefab() const;
+		Net::NetworkId   RequestPlayer(Net::PeerId peer);
 
 		NetworkSession&   m_session;
 		const NetContent& m_content;
 		Net::NetPrefabId  m_playerPrefab;
 		SpawnPointFn      m_spawnPoint;
+		bool              m_customSpawnPoint = false;   // given by the game: wins over placed players
 		std::uint32_t     m_generation = 0;   // the session's, when the state below was reset
 
 		// Client

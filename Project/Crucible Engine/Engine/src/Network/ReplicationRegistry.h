@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                ReplicationRegistry: how each replicated piece of state is
 *                written, decoded and committed, keyed by a stable protocol
@@ -76,6 +76,8 @@
 *                decode/commit, bounded readers, owned serializer names;
 *                transactional records: per-component commits with saved
 *                copies, rolled back when any commit fails or throws
+*    -v1.1       FindByName and ForEach: authored settings name serializers
+*                (Networking Phase 14.2)
 *
 **************************************************************************/
 #pragma once
@@ -86,6 +88,7 @@
 #include <new>
 #include <span>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -220,6 +223,23 @@ namespace Crucible
 		{
 			const ReplicatedComponent& c = m_table[static_cast<std::uint8_t>(id)];
 			return c.id == NetComponentId::None ? nullptr : &c;
+		}
+
+		/// The serializer registered under `name`, or null. Authored settings name serializers
+		/// (NetworkObjectAuthoring), so engine numbering never reaches a saved file.
+		const ReplicatedComponent* FindByName(std::string_view name) const noexcept
+		{
+			for (const ReplicatedComponent& c : m_table)
+				if (c.id != NetComponentId::None && c.name == name) return &c;
+			return nullptr;
+		}
+
+		/// Calls f(const ReplicatedComponent&) for every registered serializer, in id order.
+		template <typename F>
+		void ForEach(F&& f) const
+		{
+			for (const ReplicatedComponent& c : m_table)
+				if (c.id != NetComponentId::None) f(c);
 		}
 
 		/// Feeds every serializer in NetComponentId order: id, name, schemaVersion, maxBytes.

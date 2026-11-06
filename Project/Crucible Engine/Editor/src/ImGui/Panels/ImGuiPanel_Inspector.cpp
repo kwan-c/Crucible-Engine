@@ -31,6 +31,8 @@
 #include "Core.h"
 #include "Undo/EntityCommands.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "Network/NetContent.h"                    // the registered serializers, for the networking policy table
+#include "Network/NetworkAuthoringInspector.h"     // NetworkObjectAuthoring's table (Networking Phase 14.3)
 #include "../EditorWidgets.h"
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
@@ -106,6 +108,12 @@ namespace {
 		return world.HasComponent<Crucible::CharacterController>(entity)
 			? "This entity has a CharacterController, which is its collider.\nAn entity uses one or the other."
 			: nullptr;
+	}
+
+	// A network object cannot contain another (Networking Phase 14.3).
+	template <>
+	char const* AddBlockedReason<Crucible::NetworkObjectAuthoring>(Crucible::World& world, Crucible::Entity entity) {
+		return Crucible::NetworkAuthoringInspector::AddBlockedReason(world, entity);
 	}
 
 	template <>
@@ -1954,6 +1962,14 @@ bool Crucible::Inspector::DrawTextExtras(T& text, bool world) {
 		ImGui::EndDisabled();
 	}
 	return changed;
+}
+
+// NetworkObjectAuthoring: its fields are drawn only here, as the networking policy table (they are
+// NOT_ON_IMGUI in its reflection). Owned by networking: Editor/src/Network/NetworkAuthoringInspector.cpp.
+bool Crucible::Inspector::DrawComponentExtras(NetworkObjectAuthoring& authoring) {
+	Crucible::Core* core = EditorManager::GetInstance().GetCore();
+	if (core == nullptr) return false;
+	return NetworkAuthoringInspector::Draw(m_world, m_selected, authoring, m_world.Components(), core->GetNetContent().Serializers());
 }
 
 bool Crucible::Inspector::DrawComponentExtras(UIText& text) {

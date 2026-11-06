@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.7
+* \version       1.11
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -26,6 +26,10 @@
 *                (PR 12)
 *    -v1.7       snapshot budget, change detection, update ages, bytes by
 *                message type, replication CPU time (PR 13)
+*    -v1.8       kMessageTypes 12: SceneObjectBatch (Networking Phase 14.4)
+*    -v1.9       scene object counters (Networking Phase 14.5)
+*    -v1.10      scenePlayersPlaced (Networking Phase 14.6)
+*    -v1.11      sceneProfiles (Networking Phase 14.7)
 *
 **************************************************************************/
 #pragma once
@@ -150,7 +154,7 @@ namespace Crucible
 
 		// Bytes of our messages by MessageType (index = the type's value), both directions; GNS's
 		// own headers, encryption and acks are not included (GnsTransport::Status has those).
-		static constexpr std::size_t kMessageTypes = 11;   // MessageType::Count (checked in NetworkSession.cpp)
+		static constexpr std::size_t kMessageTypes = 12;   // MessageType::Count (checked in NetworkSession.cpp)
 		std::array<std::uint64_t, kMessageTypes> bytesSentByType{};
 		std::array<std::uint64_t, kMessageTypes> bytesReceivedByType{};
 
@@ -159,5 +163,14 @@ namespace Crucible
 		std::int64_t sendMicros = 0;                // server: the whole send system, lifecycle and snapshots
 		std::int64_t maxSendMicros = 0;
 		std::int64_t interpolateMicros = 0;         // client: NetInterpolationSystem
+
+		// Scene objects (Networking Phase 14.5)
+		std::uint32_t sceneObjectsAdopted = 0;      // host: scene entities that became network objects
+		std::uint32_t sceneObjectsBound = 0;        // client: own scene entities bound to the host's
+		std::uint32_t sceneObjectsRemoved = 0;      // client: own scene objects the host had destroyed before the join
+		std::uint32_t sceneObjectsSkipped = 0;      // NetworkObjectAuthoring left as a local entity (see the log)
+		std::uint32_t sceneMismatches = 0;          // client: refused, its scene is not the host's
+		std::uint32_t scenePlayersPlaced = 0;       // placed players removed as spawn points (Phase 14.6)
+		std::uint32_t sceneProfiles = 0;            // scene profiles registered (Phase 14.7)
 	};
 }

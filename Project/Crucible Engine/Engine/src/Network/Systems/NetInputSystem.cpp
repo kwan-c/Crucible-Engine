@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.1
+* \version       1.3
 * \brief
 *                NetInputSystem: client commands and heartbeat, the host's
 *                per-client intents, and the auto-spawned players.
@@ -11,6 +11,9 @@
 * \history
 *    -v1.0       Networking Guide 6.2, 6.3, 11.3, 18.3 issue 5 (PR 11)
 *    -v1.1       starts the key-to-motion measurement (PR 12)
+*    -v1.2       the player is the discovered spawnPerPlayer prefab when
+*                there is one (Networking Phase 14.2)
+*    -v1.3       players spawn at the scene's placed players (Phase 14.6)
 *
 **************************************************************************/
 #include "Network/Systems/NetInputSystem.h"
@@ -33,7 +36,19 @@ namespace Crucible
 		SpawnPointFn spawnPoint)
 		: m_session(session), m_content(content), m_playerPrefab(playerPrefab), m_spawnPoint(std::move(spawnPoint))
 	{
+		m_customSpawnPoint = static_cast<bool>(m_spawnPoint);
 		if (!m_spawnPoint) m_spawnPoint = &DefaultSpawnPoint;
+	}
+
+	// One player for `peer`: at the game's spawn point if it gave one, else where the scene placed
+	// a player (Phase 14.6), else DefaultSpawnPoint.
+	Net::NetworkId NetInputSystem::RequestPlayer(Net::PeerId peer)
+	{
+		const std::span<const PlayerSpawnPoint> placed = m_session.PlayerSpawnPoints();
+		if (m_customSpawnPoint || placed.empty()) return m_session.RequestSpawn(PlayerPrefab(), peer, m_spawnPoint(peer));
+		const PlayerSpawnPoint& point = placed[peer % placed.size()];
+		const float lap = static_cast<float>(peer / placed.size());
+		return m_session.RequestSpawn(PlayerPrefab(), peer, point.position + Math::vec3(3.f * lap, 0.f, 0.f), point.rotation);
 	}
 
 	void NetInputSystem::Describe(SystemDesc& desc) const
@@ -136,9 +151,16 @@ namespace Crucible
 
 	// ---- host ------------------------------------------------------------------------------------
 
+	// The authored player (the discovered prefab with spawnPerPlayer) when there is one, else the
+	// prefab this system was given.
+	Net::NetPrefabId NetInputSystem::PlayerPrefab() const
+	{
+		return m_content.PlayerPrefab() != Net::kInvalidNetPrefab ? m_content.PlayerPrefab() : m_playerPrefab;
+	}
+
 	bool NetInputSystem::AutoSpawn() const
 	{
-		return m_content.Prefabs().Desc(m_playerPrefab) != nullptr;
+		return m_content.Prefabs().Desc(PlayerPrefab()) != nullptr;
 	}
 
 	void NetInputSystem::UpdateServer(World& world, CommandBuffer& commands)
@@ -182,7 +204,7 @@ namespace Crucible
 		if (autoSpawn && !m_hostSpawned)
 		{
 			m_hostSpawned = true;
-			m_hostPlayer = m_session.RequestSpawn(m_playerPrefab, Net::kServerPeer, m_spawnPoint(Net::kServerPeer));
+			m_hostPlayer = RequestPlayer(Net::kServerPeer);
 			if (m_hostPlayer != Net::kInvalidNetworkId) ++m_session.MutableStats().playersSpawned;
 		}
 
@@ -201,7 +223,7 @@ namespace Crucible
 			if (autoSpawn && slot.connection == kInvalidConnection && peer.phase == PeerState::Phase::InGame)
 			{
 				slot.connection = peer.connection;   // once per connection, even if the spawn is refused
-				slot.player = m_session.RequestSpawn(m_playerPrefab, peer.peer, m_spawnPoint(peer.peer));
+				slot.player = RequestPlayer(peer.peer);
 				if (slot.player != Net::kInvalidNetworkId)
 				{
 					++m_session.MutableStats().playersSpawned;

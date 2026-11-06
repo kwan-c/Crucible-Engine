@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                The wire protocol between the host and its clients:
 *                message types, their fields, and an Encode/Decode pair
@@ -45,13 +45,16 @@
 *                                 u8 nameLength (<= 32), name bytes
 *                  JoinAccepted   u32 lifecycleSeq (= 1), u8 yourPeerId,
 *                                 u32 serverTick, u16 tickRate
-*                  WorldBegin     u32 lifecycleSeq
+*                  WorldBegin     u32 lifecycleSeq, u64 sceneAsset, u64 sceneHash
 *                  WorldEnd       u32 lifecycleSeq
 *                  ClientReady    u32 worldEndSeq
 *                  SpawnBatch     u32 lifecycleSeq, u32 serverTick, u16 count,
 *                                 count x { varint id, u16 prefab, u8 owner,
 *                                           u8 mask, u8 length, state }
 *                  DespawnBatch   u32 lifecycleSeq, u16 count, count x varint id
+*                  SceneObjectBatch u32 lifecycleSeq, u32 serverTick, u16 count,
+*                                 count x { varint id, u64 sceneId, u16 profile,
+*                                           u8 owner, u8 mask, u8 length, state }
 *                  Snapshot       u16 sequence, u32 serverTick, u16 count,
 *                                 count x { varint id, u8 mask, u8 length, body }
 *                  Input          u8 count (0..3), count x { u32 sequence,
@@ -63,8 +66,20 @@
 *
 *                Lifecycle sequence: every reliable lane-0 message the
 *                host sends a client (JoinAccepted, WorldBegin, SpawnBatch,
-*                DespawnBatch, WorldEnd, GameplayEvent) carries a per-client
-*                counter starting at 1. 0 never appears on the wire.
+*                SceneObjectBatch, DespawnBatch, WorldEnd, GameplayEvent)
+*                carries a per-client counter starting at 1. 0 never appears
+*                on the wire.
+*
+*                Scene objects (protocol 4, Networking Phase 14): entities
+*                of the loaded scene that both machines already have. The
+*                world stream binds them instead of spawning them: a
+*                SceneObjectBatch names each by its persistent scene id,
+*                with the NetworkId the host gave it, the profile (network
+*                prefab id) it replicates with, its owner and its current
+*                state. WorldBegin names the scene (its asset GUID) and a
+*                hash of its networked content, so a client with a
+*                different scene leaves before binding anything. Both are 0
+*                when the host's scene has no saved asset.
 *
 * \history
 *    -v1.0       protocol version 3: every message type, codecs, size
@@ -72,6 +87,8 @@
 *                and 3). SpawnBatch decoding is split: structure here,
 *                prefab/state checks in the replication registry later.
 *    -v1.1       kMaxGameplayEventPayload (a constant; no wire change) (PR 12)
+*    -v1.2       protocol version 4: SceneObjectBatch; WorldBegin carries the
+*                scene identity (Networking Phase 14.4)
 *
 **************************************************************************/
 #pragma once
@@ -89,9 +106,10 @@
 
 namespace Crucible
 {
-	// Bump on ANY change to the bytes of any message. (3 = lifecycle sequence; versions 1
-	// and 2 only existed in earlier guide revisions.)
-	inline constexpr std::uint32_t kProtocolVersion = 3;
+	// Bump on ANY change to the bytes of any message. (4 = scene objects and the scene identity
+	// in WorldBegin; 3 = lifecycle sequence; versions 1 and 2 only existed in earlier guide
+	// revisions.)
+	inline constexpr std::uint32_t kProtocolVersion = 4;
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message
 	inline constexpr std::size_t   kMaxReliableBytes      = 16 * 1024;   // spawn / despawn / event messages
@@ -114,6 +132,7 @@ namespace Crucible
 		WorldBegin    = 8,    // H->C reliable, lane 0, lifecycle: the full world follows
 		WorldEnd      = 9,    // H->C reliable, lane 0, lifecycle: the full world was sent
 		ClientReady   = 10,   // C->H reliable, lane 0: the world is applied
+		SceneObjectBatch = 11,   // H->C reliable, lane 0, lifecycle: scene entities to bind (protocol 4)
 		Count                 // not a message; append new types above it, never renumber
 	};
 
@@ -173,7 +192,14 @@ namespace Crucible
 		std::uint16_t tickRate = 0;                         // simulation steps per second, non-zero
 	};
 
-	struct WorldBegin  { std::uint32_t lifecycleSeq = 0; };
+	/// Opens the world stream. sceneAsset and sceneHash name the host's loaded scene and its
+	/// networked content (0, 0: no saved scene, so no scene objects).
+	struct WorldBegin
+	{
+		std::uint32_t lifecycleSeq = 0;
+		std::uint64_t sceneAsset = 0;
+		std::uint64_t sceneHash = 0;
+	};
 	struct WorldEnd    { std::uint32_t lifecycleSeq = 0; };
 	struct ClientReady { std::uint32_t worldEndSeq = 0; };   // must equal the WorldEnd's lifecycleSeq
 
@@ -223,6 +249,25 @@ namespace Crucible
 		std::uint32_t          lifecycleSeq = 0;
 		Net::NetTick           serverTick = 0;
 		std::vector<SpawnView> spawns;   // 1..kMaxEntitiesPerMessage, unique ids
+	};
+
+	/// One scene object to bind: the client's own entity with scene id `sceneId` becomes network
+	/// object `id`. `state` points into the message (decoding) or the sender's buffer (encoding).
+	struct SceneObjectView
+	{
+		Net::NetworkId             id = Net::kInvalidNetworkId;
+		std::uint64_t              sceneId = 0;   // persistent scene GUID of the entity (Scene::IdOf), non-zero
+		Net::NetPrefabId           profile = Net::kInvalidNetPrefab;   // the replication profile it uses
+		Net::PeerId                owner = Net::kServerPeer;
+		std::uint8_t               mask = 0;
+		std::span<const std::byte> state;     // at most kMaxRecordBytes
+	};
+
+	struct SceneObjectBatchView
+	{
+		std::uint32_t                lifecycleSeq = 0;
+		Net::NetTick                 serverTick = 0;
+		std::vector<SceneObjectView> objects;   // 1..kMaxEntitiesPerMessage, unique ids and unique scene ids
 	};
 
 	struct DespawnBatchView
@@ -283,6 +328,9 @@ namespace Crucible
 
 	ENGINE_API bool Encode(ByteWriter& w, const SpawnBatchView& m) noexcept;
 	ENGINE_API bool Decode(ByteReader& r, SpawnBatchView& m);   // may allocate (bounded)
+
+	ENGINE_API bool Encode(ByteWriter& w, const SceneObjectBatchView& m) noexcept;
+	ENGINE_API bool Decode(ByteReader& r, SceneObjectBatchView& m);   // may allocate (bounded)
 
 	ENGINE_API bool Encode(ByteWriter& w, const DespawnBatchView& m) noexcept;
 	ENGINE_API bool Decode(ByteReader& r, DespawnBatchView& m);   // may allocate (bounded)

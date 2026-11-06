@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NetPrefabTable (see the header).
 *
@@ -11,6 +11,8 @@
 *    -v1.0       Networking Guide 5.4, 18.3 issues 4, 6, 7 (PR 7); review
 *                fixes: IsRegistered before metadata, record-size limit
 *    -v1.1       sendPriority checked (PR 13)
+*    -v1.2       a known prefabGuid is used instead of the path; Remove,
+*                FindByGuid, FindByName, HighestId (Networking Phase 14.2)
 *
 **************************************************************************/
 #include "Network/NetPrefabTable.h"
@@ -131,7 +133,7 @@ namespace Crucible
 			Entry& entry = *m_entries[id];
 			entry.prefab = nullptr;
 			const std::string where = Where(static_cast<Net::NetPrefabId>(id), entry.desc);
-			const std::uint64_t guid = assets.GetGuid(entry.desc.prefabPath).m_Value;
+			const std::uint64_t guid = entry.desc.prefabGuid != 0 ? entry.desc.prefabGuid : assets.GetGuid(entry.desc.prefabPath).m_Value;
 			if (guid == 0) { error = std::format("{}: '{}' is not a prefab asset in the project", where, entry.desc.prefabPath); return false; }
 			std::shared_ptr<Prefab> prefab = resources.ReadPrefab(guid);   // read fresh: the file's current content hash
 			if (!prefab) { error = std::format("{}: '{}' could not be loaded", where, entry.desc.prefabPath); return false; }
@@ -224,6 +226,40 @@ namespace Crucible
 		return true;
 	}
 
+	bool NetPrefabTable::Remove(Net::NetPrefabId id)
+	{
+		if (id >= kMaxNetPrefabs || !m_entries[id]) return false;
+		m_entries[id].reset();
+		--m_count;
+		return true;
+	}
+
+	Net::NetPrefabId NetPrefabTable::FindByGuid(std::uint64_t prefabGuid) const noexcept
+	{
+		if (prefabGuid == 0) return Net::kInvalidNetPrefab;
+		for (std::size_t id = 0; id < kMaxNetPrefabs; ++id)
+		{
+			if (!m_entries[id]) continue;
+			const Entry& e = *m_entries[id];
+			if (e.desc.prefabGuid == prefabGuid || (e.prefab && e.prefab->AssetGuid() == prefabGuid)) return static_cast<Net::NetPrefabId>(id);
+		}
+		return Net::kInvalidNetPrefab;
+	}
+
+	Net::NetPrefabId NetPrefabTable::FindByName(std::string_view name) const noexcept
+	{
+		for (std::size_t id = 0; id < kMaxNetPrefabs; ++id)
+			if (m_entries[id] && m_entries[id]->desc.name == name) return static_cast<Net::NetPrefabId>(id);
+		return Net::kInvalidNetPrefab;
+	}
+
+	Net::NetPrefabId NetPrefabTable::HighestId() const noexcept
+	{
+		for (std::size_t id = kMaxNetPrefabs; id-- > 0;)
+			if (m_entries[id]) return static_cast<Net::NetPrefabId>(id);
+		return 0;
+	}
+
 	const NetPrefabDesc* NetPrefabTable::Desc(Net::NetPrefabId id) const noexcept
 	{
 		return id < kMaxNetPrefabs && m_entries[id] ? &m_entries[id]->desc : nullptr;
@@ -254,7 +290,7 @@ namespace Crucible
 			hash.U32(static_cast<std::uint32_t>(id));
 			hash.Str(entry.desc.name);
 			hash.U64(entry.prefab ? entry.prefab->AssetGuid() : 0);
-			hash.U64(entry.prefab ? entry.prefab->ContentHash() : 0);
+			hash.U64(entry.desc.contentHash != 0 ? entry.desc.contentHash : (entry.prefab ? entry.prefab->ContentHash() : 0));
 			hash.U32(static_cast<std::uint32_t>(entry.desc.replicated.size()));   // record order matters
 			for (const NetComponentId c : entry.desc.replicated) hash.U8(static_cast<std::uint8_t>(c));
 			names(entry.desc.serverOnly, true);          // sets: order does not matter

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                The thin adapter between Crucible and GameNetworkingSockets
 *                (GNS): listen, connect, accept or refuse, send bytes on a
@@ -62,6 +62,7 @@
 *                never frees anything else; Receive grows its output
 *                geometrically; IsKnownToGns for leak checks
 *    -v1.2       IsIpAddress, so settings can be validated before Play
+*    -v1.3       CloseReason::SceneMismatch (Networking Phase 14.4)
 *
 **************************************************************************/
 #pragma once
@@ -111,6 +112,7 @@ namespace Crucible
 		SpawnFailed      = 1005,
 		SendFailed       = 1006,
 		Timeout          = 1007,
+		SceneMismatch    = 1008,   // the client's loaded scene is not the host's (protocol 4)
 	};
 
 	/// Why a send did not happen (Networking Guide issue 10). Each caller has a policy:

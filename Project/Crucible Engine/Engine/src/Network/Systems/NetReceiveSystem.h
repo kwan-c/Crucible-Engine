@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.5
+* \version       1.8
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -73,6 +73,27 @@
 *                100 ms behind) and the snapshot's tick into the session's
 *                ServerTime(); the rest of the record is applied as it is.
 *
+*                Scene objects (Networking Phase 14.5): network objects the
+*                loaded scene holds on every machine (NetSceneObjects.h).
+*                In the first frame of a session - before any script, AI or
+*                physics has run on them - both sides scan the scene and
+*                record its identity (asset GUID, scene-object hash). The
+*                host adopts each one (a NetworkId, its NetworkIdentity).
+*                A client switches off their server-only and owner-local
+*                components and keeps them unbound; WorldBegin must carry
+*                its own scene identity (else it leaves: SceneMismatch);
+*                each SceneObjectBatch record binds its own entity - the
+*                one with that scene id - instead of creating a proxy, so
+*                its scene-authored data (overrides, materials, children)
+*                stays; at WorldEnd its scene objects the host no longer
+*                has (destroyed before the join) are destroyed.
+*                Scene objects with their own settings (Phase 14.7: scene-
+*                only objects, overridden instances) get scene profiles,
+*                registered in NetContent in that first frame on both sides.
+*                Placed players (Phase 14.6) are removed in that same first
+*                frame on every machine; their world positions become the
+*                session's PlayerSpawnPoints.
+*
 *                Each applied snapshot is marked in the session's
 *                SnapshotAcks(); NetInputSystem reports them in the client's
 *                Input message (it took over the Phase 9 heartbeat, PR 11).
@@ -87,11 +108,19 @@
 *                into the session (SnapshotAckWindow.h) (PR 11)
 *    -v1.5       snapshots buffered for interpolation, server time fed;
 *                GameplayEvents delivered (PR 12)
+*    -v1.6       scene objects: adopted on the host, locked down and bound
+*                on clients, scene identity checked (Networking Phase 14.5)
+*    -v1.7       placed players become spawn points (Networking Phase 14.6)
+*    -v1.8       registers scene profiles (Networking Phase 14.7)
 *
 **************************************************************************/
 #pragma once
 
+#include <cstdint>
+#include <filesystem>
+#include <functional>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 #include "ECS/Systems/IECSSystems.h"
@@ -114,9 +143,15 @@ namespace Crucible
 	{
 	public:
 		/// `session`, `content` and `scenes` are owned by Core and outlive every system.
-		NetReceiveSystem(NetworkSession& session, const NetContent& content, SceneManager& scenes) noexcept
+		/// `content` is written only to register the scene profiles when a session starts.
+		NetReceiveSystem(NetworkSession& session, NetContent& content, SceneManager& scenes) noexcept
 			: m_session(session), m_content(content), m_scenes(scenes) {}
 		NetReceiveSystem(const NetReceiveSystem&) = delete;   // holds received messages (move-only)
+
+		/// The asset GUID of a scene file (Core: the AssetManager's). Unset: 0, which both machines
+		/// then agree on, so only the scene-object hash is compared.
+		using SceneAssetResolver = std::function<std::uint64_t(const std::filesystem::path&)>;
+		void SetSceneAssetResolver(SceneAssetResolver resolver) { m_sceneAssetOf = std::move(resolver); }
 		NetReceiveSystem& operator=(const NetReceiveSystem&) = delete;
 
 		SystemStage Stage() const override { return SystemStage::PreUpdate; }
@@ -143,8 +178,13 @@ namespace Crucible
 		void Leave(CloseReason reason, const std::string& why);
 		void ApplySnapshot(World& world, ByteReader& reader);
 
+		// Scene objects (both roles)
+		void StartSceneObjects(World& world);
+		bool ApplySceneObjectBatch(World& world, ByteReader& reader);
+		void RemoveUnboundSceneObjects(World& world);
+
 		NetworkSession&           m_session;
-		const NetContent&         m_content;
+		NetContent&               m_content;
 		SceneManager&             m_scenes;
 		std::vector<Entity>       m_rejected;        // reused every frame
 		std::vector<PendingSpawn> m_spawns;          // host: this frame's requests
@@ -154,6 +194,13 @@ namespace Crucible
 		std::vector<Entity>       m_created;         // client: proxies made by the current message
 		std::vector<Entity>       m_scratch;         // subtree walks
 		SnapshotView              m_snapshot;        // client: one snapshot, decoded (fixed size, no allocation)
+		SceneObjectBatchView      m_sceneBatch;      // client: reused decode target
+
+		struct LocalSceneObject { Entity entity = kNullEntity; Net::NetPrefabId profile = Net::kInvalidNetPrefab; bool bound = false; };
+		SceneAssetResolver        m_sceneAssetOf;
+		std::uint32_t             m_sceneGeneration = 0;   // the session's, when the scene was last scanned
+		bool                      m_sceneStarted = false;
+		std::unordered_map<std::uint64_t, LocalSceneObject> m_localSceneObjects;   // client: scene id -> own entity
 		std::vector<Entity>       m_resolved;        // client: its records' entities (null: despawned since)
 	};
 #ifdef _MSC_VER
