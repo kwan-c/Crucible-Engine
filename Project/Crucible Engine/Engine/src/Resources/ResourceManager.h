@@ -371,9 +371,9 @@ namespace Crucible {
             .mat materials: updated in place, so every object using one
             changes at once. Fonts, prefabs, animator controllers, skyboxes,
             audio clips: forgotten, so the next use loads the new file (a
-            sound still playing the old clip stops). Models: only
-            reported - their meshes are held by the objects using them, so
-            the scene must be opened again.
+            sound still playing the old clip stops). Models: forgotten too,
+            once their .cmodel has changed; entities using one switch over by
+            themselves on the next frame.
          *********************************************************************/
         std::size_t ReloadChanged();
 
@@ -612,6 +612,7 @@ namespace Crucible {
         bool LoadModel(AssetId modelId);                         // fills m_meshes[modelId] + embedded material
         MaterialHandle LoadMaterialFile(AssetId id);             // .mat (JSON)
         bool ReloadMaterialFile(AssetId id);                     // .mat read again into its existing handle
+        bool ReloadModel(AssetId id);                            // frees a model whose .cmodel changed; the next use loads the new file
         void ForgetFailures();                                   // every remembered failed load may be tried again
         bool ReloadAudioClip(AssetId id);                        // unloads every load type of the file; false if none loaded
         std::string SerializeMaterial(const MaterialData& data) const;
@@ -630,6 +631,7 @@ namespace Crucible {
         std::unordered_map<AssetId, MeshHandle>     m_meshes;      // Invalid value = failed load
         std::unordered_map<AssetId, std::shared_ptr<const ModelResource>> m_models; // null = failed CPU import
         std::unordered_map<AssetId, std::shared_ptr<const ModelPose>> m_modelRestPoses;
+        std::unordered_map<AssetId, std::uint64_t> m_modelFileHashes;   // the .cmodel's content hash when it was loaded
         std::unordered_map<AssetId, std::shared_ptr<const AnimatorController>> m_controllers;
         std::unordered_map<AssetId, std::shared_ptr<const StateGraph>> m_stateGraphs;   // null = failed load
         std::unordered_map<AssetId, std::shared_ptr<const BehaviorGraph>> m_behaviorGraphs;   // null = failed load

@@ -23,6 +23,13 @@ add_executable(Editor
     "${CMAKE_SOURCE_DIR}/Tools/Common/TextureBuild.h"
     "${CMAKE_SOURCE_DIR}/Tools/Common/TextureImport.cpp"
     "${CMAKE_SOURCE_DIR}/Tools/Common/TextureImport.h"
+    # The Asset Browser compiles a .glb as soon as it appears in Assets, the same way the build
+    # does. These are left out of Engine.dll on purpose: only tools and the editor read source models.
+    "${CMAKE_SOURCE_DIR}/Tools/Common/ModelBuild.cpp"
+    "${CMAKE_SOURCE_DIR}/Tools/Common/ModelBuild.h"
+    "${CMAKE_SOURCE_DIR}/Engine/src/AssetPipe/GLTFLoader.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/src/AssetPipe/GLTFDocument.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/src/Resources/CompiledModel.cpp"
 )
 
 target_precompile_headers(Editor PRIVATE src/pch.h)
