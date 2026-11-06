@@ -1,5 +1,5 @@
 {
-  "outputType": "MTSDF",
+  "outputType": "SDF",
   "bitmapSizes": [
     16,
     32

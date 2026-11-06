@@ -1,0 +1,115 @@
+{
+    "version": 3,
+    "name": "Arrow",
+    "entities": [
+        {
+            "id": "4C89E0DE4F3A4017",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Arrow"
+                }
+            }
+        },
+        {
+            "id": "E489E0DE4F3A4019",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.2824106216430664,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -0.0,
+                        "y": -0.0,
+                        "z": -1.0,
+                        "w": 4.371138828673793e-8
+                    },
+                    "scale": {
+                        "x": 0.6494215726852417,
+                        "y": 0.7096966505050659,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 1398714408298369051,
+                    "materialAsset": 4396596060807954433
+                },
+                "EntityName": {
+                    "name": "Pyramid"
+                }
+            }
+        },
+        {
+            "id": "A489E0DE4F3A401B",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.46820831298828125,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.1865011751651764,
+                        "y": 1.0,
+                        "z": 0.07999999821186066
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 11314125088449904645
+                },
+                "EntityName": {
+                    "name": "Cube"
+                }
+            }
+        }
+    ]
+}

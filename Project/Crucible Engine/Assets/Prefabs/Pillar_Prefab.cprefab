@@ -1,0 +1,47 @@
+{
+    "version": 3,
+    "name": "Pillar",
+    "entities": [
+        {
+            "id": "9C89E0DE4B844003",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 3.700000047683716,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 8973950977870528525
+                },
+                "EntityName": {
+                    "name": "Pillar"
+                }
+            }
+        }
+    ]
+}

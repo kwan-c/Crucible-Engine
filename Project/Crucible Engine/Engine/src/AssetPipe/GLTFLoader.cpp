@@ -339,6 +339,10 @@ namespace Crucible {
                     Error(path, "Missing attributes object");
                 for (auto member = attributes->MemberBegin(); member != attributes->MemberEnd(); ++member) {
                     const auto name = Text(member->name);
+                    // Extra UV sets (TEXCOORD_1+) are ignored; materials are still
+                    // required to sample TEXCOORD_0 only (checked in the texture slot).
+                    if (name.rfind("TEXCOORD_", 0) == 0)
+                        continue;
                     Check(name == "POSITION" || name == "NORMAL" || name == "TEXCOORD_0" ||
                               name == "COLOR_0" || name == "TANGENT" || name == "JOINTS_0" ||
                               name == "WEIGHTS_0",
