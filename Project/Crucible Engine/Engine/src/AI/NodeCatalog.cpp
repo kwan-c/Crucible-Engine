@@ -83,6 +83,7 @@ namespace Crucible {
             type.id          = String(entry, "id");
             type.className   = String(entry, "class");
             type.name        = String(entry, "name");
+            type.story       = String(entry, "story");
             type.category    = String(entry, "category");
             type.description = String(entry, "description");
             type.kind        = String(entry, "kind");

@@ -1,6 +1,11 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Target Within", "Passes when the target is this close or closer.", "Distance", "target_within")]
+    [NodeDescription(
+        name: "Target Within",
+        description: "Passes when the target is this close or closer.",
+        story: "[Target] is within [Distance] m",
+        category: "Conditions/Distance",
+        id: "target_within")]
     public sealed class TargetWithinCondition : DistanceCondition
     {
         public BlackboardVariable<Entity> Target = BlackboardVariable<Entity>.Link("Target");

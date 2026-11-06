@@ -1,6 +1,10 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Try In Order", "Executes branches in order until one succeeds.", "Flow", "try_in_order")]
+    [NodeDescription(
+        name: "Try In Order",
+        description: "Executes branches in order until one succeeds.",
+        category: "Flow",
+        id: "try_in_order")]
     public sealed class TryInOrderComposite : Composite
     {
         private int current;

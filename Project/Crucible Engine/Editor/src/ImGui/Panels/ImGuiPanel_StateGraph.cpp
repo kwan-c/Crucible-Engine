@@ -141,7 +141,10 @@ namespace Crucible {
                     const StateGraphView::Result result = m_view.Draw(graph, readOnly);
                     if (result.changed) m_pendingCommit = true;
                     if (result.openState >= 0) OpenState(result.openState);
-                    if (!result.droppedPath.empty()) DropSubgraph(result);
+                    if (!result.droppedPath.empty()) {
+                        if (result.droppedPath.ends_with(".cs")) DropScript(result);
+                        else DropSubgraph(result);
+                    }
                 }
                 ImGui::EndChild();
 
@@ -175,6 +178,20 @@ namespace Crucible {
                         }
                         m_pendingCondition.clear();
                         m_pendingArrow = -1;
+                    }
+                }
+
+                // Edit a Copy: the node switches to its copy the first frame C# knows
+                // the copy - if a node of the original type is still in that spot.
+                if (!m_pendingCopy.copy.empty() && !readOnly) {
+                    if (const NodeTypeInfo* type = NodeCatalog::Instance().Find(m_pendingCopy.copy)) {
+                        BehaviorNode* node = NodeAt(m_pendingCopy);
+                        if (node && node->TypeId() == m_pendingCopy.original) {
+                            node->ChangeType(*type);
+                            m_pendingCommit = true;
+                            SetMessage("This node now runs your copy, " + type->name + ". Ctrl+Z puts the built-in back.", false);
+                        }
+                        m_pendingCopy = {};
                     }
                 }
 
@@ -303,6 +320,7 @@ namespace Crucible {
                 if (NodeFieldEditor::Draw(*node, graph.m_variables, readOnly)) changed = true;
                 ImGui::EndDisabled();   // opening the script is fine during Play
                 if (ImGui::Button("Inspect Script", { -1.0f, 0.0f }) && !InspectScript::OpenNodeSource(*node)) SetMessage("C# doesn't know this node, so there's no script to open.", true);
+                DrawEditCopyButton(*node, { .slot = CopySlot::SingleNode, .state = index });
                 ImGui::SetItemTooltip("Open the C# file this node is written in. Or double-click the state.");
                 ImGui::BeginDisabled(readOnly);
                 break;
@@ -325,8 +343,8 @@ namespace Crucible {
 
         // On Enter / On Exit: one node each, run as the enemy enters and leaves.
         ImGui::Separator();
-        if (DrawHook("On Enter", "Runs when the enemy enters this state, before its tree - which waits for it to finish.", state.m_onEnter, graph.m_variables, readOnly)) changed = true;
-        if (DrawHook("On Exit", "Runs when the enemy leaves this state. It gets one frame, so use instant nodes (Log, Stop).", state.m_onExit, graph.m_variables, readOnly)) changed = true;
+        if (DrawHook("On Enter", "Runs when the enemy enters this state, before its tree - which waits for it to finish.", state.m_onEnter, graph.m_variables, readOnly, index, true)) changed = true;
+        if (DrawHook("On Exit", "Runs when the enemy leaves this state. It gets one frame, so use instant nodes (Log, Stop).", state.m_onExit, graph.m_variables, readOnly, index, false)) changed = true;
 
         // The arrows out of it, in the order they're checked.
         ImGui::Separator();
@@ -350,7 +368,8 @@ namespace Crucible {
         A state's On Enter or On Exit: which action (or none), its fields, and
         Inspect Script. True if anything changed.
     */
-    bool StateGraphPanel::DrawHook(const char* label, const char* help, std::unique_ptr<BehaviorNode>& hook, const Blackboard& variables, bool readOnly) {
+    bool StateGraphPanel::DrawHook(const char* label, const char* help, std::unique_ptr<BehaviorNode>& hook, const Blackboard& variables, bool readOnly,
+                                   int state, bool enter) {
 
         bool changed = false;
         ImGui::PushID(label);
@@ -376,12 +395,53 @@ namespace Crucible {
             ImGui::Indent();
             if (NodeFieldEditor::Draw(*hook, variables, readOnly)) changed = true;
             if (ImGui::SmallButton("Inspect Script") && !InspectScript::OpenNodeSource(*hook)) SetMessage("C# doesn't know this node, so there's no script to open.", true);
+            ImGui::SameLine();
+            DrawEditCopyButton(*hook, { .slot = enter ? CopySlot::OnEnter : CopySlot::OnExit, .state = state });
             ImGui::Unindent();
         }
         ImGui::PopID();
         return changed;
 
     }   // StateGraphPanel::DrawHook()
+
+    void StateGraphPanel::DrawEditCopyButton(const BehaviorNode& node, PendingCopy where) {
+
+        const NodeTypeInfo* type = node.Info();
+        if (!type || !InspectScript::CanCopy(*type)) return;   // your own scripts are edited directly
+
+        // Works during Play too (it only writes a script); the switch waits for Edit mode.
+        ImGui::PushID(&node);
+        if (ImGui::SmallButton("Edit a Copy")) {
+            std::string error;
+            where.copy     = InspectScript::MakeEditableCopy(*type, error);
+            where.original = type->id;
+            if (where.copy.empty()) SetMessage(error, true);
+            else { m_pendingCopy = where; SetMessage("Copy written - this node switches to it once the scripts have compiled.", false); }
+        }
+        ImGui::SetItemTooltip("Built-in nodes are read-only. This writes your own copy into Assets/Scripts/AI and switches this node to it.");
+        ImGui::PopID();
+
+    }   // StateGraphPanel::DrawEditCopyButton()
+
+    BehaviorNode* StateGraphPanel::NodeAt(const PendingCopy& where) {
+
+        StateGraph& graph = m_document.Graph();
+        if (where.slot == CopySlot::Condition) {
+            if (where.arrow < 0 || where.arrow >= static_cast<int>(graph.m_transitions.size())) return nullptr;
+            auto& conditions = graph.m_transitions[static_cast<std::size_t>(where.arrow)].m_conditions;
+            return where.condition >= 0 && where.condition < static_cast<int>(conditions.size()) ? conditions[static_cast<std::size_t>(where.condition)].get() : nullptr;
+        }
+        if (where.state < 0 || where.state >= static_cast<int>(graph.m_states.size())) return nullptr;
+        GraphState& state = graph.m_states[static_cast<std::size_t>(where.state)];
+        switch (where.slot) {
+            case CopySlot::SingleNode: return state.m_singleNode ? state.m_behavior.Root() : nullptr;
+            case CopySlot::OnEnter:    return state.m_onEnter.get();
+            case CopySlot::OnExit:     return state.m_onExit.get();
+            case CopySlot::Condition:  break;
+        }
+        return nullptr;
+
+    }   // StateGraphPanel::NodeAt()
 
     bool StateGraphPanel::DrawTransitionInspector(int index, bool readOnly) {
 
@@ -432,7 +492,9 @@ namespace Crucible {
             if (ImGui::SmallButton("Remove")) removeAt = i;
             ImGui::SameLine();
             if (ImGui::SmallButton("Script") && !InspectScript::OpenNodeSource(*condition)) SetMessage("C# doesn't know this condition, so there's no script to open.", true);
-            ImGui::SetItemTooltip("Open the C# file this condition is written in.");
+            ImGui::SetItemTooltip("Open the C# file this condition is written in (a built-in opens read-only).");
+            ImGui::SameLine();
+            DrawEditCopyButton(*condition, { .slot = CopySlot::Condition, .arrow = index, .condition = i });
             ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
             ImGui::TextWrapped("%s", std::string(description.description).c_str());
             ImGui::PopStyleColor();
@@ -445,15 +507,11 @@ namespace Crucible {
 
         if (ImGui::Button("Add Condition", { -1.0f, 0.0f })) ImGui::OpenPopup("AddCondition");
         if (ImGui::BeginPopup("AddCondition")) {
-            bool any = false;
-            for (const NodeTypeInfo& type : NodeCatalog::Instance().All()) {
-                if (!type.IsCondition()) continue;
-                any = true;
-                if (ImGui::MenuItem(type.name.c_str())) {
-                    transition.m_conditions.push_back(MakeNode(type));
-                    changed = true;
-                }
-                ImGui::SetItemTooltip("%s", type.description.c_str());
+            const bool any = std::any_of(NodeCatalog::Instance().All().begin(), NodeCatalog::Instance().All().end(),
+                                         [](const NodeTypeInfo& type) { return type.IsCondition(); });
+            if (const NodeTypeInfo* type = BehaviorTreeView::DrawCategoryMenu("", true)) {   // nested by category, like Add Node
+                transition.m_conditions.push_back(MakeNode(*type));
+                changed = true;
             }
             if (!any) ImGui::TextDisabled("No conditions: C# scripting isn't running, or the scripts didn't build.");
             ImGui::Separator();
@@ -559,7 +617,7 @@ namespace Crucible {
                 // "Inspect Script": the file the node is written in (a .cpp
                 // for the built-in nodes). Its fields stay in the side panel.
                 m_view.SelectState(index);
-                if (!InspectScript::OpenNodeSource(*state.m_behavior.Root())) SetMessage("This node's source file isn't known.", true);
+                if (!InspectScript::OpenNodeSource(*state.m_behavior.Root())) SetMessage("This node's source file isn't known.", true);   // a built-in opens read-only
                 break;
             default:
                 m_view.SelectState(index);   // nothing to open: its side panel says what it runs
@@ -595,6 +653,56 @@ namespace Crucible {
         SetMessage(state.m_name + " now runs " + entry->virtualPath, false);
 
     }   // StateGraphPanel::DropSubgraph()
+
+    /*!
+        \brief
+        A .cs node script dropped from the Asset Browser. An action: on a state,
+        that state now runs just this node; on empty canvas, a new state that
+        does. A condition: added to the arrow it was dropped on. One undo step
+        either way, like any other edit.
+    */
+    void StateGraphPanel::DropScript(const StateGraphView::Result& drop) {
+
+        const NodeTypeInfo* type = NodeTypeForScript(drop.droppedPath);
+        if (!type) {
+            SetMessage(WhyNotANode(drop.droppedPath), true);
+            return;
+        }
+        StateGraph& graph = m_document.Graph();
+
+        if (type->IsCondition()) {
+            if (drop.dropArrow < 0 || drop.dropArrow >= static_cast<int>(graph.m_transitions.size())) {
+                SetMessage(type->name + " is a condition: drop it on an arrow.", true);
+                return;
+            }
+            graph.m_transitions[static_cast<std::size_t>(drop.dropArrow)].m_conditions.push_back(MakeNode(*type));
+            m_view.SelectTransition(drop.dropArrow);
+            m_pendingCommit = true;
+            SetMessage("Added " + type->name + " to the arrow. Ctrl+Z undoes it.", false);
+            return;
+        }
+        if (type->kind != "action") {
+            SetMessage(type->name + " has children (a " + type->kind + "), so it can't run as a state's single node - drop it into the state's tree instead.", true);
+            return;
+        }
+
+        // On a state: it now runs just this node (its tree, if it had one, goes -
+        // Ctrl+Z brings it back). On empty canvas: a new state named after the node.
+        int index = drop.dropState;
+        if (index < 0 || index >= static_cast<int>(graph.m_states.size())) {
+            const bool first = graph.m_states.empty();
+            index = StateGraphEdit::AddState(graph, type->name, drop.dropPosition);
+            if (first) graph.m_entryState = 0;   // the first state is the entry
+        }
+        GraphState& state = graph.m_states[static_cast<std::size_t>(index)];
+        StateGraphEdit::SetContent(state, Content::Empty);   // clear the old tree / subgraph first
+        state.m_singleNode = true;
+        state.m_behavior.SetRoot(MakeNode(*type));
+        m_view.SelectState(index);
+        m_pendingCommit = true;
+        SetMessage(state.m_name + " now runs " + type->name + ". Ctrl+Z undoes it.", false);
+
+    }   // StateGraphPanel::DropScript()
 
     void StateGraphPanel::LeaveTree() {
 

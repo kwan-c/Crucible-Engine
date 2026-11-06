@@ -381,7 +381,8 @@ namespace Crucible.AI
 
             json.Append("{\"id\":").Append(Quote(id))
                 .Append(",\"class\":").Append(Quote(type.FullName))
-                .Append(",\"name\":").Append(Quote(description.Name))
+                .Append(",\"name\":").Append(Quote(description.Name.Length > 0 ? description.Name : type.Name))
+                .Append(",\"story\":").Append(Quote(description.Story))
                 .Append(",\"category\":").Append(Quote(description.Category))
                 .Append(",\"description\":").Append(Quote(description.Description))
                 .Append(",\"kind\":").Append(Quote(kind))

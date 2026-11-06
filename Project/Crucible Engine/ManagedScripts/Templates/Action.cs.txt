@@ -4,7 +4,12 @@ using Action = Crucible.AI.Action;   // System.Action has the same name
 
 namespace Crucible.Scripts
 {
-    [NodeDescription("{{NAME}}", "{{DESCRIPTION}}", "{{CATEGORY}}", "{{ID}}")]
+    [NodeDescription(
+        name: "{{NAME}}",
+        description: "{{DESCRIPTION}}",
+        story: "{{STORY}}",
+        category: "{{CATEGORY}}",
+        id: "{{ID}}")]
     public sealed class {{CLASS}} : Action
     {
         // Public fields show in the graph window. A BlackboardVariable can hold its own

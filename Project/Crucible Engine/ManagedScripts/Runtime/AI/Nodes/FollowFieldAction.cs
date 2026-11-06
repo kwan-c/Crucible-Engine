@@ -1,6 +1,11 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Follow Field", "Follows the flow field towards the players; succeeds when close to one.", "Navigation", "follow_field")]
+    [NodeDescription(
+        name: "Follow Field",
+        description: "Follows the flow field towards the players; succeeds when close to one.",
+        story: "Self follows the flow field to the players",
+        category: "Action/Navigation",
+        id: "follow_field")]
     public sealed class FollowFieldAction : NavigationAction
     {
         protected override Status OnStart()

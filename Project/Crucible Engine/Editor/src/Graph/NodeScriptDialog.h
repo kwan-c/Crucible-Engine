@@ -7,8 +7,9 @@
 * \brief
 *                "Create new Action / Modifier / Composite / Condition":
 *                Unity Behavior's way to make a node of your own. Asks for a
-*                name, category and description, writes the C# script from a
-*                template, and opens it.
+*                name, story, category and description, writes the C# script
+*                from a template (Unity's named [NodeDescription] style), and
+*                opens it.
 *
 * \details
 *                The script goes in Assets/Scripts/AI/ (only Assets/Scripts
@@ -56,6 +57,7 @@ namespace Crucible {
         char        m_name[64]         = {};
         char        m_category[64]     = {};
         char        m_description[256] = {};
+        char        m_story[128]       = {};   // Unity's story sentence: "[Agent] attacks [Target]"
         std::string m_error;
 
     };  // NODESCRIPTDIALOG CLASS

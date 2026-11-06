@@ -192,6 +192,32 @@ namespace Crucible {
             return m_fields.back();
         }
 
+        /*!
+            \brief
+            Turns this node into another type where it stands (a script dropped
+            onto it in the editor): same position, same children.
+
+            \details
+            A field the new type also has, of the same kind, keeps its value
+            (and its link, if the new one can be linked), so swapping one
+            movement node for another keeps its Target. Every other field takes
+            the new type's C# default; the old type's extra fields go. The
+            caller checks the children still fit (MaxChildren) first.
+        */
+        void ChangeType(const NodeTypeInfo& type) {
+            std::vector<NodeField> fields;
+            for (const NodeFieldInfo& info : type.fields) {
+                NodeField field{ info.name, info.value, info.link, FieldKindOf(info.type), info.linkable };
+                if (const NodeField* old = FindField(info.name); old && old->kind == field.kind) {
+                    field.text = old->text;
+                    if (field.linkable) field.link = old->link;
+                }
+                fields.push_back(std::move(field));
+            }
+            m_type   = type.id;
+            m_fields = std::move(fields);
+        }
+
         // Where the node sits in the graph editor. Saved, never used at runtime.
         Math::vec2 m_editorPosition{ 0.0f };
 

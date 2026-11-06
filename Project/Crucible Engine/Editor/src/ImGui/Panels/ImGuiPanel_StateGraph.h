@@ -76,13 +76,15 @@ namespace Crucible {
         // file, open its single node's source file, or just select it.
         void OpenState(int index);
         void DropSubgraph(const StateGraphView::Result& drop);   // a .behaviorgraph dropped on the canvas
+        void DropScript(const StateGraphView::Result& drop);     // a .cs node script dropped on the canvas
         void LeaveTree();
         void AfterRebuild();    // after undo / redo / load: the old node pointers are gone
 
         void DrawToolbar(bool readOnly);
         bool DrawStateInspector(int index, bool readOnly);        // true if changed
         bool DrawTransitionInspector(int index, bool readOnly);   // true if changed
-        bool DrawHook(const char* label, const char* help, std::unique_ptr<BehaviorNode>& hook, const Blackboard& variables, bool readOnly);   // On Enter / On Exit
+        bool DrawHook(const char* label, const char* help, std::unique_ptr<BehaviorNode>& hook, const Blackboard& variables, bool readOnly,
+                      int state, bool enter);   // On Enter (enter) / On Exit of `state`
         void DrawDialogs();
 
         std::string AssetPath(std::uint64_t asset) const;          // "" if unknown
@@ -115,6 +117,26 @@ namespace Crucible {
         NodeScriptDialog   m_conditionDialog;
         std::string        m_pendingCondition;
         int                m_pendingArrow     = -1;
+
+        // Edit a Copy from the side panel: where the node sits and what it was,
+        // so it's switched to the copy once that compiles - only if a node of the
+        // original type is still in that spot (an undo or delete may have moved things).
+        enum class CopySlot { SingleNode, OnEnter, OnExit, Condition };
+        struct PendingCopy {
+
+            std::string copy;              // the copy's id; "" = nothing pending
+            std::string original;          // the type it replaces
+            CopySlot    slot      = CopySlot::SingleNode;
+            int         state     = -1;    // for the state slots
+            int         arrow     = -1;    // for a condition
+            int         condition = -1;
+
+        };  // PENDINGCOPY STRUCT
+        PendingCopy        m_pendingCopy;
+
+        // The "Edit a Copy" button for a built-in node at `where` (nothing for one of your own).
+        void          DrawEditCopyButton(const BehaviorNode& node, PendingCopy where);
+        BehaviorNode* NodeAt(const PendingCopy& where);   // null if that spot is gone
         char               m_savePath[512]    = "AI/New State Graph.stategraph";
 
     };  // STATEGRAPHPANEL CLASS

@@ -63,7 +63,8 @@ namespace Crucible {
         std::string                id;            // what files store: "wait"
         std::string                className;     // "Crucible.AI.WaitAction"
         std::string                name;          // "Wait"
-        std::string                category;      // the Add Node submenu: "Actions"
+        std::string                story;         // the sentence on the node, [Field] filled in: "Wait [Seconds] seconds" ("" = list the fields)
+        std::string                category;      // the Add Node submenu: "Actions"; '/' nests: "Action/Navigation"
         std::string                description;
         std::string                kind;          // "action", "modifier", "composite" or "condition"
         std::string                file;          // the .cs it's written in: "Inspect Script"
