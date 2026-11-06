@@ -1,0 +1,184 @@
+{
+    "version": 1,
+    "entry": 0,
+    "anyState": [
+        250.0,
+        -180.0
+    ],
+    "variables": [
+        {
+            "name": "Self",
+            "type": "Entity"
+        },
+        {
+            "name": "Target",
+            "type": "Entity"
+        }
+    ],
+    "states": [
+        {
+            "name": "Wander",
+            "singleNode": true,
+            "editor": [
+                0.0,
+                0.0
+            ],
+            "tree": {
+                "root": 0,
+                "nodes": [
+                    {
+                        "id": 0,
+                        "type": "wander",
+                        "editor": [
+                            0.0,
+                            0.0
+                        ],
+                        "fields": {
+                            "speedFraction": {
+                                "value": 0.4
+                            },
+                            "jitter": 2.0,
+                            "radius": 1.0,
+                            "distance": 2.0
+                        },
+                        "children": []
+                    }
+                ]
+            }
+        },
+        {
+            "name": "Chase",
+            "singleNode": true,
+            "editor": [
+                250.0,
+                0.0
+            ],
+            "tree": {
+                "root": 0,
+                "nodes": [
+                    {
+                        "id": 0,
+                        "type": "zigzag_chase",
+                        "editor": [
+                            0.0,
+                            0.0
+                        ],
+                        "fields": {
+                            "target": {
+                                "variable": "Target"
+                            },
+                            "amplitude": 500.0,
+                            "noiseSpeed": 1.0,
+                            "lookAhead": 20.0
+                        },
+                        "children": []
+                    }
+                ]
+            }
+        },
+        {
+            "name": "Attack",
+            "singleNode": true,
+            "editor": [
+                500.0,
+                0.0
+            ],
+            "tree": {
+                "root": 0,
+                "nodes": [
+                    {
+                        "id": 0,
+                        "type": "attack_target",
+                        "editor": [
+                            0.0,
+                            0.0
+                        ],
+                        "fields": {
+                            "target": {
+                                "variable": "Target"
+                            },
+                            "kind": "Crossbow",
+                            "damage": 12.0,
+                            "cooldown": 2.0,
+                            "fireDuration": 0.7,
+                            "releaseFrame": 0.6,
+                            "facingAngle": 70.0,
+                            "verticalReach": 2.5
+                        },
+                        "children": []
+                    }
+                ]
+            }
+        }
+    ],
+    "transitions": [
+        {
+            "from": -1,
+            "to": 0,
+            "conditions": [
+                {
+                    "type": "target_beyond",
+                    "fields": {
+                        "target": {
+                            "variable": "Target"
+                        },
+                        "distance": {
+                            "value": 60.0
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "from": 0,
+            "to": 1,
+            "conditions": [
+                {
+                    "type": "target_within",
+                    "fields": {
+                        "target": {
+                            "variable": "Target"
+                        },
+                        "distance": {
+                            "value": 40.0
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "from": 1,
+            "to": 2,
+            "conditions": [
+                {
+                    "type": "target_within",
+                    "fields": {
+                        "target": {
+                            "variable": "Target"
+                        },
+                        "distance": {
+                            "value": 12.0
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "from": 2,
+            "to": 1,
+            "conditions": [
+                {
+                    "type": "target_beyond",
+                    "fields": {
+                        "target": {
+                            "variable": "Target"
+                        },
+                        "distance": {
+                            "value": 14.4
+                        }
+                    }
+                }
+            ]
+        }
+    ]
+}

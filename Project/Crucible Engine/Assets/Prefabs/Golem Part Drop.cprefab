@@ -1,0 +1,70 @@
+{
+    "version": 3,
+    "name": "Golem Part Drop",
+    "entities": [
+        {
+            "id": "0E21241797F9D52E",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                },
+                "RigidBody": {
+                    "velocity": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": { "x": 0.6, "y": 0.6, "z": 0.6 },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Golem Part Drop"
+                }
+            }
+        },
+        {
+            "id": "0E21241797F9D53F",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 0.6, "y": 0.6, "z": 0.6 }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": { "x": 0.85, "y": 0.7, "z": 0.25, "w": 0.5 },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Mesh"
+                }
+            }
+        }
+    ]
+}

@@ -1,0 +1,166 @@
+{
+    "version": 3,
+    "name": "Golem Mace",
+    "entities": [
+        {
+            "id": "1A0644CEF6C6B614",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 1.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                },
+                "RigidBody": {
+                    "velocity": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "mass": 1.0,
+                    "useGravity": false,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": { "x": 3.0418512821197510, "y": 2.0844321250915527, "z": 1.7326987981796265 },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": { "x": 0.0, "y": 0.0, "z": -0.22885863482952118 },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Golem Mace"
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.200000047683716,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "separationRadius": 3.5,
+                    "separationWeight": 1.5,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 4968574966415897207,
+                    "logStateChanges": false
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Enemy",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "dropPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5267962757949921808
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "0E21241797F9D51D",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": -0.22885863482952118 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 3.0418512821197510, "y": 2.0844321250915527, "z": 1.7326987981796265 }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": { "x": 0.55, "y": 0.42, "z": 0.3, "w": 0.5 },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": { "x": 0.0, "y": 0.0, "z": 0.0 }
+                },
+                "EntityName": {
+                    "name": "Body"
+                }
+            }
+        },
+        {
+            "id": "48709D3EC14A420C",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.4, "z": 0.8 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 0.5, "y": 0.5, "z": 0.5 }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": { "x": 0.9, "y": 0.75, "z": 0.2, "w": 0.5 },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Front"
+                }
+            }
+        },
+        {
+            "id": "48709D3EC14A41FB",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 1.6, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 2.0, "y": 0.1, "z": 0.1 }
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                }
+            }
+        }
+    ]
+}
