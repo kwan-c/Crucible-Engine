@@ -241,6 +241,7 @@ namespace Crucible {
         }
         auto model = std::make_shared<ModelResource>(std::move(imported.model));
         m_models[id] = model;
+        m_modelFileHashes[id] = entry->contentHash;   // ReloadModel: has the compiled file changed since?
         return model;
     }
 
@@ -709,14 +710,62 @@ namespace Crucible {
                 m_cubemaps.erase(it);
                 ++reloaded;
             }
-            if (auto it = m_models.find(id); it != m_models.end() && it->second) {
-                CRU_USER_INFO("[Resources] {} changed on disk - open the scene again to see the new model", GetName(id));
-            }
+            if (auto it = m_models.find(id); it != m_models.end() && it->second && ReloadModel(id)) { ++reloaded; }
         }
         if (reloaded != 0) { CRU_USER_INFO("[Resources] Hot reload: {} asset(s) loaded again", reloaded); }
         return reloaded;
 
     }   // ResourceManager::ReloadChanged()
+
+    bool ResourceManager::ReloadModel(AssetId id) {
+
+        // A source .glb and its .cmodel share this id. Editing the .glb reports the id before the
+        // new .cmodel exists: only a change to the compiled file itself is worth a reload.
+        const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+        if (!entry || entry->extension != ".cmodel") { return false; }
+        const auto loaded = m_modelFileHashes.find(id);
+        if (loaded != m_modelFileHashes.end() && loaded->second == entry->contentHash) { return false; }
+
+        // Destroy calls only retire GPU data (freed once no frame uses it), so drawing this frame
+        // stays safe. Entities notice the new RenderedModel themselves (RenderExtractSystem).
+        bool hadEmbeddedTextures = false;
+        if (auto it = m_renderedModels.find(id); it != m_renderedModels.end() && it->second) {
+            for (const auto& primitives : it->second->meshes) {
+                for (const MeshHandle mesh : primitives) { m_meshIds.erase(mesh.id); m_renderer.DestroyMesh(mesh); }
+            }
+            for (const MaterialHandle material : it->second->materials) {
+                m_materialIds.erase(material.id);
+                m_renderer.DestroyMaterial(material);
+            }
+        }
+        for (auto it = m_modelTextureSources.begin(); it != m_modelTextureSources.end();) {
+            if (it->second.model != id) { ++it; continue; }
+            TextureHandle texture;
+            texture.id = it->first;
+            m_renderer.DestroyTexture(texture);
+            hadEmbeddedTextures = true;
+            it = m_modelTextureSources.erase(it);
+        }
+
+        m_meshes.erase(id);                                    // the first-primitive alias (GetMesh)
+        m_materials.erase(DeriveSubAssetId(id, "material"));   // the embedded-material alias (GetMaterial)
+        m_renderedModels.erase(id);
+        m_modelRestPoses.erase(id);
+        m_models.erase(id);
+        m_modelFileHashes.erase(id);
+        m_warned.erase(id);
+
+        // A .mat may point at this model's embedded textures: read those again so they use the new ones.
+        if (hadEmbeddedTextures) {
+            std::vector<AssetId> materialFiles;
+            for (const auto& [materialId, handle] : m_materials) {
+                if (handle.IsValid() && IsMaterialFile(materialId)) { materialFiles.push_back(materialId); }
+            }
+            for (const AssetId materialId : materialFiles) { ReloadMaterialFile(materialId); }
+        }
+        return true;
+
+    }   // ResourceManager::ReloadModel()
 
     bool ResourceManager::ReloadMaterialFile(AssetId id) {
 

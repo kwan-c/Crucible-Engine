@@ -42,6 +42,18 @@ Other animation, ECS, shader, renderer and preview-scene changes already existed
 before this session and were preserved. No third-party files, new dependencies,
 test projects, commits or pushes were introduced.
 
+## Adding a model while the editor is open
+
+A `.glb` that appears in `Assets` no longer needs a build. Drop it on the Asset Browser, or
+copy it there in File Explorer and return to the editor (or press F5). The browser compiles
+it on a worker thread with `Tools/Common/ModelBuild`, the same code `CrucibleModelCompiler`
+uses, so the build then reports the result as unchanged. The footer shows what is compiling;
+a failure appears in a popup and the Console. When a `.cmodel` changes, entities using that
+model switch to it on the next frame, without reopening the scene.
+
+GLTFLoader, GLTFDocument and CompiledModel are compiled into `Editor.exe` for this. They stay
+out of `Engine.dll`, so the packaged game still cannot read source models.
+
 ## Workflow
 
 1. Export a supported, self-contained animated GLB into `AssetsSource/Models` (or
