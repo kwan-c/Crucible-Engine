@@ -19,6 +19,8 @@ namespace Crucible {
         bool GuardExit(std::function<void()> continuation);
         bool HasKeyboardFocus() const { return m_focused && m_visible; }
         bool IsUnsaved() const { return m_hasDocument && (!m_asset || m_document.Dirty()); }
+        // Why the last Save / SaveAs failed, so the Menu's quit prompt can show it.
+        const std::string& LastError() const { return m_error; }
         const AnimatorDocument& Document() const { return m_document; }
         uint64_t Asset() const { return m_asset; }
     private:
