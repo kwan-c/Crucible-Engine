@@ -72,15 +72,15 @@ namespace Crucible {
         Result result;
         m_canvas.Begin("##StateGraphCanvas");
 
-        // A .behaviorgraph dragged in from the Asset Browser. This must come
-        // straight after Begin: BeginDragDropTarget works on the last item,
-        // the canvas's invisible button. The payload is peeked at first, so
-        // other kinds of asset don't light the canvas up as a target.
+        // A .behaviorgraph or a .cs node script dragged in from the Asset
+        // Browser. This must come straight after Begin: BeginDragDropTarget
+        // works on the last item, the canvas's invisible button. The payload is
+        // peeked at first, so other kinds of asset don't light the canvas up.
         std::string dropped;
         if (!readOnly && ImGui::BeginDragDropTarget()) {
             const ImGuiPayload* payload = ImGui::GetDragDropPayload();
-            if (payload && payload->IsDataType(EditorWidgets::kAssetPayload)
-                && std::string_view(static_cast<const char*>(payload->Data)).ends_with(".behaviorgraph")) {
+            const std::string_view path = payload && payload->IsDataType(EditorWidgets::kAssetPayload) ? static_cast<const char*>(payload->Data) : "";
+            if (path.ends_with(".behaviorgraph") || path.ends_with(".cs")) {
                 if (const ImGuiPayload* accepted = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) dropped = static_cast<const char*>(accepted->Data);
             }
             ImGui::EndDragDropTarget();
@@ -146,6 +146,7 @@ namespace Crucible {
         if (!dropped.empty()) {
             result.droppedPath  = std::move(dropped);
             result.dropState    = hoveredState;
+            result.dropArrow    = hoveredArrow;   // only set when no state is under the mouse
             result.dropPosition = m_canvas.MouseGraph() - kStateSize * 0.5f;   // a new state centred on the mouse
         }
         if (!m_canvas.Hovered()) { hoveredState = hoveredPort = hoveredArrow = -1; hoveredAny = hoveredAnyPort = false; }

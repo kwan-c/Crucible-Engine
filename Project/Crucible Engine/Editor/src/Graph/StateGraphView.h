@@ -55,12 +55,14 @@ namespace Crucible {
             bool        changed   = false;   // the graph was edited this frame
             int         openState = -1;      // a state was double-clicked: open what it runs
 
-            // A .behaviorgraph was dropped on the canvas: its Assets path,
-            // where a new state for it would go, and the state it was dropped
-            // ON (-1 for empty canvas). The panel turns the path into an id.
+            // A .behaviorgraph or .cs node script was dropped on the canvas: its
+            // Assets path, where a new state for it would go, and the state or
+            // arrow it was dropped ON (-1 for neither). The panel turns the path
+            // into an asset or node type.
             std::string droppedPath;
             Math::vec2  dropPosition{ 0.0f };
             int         dropState = -1;
+            int         dropArrow = -1;
 
         };  // RESULT STRUCT
 

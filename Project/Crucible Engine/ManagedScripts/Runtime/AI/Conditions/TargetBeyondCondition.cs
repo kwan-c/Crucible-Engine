@@ -1,6 +1,11 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Target Beyond", "Passes when the target is further than this, or gone.", "Distance", "target_beyond")]
+    [NodeDescription(
+        name: "Target Beyond",
+        description: "Passes when the target is further than this, or gone.",
+        story: "[Target] is beyond [Distance] m",
+        category: "Conditions/Distance",
+        id: "target_beyond")]
     public sealed class TargetBeyondCondition : DistanceCondition
     {
         public BlackboardVariable<Entity> Target = BlackboardVariable<Entity>.Link("Target");

@@ -1,6 +1,11 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Arrive", "Goes straight at a target, stopping in range and facing it; succeeds in range.", "Navigation", "arrive")]
+    [NodeDescription(
+        name: "Arrive",
+        description: "Goes straight at a target, stopping in range and facing it; succeeds in range.",
+        story: "Self arrives at [Target]",
+        category: "Action/Navigation",
+        id: "arrive")]
     public sealed class ArriveAction : NavigationAction
     {
         public BlackboardVariable<Entity> Target = BlackboardVariable<Entity>.Link("Target");   // starts linked to "Target"

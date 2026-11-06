@@ -1,6 +1,11 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Move To", "Walks straight to a point; succeeds on arrival.", "Navigation", "move_to")]
+    [NodeDescription(
+        name: "Move To",
+        description: "Walks straight to a point; succeeds on arrival.",
+        story: "Self moves to [Destination]",
+        category: "Action/Navigation",
+        id: "move_to")]
     public sealed class MoveToAction : NavigationAction
     {
         public BlackboardVariable<Vector3> Destination = new BlackboardVariable<Vector3>();

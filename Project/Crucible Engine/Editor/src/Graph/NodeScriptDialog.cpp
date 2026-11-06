@@ -49,8 +49,9 @@ namespace Crucible {
 
         };  // KINDINFO STRUCT
 
+        // Default categories in Unity's layout ('/' nests: "Action/Navigation" is a submenu of Action).
         constexpr std::array<KindInfo, 4> kKinds{ {
-            { "Action",    "Action",    "Actions",    "Action.cs.txt" },
+            { "Action",    "Action",    "Action",     "Action.cs.txt" },
             { "Modifier",  "Modifier",  "Flow",       "Modifier.cs.txt" },
             { "Composite", "Composite", "Flow",       "Composite.cs.txt" },
             { "Condition", "Condition", "Conditions", "Condition.cs.txt" },
@@ -91,6 +92,7 @@ namespace Crucible {
         m_openRequested = true;
         m_name[0]       = '\0';
         m_description[0] = '\0';
+        m_story[0]      = '\0';
         std::snprintf(m_category, sizeof m_category, "%s", InfoOf(kind).category);   // snprintf always ends the text, unlike strncpy
         m_error.clear();
 
@@ -132,7 +134,7 @@ namespace Crucible {
 
             const std::vector<std::pair<std::string, std::string>> tokens{
                 { "{{CLASS}}", className }, { "{{NAME}}", Escape(m_name) }, { "{{DESCRIPTION}}", Escape(m_description) },
-                { "{{CATEGORY}}", Escape(m_category) }, { "{{ID}}", id } };
+                { "{{STORY}}", Escape(m_story) }, { "{{CATEGORY}}", Escape(m_category) }, { "{{ID}}", id } };
             for (const auto& [token, value] : tokens) {
                 for (auto at = text.find(token); at != std::string::npos; at = text.find(token, at + value.size())) text.replace(at, token.size(), value);
             }
@@ -180,8 +182,11 @@ namespace Crucible {
             ImGui::SetNextItemWidth(320.0f);
             ImGui::InputTextWithHint("Name", "Attack Player", m_name, sizeof m_name);
             ImGui::SetNextItemWidth(320.0f);
+            ImGui::InputTextWithHint("Story", "Self attacks [Target]", m_story, sizeof m_story);
+            ImGui::SetItemTooltip("The sentence on the node, as in Unity. A [Word] shows the field of that name - add the field to the script.");
+            ImGui::SetNextItemWidth(320.0f);
             ImGui::InputText("Category", m_category, sizeof m_category);
-            ImGui::SetItemTooltip("The Add Node submenu it goes in.");
+            ImGui::SetItemTooltip("The Add Node submenu it goes in. A '/' nests, as in Unity: Action/Combat.");
             ImGui::SetNextItemWidth(320.0f);
             ImGui::InputTextWithHint("Description", "What it does, shown as its tooltip", m_description, sizeof m_description);
 

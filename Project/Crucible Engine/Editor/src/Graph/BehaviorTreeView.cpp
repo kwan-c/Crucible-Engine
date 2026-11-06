@@ -19,6 +19,7 @@
 #include <cfloat>       // FLT_MAX
 #include <charconv>     // std::from_chars: a Run Subgraph's asset id
 #include <cstdint>
+#include <filesystem>   // a dropped script's file name
 #include <string_view>
 #include <utility>      // std::pair
 
@@ -30,7 +31,9 @@
 
 // Crucible editor
 #include "Graph/InspectScript.h"
+#include "Graph/NodeCatalogSync.h"                  // NodeTypeForScript: a dropped .cs's node
 #include "Graph/NodeFieldEditor.h"
+#include "ImGui/EditorWidgets.h"                    // kAssetPayload: what the Asset Browser drags
 #include "ImGui/ImGuiManager.h"                     // EditorManager: the panels
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"  // double-click a Run Subgraph: open its graph
 
@@ -41,23 +44,76 @@ namespace Crucible {
         // A node's size on the canvas, in graph units.
         constexpr Math::vec2 kNodeSize{ 220.0f, 58.0f };
 
-        // The header colour says what kind of node it is, at a glance.
+        // The header colour says what kind of node it is, at a glance. Any part
+        // of a nested category counts: "Action/Navigation" is a navigation node.
         ImU32 HeaderColour(std::string_view category) {
 
-            if (category == "Events")     return IM_COL32(40, 150, 90, 255);    // green, like Unity's On Start
-            if (category == "Flow")       return IM_COL32(130, 80, 200, 255);   // purple, like Unity's Sequence
-            if (category == "Navigation") return IM_COL32(50, 110, 190, 255);
-            if (category == "Debug")      return IM_COL32(160, 130, 40, 255);
+            if (category.find("Events") != std::string_view::npos)     return IM_COL32(40, 150, 90, 255);    // green, like Unity's On Start
+            if (category.find("Flow") != std::string_view::npos)       return IM_COL32(130, 80, 200, 255);   // purple, like Unity's Sequence
+            if (category.find("Navigation") != std::string_view::npos) return IM_COL32(50, 110, 190, 255);
+            if (category.find("Debug") != std::string_view::npos)      return IM_COL32(160, 130, 40, 255);
             return IM_COL32(85, 92, 105, 255);
 
         }   // HeaderColour()
 
     }   // ANONYMOUS NAMESPACE
 
+    /*!
+        \brief
+        One level of the Add Node menu: a submenu for each category part under
+        `prefix` ("Action/Navigation" nests Navigation inside Action, as in
+        Unity), then the nodes filed exactly at `prefix`.
+
+        \return
+        The type picked this frame, or null.
+    */
+    const NodeTypeInfo* BehaviorTreeView::DrawCategoryMenu(const std::string& prefix, bool conditions) {
+
+        const std::vector<NodeTypeInfo>& types = NodeCatalog::Instance().All();
+        const NodeTypeInfo* picked = nullptr;
+
+        // The next part of every category below `prefix`, once each, in catalog order.
+        std::vector<std::string> parts;
+        for (const NodeTypeInfo& type : types) {
+            if (type.IsCondition() != conditions) continue;
+            if (!prefix.empty() && !type.category.starts_with(prefix + "/")) continue;
+            const std::string rest = prefix.empty() ? type.category : type.category.substr(prefix.size() + 1);
+            if (rest.empty()) continue;
+            const std::string part = rest.substr(0, rest.find('/'));
+            if (std::find(parts.begin(), parts.end(), part) == parts.end()) parts.push_back(part);
+        }
+        for (const std::string& part : parts) {
+            if (!ImGui::BeginMenu(part.c_str())) continue;
+            if (const NodeTypeInfo* inner = DrawCategoryMenu(prefix.empty() ? part : prefix + "/" + part, conditions)) picked = inner;
+            ImGui::EndMenu();
+        }
+
+        // The nodes filed right here (no category at all = the top level).
+        for (const NodeTypeInfo& type : types) {
+            if (type.IsCondition() != conditions || type.category != prefix) continue;
+            if (ImGui::MenuItem(type.name.c_str())) picked = &type;
+            ImGui::SetItemTooltip("%s", type.description.c_str());
+        }
+        return picked;
+
+    }   // BehaviorTreeView::DrawCategoryMenu()
+
     bool BehaviorTreeView::Draw(BehaviorGraph& graph, bool readOnly) {
 
         bool changed = false;
         m_canvas.Begin("##BehaviorTreeCanvas");
+
+        // A .cs script dragged in from the Asset Browser. Straight after Begin:
+        // BeginDragDropTarget works on the last item, the canvas's invisible
+        // button. Peeked first, so other kinds of asset don't light it up.
+        std::string droppedScript;
+        if (!readOnly && ImGui::BeginDragDropTarget()) {
+            const ImGuiPayload* payload = ImGui::GetDragDropPayload();
+            if (payload && payload->IsDataType(EditorWidgets::kAssetPayload) && std::string_view(static_cast<const char*>(payload->Data)).ends_with(".cs")) {
+                if (const ImGuiPayload* accepted = ImGui::AcceptDragDropPayload(EditorWidgets::kAssetPayload)) droppedScript = static_cast<const char*>(accepted->Data);
+            }
+            ImGui::EndDragDropTarget();
+        }
 
         const ImVec2 nodeSize = m_canvas.Scaled(kNodeSize);
         const auto topLeftOf = [&](const BehaviorNode* node) { return m_canvas.ToScreen(node->m_editorPosition); };
@@ -80,6 +136,12 @@ namespace Crucible {
                 if (dx * dx + dy * dy <= portReach * portReach) hoveredPort = info.node;
             }
         }
+
+        // The dropped script lands on the node under the mouse, or becomes a new
+        // node. Done before the line below: while an asset is being dragged the
+        // canvas doesn't count as hovered. A plain edit, so undo takes it back.
+        if (!droppedScript.empty() && DropScript(graph, droppedScript, hovered, m_canvas.MouseGraph() - kNodeSize * 0.5f)) changed = true;
+
         if (!m_canvas.Hovered()) { hovered = nullptr; hoveredPort = nullptr; }
 
         // 2. The mouse, turned into edits.
@@ -209,6 +271,23 @@ namespace Crucible {
             }
         }
 
+        // Edit a Copy: the node switches to its copy the first frame C# knows the
+        // copy's type - if it's still in the graph (an undo may have removed it).
+        if (!m_pendingSwapType.empty() && !readOnly) {
+            if (const NodeTypeInfo* type = NodeCatalog::Instance().Find(m_pendingSwapType)) {
+                BehaviorTreeEdit::Collect(graph, m_nodes);
+                const bool stillHere = std::any_of(m_nodes.begin(), m_nodes.end(), [&](const BehaviorTreeEdit::NodeInfo& info) { return info.node == m_pendingSwap; });
+                if (stillHere && m_pendingSwap->ChildCount() <= type->MaxChildren()) {
+                    m_pendingSwap->ChangeType(*type);
+                    Select(m_pendingSwap);
+                    m_status = "This node now runs your copy, " + type->name + ". Ctrl+Z puts the built-in back.";
+                    changed = true;
+                }
+                m_pendingSwap = nullptr;
+                m_pendingSwapType.clear();
+            }
+        }
+
         // 3. Draw. Collected again: an edit above may have moved or removed nodes.
         BehaviorTreeEdit::Collect(graph, m_nodes);
         const BehaviorNode* root = graph.Root();
@@ -263,27 +342,15 @@ namespace Crucible {
 
             // Every C# node type (not the conditions - those go on state graph arrows).
             if (ImGui::BeginMenu("Add Node")) {
-                const std::vector<NodeTypeInfo>& types = NodeCatalog::Instance().All();
-                std::vector<std::string_view> categories;
-                for (const NodeTypeInfo& type : types) {
-                    if (type.IsCondition()) continue;
-                    if (std::find(categories.begin(), categories.end(), type.category) == categories.end()) categories.push_back(type.category);
+                const bool anyNodes = std::any_of(NodeCatalog::Instance().All().begin(), NodeCatalog::Instance().All().end(),
+                                                  [](const NodeTypeInfo& type) { return !type.IsCondition(); });
+                if (const NodeTypeInfo* type = DrawCategoryMenu("", false)) {
+                    std::unique_ptr<BehaviorNode> node = MakeNode(*type);
+                    node->m_editorPosition = m_menuPosition;
+                    Select(BehaviorTreeEdit::AddDetached(graph, std::move(node)));
+                    changed = true;
                 }
-                for (const std::string_view category : categories) {
-                    if (!ImGui::BeginMenu(std::string(category).c_str())) continue;
-                    for (const NodeTypeInfo& type : types) {
-                        if (type.IsCondition() || type.category != category) continue;
-                        if (ImGui::MenuItem(type.name.c_str())) {
-                            std::unique_ptr<BehaviorNode> node = MakeNode(type);
-                            node->m_editorPosition = m_menuPosition;
-                            Select(BehaviorTreeEdit::AddDetached(graph, std::move(node)));
-                            changed = true;
-                        }
-                        ImGui::SetItemTooltip("%s", type.description.c_str());
-                    }
-                    ImGui::EndMenu();
-                }
-                if (categories.empty()) ImGui::TextDisabled("No nodes: C# scripting isn't running, or the scripts didn't build.");
+                if (!anyNodes) ImGui::TextDisabled("No nodes: C# scripting isn't running, or the scripts didn't build.");
 
                 // Unity's "Create new": a script of your own, placed here once it compiles.
                 ImGui::Separator();
@@ -315,11 +382,10 @@ namespace Crucible {
 
                 // Everything about `node` is read up front: Delete below frees
                 // it, and the items after Delete are still drawn that frame.
-                // (The script path is copied: it belongs to the catalog, not the node.)
+                // (`type` belongs to the catalog, not the node, so it outlives a Delete.)
                 const bool          hasParent = BehaviorTreeEdit::ParentOf(graph, node) != nullptr;
                 const bool          isRoot    = graph.Root() == node;
                 const NodeTypeInfo* type      = node->Info();
-                const std::string   script    = type ? type->file : std::string();
 
                 if (ImGui::MenuItem("Duplicate", "Ctrl+D")) {
                     // Copy + paste 30 units down-right, without touching the clipboard.
@@ -333,9 +399,20 @@ namespace Crucible {
                 if (ImGui::MenuItem("Set as Root", nullptr, false, !hasParent && !isRoot)) { BehaviorTreeEdit::MakeRoot(graph, node); changed = true; }
                 ImGui::SetItemTooltip("The root is where the graph starts. Usually an On Start node.");
                 ImGui::Separator();
+                // Edit a Copy before Delete: it remembers `node`, which Delete would free.
+                const bool builtIn = type && InspectScript::IsBuiltIn(*type);
+                if (ImGui::MenuItem("Edit a Copy", nullptr, false, type && InspectScript::CanCopy(*type))) {
+                    std::string error;
+                    const std::string copy = InspectScript::MakeEditableCopy(*type, error);
+                    if (copy.empty()) m_status = error;
+                    else { m_pendingSwap = node; m_pendingSwapType = copy; m_status = "Copy written - this node switches to it once the scripts have compiled."; }
+                }
+                ImGui::SetItemTooltip(builtIn ? "Built-in nodes are read-only. This writes your own copy into Assets/Scripts/AI and switches this node to it."
+                                              : "Only built-in nodes have this: your own scripts can be edited directly.");
+                ImGui::Separator();
                 if (ImGui::MenuItem("Delete", "Del") && DeleteSelection(graph)) changed = true;   // `node` is gone after this
                 ImGui::Separator();
-                if (ImGui::MenuItem("Inspect Script", nullptr, false, !script.empty())) InspectScript::OpenFile(script.c_str());
+                if (ImGui::MenuItem(builtIn ? "Inspect Script (read-only)" : "Inspect Script", nullptr, false, type && !type->file.empty())) InspectScript::OpenTypeSource(*type);
                 ImGui::SetItemTooltip("Open the C# file this node is written in. Or double-click the node.");
 
             }
@@ -426,6 +503,42 @@ namespace Crucible {
 
     }   // BehaviorTreeView::Paste()
 
+    bool BehaviorTreeView::DropScript(BehaviorGraph& graph, const std::string& script, BehaviorNode* onto, const Math::vec2& position) {
+
+        const std::string file = std::filesystem::path(script).filename().string();
+        const NodeTypeInfo* type = NodeTypeForScript(script);
+        if (!type) {
+            m_status = WhyNotANode(script);
+            return false;
+        }
+        if (type->IsCondition()) {
+            m_status = type->name + " is a condition - those go on a state graph's arrows, not in a tree.";
+            return false;
+        }
+
+        // On a node: that node becomes this script's node, where it stands -
+        // unless its children wouldn't fit (an Action can't have any).
+        if (onto) {
+            if (onto->ChildCount() > type->MaxChildren()) {
+                m_status = type->name + " can't have " + std::to_string(onto->ChildCount()) + " children - disconnect them first.";
+                return false;
+            }
+            const std::string before(onto->Description().name);
+            onto->ChangeType(*type);
+            Select(onto);
+            m_status = before + " now runs " + file + ". Ctrl+Z undoes it.";
+            return true;
+        }
+
+        // On empty canvas: a new node there, unconnected like one from Add Node.
+        std::unique_ptr<BehaviorNode> node = MakeNode(*type);
+        node->m_editorPosition = position;
+        Select(BehaviorTreeEdit::AddDetached(graph, std::move(node)));
+        m_status = "Added " + type->name + ". Connect it into the tree to run it.";
+        return true;
+
+    }   // BehaviorTreeView::DropScript()
+
     bool BehaviorTreeView::DeleteSelection(BehaviorGraph& graph) {
 
         if (m_selection.empty()) return false;
@@ -439,6 +552,8 @@ namespace Crucible {
         // later frame (the menu's node, the link being drawn), so drop them all.
         m_menuNode    = nullptr;
         m_connectFrom = nullptr;
+        m_pendingSwap = nullptr;   // may have been one of them, and its address can be reused
+        m_pendingSwapType.clear();
         return true;
 
     }   // BehaviorTreeView::DeleteSelection()
@@ -479,6 +594,12 @@ namespace Crucible {
         m_branchParent = nullptr;
         m_branchChild  = nullptr;
         m_dragging     = false;
+
+        // Undo, redo and load rebuild every node: a new one could reuse the old
+        // one's address, so the pending switch can't be trusted any more. (The
+        // copy itself is kept - it can be dragged onto the node.)
+        m_pendingSwap = nullptr;
+        m_pendingSwapType.clear();
 
     }   // BehaviorTreeView::ClearSelection()
 

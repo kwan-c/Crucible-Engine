@@ -15,6 +15,8 @@
 #include "NodeFieldEditor.h"
 
 // STL
+#include <algorithm>    // std::equal, std::find_if
+#include <cctype>       // std::tolower
 #include <charconv>     // std::from_chars
 #include <cstdint>
 #include <filesystem>
@@ -290,17 +292,39 @@ namespace Crucible::NodeFieldEditor {
         const NodeTypeInfo* info = node.Info();
         if (!info) return {};
 
-        std::string summary;
-        for (const NodeFieldInfo& fieldInfo : info->fields) {
-
+        // A field's value as the box shows it: the variable it's linked to, or its own value.
+        const auto shownValue = [&](const NodeFieldInfo& fieldInfo) {
             const NodeField* field = node.FindField(fieldInfo.name);
             const std::string& link = field ? field->link : fieldInfo.link;
             const std::string& text = field ? field->text : fieldInfo.value;
-            const std::string  shown = !link.empty() ? link : fieldInfo.type == "Entity" ? "(no variable)" : ValueText(fieldInfo.type, text);
+            return !link.empty() ? link : fieldInfo.type == "Entity" ? std::string("(no variable)") : ValueText(fieldInfo.type, text);
+        };
 
+        // Unity's story: "[Agent] navigates to [Location]" with each [Word] replaced by
+        // the field of that name (any case). A word with no such field shows as plain text.
+        if (!info->story.empty()) {
+            std::string story;
+            for (std::size_t at = 0; at < info->story.size();) {
+                const std::size_t open  = info->story.find('[', at);
+                const std::size_t close = open == std::string::npos ? std::string::npos : info->story.find(']', open);
+                if (close == std::string::npos) { story += info->story.substr(at); break; }
+                story += info->story.substr(at, open - at);
+                const std::string word = info->story.substr(open + 1, close - open - 1);
+                const auto same = [&](const std::string& name) {
+                    return name.size() == word.size() && std::equal(name.begin(), name.end(), word.begin(),
+                        [](char a, char b) { return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b)); });
+                };
+                const auto field = std::find_if(info->fields.begin(), info->fields.end(), [&](const NodeFieldInfo& f) { return same(f.name) || same(f.label); });
+                story += field != info->fields.end() ? shownValue(*field) : word;
+                at = close + 1;
+            }
+            return story;
+        }
+
+        std::string summary;
+        for (const NodeFieldInfo& fieldInfo : info->fields) {
             if (!summary.empty()) summary += ", ";
-            summary += (fieldInfo.label.empty() ? fieldInfo.name : fieldInfo.label) + " " + shown;
-
+            summary += (fieldInfo.label.empty() ? fieldInfo.name : fieldInfo.label) + " " + shownValue(fieldInfo);
         }
         return summary;
 
