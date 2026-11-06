@@ -97,8 +97,9 @@ namespace Crucible
 			m_reloadSeen = m_runtime.ReloadCount();
 		}
 
-		// --- Step 1: reset everything on scene change, Stop, or a new Play session.
-		if (m_sceneChanged || m_session != m_play.SessionRevision() || !m_play.InSession())
+		// --- Step 1: reset everything on Stop or a new Play session.
+		const bool sessionChanged = m_session != m_play.SessionRevision() || !m_play.InSession();
+		if (sessionChanged)
 		{
 			StopAll();
 #if CRUCIBLE_WITH_MONO
@@ -107,14 +108,37 @@ namespace Crucible
 			ScriptBindings::EntityContext::ClearUIEvents();
 			ScriptBindings::EntityContext::ClearCollisionEvents();
 			ScriptBindings::EntityContext::ClearActiveStates();
-			// Time.ElapsedTime keeps counting across a level switch (Scene.Load), like
-			// Unity's Time.time; only a new session or Stop starts it again.
-			if (m_session != m_play.SessionRevision() || !m_play.InSession())
-				ScriptBindings::EntityContext::ResetPlayClock();
+			ScriptBindings::EntityContext::ResetPlayClock();
 #endif
-			m_sceneChanged = false;
-			m_session = m_play.SessionRevision();
 		}
+		// A level switch (Scene.Load) during play: only the old scene's scripts end.
+		// DontDestroyOnLoad entities survived the load with the same handles, so their
+		// scripts keep running, state and all. Time.ElapsedTime keeps counting, like
+		// Unity's Time.time.
+		else if (m_sceneChanged)
+		{
+			for (auto it = m_records.begin(); it != m_records.end();)
+			{
+				const Entity entity{ static_cast<uint32_t>(it->first & 0xFFFFFFFFu),
+				                     static_cast<uint32_t>(it->first >> 32) };
+				if (world.IsAlive(entity))
+				{
+					++it;
+					continue;
+				}
+				Release(it->second);
+				it = m_records.erase(it);
+			}
+#if CRUCIBLE_WITH_MONO
+			ScriptBindings::EntityContext::PruneDestroyQueue(world);
+			ScriptBindings::EntityContext::ClearOneShotAudio();
+			ScriptBindings::EntityContext::ClearUIEvents();
+			ScriptBindings::EntityContext::ClearCollisionEvents();
+			ScriptBindings::EntityContext::PruneActiveStates(world);
+#endif
+		}
+		m_sceneChanged = false;
+		m_session = m_play.SessionRevision();
 
 		// --- Step 2: destroy scripts whose ScriptComponent was removed.
 		for (const auto key : m_removed)

@@ -152,7 +152,7 @@ namespace Crucible {
     //  Load
     // =======================================================================
 
-    bool Scene::Load(World& world, const fs::path& file)
+    bool Scene::Load(World& world, const fs::path& file, const std::vector<Entity>& keepRoots)
     {
         // Everything that can fail happens before the world is touched, so
         // a bad file costs nothing.
@@ -162,10 +162,11 @@ namespace Crucible {
             return false;   // ReadFromFile already logged why
         }
 
-        return LoadDocument(world, doc, file);
+        return LoadDocument(world, doc, file, keepRoots);
     }
 
-    bool Scene::LoadFromText(World& world, const std::string& text, const fs::path& source)
+    bool Scene::LoadFromText(World& world, const std::string& text, const fs::path& source,
+                             const std::vector<Entity>& keepRoots)
     {
         // Same as Load: parse first, so a bad document costs nothing.
         JsonWrapper doc;
@@ -175,10 +176,25 @@ namespace Crucible {
             return false;   // ReadFromString logged the parse error itself
         }
 
-        return LoadDocument(world, doc, source);
+        return LoadDocument(world, doc, source, keepRoots);
     }
 
-    bool Scene::LoadDocument(World& world, const JsonWrapper& doc, const fs::path& file)
+    void Scene::Clear(World& world, const std::vector<Entity>& keepRoots)
+    {
+        if (keepRoots.empty())
+        {
+            world.DestroyAllEntities();
+            m_ids.clear();
+            return;
+        }
+
+        world.DestroyAllEntitiesExcept(keepRoots);
+        // Only the kept entities' guids are still about anything.
+        std::erase_if(m_ids, [&world](const auto& entry) { return !world.IsAlive(entry.first); });
+    }
+
+    bool Scene::LoadDocument(World& world, const JsonWrapper& doc, const fs::path& file,
+                             const std::vector<Entity>& keepRoots)
     {
         const int version = doc.Get<int>("version", 0);
         if (version > kSceneVersion)
@@ -195,8 +211,18 @@ namespace Crucible {
         }
 
         // --- Past this line the world is being replaced -------------------
-        world.DestroyAllEntities();
-        m_ids.clear();
+        Clear(world, keepRoots);
+
+        // Kept entities by guid. Reloading the scene a kept entity came from
+        // brings its guid back with the file's copy; the kept one then gets
+        // a new guid, so every guid still names one entity (EntityOf).
+        std::unordered_map<std::uint64_t, Entity> keptById;
+        keptById.reserve(m_ids.size());
+        for (const auto& [entity, id] : m_ids)
+        {
+            keptById.emplace(id.m_Value, entity);
+        }
+        const std::size_t keptCount = m_ids.size();
 
         m_name = doc.Get<std::string>("name", file.stem().string());
 
@@ -231,6 +257,12 @@ namespace Crucible {
                 idText.empty()
                     ? xresource::instance_guid::GenerateGUIDCopy()
                     : AssetRegistry::GuidFromString(idText);
+
+            if (const auto clash = keptById.find(id.m_Value); clash != keptById.end())
+            {
+                m_ids[clash->second] = xresource::instance_guid::GenerateGUIDCopy();
+                keptById.erase(clash);
+            }
 
             m_ids.emplace(entity, id);
             byId.emplace(id.m_Value, entity);
@@ -289,8 +321,8 @@ namespace Crucible {
             }
         }
 
-        CRU_INFO("Scene: loaded '{}' ({} entities, {} components, {} parented) from {}",
-                 m_name, count, components, parented, file.string());
+        CRU_INFO("Scene: loaded '{}' ({} entities, {} components, {} parented, {} kept guids) from {}",
+                 m_name, count, components, parented, keptCount, file.string());
         return true;
     }
 

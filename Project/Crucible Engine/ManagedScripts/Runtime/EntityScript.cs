@@ -91,6 +91,12 @@ namespace Crucible
         public static void Destroy(Entity entity, float delay = 0f) { global::Crucible.Entity.Destroy(entity, delay); }
 
         /// <summary>
+        /// Keeps a root entity (e.g. DontDestroyOnLoad(Entity) for this one) alive through
+        /// scene loads. Same as Scene.DontDestroyOnLoad.
+        /// </summary>
+        public static bool DontDestroyOnLoad(Entity entity) { return global::Crucible.Scene.DontDestroyOnLoad(entity); }
+
+        /// <summary>
         /// This script on or off (Unity's MonoBehaviour.enabled). While off it gets no OnUpdate
         /// or UI callbacks but keeps its fields; switch it back on from another script.
         /// </summary>

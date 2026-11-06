@@ -42,6 +42,7 @@
 #include <filesystem>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include <xresource_guid.h>
 
@@ -139,11 +140,18 @@ namespace Crucible {
             version-checked before anything is destroyed, so a bad file
             leaves the world exactly as it was.
 
+         \param[in]     keepRoots Entities that survive the load, with
+                                  their descendants (DontDestroyOnLoad).
+                                  They keep their handles and guids; a
+                                  guid the file also uses is reissued on
+                                  the kept entity. Empty: replace all.
+
          \note
             For adding one object to the existing world rather than
             replacing everything, use Prefab::Instantiate.
          *********************************************************************/
-        bool Load(World& world, const std::filesystem::path& file);
+        bool Load(World& world, const std::filesystem::path& file,
+                  const std::vector<Entity>& keepRoots = {});
 
         /*********************************************************************
          \brief
@@ -164,7 +172,16 @@ namespace Crucible {
             the ResourceManager reads the file through the AssetManager by
             the scene's GUID, and the world is built from that text.
          *********************************************************************/
-        bool LoadFromText(World& world, const std::string& text, const std::filesystem::path& source);
+        bool LoadFromText(World& world, const std::string& text, const std::filesystem::path& source,
+                          const std::vector<Entity>& keepRoots = {});
+
+        /*********************************************************************
+         \brief  Empty the world (SceneManager's New Scene), keeping
+                 keepRoots and their descendants, as for Load.
+         \details Guids of the kept entities are kept; every other one is
+                  dropped, as Forget does.
+         *********************************************************************/
+        void Clear(World& world, const std::vector<Entity>& keepRoots = {});
 
         /*********************************************************************
          \brief
@@ -259,7 +276,8 @@ namespace Crucible {
                  the document has been read.
          \param[in] source For log messages and the fallback scene name.
          *********************************************************************/
-        bool LoadDocument(World& world, const JsonWrapper& doc, const std::filesystem::path& source);
+        bool LoadDocument(World& world, const JsonWrapper& doc, const std::filesystem::path& source,
+                          const std::vector<Entity>& keepRoots);
 
         /*********************************************************************
          \brief  Hashes an Entity by both its index and its generation.

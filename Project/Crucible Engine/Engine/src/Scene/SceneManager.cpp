@@ -1,5 +1,6 @@
 
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 #include <system_error>
@@ -138,9 +139,7 @@ namespace Crucible {
 	}
 
 	void SceneManager::ApplyNew() {
-		m_world.DestroyAllEntities();
-
-		m_scene.Forget();
+		m_scene.Clear(m_world, KeepRoots());
 		m_scene.SetName("Untitled");
 
 		PopulateDefaultScene(m_world);
@@ -195,7 +194,7 @@ namespace Crucible {
 			// entity saved without one, or before EntityName existed) are filled when the
 			// scope ends, after the highest "Entity N" the file holds.
 			World::DeferredNaming loading(m_world);
-			loaded = m_scene.Load(m_world, file);
+			loaded = m_scene.Load(m_world, file, KeepRoots());
 		}
 		if (!loaded)
 		{
@@ -228,7 +227,7 @@ namespace Crucible {
 		bool loaded = false;
 		{
 			World::DeferredNaming loading(m_world);
-			loaded = m_scene.LoadFromText(m_world, text, file);
+			loaded = m_scene.LoadFromText(m_world, text, file, KeepRoots());
 		}
 		if (!loaded)
 		{
@@ -275,7 +274,55 @@ namespace Crucible {
 
 		m_path  = snapshot.path;
 		m_dirty = snapshot.dirty;
+		m_persistent.clear();   // every handle is stale now
 		return true;
+	}
+
+	// =======================================================================
+	//  DontDestroyOnLoad
+	// =======================================================================
+	bool SceneManager::DontDestroyOnLoad(Entity entity) {
+		if (!m_playSession)
+		{
+			CRU_USER_WARN("SceneManager: DontDestroyOnLoad only works in play mode");
+			return false;
+		}
+		if (!m_world.IsAlive(entity))
+		{
+			CRU_USER_WARN("SceneManager: DontDestroyOnLoad was given an entity that no longer exists");
+			return false;
+		}
+		if (m_world.GetParent(entity).IsValid())
+		{
+			CRU_USER_WARN("SceneManager: DontDestroyOnLoad only works for root entities - unparent it first");
+			return false;
+		}
+
+		std::erase_if(m_persistent, [this](Entity e) { return !m_world.IsAlive(e); });
+		if (std::find(m_persistent.begin(), m_persistent.end(), entity) == m_persistent.end())
+		{
+			m_persistent.push_back(entity);
+		}
+		return true;
+	}
+
+	bool SceneManager::IsPersistent(Entity entity) const {
+		if (!m_world.IsAlive(entity)) return false;
+		for (const Entity root : m_persistent)
+		{
+			if (m_world.IsAlive(root) && m_world.IsChildOf(entity, root)) return true;
+		}
+		return false;
+	}
+
+	std::vector<Entity> SceneManager::KeepRoots() {
+		if (!m_playSession)
+		{
+			m_persistent.clear();
+			return {};
+		}
+		std::erase_if(m_persistent, [this](Entity e) { return !m_world.IsAlive(e); });
+		return m_persistent;
 	}
 
 	void SceneManager::OnBeforeSave(std::function<void()> callback) {

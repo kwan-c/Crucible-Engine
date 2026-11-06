@@ -168,6 +168,12 @@ namespace Crucible::ScriptBindings
 			pendingDestroys.clear();
 		}
 
+		void PruneDestroyQueue(const World& liveWorld)
+		{
+			std::erase_if(pendingDestroys,
+			              [&liveWorld](const PendingDestroy& pending) { return !liveWorld.IsAlive(pending.entity); });
+		}
+
 		bool InPlaySession()
 		{
 			return play && play->InSession();

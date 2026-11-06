@@ -241,6 +241,15 @@ namespace Crucible::ScriptBindings
 		{
 			inactive.clear();
 		}
+
+		void PruneActiveStates(const World& liveWorld)
+		{
+			std::erase_if(inactive, [&liveWorld](const auto& entry) {
+				const Entity entity{ static_cast<uint32_t>(entry.first & 0xFFFFFFFFu),
+				                     static_cast<uint32_t>(entry.first >> 32) };
+				return !liveWorld.IsAlive(entity);
+			});
+		}
 	}
 
 	void RegisterEnableBindings()

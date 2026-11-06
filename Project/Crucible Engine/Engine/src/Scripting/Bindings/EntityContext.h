@@ -99,6 +99,12 @@ namespace Crucible
 		void ClearDestroyQueue();
 
 		/*********************************************************************
+		 \brief  Forgets queued destroys of entities that no longer exist
+		         (a level switch: DontDestroyOnLoad entities keep theirs).
+		 *********************************************************************/
+		void PruneDestroyQueue(const World& world);
+
+		/*********************************************************************
 		 \brief  true during a Play session (Playing or Paused).
 		 *********************************************************************/
 		bool InPlaySession();
@@ -200,6 +206,14 @@ namespace Crucible
 		         Defined in Bindings/EnableBindings.cpp.
 		 *********************************************************************/
 		void ClearActiveStates();
+
+		/*********************************************************************
+		 \brief  Forgets SetActive(false) records of entities that no longer
+		         exist (a level switch: DontDestroyOnLoad entities keep
+		         theirs, so SetActive(true) still restores them).
+		         Defined in Bindings/EnableBindings.cpp.
+		 *********************************************************************/
+		void PruneActiveStates(const World& world);
 
 		// --- One-shot audio (C# Audio.PlayClipAtPoint) ---------------------- //
 
