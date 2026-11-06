@@ -11,6 +11,7 @@
 *
 *        Scene.Load("Scenes/Level2.scene");   // a path inside Assets
 *        Scene.Reload();                      // restart the current level
+*        Scene.DontDestroyOnLoad(Entity);     // keep this root entity across loads
 *
 *    The switch happens at the start of the next frame, not immediately, so
 *    the rest of this frame runs as normal. Every script in the old scene
@@ -50,11 +51,39 @@ namespace Crucible
             get { return GetNameInternal() ?? string.Empty; }
         }
 
+        /// <summary>
+        /// Unity's DontDestroyOnLoad: keeps <paramref name="entity"/> and its children alive
+        /// through Scene.Load / Scene.Reload, scripts and all. Only works on a root entity
+        /// during Play. Lasts until it is destroyed or Play stops. Returns false (and logs why)
+        /// if it could not be marked.
+        /// </summary>
+        /// <remarks>
+        /// Reloading the scene the entity came from brings a second copy in with the scene.
+        /// Guard against that the usual way: a static Instance, and Destroy(Entity) in the
+        /// copy's OnCreate if one already exists.
+        /// </remarks>
+        public static bool DontDestroyOnLoad(Entity entity)
+        {
+            return entity != null
+                && DontDestroyOnLoadInternal((int)entity.Index, (int)entity.Generation) != 0;
+        }
+
+        /// <summary>Whether a scene change will keep this entity (it or a parent was marked).</summary>
+        public static bool IsDontDestroyOnLoad(Entity entity)
+        {
+            return entity != null
+                && IsDontDestroyOnLoadInternal((int)entity.Index, (int)entity.Generation) != 0;
+        }
+
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int LoadInternal(string path);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int ReloadInternal();
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern string GetNameInternal();
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int DontDestroyOnLoadInternal(int index, int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int IsDontDestroyOnLoadInternal(int index, int generation);
     }
 }

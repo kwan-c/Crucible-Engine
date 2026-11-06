@@ -80,6 +80,15 @@ namespace Crucible {
         // The menus and the Branch Options dialog. True if the graph changed.
         bool DrawMenus(BehaviorGraph& graph);
 
+    public:
+
+        // The node types as nested submenus ('/' in a category nests, as in Unity);
+        // nodes, or (conditions) the condition types. Returns the one picked, or null.
+        // Static so the State Graph panel's Add Condition menu can use it too.
+        static const NodeTypeInfo* DrawCategoryMenu(const std::string& prefix, bool conditions);
+
+    private:
+
         bool IsSelected(const BehaviorNode* node) const;
         void Select(BehaviorNode* node) { m_selection.assign(1, node); }
 
@@ -93,6 +102,11 @@ namespace Crucible {
         bool Paste(BehaviorGraph& graph, const Math::vec2& at);
         // Deletes every selected node. True if anything was deleted.
         bool DeleteSelection(BehaviorGraph& graph);
+
+        // A .cs dropped from the Asset Browser (its Assets path): `onto` becomes
+        // that script's node, or (null) a new one goes at `position`. True if
+        // the graph changed; m_status says why not otherwise.
+        bool DropScript(BehaviorGraph& graph, const std::string& script, BehaviorNode* onto, const Math::vec2& position);
 
         GraphCanvas                             m_canvas;
         std::vector<BehaviorTreeEdit::NodeInfo> m_nodes;            // this frame's nodes (reused)
@@ -117,6 +131,11 @@ namespace Crucible {
         NodeScriptDialog                        m_scriptDialog;
         std::string                             m_pendingType;
         Math::vec2                              m_pendingPosition{ 0.0f };
+
+        // Edit a Copy: the node to switch, and the copy's id, once it compiles.
+        // The pointer is only used after checking it's still in the graph.
+        BehaviorNode*                           m_pendingSwap = nullptr;
+        std::string                             m_pendingSwapType;
 
     };  // BEHAVIORTREEVIEW CLASS
 

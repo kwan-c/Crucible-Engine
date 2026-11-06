@@ -155,8 +155,37 @@ namespace Crucible {
 		 \brief  Core marks the play session here (Play to Stop) so saving
 				 can be refused while the world holds runtime state.
 		 *********************************************************************/
-		void SetPlaySessionActive(bool active) noexcept { m_playSession = active; }
+		void SetPlaySessionActive(bool active) noexcept
+		{
+			m_playSession = active;
+			if (!active) m_persistent.clear();   // persistence lasts one play session
+		}
 		bool IsPlaySessionActive() const noexcept { return m_playSession; }
+
+		// ===================================================================
+		//  DontDestroyOnLoad
+		// ===================================================================
+
+		/*********************************************************************
+		 \brief  Unity's DontDestroyOnLoad: keep a root entity, and
+				 everything below it, through runtime scene changes.
+		 \details
+			A Load or New during play then replaces every other entity and
+			leaves this one alive, with the same handle and its scripts
+			still running. It lasts until the entity is destroyed or the
+			play session ends; Stop still restores the scene as it was at
+			Play.
+		 \return false (with a warning) outside a play session, for a dead
+				 entity, or for one that has a parent - as in Unity, only
+				 a root can be marked.
+		 *********************************************************************/
+		bool DontDestroyOnLoad(Entity entity);
+
+		/*********************************************************************
+		 \brief  Whether a scene change would keep this entity: it, or one
+				 of its ancestors, was marked with DontDestroyOnLoad.
+		 *********************************************************************/
+		bool IsPersistent(Entity entity) const;
 
 
 		// ===================================================================
@@ -257,6 +286,8 @@ namespace Crucible {
 		void ApplyLoadAsset(std::uint64_t sceneAsset);
 		// Notifies every listener that the scene has changed. Called after ApplyNew or ApplyLoad.
 		void NotifyChanged();
+		// The live DontDestroyOnLoad roots a scene change keeps (none outside play).
+		std::vector<Entity> KeepRoots();
 
 		World&								 m_world;
 		Scene								 m_scene;
@@ -271,6 +302,7 @@ namespace Crucible {
 
 		std::vector<std::function<void()>>	 m_listeners;
 		std::vector<std::function<void()>>	 m_beforeSave;   // OnBeforeSave
+		std::vector<Entity>					 m_persistent;   // DontDestroyOnLoad roots; may hold dead handles
 	};
 
 #ifdef _MSC_VER

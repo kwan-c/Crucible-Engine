@@ -63,6 +63,18 @@ namespace Crucible {
 		void SaveEditedMaterials();   // writes Inspector-edited .mat files; called on every scene save
 		void DrawUnsavedChangesPopup();
 
+		// ---- Quitting with unsaved Animator changes ----
+		// Second prompt on Exit, after the scene's: Save / Don't Save / Cancel for the Animator's
+		// controller. The Menu draws it rather than the Animator panel, because the Animator's own
+		// prompt lives in its window and ImGui closes it whenever that window takes focus, which
+		// left the quit stuck. QuitNow is the only place that really closes the Editor.
+		void DrawAnimatorQuitPopup();
+		void QuitNow();
+
+		bool        m_openAnimatorQuitPopup = false;
+		std::string m_animatorQuitError;                                    // why the last Save failed, shown in the prompt
+		char        m_animatorSavePath[512] = "Animation/New Controller.animcontroller";   // for a controller that has no file yet
+
 		SceneManager& m_scenes;
 		AssetManager& m_assets;           // Core's shared index (core.GetAssets())
 

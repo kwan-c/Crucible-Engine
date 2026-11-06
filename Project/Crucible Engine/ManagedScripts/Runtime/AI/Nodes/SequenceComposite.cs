@@ -1,6 +1,10 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Sequence", "Executes branches in order until one fails or all succeed.", "Flow", "sequence")]
+    [NodeDescription(
+        name: "Sequence",
+        description: "Executes branches in order until one fails or all succeed.",
+        category: "Flow",
+        id: "sequence")]
     public sealed class SequenceComposite : Composite
     {
         private int current;   // the child running now

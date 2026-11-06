@@ -108,8 +108,54 @@ namespace Crucible::ScriptBindings
 		}
 	}
 
+	namespace
+	{
+		/*********************************************************************
+		 \brief  C# Scene.DontDestroyOnLoad(entity). 1 if marked; 0 for a
+		         dead entity, a child, or outside Play (SceneManager logs why).
+		 *********************************************************************/
+		int32_t ManagedSceneDontDestroyOnLoad(int32_t index, int32_t generation) noexcept
+		{
+			try
+			{
+				Entity entity;
+				SceneManager* scenes = EntityContext::GetScenes();
+				if (!scenes || !EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				return scenes->DontDestroyOnLoad(entity) ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Scene.IsDontDestroyOnLoad(entity).
+		 *********************************************************************/
+		int32_t ManagedSceneIsDontDestroyOnLoad(int32_t index, int32_t generation) noexcept
+		{
+			try
+			{
+				Entity entity;
+				SceneManager* scenes = EntityContext::GetScenes();
+				if (!scenes || !EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				return scenes->IsPersistent(entity) ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+	}
+
 	void RegisterSceneBindings()
 	{
+		mono_add_internal_call("Crucible.Scene::DontDestroyOnLoadInternal",
+		                       reinterpret_cast<const void*>(ManagedSceneDontDestroyOnLoad));
+		mono_add_internal_call("Crucible.Scene::IsDontDestroyOnLoadInternal",
+		                       reinterpret_cast<const void*>(ManagedSceneIsDontDestroyOnLoad));
 		mono_add_internal_call("Crucible.Scene::LoadInternal", reinterpret_cast<const void*>(ManagedSceneLoad));
 		mono_add_internal_call("Crucible.Scene::ReloadInternal", reinterpret_cast<const void*>(ManagedSceneReload));
 		mono_add_internal_call("Crucible.Scene::GetNameInternal", reinterpret_cast<const void*>(ManagedSceneGetName));

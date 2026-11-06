@@ -304,7 +304,7 @@
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 3.230177402496338,
+                        "y": 2.1365647315979004,
                         "z": -2.3366246223449707
                     },
                     "rotation": {
@@ -340,36 +340,8 @@
                     "enabled": true,
                     "assembly": "Managed/Crucible.Scripts.dll",
                     "namespace": "Crucible.Scripts",
-                    "class": "MeshRendererTest",
-                    "fields": [
-                        {
-                            "declaringType": "Crucible.Scripts.MeshRendererTest",
-                            "name": "altMaterial",
-                            "type": "Material",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 2114766385531944983
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.MeshRendererTest",
-                            "name": "altModel",
-                            "type": "Model",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 573453398223863809
-                        }
-                    ],
-                    "$enabled": false
+                    "class": "testdestroy",
+                    "fields": []
                 }
             }
         },
@@ -1331,9 +1303,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -10.211851119995117,
-                        "y": 2.187405586242676,
-                        "z": -0.8045258522033691
+                        "x": -7.228576183319092,
+                        "y": 1.2297487258911133,
+                        "z": -5.49963903427124
                     },
                     "rotation": {
                         "x": 0.0,
@@ -1378,10 +1350,17 @@
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
                     "layer": "NonMoving",
-                    "isTrigger": false
+                    "isTrigger": true
                 },
                 "EntityName": {
                     "name": "Cone"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "swtich",
+                    "fields": []
                 }
             }
         },

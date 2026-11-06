@@ -83,6 +83,7 @@
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 
 #include <Diagnostics/Logger.h>
 
@@ -672,6 +673,56 @@ namespace Crucible
 
 		for (Entity entity : alive) DestroyEntity(entity);
 		m_nextEntityNumber = 1;   // nothing left to collide with
+	}
+
+	void World::DestroyAllEntitiesExcept(const std::vector<Entity>& keepRoots)
+	{
+		RequireStructuralChange("DestroyAllEntitiesExcept");
+
+		// Every kept entity: the live roots plus their subtrees.
+		std::vector<Entity> kept;
+		for (Entity root : keepRoots)
+		{
+			if (!m_entities.IsAlive(root)) continue;
+			std::vector<Entity> subtree;
+			CollectSubtree(root, subtree);
+			kept.insert(kept.end(), subtree.begin(), subtree.end());
+		}
+		if (kept.empty())
+		{
+			DestroyAllEntities();
+			return;
+		}
+
+		// By slot index: among live entities, the index alone is unique.
+		std::unordered_set<std::uint32_t> keep;
+		keep.reserve(kept.size());
+		for (Entity entity : kept) keep.insert(entity.index);
+		const auto isKept = [&keep](Entity entity) { return keep.contains(entity.index); };
+
+		// A kept entity under a parent that goes would be destroyed with it.
+		for (Entity entity : kept)
+		{
+			const Entity parent = GetParent(entity);
+			if (parent.IsValid() && !isKept(parent)
+				&& TrySetParent(entity, kNullEntity, true) != ParentResult::Ok)
+			{
+				// A zero-scale parent has no world position to keep: keep the local one.
+				TrySetParent(entity, kNullEntity, false);
+			}
+		}
+
+		std::vector<Entity> doomed;
+		doomed.reserve(m_entities.AliveCount());
+		for (Archetype* archetype : m_archetypes.All())
+		{
+			for (Entity entity : archetype->Entities())
+				if (!isKept(entity)) doomed.push_back(entity);
+		}
+
+		// DestroyEntity takes the descendants too and is a no-op for one
+		// already gone, so the order does not matter.
+		for (Entity entity : doomed) DestroyEntity(entity);
 	}
 
 

@@ -1,6 +1,11 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Blackboard Bool", "Passes when a bool variable has the given value.", "Blackboard", "blackboard_bool")]
+    [NodeDescription(
+        name: "Blackboard Bool",
+        description: "Passes when a bool variable has the given value.",
+        story: "[Variable] is [Value]",
+        category: "Conditions/Blackboard",
+        id: "blackboard_bool")]
     public sealed class BlackboardBoolCondition : Condition
     {
         public string Variable = "";

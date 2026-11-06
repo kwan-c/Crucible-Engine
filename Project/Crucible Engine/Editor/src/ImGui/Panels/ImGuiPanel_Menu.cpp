@@ -327,9 +327,15 @@ void Crucible::Menu::Update(float) {
 		m_openProjectSettingsPopup = false;
 	}
 
+	if (m_openAnimatorQuitPopup) {
+		ImGui::OpenPopup("Unsaved Animator Controller");
+		m_openAnimatorQuitPopup = false;
+	}
+
 	DrawOpenScenePopup();
 	DrawSaveAsPopup();
 	DrawUnsavedChangesPopup();
+	DrawAnimatorQuitPopup();
 	DrawProjectSettingsPopup();
 
 	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
@@ -392,9 +398,11 @@ void Crucible::Menu::RunAction(GuardedAction action, const std::filesystem::path
 	case GuardedAction::New:  m_scenes.RequestNew();      break;
 	case GuardedAction::Open: m_scenes.RequestLoad(path); break;
 	case GuardedAction::Exit: {
-		auto finish = [this] { m_quitConfirmed = true; if (GLFWwindow* window = MainWindow()) glfwSetWindowShouldClose(window, GLFW_TRUE); };
+		// The scene is settled by now (saved, discarded, or never dirty). Unsaved Animator
+		// changes get their own prompt next; otherwise close straight away.
 		auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR);
-		if (!animator || animator->GuardExit(finish)) finish();
+		if (animator && animator->IsUnsaved()) { m_animatorQuitError.clear(); m_openAnimatorQuitPopup = true; }
+		else QuitNow();
 		break;
 	}
 	case GuardedAction::None: break;
@@ -511,6 +519,83 @@ void Crucible::Menu::DrawUnsavedChangesPopup()
 	if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
 	{
 		m_guardedAction = GuardedAction::None;
+		ImGui::CloseCurrentPopup();
+	}
+	ImGui::EndPopup();
+}
+
+// Sets GLFW's close flag for real. m_quitConfirmed first, so the check at the top of Update
+// doesn't catch this flag as a new close request and cancel it.
+void Crucible::Menu::QuitNow()
+{
+	m_quitConfirmed = true;
+	if (GLFWwindow* window = MainWindow())
+		glfwSetWindowShouldClose(window, GLFW_TRUE);
+}
+
+// The second quit prompt (see RunAction): only opened on Exit, after the scene's prompt.
+void Crucible::Menu::DrawAnimatorQuitPopup()
+{
+	ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+	if (!ImGui::BeginPopupModal("Unsaved Animator Controller", nullptr, ImGuiWindowFlags_AlwaysAutoResize))
+		return;
+
+	auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR);
+	Core* core = EditorManager::GetInstance().GetCore();
+
+	// Saved some other way meanwhile (or the panel is gone): nothing left to ask, just close.
+	if (!animator || !core || !animator->IsUnsaved())
+	{
+		ImGui::CloseCurrentPopup();
+		ImGui::EndPopup();
+		QuitNow();
+		return;
+	}
+
+	// Asset() is 0 for a controller that was never saved: it has no name and no file yet.
+	uint64_t const asset = animator->Asset();
+	std::string const name = asset ? core->GetResources().GetName(asset) : "New controller";
+	ImGui::Text("Animator controller '%s' has unsaved changes.", name.c_str());
+	ImGui::TextUnformatted("Save before closing?");
+
+	// No file yet: Save needs a path, so ask for it here (relative to Assets, like Save As).
+	if (!asset)
+	{
+		ImGui::SetNextItemWidth(420.0f);
+		ImGui::InputText("Path", m_animatorSavePath, sizeof(m_animatorSavePath));
+	}
+
+	// A failed save (e.g. the controller changed on disk) stays here with the reason, so the
+	// user can fix it, choose Don't Save, or Cancel - it never closes with the work lost.
+	if (!m_animatorQuitError.empty())
+		ImGui::TextColored(EditorTheme::GetPalette().warning, "%s", m_animatorQuitError.c_str());
+	ImGui::Separator();
+
+	if (ImGui::Button("Save", ImVec2(120.0f, 0.0f)))
+	{
+		// SaveAs for a new controller: plain Save() would open the Animator's own Save As instead.
+		bool const saved = asset ? animator->Save() : animator->SaveAs(m_animatorSavePath);
+		if (saved)
+		{
+			ImGui::CloseCurrentPopup();
+			QuitNow();
+		}
+		else
+		{
+			m_animatorQuitError = animator->LastError();
+		}
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Don't Save", ImVec2(120.0f, 0.0f)))
+	{
+		// Nothing to discard: the Editor is closing, so the edits simply aren't written.
+		ImGui::CloseCurrentPopup();
+		QuitNow();
+	}
+	ImGui::SameLine();
+	if (ImGui::Button("Cancel", ImVec2(120.0f, 0.0f)))
+	{
+		m_animatorQuitError.clear();
 		ImGui::CloseCurrentPopup();
 	}
 	ImGui::EndPopup();

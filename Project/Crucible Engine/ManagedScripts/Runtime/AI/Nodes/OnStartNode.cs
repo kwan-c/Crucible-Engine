@@ -1,6 +1,10 @@
 namespace Crucible.AI
 {
-    [NodeDescription("On Start", "The root of a behaviour graph. Runs its child; with Repeat, again and again.", "Events", "start")]
+    [NodeDescription(
+        name: "On Start",
+        description: "The root of a behaviour graph. Runs its child; with Repeat, again and again.",
+        category: "Events",
+        id: "start")]
     public sealed class OnStartNode : Modifier
     {
         public bool Repeat = true;

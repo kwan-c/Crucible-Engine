@@ -1,8 +1,7 @@
 #include "AssetPipe/AssetManager.h"
 #include "AssetPipe/GLTFLoader.h"
 #include "Resources/CompiledModel.h"
-#include "Resources/CompiledTexture.h"
-#include "TextureBuild.h"   // Tools/Common
+#include "ModelBuild.h"     // Tools/Common: the compile itself, shared with the editor's Asset Browser
 
 #include <algorithm>
 #include <filesystem>
@@ -11,9 +10,6 @@
 #include <stdexcept>
 #include <unordered_map>
 #include <unordered_set>
-#ifdef _WIN32
-#include <Windows.h>
-#endif
 
 namespace fs = std::filesystem;
 using namespace Crucible;
@@ -21,90 +17,14 @@ using namespace Crucible;
 namespace {
     void Check(bool ok,const std::string& error) { if (!ok) throw std::runtime_error(error); }
 
-    std::vector<unsigned char> Read(const fs::path& path) {
-        std::ifstream file(path,std::ios::binary|std::ios::ate);
-        Check(bool(file),"Cannot open "+path.string());
-        const auto size=file.tellg();
-        Check(size>=0 && uint64_t(size)<=MaxCompiledModelBytes,"File exceeds 1 GiB limit: "+path.string());
-        std::vector<unsigned char> bytes(static_cast<size_t>(size));
-        file.seekg(0);
-        Check(bool(file.read(reinterpret_cast<char*>(bytes.data()),static_cast<std::streamsize>(bytes.size()))),"Cannot read "+path.string());
-        return bytes;
-    }
-
-    void Replace(const fs::path& temporary,const fs::path& destination) {
-#ifdef _WIN32
-        Check(MoveFileExW(temporary.c_str(),destination.c_str(),MOVEFILE_REPLACE_EXISTING|MOVEFILE_WRITE_THROUGH)!=0,
-              "Cannot replace "+destination.string()+" (Windows error "+std::to_string(GetLastError())+")");
-#else
-        fs::rename(temporary,destination);
-#endif
-    }
-
-    void Write(const fs::path& path,const std::vector<unsigned char>& bytes,
-               const AssetEntry& source,const std::string& virtualPath) {
-        fs::create_directories(path.parent_path());
-        auto temporary=path.parent_path()/("."+path.filename().string()+".tmp");
-        auto meta=AssetRegistry::MetaPathFor(path);
-        auto temporaryMeta=path.parent_path()/("."+path.filename().string()+".meta.tmp");
-        try {
-            {
-                std::ofstream file(temporary,std::ios::binary|std::ios::trunc);
-                Check(bool(file.write(reinterpret_cast<const char*>(bytes.data()),static_cast<std::streamsize>(bytes.size()))),"Cannot write "+temporary.string());
-                file.close(); Check(!file.fail(),"Cannot flush "+temporary.string());
-            }
-            Check(Read(temporary)==bytes,"Compiled file read-back differs");
-            AssetMeta metadata; metadata.guid=source.guid;
-            metadata.contenthash=AssetRegistry::HashFileContents(temporary);
-            Check(AssetRegistry::WriteMeta(temporaryMeta,metadata,virtualPath),"Cannot write compiled metadata");
-            Replace(temporary,path);
-            Replace(temporaryMeta,meta);
-        } catch (...) {
-            std::error_code ignored; fs::remove(temporary,ignored); fs::remove(temporaryMeta,ignored);
-            throw;
-        }
-    }
+    using ModelBuild::ReadFile;
 
     void Summary(const std::string& name,const ModelResource& m) {
-        size_t primitives=0,vertices=0,indices=0;
-        for (const auto& mesh:m.meshes) for (const auto& p:mesh.primitives) {
-            ++primitives; vertices+=p.vertices.size(); indices+=p.indices.size();
-        }
-        std::cout<<name<<": nodes="<<m.nodes.size()<<" meshes="<<m.meshes.size()
-                 <<" primitives="<<primitives<<" vertices="<<vertices<<" indices="<<indices
-                 <<" materials="<<m.materials.size()<<" skins="<<m.skins.size()<<" clips="<<m.animations.size()<<'\n';
+        std::cout<<name<<": "<<ModelBuild::Summary(m)<<'\n';
         for (size_t i=0;i<m.animations.size();++i)
             std::cout<<"  clip["<<i<<"] "<<m.animations[i].name<<" duration="<<m.animations[i].duration
                      <<" channels="<<m.animations[i].channels.size()<<'\n';
         for (const auto& warning:m.warnings) std::cout<<"  warning: "<<warning<<'\n';
-    }
-
-    // Each image becomes a GPU-compressed texture (Tools/Common/TextureBuild, packed with Billet),
-    // so the engine uploads it as it is - no image decoding (stb) at runtime. Images a material
-    // uses for colour (base colour, emissive) get sRGB mipmaps (BC7); normal maps BC5 with
-    // direction-averaged mipmaps (the shader rebuilds z); other data (metallic-roughness,
-    // occlusion) BC7, averaged as stored.
-    void CompileImages(ModelResource& m,uint64_t guid) {
-        std::vector<bool> colour(m.images.size(),false), normal(m.images.size(),false);
-        auto mark=[&](const ModelTextureInfo& s,std::vector<bool>& as) {
-            if (s.texture<m.textures.size() && m.textures[s.texture].image<m.images.size()) as[m.textures[s.texture].image]=true;
-        };
-        for (const auto& material:m.materials) {
-            mark(material.baseColor,colour); mark(material.emissive,colour); mark(material.normal,normal);
-        }
-        for (size_t i=0;i<m.images.size();++i) {
-            auto& image=m.images[i];
-            TextureBuild::Options options; options.srgb=colour[i];
-            if (normal[i] && !colour[i]) { options.format=CompiledTextureFormat::BC5; options.normalMap=true; }
-            CompiledTexture texture=TextureBuild::Build(TextureBuild::DecodeImage(image.bytes),options);
-            texture.assetGuid=guid;
-            auto bytes=EncodeCompiledTexture(texture);
-            CompiledTexture check; std::string error;
-            const bool decoded=DecodeCompiledTexture(bytes,guid,check,error);   // before the message reads `error`
-            Check(decoded && check.data==texture.data,"Embedded texture round trip failed: "+error);
-            image.bytes=std::move(bytes);
-            image.mimeType=CompiledTextureMimeType;
-        }
     }
 
     // compiledOnly: in Resources a compiled file shares its GUID with the source copy Cook may
@@ -145,29 +65,15 @@ namespace {
                     Check(AssetRegistry::ReadMeta(AssetRegistry::MetaPathFor(target),meta) && meta.guid==source->guid,
                           "Refusing to overwrite a compiled asset with a different GUID: "+target.string());
                 }
-                const auto sourceBytes=Read(source->absolutePath);
-                // Source fingerprints must be byte-exact: the registry's text-
-                // tolerant hash deliberately folds CRLF, even in binary files.
-                uint64_t sourceHash=1469598103934665603ull;
-                for (auto byte:sourceBytes) { sourceHash^=byte; sourceHash*=1099511628211ull; }
-                for (int i=0;i<8;++i) { sourceHash^=uint8_t(TextureBuild::Version>>(8*i)); sourceHash*=1099511628211ull; }   // texture output changed: rebuild
-                CompiledModelInfo info{CompiledModelVersion,source->guid.m_Value,sourceHash};
-                if (!verify && fs::exists(target)) {
-                    CompiledModelInfo cached;
-                    auto decoded=DecodeCompiledModel(Read(target),info.assetGuid,&cached);
-                    if (decoded.ok && cached.sourceHash==info.sourceHash) { ++unchanged; continue; }
-                }
-                auto imported=GLTFLoader::LoadModelGLB(sourceBytes);
-                Check(imported.ok,source->virtualPath+": "+imported.error);
-                CompileImages(imported.model,source->guid.m_Value);
-                auto compiled=EncodeCompiledModel(imported.model,info);
-                auto decoded=DecodeCompiledModel(compiled,info.assetGuid);
-                Check(decoded.ok,"Compiled round trip failed: "+decoded.error);
-                Check(EncodeCompiledModel(decoded.model,info)==compiled,"Compiled round trip changed model fields");
+                const auto sourceBytes=ReadFile(source->absolutePath);
+                const uint64_t guid=source->guid.m_Value;
+                const uint64_t sourceHash=ModelBuild::SourceHash(sourceBytes);
+                if (!verify && ModelBuild::IsUpToDate(target,guid,sourceHash)) { ++unchanged; continue; }
+                auto compiled=ModelBuild::Compile(sourceBytes,guid,sourceHash);
                 if (verify) {
-                    Check(fs::exists(target) && Read(target)==compiled,"Compiled resource is missing/stale/different; rebuild assets first: "+target.string());
-                } else Write(target,compiled,*source,relative.generic_string());
-                Summary((verify?"Verified ":"Compiled ")+relative.generic_string(),decoded.model);
+                    Check(fs::exists(target) && ReadFile(target)==compiled.bytes,"Compiled resource is missing/stale/different; rebuild assets first: "+target.string());
+                } else ModelBuild::Write(target,compiled.bytes,guid,relative.generic_string());
+                Summary((verify?"Verified ":"Compiled ")+relative.generic_string(),compiled.model);
                 ++built;
             } catch (const std::exception& e) { std::cerr<<"[ModelCompiler] "<<source->virtualPath<<": "<<e.what()<<'\n'; ++failed; }
         }
@@ -182,7 +88,7 @@ int main(int argc,char** argv) {
             return CompileTree(argv[2],argv[3],std::string(argv[1])=="--verify-tree");
         if (argc==3 && std::string(argv[1])=="--inspect") {
             CompiledModelInfo info;
-            auto decoded=DecodeCompiledModel(Read(argv[2]),0,&info);
+            auto decoded=DecodeCompiledModel(ReadFile(argv[2]),0,&info);
             Check(decoded.ok,decoded.error);
             std::cout<<"Crucible model v"<<info.version<<" GUID="<<AssetRegistry::GuidToString(xresource::instance_guid{info.assetGuid})<<'\n';
             Summary(argv[2],decoded.model); return 0;

@@ -3,7 +3,12 @@ using Crucible.AI;
 
 namespace Crucible.Scripts
 {
-    [NodeDescription("{{NAME}}", "{{DESCRIPTION}}", "{{CATEGORY}}", "{{ID}}")]
+    [NodeDescription(
+        name: "{{NAME}}",
+        description: "{{DESCRIPTION}}",
+        story: "{{STORY}}",
+        category: "{{CATEGORY}}",
+        id: "{{ID}}")]
     public sealed class {{CLASS}} : Condition
     {
         // Public fields show on the arrow, like a node's. For example:

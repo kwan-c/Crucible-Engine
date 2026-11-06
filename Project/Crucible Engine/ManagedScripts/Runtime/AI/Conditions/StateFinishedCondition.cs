@@ -8,7 +8,12 @@ namespace Crucible.AI
         Failure
     }
 
-    [NodeDescription("State Finished", "Passes once the state's behaviour has finished (with Success, Failure, or either).", "State", "state_finished")]
+    [NodeDescription(
+        name: "State Finished",
+        description: "Passes once the state's behaviour has finished (with Success, Failure, or either).",
+        story: "The state finished with [With]",
+        category: "Conditions/State",
+        id: "state_finished")]
     public sealed class StateFinishedCondition : Condition
     {
         public FinishedWith With = FinishedWith.Either;

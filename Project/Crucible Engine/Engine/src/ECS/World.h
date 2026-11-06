@@ -518,6 +518,24 @@ namespace Crucible
 		void DestroyAllEntities();
 
 		/*********************************************************************
+		 \brief
+			DestroyAllEntities, except for the given roots and everything
+			below them (Unity's DontDestroyOnLoad on a scene change).
+
+		 \param[in] keepRoots Entities to keep, with all their descendants.
+							  Dead or stale handles are ignored.
+		 \details
+			A kept entity whose parent is not kept is detached to a root
+			first (keeping its world position), or it would be destroyed
+			with that parent. Kept entities keep their handles, so nothing
+			holding one has to look it up again. With nothing to keep this
+			is exactly DestroyAllEntities. Otherwise the default-name counter
+			is left as it is, since the kept names are still in use.
+		 \note   Same rules as DestroyAllEntities.
+		 *********************************************************************/
+		void DestroyAllEntitiesExcept(const std::vector<Entity>& keepRoots);
+
+		/*********************************************************************
 		 \brief  Whether an entity handle is still alive.
 		 \param[in] e The handle to check.
 		 \return true if e refers to a currently-alive entity.

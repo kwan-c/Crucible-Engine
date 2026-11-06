@@ -48,13 +48,16 @@ namespace Crucible {
         const bool stopped = restart && state == PlayState::Edit;
         m_sessionRevision = m_playMode.SessionRevision();
         m_query->ForEach([&](Entity entity, const MeshRenderer& renderer, AnimatedModel& animation) {
-            const bool changedAsset = !animation.initialized || animation.evaluatedAsset != renderer.modelAsset;
+            const auto model = renderer.modelAsset ? m_resources.GetModel(renderer.modelAsset) : nullptr;
+            // Same id, new definition: its file was hot reloaded, and the controller still points at the old one.
+            const bool changedAsset = !animation.initialized || animation.evaluatedAsset != renderer.modelAsset
+                || animation.evaluatedModel != model;
             const bool changedClip = animation.evaluatedClip != animation.clip;
             const bool changedController = animation.evaluatedController != animation.controllerAsset;
-            const auto model = renderer.modelAsset ? m_resources.GetModel(renderer.modelAsset) : nullptr;
             if (changedAsset || changedController || restart) animation.playing = animation.playOnStart;
             animation.initialized = true;
             animation.evaluatedAsset = renderer.modelAsset;
+            animation.evaluatedModel = model;
             animation.evaluatedClip = animation.clip;
             animation.evaluatedController = animation.controllerAsset;
             if (changedAsset || changedController || restart) {

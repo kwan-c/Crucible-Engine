@@ -1,6 +1,11 @@
 namespace Crucible.AI
 {
-    [NodeDescription("Wait", "Waits for a number of seconds, then succeeds.", "Actions", "wait")]
+    [NodeDescription(
+        name: "Wait",
+        description: "Waits for a number of seconds, then succeeds.",
+        story: "Wait [Seconds] seconds",
+        category: "Action/Delay",
+        id: "wait")]
     public sealed class WaitAction : Action
     {
         public BlackboardVariable<float> Seconds = new BlackboardVariable<float>(1f);

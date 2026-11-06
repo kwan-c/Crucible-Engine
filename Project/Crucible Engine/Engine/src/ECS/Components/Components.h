@@ -158,6 +158,7 @@ namespace Crucible
 		bool playing = true;
 		bool initialized = false, poseValid = false, poseFailed = false;
 		std::uint64_t evaluatedAsset = 0;
+		std::shared_ptr<const ModelResource> evaluatedModel; // pins it; a new pointer = the file was hot reloaded
 		std::uint32_t evaluatedClip = InvalidModelIndex;
 		ModelPose pose;
 		std::uint64_t evaluatedController = 0;

@@ -11,7 +11,12 @@ namespace Crucible.AI
     /// chosen graph's tree and hands it over as a hidden child - minus its On Start, which
     /// would repeat forever and never let this node finish.
     /// </remarks>
-    [NodeDescription("Run Subgraph", "Runs another behaviour graph (.behaviorgraph) here and finishes when it does.", "Flow", "run_subgraph")]
+    [NodeDescription(
+        name: "Run Subgraph",
+        description: "Runs another behaviour graph (.behaviorgraph) here and finishes when it does.",
+        story: "Run [Graph]",
+        category: "Flow",
+        id: "run_subgraph")]
     public sealed class RunSubgraphNode : Action
     {
         public BehaviorGraphAsset Graph = new BehaviorGraphAsset();

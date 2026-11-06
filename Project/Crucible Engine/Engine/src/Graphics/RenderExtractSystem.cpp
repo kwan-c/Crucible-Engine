@@ -47,11 +47,14 @@ namespace Crucible {
     void RenderExtractSystem::ExtractModel(Entity entity, const WorldTransform& transform,
                                            const MeshRenderer& renderer, const AnimatedModel* animation,
                                            ProxyRecord& record) {
-        if (record.modelAsset != renderer.modelAsset || record.modelRoot != renderer.modelRoot) {
+        // Compared by pointer as well as id: the same asset gets a new RenderedModel when its file
+        // is hot reloaded, or when a model that was not compiled yet finally loads.
+        const auto current = m_resources ? m_resources->GetRenderedModel(renderer.modelAsset) : nullptr;
+        if (record.modelAsset != renderer.modelAsset || record.modelRoot != renderer.modelRoot || record.model != current) {
             ReleaseDraws(record);
             record.modelAsset = renderer.modelAsset;
             record.modelRoot = renderer.modelRoot;
-            record.model = m_resources ? m_resources->GetRenderedModel(renderer.modelAsset) : nullptr;
+            record.model = current;
             if (record.model) {
                 const auto& model = *record.model->definition;
                 record.restPoseValid = EvaluateModelPose(model, InvalidModelIndex, 0, record.restPose);
@@ -75,7 +78,11 @@ namespace Crucible {
         if (!record.model) return;
         const auto& pose = animation ? animation->pose : record.restPose;
         glm::mat4 rootInverse;
-        const bool validPose = (animation ? animation->poseValid && animation->evaluatedAsset == renderer.modelAsset : record.restPoseValid)
+        // A pose evaluated before a hot reload has the old model's node count.
+        const bool poseFits = pose.global.size() == record.model->definition->nodes.size()
+            && pose.palettes.size() == record.model->definition->nodes.size();
+        const bool validPose = poseFits
+            && (animation ? animation->poseValid && animation->evaluatedAsset == renderer.modelAsset : record.restPoseValid)
             && ModelRootInverse(pose, renderer.modelRoot, rootInverse);
         if (!validPose) {
             for (const auto& part : record.parts) m_renderer.SetRenderProxy(part.proxy, {}, {}, glm::mat4(1), false);

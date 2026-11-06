@@ -20,12 +20,21 @@
 * The full name is in the tooltip and the footer.
 *
 * Interaction:
-*	click          select
+*	click          select. Ctrl+click adds or removes a file, Shift+click selects the files between
+*	               the last clicked and this one; dragging one of them onto a folder moves them all
 *	double-click   folder: open it.  .scene: open the scene (same guard as File > Open).
 *	               C# script (.cs): open that file in VS Code.  Anything else: logged.
-*	drag           starts a drag-drop with EditorWidgets::kAssetPayload (virtual path)
+*	drag           starts a drag-drop with EditorWidgets::kAssetPayload (virtual path). Dropped on
+*	               a folder tile, the Back tile or the folder tree, the file moves there with its
+*	               .meta (so its guid), but only within its type's folder (Assets/Textures/...)
 *	drop entity    a Hierarchy entity dropped on the grid is saved as a .cprefab in the folder
 *	               being viewed; dropped on a folder tile, in that folder (Prefabs/PrefabAuthoring.h)
+*	drop files     files dropped on this panel from File Explorer are copied to their type's folder,
+*	               or to the folder being viewed when it is inside that one. Folders and unsupported
+*	               files are refused in a popup; a name already taken asks Replace / Keep Both / Skip
+*	Back tile      first tile inside a subfolder: double-click goes up one folder. It is not an
+*	               item, so it cannot be selected, renamed or deleted
+*	               (the file handling is in ImGuiPanel_AssetBrowser_Import.cpp)
 *	right-click    context menu (Rename, Delete, Show in Explorer, Copy Path, Copy GUID, New Folder,
 *	               Create Scene - inside Scenes/ only - Create C# Script - inside Scripts/ only -
 *	               and Refresh)
@@ -45,9 +54,15 @@
 #include "AssetPipe/Assetmanager.h"
 #include "ECS/Core/ECSCore.h"   // Entity (Create Prefab drops)
 
+#include <chrono>
 #include <cstdint>
+#include <deque>
+#include <filesystem>
+#include <future>
 #include <optional>
 #include <string>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -63,6 +78,7 @@ namespace Crucible {
 		// previews do nothing.
 		AssetBrowser(AssetManager& assets, SceneManager& scenes, ECSAudioSystem* audio = nullptr)
 			: m_assets(assets), m_scenes(scenes), m_audio(audio) {}
+		~AssetBrowser();
 
 		// REQUIRED Overrides
 		void Init() override;
@@ -104,6 +120,7 @@ namespace Crucible {
 		void DrawFolderTree(FolderNode const& node);
 		void DrawGrid();
 		void DrawTile(Item const& item);
+		void DrawBackTile();   // not in m_items: the first slot inside a subfolder
 		void DrawItemContextMenu(Item const& item);
 		void DrawFooter();
 
@@ -142,6 +159,9 @@ namespace Crucible {
 		void DrawRenameField(ImVec2 labelPos, float width);
 		void ApplyPendingRename();
 		bool RenameOnDisk(std::string const& from, std::string const& newName, std::string& outVirtualPath);
+		// Rename and drag-to-move both end here: the file or folder, its .meta, its companion
+		// files, its compiled copy in Resources, and the open scene's path if it is affected.
+		bool MoveOnDisk(std::string const& from, std::string const& to, std::string& error);
 
 		// ---- Delete (Del / right-click; any file or folder) ----
 		// Asks first in a modal. The delete itself happens after the frame's drawing
@@ -163,7 +183,88 @@ namespace Crucible {
 		void AcceptEntityDrop(std::string const& folder);
 		void ApplyPendingPrefab();
 
-		AssetManager&   m_assets;               // Core's shared index (core.GetAssets())
+		// ---- Files dropped from File Explorer (ImGuiPanel_AssetBrowser_Import.cpp) ----
+		struct ImportProblem { std::string file; std::string reason; };
+		struct ImportJob {
+			std::filesystem::path source;        // a file outside Assets; empty for a move
+			std::string           moveFrom;      // a file inside Assets; empty for an import
+			std::string           destination;   // virtual path
+			bool                  replace = false;
+		};
+		struct Conflict {
+			std::filesystem::path    source;
+			std::string              moveFrom;
+			std::string              destination;
+			std::vector<std::string> usedBy;     // moves only: an import keeps the file's guid
+		};
+		enum class ConflictChoice { Replace, KeepBoth, Skip };
+
+		void InstallDropCallback();
+		void ProcessDroppedFiles();
+		void PlanImport(std::vector<std::filesystem::path> const& paths, bool jumpToFolder);
+		std::string ImportFolderFor(std::string const& extension) const;
+		std::string UniqueDestination(std::string const& destination) const;
+		void ResolveConflict(Conflict conflict, ConflictChoice choice);
+		void DrawConflictModal();
+		void DrawImportProblemsModal();
+		void FinishImport();
+		void ForgetCompiledCopy(std::string const& virtualPath);
+
+		bool                               m_dropCallbackInstalled = false;
+		std::vector<std::filesystem::path> m_droppedPaths;   // from the GLFW callback, until the next Update
+		ImVec2                             m_dropPosition{};
+		std::vector<ImportJob>             m_importJobs;     // decided; carried out by FinishImport
+		std::deque<Conflict>               m_conflicts;      // waiting for an answer in the popup
+		std::vector<ImportProblem>         m_importProblems;
+		std::unordered_set<std::string>    m_importPlanned;  // lowercase destinations already taken by this drop
+		bool                               m_conflictApplyToAll = false;
+		bool                               m_finishImport = false;
+
+		// ---- Dragging an asset into another folder ----
+		std::string MoveRefusal(std::string const& from, std::string const& folder) const;   // "" = allowed
+		void AcceptAssetMove(std::string const& folder);   // lets the item just drawn take a dragged asset
+		void ApplyPendingMove();
+		std::vector<std::string> FilesToMove(std::string const& dragged) const;   // the whole selection if `dragged` is part of it
+		std::optional<std::pair<std::vector<std::string>, std::string>> m_pendingMove;   // { files, folder }
+
+		// ---- Selecting several files (Ctrl / Shift + click) ----
+		// m_selected stays the file last clicked, which everything else reads. m_selection only
+		// counts while it contains m_selected, so setting m_selected to any other file ends it.
+		bool IsMultiSelect() const;
+		bool IsSelected(std::string const& virtualPath) const;
+		void ToggleInSelection(std::string const& virtualPath);
+		void SelectRangeTo(std::string const& virtualPath);
+		std::vector<std::string> m_selection;
+		std::string              m_selectionAnchor;   // where the next Shift+click range starts
+
+		// ---- A .glb in Assets gets its .cmodel without a rebuild, one at a time on a worker ----
+		struct ModelJob {
+			std::uint64_t         guid = 0;
+			std::uint64_t         contentHash = 0;
+			std::filesystem::path source;
+			std::filesystem::path target;
+			std::string           virtualPath;
+			std::string           compiledPath;
+		};
+		struct ModelCompileResult {
+			bool        ok = false;
+			bool        unchanged = false;
+			std::string error;
+			std::string summary;
+			double      seconds = 0.0;
+		};
+		void QueueModelCompiles();    // after every refresh: anything new, changed or never compiled
+		void UpdateModelCompiles();   // every frame: collects a finished job and starts the next
+
+		std::deque<ModelJob>                       m_modelQueue;
+		ModelJob                                   m_runningModel;
+		std::uint64_t                              m_runningModelGuid = 0;
+		std::future<ModelCompileResult>            m_modelJob;
+		std::unordered_map<std::uint64_t, std::uint64_t> m_modelFailures;   // guid -> hash of the file that failed
+		std::unordered_map<std::uint64_t, std::uint64_t> m_modelCompiled;   // guid -> hash of the file last compiled
+		bool                                       m_modelRefreshPending = false;
+
+		AssetManager&   m_assets;              // Core's shared index (core.GetAssets())
 		SceneManager&   m_scenes;               // to open scenes, and to follow a rename of the open one
 		bool            m_ready = false;
 		bool            m_appWasFocused = true;   // the editor window had the focus last frame (refresh when it comes back)
