@@ -1,0 +1,184 @@
+{
+  "version": 3,
+  "name": "Zoo Small Enemy",
+  "entities": [
+    {
+      "id": "5A454E4D00010003",
+      "parent": -1,
+      "components": {
+        "Transform": {
+          "positions": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+          },
+          "scale": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          }
+        },
+        "RigidBody": {
+          "velocity": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "mass": 1.0,
+          "useGravity": false,
+          "drag": 0.0,
+          "angularDrag": 0.05,
+          "isKinematic": true,
+          "constraints": {
+            "freezePositionX": false,
+            "freezePositionY": false,
+            "freezePositionZ": false,
+            "freezeRotationX": false,
+            "freezeRotationY": false,
+            "freezeRotationZ": false
+          }
+        },
+        "Collider": {
+          "type": "Capsule",
+          "size": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          },
+          "radius": 0.6,
+          "height": 2.0,
+          "center": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0
+          },
+          "friction": 0.2,
+          "bounciness": 0.0,
+          "layer": "Moving",
+          "isTrigger": false
+        },
+        "FlowFieldAgent": {
+          "speed": 4.5,
+          "acceleration": 20.0,
+          "angularSpeed": 360.0,
+          "baseOffset": 0.0,
+          "startWith": "Nothing",
+          "stoppingDistance": 2.2,
+          "slowingDistance": 5.0,
+          "neighbourRadius": 6.0,
+          "separationRadius": 1.8,
+          "separationWeight": 1.5,
+          "alignmentWeight": 0.4,
+          "radius": 0.6,
+          "avoidanceDistance": 3.0,
+          "avoidanceWeight": 2.2
+        },
+        "ScriptComponent": {
+          "enabled": true,
+          "assembly": "Managed/Crucible.Scripts.dll",
+          "namespace": "Crucible.Scripts",
+          "class": "ZooEnemy",
+          "fields": [
+            {
+              "declaringType": "Crucible.Scripts.ZooEnemy",
+              "name": "maximumHealth",
+              "type": "Single",
+              "boolean": false,
+              "integer": 0,
+              "single": 100.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.ZooEnemy",
+              "name": "fast",
+              "type": "Boolean",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.ZooEnemy",
+              "name": "attackDamage",
+              "type": "Single",
+              "boolean": false,
+              "integer": 0,
+              "single": 10.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            }
+          ]
+        },
+        "EntityName": {
+          "name": "Zoo Small Enemy"
+        }
+      }
+    },
+    {
+      "id": "5A454E4D00010005",
+      "parent": 0,
+      "components": {
+        "Transform": {
+          "positions": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0,
+            "w": 6.123233995736766E-17
+          },
+          "scale": {
+            "x": 0.8,
+            "y": 0.8,
+            "z": 0.8
+          }
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "modelAsset": 8250815376162455559,
+          "modelRoot": 4294967295,
+          "materialOverrides": [],
+          "colour": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+          },
+          "meshAsset": 0,
+          "materialAsset": 0
+        },
+        "AnimatedModel": {
+          "controllerAsset": 12182777730310598097,
+          "clip": 8,
+          "speed": 1.0,
+          "loop": true,
+          "previewInEditor": false,
+          "playOnStart": true
+        },
+        "EntityName": {
+          "name": "Visual"
+        }
+      }
+    }
+  ]
+}
