@@ -227,7 +227,7 @@
                     },
                     "position": {
                         "x": 0.0,
-                        "y": -137.0
+                        "y": -159.0
                     },
                     "size": {
                         "x": 1044.0,
@@ -1157,170 +1157,6 @@
             }
         },
         {
-            "id": "2173B8DE5F50800B",
-            "parent": "4B3648DD3BE5400B",
-            "siblingIndex": 6,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "OptionsMenuButton"
-                },
-                "UIRect": {
-                    "anchorMin": {
-                        "x": 0.0,
-                        "y": 0.0
-                    },
-                    "anchorMax": {
-                        "x": 0.0,
-                        "y": 0.0
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "position": {
-                        "x": 55.0,
-                        "y": 55.0
-                    },
-                    "size": {
-                        "x": 100.0,
-                        "y": 100.0
-                    },
-                    "rotation": 0.0,
-                    "raycastTarget": true
-                },
-                "UIImage": {
-                    "colour": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "textureAsset": 0
-                },
-                "UIButton": {
-                    "onClick": "Custom",
-                    "sceneAsset": 0,
-                    "actionId": "OpenOptions",
-                    "normal": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0,
-                        "w": 1.0
-                    },
-                    "hovered": {
-                        "x": 0.8999999761581421,
-                        "y": 0.8999999761581421,
-                        "z": 0.8999999761581421,
-                        "w": 1.0
-                    },
-                    "pressed": {
-                        "x": 0.699999988079071,
-                        "y": 0.699999988079071,
-                        "z": 0.699999988079071,
-                        "w": 1.0
-                    },
-                    "disabled": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "interactable": true
-                },
-                "UIText": {
-                    "text": "OPT",
-                    "colour": {
-                        "x": 0.15555554628372192,
-                        "y": 0.06987325102090836,
-                        "z": 0.056691352277994156,
-                        "w": 1.0
-                    },
-                    "fontAsset": 0,
-                    "fontSize": 47.29999923706055,
-                    "horizontalAlign": "Center",
-                    "verticalAlign": "Middle",
-                    "wrap": true,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": true,
-                    "bold": false,
-                    "underline": false,
-                    "bestFit": false,
-                    "minFontSize": 10.0,
-                    "maxFontSize": 40.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 2.0,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 3.0,
-                    "glowSoftness": 0.5,
-                    "shadow": false,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 2.0,
-                        "y": 2.0
-                    },
-                    "shadowSoftness": 0.0
-                },
-                "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "OptionsMenuController",
-                    "fields": [
-                        {
-                            "declaringType": "Crucible.Scripts.OptionsMenuController",
-                            "name": "optionsCanvasEntity",
-                            "type": "Entity",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 7022159509222096899,
-                            "assetId": 0
-                        }
-                    ]
-                }
-            }
-        },
-        {
             "id": "2173B8DE620D400F",
             "parent": "D173B8DE5F508007",
             "siblingIndex": 7,
@@ -1578,9 +1414,9 @@
                     }
                 },
                 "AudioSource": {
-                    "clip": 7938923459535290371,
+                    "clip": 133824715814617129,
                     "loadType": "DecompressOnLoad",
-                    "output": "Master",
+                    "output": "Music",
                     "playOnAwake": true,
                     "loop": true,
                     "volume": 1.0,
@@ -2114,6 +1950,170 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                }
+            }
+        },
+        {
+            "id": "39DB70DEB6AA801F",
+            "parent": "4B3648DD3BE5400B",
+            "siblingIndex": 6,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Options Button"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 131.11346435546875,
+                        "y": 290.0
+                    },
+                    "size": {
+                        "x": 200.0,
+                        "y": 100.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.7019608020782471,
+                        "z": 0.40392157435417175,
+                        "w": 1.0
+                    },
+                    "textureAsset": 0
+                },
+                "UIButton": {
+                    "onClick": "Custom",
+                    "sceneAsset": 0,
+                    "actionId": "OpenOptions",
+                    "normal": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.8999999761581421,
+                        "y": 0.8999999761581421,
+                        "z": 0.8999999761581421,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
+                },
+                "UIText": {
+                    "text": "Options",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 40.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "OptionsMenuController",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.OptionsMenuController",
+                            "name": "optionsCanvasEntity",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 7022159509222096899,
+                            "assetId": 0
+                        }
+                    ]
                 }
             }
         },
@@ -3757,7 +3757,7 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 300.0,
+                        "x": 432.9865417480469,
                         "y": 290.0
                     },
                     "size": {
@@ -4713,6 +4713,79 @@
             }
         },
         {
+            "id": "99DB70DEB9A00033",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "AudioSource": {
+                    "clip": 0,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": true,
+                    "loop": false,
+                    "volume": 0.1550000011920929,
+                    "pitch": 1.0,
+                    "spatialBlend": 0.0,
+                    "minDistance": 1.0,
+                    "maxDistance": 500.0,
+                    "rolloffMode": "Logarithmic"
+                },
+                "EntityName": {
+                    "name": "SFX"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "UISounds",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.UISounds",
+                            "name": "buttonHover",
+                            "type": "AudioClip",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5898432238870773805
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.UISounds",
+                            "name": "buttonClick",
+                            "type": "AudioClip",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 9933657504994738225
+                        }
+                    ]
+                }
+            }
+        },
+        {
             "id": "A973B8DE620D4017",
             "parent": "D173B8DE5F508007",
             "siblingIndex": 4,
@@ -4989,7 +5062,7 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": -300.0,
+                        "x": -462.955322265625,
                         "y": 290.0
                     },
                     "size": {
@@ -6060,7 +6133,7 @@
                         "y": 0.5
                     },
                     "position": {
-                        "x": 0.0,
+                        "x": -164.82838439941406,
                         "y": 290.0
                     },
                     "size": {

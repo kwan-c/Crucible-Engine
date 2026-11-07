@@ -631,6 +631,20 @@ namespace Crucible {
         s.previewPath.clear();
     }
 
+    bool ECSAudioSystem::ReleaseFiles(const std::string& virtualPath) {
+
+        State& s = *m_state;
+        if (virtualPath.empty()) return false;
+
+        const bool previewHit = s.previewClip.IsValid() &&
+            (s.previewPath == virtualPath || s.previewPath.rfind(virtualPath + "/", 0) == 0);
+        if (previewHit) UnloadPreview();
+
+        s.resources.ReleaseAudioFiles(virtualPath);
+        return previewHit;
+
+    }   // ECSAudioSystem::ReleaseFiles()
+
     bool  ECSAudioSystem::IsPreviewPlaying() const { return m_state->audio.IsPlaying(m_state->previewVoice); }
     float ECSAudioSystem::GetPreviewLength() const { return m_state->audio.GetClipLength(m_state->previewClip); }
 

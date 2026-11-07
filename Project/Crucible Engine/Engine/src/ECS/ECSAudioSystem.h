@@ -131,6 +131,14 @@ namespace Crucible {
         ENGINE_API bool  IsPreviewPlaying() const;
         ENGINE_API float GetPreviewLength() const;                       // seconds, 0 if nothing is loaded
 
+        // Closes every audio file the engine has open at virtualPath (a file, or
+        // every file under a folder): the preview and any cached clips. Windows
+        // will not rename or delete an open file, and a streamed clip - the
+        // preview always is one - keeps its file open while loaded. The editor
+        // calls this before renaming, moving or deleting. Returns true if the
+        // preview was one of them (so the caller can load it again).
+        ENGINE_API bool  ReleaseFiles(const std::string& virtualPath);
+
     private:
 
         struct State;                               // everything else, in the .cpp
