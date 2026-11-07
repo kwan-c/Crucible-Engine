@@ -9,6 +9,7 @@ add_executable(CrucibleModelCompiler
     ../../Engine/src/Resources/CompiledTexture.cpp
     ../../Engine/src/Compression/Billet.cpp
     ../Common/TextureBuild.cpp
+    ../Common/ModelBuild.cpp
     ../../Engine/src/Systems/ExecutablePath.cpp
     ../../Engine/src/AssetPipe/AssetPaths.cpp
     ../../Engine/src/Diagnostics/FatalError.cpp

@@ -28,6 +28,17 @@
 #include "UI/UISystem.h"
 #include "Scripting/ScriptRuntime.h"
 #include "Scripting/EntityScriptSystem.h"
+#include "Network/GamePrefabs.h"
+#include "Network/GnsTransport.h"
+#include "Network/NetContent.h"
+#include "Network/NetIdentityHooks.h"
+#include "Network/NetworkSession.h"
+#include "Network/NetworkSettings.h"
+#include "Network/Systems/NetReceiveSystem.h"
+#include "Network/Systems/NetReplicationSendSystem.h"
+#include "Network/Systems/LocalPlayerInputSystem.h"
+#include "Network/Systems/NetInputSystem.h"
+#include "Network/Systems/NetInterpolationSystem.h"
 
 // STL
 #include <algorithm>
@@ -172,6 +183,59 @@ namespace Crucible {
         m_events.network.SetFailureLogger(logFailure);
         m_systems.SetEventBuses(&m_events);
 
+        // Networking: the session exists for the whole run but stays Offline (no sockets) unless
+        // this instance's settings say Host or Client. Then it starts when Play starts and stops
+        // when Play stops; Pause keeps it running.
+        m_network = std::make_unique<NetworkSession>(m_events);
+        {
+            // The shared defaults from EngineConfig.json; the editor's Network panel may change them
+            // for this instance (in memory) before Play.
+            std::string configWarning;
+            m_network->SetSettings(FromEngineConfig(m_config.network, configWarning));
+            if (!configWarning.empty()) CRU_WARN("[Net] EngineConfig.json: {}", configWarning);
+            const NetworkSettings& net = m_network->Settings();
+            CRU_INFO("[Net] defaults from EngineConfig.json: mode {}, host port {}, listen on {}, client joins {}:{}, max clients {}",
+                ToString(net.mode), net.hostPort, net.listenAddress.empty() ? "all interfaces" : net.listenAddress,
+                net.connectAddress, net.connectPort, net.maxClients);
+        }
+        // The session's NetworkId -> entity map follows every NetworkIdentity add and remove (World
+        // hooks, registered once; the session outlives every entity of the World).
+        RegisterIdentityHooks(*m_world, *m_network);
+
+        // What both machines must agree on: the serializers and the game's network prefabs
+        // (GamePrefabs.h). A registration mistake is reported now and refuses every session.
+        m_netContent = std::make_unique<NetContent>();
+        m_network->SetPrefabCheck([content = m_netContent.get()](Net::NetPrefabId id) { return content->Prefabs().Desc(id) != nullptr; });   // for RequestSpawn
+        std::string netRegistrationError;
+        if (!RegisterGameNetPrefabs(m_netContent->Prefabs(), netRegistrationError))
+            CRU_ERROR("[Net] network prefab registration: {}", netRegistrationError);
+
+        // Play starts the session; Stop ends it BEFORE the world is restored (OnBeforeStop), so
+        // tearing down the play world announces nothing to the other players. Before a Host or
+        // Client start, the prefab files are read and validated again and the content hash is
+        // recomputed: an invalid table refuses the start (the editor's Network panel shows why).
+        m_networkPlayState = m_events.engine.Subscribe<EngineEvents::PlayStateChanged>([this, netRegistrationError](const EngineEvents::PlayStateChanged& e) {
+            if (e.from == PlayState::Edit && e.to == PlayState::Playing)
+            {
+                if (m_network->Settings().mode != NetMode::Offline)
+                {
+                    std::string contentError = netRegistrationError;
+                    if (contentError.empty() && m_netContent->Prepare(*m_world, *m_assets, *m_resources, contentError))
+                        m_network->SetContentHash(m_netContent->Hash());
+                    m_network->SetContentError(contentError);
+                }
+                std::string error;
+                if (!m_network->Start(error)) CRU_ERROR("[Net] could not start the {} session: {}", ToString(m_network->Settings().mode), error);
+            }
+        });
+        m_playMode->OnBeforeStop([this] { m_network->Stop("Play stopped"); });
+
+        // v1 rule: a scene change during a session ends it (clients cannot follow a level switch
+        // yet). This runs inside SceneManager::ApplyPending, before any system of the frame.
+        m_scenes->OnSceneChanged([this] {
+            if (m_network->IsActive()) m_network->Stop("the scene changed during the session");
+        });
+
         RegisterEngineSystems();
 
         m_systems.Init();
@@ -244,17 +308,41 @@ namespace Crucible {
 
     void Core::RegisterEngineSystems()
     {
+        m_systems.RegisterSystem<NetReceiveSystem>(*m_network, *m_netContent, *m_scenes)             // PreUpdate, first, every state: runs the network session, host spawns, client proxies (Offline: nothing)
+            .SetSceneAssetResolver([this](const std::filesystem::path& scene) -> std::uint64_t {    // scene objects: the loaded scene's asset GUID, compared on join
+                const std::filesystem::path relative = std::filesystem::absolute(scene).lexically_normal().lexically_relative(std::filesystem::absolute(m_assets->GetAssetRoot()).lexically_normal());
+                const std::u8string text = relative.generic_u8string();
+                return text.empty() ? 0 : m_assets->GetGuid(std::string(text.begin(), text.end())).m_Value;
+            });
         m_systems.RegisterSystem<EntityScriptSystem>(*m_scriptRuntime, *m_world, *m_playMode, *m_scenes);
         m_systems.RegisterSystem<UIMenuSystem>();                                        // PreUpdate, Playing only: Escape opens / closes UICanvas::toggleWithEscape menus and frees / locks the cursor
         m_systems.RegisterSystem<UIInputSystem>(*m_renderer, m_scenes.get())                             // PreUpdate, Playing only: mouse -> UI buttons (states, UIEvents::ButtonClicked, Input::IsPointerOverUI) before gameplay reads input
             .ReactiveTo<UIButton, UISlider>();                                           // switched off mid-press / drag: cancelled
-        m_systems.RegisterSystem<ECSPlayerControllerSystem>(m_userSettings.input)                           // Update, Playing only: keyboard -> CharacterController, before physics moves it; the main CameraComponent sets "forward"
+        // PreUpdate, after the UI, every state: this machine's keys, mouse and pad -> its players' PlayerInput,
+        // cursor lock, camera pivot. Neutral input while Paused, and while the last argument says something
+        // else owns the input: the in-game menu (drop it to let players walk with the menu open).
+        m_systems.RegisterSystem<LocalPlayerInputSystem>(m_userSettings.input, m_network.get(), *m_playMode,
+            [] { return UI::IsMenuOpen(); });
+        // PreUpdate, after the sampler, every state: a client's commands, acks and heartbeat to the host; on the
+        // host, each client's commands into its players' PlayerInput (neutral after ~270 ms without one), and a
+        // player spawned per peer: the network prefab whose NetworkObjectAuthoring has spawnPerPlayer (none: no
+        // auto-spawn). Spawn points: the last argument, else where the scene placed that prefab (removed in a session), else 3 m apart along +X.
+        m_systems.RegisterSystem<NetInputSystem>(*m_network, *m_netContent, Net::kInvalidNetPrefab);
+        m_systems.RegisterSystem<ECSPlayerControllerSystem>()                                               // Update, Playing only: PlayerInput -> CharacterController, before physics moves it; the mech faces its camera
             .ReactiveTo<PlayerController>();                                             // switched off: stop the mech
         m_systems.RegisterSystem<ECSStateGraphSystem>(*m_resources, *m_playMode, *m_scriptRuntime);   // Update, Playing only, before navigation: each StateGraphAgent's state graph (its trees run in C#) gives its FlowFieldAgent orders
         m_systems.RegisterSystem<ECSNavigationSystem>(*m_playMode, m_systems);          // Update, Edit too: bakes the FlowFieldSurface's grid (Inspector Bake, and on Play) and draws it; Playing: flow field + agents (finds physics in m_systems for collision)
         m_systems.RegisterSystem<ECSPhysicsSystem>(m_scenes.get())                      // the scene turns a PhysicsJoint's saved connected body back into an entity
             .ReactiveTo<CharacterController>();                                          // switched back on: no stale fall
+        // PostUpdate, after physics, every state: the host's world, spawn, despawn and snapshot messages. The
+        // network tick counts the fixed steps physics really ran: only while Playing, because physics is
+        // SimulationOnly and its GetStepsLastFrame() keeps the last playing frame's value while paused.
+        m_systems.RegisterSystem<NetReplicationSendSystem>(*m_network, *m_netContent,
+            [physics = m_systems.FindSystem<ECSPhysicsSystem>(), play = m_playMode.get()]() -> std::uint32_t {
+                return physics != nullptr && play->State() == PlayState::Playing ? physics->GetStepsLastFrame() : 0u;
+            });
         m_systems.RegisterSystem<StressMoverSystem>();          // TEMPORARY, Update: walks StressMover entities in circles (load testing)
+        m_systems.RegisterSystem<NetInterpolationSystem>(*m_network);   // PreRender, before the hierarchy, client only: proxies drawn 100 ms behind the host, between snapshots
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
@@ -288,6 +376,8 @@ namespace Crucible {
     }
 
     void Core::CleanUp() {
+        // A multiplayer session ends first: clients are told, and nothing networked runs during teardown.
+        if (m_network) m_network->Stop("engine shutting down");
         if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
         // Run managed teardown while Core's resources/systems are still alive.
         if (m_scriptRuntime && m_scriptRuntime->IsRunning()) m_scriptRuntime->DestroyAllInstances();
@@ -307,6 +397,9 @@ namespace Crucible {
         // Managed instances/bindings added later must be released before final cleanup.
         // Play/Stop never destroys or restarts the process-wide Mono runtime.
         if (m_scriptRuntime) m_scriptRuntime->Shutdown();
+
+        // GameNetworkingSockets stops last among the engine's own subsystems (a no-op if no session ever started).
+        GnsTransport::KillLibrary();
 
         // Remember how the window was left (fullscreen / maximized) for the next launch.
         SaveWindowState();

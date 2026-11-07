@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -33,6 +33,8 @@
 	* -v1.5       EntityName (mandatory display name, WorldValidated)
 	* -v1.6       RequiresComponents pairs (what switching a component off
 	*             also stops); component fields unchanged
+	* -v1.7       includes Network/NetComponents.h (NetworkIdentity,
+	*             NetInterpolation, PlayerInput)
 	*
 	*
 	**************************************************************************/
@@ -59,6 +61,7 @@
 #include"../../UI/UIComponents.h"
 #include"Text/WorldText.h"        // WorldText (text in the 3D world)
 #include "Scripting/ScriptTypes.h"
+#include "Network/NetComponents.h"   // NetworkIdentity, NetInterpolation, PlayerInput (runtime only)
 
 namespace Crucible
 {
@@ -155,6 +158,7 @@ namespace Crucible
 		bool playing = true;
 		bool initialized = false, poseValid = false, poseFailed = false;
 		std::uint64_t evaluatedAsset = 0;
+		std::shared_ptr<const ModelResource> evaluatedModel; // pins it; a new pointer = the file was hot reloaded
 		std::uint32_t evaluatedClip = InvalidModelIndex;
 		ModelPose pose;
 		std::uint64_t evaluatedController = 0;

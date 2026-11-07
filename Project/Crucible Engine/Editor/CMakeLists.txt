@@ -23,6 +23,13 @@ add_executable(Editor
     "${CMAKE_SOURCE_DIR}/Tools/Common/TextureBuild.h"
     "${CMAKE_SOURCE_DIR}/Tools/Common/TextureImport.cpp"
     "${CMAKE_SOURCE_DIR}/Tools/Common/TextureImport.h"
+    # The Asset Browser compiles a .glb as soon as it appears in Assets, the same way the build
+    # does. These are left out of Engine.dll on purpose: only tools and the editor read source models.
+    "${CMAKE_SOURCE_DIR}/Tools/Common/ModelBuild.cpp"
+    "${CMAKE_SOURCE_DIR}/Tools/Common/ModelBuild.h"
+    "${CMAKE_SOURCE_DIR}/Engine/src/AssetPipe/GLTFLoader.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/src/AssetPipe/GLTFDocument.cpp"
+    "${CMAKE_SOURCE_DIR}/Engine/src/Resources/CompiledModel.cpp"
 )
 
 target_precompile_headers(Editor PRIVATE src/pch.h)
@@ -66,7 +73,15 @@ add_custom_command(TARGET Editor POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/Extern/fmod/bin/fmod.dll" "$<TARGET_FILE_DIR:Editor>"
 
-    COMMENT "Copying Engine.dll, glfw3.dll, rttr_core.dll and fmod.dll to Editor output directory..."
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/GameNetworkingSockets/bin/GameNetworkingSockets.dll" 
+        "$<TARGET_FILE_DIR:Editor>"
+
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/Extern/GameNetworkingSockets/bin/libprotobuf.dll" 
+        "$<TARGET_FILE_DIR:Editor>"
+
+    COMMENT "Copying Engine.dll, glfw3.dll, rttr_core.dll, GameNetworkingSockets.dll, libprotobuf.dll and fmod.dll to Editor output directory..."
 )
 
 # Debugger working directory (Visual Studio)

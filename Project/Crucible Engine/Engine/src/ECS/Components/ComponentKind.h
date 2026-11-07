@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.3
+* \version       1.5
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -27,6 +27,10 @@
 *    -v1.2       EntityName kind (17); WorldValidated trait
 *    -v1.3       ToggleableComponent concept, RequiresComponents trait
 *                (per-component on/off state and its dependencies)
+*    -v1.4       NetworkIdentity, NetInterpolation, PlayerInput kinds
+*                (33-35); NotToggleable and RuntimeOnly traits
+*    -v1.5       NetworkObjectAuthoring kind (39): persistent networking
+*                settings of an object (Networking Phase 14)
 *
 *
 **************************************************************************/
@@ -92,11 +96,15 @@ namespace Crucible
 		PhysicsJoint = 30,       // Physics: hinge, fixed, ball, character or spring joint between two bodies (Physics/PhysicsComponents.h)
 		WorldText = 31,          // Graphics: text placed in the 3D world by its Transform (Text/WorldText.h)
 		Vine = 32,               // Graphics: procedural vines that grow from the entity and wrap one of its children - Components.h
-		FlowFieldSurface = 33,   // Navigation: where enemies can walk, Unity's NavMeshSurface (Navigation/NavigationComponents.h)
-		FlowFieldAgent = 34,     // Navigation: one enemy's legs, Unity's NavMeshAgent (Navigation/NavigationComponents.h)
-		StateGraphAgent = 35,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
+		NetworkIdentity = 33,    // Network: who this entity is on every peer (Network/NetComponents.h)
+		NetInterpolation = 34,   // Network: a client's recent snapshots of a remote entity (Network/NetComponents.h)
+		PlayerInput = 35,        // Network/Player: one tick of a player's intent (Network/NetComponents.h)
+		FlowFieldSurface = 36,   // Navigation: where enemies can walk, Unity's NavMeshSurface (Navigation/NavigationComponents.h)
+		FlowFieldAgent = 37,     // Navigation: one enemy's legs, Unity's NavMeshAgent (Navigation/NavigationComponents.h)
+		StateGraphAgent = 38,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
+		NetworkObjectAuthoring = 39,   // Network: an object's saved networking settings (Network/NetComponents.h)
 
-		MAXCOMPONENT = 36
+		MAXCOMPONENT = 40
 	};
 
 
@@ -168,9 +176,39 @@ namespace Crucible
 
 	/*************************************************************************
 	 \brief
+		True for components the ECS must never switch off although they are
+		neither mandatory nor World-managed: identity-like components such
+		as NetworkIdentity, which would silently drop out of every default
+		query if they were off.
+	 \details
+		Excluded from ToggleableComponent, so World::SetComponentEnabled and
+		the other on/off calls refuse them at compile time and their columns
+		keep no on/off bytes. Specialised next to the component's definition
+		(the network components: Network/NetComponents.h).
+	 *************************************************************************/
+	template <typename T>
+	struct NotToggleable : std::false_type {};
+
+	/*************************************************************************
+	 \brief
+		True for components that exist only while the game runs and are never
+		written to a file: scenes, prefabs, the Play snapshot, undo steps and
+		copy/paste all leave them out.
+	 \details
+		EntityIO's kSkipInSceneFile skips them, and so does everything built
+		on it, so Stop never brings back a stale value either. The editor
+		also keeps them out of Add Component, prefab overrides and undo.
+		Specialised next to the component's definition
+		(Network/NetComponents.h).
+	 *************************************************************************/
+	template <typename T>
+	struct RuntimeOnly : std::false_type {};
+
+	/*************************************************************************
+	 \brief
 		A component the ECS can switch off without removing it (Unity's
-		Behaviour.enabled): every component except the mandatory base ones
-		and World-managed ones.
+		Behaviour.enabled): every component except the mandatory base ones,
+		World-managed ones and NotToggleable ones.
 	 \details
 		The ECS keeps the on/off state itself, next to the component's data
 		(one byte per entity in the component's column), so a new component
@@ -180,7 +218,7 @@ namespace Crucible
 		World::SetComponentEnabled.
 	 *************************************************************************/
 	template <typename T>
-	concept ToggleableComponent = !Mandatory<T>::value && !WorldManaged<T>::value;
+	concept ToggleableComponent = !Mandatory<T>::value && !WorldManaged<T>::value && !NotToggleable<T>::value;
 
 	/*************************************************************************
 	 \brief  A list of component types (used by RequiresComponents).
@@ -274,8 +312,12 @@ namespace Crucible
  X(ConstantForce)                                                              \
  X(PhysicsJoint)                                                               \
  X(WorldText)                                                                  \
+ X(NetworkIdentity)                                                            \
+ X(NetInterpolation)                                                           \
+ X(PlayerInput)                                                                \
  X(FlowFieldSurface)                                                           \
  X(FlowFieldAgent)                                                             \
  X(StateGraphAgent)                                                            \
+ X(NetworkObjectAuthoring)                                                     \
 
 }

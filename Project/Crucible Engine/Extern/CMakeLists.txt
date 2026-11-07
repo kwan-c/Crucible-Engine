@@ -107,6 +107,25 @@ target_link_libraries(fmod INTERFACE
 )
 
 # ----------------------------------- #
+# GameNetworkingSockets (prebuilt DLL)
+# Release build used for every configuration: GNS's API passes no STL types,
+# and the GNS Debug build would mix debug and release runtimes with protobuf.
+# ----------------------------------- #
+set(GNS_ROOT
+    "${CMAKE_CURRENT_SOURCE_DIR}/GameNetworkingSockets"
+)
+
+add_library(GameNetworkingSockets INTERFACE)
+
+target_include_directories(GameNetworkingSockets SYSTEM INTERFACE
+    "${GNS_ROOT}/include"
+)
+
+target_link_libraries(GameNetworkingSockets INTERFACE
+    "${GNS_ROOT}/lib/x64/GameNetworkingSockets.lib"
+)
+
+# ----------------------------------- #
 # JOLT
 # ----------------------------------- #
 
@@ -323,6 +342,7 @@ target_link_libraries(EngineThirdParty INTERFACE
     # Add more here...
     xresource
     fmod
+    GameNetworkingSockets
     Jolt
     vma
     Vulkan::Vulkan

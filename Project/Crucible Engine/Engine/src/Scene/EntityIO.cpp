@@ -50,6 +50,10 @@ namespace {
                         Transform every frame. Saving it would only store a
                         stale copy.
 
+        RuntimeOnly     Session data (the network components): meaningless
+                        after the session, so never saved, and never
+                        brought back by the Play snapshot either.
+
      \note
         Checked with if constexpr, not a runtime if. A runtime branch still
         instantiates AddComponent<HierarchyNode>, and its static_assert fires
@@ -58,7 +62,8 @@ namespace {
     template <typename T>
     inline constexpr bool kSkipInSceneFile =
         Crucible::WorldManaged<T>::value
-        || std::is_same_v<T, Crucible::WorldTransform>;
+        || std::is_same_v<T, Crucible::WorldTransform>
+        || Crucible::RuntimeOnly<T>::value;
 
     // A component switched off (World::SetComponentEnabled) gets "$enabled": false inside its own
     // object; nothing is written while it is on, so files of entities that never used it are

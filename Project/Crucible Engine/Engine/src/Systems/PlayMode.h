@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          2 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Unity-style Play / Pause / Resume / Stop for the engine:
 *                the play state, its queued requests, which systems run,
@@ -40,10 +40,14 @@
 *
 * \history
 *    -v1.0       initial version
+*    -v1.1       OnBeforeStop: generic listeners run before Stop touches
+*                the world (Core stops a multiplayer session there); the
+*                events they queue survive Stop's clear
 *
 **************************************************************************/
 #pragma once
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -163,6 +167,24 @@ namespace Crucible
 		//! True while a request waits for the next safe point.
 		bool HasPendingRequest() const noexcept { return !m_requests.empty(); }
 
+		/*********************************************************************
+		 \brief  Registers a listener run at the start of every applied Stop,
+				 before the simulation is switched off and before the world
+				 is restored.
+		 \details For work that must finish while the play world is still
+				  intact (Core ends a multiplayer session here, so tearing
+				  that world down announces nothing to other players).
+				  Stop first drops the gameplay and network events the
+				  ending session still had queued or delayed, THEN runs the
+				  listeners: events a listener queues (the session's final
+				  SessionEnded) are kept and delivered normally, at the next
+				  stage end - before anything a following Play sends.
+				  Listeners run in registration order; one that throws is
+				  logged and the Stop carries on. There is no unregister:
+				  register from an object that outlives this PlayMode.
+		 *********************************************************************/
+		void OnBeforeStop(std::function<void()> listener);
+
 		//! Why the last failed request failed; cleared by the next applied transition.
 		const std::string& LastError() const noexcept { return m_lastError; }
 
@@ -223,6 +245,7 @@ namespace Crucible
 		std::vector<PendingRequest>       m_requests;     // applied in order at the next safe point
 		SceneManager::Snapshot            m_snapshot;     // the scene at Play; empty when not restorable
 		std::string                       m_lastError;
+		std::vector<std::function<void()>> m_beforeStop;  // OnBeforeStop listeners
 
 		// Level switch during a play session: the old scene's bodies must leave Jolt before the
 		// new scene's bodies are built. Subscribed in the constructor (SceneManager::OnSceneChanged).

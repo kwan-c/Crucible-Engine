@@ -3,12 +3,15 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          2 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Implementation of PlayMode - see PlayMode.h.
 *
 * \history
 *    -v1.0       initial version
+*    -v1.1       OnBeforeStop listeners run at the start of ApplyStop, right
+*                after the gameplay/network queues are cleared, so the events
+*                they queue (SessionEnded) are delivered
 *
 **************************************************************************/
 #include "Systems/PlayMode.h"
@@ -260,18 +263,34 @@ namespace Crucible
 		return true;
 	}
 
+	void PlayMode::OnBeforeStop(std::function<void()> listener)
+	{
+		if (listener) m_beforeStop.push_back(std::move(listener));
+	}
+
 	bool PlayMode::ApplyStop()
 	{
-		// 1. End the session before the world is restored: simulation off, physics bodies,
-		//    Jolt and clock gone, nothing the session queued carried into the next Play.
+		// 0. Runtime events still queued or delayed belong to the session that is ending: drop
+		//    them first. Engine events (window, input, editor) are untouched; listeners stay
+		//    subscribed.
+		m_events.gameplay.Clear();
+		m_events.network.Clear();
+
+		// 1. Whatever must finish while the play world is intact (OnBeforeStop) - e.g. the
+		//    multiplayer session ends here, so restoring the world below announces nothing.
+		//    Runs AFTER the clear: what a listener queues (the session's final SessionEnded) is
+		//    the last word of this session and is delivered normally, at the next stage end.
+		for (const std::function<void()>& listener : m_beforeStop)
+		{
+			try { listener(); }
+			catch (const std::exception& e) { CRU_ERROR("PlayMode: an OnBeforeStop listener failed - {}", e.what()); }
+		}
+
+		// 2. End the simulation session before the world is restored: simulation off, physics
+		//    bodies, Jolt and clock gone, nothing the session queued carried into the next Play.
 		m_systems.SetSimulationActive(false);
 		if (ECSPhysicsSystem* physics = FindPhysics()) physics->EndSession();
 		m_systems.ResetSimulationSystems();
-
-		// Runtime events still queued or delayed belong to the session that just ended.
-		// Engine events (window, input, editor) are untouched; listeners stay subscribed.
-		m_events.gameplay.Clear();
-		m_events.network.Clear();
 
 		// Silence first, THEN clear the pause. The other way round, Stop pressed while paused
 		// unpaused every voice for a moment before stopping it - FMOD mixes on its own thread,
@@ -283,7 +302,7 @@ namespace Crucible
 			audio->SetPaused(false);
 		}
 
-		// 2. Put the scene back as it was at Play. The snapshot is checked before the world
+		// 3. Put the scene back as it was at Play. The snapshot is checked before the world
 		//    is touched; if it cannot be used, the session's world is kept rather than lost.
 		bool restored = false;
 		std::string failure;
