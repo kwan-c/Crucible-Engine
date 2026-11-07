@@ -1,0 +1,152 @@
+{
+    "version": 3,
+    "name": "Player",
+    "entities": [
+        {
+            "id": "2C84B8DE907E0023",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player"
+                },
+                "NetworkObjectAuthoring": {
+                    "replicated": [
+                        "Transform/Full"
+                    ],
+                    "serverOnly": [
+                        "CharacterController",
+                        "PlayerController"
+                    ],
+                    "ownerLocalOnly": [
+                        "CameraOrbit",
+                        "Camera"
+                    ],
+                    "enabledReplicated": [],
+                    "sendPriority": 1.0,
+                    "critical": true,
+                    "allowScenePlacement": true,
+                    "spawnPerPlayer": true
+                }
+            }
+        },
+        {
+            "id": "3484B8DE907E0025",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.5,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                }
+            }
+        },
+        {
+            "id": "2484B8DE907E0027",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                }
+            }
+        }
+    ]
+}
