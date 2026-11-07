@@ -44,11 +44,32 @@
                 "EntityName": {
                     "name": "Player Golem"
                 },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "CombatHealth",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "deactivateOnDeath",
+                            "type": "Bool",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
                 "PrefabInstance": {
                     "prefabAsset": 10834676495841607803,
                     "fileId": 13140519505055301737,
                     "isRoot": true,
-                    "prefabHash": 15204958774316212367,
+                    "prefabHash": 3326835317903766686,
                     "overrides": []
                 }
             }
@@ -186,7 +207,7 @@
                             "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
-                            "assetId": 7355109288905458535
+                            "assetId": 12564058752782925993
                         },
                         {
                             "declaringType": "Crucible.Scripts.EnemySpawner",
@@ -240,7 +261,7 @@
                     }
                 },
                 "EntityName": {
-                    "name": "Enemy Spawner Crossbow"
+                    "name": "Enemy Spawner Cannon"
                 },
                 "ScriptComponent": {
                     "enabled": true,
@@ -259,7 +280,7 @@
                             "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
-                            "assetId": 5646529725118021769
+                            "assetId": 8796023608539152641
                         },
                         {
                             "declaringType": "Crucible.Scripts.EnemySpawner",
@@ -390,189 +411,6 @@
                         "y": 0.019999999552965164
                     },
                     "shadowSoftness": 0.0
-                }
-            }
-        },
-        {
-            "id": "7E5C80DE4F6A8093",
-            "parent": "BE5C80DE4F6A8091",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": -0.22885870933532715
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 4175691030365061123,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.3499999940395355,
-                        "y": 0.44999998807907104,
-                        "z": 0.6000000238418579,
-                        "w": 0.5
-                    },
-                    "meshAsset": 0,
-                    "materialAsset": 0
-                },
-                "MaterialParams": {
-                    "emissiveScale": 1.0,
-                    "custom": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    }
-                },
-                "EntityName": {
-                    "name": "Body"
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 5646529725118021769,
-                    "fileId": 16022823266579628165,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                }
-            }
-        },
-        {
-            "id": "BE5C80DE4F6A8091",
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": -10.294611930847168,
-                        "y": 0.24999988079071045,
-                        "z": 3.4934189319610596
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "RigidBody": {
-                    "velocity": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "mass": 1.0,
-                    "useGravity": false,
-                    "drag": 0.0,
-                    "angularDrag": 0.05000000074505806,
-                    "isKinematic": true,
-                    "constraints": {
-                        "freezePositionX": false,
-                        "freezePositionY": false,
-                        "freezePositionZ": false,
-                        "freezeRotationX": false,
-                        "freezeRotationY": false,
-                        "freezeRotationZ": false
-                    }
-                },
-                "Collider": {
-                    "type": "Box",
-                    "size": {
-                        "x": 2.0,
-                        "y": 1.0,
-                        "z": 1.7326987981796265
-                    },
-                    "radius": 0.5,
-                    "height": 2.0,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.5,
-                        "z": -0.22885863482952118
-                    },
-                    "friction": 0.20000000298023224,
-                    "bounciness": 0.0,
-                    "layer": "Moving",
-                    "isTrigger": false
-                },
-                "EntityName": {
-                    "name": "Golem Crossbow"
-                },
-                "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "Enemy",
-                    "fields": [
-                        {
-                            "declaringType": "Crucible.Scripts.Enemy",
-                            "name": "boltPrefab",
-                            "type": "Prefab",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 5751008649613577526
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.Enemy",
-                            "name": "dropPrefab",
-                            "type": "Prefab",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 5267962757949921808
-                        }
-                    ]
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 5646529725118021769,
-                    "fileId": 14293441009669357699,
-                    "isRoot": true,
-                    "prefabHash": 4514589393974936579,
-                    "overrides": []
-                },
-                "FlowFieldAgent": {
-                    "speed": 6.0,
-                    "acceleration": 15.0,
-                    "angularSpeed": 240.0,
-                    "baseOffset": 0.5,
-                    "startWith": "Nothing",
-                    "stoppingDistance": 9.0,
-                    "slowingDistance": 12.0,
-                    "neighbourRadius": 10.0,
-                    "separationRadius": 3.5,
-                    "separationWeight": 1.5,
-                    "alignmentWeight": 0.4000000059604645,
-                    "radius": 0.6000000238418579,
-                    "avoidanceDistance": 3.0,
-                    "avoidanceWeight": 2.200000047683716
-                },
-                "StateGraphAgent": {
-                    "graph": 8368320002347871704,
-                    "logStateChanges": false
                 }
             }
         },
@@ -937,108 +775,6 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
-                }
-            }
-        },
-        {
-            "id": "FE5C80DE4F6A8095",
-            "parent": "BE5C80DE4F6A8091",
-            "siblingIndex": 1,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 1.600000023841858,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "EntityName": {
-                    "name": "Health Bar"
-                },
-                "PrefabInstance": {
-                    "prefabAsset": 5646529725118021769,
-                    "fileId": 8528833486635122823,
-                    "isRoot": false,
-                    "prefabHash": 0,
-                    "overrides": []
-                },
-                "WorldText": {
-                    "text": "",
-                    "colour": {
-                        "x": 1.0,
-                        "y": 0.20000000298023224,
-                        "z": 0.20000000298023224,
-                        "w": 1.0
-                    },
-                    "fontAsset": 8612070892498599937,
-                    "fontSize": 0.5,
-                    "size": {
-                        "x": 4.0,
-                        "y": 1.0
-                    },
-                    "pivot": {
-                        "x": 0.5,
-                        "y": 0.5
-                    },
-                    "billboard": "FaceCamera",
-                    "alwaysOnTop": false,
-                    "doubleSided": true,
-                    "intensity": 1.0,
-                    "fade": false,
-                    "fadeStart": 20.0,
-                    "fadeEnd": 30.0,
-                    "horizontalAlign": "Center",
-                    "verticalAlign": "Middle",
-                    "wrap": false,
-                    "overflow": "Overflow",
-                    "lineSpacing": 1.0,
-                    "characterSpacing": 0.0,
-                    "richText": false,
-                    "bold": true,
-                    "underline": false,
-                    "bestFit": false,
-                    "minFontSize": 0.10000000149011612,
-                    "maxFontSize": 1.0,
-                    "outline": false,
-                    "outlineColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "outlineWidth": 0.019999999552965164,
-                    "glow": false,
-                    "glowColour": {
-                        "x": 1.0,
-                        "y": 0.8500000238418579,
-                        "z": 0.4000000059604645,
-                        "w": 0.800000011920929
-                    },
-                    "glowWidth": 0.029999999329447746,
-                    "glowSoftness": 0.5,
-                    "shadow": true,
-                    "shadowColour": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 0.6000000238418579
-                    },
-                    "shadowOffset": {
-                        "x": 0.019999999552965164,
-                        "y": 0.019999999552965164
-                    },
-                    "shadowSoftness": 0.0
                 }
             }
         }

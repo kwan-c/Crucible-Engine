@@ -58,6 +58,15 @@ namespace Crucible
             get { Vector3 v; return GetVelocityInternal(I, G, out v) != 0 ? v : Vector3.Zero; }
         }
 
+        /// <summary>
+        /// The capsule's offset from the entity's position, in metres (Unity's center). Read-only
+        /// here; set it in the Inspector. Added by Hugo (7 Nov 2026): enemies aim at it.
+        /// </summary>
+        public Vector3 Center
+        {
+            get { Vector3 v; return GetCenterInternal(I, G, out v) != 0 ? v : Vector3.Zero; }
+        }
+
         /// <summary>The capsule's full height in metres. Changing it rebuilds the capsule.</summary>
         public float Height
         {
@@ -94,6 +103,8 @@ namespace Crucible
         private static extern int IsGroundedInternal(int index, int generation, out int value);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int GetVelocityInternal(int index, int generation, out Vector3 value);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetCenterInternal(int index, int generation, out Vector3 value);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int GetHeightInternal(int index, int generation, out float value);
         [MethodImpl(MethodImplOptions.InternalCall)]

@@ -3,10 +3,19 @@
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
 * \date          3 November 2026
-* \version       1.1
-* \brief         Internal calls behind C# Physics.Raycast
-*                (ManagedScripts/Runtime/Physics.cs) and the C#
-*                CharacterController class (CharacterController.cs).
+* \version       1.2
+* \brief         Internal calls behind C# Physics.Raycast and
+*                Physics.Explode (ManagedScripts/Runtime/Physics.cs),
+*                RigidBody.AddExplosionForce and RigidBody.FreezeRotation
+*                (RigidBody.cs), and the C# CharacterController class
+*                (CharacterController.cs).
+*
+* \history
+*    -v1.2       (Hugo Low Ren Hao) Physics.Explode, RigidBody.AddExplosionForce
+*                and RigidBody.FreezeRotation, for dynamic enemies: knockback,
+*                explosions and toppling over on death; Physics.Raycast with
+*                a layer mask, Physics.SphereCast, Physics.CheckSphere and
+*                CharacterController.Center, for the enemies' position checks
 *
 * \details
 *    Bindings only - Physics/ and ECSPhysicsSystem (Hugo's) are unchanged.
@@ -28,6 +37,7 @@
 #include "Scripting/ScriptInterop.h"
 #include "Scripting/Bindings/EntityContext.h"
 #include "ECS/World.h"
+#include "ECS/Components/Components.h"   // RigidBody, RigidBodyConstraints
 #include "Physics/PhysicsComponents.h"
 #include "Physics/PhysicsSystem.h"
 #include "Physics/PhysicsEvents.h"
@@ -71,10 +81,53 @@ namespace Crucible::ScriptBindings
 		         original origin; 0 if nothing was hit, outside Play, or
 		         physics is not running.
 		 *********************************************************************/
+		// A C# layer mask (one bit per PhysicsLayer, Unity's int layerMask) as the
+		// engine's LayerMask. Built with With() one layer at a time because
+		// LayerMask deliberately has no "from raw bits" constructor; bits for
+		// layers that don't exist are dropped.
+		LayerMask MaskFromBits(uint32_t bits)
+		{
+			LayerMask mask;
+			for (uint32_t layer = 0; layer < static_cast<uint32_t>(kPhysicsLayerCount); ++layer)
+				if ((bits >> layer) & 1u)
+					mask = mask.With(static_cast<PhysicsLayer>(layer));
+			return mask;
+		}
+
+		// The C# side's ignore entity and layer mask as an EntityFilter.
+		EntityFilter MakeFilter(uint32_t layerMask, int32_t ignoreIndex, int32_t ignoreGeneration)
+		{
+			EntityFilter filter;
+			filter.layers = MaskFromBits(layerMask);
+			if (ignoreIndex != 0)
+				filter.ignore = Entity{static_cast<uint32_t>(ignoreIndex), static_cast<uint32_t>(ignoreGeneration)};
+			return filter;
+		}
+
+		int32_t ManagedPhysicsRaycastMasked(const ScriptVec3* origin, const ScriptVec3* direction, float maxDistance,
+		                                    uint32_t layerMask, int32_t ignoreIndex, int32_t ignoreGeneration,
+		                                    int32_t* outIndex, int32_t* outGeneration, ScriptVec3* outPoint,
+		                                    ScriptVec3* outNormal, float* outDistance) noexcept;
+
+		// Xavier's original: every layer. Forwards to the masked version below
+		// (added by Hugo, 7 Nov 2026), which is his code with the mask added.
 		int32_t ManagedPhysicsRaycast(const ScriptVec3* origin, const ScriptVec3* direction, float maxDistance,
 		                              int32_t ignoreIndex, int32_t ignoreGeneration, int32_t* outIndex,
 		                              int32_t* outGeneration, ScriptVec3* outPoint, ScriptVec3* outNormal,
 		                              float* outDistance) noexcept
+		{
+			return ManagedPhysicsRaycastMasked(origin, direction, maxDistance, ~0u, ignoreIndex, ignoreGeneration,
+			                                   outIndex, outGeneration, outPoint, outNormal, outDistance);
+		}
+
+		/*********************************************************************
+		 \brief  C# Physics.Raycast with a layer mask: only bodies on those
+		         layers are hit (Unity's layerMask argument).
+		 *********************************************************************/
+		int32_t ManagedPhysicsRaycastMasked(const ScriptVec3* origin, const ScriptVec3* direction, float maxDistance,
+		                                    uint32_t layerMask, int32_t ignoreIndex, int32_t ignoreGeneration,
+		                                    int32_t* outIndex, int32_t* outGeneration, ScriptVec3* outPoint,
+		                                    ScriptVec3* outNormal, float* outDistance) noexcept
 		{
 			try
 			{
@@ -92,9 +145,7 @@ namespace Crucible::ScriptBindings
 				const Math::vec3 unit = heading / length;
 
 				// The shooter is skipped inside Jolt (all of its body, wherever the ray starts).
-				EntityFilter filter;
-				if (ignoreIndex != 0)
-					filter.ignore = Entity{static_cast<uint32_t>(ignoreIndex), static_cast<uint32_t>(ignoreGeneration)};
+				const EntityFilter filter = MakeFilter(layerMask, ignoreIndex, ignoreGeneration);
 
 				Math::vec3 start(origin->x, origin->y, origin->z);
 				float travelled = 0.0f;
@@ -118,6 +169,100 @@ namespace Crucible::ScriptBindings
 					// A body whose entity was destroyed this frame (physics drops it next step): go on past it.
 					travelled += hit.distance + SkipDistance;
 					start = hit.point + unit * SkipDistance;
+				}
+				return 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		// ======================================================================
+		// Physics.SphereCast / Physics.CheckSphere (added by Hugo, 7 Nov 2026)
+		// ======================================================================
+
+		/*********************************************************************
+		 \brief  C# Physics.SphereCast: a ball of `radius` swept from origin
+		         along direction, up to maxDistance; the nearest body it hits
+		         on the mask's layers. A body the ball already overlaps at
+		         the start is hit at distance 0 (Jolt's rule; Unity skips
+		         those - C# callers check Distance if they need Unity's).
+		 \return 1 with the hit; 0 if nothing (or a body whose entity was
+		         destroyed this frame) was hit, outside Play, or bad input.
+		 *********************************************************************/
+		int32_t ManagedPhysicsSphereCast(const ScriptVec3* origin, float radius, const ScriptVec3* direction,
+		                                 float maxDistance, uint32_t layerMask, int32_t ignoreIndex,
+		                                 int32_t ignoreGeneration, int32_t* outIndex, int32_t* outGeneration,
+		                                 ScriptVec3* outPoint, ScriptVec3* outNormal, float* outDistance) noexcept
+		{
+			try
+			{
+				if (!origin || !direction || !outIndex || !outGeneration || !outPoint || !outNormal || !outDistance)
+					return 0;
+				*outIndex = 0;
+				*outGeneration = 0;
+				if (!physics || !EntityContext::InPlaySession() || !IsFinite(*origin) || !IsFinite(*direction) ||
+				    !(maxDistance > 0.0f) || !(radius > 0.0f) || !std::isfinite(radius))
+					return 0;
+				const Math::vec3 heading(direction->x, direction->y, direction->z);
+				const float length = std::sqrt(heading.x * heading.x + heading.y * heading.y + heading.z * heading.z);
+				if (!(length > 1e-6f))
+					return 0;
+
+				EntityHit hit;
+				if (!physics->SphereCast(Math::vec3(origin->x, origin->y, origin->z), radius, heading / length, hit,
+				                         std::isfinite(maxDistance) ? maxDistance : 1.0e6f,
+				                         MakeFilter(layerMask, ignoreIndex, ignoreGeneration)))
+					return 0;
+
+				// Unlike Raycast, no re-cast past a destroyed body: a ball can't be
+				// restarted from a point the way a ray can. It is gone next step.
+				Entity alive;
+				if (!EntityContext::ResolveEntity(static_cast<int32_t>(hit.entity.index),
+				                                  static_cast<int32_t>(hit.entity.generation), alive))
+					return 0;
+				*outIndex = static_cast<int32_t>(hit.entity.index);
+				*outGeneration = static_cast<int32_t>(hit.entity.generation);
+				*outPoint = {hit.point.x, hit.point.y, hit.point.z};
+				*outNormal = {hit.normal.x, hit.normal.y, hit.normal.z};
+				*outDistance = hit.distance;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Physics.CheckSphere (Unity's): does anything on the
+		         mask's layers overlap a ball at center right now?
+		 \return 1 yes; 0 no, outside Play, or bad input.
+		 *********************************************************************/
+		int32_t ManagedPhysicsCheckSphere(const ScriptVec3* center, float radius, uint32_t layerMask,
+		                                  int32_t ignoreIndex, int32_t ignoreGeneration) noexcept
+		{
+			try
+			{
+				if (!center || !physics || !EntityContext::InPlaySession() || !IsFinite(*center) ||
+				    !(radius > 0.0f) || !std::isfinite(radius))
+					return 0;
+
+				// Reused between calls (main thread only, like `physics`), so a
+				// planner asking about dozens of spots doesn't allocate each time.
+				thread_local std::vector<Entity> overlaps;
+				overlaps.clear();
+				physics->OverlapSphere(Math::vec3(center->x, center->y, center->z), radius, overlaps,
+				                       MakeFilter(layerMask, ignoreIndex, ignoreGeneration));
+
+				// Bodies of entities destroyed this frame are still in physics until its next step.
+				for (const Entity& entity : overlaps)
+				{
+					Entity alive;
+					if (EntityContext::ResolveEntity(static_cast<int32_t>(entity.index),
+					                                 static_cast<int32_t>(entity.generation), alive))
+						return 1;
 				}
 				return 0;
 			}
@@ -227,6 +372,27 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		/*********************************************************************
+		 \brief  C# CharacterController.Center (added by Hugo, 7 Nov 2026):
+		         the capsule's offset from the entity's position, in metres
+		         (not scaled). Read-only for now: enemies aim at it.
+		 *********************************************************************/
+		int32_t ManagedCharacterGetCenter(int32_t index, int32_t generation, ScriptVec3* out) noexcept
+		{
+			try
+			{
+				const CharacterController* controller = out ? ReadController(index, generation) : nullptr;
+				if (!controller)
+					return 0;
+				*out = {controller->m_center.x, controller->m_center.y, controller->m_center.z};
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		template <float CharacterController::*Member>
 		int32_t GetSetting(int32_t index, int32_t generation, float* out) noexcept
 		{
@@ -259,6 +425,112 @@ namespace Crucible::ScriptBindings
 				if (!controller)
 					return 0;
 				controller->*Member = *value;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		// ======================================================================
+		// Explosions and rotation locks, for dynamic enemies (Hugo, v1.2).
+		// Explode / AddExplosionForce are ECSPhysicsSystem's; both push as an
+		// impulse - a one-off kick, the mode Explode already used.
+		// ======================================================================
+
+		/*********************************************************************
+		 \brief  C# RigidBody.AddExplosionForce (Unity's arguments). Pushes one
+		         dynamic body away from the blast, fading to nothing at the
+		         radius; upwardsModifier throws it up.
+		 \return 1 if it pushed the body; 0 if not (not dynamic, outside the
+		         radius, outside Play, a bad number).
+		 *********************************************************************/
+		int32_t ManagedRigidBodyAddExplosionForce(int32_t index, int32_t generation, float force,
+		                                          const ScriptVec3* position, float radius, float upwardsModifier) noexcept
+		{
+			try
+			{
+				if (!position || !physics || !EntityContext::InPlaySession() || !IsFinite(*position) ||
+				    !std::isfinite(force) || !std::isfinite(radius) || radius < 0.0f || !std::isfinite(upwardsModifier))
+					return 0;
+				Entity entity;
+				if (!EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				return physics->AddExplosionForce(entity, force, Math::vec3(position->x, position->y, position->z),
+				                                  radius, upwardsModifier, ForceMode::Impulse) ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Physics.Explode: every dynamic body in the sphere is pushed
+		         away (ECSPhysicsSystem::Explode).
+		 \return How many entities the blast reached, characters and static
+		         things included; 0 outside Play or for a bad number.
+		 *********************************************************************/
+		int32_t ManagedPhysicsExplode(const ScriptVec3* position, float radius, float force, float upwardsModifier) noexcept
+		{
+			try
+			{
+				if (!position || !physics || !EntityContext::InPlaySession() || !IsFinite(*position) ||
+				    !(radius > 0.0f) || !std::isfinite(radius) || !std::isfinite(force) || !std::isfinite(upwardsModifier))
+					return 0;
+				Explosion explosion;
+				explosion.position        = Math::vec3(position->x, position->y, position->z);
+				explosion.radius          = radius;
+				explosion.force           = force;
+				explosion.upwardsModifier = upwardsModifier;
+				explosion.mode            = ForceMode::Impulse;
+				std::vector<Entity> reached;
+				physics->Explode(explosion, reached);
+				return static_cast<int32_t>(reached.size());
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# RigidBody.FreezeRotation (Unity's freezeRotation): all
+		         three rotation locks at once. Physics rebuilds the body with
+		         the new locks next frame, keeping its velocity.
+		 *********************************************************************/
+		int32_t ManagedRigidBodyGetFreezeRotation(int32_t index, int32_t generation, int32_t* out) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!out || !EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				const RigidBody* body = EntityContext::GetWorld()->Read<RigidBody>(entity);
+				if (!body)
+					return 0;
+				const RigidBodyConstraints& c = body->constraints;
+				*out = (c.freezeRotationX && c.freezeRotationY && c.freezeRotationZ) ? 1 : 0;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedRigidBodySetFreezeRotation(int32_t index, int32_t generation, int32_t value) noexcept
+		{
+			try
+			{
+				Entity entity;
+				if (!EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				RigidBody* body = EntityContext::GetWorld()->Write<RigidBody>(entity);
+				if (!body)
+					return 0;
+				body->constraints.freezeRotationX = body->constraints.freezeRotationY = body->constraints.freezeRotationZ = value != 0;
 				return 1;
 			}
 			catch (...)
@@ -342,11 +614,19 @@ namespace Crucible::ScriptBindings
 	void RegisterPhysicsBindings()
 	{
 		Add("Crucible.Physics::RaycastInternal", &ManagedPhysicsRaycast);
+		Add("Crucible.Physics::RaycastMaskedInternal", &ManagedPhysicsRaycastMasked);
+		Add("Crucible.Physics::SphereCastInternal", &ManagedPhysicsSphereCast);
+		Add("Crucible.Physics::CheckSphereInternal", &ManagedPhysicsCheckSphere);
+		Add("Crucible.Physics::ExplodeInternal", &ManagedPhysicsExplode);
+		Add("Crucible.RigidBody::AddExplosionForceInternal", &ManagedRigidBodyAddExplosionForce);
+		Add("Crucible.RigidBody::GetFreezeRotationInternal", &ManagedRigidBodyGetFreezeRotation);
+		Add("Crucible.RigidBody::SetFreezeRotationInternal", &ManagedRigidBodySetFreezeRotation);
 
 		Add("Crucible.CharacterController::SimpleMoveInternal", &ManagedCharacterSimpleMove);
 		Add("Crucible.CharacterController::JumpInternal", &ManagedCharacterJump);
 		Add("Crucible.CharacterController::IsGroundedInternal", &ManagedCharacterIsGrounded);
 		Add("Crucible.CharacterController::GetVelocityInternal", &ManagedCharacterGetVelocity);
+		Add("Crucible.CharacterController::GetCenterInternal", &ManagedCharacterGetCenter);
 		Add("Crucible.CharacterController::GetHeightInternal", &GetSetting<&CharacterController::m_height>);
 		Add("Crucible.CharacterController::SetHeightInternal", &SetSetting<&CharacterController::m_height, 0>);
 		Add("Crucible.CharacterController::GetRadiusInternal", &GetSetting<&CharacterController::m_radius>);

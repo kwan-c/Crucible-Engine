@@ -59,6 +59,25 @@ namespace Crucible.Scripts
             return true;
         }
 
+        // Damage plus a shove. knockback is an impulse (mass x metres per second, in world
+        // axes) for a dynamic RigidBody - an enemy flies back and its FlowFieldAgent steers
+        // back in as the speed fades. Bodies that aren't dynamic (the player's
+        // CharacterController, a kinematic prop) just take the damage. A killing blow's
+        // shove is NOT applied here: dying can change the body (an Enemy unlocks its
+        // rotation to topple, which rebuilds it and loses a push given the same frame),
+        // so OnDied gets it through LastKnockback and applies it itself.
+        public bool ApplyDamage(float amount, Vector3 knockback)
+        {
+            LastKnockback = knockback;
+            bool hurt = ApplyDamage(amount);
+            if (hurt && !IsDead && knockback.Length > 0f && Entity.HasComponent<RigidBody>() && !Entity.RigidBody.IsKinematic)
+                Entity.RigidBody.ApplyImpulse(knockback);
+            return hurt;
+        }
+
+        // The knockback of the last hit that came with one (zero if none yet).
+        public Vector3 LastKnockback { get; private set; }
+
         // Unity's Damaged and Died events, as methods a derived class overrides.
         // (C# events would work too, but nothing outside the entity listens yet.)
         protected virtual void OnDamaged(float amount) {}

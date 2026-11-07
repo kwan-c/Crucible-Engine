@@ -3,9 +3,10 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          5 November 2026
-* \version       1.0
-* \brief         Internal calls behind the C# FlowFieldAgent and
-*                FlowFieldSurface classes (ManagedScripts/Runtime/).
+* \version       1.1
+* \brief         Internal calls behind the C# FlowFieldAgent,
+*                FlowFieldSurface and Navigation classes
+*                (ManagedScripts/Runtime/).
 *
 * \details
 *    FlowFieldAgent: its settings, the four orders (FollowField, MoveTo,
@@ -19,6 +20,9 @@
 *    padding, wall cost - are read when the grid is baked at Play, so
 *    changing them from a script would do nothing until the next Play.
 *
+*    Navigation: IsWalkable and IsPathClear on the baked grid, through
+*    ECSNavigationSystem::Active().
+*
 *    Same shape as PlayerControllerBindings.cpp: 1 = done, 0 = refused (dead
 *    entity, no such component, a bad value); never throws into C#.
 *
@@ -26,6 +30,7 @@
 #include "Scripting/ScriptBindings.h"
 #include "Scripting/ScriptInterop.h"
 #include "Scripting/Bindings/EntityContext.h"
+#include "ECS/ECSNavigationSystem.h"   // Active(), for the Navigation queries
 #include "ECS/World.h"
 #include "Navigation/NavigationComponents.h"
 #if CRUCIBLE_WITH_MONO
@@ -99,6 +104,43 @@ namespace Crucible::ScriptBindings
 		}
 
 		// ======================================================================
+		// FlowFieldAgent's avoidance priority: an int, 0-99 like Unity's
+		// (Unity clamps it to that range too, rather than refusing)
+		// ======================================================================
+
+		int32_t GetAvoidancePriority(int32_t index, int32_t generation, int32_t* out) noexcept
+		{
+			try
+			{
+				const FlowFieldAgent* agent = out ? ReadComponent<FlowFieldAgent>(index, generation) : nullptr;
+				if (!agent)
+					return 0;
+				*out = agent->m_avoidancePriority;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t SetAvoidancePriority(int32_t index, int32_t generation, int32_t value) noexcept
+		{
+			try
+			{
+				FlowFieldAgent* agent = WriteComponent<FlowFieldAgent>(index, generation);
+				if (!agent)
+					return 0;
+				agent->m_avoidancePriority = value < 0 ? 0 : (value > 99 ? 99 : value);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		// ======================================================================
 		// Agent orders: the same calls the state graph's nodes make
 		// ======================================================================
 
@@ -118,17 +160,20 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
-		int32_t ManagedAgentMoveTo(int32_t index, int32_t generation, const ScriptVec3* point) noexcept
+		// stoppingDistance / slowingDistance: negative = the agent's own setting (C#'s default).
+		int32_t ManagedAgentMoveTo(int32_t index, int32_t generation, const ScriptVec3* point, float stoppingDistance,
+		                           float slowingDistance) noexcept
 		{
 			try
 			{
 				// A NaN destination would turn into a NaN velocity, then a NaN position.
-				if (!point || !std::isfinite(point->x) || !std::isfinite(point->y) || !std::isfinite(point->z))
+				if (!point || !std::isfinite(point->x) || !std::isfinite(point->y) || !std::isfinite(point->z)
+				    || !std::isfinite(stoppingDistance) || !std::isfinite(slowingDistance))
 					return 0;
 				FlowFieldAgent* agent = WriteComponent<FlowFieldAgent>(index, generation);
 				if (!agent)
 					return 0;
-				agent->MoveTo(Math::vec3(point->x, point->y, point->z));
+				agent->MoveTo(Math::vec3(point->x, point->y, point->z), stoppingDistance, slowingDistance);
 				return 1;
 			}
 			catch (...)
@@ -150,6 +195,26 @@ namespace Crucible::ScriptBindings
 				if (!agent)
 					return 0;
 				agent->Arrive(target);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		// targetIndex 0 = C# passed null: back to facing the way it walks.
+		int32_t ManagedAgentFaceTarget(int32_t index, int32_t generation, int32_t targetIndex, int32_t targetGeneration) noexcept
+		{
+			try
+			{
+				Entity target = kNullEntity;
+				if (targetIndex != 0 && !EntityContext::ResolveEntity(targetIndex, targetGeneration, target))
+					return 0;
+				FlowFieldAgent* agent = WriteComponent<FlowFieldAgent>(index, generation);
+				if (!agent)
+					return 0;
+				agent->FaceTarget(target);
 				return 1;
 			}
 			catch (...)
@@ -212,6 +277,44 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		// ======================================================================
+		// Navigation (C# static class): questions about the baked grid. No
+		// navigation system or no bake yet answers "no" - never walkable, never
+		// clear - so a script asking too early plays safe instead of crashing.
+		// ======================================================================
+
+		bool IsFinite(const ScriptVec3& v) { return std::isfinite(v.x) && std::isfinite(v.y) && std::isfinite(v.z); }
+
+		int32_t ManagedNavigationIsWalkable(const ScriptVec3* position) noexcept
+		{
+			try
+			{
+				const ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				if (!navigation || !position || !IsFinite(*position))
+					return 0;
+				return navigation->IsWalkable(Math::vec3(position->x, position->y, position->z)) ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedNavigationIsPathClear(const ScriptVec3* from, const ScriptVec3* to) noexcept
+		{
+			try
+			{
+				const ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				if (!navigation || !from || !to || !IsFinite(*from) || !IsFinite(*to))
+					return 0;
+				return navigation->IsPathClear(Math::vec3(from->x, from->y, from->z), Math::vec3(to->x, to->y, to->z)) ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		template <typename Fn>
 		void Add(const char* name, Fn* function)
 		{
@@ -236,10 +339,8 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.FlowFieldAgent::SetSlowingDistanceInternal", &SetFloat<FlowFieldAgent, &FlowFieldAgent::m_slowingDistance>);
 		Add("Crucible.FlowFieldAgent::GetNeighbourRadiusInternal", &GetFloat<FlowFieldAgent, &FlowFieldAgent::m_neighbourRadius>);
 		Add("Crucible.FlowFieldAgent::SetNeighbourRadiusInternal", &SetFloat<FlowFieldAgent, &FlowFieldAgent::m_neighbourRadius>);
-		Add("Crucible.FlowFieldAgent::GetSeparationRadiusInternal", &GetFloat<FlowFieldAgent, &FlowFieldAgent::m_separationRadius>);
-		Add("Crucible.FlowFieldAgent::SetSeparationRadiusInternal", &SetFloat<FlowFieldAgent, &FlowFieldAgent::m_separationRadius>);
-		Add("Crucible.FlowFieldAgent::GetSeparationWeightInternal", &GetFloat<FlowFieldAgent, &FlowFieldAgent::m_separationWeight>);
-		Add("Crucible.FlowFieldAgent::SetSeparationWeightInternal", &SetFloat<FlowFieldAgent, &FlowFieldAgent::m_separationWeight>);
+		Add("Crucible.FlowFieldAgent::GetAvoidancePriorityInternal", &GetAvoidancePriority);
+		Add("Crucible.FlowFieldAgent::SetAvoidancePriorityInternal", &SetAvoidancePriority);
 		Add("Crucible.FlowFieldAgent::GetAlignmentWeightInternal", &GetFloat<FlowFieldAgent, &FlowFieldAgent::m_alignmentWeight>);
 		Add("Crucible.FlowFieldAgent::SetAlignmentWeightInternal", &SetFloat<FlowFieldAgent, &FlowFieldAgent::m_alignmentWeight>);
 		Add("Crucible.FlowFieldAgent::GetRadiusInternal", &GetFloat<FlowFieldAgent, &FlowFieldAgent::m_radius>);
@@ -254,6 +355,7 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.FlowFieldAgent::MoveToInternal", &ManagedAgentMoveTo);
 		Add("Crucible.FlowFieldAgent::ArriveInternal", &ManagedAgentArrive);
 		Add("Crucible.FlowFieldAgent::StopInternal", &ManagedAgentStop);
+		Add("Crucible.FlowFieldAgent::FaceTargetInternal", &ManagedAgentFaceTarget);
 		Add("Crucible.FlowFieldAgent::HasArrivedInternal", &ManagedAgentHasArrived);
 		Add("Crucible.FlowFieldAgent::GetRemainingDistanceInternal", &GetFloat<FlowFieldAgent, &FlowFieldAgent::m_remainingDistance>);
 		Add("Crucible.FlowFieldAgent::GetVelocityInternal", &ManagedAgentGetVelocity);
@@ -263,6 +365,10 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.FlowFieldSurface::SetFloodRadiusInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_floodRadius>);
 		Add("Crucible.FlowFieldSurface::GetRebuildDistanceInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_rebuildDistance>);
 		Add("Crucible.FlowFieldSurface::SetRebuildDistanceInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_rebuildDistance>);
+
+		// Navigation: grid queries
+		Add("Crucible.Navigation::IsWalkableInternal", &ManagedNavigationIsWalkable);
+		Add("Crucible.Navigation::IsPathClearInternal", &ManagedNavigationIsPathClear);
 	}
 }
 #endif

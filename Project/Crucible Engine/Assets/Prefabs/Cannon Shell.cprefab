@@ -1,0 +1,76 @@
+{
+    "version": 3,
+    "name": "Cannon Shell",
+    "entities": [
+        {
+            "id": "7A11C0DE5EED0201",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 0.45, "y": 0.45, "z": 0.45 }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": { "x": 0.25, "y": 0.22, "z": 0.2, "w": 0.5 },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Cannon Shell"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Bolt",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.Bolt",
+                            "name": "speed",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 80.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Bolt",
+                            "name": "damage",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 45.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Bolt",
+                            "name": "maxDistance",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 36.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                }
+            }
+        }
+    ]
+}

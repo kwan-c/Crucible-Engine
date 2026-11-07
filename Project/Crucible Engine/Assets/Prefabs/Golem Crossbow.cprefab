@@ -30,18 +30,18 @@
                         "y": 0.0,
                         "z": 0.0
                     },
-                    "mass": 1.0,
-                    "useGravity": false,
+                    "mass": 200.0,
+                    "useGravity": true,
                     "drag": 0.0,
                     "angularDrag": 0.05000000074505806,
-                    "isKinematic": true,
+                    "isKinematic": false,
                     "constraints": {
                         "freezePositionX": false,
                         "freezePositionY": false,
                         "freezePositionZ": false,
-                        "freezeRotationX": false,
-                        "freezeRotationY": false,
-                        "freezeRotationZ": false
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
                     }
                 },
                 "Collider": {
@@ -60,7 +60,7 @@
                     },
                     "friction": 0.20000000298023224,
                     "bounciness": 0.0,
-                    "layer": "Moving",
+                    "layer": "Enemy",
                     "isTrigger": false
                 },
                 "EntityName": {
@@ -72,6 +72,162 @@
                     "namespace": "Crucible.Scripts",
                     "class": "Enemy",
                     "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "maximumHealth",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 80.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "arriveRadius",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 14.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "attackRange",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 8.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "minimumRange",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 5.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "melee",
+                            "type": "Bool",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "damage",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 20.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "cooldown",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 5.333333,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "fireDuration",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 1.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "releaseFrame",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.7,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "weaponReach",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 40.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "respectAttackRangeAtRelease",
+                            "type": "Bool",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "aimSpreadDegrees",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 12.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
                         {
                             "declaringType": "Crucible.Scripts.Enemy",
                             "name": "boltPrefab",
@@ -97,22 +253,34 @@
                             "stringIsNull": false,
                             "entityId": 0,
                             "assetId": 5267962757949921808
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "attackAnimation",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "None",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
                         }
                     ]
                 },
                 "FlowFieldAgent": {
-                    "speed": 6.0,
+                    "speed": 5.0,
                     "acceleration": 15.0,
                     "angularSpeed": 240.0,
-                    "baseOffset": 0.5,
+                    "baseOffset": 0.0,
                     "startWith": "Nothing",
-                    "stoppingDistance": 9.0,
-                    "slowingDistance": 12.0,
+                    "stoppingDistance": 0.15,
+                    "slowingDistance": 1.6,
                     "neighbourRadius": 10.0,
-                    "separationRadius": 3.5,
-                    "separationWeight": 1.5,
+                    "avoidancePriority": 50,
                     "alignmentWeight": 0.4000000059604645,
-                    "radius": 0.6000000238418579,
+                    "radius": 1.3,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
                 },
@@ -166,6 +334,14 @@
                         "z": 0.0
                     }
                 },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
                 "EntityName": {
                     "name": "Body"
                 }
@@ -209,6 +385,29 @@
                     },
                     "meshAsset": 3578055278504480029,
                     "materialAsset": 0
+                }
+            }
+        },
+        {
+            "id": "C65C80DE4F57C0B1",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": -0.94, "z": 1.5 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 2.0, "y": 0.02, "z": 3.0 }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": { "x": 1.0, "y": 0.4000000059604645, "z": 0.11999999731779099, "w": 0.5 },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
                 }
             }
         }

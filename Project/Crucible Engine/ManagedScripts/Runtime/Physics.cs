@@ -95,6 +95,98 @@ namespace Crucible
             return Raycast(ray.Origin, ray.Direction, out hit, maxDistance, ignore);
         }
 
+        // --- Added by Hugo (7 Nov 2026): layer masks, SphereCast, CheckSphere ---------- //
+        // Unity's signatures, plus `ignore` last as in Xavier's Raycast. layerMask is a
+        // LayerMask.GetMask(...) value; only bodies on those layers are hit, so e.g. a
+        // walls-only ray looks straight past enemies standing in front of a wall.
+
+        /// <summary>Raycast that only hits bodies on the layers in layerMask (Unity's layerMask argument).</summary>
+        public static bool Raycast(Vector3 origin, Vector3 direction, out RaycastHit hit, float maxDistance,
+                                   int layerMask, Entity ignore = null)
+        {
+            hit = new RaycastHit();
+            int index, generation;
+            Vector3 point, normal;
+            float distance;
+            if (RaycastMaskedInternal(ref origin, ref direction, maxDistance, unchecked((uint)layerMask),
+                                      IgnoreIndex(ignore), IgnoreGeneration(ignore),
+                                      out index, out generation, out point, out normal, out distance) == 0)
+                return false;
+            hit = MakeHit(index, generation, point, normal, distance);
+            return true;
+        }
+
+        /// <summary>
+        /// Sweeps a ball of radius from origin along direction and reports the first body it
+        /// hits (Unity's Physics.SphereCast) - "would something this wide fit through?".
+        /// Unlike Unity, a body the ball already overlaps at the start IS reported, at
+        /// Distance 0; skip those if you want Unity's behaviour.
+        /// </summary>
+        public static bool SphereCast(Vector3 origin, float radius, Vector3 direction, out RaycastHit hit,
+                                      float maxDistance = float.PositiveInfinity, int layerMask = LayerMask.All,
+                                      Entity ignore = null)
+        {
+            hit = new RaycastHit();
+            int index, generation;
+            Vector3 point, normal;
+            float distance;
+            if (SphereCastInternal(ref origin, radius, ref direction, maxDistance, unchecked((uint)layerMask),
+                                   IgnoreIndex(ignore), IgnoreGeneration(ignore),
+                                   out index, out generation, out point, out normal, out distance) == 0)
+                return false;
+            hit = MakeHit(index, generation, point, normal, distance);
+            return true;
+        }
+
+        /// <summary>Is anything on layerMask's layers inside a ball at position right now? (Unity's Physics.CheckSphere.)</summary>
+        public static bool CheckSphere(Vector3 position, float radius, int layerMask = LayerMask.All, Entity ignore = null)
+        {
+            return CheckSphereInternal(ref position, radius, unchecked((uint)layerMask),
+                                       IgnoreIndex(ignore), IgnoreGeneration(ignore)) != 0;
+        }
+
+        static int IgnoreIndex(Entity ignore) { return ignore != null ? (int)ignore.Index : 0; }
+        static int IgnoreGeneration(Entity ignore) { return ignore != null ? (int)ignore.Generation : 0; }
+
+        static RaycastHit MakeHit(int index, int generation, Vector3 point, Vector3 normal, float distance)
+        {
+            RaycastHit hit = new RaycastHit();
+            hit.Entity = new Entity(unchecked((uint)index), unchecked((uint)generation));
+            hit.Point = point;
+            hit.Normal = normal;
+            hit.Distance = distance;
+            return hit;
+        }
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int RaycastMaskedInternal(ref Vector3 origin, ref Vector3 direction, float maxDistance,
+                                                        uint layerMask, int ignoreIndex, int ignoreGeneration,
+                                                        out int index, out int generation, out Vector3 point,
+                                                        out Vector3 normal, out float distance);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SphereCastInternal(ref Vector3 origin, float radius, ref Vector3 direction,
+                                                     float maxDistance, uint layerMask, int ignoreIndex,
+                                                     int ignoreGeneration, out int index, out int generation,
+                                                     out Vector3 point, out Vector3 normal, out float distance);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int CheckSphereInternal(ref Vector3 position, float radius, uint layerMask,
+                                                      int ignoreIndex, int ignoreGeneration);
+
+        /// <summary>
+        /// An explosion at position: every dynamic body within radius is pushed away (as
+        /// RigidBody.AddExplosionForce), full force at the centre fading to nothing at the
+        /// edge; upwardsModifier throws them up. Returns how many entities it reached -
+        /// characters and static things too, which aren't moved. Damage is up to the caller.
+        /// </summary>
+        public static int Explode(Vector3 position, float radius, float force, float upwardsModifier = 0f)
+        {
+            return ExplodeInternal(ref position, radius, force, upwardsModifier);
+        }
+
+        // Added by Hugo (7 Nov 2026), C++ side in PhysicsBindings.cpp.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ExplodeInternal(ref Vector3 position, float radius, float force, float upwardsModifier);
+
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int RaycastInternal(ref Vector3 origin, ref Vector3 direction, float maxDistance,
                                                   int ignoreIndex, int ignoreGeneration, out int index,
