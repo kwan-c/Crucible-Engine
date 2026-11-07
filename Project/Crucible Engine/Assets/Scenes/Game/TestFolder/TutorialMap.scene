@@ -2254,6 +2254,86 @@
             }
         },
         {
+            "id": "1F01F0DEB06D400D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 81.97647094726563,
+                        "y": 2.905433416366577,
+                        "z": -54.35051727294922
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 1.5,
+                    "rate": 0.0,
+                    "burstCount": 60,
+                    "maxParticles": 200,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 70.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.3499999940395355,
+                    "lifetimeMax": 0.8999999761581421,
+                    "speedMin": 3.0,
+                    "speedMax": 8.0,
+                    "sizeMin": 0.02500000037252903,
+                    "sizeMax": 0.05000000074505806,
+                    "endSizeScale": 0.30000001192092896,
+                    "gravityScale": 1.0,
+                    "drag": 0.800000011920929,
+                    "spinDeg": 0.0,
+                    "stretch": 0.03999999910593033,
+                    "colourStart": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.44999998807907104
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 0.30000001192092896,
+                        "z": 0.05000000074505806
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 12.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": true,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 10.0,
+                    "lightRange": 6.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sparks"
+                }
+            }
+        },
+        {
             "id": "1F491F9570A2E2EB",
             "parent": "70061E5CAD2D87B5",
             "siblingIndex": 9,
@@ -4869,7 +4949,7 @@
                     "scale": {
                         "x": 10.408409118652344,
                         "y": 0.17109107971191406,
-                        "z": 30.67283058166504
+                        "z": 30.877981185913086
                     }
                 },
                 "MeshRenderer": {
@@ -8176,20 +8256,20 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 48.00392150878906,
+                        "x": 47.6481819152832,
                         "y": 0.0,
-                        "z": -51.83803176879883
+                        "z": -52.013248443603516
                     },
                     "rotation": {
                         "x": 0.0,
-                        "y": 0.04361938685178757,
+                        "y": 0.0,
                         "z": 0.0,
-                        "w": 0.9990482330322266
+                        "w": 1.0
                     },
                     "scale": {
-                        "x": 24.999998092651367,
+                        "x": 24.999996185302734,
                         "y": 0.17100000381469727,
-                        "z": 33.72004318237305
+                        "z": 41.59518051147461
                     }
                 },
                 "MeshRenderer": {
@@ -8204,7 +8284,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 2856787514755437467,
-                    "materialAsset": 0
+                    "materialAsset": 10703333234877988937
                 },
                 "EntityName": {
                     "name": "Cylinder"
@@ -8472,6 +8552,67 @@
                 },
                 "EntityName": {
                     "name": "Tower_Ruin"
+                }
+            }
+        },
+        {
+            "id": "6F01F0DEAFB90001",
+            "parent": "AF01F0DEB05AC00B",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.00034332275390625,
+                        "y": 0.0,
+                        "z": -0.00016021728515625
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.7071066498756409,
+                        "z": 0.0,
+                        "w": 0.70710688829422
+                    },
+                    "scale": {
+                        "x": 10.408406257629395,
+                        "y": 0.17109107971191406,
+                        "z": 30.67282485961914
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 10703333234877988937
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Ground"
                 }
             }
         },
@@ -11788,6 +11929,86 @@
             }
         },
         {
+            "id": "9701F0DEB06D400F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 81.97647094726563,
+                        "y": 2.905433416366577,
+                        "z": -51.705928802490234
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 1.5,
+                    "rate": 0.0,
+                    "burstCount": 60,
+                    "maxParticles": 200,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 70.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.3499999940395355,
+                    "lifetimeMax": 0.8999999761581421,
+                    "speedMin": 3.0,
+                    "speedMax": 8.0,
+                    "sizeMin": 0.02500000037252903,
+                    "sizeMax": 0.05000000074505806,
+                    "endSizeScale": 0.30000001192092896,
+                    "gravityScale": 1.0,
+                    "drag": 0.800000011920929,
+                    "spinDeg": 0.0,
+                    "stretch": 0.03999999910593033,
+                    "colourStart": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.44999998807907104
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 0.30000001192092896,
+                        "z": 0.05000000074505806
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 12.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": true,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 10.0,
+                    "lightRange": 6.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sparks"
+                }
+            }
+        },
+        {
             "id": "9743E655596A4B1F",
             "parent": "D3A13987FF8EB587",
             "siblingIndex": 13,
@@ -12560,6 +12781,86 @@
                 },
                 "EntityName": {
                     "name": "Tower_Window"
+                }
+            }
+        },
+        {
+            "id": "9F01F0DEB06D4011",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 81.97647094726563,
+                        "y": 2.905433416366577,
+                        "z": -49.00954818725586
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ParticleEmitter": {
+                    "playing": true,
+                    "loop": true,
+                    "duration": 1.5,
+                    "rate": 0.0,
+                    "burstCount": 60,
+                    "maxParticles": 200,
+                    "shape": "Point",
+                    "shapeRadius": 0.25,
+                    "boxExtents": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    },
+                    "spreadDeg": 70.0,
+                    "worldSpace": true,
+                    "lifetimeMin": 0.3499999940395355,
+                    "lifetimeMax": 0.8999999761581421,
+                    "speedMin": 3.0,
+                    "speedMax": 8.0,
+                    "sizeMin": 0.02500000037252903,
+                    "sizeMax": 0.05000000074505806,
+                    "endSizeScale": 0.30000001192092896,
+                    "gravityScale": 1.0,
+                    "drag": 0.800000011920929,
+                    "spinDeg": 0.0,
+                    "stretch": 0.03999999910593033,
+                    "colourStart": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.44999998807907104
+                    },
+                    "colourEnd": {
+                        "x": 1.0,
+                        "y": 0.30000001192092896,
+                        "z": 0.05000000074505806
+                    },
+                    "alphaStart": 1.0,
+                    "alphaEnd": 0.0,
+                    "brightness": 12.0,
+                    "blend": "Additive",
+                    "textureAsset": 0,
+                    "flipbookCols": 1,
+                    "flipbookRows": 1,
+                    "emitLight": true,
+                    "lightColour": {
+                        "x": 1.0,
+                        "y": 0.6000000238418579,
+                        "z": 0.25
+                    },
+                    "lightIntensity": 10.0,
+                    "lightRange": 6.0,
+                    "seed": 1
+                },
+                "EntityName": {
+                    "name": "Sparks"
                 }
             }
         },
@@ -13550,6 +13851,101 @@
             }
         },
         {
+            "id": "A701F0DEAFBD0003",
+            "parent": "AF01F0DEAFC58005",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 19.090518951416016,
+                        "z": -0.5404852032661438
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.1526833325624466,
+                        "y": 7.3367919921875,
+                        "z": 0.27585068345069885
+                    }
+                },
+                "EntityName": {
+                    "name": "World Text"
+                },
+                "WorldText": {
+                    "text": "Defeat the enemies ahead to complete the tutorial",
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 0.5,
+                    "size": {
+                        "x": 10.0,
+                        "y": 1.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": true,
+                    "fadeStart": 15.0,
+                    "fadeEnd": 25.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.01600000075995922,
+                    "glow": true,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
             "id": "A711BCCA37FD78E7",
             "parent": "F22B2B96BC7E27B1",
             "siblingIndex": 37,
@@ -14472,7 +14868,7 @@
                             "real": 0.0,
                             "text": "",
                             "stringIsNull": false,
-                            "entityId": 0,
+                            "entityId": 3209343454945230951,
                             "assetId": 0
                         },
                         {
@@ -14502,6 +14898,166 @@
                             "assetId": 0
                         }
                     ]
+                }
+            }
+        },
+        {
+            "id": "AF01F0DEAFC58005",
+            "parent": "E0CFF8DE8F304009",
+            "siblingIndex": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 31.693561553955078,
+                        "y": 0.1789761781692505,
+                        "z": -51.85057067871094
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071067094802856,
+                        "z": 0.0,
+                        "w": 0.7071068286895752
+                    },
+                    "scale": {
+                        "x": 6.549502849578857,
+                        "y": 0.13629934191703796,
+                        "z": 3.6251490116119385
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.501960813999176,
+                        "y": 0.501960813999176,
+                        "z": 0.501960813999176,
+                        "w": 0.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 11314125088449904645
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": true
+                },
+                "EntityName": {
+                    "name": "CheckPoint_Ground_7"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Checkpoint",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "message",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "marker",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 12034164518532481027,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "next",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 13187086023146078217,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "spinSpeed",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "startHidden",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "AF01F0DEB05AC00B",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 74.87699890136719,
+                        "y": 0.0,
+                        "z": -52.012001037597656
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "LastPart"
                 }
             }
         },
@@ -14853,6 +15409,140 @@
             }
         },
         {
+            "id": "B701F0DEB0240009",
+            "parent": "AF01F0DEB05AC00B",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.722686767578125,
+                        "y": 0.1789761781692505,
+                        "z": 0.16143035888671875
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071066498756409,
+                        "z": 0.0,
+                        "w": 0.70710688829422
+                    },
+                    "scale": {
+                        "x": 6.549501895904541,
+                        "y": 0.13629934191703796,
+                        "z": 3.6251485347747803
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.501960813999176,
+                        "y": 0.501960813999176,
+                        "z": 0.501960813999176,
+                        "w": 0.0
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 11314125088449904645
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": true
+                },
+                "EntityName": {
+                    "name": "CheckPoint_Ground_8"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Checkpoint",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "message",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "marker",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 17222311289269911559,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "next",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "spinSpeed",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "startHidden",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
             "id": "B7B017840C57D8FF",
             "parent": "70061E5CAD2D87B5",
             "siblingIndex": 20,
@@ -15107,6 +15797,19 @@
                     },
                     "meshAsset": 5067099792209742713,
                     "materialAsset": 0
+                },
+                "AudioSource": {
+                    "clip": 0,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": true,
+                    "loop": false,
+                    "volume": 1.0,
+                    "pitch": 1.0,
+                    "spatialBlend": 0.0,
+                    "minDistance": 1.0,
+                    "maxDistance": 500.0,
+                    "rolloffMode": "Logarithmic"
                 },
                 "CharacterController": {
                     "height": 2.0,
@@ -17736,7 +18439,7 @@
                             "real": 0.0,
                             "text": "",
                             "stringIsNull": false,
-                            "entityId": 0,
+                            "entityId": 12610625270836461573,
                             "assetId": 0
                         },
                         {
@@ -19584,6 +20287,101 @@
             }
         },
         {
+            "id": "EF01F0DEB0220007",
+            "parent": "B701F0DEB0240009",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 19.090518951416016,
+                        "z": -0.5404852032661438
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.1526833325624466,
+                        "y": 7.3367919921875,
+                        "z": 0.27585068345069885
+                    }
+                },
+                "EntityName": {
+                    "name": "World Text"
+                },
+                "WorldText": {
+                    "text": "Congratulations on completing the tutorial!",
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 0.5,
+                    "size": {
+                        "x": 10.0,
+                        "y": 1.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": true,
+                    "fadeStart": 15.0,
+                    "fadeEnd": 25.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.01600000075995922,
+                    "glow": true,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
             "id": "EF4E9CF8C06D657F",
             "parent": "D3A13987FF8EB587",
             "siblingIndex": 2,
@@ -21017,7 +21815,7 @@
                         "x": 0.5,
                         "y": 0.5
                     },
-                    "billboard": "Off",
+                    "billboard": "FaceCamera",
                     "alwaysOnTop": false,
                     "doubleSided": true,
                     "intensity": 1.0,

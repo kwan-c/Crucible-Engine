@@ -37,6 +37,7 @@
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/Panels/ImGuiPanel_Console.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
+#include "ImGui/Panels/ImGuiPanel_PackageGame.h"
 #include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
 #include "ImGui/Panels/ImGuiPanel_Resources.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
@@ -412,6 +413,7 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::NETWORK] = std::make_shared<NetworkPanel>(core);   // this instance's Offline/Host/Client settings, used at the next Play
 	m_panels[ImguiPanels::BEHAVIORGRAPH] = std::make_shared<BehaviorGraphPanel>(core);   // floating: edit .behaviorgraph files (AI)
 	m_panels[ImguiPanels::STATEGRAPH] = std::make_shared<StateGraphPanel>(core);         // floating: edit .stategraph files (AI)
+	m_panels[ImguiPanels::PACKAGEGAME] = std::make_shared<PackageGamePanel>(core);       // floating: File > Package Game... (zip for players)
 
 	for (auto& panel : m_panels)
 		panel.second->Init();

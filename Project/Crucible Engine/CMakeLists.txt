@@ -41,6 +41,34 @@ add_subdirectory(Editor)
 add_subdirectory(Game)
 add_subdirectory(Tools/Cook)   # after Engine: the Cook target waits for its Shaders target
 
+# ------------------------------------------------------------
+# Packaging (CPack): the PACKAGE target zips the game folder
+# ------------------------------------------------------------
+# Packs only the "Game" install component (see Game/CMakeLists.txt) into
+# Build/Mekanomachia-<version>-win64.zip, holding one Mekanomachia-<version>-win64 folder.
+# Players unzip it and run Mekanomachia.exe. Build the Cook target first:
+#
+#   cmake --build Build --config Release --target Game Cook
+#   cmake --build Build --config Release --target PACKAGE
+#
+# FreeType, glm and rttr call include(CPack) in their own folders too. This one runs
+# last, so the Build/CPackConfig.cmake it writes is the one PACKAGE uses.
+set(CPACK_PACKAGE_NAME        "Mekanomachia")
+set(CPACK_PACKAGE_VENDOR      "Team Medium-Well")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "Mekanomachia, made with the Crucible Engine")
+set(CPACK_PACKAGE_VERSION     "0.1.0")   # default; File > Package Game (or cpack -R) can give another
+# Names the zip <name>-<version>-win64 when cpack runs, so a version given then is used too.
+set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_SOURCE_DIR}/Tools/Package/CPackOptions.cmake")
+set(CPACK_GENERATOR           "ZIP")
+# Only the Game component: leaves out third-party headers and .lib files (Jolt, glfw, ...).
+# CPack only honours this list in component mode, so turn that on and put every listed
+# component into one zip.
+set(CPACK_COMPONENTS_ALL      Game)
+set(CPACK_ARCHIVE_COMPONENT_INSTALL ON)
+set(CPACK_COMPONENTS_GROUPING ALL_COMPONENTS_IN_ONE)
+set(CPACK_COMPONENT_INCLUDE_TOPLEVEL_DIRECTORY ON)   # component mode leaves it out by default
+include(CPack)
+
 # Set startup project for Visual Studio
 if(MSVC)
     set_property(DIRECTORY ${CMAKE_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT Editor)
