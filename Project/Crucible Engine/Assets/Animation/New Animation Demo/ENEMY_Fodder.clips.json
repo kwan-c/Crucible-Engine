@@ -1,0 +1,504 @@
+{
+ "model": "ENEMY_Fodder",
+ "source": "LithomachiaEnemies_Set1.blend",
+ "fps": 30.0,
+ "note": "index = the clip number in the GLB (Crucible). Unity finds clips by name.",
+ "clips": [
+  {
+   "name": "Fodder_BlasterFire",
+   "index": 0,
+   "frames": 5,
+   "seconds": 0.1667,
+   "loop": true,
+   "markers": [
+    {
+     "name": "fire",
+     "frame": 0,
+     "seconds": 0.0
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Loop with Blaster_Fire: every shot jolts the body 10 cm back and tips it 5 degrees further back.",
+   "props": {
+    "shots_per_second": 6.0,
+    "notes": "Loop with Blaster_Fire: every shot jolts the body 10 cm back and tips it 5 degrees further back."
+   }
+  },
+  {
+   "name": "Fodder_CannonChargeLoop",
+   "index": 1,
+   "frames": 24,
+   "seconds": 0.8,
+   "loop": true,
+   "markers": [],
+   "speed_mps": 0.0,
+   "notes": "Loop with Cannon_ChargeLoop while charging: braced and shaking, the front-left leg twitches.",
+   "props": {
+    "notes": "Loop with Cannon_ChargeLoop while charging: braced and shaking, the front-left leg twitches."
+   }
+  },
+  {
+   "name": "Fodder_CannonChargeStart",
+   "index": 2,
+   "frames": 24,
+   "seconds": 0.8,
+   "loop": false,
+   "markers": [
+    {
+     "name": "charge_start",
+     "frame": 0,
+     "seconds": 0.0
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Play with Cannon_ChargeStart. Ends in the braced pose that the charge loop holds.",
+   "props": {
+    "notes": "Play with Cannon_ChargeStart. Ends in the braced pose that the charge loop holds."
+   }
+  },
+  {
+   "name": "Fodder_CannonFire",
+   "index": 3,
+   "frames": 48,
+   "seconds": 1.6,
+   "loop": false,
+   "markers": [
+    {
+     "name": "fire",
+     "frame": 1,
+     "seconds": 0.0333
+    },
+    {
+     "name": "land",
+     "frame": 10,
+     "seconds": 0.3333
+    },
+    {
+     "name": "cancel",
+     "frame": 34,
+     "seconds": 1.1333
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Play with Cannon_Fire. The shot knocks the body 0.75 m back and 34 degrees up onto its back legs; the front legs flail, slam down 0.3 m short (land), and step back into place.",
+   "props": {
+    "notes": "Play with Cannon_Fire. The shot knocks the body 0.75 m back and 34 degrees up onto its back legs; the front legs flail, slam down 0.3 m short (land), and step back into place."
+   }
+  },
+  {
+   "name": "Fodder_HitReact_Back",
+   "index": 4,
+   "frames": 20,
+   "seconds": 0.6667,
+   "loop": false,
+   "markers": [
+    {
+     "name": "impact",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "land",
+     "frame": 8,
+     "seconds": 0.2667
+    },
+    {
+     "name": "cancel",
+     "frame": 12,
+     "seconds": 0.4
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Hit from the back. Starts and ends on the idle base pose. Blend back out from cancel (12).",
+   "props": {
+    "notes": "Hit from the back. Starts and ends on the idle base pose. Blend back out from cancel (12)."
+   }
+  },
+  {
+   "name": "Fodder_HitReact_Front",
+   "index": 5,
+   "frames": 20,
+   "seconds": 0.6667,
+   "loop": false,
+   "markers": [
+    {
+     "name": "impact",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "land",
+     "frame": 8,
+     "seconds": 0.2667
+    },
+    {
+     "name": "cancel",
+     "frame": 12,
+     "seconds": 0.4
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Hit from the front. Starts and ends on the idle base pose. Blend back out from cancel (12).",
+   "props": {
+    "notes": "Hit from the front. Starts and ends on the idle base pose. Blend back out from cancel (12)."
+   }
+  },
+  {
+   "name": "Fodder_HitReact_Left",
+   "index": 6,
+   "frames": 20,
+   "seconds": 0.6667,
+   "loop": false,
+   "markers": [
+    {
+     "name": "impact",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "land",
+     "frame": 8,
+     "seconds": 0.2667
+    },
+    {
+     "name": "cancel",
+     "frame": 12,
+     "seconds": 0.4
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Hit from the left. Starts and ends on the idle base pose. Blend back out from cancel (12).",
+   "props": {
+    "notes": "Hit from the left. Starts and ends on the idle base pose. Blend back out from cancel (12)."
+   }
+  },
+  {
+   "name": "Fodder_HitReact_Right",
+   "index": 7,
+   "frames": 20,
+   "seconds": 0.6667,
+   "loop": false,
+   "markers": [
+    {
+     "name": "impact",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "land",
+     "frame": 8,
+     "seconds": 0.2667
+    },
+    {
+     "name": "cancel",
+     "frame": 12,
+     "seconds": 0.4
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Hit from the right. Starts and ends on the idle base pose. Blend back out from cancel (12).",
+   "props": {
+    "notes": "Hit from the right. Starts and ends on the idle base pose. Blend back out from cancel (12)."
+   }
+  },
+  {
+   "name": "Fodder_Idle",
+   "index": 8,
+   "frames": 120,
+   "seconds": 4.0,
+   "loop": true,
+   "markers": [
+    {
+     "name": "look_L",
+     "frame": 22,
+     "seconds": 0.7333
+    },
+    {
+     "name": "look_R",
+     "frame": 50,
+     "seconds": 1.6667
+    },
+    {
+     "name": "tap_FL",
+     "frame": 63,
+     "seconds": 2.1
+    },
+    {
+     "name": "tap_FL_2",
+     "frame": 67,
+     "seconds": 2.2333
+    },
+    {
+     "name": "sag",
+     "frame": 88,
+     "seconds": 2.9333
+    },
+    {
+     "name": "plant_BR",
+     "frame": 96,
+     "seconds": 3.2
+    },
+    {
+     "name": "jerk_up",
+     "frame": 100,
+     "seconds": 3.3333
+    },
+    {
+     "name": "plant_BR_2",
+     "frame": 112,
+     "seconds": 3.7333
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Loop. Frame 0 is the same pose as Fodder_BlasterFire frame 0, so firing from idle starts without a pop.",
+   "props": {
+    "notes": "Loop. Frame 0 is the same pose as Fodder_BlasterFire frame 0, so firing from idle starts without a pop."
+   }
+  },
+  {
+   "name": "Fodder_Jog",
+   "index": 9,
+   "frames": 24,
+   "seconds": 0.8,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_BR",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_FL",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_BL",
+     "frame": 12,
+     "seconds": 0.4
+    },
+    {
+     "name": "step_FR",
+     "frame": 12,
+     "seconds": 0.4
+    }
+   ],
+   "speed_mps": 4.2,
+   "notes": "In place. Planted feet slide at 4.2 m/s. Same footfall timing as Fodder_Jog, so the clips blend by angle.",
+   "props": {
+    "speed_mps": 4.2,
+    "direction": "forward",
+    "notes": "In place. Planted feet slide at 4.2 m/s. Same footfall timing as Fodder_Jog, so the clips blend by angle."
+   }
+  },
+  {
+   "name": "Fodder_StrafeJog_L",
+   "index": 10,
+   "frames": 24,
+   "seconds": 0.8,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_BR",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_FL",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_BL",
+     "frame": 12,
+     "seconds": 0.4
+    },
+    {
+     "name": "step_FR",
+     "frame": 12,
+     "seconds": 0.4
+    }
+   ],
+   "speed_mps": 4.2,
+   "notes": "In place. Planted feet slide at 4.2 m/s. Same footfall timing as Fodder_Jog, so the clips blend by angle.",
+   "props": {
+    "speed_mps": 4.2,
+    "direction": "left (+X)",
+    "notes": "In place. Planted feet slide at 4.2 m/s. Same footfall timing as Fodder_Jog, so the clips blend by angle."
+   }
+  },
+  {
+   "name": "Fodder_StrafeJog_R",
+   "index": 11,
+   "frames": 24,
+   "seconds": 0.8,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_BR",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_FL",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_BL",
+     "frame": 12,
+     "seconds": 0.4
+    },
+    {
+     "name": "step_FR",
+     "frame": 12,
+     "seconds": 0.4
+    }
+   ],
+   "speed_mps": 4.2,
+   "notes": "In place. Planted feet slide at 4.2 m/s. Same footfall timing as Fodder_Jog, so the clips blend by angle.",
+   "props": {
+    "speed_mps": 4.2,
+    "direction": "right (-X)",
+    "notes": "In place. Planted feet slide at 4.2 m/s. Same footfall timing as Fodder_Jog, so the clips blend by angle."
+   }
+  },
+  {
+   "name": "Fodder_StrafeWalk_L",
+   "index": 12,
+   "frames": 36,
+   "seconds": 1.2,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_BL",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_FL",
+     "frame": 9,
+     "seconds": 0.3
+    },
+    {
+     "name": "step_BR",
+     "frame": 18,
+     "seconds": 0.6
+    },
+    {
+     "name": "step_FR",
+     "frame": 27,
+     "seconds": 0.9
+    }
+   ],
+   "speed_mps": 1.6,
+   "notes": "In place. Planted feet slide at 1.6 m/s. Same footfall timing as Fodder_Walk, so the clips blend by angle.",
+   "props": {
+    "speed_mps": 1.6,
+    "direction": "left (+X)",
+    "notes": "In place. Planted feet slide at 1.6 m/s. Same footfall timing as Fodder_Walk, so the clips blend by angle."
+   }
+  },
+  {
+   "name": "Fodder_StrafeWalk_R",
+   "index": 13,
+   "frames": 36,
+   "seconds": 1.2,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_BL",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_FL",
+     "frame": 9,
+     "seconds": 0.3
+    },
+    {
+     "name": "step_BR",
+     "frame": 18,
+     "seconds": 0.6
+    },
+    {
+     "name": "step_FR",
+     "frame": 27,
+     "seconds": 0.9
+    }
+   ],
+   "speed_mps": 1.6,
+   "notes": "In place. Planted feet slide at 1.6 m/s. Same footfall timing as Fodder_Walk, so the clips blend by angle.",
+   "props": {
+    "speed_mps": 1.6,
+    "direction": "right (-X)",
+    "notes": "In place. Planted feet slide at 1.6 m/s. Same footfall timing as Fodder_Walk, so the clips blend by angle."
+   }
+  },
+  {
+   "name": "Fodder_Walk",
+   "index": 14,
+   "frames": 36,
+   "seconds": 1.2,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_BL",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_FL",
+     "frame": 9,
+     "seconds": 0.3
+    },
+    {
+     "name": "step_BR",
+     "frame": 18,
+     "seconds": 0.6
+    },
+    {
+     "name": "step_FR",
+     "frame": 27,
+     "seconds": 0.9
+    }
+   ],
+   "speed_mps": 1.6,
+   "notes": "In place. Planted feet slide at 1.6 m/s. Same footfall timing as Fodder_Walk, so the clips blend by angle.",
+   "props": {
+    "speed_mps": 1.6,
+    "direction": "forward",
+    "notes": "In place. Planted feet slide at 1.6 m/s. Same footfall timing as Fodder_Walk, so the clips blend by angle."
+   }
+  }
+ ],
+ "moves": {
+  "CannonShot": {
+   "parts": {
+    "enemy": "Fodder_CannonFire",
+    "shoulder_weapon": "Cannon_Fire"
+   },
+   "seconds": 1.6,
+   "events": {
+    "fire": 0.033,
+    "land": 0.333,
+    "cancel": 1.133
+   },
+   "before": [
+    "Fodder_CannonChargeStart + Cannon_ChargeStart (0.8 s)",
+    "Fodder_CannonChargeLoop + Cannon_ChargeLoop (loop while charging)"
+   ]
+  },
+  "BlasterBurst": {
+   "parts": {
+    "enemy": "Fodder_BlasterFire",
+    "arm_weapon": "Blaster_Fire"
+   },
+   "seconds_per_shot": 0.167,
+   "loop": true,
+   "events": {
+    "fire": 0.0
+   }
+  }
+ }
+}

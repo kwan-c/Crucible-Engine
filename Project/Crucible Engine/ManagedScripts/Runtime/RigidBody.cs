@@ -71,6 +71,29 @@ namespace Crucible
             ApplyRBImpulse((int)entity.Index, (int)entity.Generation, ref v);
         }
 
+        /// <summary>
+        /// Unity's freezeRotation: locks all three rotation axes, so collisions and pushes
+        /// can't spin or tip the body (it still moves). A FlowFieldAgent turns a locked
+        /// enemy itself. Unlocking lets it fall over - e.g. when it dies.
+        /// </summary>
+        public bool FreezeRotation
+        {
+            get { int v; return GetFreezeRotationInternal((int)entity.Index, (int)entity.Generation, out v) != 0 && v != 0; }
+            set { SetFreezeRotationInternal((int)entity.Index, (int)entity.Generation, value ? 1 : 0); }
+        }
+
+        /// <summary>
+        /// Unity's AddExplosionForce: pushes this body away from a blast at explosionPosition,
+        /// full force at the centre fading to nothing at explosionRadius (0 = no fading).
+        /// upwardsModifier lowers the blast by that many metres, so the body is thrown up.
+        /// Pushes as an impulse (a one-off kick). Only dynamic bodies move. False if nothing was pushed.
+        /// </summary>
+        public bool AddExplosionForce(float explosionForce, Vector3 explosionPosition, float explosionRadius, float upwardsModifier = 0f)
+        {
+            return AddExplosionForceInternal((int)entity.Index, (int)entity.Generation, explosionForce,
+                                             ref explosionPosition, explosionRadius, upwardsModifier) != 0;
+        }
+
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int GetVelocity(int index, int generation, out Vector3 value);
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -114,5 +137,16 @@ namespace Crucible
         
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int ApplyRBImpulse(int index, int generation, ref Vector3 value);
+
+        // Added by Hugo (7 Nov 2026), C++ side in PhysicsBindings.cpp: rotation locks and explosions.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetFreezeRotationInternal(int index, int generation, out int value);
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetFreezeRotationInternal(int index, int generation, int value);
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int AddExplosionForceInternal(int index, int generation, float force, ref Vector3 position,
+                                                            float radius, float upwardsModifier);
     }
 }

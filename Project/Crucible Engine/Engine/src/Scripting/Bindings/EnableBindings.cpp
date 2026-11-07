@@ -34,6 +34,8 @@
 #include "Audio/AudioComponents.h"
 #include "Physics/PhysicsComponents.h"
 #include "Player/PlayerComponents.h"
+#include "Navigation/NavigationComponents.h"   // FlowFieldAgent, FlowFieldSurface
+#include "AI/AIComponents.h"                   // StateGraphAgent
 #if CRUCIBLE_WITH_MONO
 #include <algorithm>
 #include <map>
@@ -74,6 +76,9 @@ namespace Crucible::ScriptBindings
 			case 18: return ComponentTypeId<PlayerController>();
 			case 19: return ComponentTypeId<WorldText>();
 			case 20: return ComponentTypeId<MaterialParams>();
+			case 21: return ComponentTypeId<FlowFieldAgent>();     // Hugo, 7 Nov 2026: the AI components
+			case 22: return ComponentTypeId<FlowFieldSurface>();
+			case 23: return ComponentTypeId<StateGraphAgent>();
 			default: return kInvalid; // 0 = Transform: mandatory
 			}
 		}

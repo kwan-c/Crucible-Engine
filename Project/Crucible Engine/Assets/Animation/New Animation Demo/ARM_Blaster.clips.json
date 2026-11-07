@@ -1,0 +1,70 @@
+{
+ "model": "ARM_Blaster",
+ "source": "LithomachiaGolems_Set1.blend",
+ "fps": 30.0,
+ "note": "index = the clip number in the GLB (Crucible). Unity finds clips by name.",
+ "clips": [
+  {
+   "name": "Blaster_Fire",
+   "index": 0,
+   "frames": 5,
+   "seconds": 0.1667,
+   "loop": true,
+   "markers": [
+    {
+     "name": "fire",
+     "frame": 0,
+     "seconds": 0.0
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "One shot per cycle; loop it while the trigger is held. Kick back 0.12 m and up 3 degrees, recovered by the next shot. Faster or slower fire = play it faster or slower (rate = shots per second / 6).",
+   "props": {
+    "shots_per_second": 6.0,
+    "notes": "One shot per cycle; loop it while the trigger is held. Kick back 0.12 m and up 3 degrees, recovered by the next shot. Faster or slower fire = play it faster or slower (rate = shots per second / 6)."
+   }
+  }
+ ],
+ "moves": {
+  "PowerUp": {
+   "parts": {
+    "legs": "LegsBiped_PowerUp",
+    "torso": "TorsoSpecialist_PowerUp",
+    "head": "HeadSpecialist_PowerUp"
+   },
+   "seconds": 2.0,
+   "events_from": "torso",
+   "events": {
+    "release": 0.533,
+    "cancel": 1.467
+   },
+   "notes": "Start all three on the same frame. While moving, play only the torso and head clips; the legs keep their locomotion."
+  },
+  "CannonShot_L": {
+   "parts": {
+    "shoulder_weapon": "Cannon_Fire",
+    "torso": "Torso_CannonFire_L"
+   },
+   "seconds": 1.6,
+   "events_from": "shoulder_weapon",
+   "events": {
+    "fire": 0.033,
+    "cancel": 1.0
+   },
+   "notes": "Play after Cannon_ChargeStart (0.8 s) and Cannon_ChargeLoop (looped while held). Start both clips on the same frame."
+  },
+  "CannonShot_R": {
+   "parts": {
+    "shoulder_weapon": "Cannon_Fire",
+    "torso": "Torso_CannonFire_R"
+   },
+   "seconds": 1.6,
+   "events_from": "shoulder_weapon",
+   "events": {
+    "fire": 0.033,
+    "cancel": 1.0
+   },
+   "notes": "Play after Cannon_ChargeStart (0.8 s) and Cannon_ChargeLoop (looped while held). Start both clips on the same frame."
+  }
+ }
+}

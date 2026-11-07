@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -15,13 +15,24 @@
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       Unity's crowd: overlapping bodies are moved apart and the
+*                less important agent gives way (CrowdPush), instead of the
+*                full-speed separation push from 3.5 m. Alignment only under
+*                FollowField (it made arrived agents drift at 1.7 m/s). Play
+*                bakes once the surface's WorldTransform is valid (the Game's
+*                first frame baked a 1 x 1 m grid). StandOnGround: agents
+*                stand on the surface under them (ray down, ease, fall off
+*                ledges), not on a flat plane at the surface entity's height.
+*                Dynamic agents: a dynamic RigidBody is moved by physics and
+*                the agent steers only its XZ velocity (knockback fades at
+*                m_acceleration; no steering while airborne)
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
 
 // STL
-#include <algorithm>    // std::clamp, std::max
-#include <cmath>        // std::atan2, std::sqrt
+#include <algorithm>    // std::clamp, std::max, std::sort, std::unique, std::binary_search
+#include <cmath>        // std::atan2, std::sqrt, std::ceil, std::tan, std::cos
 
 // Crucible engine
 #include "Components/Components.h"            // WorldTransform
@@ -148,7 +159,7 @@ namespace Crucible {
 
         // Reynolds' steering force (Jean David's ToForce): the change of
         // velocity that would turn `velocity` into `desired`, no bigger than
-        // maxForce. Every behaviour (follow the field, separation, alignment)
+        // maxForce. Every behaviour (follow the field, alignment, avoidance)
         // speaks in these, so they can simply be weighted and added up.
         Math::vec3 Steer(const Math::vec3& desired, const Math::vec3& velocity, float maxForce) {
 
@@ -160,12 +171,49 @@ namespace Crucible {
         // "attackRange + 0.5"): the crowd can hold an agent just outside it.
         constexpr float kArriveSlack = 0.5f;
 
+        // Dynamic agents: how far (m/s) the body's real velocity may be from the
+        // agent's own before the agent takes the body's - i.e. physics shoved it.
+        // Well above friction's drag between two frames (about 0.03 m/s a step),
+        // well below a knockback or a wall stopping it dead.
+        constexpr float kShoveSpeed = 1.0f;
+
+        // How fast two overlapping bodies are moved apart: this share of the
+        // overlap per second, so 8 clears most of it in about an eighth of a
+        // second - quick enough to look solid, slow enough not to snap. It is
+        // also never faster than the agent can walk (see CrowdPush's use).
+        constexpr float kOverlapResolveRate = 8.0f;
+
+        // Unity's avoidance priority, plus one rule of ours: of two touching
+        // agents, how much of the overlap `self` should clear.
+        //   0   - `self` is the more important one: the other gives way
+        //   0.5 - equals: they share it
+        //   1   - `self` is the less important one: it gives way entirely
+        // Lower priority numbers are more important (Unity's rule). At equal
+        // priority, an agent that has arrived (standing at its attack spot,
+        // or stopped) outranks one still on its way, so an enemy already
+        // hitting the player isn't shoved off by the next one walking in.
+        float YieldShare(int selfPriority, bool selfArrived, int otherPriority, bool otherArrived) {
+
+            if (selfPriority != otherPriority) return selfPriority > otherPriority ? 1.0f : 0.0f;
+            if (selfArrived != otherArrived)   return selfArrived ? 0.0f : 1.0f;
+            return 0.5f;
+
+        }   // YieldShare()
+
         /*!
             \brief
             Jean David's Arrive: the velocity that heads straight for `target`
-            at full speed, then slows in a straight line from the agent's
-            m_slowingDistance to a stop at its m_stoppingDistance. Shared by
+            at full speed, then slows in a straight line from
+            `slowingDistance` to a stop at `stoppingDistance`. Shared by
             MoveTo (a point) and Arrive (an entity's position).
+
+            \param stoppingDistance
+            Where it stops: m_stoppingDistance for Arrive, the order's own
+            for MoveTo (FlowFieldAgent::MoveStoppingDistance).
+
+            \param slowingDistance
+            Where it starts slowing: m_slowingDistance for Arrive, the
+            order's own for MoveTo (FlowFieldAgent::MoveSlowingDistance).
 
             \param outDirection
             The flat unit direction to the target (zero if standing on it).
@@ -174,7 +222,7 @@ namespace Crucible {
             The flat distance to it, for RemainingDistance.
         */
         Math::vec3 ArriveVelocity(const Math::vec3& from, const Math::vec3& target, const FlowFieldAgent& agent,
-                                  Math::vec3& outDirection, float& outDistance) {
+                                  float stoppingDistance, float slowingDistance, Math::vec3& outDirection, float& outDistance) {
 
             const Math::vec3 to(target.x - from.x, 0.0f, target.z - from.z);
             outDistance = glm::length(to);
@@ -184,8 +232,8 @@ namespace Crucible {
             // 1 outside the slowing distance, 0 at the stopping distance, a
             // straight line in between. max(0.01) so slowing <= stopping can't
             // divide by zero (it then just stops dead at the stopping distance).
-            const float t = std::clamp((outDistance - agent.m_stoppingDistance)
-                                       / std::max(0.01f, agent.m_slowingDistance - agent.m_stoppingDistance), 0.0f, 1.0f);
+            const float t = std::clamp((outDistance - stoppingDistance)
+                                       / std::max(0.01f, slowingDistance - stoppingDistance), 0.0f, 1.0f);
             return outDirection * agent.m_speed * t;
 
         }   // ArriveVelocity()
@@ -206,10 +254,64 @@ namespace Crucible {
 
         }   // TowardsNearest()
 
+        // An order on entities, for the sorted ground list's binary search.
+        bool EntityLess(const Entity& a, const Entity& b) {
+
+            return a.index != b.index ? a.index < b.index : a.generation < b.generation;
+
+        }   // EntityLess()
+
     }   // ANONYMOUS NAMESPACE
 
     ECSNavigationSystem::ECSNavigationSystem(const PlayMode& playMode, ECSSystemManager& systems)
-        : m_playMode(playMode), m_systems(systems) {}
+        : m_playMode(playMode), m_systems(systems) {
+
+        s_active = this;
+
+    }   // ECSNavigationSystem::ECSNavigationSystem()
+
+    // Only clears it if it is still us, so a newer system made before this one
+    // is destroyed keeps its claim. Without the clear, C# could reach a freed
+    // system after Core shuts down.
+    ECSNavigationSystem::~ECSNavigationSystem() {
+
+        if (s_active == this) s_active = nullptr;
+
+    }   // ECSNavigationSystem::~ECSNavigationSystem()
+
+    bool ECSNavigationSystem::IsWalkable(const Math::vec3& position) const {
+
+        // IsBlockedWorld already says "blocked" while unbaked, so no separate check.
+        return !m_grid.IsBlockedWorld(position) && !m_terrain->IsWall(position);
+
+    }   // ECSNavigationSystem::IsWalkable()
+
+    bool ECSNavigationSystem::IsPathClear(const Math::vec3& from, const Math::vec3& to) const {
+
+        if (!m_grid.IsBaked()) return false;
+
+        // Half a cell per step (at least 20 cm), so the line can't skip over a
+        // one-cell wall between two samples. Unity's spacing exactly.
+        const Math::vec3 delta  = to - from;
+        const float      length = glm::length(Math::vec3(delta.x, 0.0f, delta.z));
+        const int        steps  = std::max(1, static_cast<int>(std::ceil(length / std::max(0.2f, m_grid.CellSize() * 0.5f))));
+
+        // Still inside the blocked cells it started in: those don't count (see the header).
+        bool leavingBlockedStart = m_grid.IsBlockedWorld(from);
+        for (int i = 0; i <= steps; ++i) {
+
+            const Math::vec3 sample = from + delta * (static_cast<float>(i) / static_cast<float>(steps));
+            if (m_terrain->IsWall(sample)) return false;
+            if (m_grid.IsBlockedWorld(sample)) {
+                if (!leavingBlockedStart) return false;
+            } else {
+                leavingBlockedStart = false;
+            }
+
+        }
+        return true;
+
+    }   // ECSNavigationSystem::IsPathClear()
 
     /*!
         \brief
@@ -225,7 +327,7 @@ namespace Crucible {
         centred capsule would pass over knee-high crates.)
 
         Only NonMoving and Moving are hit: the player is the goal, not an
-        obstacle, and other enemies are separation's job. Filtering them out
+        obstacle, and other enemies are the crowd push's job. Filtering them out
         in the cast itself also means an enemy standing in front of a wall
         can't hide the wall, which only looking at the nearest hit would.
 
@@ -262,8 +364,31 @@ namespace Crucible {
         // last Bake click, or never clicked it, and the game must not run on a
         // stale grid. Only Edit -> Playing - Resume carries on with the same one.
         const PlayState state = m_playMode.State();
-        if (m_lastState == PlayState::Edit && state == PlayState::Playing) {
+        if (m_lastState == PlayState::Edit && state == PlayState::Playing) { m_bakePending = true; m_physicsStepped = false; }
 
+        // And not before physics has stepped once: its bodies are created when
+        // Play starts (it runs after this system, in PostUpdate), and the bake
+        // samples the ground heights from them. Without the wait, the first
+        // bake's rays would find nothing and the level would bake flat. It is
+        // a frame or two; with no physics system at all there is nothing to wait for.
+        if (!m_physics) m_physics = m_systems.FindSystem<ECSPhysicsSystem>();
+        if (state == PlayState::Playing && (!m_physics || m_physics->GetStepsLastFrame() > 0)) m_physicsStepped = true;
+
+        // Not on the very frame Play starts, though, if the surface's world
+        // matrix isn't worked out yet: the Game starts Playing on its first
+        // frame, before HierarchyTransformSystem has run, and baking then read
+        // an identity matrix - a 1 x 1 m grid at the origin, so no flow field.
+        // (The Editor never hit this: its transforms exist long before Play.)
+        // No surface at all bakes at once, so Bake's warning still comes.
+        bool surfaceReady = true;
+        world.CreateQuery<const FlowFieldSurface, const WorldTransform>()
+            .ForEach([&](Entity, const FlowFieldSurface&, const WorldTransform& transform) {
+                if (!transform.valid) surfaceReady = false;
+            });
+
+        if (m_bakePending && state == PlayState::Playing && surfaceReady && m_physicsStepped) {
+
+            m_bakePending = false;
             Bake(world);
 
             // Say why there will be no arrows, once, rather than leaving the
@@ -279,8 +404,8 @@ namespace Crucible {
         if (m_lastState != PlayState::Edit && state == PlayState::Edit) {
             m_field.ClearFlow();
             m_goalsAtBuild.clear();
+            m_bakePending    = false;
             m_warnedParented = false;
-            m_warnedDynamic  = false;
         }
         m_lastState = state;
 
@@ -404,10 +529,10 @@ namespace Crucible {
 
         Pass 2, per agent:
           1. the velocity it WANTS from its movement, as a steering force
-          2. the crowd: separation and alignment forces from its neighbours
+          2. the crowd: the overlap push (Unity's rule) and alignment
           3. avoidance: a swerve round whatever is ahead
           4. add them up, capped by m_acceleration, and steer
-          5. move, sliding along anything still in the way
+          5. move, plus the overlap push, sliding along anything still in the way
           6. turn to face where it is going, limited by m_angularSpeed
           7. stand on the ground
     */
@@ -426,6 +551,7 @@ namespace Crucible {
 
         m_agents.clear();
         m_hash.Clear();
+        float largestRadius = 0.0f;     // so a crowd query always reaches every body that could touch
         world.CreateQuery<FlowFieldAgent, Transform>()
             .ForEach([&](Entity entity, FlowFieldAgent& agent, Transform& transform) {
 
@@ -440,15 +566,31 @@ namespace Crucible {
                     return;
                 }
 
-                // A dynamic RigidBody means physics moves this entity too: its
-                // gravity drops it, this sets it back on the ground, and it bobs.
-                // Kinematic is the right setup (physics follows the Transform,
-                // bullets still hit it). Still moved, so the problem is visible
-                // AND explained, once per session.
-                if (const RigidBody* body = world.Read<RigidBody>(entity); body && !body->isKinematic && !m_warnedDynamic) {
-                    CRU_WARN("Navigation: the FlowFieldAgent on entity {} has a non-kinematic RigidBody - tick isKinematic, "
-                             "or physics and the agent will fight over its position", entity.index);
-                    m_warnedDynamic = true;
+                // Two ways to be moved (see DYNAMIC AGENTS in UpdateAgents):
+                //   kinematic - no RigidBody, or a kinematic one: the agent moves
+                //               the Transform itself and stands it on the ground;
+                //   dynamic   - a dynamic RigidBody: physics moves it (gravity,
+                //               collisions, knockback, explosions) and the agent
+                //               only steers its sideways velocity.
+                // A dynamic agent keeps its OWN velocity from last frame - what it is
+                // steering at - and each physics step tops the body up to it (step 5).
+                // That way the ground's friction, which slows the body every step, is
+                // made up every step too. Re-reading the body's velocity instead let
+                // friction feed back into the steering: under about 2 m/s wanted (the
+                // end of an Arrive) the steering's pull was weaker than friction's
+                // drag, and maces stalled 3-7 m from the player, then lurched.
+                // It takes the body's velocity instead when physics has clearly moved
+                // it somewhere else - a blast, a knockback, a wall stopping it, a
+                // landing - so a shove is what it steers back from, as before.
+                // Once the RigidBody's impulse is empty, the queued top-up was used.
+                const RigidBody* body = world.Read<RigidBody>(entity);
+                const bool dynamic = body != nullptr && !body->isKinematic;
+                Math::vec3 bodyVelocity(0.0f);
+                if (dynamic) {
+                    if (body->impulse == Math::vec3(0.0f)) agent.m_pendingSteer = Math::vec3(0.0f);
+                    bodyVelocity = Math::vec3(body->velocity.x, 0.0f, body->velocity.z);
+                    const Math::vec3 expected = bodyVelocity + agent.m_pendingSteer;   // where the body is headed once the queue lands
+                    if (glm::length(expected - agent.m_velocity) > kShoveSpeed) agent.m_velocity = expected;
                 }
 
                 // 1. The Inspector's "start with", applied the first frame the
@@ -472,29 +614,39 @@ namespace Crucible {
                 // function ends: nothing here adds or removes components, so
                 // nothing moves in memory.
                 const int index = static_cast<int>(m_agents.size());
-                m_agents.push_back({ entity, &agent, &transform, transform.positions, agent.m_velocity });
+                const float radius = std::max(agent.m_radius, 0.0f);
+                m_agents.push_back({ entity, &agent, &transform, transform.positions, agent.m_velocity,
+                                     radius, agent.m_avoidancePriority, agent.m_arrived, dynamic, bodyVelocity });
                 m_hash.Insert(index, transform.positions);
+                largestRadius = std::max(largestRadius, radius);
 
             });
 
-        // The crowd forces, from this frame's neighbours (m_neighbours) and the
+        // The crowd, from this frame's neighbours (m_neighbours) and the
         // snapshots - never from an agent pass 2 has already moved.
         //
-        // Separation: away from every neighbour closer than m_separationRadius,
-        // each weighted 1/distance, so the nearest one counts most. Then aimed
-        // at full speed: the direction says which way, the weight how hard.
-        const auto separation = [&](std::size_t i, const FlowFieldAgent& agent) {
+        // CrowdPush (Unity's NavMeshAgent rule, not boids separation): only
+        // bodies that OVERLAP push - closer than the two radii added up - and
+        // by how much they overlap, not at full speed. Agents standing side by
+        // side don't push at all, so nothing shoves a crowd away from its
+        // target. Of each touching pair, YieldShare says how much of the
+        // overlap this agent clears. Returns that as metres to move.
+        const auto crowdPush = [&](std::size_t i) {
 
-            const Math::vec3& from     = m_agents[i].start;
-            const float       radiusSq = agent.m_separationRadius * agent.m_separationRadius;
+            const AgentRef& self = m_agents[i];
 
-            Math::vec3 sum(0.0f);
+            Math::vec3 push(0.0f);
             for (const int j : m_neighbours) {
 
-                Math::vec3  away(from.x - m_agents[static_cast<std::size_t>(j)].start.x, 0.0f,
-                                 from.z - m_agents[static_cast<std::size_t>(j)].start.z);
+                const AgentRef& other = m_agents[static_cast<std::size_t>(j)];
+                const float     reach = self.radius + other.radius;
+
+                Math::vec3  away(self.start.x - other.start.x, 0.0f, self.start.z - other.start.z);
                 const float distanceSq = glm::dot(away, away);
-                if (distanceSq >= radiusSq) continue;
+                if (distanceSq >= reach * reach) continue;      // not touching: no push at all
+
+                const float share = YieldShare(self.priority, self.arrived, other.priority, other.arrived);
+                if (share == 0.0f) continue;                    // the other one gives way
 
                 float distance = std::sqrt(distanceSq);
                 if (distance < 0.001f) {
@@ -505,15 +657,14 @@ namespace Crucible {
                     // rad) spreads consecutive numbers evenly round the circle.
                     const float angle = static_cast<float>(i) * 2.39996f;
                     away     = Math::vec3(std::cos(angle), 0.0f, std::sin(angle));
-                    distance = 0.001f;
+                    distance = 0.0f;
                 } else {
                     away /= distance;
                 }
-                sum += away / distance;
+                push += away * ((reach - distance) * share);
 
             }
-            if (glm::dot(sum, sum) < 1e-8f) return Math::vec3(0.0f);   // nobody close, or pushes that cancel out
-            return Steer(glm::normalize(sum) * agent.m_speed, agent.m_velocity, agent.m_acceleration);
+            return push;
 
         };
 
@@ -550,17 +701,20 @@ namespace Crucible {
             //
             // MoveTo and Arrive: straight at the point / the target entity,
             // slowing from m_slowingDistance to a stop at m_stoppingDistance.
-            // Arrive also faces its target, not where it walks (his FaceTarget),
-            // so an enemy backing off or sidestepping still looks at you.
+            // Both face where they walk, as Unity's Arrive does when its graph
+            // drives it (Jean David's Arrive faced the target; Gam3333's main
+            // turned that off, so a golem stepping round the crowd turns with
+            // its steps instead of strafing). FaceTarget() still overrides.
             //
             // Each also fills in how it's going: RemainingDistance and
             // HasArrived, which the brain and the attack code read.
             Math::vec3 direction(0.0f);     // the way it is trying to go: avoidance picks its side from this
             Math::vec3 desired(0.0f);
-            Math::vec3 lookAt(0.0f);        // a point to face instead of its velocity (Arrive only)
+            Math::vec3 lookAt(0.0f);        // a point to face instead of its velocity (FaceTarget)
             bool       facesTarget = false;
             bool       hasGoal     = false; // something to measure the distance to
             float      remaining   = 0.0f;
+            float      stopAt      = agent.m_stoppingDistance;   // MoveTo may bring its own
 
             switch (agent.m_movement) {
 
@@ -582,7 +736,8 @@ namespace Crucible {
                 }
 
                 case AgentMovement::MoveTo:
-                    desired = ArriveVelocity(position, agent.m_destination, agent, direction, remaining);
+                    stopAt  = agent.MoveStoppingDistance();
+                    desired = ArriveVelocity(position, agent.m_destination, agent, stopAt, agent.MoveSlowingDistance(), direction, remaining);
                     hasGoal = true;
                     DebugDraw::Line(position, agent.m_destination, pathStyle);
                     break;
@@ -593,14 +748,25 @@ namespace Crucible {
                     const WorldTransform* target = world.IsAlive(agent.m_target) ? world.Read<WorldTransform>(agent.m_target) : nullptr;
                     if (!target || !target->valid) break;
 
-                    lookAt      = Math::vec3(target->matrix[3]);
-                    facesTarget = true;
-                    desired     = ArriveVelocity(position, lookAt, agent, direction, remaining);
-                    hasGoal     = true;
-                    DebugDraw::Line(position, lookAt, pathStyle);
+                    const Math::vec3 goal(target->matrix[3]);
+                    desired = ArriveVelocity(position, goal, agent, stopAt, agent.m_slowingDistance, direction, remaining);
+                    hasGoal = true;
+                    DebugDraw::Line(position, goal, pathStyle);
                     break;
                 }
 
+            }
+
+            // FaceTarget(entity): face that entity whatever the order is, like
+            // Unity's updateRotation = false with the script turning it - Unity's
+            // FaceTarget flag, set while positioning (the pressure walk, a
+            // crossbow's firing spot, a retreat, aiming). A crossbow walking
+            // sideways to its spot then reads as strafing, not as swinging round.
+            if (world.IsAlive(agent.m_faceTarget)) {
+                if (const WorldTransform* face = world.Read<WorldTransform>(agent.m_faceTarget); face && face->valid) {
+                    lookAt      = Math::vec3(face->matrix[3]);
+                    facesTarget = true;
+                }
             }
 
             // Stopped: nothing left to reach, so "arrived" (Unity reads a path-less
@@ -609,17 +775,40 @@ namespace Crucible {
             // agent just outside it, and it must still count as in range.
             agent.m_remainingDistance = remaining;
             agent.m_arrived = agent.m_movement == AgentMovement::None
-                           || (hasGoal && remaining <= agent.m_stoppingDistance + kArriveSlack);
+                           || (hasGoal && remaining <= stopAt + kArriveSlack);
 
             Math::vec3 force = Steer(desired, agent.m_velocity, agent.m_acceleration);
 
-            // 2. The crowd, on top - whatever it was told, so even standing
-            // agents nudge apart. Skipped entirely when both weights are 0.
-            if (agent.m_separationWeight != 0.0f || agent.m_alignmentWeight != 0.0f) {
-                m_hash.Query(m_agents[i].start, agent.m_neighbourRadius, static_cast<int>(i), m_neighbours);
-                if (agent.m_separationWeight != 0.0f) force += separation(i, agent) * agent.m_separationWeight;
-                if (agent.m_alignmentWeight  != 0.0f) force += alignment(agent)     * agent.m_alignmentWeight;
+            // Stopped: brake as hard as m_acceleration allows, Unity's Hold
+            // (EnemyAgent: -velocity / dt, clamped to maxForce) - 15 m/s^2 stops
+            // a golem from walking pace in under half a second. The ordinary
+            // steer above only pulls by the speed left (it halves about every
+            // 0.7 s), so a golem told to hold in range coasted on into the player
+            // and shoved them. Ground friction used to hide that on dynamic golems.
+            if (agent.m_movement == AgentMovement::None) {
+                force = ClampMagnitude(-agent.m_velocity / std::max(dt, 1e-4f), agent.m_acceleration);
             }
+
+            // 2. The crowd, whatever it was told, so even standing agents are
+            // kept from overlapping. The query reaches at least far enough to
+            // find every body that could touch this one (its radius plus the
+            // largest), whatever m_neighbourRadius says. The overlap push is
+            // not a force: it is applied to the move in step 5, so it can't
+            // build up speed and carry the agent on past the gap.
+            m_hash.Query(m_agents[i].start, std::max(agent.m_neighbourRadius, m_agents[i].radius + largestRadius),
+                         static_cast<int>(i), m_neighbours);
+            const Math::vec3 push = crowdPush(i);
+
+            // Alignment only while following the field: it is what makes a horde
+            // pour round a corner as one. Under Arrive, MoveTo or standing still
+            // it did harm - it steers towards the neighbours' heading at 0.4 x full
+            // speed, which Arrive's brake (zero wish to move at its stop) balances
+            // at 2.4 / 1.4 = 1.7 m/s. Measured in Golem_test: every enemy that had
+            // arrived slid on at a steady 1.70 m/s, and as the drifters aligned
+            // with each other the whole group slid away from the player together.
+            // (Unity's NavMeshAgent has no alignment at all.)
+            if (agent.m_alignmentWeight != 0.0f && agent.m_movement == AgentMovement::FollowField)
+                force += alignment(agent) * agent.m_alignmentWeight;
 
             // 3. Avoidance: look m_avoidanceDistance ahead along its heading.
             // Something there: push sideways round it - along the surface
@@ -652,17 +841,92 @@ namespace Crucible {
             // the forces stack an agent is never shoved harder than it can
             // steer. That cap is also what turns the field's 8 blocky
             // directions into smooth curves.
+            // A dynamic agent may be going faster than m_speed - knocked back or
+            // blown away. Steering then brakes it at m_acceleration (it wants
+            // m_speed at most), so the shove plays out and fades instead of
+            // being cut off; the cap only stops steering ADDING speed past that.
+            // The cap is measured from the BODY's speed (what physics last left
+            // it), never from m_velocity: for a dynamic agent that also holds the
+            // steering queued for the next physics step, so a cap read from it
+            // grows with whatever was queued - see the impulse in step 5.
+            const bool  dynamic  = m_agents[i].dynamic;
+            const float speedCap = dynamic ? std::max(agent.m_speed, glm::length(m_agents[i].bodyVelocity)) : agent.m_speed;
             agent.m_velocity += ClampMagnitude(force, agent.m_acceleration) * dt;
             agent.m_velocity.y = 0.0f;
-            agent.m_velocity  = ClampMagnitude(agent.m_velocity, agent.m_speed);
+            agent.m_velocity  = ClampMagnitude(agent.m_velocity, speedCap);
 
-            // 5. Move - the hard limit no force can overpower. Probe along the
-            // move first. Something in the way: keep only the part of the move
-            // (and of the velocity, so it stops pushing) that runs ALONG the
-            // surface, and slide. If even the slide is blocked - a corner -
-            // stay put this frame.
-            Math::vec3  motion   = agent.m_velocity * dt;
-            const float distance = glm::length(motion);
+            // Giving way: the part of its velocity that heads into the bodies it
+            // is being moved out of is turned SIDEWAYS instead, so it walks round
+            // the agent holding its spot - the way NavMeshAgents file round each
+            // other - rather than leaning on it. Only dropping that part (like
+            // sliding on a wall) was tried first: an agent heading straight at the
+            // player through another one then had nothing left and just stood
+            // behind it, out of range, with the far side of the player empty.
+            // The side is fixed per agent (odd/even), so it doesn't dither left
+            // and right; but if it is already moving sideways, it keeps that side.
+            if (glm::dot(push, push) > 1e-8f) {
+                const Math::vec3 out  = glm::normalize(push);
+                const float      into = glm::dot(agent.m_velocity, out);
+                if (into < 0.0f) {
+                    agent.m_velocity -= out * into;
+                    Math::vec3 side = glm::cross(Math::vec3(0.0f, 1.0f, 0.0f), out);
+                    const float sideways = glm::dot(agent.m_velocity, side);
+                    if (sideways < -0.05f || (sideways <= 0.05f && (i % 2) == 1)) side = -side;
+                    agent.m_velocity += side * (-into);
+                }
+            }
+
+            // 5. Move - the hard limit no force can overpower. The move is the
+            // velocity's, plus a share of the crowd's overlap (kOverlapResolveRate
+            // per second), that share never faster than the agent walks. Probe
+            // along the move first. Something in the way: keep only the part of
+            // the move (and of the velocity, so it stops pushing) that runs
+            // ALONG the surface, and slide. If even the slide is blocked - a
+            // corner - stay put this frame. So the crowd can't push an agent
+            // through a wall either.
+            const Math::vec3 crowdMove = ClampMagnitude(push * std::min(1.0f, kOverlapResolveRate * dt), agent.m_speed * dt);
+
+            // DYNAMIC AGENTS: physics owns the position. The agent gets the sideways
+            // (XZ) velocity it wants - plus the crowd's push as a speed - by ADDING
+            // the difference as an impulse (mass x change of velocity), and leaves Y
+            // to gravity. Setting RigidBody::velocity instead was tried first and
+            // wiped out every other push that frame: an explosion "reached 8
+            // entities" in the test and none of them moved. Added, a blast or a
+            // knockback lands on top, and next frame steering brakes it at
+            // m_acceleration. The Game draws many frames per physics step, so the
+            // agent remembers the change it has queued (m_pendingSteer) and only
+            // tops it up to what it now wants: every frame's steering counts, and
+            // none is queued twice. (Skipping frames whose impulse was still waiting
+            // was tried first: at hundreds of frames per second each step got only
+            // one frame's 0.02 m/s, less than the ground's friction, and a mace sat
+            // at its spawn point for seconds.) Walls, slopes, landing and other
+            // bodies are Jolt's collisions, so no probe and no ground snap.
+            // While it is off the ground (thrown by an explosion, falling off a
+            // ledge) it doesn't steer at all: it flies as physics says, and takes
+            // control back when it lands - like a NavMeshAgent with updatePosition
+            // off, its Rigidbody switched to physics until it is grounded again.
+            // Its facing is still the agent's: the prefab locks the body's rotation,
+            // so collisions can't tip it over, and step 6 turns it.
+            const bool airborne = dynamic && !OnGround(m_agents[i].entity, agent, position);
+            if (dynamic) {
+                RigidBody* body = world.GetComponent<RigidBody>(m_agents[i].entity);
+                if (!airborne && body && body->mass > 0.0f) {
+                    // Steering plus the crowd's push, capped TOGETHER at speedCap.
+                    // Uncapped, the push stacked up: next frame m_velocity reads the
+                    // body's velocity plus this queued change - push included - and
+                    // the push was added on top again. With several frames drawn
+                    // per physics step, overlapping golems (two spawned on one spot,
+                    // one walking into another) queued 20-40 m/s and the step fired
+                    // it all at once: a launch, that once threw the player off the map.
+                    const Math::vec3 wanted = ClampMagnitude(agent.m_velocity + crowdMove / dt, speedCap);
+                    const Math::vec3 needed(wanted.x - m_agents[i].bodyVelocity.x, 0.0f, wanted.z - m_agents[i].bodyVelocity.z);
+                    body->impulse      += (needed - agent.m_pendingSteer) * body->mass;   // only the top-up; other kicks stay
+                    agent.m_pendingSteer = needed;
+                }
+            }
+
+            Math::vec3  motion   = agent.m_velocity * dt + crowdMove;
+            const float distance = dynamic ? 0.0f : glm::length(motion);   // a dynamic agent's move is physics'
             if (distance > 1e-5f) {
 
                 bool blocked = false;
@@ -683,13 +947,18 @@ namespace Crucible {
 
             }
 
-            // 6. Face where it is going - or, under Arrive, its target (the
-            // model is assumed to face +Z, as in his prototype). Below 0.1 m/s,
-            // or within 0.1 m of the target, the heading is noise, so it keeps
-            // its last facing. Yaw only: it always stays upright.
+            // 6. Face where it is going - or its FaceTarget (the model is
+            // assumed to face +Z, as in his prototype). Below 0.1 m/s, or within
+            // 0.1 m of the target, the heading is noise, so it keeps its last
+            // facing. Yaw only: it always stays upright.
+            // Stopped, it doesn't turn at all unless told to face something -
+            // Unity's Hold skips its Face() - so a golem holding in range or
+            // mid-swing keeps the facing it stopped with, and a shove while it
+            // stands doesn't spin it round to the shove.
             const Math::vec3 look = facesTarget ? Math::vec3(lookAt.x - position.x, 0.0f, lookAt.z - position.z)
                                                 : agent.m_velocity;
-            if (glm::dot(look, look) >= 0.01f) {
+            const bool holding = agent.m_movement == AgentMovement::None && !facesTarget;
+            if (glm::dot(look, look) >= 0.01f && !airborne && !holding) {
 
                 const Math::vec3 forward = transform.rotation * Math::vec3(0.0f, 0.0f, 1.0f);
                 const float      current = std::atan2(forward.x, forward.z);
@@ -707,13 +976,9 @@ namespace Crucible {
 
             }
 
-            // 7. Stand on the ground: its feet m_baseOffset below its
-            // position. Set exactly for now; Jean David's prototype eases
-            // towards the ground at 12 m/s instead, which can come back if
-            // spawning off the ground or real terrain needs it.
-            // With no baked surface there is no known ground, so its height
-            // is left alone rather than dropped to some made-up y = 0.
-            if (m_grid.IsBaked()) position.y = m_terrain.GroundHeight(position) + agent.m_baseOffset;
+            // 7. Stand on whatever is under it, feet m_baseOffset below its
+            // position (StandOnGround). A dynamic agent has gravity for that.
+            if (!dynamic) StandOnGround(m_agents[i].entity, agent, position, dt);
 
             // Its velocity, half a second's worth, under Gizmos > Velocities:
             // the push-apart and the curving are visible at a glance.
@@ -722,6 +987,121 @@ namespace Crucible {
         }
 
     }   // ECSNavigationSystem::UpdateAgents()
+
+    /*!
+        \brief
+        Is there walkable ground just under the agent's feet? For dynamic agents:
+        off the ground (thrown, falling) they don't steer.
+
+        \details
+        A ray down from 0.3 m above its position to 0.3 m below its feet
+        (m_baseOffset below the position), on the level's layers only
+        (NonMoving, Moving), skipping the agent itself. 0.3 m of slack so
+        walking over bumps and down gentle slopes still counts as grounded,
+        while an explosion's lift clearly doesn't. Starting at the position, not
+        at the feet, keeps it working when m_baseOffset is too big for the
+        collider (a root at the feet, baseOffset left at 1): the ray then just
+        reaches further. Starting at the computed feet, it began inside the
+        floor for such a crossbow, and the agent thought it was airborne.
+    */
+    bool ECSNavigationSystem::OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const {
+
+        constexpr float kSlack = 0.3f;
+        if (!m_physics) return true;     // no physics: nothing can throw it, so treat it as standing
+
+        // Other enemies count as ground here: an explosion can drop a golem on top of
+        // another (seen in the test), and one that thought it was in the air there
+        // would never steer, so it would stand on its friend forever. Steering, it
+        // walks off.
+        EntityFilter filter;
+        filter.layers = LayerMask(PhysicsLayer::NonMoving, PhysicsLayer::Moving).With(PhysicsLayer::Enemy);
+        filter.ignore = self;
+
+        EntityHit hit;
+        return m_physics->Raycast(Math::vec3(position.x, position.y + kSlack, position.z), Math::vec3(0.0f, -1.0f, 0.0f), hit,
+                                  std::max(agent.m_baseOffset, 0.0f) + kSlack * 2.0f, filter)
+            && hit.normal.y > kWalkableNormalY;
+
+    }   // ECSNavigationSystem::OnGround()
+
+    /*!
+        \brief
+        Puts an agent's feet on the surface under it: Gam3333's EnemyAgent.SnapToGround.
+
+        \details
+        A ray goes straight down from half a metre above its middle. Only the
+        level counts as ground (NonMoving and Moving layers: floors, ramps,
+        crate tops), never the agent itself, other enemies or players, and
+        only a surface facing mostly up (kWalkableNormalY) - a wall it brushes
+        is not a floor.
+          - Ground within reach (down to kGroundSnapRange below its feet): ease
+            the feet onto it at kGroundSnapSpeed, so walking up and down a ramp
+            looks smooth instead of stair-stepping. An agent's first frame
+            snaps straight onto it instead (Unity's Start), so a spawn point
+            set a little too high doesn't make it slide down from the air.
+          - Ground further below (off a ledge): fall, gaining kFallGravity m/s
+            every second, and land on it - a real fall, not a teleport.
+          - No ground at all under it (off the edge of the level): the old
+            flat plane at the surface's height, if a surface is baked;
+            otherwise its height is left alone.
+
+        Before this, every agent stood on that flat plane: in Golem_test the
+        Ground box's top is at y = 0.25 but its entity at y = 0, so every
+        golem's feet were 25 cm inside the floor, and ramps were ignored.
+    */
+    void ECSNavigationSystem::StandOnGround(Entity self, FlowFieldAgent& agent, Math::vec3& position, float dt) const {
+
+        // Unity's values: snapRange 2 m below the probe start, snapSpeed 12, fallGravity 25.
+        constexpr float kProbeLift        = 0.5f;    // the ray starts this far above the agent's middle
+        constexpr float kGroundSnapRange  = 1.0f;    // metres below the feet still counted as "standing on it"
+        constexpr float kGroundSnapSpeed  = 12.0f;   // m/s the feet ease up or down onto it
+        constexpr float kFallGravity      = 25.0f;   // m/s^2, the mech's own gravity
+        constexpr float kFallSearchRange  = 50.0f;   // how far down to look for somewhere to land
+
+        const Math::vec3 origin(position.x, position.y + kProbeLift, position.z);
+        const Math::vec3 down(0.0f, -1.0f, 0.0f);
+        const float      toFeet = kProbeLift + agent.m_baseOffset;
+
+        EntityFilter filter;
+        filter.layers = LayerMask(PhysicsLayer::NonMoving, PhysicsLayer::Moving);
+        filter.ignore = self;
+
+        EntityHit hit;
+        const bool found = m_physics && m_physics->Raycast(origin, down, hit, toFeet + kFallSearchRange, filter)
+                        && hit.normal.y > kWalkableNormalY;
+
+        if (found && hit.distance <= toFeet + kGroundSnapRange) {
+
+            const float target = hit.point.y + agent.m_baseOffset;
+            if (!agent.m_grounded) {
+                position.y = target;                                    // first frame: straight onto it
+            } else {
+                const float step = kGroundSnapSpeed * dt;               // Mathf.MoveTowards
+                position.y = std::abs(target - position.y) <= step ? target : position.y + (target > position.y ? step : -step);
+            }
+            agent.m_fallSpeed = 0.0f;
+            agent.m_grounded  = true;
+            return;
+
+        }
+
+        if (found) {
+
+            // Off a ledge: fall like simple gravity, and stop on the ground below.
+            agent.m_fallSpeed += kFallGravity * dt;
+            const float landing = hit.point.y + agent.m_baseOffset;
+            position.y = std::max(position.y - agent.m_fallSpeed * dt, landing);
+            if (position.y <= landing) agent.m_fallSpeed = 0.0f;
+            agent.m_grounded = true;
+            return;
+
+        }
+
+        // Nothing under it: the flat plane, as before, or leave it be.
+        agent.m_fallSpeed = 0.0f;
+        if (m_grid.IsBaked()) position.y = m_terrain->GroundHeight(position) + agent.m_baseOffset;
+
+    }   // ECSNavigationSystem::StandOnGround()
 
     bool ECSNavigationSystem::Bake(World& world) {
 
@@ -759,12 +1139,13 @@ namespace Crucible {
                      area.width, area.depth);
         }
 
-        // Until a terrain system exists the ground is flat, at the surface's
-        // own height - so a designer sits the surface on the floor, the way
-        // Unity's NavMeshSurface sits in the level. World y = 0 would be wrong
-        // for any floor that isn't exactly there.
-        m_terrain    = FlatNavTerrain(area.centre.y);
-        m_stepHeight = surface.m_stepHeight;   // the agents' probes sweep the same height band the bake uses
+        // The flat plane at the surface's own height is the fallback ground -
+        // so a designer sits the surface on the floor, the way Unity's
+        // NavMeshSurface sits in the level. World y = 0 would be wrong for any
+        // floor that isn't exactly there.
+        m_flatTerrain = FlatNavTerrain(area.centre.y);
+        m_terrain     = &m_flatTerrain;
+        m_stepHeight  = surface.m_stepHeight;   // the agents' probes sweep the same height band the bake uses
 
         // 2. The obstacles: static, solid colliders. "Static" is Unity's rule:
         // a collider with no RigidBody. Anything with one moves (crates, even a
@@ -772,16 +1153,15 @@ namespace Crucible {
         // checking for the RigidBody too catches a moving body someone left on
         // the NonMoving layer. Triggers block nothing in physics either.
         m_obstacles.clear();
+        m_obstacleEntities.clear();
         world.CreateQuery<const Collider, const WorldTransform>()
             .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
                 if (collider.m_isTrigger || collider.m_layer != PhysicsLayer::NonMoving || !transform.valid) return;
                 if (world.HasComponent<RigidBody>(entity)) return;
                 m_obstacles.push_back(WorldBounds(collider, transform.matrix));
+                m_obstacleEntities.push_back(entity);
             });
 
-        // 3. The bake itself. NavGrid logs the result, or why it failed. Then
-        // the flow field's cost field, which depends on nothing but the grid,
-        // so it is built once here rather than on every rebuild.
         NavGridSettings settings;
         settings.origin            = area.centre;
         settings.width             = area.width;
@@ -790,7 +1170,36 @@ namespace Crucible {
         settings.bodyRadiusPadding = surface.m_bodyRadiusPadding;
         settings.stepHeight        = surface.m_stepHeight;
         settings.shoulderHeight    = surface.m_shoulderHeight;
-        if (!m_grid.Bake(settings, m_obstacles, m_terrain)) {
+
+        // 3. The ground's heights, sampled from physics - only while Playing,
+        // because physics only has bodies then (it is SimulationOnly). The
+        // Edit preview stays flat, so a ramp shows as blocked there until Play.
+        // Colliders found to be ground (the floor, ramps, plateau tops) are
+        // then dropped from the obstacles: judged against the flat plane, a
+        // ramp is "taller than a step" and would wall itself off.
+        if (!m_physics) m_physics = m_systems.FindSystem<ECSPhysicsSystem>();
+        if (m_playMode.State() == PlayState::Playing && m_physics && m_physics->IsInSession()
+            && SampleTerrain(settings, surface.m_stepHeight)) {
+
+            m_terrain = &m_heightTerrain;
+            std::size_t kept = 0;
+            for (std::size_t i = 0; i < m_obstacles.size(); ++i) {
+                const bool ground = std::binary_search(m_groundEntities.begin(), m_groundEntities.end(), m_obstacleEntities[i], EntityLess);
+                if (ground) continue;
+                m_obstacles[kept]        = m_obstacles[i];
+                m_obstacleEntities[kept] = m_obstacleEntities[i];
+                ++kept;
+            }
+            CRU_INFO("Navigation: ground heights sampled - {} collider(s) are ground, {} left as obstacles",
+                     m_obstacles.size() - kept, kept);
+            m_obstacles.resize(kept);
+            m_obstacleEntities.resize(kept);
+        }
+
+        // 4. The bake itself. NavGrid logs the result, or why it failed. Then
+        // the flow field's cost field, which depends on nothing but the grid,
+        // so it is built once here rather than on every rebuild.
+        if (!m_grid.Bake(settings, m_obstacles, *m_terrain)) {
             m_field.Clear();
             return false;
         }
@@ -798,6 +1207,148 @@ namespace Crucible {
         return true;
 
     }   // ECSNavigationSystem::Bake()
+
+    /*!
+        \brief
+        Fills m_heightTerrain from physics: one ray straight down through
+        every cell's centre, and the static (NonMoving) surface it lands on
+        first is that cell's ground. Unity's NavMesh bake works out walkable
+        ground the same way, from the geometry, with the same two rules.
+
+        \details
+        A cell is a wall when:
+          - nothing is under it (a hole, or past the edge of the floor);
+          - its surface is steeper than kMaxSlopeDegrees (35, Jean David's
+            limit, for players and enemies alike);
+          - it is a LEDGE: higher than a neighbour by more than the slope
+            between them explains, plus the step height. That is what tells a
+            crate's flat top (1 m above the flat floor beside it, where flat
+            means a 0 m rise is expected) from a ramp (which rises as much as
+            its tilt says). A ledge cell's height is then set to the ground
+            below it, so the grid bake still judges the crate against the
+            floor and blocks it with padding as an obstacle, as before.
+
+        Colliders hit in cells that stayed walkable are "ground" and go in
+        m_groundEntities; Bake stops treating them as obstacles.
+
+        Not handled: walking UNDER things. The ray lands on top of a bridge or
+        an arch, so that cell's ground is the top. Jean David's terrain has no
+        overhangs, and a hand-built one can wait.
+
+        \return
+        False if nothing was hit at all (no colliders under the surface): the
+        caller then keeps the flat ground.
+    */
+    bool ECSNavigationSystem::SampleTerrain(const NavGridSettings& settings, float stepHeight) {
+
+        constexpr float kMaxSlopeDegrees = 35.0f;
+        constexpr long long kMaxSamples  = 1000000;   // one ray each; past this, bigger cells are the fix (NavGrid says so too)
+
+        m_groundEntities.clear();
+        if (!m_physics || !(settings.cellSize > 0.0f)) return false;
+
+        const long long colsLong = static_cast<long long>(std::ceil(settings.width / settings.cellSize));
+        const long long rowsLong = static_cast<long long>(std::ceil(settings.depth / settings.cellSize));
+        if (colsLong <= 0 || rowsLong <= 0 || colsLong * rowsLong > kMaxSamples) return false;
+        const int   cols = static_cast<int>(colsLong);
+        const int   rows = static_cast<int>(rowsLong);
+        const float cell = settings.cellSize;
+        const float minX = settings.origin.x - settings.width * 0.5f;   // the same corner NavGrid uses, so cells match
+        const float minZ = settings.origin.z - settings.depth * 0.5f;
+
+        // Rays start above the highest static collider and reach below the
+        // lowest, so every floor, hill and pit in the level is found.
+        float top    = settings.origin.y + 50.0f;
+        float bottom = settings.origin.y - 50.0f;
+        for (const NavObstacle& obstacle : m_obstacles) {
+            top    = std::max(top, obstacle.max.y + 1.0f);
+            bottom = std::min(bottom, obstacle.min.y - 1.0f);
+        }
+
+        // 1. One ray per cell centre.
+        struct Sample { float height = 0.0f; float normalY = 1.0f; Entity entity{}; bool hit = false; };
+        std::vector<Sample> samples(static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows));
+
+        EntityFilter filter;
+        filter.layers = LayerMask(PhysicsLayer::NonMoving);   // the arena only: not crates, characters or enemies
+        const Math::vec3 down(0.0f, -1.0f, 0.0f);
+        int hits = 0;
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const Math::vec3 origin(minX + (static_cast<float>(col) + 0.5f) * cell, top,
+                                        minZ + (static_cast<float>(row) + 0.5f) * cell);
+                EntityHit hit;
+                if (!m_physics->Raycast(origin, down, hit, top - bottom, filter)) continue;
+                Sample& sample = samples[static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(col)];
+                sample = { hit.point.y, hit.normal.y, hit.entity, true };
+                ++hits;
+            }
+        }
+        if (hits == 0) return false;
+
+        // 2. Steep cells, then ledges between each pair of side-by-side cells
+        // (each pair once: the right and the forward neighbour).
+        const float maxSlopeTan = std::tan(glm::radians(kMaxSlopeDegrees));
+        const float minNormalY  = std::cos(glm::radians(kMaxSlopeDegrees));
+
+        // How steep a surface is, as rise per metre, from its normal; capped
+        // at the walkable limit so a wall's normal can't excuse a huge jump.
+        const auto riseRate = [&](const Sample& s) {
+            if (s.normalY <= minNormalY) return maxSlopeTan;
+            return std::min(std::sqrt(std::max(0.0f, 1.0f - s.normalY * s.normalY)) / s.normalY, maxSlopeTan);
+        };
+
+        std::vector<std::uint8_t> wall(samples.size(), 0);
+        std::vector<float>        height(samples.size(), settings.origin.y);
+        int steep = 0, ledges = 0, empty = 0;
+        for (std::size_t i = 0; i < samples.size(); ++i) {
+            if (!samples[i].hit)                     { wall[i] = 1; ++empty; continue; }
+            height[i] = samples[i].height;
+            if (samples[i].normalY < minNormalY)     { wall[i] = 1; ++steep; }
+        }
+
+        std::vector<float> lowered = height;   // ledge cells sink to the ground beside them (read the unlowered heights while comparing)
+        const auto compare = [&](std::size_t a, std::size_t b) {
+            if (!samples[a].hit || !samples[b].hit) return;
+            const float allowed = cell * std::max(riseRate(samples[a]), riseRate(samples[b])) + stepHeight;
+            const float rise    = height[b] - height[a];
+            if (std::abs(rise) <= allowed) return;
+            const std::size_t high = rise > 0.0f ? b : a;
+            const std::size_t low  = rise > 0.0f ? a : b;
+            if (wall[high] == 0) ++ledges;
+            wall[high]    = 1;
+            lowered[high] = std::min(lowered[high], height[low]);
+        };
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const std::size_t i = static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(col);
+                if (col + 1 < cols) compare(i, i + 1);
+                if (row + 1 < rows) compare(i, i + static_cast<std::size_t>(cols));
+            }
+        }
+
+        // 3. Into the terrain, and the ground list.
+        m_heightTerrain.Reset(minX, minZ, cols, rows, cell, settings.origin.y);
+        float lowest = lowered[0], highest = lowered[0];
+        for (int row = 0; row < rows; ++row) {
+            for (int col = 0; col < cols; ++col) {
+                const std::size_t i = static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(col);
+                m_heightTerrain.SetCell(col, row, lowered[i], wall[i] != 0);
+                lowest  = std::min(lowest, lowered[i]);
+                highest = std::max(highest, lowered[i]);
+                if (wall[i] == 0) m_groundEntities.push_back(samples[i].entity);
+            }
+        }
+        std::sort(m_groundEntities.begin(), m_groundEntities.end(), EntityLess);
+        m_groundEntities.erase(std::unique(m_groundEntities.begin(), m_groundEntities.end(),
+                                           [](const Entity& a, const Entity& b) { return !EntityLess(a, b) && !EntityLess(b, a); }),
+                               m_groundEntities.end());
+
+        CRU_INFO("Navigation: sampled {} x {} ground heights from {:.2f} to {:.2f} m - {} too steep, {} ledges, {} with nothing under them",
+                 cols, rows, lowest, highest, steep, ledges, empty);
+        return true;
+
+    }   // ECSNavigationSystem::SampleTerrain()
 
     /*!
         \brief
@@ -824,7 +1375,7 @@ namespace Crucible {
         // The grid's corners: from the first cell's outer corner to the last cell's.
         const Math::vec3 first = m_grid.CellToWorldCenter({ 0, 0 });
         const Math::vec3 last  = m_grid.CellToWorldCenter({ m_grid.Cols() - 1, m_grid.Rows() - 1 });
-        const float      y     = m_terrain.GroundHeight(first) + kDrawLift;
+        const float      y     = m_terrain->GroundHeight(first) + kDrawLift;
         const float      minX  = first.x - half;
         const float      maxX  = last.x + half;
         const float      minZ  = first.z - half;
@@ -850,7 +1401,7 @@ namespace Crucible {
                 if (!m_grid.IsBlocked({ col, row })) continue;
 
                 Math::vec3 centre = m_grid.CellToWorldCenter({ col, row });
-                centre.y = m_terrain.GroundHeight(centre) + kDrawLift;
+                centre.y = m_terrain->GroundHeight(centre) + kDrawLift;
                 const Math::vec3 p0(centre.x - inset, centre.y, centre.z - inset);
                 const Math::vec3 p1(centre.x + inset, centre.y, centre.z - inset);
                 const Math::vec3 p2(centre.x + inset, centre.y, centre.z + inset);
@@ -890,7 +1441,7 @@ namespace Crucible {
                 if (direction.x == 0.0f && direction.z == 0.0f) continue;
 
                 Math::vec3 centre = m_grid.CellToWorldCenter({ col, row });
-                centre.y = m_terrain.GroundHeight(centre) + kDrawLift * 2.0f;
+                centre.y = m_terrain->GroundHeight(centre) + kDrawLift * 2.0f;
                 DebugDraw::Arrow(centre - direction * halfLength, centre + direction * halfLength, arrow);
 
             }

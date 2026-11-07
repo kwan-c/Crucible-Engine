@@ -3,7 +3,7 @@
   \author     Hugo Low Ren Hao
   \par        Email: low.h@digipen.edu
   \date       1 November 2026
-  \version    1.0
+  \version    1.1
   \brief
     RTTR registration for FlowFieldAgent and AgentStart.
   \details
@@ -22,6 +22,9 @@
     ECS/ECSNavigationSystem.h
   \history
     - 1.0 (1 November 2026): First version.
+    - 1.1 (6 November 2026): avoidancePriority replaces separationRadius and
+      separationWeight. Scenes that still have those two keys load fine: a
+      key with no property is skipped, and avoidancePriority starts at 50.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -49,10 +52,9 @@ RTTR_REGISTRATION
         .property("startWith",    &FlowFieldAgent::m_startWith)
         .property("stoppingDistance", &FlowFieldAgent::m_stoppingDistance)
         .property("slowingDistance",  &FlowFieldAgent::m_slowingDistance)
-        .property("neighbourRadius",  &FlowFieldAgent::m_neighbourRadius)
-        .property("separationRadius", &FlowFieldAgent::m_separationRadius)
-        .property("separationWeight", &FlowFieldAgent::m_separationWeight)
-        .property("alignmentWeight",  &FlowFieldAgent::m_alignmentWeight)
+        .property("neighbourRadius",   &FlowFieldAgent::m_neighbourRadius)
+        .property("avoidancePriority", &FlowFieldAgent::m_avoidancePriority)
+        .property("alignmentWeight",   &FlowFieldAgent::m_alignmentWeight)
         .property("radius",            &FlowFieldAgent::m_radius)
         .property("avoidanceDistance", &FlowFieldAgent::m_avoidanceDistance)
         .property("avoidanceWeight",   &FlowFieldAgent::m_avoidanceWeight)

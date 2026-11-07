@@ -1,0 +1,478 @@
+{
+    "version": 3,
+    "name": "Golem Cannon",
+    "entities": [
+        {
+            "id": "C65C80DE4F57D183",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 200.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 2.0,
+                        "y": 1.0,
+                        "z": 1.7326987981796265
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.5,
+                        "z": -0.2288586348295212
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Enemy",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Golem Cannon"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Enemy",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "maximumHealth",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 80.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "arriveRadius",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 24.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "attackRange",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 18.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "minimumRange",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 11.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "melee",
+                            "type": "Bool",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "damage",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 20.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "cooldown",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 2.5,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "fireDuration",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 1.4,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "releaseFrame",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.7,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "weaponReach",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 40.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "respectAttackRangeAtRelease",
+                            "type": "Bool",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "aimSpreadDegrees",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "boltPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 8796023608539152642
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "dropPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5267962757949921808
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "attackAnimation",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Cannon",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "detectRadius",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 65.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "loseRadius",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 85.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "FlowFieldAgent": {
+                    "speed": 3.5,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 0.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 0.15,
+                    "slowingDistance": 1.6,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 1.3,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 8368320002347871704,
+                    "logStateChanges": false
+                }
+            }
+        },
+        {
+            "id": "DE5C80DE4F57D185",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -0.22885870933532715
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 4175691030365061123,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Body"
+                }
+            }
+        },
+        {
+            "id": "765C80DE4F57D187",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.600000023841858,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                }
+            }
+        },
+        {
+            "id": "C65C80DE4F57D1B1",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": -0.94, "z": 1.5 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 2.0, "y": 0.02, "z": 3.0 }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": { "x": 1.0, "y": 0.4000000059604645, "z": 0.11999999731779099, "w": 0.5 },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
+                }
+            }
+        },
+        {
+            "id": "C65C80DE4F57D1C1",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.70710677, "y": 0.0, "z": 0.0, "w": 0.70710677 },
+                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 9363837801095872521,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0 },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024258,
+                    "clip": 0,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "EntityName": {
+                    "name": "Cannon"
+                }
+            }
+        }
+    ]
+}

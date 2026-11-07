@@ -1,0 +1,782 @@
+{
+    "version": 1,
+    "name": "Golem_test",
+    "entities": [
+        {
+            "id": "465C80DE4E0C4051",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -1.2368757724761963,
+                        "y": 0.5115189552307129,
+                        "z": 6.486649990081787
+                    },
+                    "rotation": {
+                        "x": -0.0,
+                        "y": 1.0,
+                        "z": -0.0,
+                        "w": -4.371138828673793e-8
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 2.0,
+                        "z": 2.0
+                    }
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": -0.3499999940395355
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player Golem"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "CombatHealth",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "deactivateOnDeath",
+                            "type": "Bool",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 13140519505055301737,
+                    "isRoot": true,
+                    "prefabHash": 3326835317903766686,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "4E5C80DE4E0C4059",
+            "parent": "565C80DE4E890061",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 2.184018611907959,
+                        "z": -0.4577176570892334
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4000000059604645,
+                        "y": 0.4000000059604645,
+                        "z": 0.4000000059604645
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7634455544185602053,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 13140519505055301741,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "565C80DE4E890061",
+            "parent": "465C80DE4E0C4051",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -4.371139183945161e-8,
+                        "y": 1.0,
+                        "z": -4.371139183945161e-8,
+                        "w": -4.371138473402425e-8
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "EntityName": {
+                    "name": "rotation"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 4493608220503949419,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "5B3C1E9A7D2F4011",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -10.0,
+                        "y": 1.25,
+                        "z": -10.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Enemy Spawner Mace"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "EnemySpawner",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.EnemySpawner",
+                            "name": "enemyPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 12564058752782925993
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.EnemySpawner",
+                            "name": "enemiesPerWave",
+                            "type": "Int",
+                            "boolean": false,
+                            "integer": 3,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.EnemySpawner",
+                            "name": "spawnStagger",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 3.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "5B3C1E9A7D2F4013",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 10.0,
+                        "y": 1.25,
+                        "z": -10.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Enemy Spawner Cannon"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "EnemySpawner",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.EnemySpawner",
+                            "name": "enemyPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 8796023608539152641
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.EnemySpawner",
+                            "name": "enemiesPerWave",
+                            "type": "Int",
+                            "boolean": false,
+                            "integer": 3,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.EnemySpawner",
+                            "name": "spawnStagger",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 3.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "7E5C80DE4E0C405B",
+            "parent": "465C80DE4E0C4051",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.600000023841858,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 9681754991234760821,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.20000000298023224,
+                        "z": 0.20000000298023224,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 0.5,
+                    "size": {
+                        "x": 4.0,
+                        "y": 1.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "FaceCamera",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "C68540DC9CCA4001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 100.0,
+                        "y": 100.0,
+                        "z": 100.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": -0.0,
+                        "z": -0.0,
+                        "w": 0.9063077569007874
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 1.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Directional Light"
+                }
+            }
+        },
+        {
+            "id": "CE8540DC9CCA4003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -1.7881393432617188e-7,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 30.0,
+                        "y": 0.5,
+                        "z": 30.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Ground"
+                },
+                "FlowFieldSurface": {
+                    "cellSize": 2.0,
+                    "bodyRadiusPadding": 0.6000000238418579,
+                    "stepHeight": 0.30000001192092896,
+                    "shoulderHeight": 1.600000023841858,
+                    "floodRadius": 100.0,
+                    "rebuildDistance": 3.0,
+                    "wallAdjacencyCost": 4.0
+                }
+            }
+        },
+        {
+            "id": "DE5C80DE4E0C4057",
+            "parent": "565C80DE4E890061",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.488553524017334,
+                        "z": -0.39488720893859863
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4000000059604645,
+                        "y": 0.4000000059604645,
+                        "z": 0.4000000059604645
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7057994791882178571,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 9105294238931337327,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "DE5C80DE4EDD0067",
+            "parent": "E65C80DE4EDD0065",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 5646529725110796409,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "E65C80DE4E0C4053",
+            "parent": "565C80DE4E890061",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.6319713592529297,
+                        "y": 2.38352370262146,
+                        "z": -0.39488720893859863
+                    },
+                    "rotation": {
+                        "x": -4.371138828673793e-8,
+                        "y": 4.371138828673793e-8,
+                        "z": -4.371138828673793e-8,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4000000059604645,
+                        "y": 0.4000000059604645,
+                        "z": 0.4000000059604645
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 9363837801095872521,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Shoulder Cannon"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 14869901761965572211,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "E65C80DE4EDD0065",
+            "parent": "465C80DE4E0C4051",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.5707324743270874,
+                        "z": 0.16197001934051514
+                    },
+                    "rotation": {
+                        "x": -0.0,
+                        "y": -1.0,
+                        "z": -0.0,
+                        "w": 4.371138828673793e-8
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 6222990477414219895,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "F65C80DE4E0C4055",
+            "parent": "565C80DE4E890061",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.027778983116149902,
+                        "z": -0.39488697052001953
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4000000059604645,
+                        "y": 0.4000000059604645,
+                        "z": 0.4000000059604645
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 16281366828736954375,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Legs"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 11411137248145031281,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        }
+    ]
+}

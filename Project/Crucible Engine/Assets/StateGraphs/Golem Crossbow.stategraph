@@ -1,0 +1,34 @@
+{
+    "version": 1,
+    "entry": 0,
+    "anyState": [
+        250.0,
+        -180.0
+    ],
+    "variables": [
+        {
+            "name": "Self",
+            "type": "Entity"
+        },
+        {
+            "name": "Target",
+            "type": "Entity"
+        }
+    ],
+    "states": [
+        {
+            "name": "Small Type 3 - Crossbow",
+            "singleNode": false,
+            "subgraph": 6033475500424766449,
+            "editor": [
+                0.0,
+                0.0
+            ],
+            "tree": {
+                "root": -1,
+                "nodes": []
+            }
+        }
+    ],
+    "transitions": []
+}

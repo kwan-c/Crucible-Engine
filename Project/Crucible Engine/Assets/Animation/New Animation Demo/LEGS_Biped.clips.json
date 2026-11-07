@@ -1,0 +1,327 @@
+{
+ "model": "LEGS_Biped",
+ "source": "LithomachiaGolems_Set1.blend",
+ "fps": 30.0,
+ "note": "index = the clip number in the GLB (Crucible). Unity finds clips by name.",
+ "clips": [
+  {
+   "name": "LegsBiped_Dash",
+   "index": 0,
+   "frames": 30,
+   "seconds": 1.0,
+   "loop": false,
+   "markers": [
+    {
+     "name": "boost",
+     "frame": 4,
+     "seconds": 0.1333
+    },
+    {
+     "name": "brake",
+     "frame": 18,
+     "seconds": 0.6
+    },
+    {
+     "name": "cancel",
+     "frame": 24,
+     "seconds": 0.8
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Burst from boost (0.13 s) to brake (0.6 s); the feet plant at brake, so the golem should have stopped by then.",
+   "props": {
+    "notes": "Burst from boost (0.13 s) to brake (0.6 s); the feet plant at brake, so the golem should have stopped by then."
+   }
+  },
+  {
+   "name": "LegsBiped_Idle",
+   "index": 1,
+   "frames": 120,
+   "seconds": 4.0,
+   "loop": true,
+   "markers": [],
+   "speed_mps": 0.0,
+   "notes": "Feet planted. Plays under any standing torso clip.",
+   "props": {
+    "speed_mps": 0.0,
+    "notes": "Feet planted. Plays under any standing torso clip."
+   }
+  },
+  {
+   "name": "LegsBiped_Jog",
+   "index": 2,
+   "frames": 30,
+   "seconds": 1.0,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_L",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_R",
+     "frame": 15,
+     "seconds": 0.5
+    }
+   ],
+   "speed_mps": 3.9,
+   "notes": "In place. Planted feet slide back at 3.9 m/s. step_L/step_R = footfalls.",
+   "props": {
+    "speed_mps": 3.9,
+    "notes": "In place. Planted feet slide back at 3.9 m/s. step_L/step_R = footfalls."
+   }
+  },
+  {
+   "name": "LegsBiped_JumpAir",
+   "index": 3,
+   "frames": 30,
+   "seconds": 1.0,
+   "loop": true,
+   "markers": [],
+   "speed_mps": 0.0,
+   "notes": "Loop while airborne.",
+   "props": {
+    "notes": "Loop while airborne."
+   }
+  },
+  {
+   "name": "LegsBiped_JumpLand",
+   "index": 4,
+   "frames": 30,
+   "seconds": 1.0,
+   "loop": false,
+   "markers": [
+    {
+     "name": "land",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "cancel",
+     "frame": 14,
+     "seconds": 0.4667
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Frame 0 = touchdown. Movement may resume from cancel (0.47 s).",
+   "props": {
+    "notes": "Frame 0 = touchdown. Movement may resume from cancel (0.47 s)."
+   }
+  },
+  {
+   "name": "LegsBiped_JumpStart",
+   "index": 5,
+   "frames": 18,
+   "seconds": 0.6,
+   "loop": false,
+   "markers": [
+    {
+     "name": "takeoff",
+     "frame": 11,
+     "seconds": 0.3667
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Apply the jump impulse at takeoff (0.37 s). Ends in the JumpAir pose.",
+   "props": {
+    "notes": "Apply the jump impulse at takeoff (0.37 s). Ends in the JumpAir pose."
+   }
+  },
+  {
+   "name": "LegsBiped_PowerUp",
+   "index": 6,
+   "frames": 60,
+   "seconds": 2.0,
+   "loop": false,
+   "markers": [
+    {
+     "name": "release",
+     "frame": 16,
+     "seconds": 0.5333
+    },
+    {
+     "name": "cancel",
+     "frame": 44,
+     "seconds": 1.4667
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Legs part of the power-up move: crouch to gather, rise on release.",
+   "props": {
+    "notes": "Legs part of the power-up move: crouch to gather, rise on release."
+   }
+  },
+  {
+   "name": "LegsBiped_StrafeJog_L",
+   "index": 7,
+   "frames": 30,
+   "seconds": 1.0,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_L",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_R",
+     "frame": 15,
+     "seconds": 0.5
+    }
+   ],
+   "speed_mps": 3.9,
+   "notes": "In place. Planted feet slide sideways at 3.9 m/s. Same timing as LegsBiped_Jog, so the two blend by angle.",
+   "props": {
+    "speed_mps": 3.9,
+    "direction": "left (+X in Blender)",
+    "notes": "In place. Planted feet slide sideways at 3.9 m/s. Same timing as LegsBiped_Jog, so the two blend by angle."
+   }
+  },
+  {
+   "name": "LegsBiped_StrafeJog_R",
+   "index": 8,
+   "frames": 30,
+   "seconds": 1.0,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_L",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_R",
+     "frame": 15,
+     "seconds": 0.5
+    }
+   ],
+   "speed_mps": 3.9,
+   "notes": "In place. Planted feet slide sideways at 3.9 m/s. Same timing as LegsBiped_Jog, so the two blend by angle.",
+   "props": {
+    "speed_mps": 3.9,
+    "direction": "right (-X in Blender)",
+    "notes": "In place. Planted feet slide sideways at 3.9 m/s. Same timing as LegsBiped_Jog, so the two blend by angle."
+   }
+  },
+  {
+   "name": "LegsBiped_StrafeWalk_L",
+   "index": 9,
+   "frames": 48,
+   "seconds": 1.6,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_L",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_R",
+     "frame": 24,
+     "seconds": 0.8
+    }
+   ],
+   "speed_mps": 1.5,
+   "notes": "In place. Planted feet slide sideways at 1.5 m/s. Same timing as LegsBiped_Walk, so the two blend by angle.",
+   "props": {
+    "speed_mps": 1.5,
+    "direction": "left (+X in Blender)",
+    "notes": "In place. Planted feet slide sideways at 1.5 m/s. Same timing as LegsBiped_Walk, so the two blend by angle."
+   }
+  },
+  {
+   "name": "LegsBiped_StrafeWalk_R",
+   "index": 10,
+   "frames": 48,
+   "seconds": 1.6,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_L",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_R",
+     "frame": 24,
+     "seconds": 0.8
+    }
+   ],
+   "speed_mps": 1.5,
+   "notes": "In place. Planted feet slide sideways at 1.5 m/s. Same timing as LegsBiped_Walk, so the two blend by angle.",
+   "props": {
+    "speed_mps": 1.5,
+    "direction": "right (-X in Blender)",
+    "notes": "In place. Planted feet slide sideways at 1.5 m/s. Same timing as LegsBiped_Walk, so the two blend by angle."
+   }
+  },
+  {
+   "name": "LegsBiped_Walk",
+   "index": 11,
+   "frames": 48,
+   "seconds": 1.6,
+   "loop": true,
+   "markers": [
+    {
+     "name": "step_L",
+     "frame": 0,
+     "seconds": 0.0
+    },
+    {
+     "name": "step_R",
+     "frame": 24,
+     "seconds": 0.8
+    }
+   ],
+   "speed_mps": 1.5,
+   "notes": "In place. Planted feet slide back at 1.5 m/s. step_L/step_R = footfalls.",
+   "props": {
+    "speed_mps": 1.5,
+    "notes": "In place. Planted feet slide back at 1.5 m/s. step_L/step_R = footfalls."
+   }
+  }
+ ],
+ "moves": {
+  "PowerUp": {
+   "parts": {
+    "legs": "LegsBiped_PowerUp",
+    "torso": "TorsoSpecialist_PowerUp",
+    "head": "HeadSpecialist_PowerUp"
+   },
+   "seconds": 2.0,
+   "events_from": "torso",
+   "events": {
+    "release": 0.533,
+    "cancel": 1.467
+   },
+   "notes": "Start all three on the same frame. While moving, play only the torso and head clips; the legs keep their locomotion."
+  },
+  "CannonShot_L": {
+   "parts": {
+    "shoulder_weapon": "Cannon_Fire",
+    "torso": "Torso_CannonFire_L"
+   },
+   "seconds": 1.6,
+   "events_from": "shoulder_weapon",
+   "events": {
+    "fire": 0.033,
+    "cancel": 1.0
+   },
+   "notes": "Play after Cannon_ChargeStart (0.8 s) and Cannon_ChargeLoop (looped while held). Start both clips on the same frame."
+  },
+  "CannonShot_R": {
+   "parts": {
+    "shoulder_weapon": "Cannon_Fire",
+    "torso": "Torso_CannonFire_R"
+   },
+   "seconds": 1.6,
+   "events_from": "shoulder_weapon",
+   "events": {
+    "fire": 0.033,
+    "cancel": 1.0
+   },
+   "notes": "Play after Cannon_ChargeStart (0.8 s) and Cannon_ChargeLoop (looped while held). Start both clips on the same frame."
+  }
+ }
+}

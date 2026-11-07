@@ -1,0 +1,46 @@
+{
+    "version":  1,
+    "variables":  [
+                      {
+                          "name":  "Self",
+                          "type":  "Entity"
+                      },
+                      {
+                          "name":  "Target",
+                          "type":  "Entity"
+                      }
+                  ],
+    "tree":  {
+                 "root":  0,
+                 "nodes":  [
+                               {
+                                   "id":  0,
+                                   "type":  "start",
+                                   "editor":  [
+                                                  0,
+                                                  0
+                                              ],
+                                   "fields":  {
+                                                  "repeat":  false
+                                              },
+                                   "children":  [
+                                                    1
+                                                ]
+                               },
+                               {
+                                   "id":  1,
+                                   "type":  "a8110da821b546f0a5d10af059770ce7",
+                                   "editor":  [
+                                                  0,
+                                                  140
+                                              ],
+                                   "fields":  {
+
+                                              },
+                                   "children":  [
+
+                                                ]
+                               }
+                           ]
+             }
+}
