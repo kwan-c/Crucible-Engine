@@ -1,0 +1,202 @@
+{
+  "version": 1,
+  "entryState": 0,
+  "parameters": [
+    {
+      "name": "Pose",
+      "type": "Integer",
+      "default": 0
+    },
+    {
+      "name": "Speed",
+      "type": "Float",
+      "default": 0.0
+    }
+  ],
+  "states": [
+    {
+      "name": "Neutral",
+      "clip": 1,
+      "speed": 1.0,
+      "loop": true
+    },
+    {
+      "name": "Locomotion Slow",
+      "clip": 2,
+      "speed": 1.0,
+      "loop": true
+    },
+    {
+      "name": "Locomotion",
+      "clip": 2,
+      "speed": 2.0,
+      "loop": true
+    },
+    {
+      "name": "Locomotion Fast",
+      "clip": 2,
+      "speed": 3.3,
+      "loop": true
+    },
+    {
+      "name": "Locomotion Run",
+      "clip": 2,
+      "speed": 4.0,
+      "loop": true
+    },
+    {
+      "name": "Boost",
+      "clip": 0,
+      "speed": 1.0,
+      "loop": false
+    },
+    {
+      "name": "BoostStop",
+      "clip": 0,
+      "speed": 1.0,
+      "loop": false
+    },
+    {
+      "name": "Jump",
+      "clip": 3,
+      "speed": 1.0,
+      "loop": true
+    }
+  ],
+  "transitions": [
+    {
+      "from": "Any",
+      "to": 5,
+      "duration": 0.08,
+      "offset": 0.0,
+      "conditions": [
+        {
+          "parameter": 0,
+          "mode": "Equals",
+          "value": 2
+        }
+      ]
+    },
+    {
+      "from": "Any",
+      "to": 6,
+      "duration": 0.08,
+      "offset": 0.6,
+      "conditions": [
+        {
+          "parameter": 0,
+          "mode": "Equals",
+          "value": 3
+        }
+      ]
+    },
+    {
+      "from": "Any",
+      "to": 7,
+      "duration": 0.08,
+      "offset": 0.0,
+      "conditions": [
+        {
+          "parameter": 0,
+          "mode": "Equals",
+          "value": 4
+        }
+      ]
+    },
+    {
+      "from": "Any",
+      "to": 0,
+      "duration": 0.08,
+      "offset": 0.0,
+      "conditions": [
+        {
+          "parameter": 0,
+          "mode": "Equals",
+          "value": 0
+        }
+      ]
+    },
+    {
+      "from": "Any",
+      "to": 1,
+      "duration": 0.08,
+      "offset": 0.0,
+      "conditions": [
+        {
+          "parameter": 0,
+          "mode": "Equals",
+          "value": 1
+        },
+        {
+          "parameter": 1,
+          "mode": "Less",
+          "value": 4.5
+        }
+      ]
+    },
+    {
+      "from": "Any",
+      "to": 2,
+      "duration": 0.08,
+      "offset": 0.0,
+      "conditions": [
+        {
+          "parameter": 0,
+          "mode": "Equals",
+          "value": 1
+        },
+        {
+          "parameter": 1,
+          "mode": "Greater",
+          "value": 4.5
+        },
+        {
+          "parameter": 1,
+          "mode": "Less",
+          "value": 7.5
+        }
+      ]
+    },
+    {
+      "from": "Any",
+      "to": 3,
+      "duration": 0.08,
+      "offset": 0.0,
+      "conditions": [
+        {
+          "parameter": 0,
+          "mode": "Equals",
+          "value": 1
+        },
+        {
+          "parameter": 1,
+          "mode": "Greater",
+          "value": 7.5
+        },
+        {
+          "parameter": 1,
+          "mode": "Less",
+          "value": 11.5
+        }
+      ]
+    },
+    {
+      "from": "Any",
+      "to": 4,
+      "duration": 0.08,
+      "offset": 0.0,
+      "conditions": [
+        {
+          "parameter": 0,
+          "mode": "Equals",
+          "value": 1
+        },
+        {
+          "parameter": 1,
+          "mode": "Greater",
+          "value": 11.5
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,95 @@
+{
+  "version": 3,
+  "name": "Projectile Axe",
+  "entities": [
+    {
+      "id": "50524F4A00010003",
+      "parent": -1,
+      "components": {
+        "Transform": {
+          "positions": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+          },
+          "scale": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          }
+        },
+        "ScriptComponent": {
+          "enabled": true,
+          "assembly": "Managed/Crucible.Scripts.dll",
+          "namespace": "Crucible.Scripts",
+          "class": "MechProjectile",
+          "fields": [
+            {
+              "declaringType": "Crucible.Scripts.MechProjectile",
+              "name": "spinDegreesPerSecond",
+              "type": "Single",
+              "boolean": false,
+              "integer": 0,
+              "single": 720.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            }
+          ]
+        },
+        "EntityName": {
+          "name": "Projectile Axe"
+        }
+      }
+    },
+    {
+      "id": "50524F4A00010005",
+      "parent": 0,
+      "components": {
+        "Transform": {
+          "positions": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 1.0,
+            "z": 0.0,
+            "w": 6.123233995736766E-17
+          },
+          "scale": {
+            "x": 0.55,
+            "y": 0.55,
+            "z": 0.55
+          }
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "modelAsset": 8536146718493933991,
+          "modelRoot": 4294967295,
+          "materialOverrides": [],
+          "colour": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+          },
+          "meshAsset": 0,
+          "materialAsset": 0
+        },
+        "EntityName": {
+          "name": "Visual"
+        }
+      }
+    }
+  ]
+}
