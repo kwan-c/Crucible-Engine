@@ -197,8 +197,12 @@ namespace Crucible
 			//networking
 			if (const JsonValue* network = FindSection(root, "network"))
 			{
-				ReadUInt(*network, "port", config.network.port);
-				ReadUInt(*network, "maxPlayers", config.network.maxPlayers);
+				ReadString(*network, "mode", config.network.mode);
+				ReadString(*network, "listenAddress", config.network.listenAddress);
+				ReadUInt16(*network, "hostPort", config.network.hostPort);
+				ReadString(*network, "connectAddress", config.network.connectAddress);
+				ReadUInt16(*network, "connectPort", config.network.connectPort);
+				ReadUInt(*network, "maxClients", config.network.maxClients);
 			}
 
 			// (no "audio": the volumes are the player's - see Configuration/UserSettings.h)
@@ -364,8 +368,12 @@ namespace Crucible
 		doc.Set("graphics/maximized",    config.graphics.maximized);
 		doc.Set("graphics/targetFPS",    config.graphics.targetFPS);
 
-		doc.Set("network/port",       config.network.port);
-		doc.Set("network/maxPlayers", config.network.maxPlayers);
+		doc.Set("network/mode",           config.network.mode);
+		doc.Set("network/listenAddress",  config.network.listenAddress);
+		doc.Set("network/hostPort",       static_cast<std::uint32_t>(config.network.hostPort));
+		doc.Set("network/connectAddress", config.network.connectAddress);
+		doc.Set("network/connectPort",    static_cast<std::uint32_t>(config.network.connectPort));
+		doc.Set("network/maxClients",     config.network.maxClients);
 
 		doc.Set("project/startupScene", config.project.startupScene);
 		doc.SetList("project/aspectRatio", std::vector<std::uint32_t>{ config.project.aspectWidth, config.project.aspectHeight });

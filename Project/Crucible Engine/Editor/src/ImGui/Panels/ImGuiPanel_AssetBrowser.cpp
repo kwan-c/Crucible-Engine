@@ -405,8 +405,10 @@ void Crucible::AssetBrowser::Init() {
 	// to run its own reconcile (writing .meta files a second time) and went stale whenever this
 	// panel created a file, so the engine could not see what the browser showed.
 	m_ready = m_assets.IsInitialized() || m_assets.Init();
-	if (m_ready)
+	if (m_ready) {
 		RebuildFolderTree();
+		QueueModelCompiles();   // a .glb added while the editor was closed
+	}
 	else
 		CRU_WARN("[AssetBrowser] AssetManager::Init() failed: Assets folder not found");
 }
@@ -432,11 +434,15 @@ void Crucible::AssetBrowser::Refresh() {
 	// A .cprefab changed on disk (a git pull, another scene's Apply): bring the open scene's
 	// instances of it up to date, keeping their overrides. One undo step; nothing if none changed.
 	if (Core* core = EditorManager::GetInstance().GetCore()) { PrefabAuthoring::UpdateChangedInstances(core->GetWorld()); }
+
+	// A .glb that is new or changed gets its .cmodel without a rebuild.
+	QueueModelCompiles();
 }
 
 void Crucible::AssetBrowser::Reveal(std::string const& virtualPath) {
 	if (virtualPath.empty()) return;
 	NavigateTo(ParentOf(virtualPath));   // applied after drawing; also clears the search
+	m_selection.clear();
 	m_selected = virtualPath;
 	m_syncTree = true;
 	ImGui::SetWindowFocus(m_panelName.c_str());
@@ -449,6 +455,12 @@ void Crucible::AssetBrowser::Update(float) {
 	bool const appFocused = window != nullptr && glfwGetWindowAttrib(window, GLFW_FOCUSED) != 0;
 	if (appFocused && !m_appWasFocused && m_ready && IsRefreshAllowed()) { Refresh(); }
 	m_appWasFocused = appFocused;
+
+	// Before Begin: both must still happen while this panel's tab is hidden behind another.
+	if (m_ready) {
+		ProcessDroppedFiles();
+		UpdateModelCompiles();
+	}
 
 	// Something else took the Inspector (an entity was picked in the Hierarchy): the clip
 	// preview is no longer on screen, so stop it and let the clip go. Checked before Begin so
@@ -512,17 +524,22 @@ void Crucible::AssetBrowser::Update(float) {
 			Refresh();
 		if (ImGui::IsKeyPressed(ImGuiKey_Backspace, false) && !m_currentFolder.empty() && m_search[0] == '\0')
 			NavigateTo(ParentOf(m_currentFolder));
-		if (ImGui::IsKeyPressed(ImGuiKey_F2, false) && !m_selected.empty() && m_renaming.empty())
+		if (ImGui::IsKeyPressed(ImGuiKey_F2, false) && !m_selected.empty() && m_renaming.empty() && !IsMultiSelect())
 			BeginRename(m_selected);
 		// Shortcut, not IsKeyPressed: the Hierarchy registers Delete with RouteGlobal (delete the
 		// selected entities), and only a focus-route Shortcut claims the key ahead of it -
 		// otherwise one press would delete the scene file AND the selected entities.
-		if (!m_selected.empty() && m_renaming.empty() && ImGui::Shortcut(ImGuiKey_Delete))
-			BeginDelete(m_selected);
+		if (!m_selected.empty() && m_renaming.empty() && ImGui::Shortcut(ImGuiKey_Delete)) {
+			// Still claimed above, so the key never falls through to the Hierarchy's selected entities.
+			if (IsMultiSelect()) CRU_USER_INFO("Select one file to delete it");
+			else BeginDelete(m_selected);
+		}
 	}
 
 	DrawDeleteConfirm();
 	DrawCreateScriptModal();
+	DrawConflictModal();
+	DrawImportProblemsModal();
 
 	ImGui::End();
 
@@ -530,11 +547,14 @@ void Crucible::AssetBrowser::Update(float) {
 	ApplyPendingRename();
 	ApplyPendingDelete();
 	ApplyPendingPrefab();
+	ApplyPendingMove();
+	FinishImport();
 
 	// Apply navigation after drawing, so the item list never changes mid-loop.
 	if (m_navigateTo) {
 		m_currentFolder = *m_navigateTo;
 		m_navigateTo.reset();
+		m_selection.clear();
 		m_renaming.clear();
 		m_search[0] = '\0';
 		m_listingDirty = true;
@@ -642,6 +662,11 @@ void Crucible::AssetBrowser::RebuildListing() {
 	std::sort(m_items.begin(), m_items.end(), [](Item const& a, Item const& b) {
 		if (a.isFolder != b.isFolder) return a.isFolder;
 		return ToLowerCopy(a.name) < ToLowerCopy(b.name);
+	});
+
+	// A drag must only ever move files the user can see selected (a new search can hide some).
+	std::erase_if(m_selection, [this](std::string const& path) {
+		return std::none_of(m_items.begin(), m_items.end(), [&](Item const& item) { return item.virtualPath == path; });
 	});
 }
 
@@ -782,6 +807,9 @@ void Crucible::AssetBrowser::DrawFolderTree(FolderNode const& node) {
 	if (ImGui::IsItemClicked(ImGuiMouseButton_Left) && !ImGui::IsItemToggledOpen())
 		NavigateTo(node.virtualPath);
 
+	// The quick way to a folder that is neither below this one nor its parent.
+	AcceptAssetMove(node.virtualPath);
+
 	if (open) {
 		for (FolderNode const& child : node.children)
 			DrawFolderTree(child);
@@ -804,14 +832,21 @@ void Crucible::AssetBrowser::DrawGrid() {
 	float const cellWidth = m_tileSize + style.ItemSpacing.x;
 	int const columns = std::max(1, static_cast<int>((ImGui::GetContentRegionAvail().x + style.ItemSpacing.x) / cellWidth));
 
+	// The Back tile takes the first slot. It is not in m_items, so selection, rename, delete, search
+	// and the item count never see it.
+	std::size_t const firstSlot = (m_search[0] == '\0' && !m_currentFolder.empty()) ? 1 : 0;
+	if (firstSlot == 1) DrawBackTile();
+
 	for (std::size_t i = 0; i < m_items.size(); ++i) {
-		if (i % static_cast<std::size_t>(columns) != 0) ImGui::SameLine();
+		if ((i + firstSlot) % static_cast<std::size_t>(columns) != 0) ImGui::SameLine();
 		DrawTile(m_items[i]);
 	}
 
 	// Click on empty space clears the selection.
-	if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsAnyItemHovered())
+	if (ImGui::IsWindowHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !ImGui::IsAnyItemHovered()) {
 		m_selected.clear();
+		m_selection.clear();
+	}
 
 	// Right-click on empty space.
 	if (ImGui::BeginPopupContextWindow("##GridContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
@@ -836,6 +871,57 @@ void Crucible::AssetBrowser::DrawGrid() {
 	}
 }
 
+void Crucible::AssetBrowser::DrawBackTile() {
+	std::string const parent = ParentOf(m_currentFolder);
+
+	ImGui::PushID("##BackTile");
+	float const size = m_tileSize;
+	float const labelHeight = ImGui::GetTextLineHeight();
+	ImVec2 const tileSize(size, size + labelHeight * m_labelLines + 6.0f);   // the same as a file tile
+	ImVec2 const p0 = ImGui::GetCursorScreenPos();
+	ImVec2 const p1(p0.x + tileSize.x, p0.y + tileSize.y);
+
+	ImGui::InvisibleButton("##Back", tileSize);
+	bool const hovered = ImGui::IsItemHovered();
+
+	// Right after the button, while it is still the last item. Same as dropping on a folder tile.
+	AcceptEntityDrop(parent);
+	AcceptAssetMove(parent);
+
+	if (hovered && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+		NavigateTo(parent);
+	if (ImGui::BeginItemTooltip()) {
+		ImGui::Text("Back to Assets%s%s", parent.empty() ? "" : "/", parent.c_str());
+		ImGui::TextDisabled("Double-click to open, or drop a file here to move it there");
+		ImGui::EndTooltip();
+	}
+
+	ImDrawList* dl = ImGui::GetWindowDrawList();
+	if (hovered)
+		dl->AddRectFilled(p0, p1, ImGui::GetColorU32(ImGuiCol_HeaderHovered), 4.0f);
+
+	// An arrow pointing left, on a plain tile, so it cannot be mistaken for a folder or a file.
+	float const pad = size * 0.14f;
+	ImVec2 const i0(p0.x + pad, p0.y + pad);
+	ImVec2 const i1(p0.x + size - pad, p0.y + size - pad);
+	dl->AddRectFilled(i0, i1, IM_COL32(70, 72, 80, 255), 4.0f);
+
+	float const w = i1.x - i0.x;
+	float const h = i1.y - i0.y;
+	float const midY = i0.y + h * 0.5f;
+	ImU32 const arrow = IM_COL32(235, 235, 240, 255);
+	float const thickness = std::max(2.0f, size * 0.05f);
+	dl->AddLine(ImVec2(i0.x + w * 0.25f, midY), ImVec2(i1.x - w * 0.22f, midY), arrow, thickness);
+	dl->AddLine(ImVec2(i0.x + w * 0.25f, midY), ImVec2(i0.x + w * 0.50f, midY - h * 0.25f), arrow, thickness);
+	dl->AddLine(ImVec2(i0.x + w * 0.25f, midY), ImVec2(i0.x + w * 0.50f, midY + h * 0.25f), arrow, thickness);
+
+	char const* const label = "Back";
+	float const labelWidth = ImGui::CalcTextSize(label).x;
+	dl->AddText(ImVec2(p0.x + (size - labelWidth) * 0.5f, p0.y + size + 2.0f), ImGui::GetColorU32(ImGuiCol_Text), label);
+
+	ImGui::PopID();
+}
+
 void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	ImGui::PushID(item.virtualPath.c_str());
 	// A group, so the rename field drawn over the label below still leaves the row layout
@@ -858,7 +944,10 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 
 	// Dropping a Hierarchy entity on a folder saves the prefab in that folder. Right after the
 	// button, while it is still the last item.
-	if (item.isFolder) AcceptEntityDrop(item.virtualPath);
+	if (item.isFolder) {
+		AcceptEntityDrop(item.virtualPath);
+		AcceptAssetMove(item.virtualPath);   // an asset dragged from another tile moves there
+	}
 
 	// Unity's rule: a click selects, a drag does not. The press only counts as a click if the
 	// mouse never moved past ImGui's drag threshold - the same threshold BeginDragDropSource
@@ -867,26 +956,48 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	// is kept until the next press, so it is still readable on the release frame.
 	ImGuiIO const& io = ImGui::GetIO();
 	bool const dragged = io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] >= io.MouseDragThreshold * io.MouseDragThreshold;
+	bool const addingToSelection = !item.isFolder && (io.KeyCtrl || io.KeyShift);
 	if (released && !dragged) {
-		m_selected = item.virtualPath;
-		ShowInInspector(item);
+		if (addingToSelection) {
+			if (io.KeyCtrl) ToggleInSelection(item.virtualPath);
+			else            SelectRangeTo(item.virtualPath);
+		}
+		else {
+			m_selection.clear();
+			m_selectionAnchor = item.virtualPath;
+			m_selected = item.virtualPath;
+		}
+		if (!IsMultiSelect() && m_selected == item.virtualPath) ShowInInspector(item);
 	}
 
-	// Right-click selects straight away, so the context menu is about this tile.
+	// Right-click selects straight away, so the context menu is about this tile. On a file that
+	// is already selected it keeps the others selected, as File Explorer does.
 	if (ImGui::IsItemClicked(ImGuiMouseButton_Right)) {
+		if (!IsSelected(item.virtualPath)) {
+			m_selection.clear();
+			m_selectionAnchor = item.virtualPath;
+		}
 		m_selected = item.virtualPath;
-		ShowInInspector(item);
+		if (!IsMultiSelect()) ShowInInspector(item);
 	}
 
-	if (hovered && !renamingThis && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+	if (hovered && !renamingThis && !addingToSelection && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
 		OpenItem(item);
 
 	DrawItemContextMenu(item);
 
 	if (!item.isFolder && !renamingThis && ImGui::BeginDragDropSource()) {
+		// One path, whatever is selected: the Inspector's pickers and the Hierarchy want a single
+		// asset. Only a drop on a folder looks at the selection (AcceptAssetMove).
 		ImGui::SetDragDropPayload(EditorWidgets::kAssetPayload, item.virtualPath.c_str(), item.virtualPath.size() + 1);
-		ImGui::TextUnformatted(item.name.c_str());
-		ImGui::TextDisabled("%s", ToString(item.type));
+		if (IsMultiSelect() && IsSelected(item.virtualPath)) {
+			ImGui::Text("%zu files", m_selection.size());
+			ImGui::TextDisabled("Drop on a folder to move them");
+		}
+		else {
+			ImGui::TextUnformatted(item.name.c_str());
+			ImGui::TextDisabled("%s", ToString(item.type));
+		}
 		ImGui::EndDragDropSource();
 	}
 	else if (ImGui::BeginItemTooltip()) {
@@ -899,7 +1010,7 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 
 	// ---- visuals ----
 	ImDrawList* dl = ImGui::GetWindowDrawList();
-	bool const selected = (m_selected == item.virtualPath);
+	bool const selected = IsSelected(item.virtualPath);
 	if (selected || hovered)
 		dl->AddRectFilled(p0, p1, ImGui::GetColorU32(selected ? ImGuiCol_HeaderActive : ImGuiCol_HeaderHovered), 4.0f);
 
@@ -979,11 +1090,14 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	if (m_search[0] != '\0' && ImGui::MenuItem("Go to Folder"))
 		NavigateTo(ParentOf(item.virtualPath));
 
-	if (ImGui::MenuItem("Rename", "F2", false, IsRefreshAllowed()))
+	bool const severalSelected = IsMultiSelect();
+	if (ImGui::MenuItem("Rename", "F2", false, IsRefreshAllowed() && !severalSelected))
 		BeginRename(item.virtualPath);
+	if (severalSelected) ImGui::SetItemTooltip("Select one file to rename it");
 
-	if (ImGui::MenuItem("Delete", "Del", false, IsRefreshAllowed()))
+	if (ImGui::MenuItem("Delete", "Del", false, IsRefreshAllowed() && !severalSelected))
 		BeginDelete(item.virtualPath);
+	if (severalSelected) ImGui::SetItemTooltip("Select one file to delete it");
 
 	if (ImGui::MenuItem("Show in Explorer"))
 		ShowInExplorer(AbsolutePathOf(item.virtualPath), true);
@@ -1059,6 +1173,15 @@ void Crucible::AssetBrowser::DrawAudioPreview(std::string const& name, bool load
 
 void Crucible::AssetBrowser::DrawFooter() {
 	ImGui::AlignTextToFramePadding();
+	if (m_modelJob.valid()) {
+		ImGui::TextColored(ImVec4(0.55f, 0.75f, 1.0f, 1.0f), "Compiling %s%s", m_runningModel.virtualPath.c_str(),
+			m_modelQueue.empty() ? "" : (" (+" + std::to_string(m_modelQueue.size()) + " more)").c_str());
+		ImGui::SameLine(0.0f, 24.0f);
+	}
+	if (IsMultiSelect()) {
+		ImGui::Text("%zu files selected", m_selection.size());
+		return;
+	}
 	if (m_selected.empty()) {
 		ImGui::TextDisabled("%d items", static_cast<int>(m_items.size()));
 		return;
@@ -1571,9 +1694,37 @@ bool Crucible::AssetBrowser::RenameOnDisk(std::string const& from, std::string c
 		return false;
 	}
 
+	std::string error;
+	if (!MoveOnDisk(from, to, error)) {
+		CRU_USER_WARN("Cannot rename '{}': {}", from, error);
+		return false;
+	}
+
+	// A scene's display name lives inside the file. Keep it equal to the file name, the way
+	// Unity names scenes - otherwise the renamed file would still open as its old name.
+	if (!isFolder && ToLowerCopy(extension) == ".scene") {
+		JsonWrapper doc;
+		if (doc.ReadFromFile(dst)) {
+			doc.Set("name", fs::path(finalName).stem().string());
+			doc.SaveToFile(dst);
+		}
+	}
+
+	outVirtualPath = to;
+	return true;
+}
+
+bool Crucible::AssetBrowser::MoveOnDisk(std::string const& from, std::string const& to, std::string& error) {
+	std::error_code ec;
+	fs::path const src = AbsolutePathOf(from);
+	fs::path const dst = AbsolutePathOf(to);
+	bool const isFolder = fs::is_directory(src, ec);
+
+	fs::create_directories(dst.parent_path(), ec);
+	ec.clear();
 	fs::rename(src, dst, ec);
 	if (ec) {
-		CRU_USER_WARN("Cannot rename '{}': {}", from, ec.message());
+		error = ec.message();
 		return false;
 	}
 
@@ -1584,9 +1735,9 @@ bool Crucible::AssetBrowser::RenameOnDisk(std::string const& from, std::string c
 		if (fs::exists(srcMeta, ec)) {
 			fs::rename(srcMeta, AssetRegistry::MetaPathFor(dst), ec);
 			if (ec) {
+				error = "its .meta could not be moved (" + ec.message() + ")";
 				std::error_code undo;
 				fs::rename(dst, src, undo);   // put the asset back rather than split it from its guid
-				CRU_USER_WARN("Cannot rename '{}': its .meta could not be moved ({})", from, ec.message());
 				return false;
 			}
 		}
@@ -1598,6 +1749,42 @@ bool Crucible::AssetBrowser::RenameOnDisk(std::string const& from, std::string c
 		if (AssetRegistry::ReadMeta(metaPath, meta))
 			AssetRegistry::WriteMeta(metaPath, meta, virtualPath);
 	};
+
+	if (!isFolder) {
+		// Companion files are hidden from the browser, so they must travel with their asset: a
+		// font's settings are found by the asset's own name ("Arial.ttf" + ".fontsettings").
+		for (std::string_view const suffix : kCompanionSuffixes) {
+			fs::path srcCompanion = src;
+			srcCompanion += std::string(suffix);
+			if (!fs::is_regular_file(srcCompanion, ec)) continue;
+			fs::path dstCompanion = dst;
+			dstCompanion += std::string(suffix);
+			fs::rename(srcCompanion, dstCompanion, ec);
+			if (ec) { CRU_USER_WARN("Moved '{}', but '{}' could not follow it: {}", from, srcCompanion.filename().string(), ec.message()); continue; }
+			if (fs::path const companionMeta = AssetRegistry::MetaPathFor(srcCompanion); fs::exists(companionMeta, ec)) {
+				fs::rename(companionMeta, AssetRegistry::MetaPathFor(dstCompanion), ec);
+				rewriteHint(AssetRegistry::MetaPathFor(dstCompanion), to + std::string(suffix));
+			}
+		}
+
+		// The compiled copy in Resources follows too: a font finds its .cfont by path, and leaving
+		// any of them behind would strand a file nothing can reach from the browser.
+		if (fs::path const resources = m_assets.GetResourceRoot(); !resources.empty()) {
+			for (char const* const compiled : { ".cmodel", ".cfont", ".bill", ".sky" }) {
+				fs::path const fromRelative = fs::path(from).replace_extension(compiled);
+				fs::path const toRelative = fs::path(to).replace_extension(compiled);
+				fs::path const srcCompiled = resources / fromRelative;
+				if (!fs::is_regular_file(srcCompiled, ec)) continue;
+				fs::path const dstCompiled = resources / toRelative;
+				fs::create_directories(dstCompiled.parent_path(), ec);
+				fs::rename(srcCompiled, dstCompiled, ec);
+				if (ec) { CRU_USER_WARN("Moved '{}', but its compiled file could not follow it: {}", from, ec.message()); continue; }
+				fs::rename(AssetRegistry::MetaPathFor(srcCompiled), AssetRegistry::MetaPathFor(dstCompiled), ec);
+				rewriteHint(AssetRegistry::MetaPathFor(dstCompiled), toRelative.generic_string());
+			}
+		}
+	}
+
 	if (isFolder) {
 		for (fs::recursive_directory_iterator it(dst, fs::directory_options::skip_permission_denied, ec), end; it != end; it.increment(ec)) {
 			if (ec || !AssetRegistry::IsMetaFile(it->path())) continue;
@@ -1607,16 +1794,6 @@ bool Crucible::AssetBrowser::RenameOnDisk(std::string const& from, std::string c
 	}
 	else {
 		rewriteHint(AssetRegistry::MetaPathFor(dst), to);
-	}
-
-	// A scene's display name lives inside the file. Keep it equal to the file name, the way
-	// Unity names scenes - otherwise the renamed file would still open as its old name.
-	if (!isFolder && ToLowerCopy(extension) == ".scene") {
-		JsonWrapper doc;
-		if (doc.ReadFromFile(dst)) {
-			doc.Set("name", fs::path(finalName).stem().string());
-			doc.SaveToFile(dst);
-		}
 	}
 
 	// The open scene's file - or the folder holding it - moved: keep saving to the right place.
@@ -1633,6 +1810,5 @@ bool Crucible::AssetBrowser::RenameOnDisk(std::string const& from, std::string c
 		m_scenes.RelocateCurrentFile(moved);
 	}
 
-	outVirtualPath = to;
 	return true;
 }

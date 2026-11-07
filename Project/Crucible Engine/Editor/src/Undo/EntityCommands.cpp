@@ -46,7 +46,8 @@ namespace {
     template <typename T>
     inline constexpr bool kSkipInSnapshot =
         Crucible::WorldManaged<T>::value
-        || std::is_same_v<T, Crucible::WorldTransform>;
+        || std::is_same_v<T, Crucible::WorldTransform>
+        || Crucible::RuntimeOnly<T>::value;   // never captured, so never removed as "absent" either
 
     /*************************************************************************
      \brief  The JSON path of component T inside a snapshot.

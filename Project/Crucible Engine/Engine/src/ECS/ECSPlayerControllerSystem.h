@@ -3,24 +3,26 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          2 October 2026
-* \version       1.5
+* \version       1.6
 * \brief
-*                Keyboard, mouse and gamepad in: walks and jumps the mech
-*                that carries a PlayerController, and turns the
-*                third-person camera pivot that carries a CameraOrbit.
+*                PlayerInput in: walks and jumps the mech that carries a
+*                PlayerController, and turns it to face its camera.
 *
 * \details
 *                Each Update():
-*                  1. locks the cursor if Play or Resume just started
-*                  2. turns every CameraOrbit pivot with the mouse (while
-*                     the cursor is locked) and the right stick (always),
-*                     and turns its parent mech to face the same way if
-*                     m_faceCamera is on
-*                  3. reads WASD plus the left stick, and Space or gamepad
-*                     A, and turns the walk into a direction relative to
-*                     the main camera entity, flat on the ground
-*                  4. calls SimpleMove() and Jump() on every entity with a
-*                     PlayerController and a CharacterController
+*                  1. turns every mech whose PlayerInput carries a camera
+*                     yaw to face that way, if m_faceCamera is on
+*                  2. calls SimpleMove() and Jump() on every entity with a
+*                     PlayerController, a CharacterController and a
+*                     PlayerInput, from that PlayerInput
+*
+*                Reading the keyboard, mouse and gamepad (and the cursor
+*                lock and the camera pivot that go with them) is
+*                LocalPlayerInputSystem's (Network/Systems), which writes
+*                PlayerInput in PreUpdate for this machine's players. So the
+*                same code moves a player whatever wrote its PlayerInput:
+*                the local sampler, or on the host a remote player's
+*                network commands.
 *
 *                It never touches physics. ECSPhysicsSystem runs later in
 *                the frame (PostUpdate) and does the actual moving, the
@@ -28,9 +30,9 @@
 *                script tells it to.
 *
 *                It only runs while Playing, like a Unity script's Update:
-*                in Edit and Paused the keyboard and mouse belong to the
-*                editor. Freeing the cursor again (Esc, Pause, Stop) is the
-*                editor's job - see EditorManager in ImGuiManager.cpp.
+*                in Edit and Paused nothing moves. Freeing the cursor again
+*                (Esc, Pause, Stop) is the editor's job - see EditorManager
+*                in ImGuiManager.cpp.
 *
 * \history
 *    -v1.0       WASD, Space, camera-relative (the Renderer's camera)
@@ -41,27 +43,24 @@
 *    -v1.4       gamepad: left stick walks, right stick turns the camera,
 *                A jumps
 *    -v1.5       takes the player's InputSettings (sensitivity, invert Y)
+*    -v1.6       split (Networking Guide PR 10, Abhishek Akilandeswari
+*                Patchamuthu): input, cursor and camera pivot moved to
+*                LocalPlayerInputSystem (with the InputSettings); this
+*                applies PlayerInput
 *
 **************************************************************************/
 #pragma once
 
-// STL
-#include <cstdint>
-
 // Crucible engine
+#include "EngineExport.h"
 #include "Systems/IECSSystems.h"
 
 namespace Crucible {
 
-    struct InputSettings;
-
-    class ECSPlayerControllerSystem final : public IECSSystem {
+    // Exported so the engine's tests can drive it alongside LocalPlayerInputSystem.
+    class ENGINE_API ECSPlayerControllerSystem final : public IECSSystem {
 
     public:
-
-        // The player's look sensitivity and invert Y (Core's UserSettings), read
-        // every frame. Core owns them and they outlive this system.
-        explicit ECSPlayerControllerSystem(const InputSettings& settings);
 
         // --- IECSSystem ---------------------------------------------------- //
 
@@ -80,17 +79,6 @@ namespace Crucible {
         // running (switched off, or its CharacterController is) drops out of the query below,
         // and SimpleMove keeps walking until told otherwise - so stop the mech here.
         void OnComponentDeactivated(World& world, Entity entity, ComponentId component) override;
-
-    private:
-
-        const InputSettings& m_settings;
-
-        // The World's tick from the last time Update ran. The tick goes up by
-        // one every frame whether or not this system runs, so a jump of more
-        // than one means frames went by without us - Edit or Paused - and Play
-        // or Resume has just started. That is the moment to lock the cursor.
-        // Nothing tells a system "you were just switched back on", hence this.
-        std::uint64_t m_lastTick = 0;
 
     };  // ECSPLAYERCONTROLLERSYSTEM CLASS
 

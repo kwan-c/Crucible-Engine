@@ -31,6 +31,8 @@
 #include "Core.h"
 #include "Undo/EntityCommands.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "Network/NetContent.h"                    // the registered serializers, for the networking policy table
+#include "Network/NetworkAuthoringInspector.h"     // NetworkObjectAuthoring's table (Networking Phase 14.3)
 #include "../EditorWidgets.h"
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
@@ -106,6 +108,12 @@ namespace {
 		return world.HasComponent<Crucible::CharacterController>(entity)
 			? "This entity has a CharacterController, which is its collider.\nAn entity uses one or the other."
 			: nullptr;
+	}
+
+	// A network object cannot contain another (Networking Phase 14.3).
+	template <>
+	char const* AddBlockedReason<Crucible::NetworkObjectAuthoring>(Crucible::World& world, Crucible::Entity entity) {
+		return Crucible::NetworkAuthoringInspector::AddBlockedReason(world, entity);
 	}
 
 	template <>
@@ -885,9 +893,10 @@ void Crucible::Inspector::DrawAddComponentButton(Entity entity) {
 		bool any = false;
 
 		// Same X-macro as the inspector loop. Skips mandatory components (Transform,
-		// WorldTransform, HierarchyNode), World-managed ones, and ones already present.
+		// WorldTransform, HierarchyNode), World-managed ones, runtime-only ones (never saved,
+		// so an added one would vanish on save), and ones already present.
 #define CRU_ADD_COMPONENT_ITEM(T)																			    \
-		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !std::is_same_v<T, ScriptComponent> && !std::is_same_v<T, PrefabInstance>) { \
+		if constexpr (!Mandatory<T>::value && !WorldManaged<T>::value && !RuntimeOnly<T>::value && !std::is_same_v<T, ScriptComponent> && !std::is_same_v<T, PrefabInstance>) { \
 			std::string_view const name = ComponentTraits<T>::name;											        \
 			if (!m_world.HasComponent<T>(entity) &&															        \
 				m_addComponentFilter.PassFilter(name.data(), name.data() + name.size())) {					        \
@@ -1953,6 +1962,14 @@ bool Crucible::Inspector::DrawTextExtras(T& text, bool world) {
 		ImGui::EndDisabled();
 	}
 	return changed;
+}
+
+// NetworkObjectAuthoring: its fields are drawn only here, as the networking policy table (they are
+// NOT_ON_IMGUI in its reflection). Owned by networking: Editor/src/Network/NetworkAuthoringInspector.cpp.
+bool Crucible::Inspector::DrawComponentExtras(NetworkObjectAuthoring& authoring) {
+	Crucible::Core* core = EditorManager::GetInstance().GetCore();
+	if (core == nullptr) return false;
+	return NetworkAuthoringInspector::Draw(m_world, m_selected, authoring, m_world.Components(), core->GetNetContent().Serializers());
 }
 
 bool Crucible::Inspector::DrawComponentExtras(UIText& text) {

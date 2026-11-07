@@ -36,11 +36,19 @@ namespace Crucible
 		uint32_t    targetFPS = 60;
 	};
 
-	//network config
+	//network config - the team's shared multiplayer defaults ("network" in EngineConfig.json).
+	// The one source of shared networking defaults: Core turns them into NetworkSettings at
+	// startup (Network/NetworkSettings.h, FromEngineConfig). The editor's Network panel then
+	// changes them for its own instance only, in memory - nothing writes a Host/Client choice
+	// back here, so two editors can be Host and Client at the same time.
 	struct NetworkConfig
 	{
-		uint32_t port = 9999;
-		uint32_t maxPlayers = 4;
+		std::string mode = "offline";             // "offline" | "host" | "client": what Play does at startup
+		std::string listenAddress;                // host: local address to listen on; empty = all interfaces
+		uint16_t    hostPort = 27020;             // host: UDP port to listen on
+		std::string connectAddress = "127.0.0.1"; // client: the host's IP address
+		uint16_t    connectPort = 27020;          // client: the host's port
+		uint32_t    maxClients = 3;               // host: remote players accepted (1..3; the host is the 4th)
 	};
 
 	// No audio section: volumes are the PLAYER's choice, so they live in UserSettings.json

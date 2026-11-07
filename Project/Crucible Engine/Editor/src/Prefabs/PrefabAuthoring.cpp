@@ -531,7 +531,7 @@ namespace Crucible::PrefabAuthoring {
 		// Components that take part: everything a scene file holds, minus the link itself.
 		template <typename T>
 		inline constexpr bool kCompared = !WorldManaged<T>::value && !std::is_same_v<T, WorldTransform>
-			&& !std::is_same_v<T, PrefabInstance>;
+			&& !std::is_same_v<T, PrefabInstance> && !RuntimeOnly<T>::value;   // runtime-only: never in a .cprefab
 
 		// One component of one entity against the prefab entry.
 		template <typename T>

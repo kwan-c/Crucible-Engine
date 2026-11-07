@@ -3,7 +3,7 @@
   \author     Tok Duan Jie Nelson
   \par        Email: t.duanjienelson@digipen.edu
   \date       29 September 2026
-  \version    3.0
+  \version    3.1
   \brief
     Prefab save and instantiate implementation.
   \details
@@ -25,6 +25,9 @@
       Instantiate, tree validated at load. Version 1 files still load.
     - 3.0 (25 October 2026): Stable per-entry ids; instances are linked to
       their file (PrefabInstance); the link is stripped when saving.
+    - 3.1 (3 November 2026): Instantiate is all or nothing: if an entry
+      throws, every entity it created is destroyed before the exception
+      propagates 
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -331,54 +334,68 @@ namespace Crucible {
         std::vector<Entity> created;
         created.reserve(m_parents.size());
 
-        for (std::size_t i = 0; i < m_parents.size(); ++i)
+        // All or nothing: if any entry throws (reading its components, linking, parenting), every
+        // entity this call created is destroyed again before the exception goes on, so a caller
+        // never ends up with a partial subtree it has no handle to.
+        try
         {
-            const Entity entity = world.CreateEntity();
-
-            const std::string components = (m_version <= 1)
-                ? std::string(PREFAB_V1_COMPONENTS)
-                : EntityBase(i) + "/components";
-            EntityIO::ReadComponents(world, entity, m_doc, components);
-            world.ReissueDefaultName(entity);   // "Entity 3" was the source's default, not this instance's; custom names stay
-
-            // The link back to the file: which prefab, which entry of it, and whether this is
-            // the instance's root. Only for a file loaded from a registered asset.
-            if (m_asset != 0)
+            for (std::size_t i = 0; i < m_parents.size(); ++i)
             {
-                PrefabInstance link{ m_asset, m_ids[i], i == 0 };
-                if (i == 0) link.prefabHash = m_hash;   // the version of the file this instance matches
-                world.AddComponent<PrefabInstance>(entity, std::move(link));
-            }
+                const Entity entity = world.CreateEntity();
+                created.push_back(entity);   // tracked before anything below can throw (reserved: no allocation)
 
-            // The root goes under the caller's parent (if any); everyone else
-            // under an entity created earlier in this loop. false keeps the
-            // saved LOCAL Transform as-is, the same as Scene::Load.
-            const Entity attachTo = (i == 0)
-                ? parent
-                : created[static_cast<std::size_t>(m_parents[i])];
+                const std::string components = (m_version <= 1)
+                    ? std::string(PREFAB_V1_COMPONENTS)
+                    : EntityBase(i) + "/components";
+                EntityIO::ReadComponents(world, entity, m_doc, components);
+                world.ReissueDefaultName(entity);   // "Entity 3" was the source's default, not this instance's; custom names stay
 
-            if (!(attachTo == kNullEntity))
-            {
-                const ParentResult result = world.TrySetParent(entity, attachTo, false);
-                if (result != ParentResult::Ok)
+                // The link back to the file: which prefab, which entry of it, and whether this is
+                // the instance's root. Only for a file loaded from a registered asset.
+                if (m_asset != 0)
                 {
-                    CRU_WARN("Prefab: '{}' could not attach entity {} to its parent ({}) - "
-                             "left as a root",
-                             m_name, i, ToString(result));
+                    PrefabInstance link{ m_asset, m_ids[i], i == 0 };
+                    if (i == 0) link.prefabHash = m_hash;   // the version of the file this instance matches
+                    world.AddComponent<PrefabInstance>(entity, std::move(link));
+                }
+
+                // The root goes under the caller's parent (if any); everyone else
+                // under an entity created earlier in this loop. false keeps the
+                // saved LOCAL Transform as-is, the same as Scene::Load.
+                const Entity attachTo = (i == 0)
+                    ? parent
+                    : created[static_cast<std::size_t>(m_parents[i])];
+
+                if (!(attachTo == kNullEntity))
+                {
+                    const ParentResult result = world.TrySetParent(entity, attachTo, false);
+                    if (result != ParentResult::Ok)
+                    {
+                        CRU_WARN("Prefab: '{}' could not attach entity {} to its parent ({}) - "
+                                 "left as a root",
+                                 m_name, i, ToString(result));
+                    }
                 }
             }
 
-            created.push_back(entity);
+            // References between the copy's parts: entry ids -> the new entities' scene ids.
+            if (ensureSceneId)
+            {
+                const auto toScene = EntryToSceneMap(
+                    [&](std::size_t index) { return index < created.size() ? created[index] : kNullEntity; },
+                    ensureSceneId);
+                for (const Entity entity : created) EntityRefs::RemapEntity(world, entity, toScene);
+            }
+        }
+        catch (...)
+        {
+            // Newest first: children go before their parents. Destroying a parent also destroys
+            // whatever is already attached under it; DestroyEntity on a dead entity does nothing.
+            for (auto it = created.rbegin(); it != created.rend(); ++it)
+                if (world.IsAlive(*it)) world.DestroyEntity(*it);
+            throw;
         }
 
-        // References between the copy's parts: entry ids -> the new entities' scene ids.
-        if (ensureSceneId)
-        {
-            const auto toScene = EntryToSceneMap(
-                [&](std::size_t index) { return index < created.size() ? created[index] : kNullEntity; },
-                ensureSceneId);
-            for (const Entity entity : created) EntityRefs::RemapEntity(world, entity, toScene);
-        }
 
         return created.front();
     }

@@ -62,6 +62,9 @@
       the new copies (given ensureSceneId). Both callbacks are optional, so
       older callers behave as before. Prefabs saved earlier keep scene ids
       until saved again.
+
+    - 3.1 (3 November 2026): Instantiate is all or nothing (a throw
+      destroys what it created, then propagates).
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -129,7 +132,7 @@ namespace Crucible {
      \endcode
 
      \note
-        Nothing here throws. A missing or corrupt file logs and leaves the
+        A missing or corrupt file logs and leaves the
         Prefab invalid; Instantiate on an invalid Prefab returns
         kNullEntity without touching the world.
      *************************************************************************/
@@ -230,6 +233,11 @@ namespace Crucible {
             pointed at the matching new copy (by that copy's scene id), so a
             copy's parts refer to each other, not to the original's. Not
             given, references are left as stored.
+
+            All or nothing: if anything throws part-way (reading an entry's
+            components, for example), every entity this call created is
+            destroyed again and the exception propagates, so no partial
+            subtree is left behind.
 
          \note
             Each component added is a structural change, so every new entity

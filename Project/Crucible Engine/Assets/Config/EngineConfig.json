@@ -8,8 +8,12 @@
         "targetFPS": 60
     },
     "network": {
-        "port": 9999,
-        "maxPlayers": 4
+        "mode": "offline",
+        "listenAddress": "",
+        "hostPort": 27020,
+        "connectAddress": "127.0.0.1",
+        "connectPort": 27020,
+        "maxClients": 3
     },
     "project": {
         "startupScene": "Scenes/Fog_Lighting_Effects.scene",
