@@ -604,7 +604,7 @@ namespace Crucible {
 	void UIMenuSystem::Update(World& world, [[maybe_unused]] CommandBuffer& commands) {
 
 		// Play or Resume just started (the tick jumped while this system was off): start closed.
-		// The cursor is left alone here - ECSPlayerControllerSystem locks it as Play starts.
+		// The cursor is left alone here - scripts lock it (Input.SetMouseLocked).
 		const std::uint64_t tick = world.CurrentTick();
 		const bool sessionStarted = tick != m_lastTick + 1;
 		m_lastTick = tick;
@@ -612,7 +612,12 @@ namespace Crucible {
 		bool open = g_menuOpen;
 		if (sessionStarted) { open = false; g_menuRequested = false; m_cursorNeeded = false; }
 		if (g_menuRequested) { open = g_menuRequest; g_menuRequested = false; }
-		if (Input::IsPressed(KeyCode::Escape)) { open = !open; }
+		// Escape is the pause menu's key only in a scene that has one (a screen-space toggleWithEscape canvas).
+		bool hasMenu = false;
+		world.CreateQuery<const UICanvas>().ForEach([&](Entity, const UICanvas& canvas) {
+			if (canvas.toggleWithEscape && canvas.renderMode == UICanvas::RenderMode::ScreenSpace) { hasMenu = true; }
+		});
+		if (hasMenu && Input::IsPressed(KeyCode::Escape)) { open = !open; }
 		g_menuOpen = open;
 
 		// Every menu canvas follows the menu (checked every frame: a scene loaded mid-Play brings its
@@ -631,11 +636,10 @@ namespace Crucible {
 			if (UICanvas* canvas = world.Write<UICanvas>(entity)) { canvas->enabled = open; }
 		}
 
-		// The cursor: free while something needs it; locked once, when that stops (back to
-		// mouse-look). Not forced locked every frame, so the editor's own Esc can still free it.
+		// The cursor: held free while something needs it. When that stops the game's latest
+		// Input::SetMouseLocked request applies again - a cursor that was free stays free.
 		const bool needed = open || showsCursor;
-		if (needed && Input::IsMouseLocked())   { Input::SetMouseLocked(false); }
-		else if (!needed && m_cursorNeeded)     { Input::SetMouseLocked(true); }
+		Input::SetMouseReleased(Input::MouseRelease::Menu, needed);
 		m_cursorNeeded = needed;
 		g_cursorNeeded = needed;
 	}

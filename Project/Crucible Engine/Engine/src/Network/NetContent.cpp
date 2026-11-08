@@ -8,7 +8,7 @@
 *                NetContent (see the header).
 *
 * \history
-*    -v1.0       Networking Guide 18.3 issue 7 (PR 7)
+*    -v1.0       network content: registry, prefab table, content hash
 *    -v1.1       discovery of authored network prefabs (Networking Phase
 *                14.2)
 *    -v1.2       scene profiles (Networking Phase 14.7)

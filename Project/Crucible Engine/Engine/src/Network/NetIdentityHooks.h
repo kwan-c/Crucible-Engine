@@ -22,7 +22,7 @@
 *                spawn"; CheckIdentityMap reports any break of it.
 *
 * \history
-*    -v1.0       Networking Guide 9.2, 18.3 issue 8 (PR 6)
+*    -v1.0       NetworkIdentity hooks and the identity map check
 *
 **************************************************************************/
 #pragma once

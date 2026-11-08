@@ -10,27 +10,27 @@
 *                requests and the lifecycle stream.
 *
 * \history
-*    -v1.0       Networking Guide PR 4 (see the header)
+*    -v1.0       connection handling (see the header)
 *    -v1.1       review fixes: refused Start changes nothing, FreeSlot
 *                guarded, per-message receive budget, client join deadline
 *    -v1.2       LastStartError, LastEndReason
-*    -v1.3       identity hooks, rejection, despawn ownership (PR 6);
+*    -v1.3       identity hooks, rejection, despawn ownership;
 *                review fix: oversized messages count towards the frame's
 *                message limit and their sender's quota, released at once
 *    -v1.4       invalid network content refuses Start; client logs its
-*                content hash (PR 7)
+*                content hash
 *    -v1.5       RequestSpawn, SendLifecycle, ClientReady, Synchronizing
 *                timeout; the client hands lifecycle messages to
-*                NetReceiveSystem (PR 8)
+*                NetReceiveSystem
 *    -v1.6       SendSnapshot, SendInput, HandleInput; ClientReady counts as
-*                confirming the world (PR 9)
+*                confirming the world
 *    -v1.7       HandleInput takes commands (by sequence, newest wins, jumps
 *                latched); TakePeerIntent with the input timeout; the
-*                client's SnapshotAcks() reset by Start and Stop (PR 11)
-*    -v1.8       gameplay events, ServerTime(), the input latency probe
-*                (PR 12); review fix: a pending measurement is cancelled
+*                client's SnapshotAcks() reset by Start and Stop
+*    -v1.8       gameplay events, ServerTime(), the input latency probe;
+*                review fix: a pending measurement is cancelled
 *                when its entity is removed and expires in Update
-*    -v1.9       bytes by message type, both directions (PR 13)
+*    -v1.9       bytes by message type, both directions
 *    -v1.10      SceneObjectBatch is a lifecycle message (protocol 4,
 *                Networking Phase 14.4)
 *    -v1.11      scene objects: AdoptSceneObject, SceneIdOf, the scene
@@ -754,7 +754,7 @@ namespace Crucible
 		Post(NetworkEvents::PeerJoined{ .peer = peer.peer, .name = peer.name });
 	}
 
-	// The client's receipt for the world (issue 13): accepted only from a Synchronizing peer, and
+	// The client's receipt for the world: accepted only from a Synchronizing peer, and
 	// only if it echoes the sequence of the WorldEnd it was sent. Sending a GNS message reliably
 	// says nothing about whether the client's World holds the entities; this does.
 	void NetworkSession::HandleClientReady(PeerState& peer, ByteReader& reader)
@@ -775,8 +775,8 @@ namespace Crucible
 		Post(NetworkEvents::PeerReady{ .peer = peer.peer });
 	}
 
-	// Input is the client's heartbeat and carries both acknowledgements (Networking Guide 6.2,
-	// issues 1 and 12) and its commands. appliedLifecycle is accepted while Synchronizing too, only
+	// Input is the client's heartbeat and carries both acknowledgements
+	// and its commands. appliedLifecycle is accepted while Synchronizing too, only
 	// forwards, and never for a message that was not sent. Commands and snapshot acks only matter
 	// once InGame. Commands are taken by sequence: each of them arrives up to 3 times (redundancy),
 	// so a copy or an older one is skipped; the newest wins, and a jump in any new one is latched
@@ -836,7 +836,7 @@ namespace Crucible
 		return result;
 	}
 
-	// What a client's players do this frame (Networking Guide 6.2, server step 5). The intent stays
+	// What a client's players do this frame. The intent stays
 	// in force over every step until a newer command replaces it - or until kInputTimeoutTicks steps
 	// pass without one (loss burst, frozen client, cable pulled): then it is neutral, so the mech
 	// stops within about 270 ms instead of walking for the ~10 s GNS takes to time the connection
@@ -926,7 +926,7 @@ namespace Crucible
 
 	// ---- client time and responsiveness --------------------------------------------------------
 
-	// Networking Guide 11.7, the one instrument: key down to the first rendered frame in which the
+	// The one instrument: key down to the first rendered frame in which the
 	// own player moved. Expected with v1 (no prediction): one input interval + delivery + one
 	// snapshot interval + the 100 ms interpolation delay, ~110 to 150 ms on a LAN.
 	void NetworkSession::AbandonLatencyProbe() noexcept

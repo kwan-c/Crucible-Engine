@@ -51,6 +51,9 @@ for ($i = 0; $i -lt $rack.Count; $i++) {
 
 [void](Add-UnityHud $S $PlayerControls)
 
+# The engine never locks the cursor itself: this scene asks for mouse-look (CursorLock.cs).
+[void](Add-Entity $S 'Cursor Lock' $null ([ordered]@{ ScriptComponent = (Script 'CursorLock' @((FBool 'locked' $true))) }))
+
 $scenePath = Join-Path $assets 'Scenes\Game\TestFolder\Player Showcase.scene'
 Write-JsonFile $scenePath ([ordered]@{ version = 1; name = 'Player Showcase'; entities = $S.Entities })
 "Wrote $($S.Entities.Count) entities to $scenePath"

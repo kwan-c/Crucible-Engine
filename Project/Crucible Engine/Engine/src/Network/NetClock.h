@@ -13,7 +13,7 @@
 *                fixed step), not a second clock beside it: two clocks with
 *                their own accumulators drift apart, and later client-side
 *                prediction needs "input N was applied at step S" to name
-*                an exact simulation step (Networking Guide 18.4).
+*                an exact simulation step.
 *
 *                Server: AdvanceSimulation(stepsThisFrame) after physics;
 *                SnapshotDue() is true at most once per frame, once at least
@@ -27,7 +27,7 @@
 *                advances it every frame.
 *
 * \history
-*    -v1.0       Networking Guide 5.4 (NetClock), 18.4
+*    -v1.0       NetClock: the fixed-step network tick
 *
 **************************************************************************/
 #pragma once

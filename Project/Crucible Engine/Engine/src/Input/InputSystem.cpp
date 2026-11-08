@@ -110,6 +110,7 @@ namespace Crucible{
         }
 
         m_mouseLocked = false;
+        m_lockRequested = m_releasedByMenu = m_releasedByEditor = false;
         g_instance = nullptr;
         m_window = nullptr;
 
@@ -342,30 +343,65 @@ namespace Crucible{
     }
 
     void Input::SetMouseLocked(const bool& locked) {
-        if (g_instance == nullptr || g_instance->m_window == nullptr) { return; }
+        if (g_instance == nullptr) { return; }
+
+        g_instance->m_lockRequested = locked;
+        g_instance->ApplyMouseLock();
+    }
+
+    void Input::SetMouseReleased(const MouseRelease& source, const bool& released) {
+        if (g_instance == nullptr) { return; }
+
+        (source == MouseRelease::Menu ? g_instance->m_releasedByMenu : g_instance->m_releasedByEditor) = released;
+        g_instance->ApplyMouseLock();
+    }
+
+    bool Input::IsMouseReleased(const MouseRelease& source) {
+        if (g_instance == nullptr) { return false; }
+
+        return source == MouseRelease::Menu ? g_instance->m_releasedByMenu : g_instance->m_releasedByEditor;
+    }
+
+    bool Input::IsMouseLockRequested() {
+        if (g_instance == nullptr) { return false; }
+
+        return g_instance->m_lockRequested;
+    }
+
+    void Input::ResetMouseLock() {
+        if (g_instance == nullptr) { return; }
+
+        g_instance->m_lockRequested = g_instance->m_releasedByMenu = g_instance->m_releasedByEditor = false;
+        g_instance->ApplyMouseLock();
+    }
+
+    void Input::ApplyMouseLock() {
+        if (m_window == nullptr) { return; }
+
+        const bool locked = m_lockRequested && !m_releasedByMenu && !m_releasedByEditor;
 
         // Already in that mode: return before the warp, so no delta is skipped for nothing.
-        if (g_instance->m_mouseLocked == locked) { return; }
+        if (m_mouseLocked == locked) { return; }
 
-        g_instance->m_mouseLocked = locked;
+        m_mouseLocked = locked;
 
-        glfwSetInputMode(g_instance->m_window, GLFW_CURSOR,
+        glfwSetInputMode(m_window, GLFW_CURSOR,
             locked ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
 
         // Raw motion skips the OS pointer acceleration curve, so the same hand movement
         // always turns the camera by the same amount. GLFW only honours it while the cursor
         // is disabled, and not every platform has it - hence the support check.
         if (glfwRawMouseMotionSupported() == GLFW_TRUE) {
-            glfwSetInputMode(g_instance->m_window, GLFW_RAW_MOUSE_MOTION,
+            glfwSetInputMode(m_window, GLFW_RAW_MOUSE_MOTION,
                 locked ? GLFW_TRUE : GLFW_FALSE);
         }
 
         // Disabling the cursor warps it to the window centre and enabling it puts it back,
         // so either way the next event is a teleport. Swallow one delta, or the camera spins
         // the moment you enter or leave mouse-look.
-        g_instance->m_skipNextDelta = true;
+        m_skipNextDelta = true;
     }
-    
+
     bool Input::IsMouseLocked() {
         if (g_instance == nullptr) { return false; }
 

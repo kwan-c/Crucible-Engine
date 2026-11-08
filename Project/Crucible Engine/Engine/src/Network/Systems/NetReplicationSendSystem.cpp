@@ -9,12 +9,12 @@
 *                (world on join, spawns, despawns) and snapshots.
 *
 * \history
-*    -v1.0       lifecycle only (Networking Guide 9.3, 9.4, PR 8)
+*    -v1.0       lifecycle only
 *    -v1.1       step-stamped tick, per-client views, confirmed-spawn
-*                gating, full-state snapshots, acks (PR 9)
-*    -v1.2       gameplay events, after the spawns and despawns (PR 12)
+*                gating, full-state snapshots, acks
+*    -v1.2       gameplay events, after the spawns and despawns
 *    -v1.3       the per-client budget: classes, maximum ages, priority,
-*                change detection, adaptive allowance, counters (PR 13)
+*                change detection, adaptive allowance, counters
 *    -v1.4       SceneObjectBatches in the world stream; the scene identity
 *                in WorldBegin (Networking Phase 14.5)
 *
@@ -142,11 +142,11 @@ namespace Crucible
 		}
 
 		// The tick counts the fixed steps physics really ran (none while paused), so a snapshot's
-		// tick names an exact simulation step (Networking Guide 18.4).
+		// tick names an exact simulation step.
 		const bool hosting = m_session.IsServer() && m_session.State() == SessionState::Running;
 		if (hosting) m_session.Clock().AdvanceSimulation(m_steps ? m_steps() : 0u);
 
-		// Ids unmapped since last frame: their per-client state goes (issue 9). In every role, so the
+		// Ids unmapped since last frame: their per-client state goes. In every role, so the
 		// session's list never grows.
 		m_session.TakeDestroyedThisFrame(m_destroyed);
 		for (const Net::NetworkId id : m_destroyed)
@@ -454,7 +454,7 @@ namespace Crucible
 		return true;
 	}
 
-	// Confirmation is application, not delivery (issues 1, 12): the client says which lifecycle
+	// Confirmation is application, not delivery: the client says which lifecycle
 	// message it has applied (Input.appliedLifecycle, or ClientReady for the whole world), and every
 	// spawn carried by that message or an earlier one is now in its World.
 	void NetReplicationSendSystem::RefreshConfirmations(const PeerState& peer, ClientView& view)
@@ -502,7 +502,7 @@ namespace Crucible
 		}
 	}
 
-	// Issue 14: the allowance follows how long GNS queues this client's snapshots (lane 1 only, so a
+	// The allowance follows how long GNS queues this client's snapshots (lane 1 only, so a
 	// burst of reliable spawns on lane 0 cannot shrink it).
 	void NetReplicationSendSystem::AdaptAllowance(const PeerState& peer, ClientView& view)
 	{
@@ -551,7 +551,7 @@ namespace Crucible
 		{
 			const Record& r = m_snapshotRecords[index];
 			const auto it = view.states.find(r.id);
-			if (it == view.states.end() || !it->second.confirmed) continue;   // GATING (issue 1)
+			if (it == view.states.end() || !it->second.confirmed) continue;   // GATING
 			ClientEntityState& state = it->second;
 			if (state.acked && state.baseline == r.hash)   // the client holds exactly this: 0 bytes
 			{

@@ -21,7 +21,7 @@
 *                value on the wire.
 *
 * \history
-*    -v1.0       ids, constants and NetRole (Networking Guide 4.2)
+*    -v1.0       ids, constants and NetRole
 *
 **************************************************************************/
 #pragma once

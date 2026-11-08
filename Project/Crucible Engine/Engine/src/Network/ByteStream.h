@@ -28,8 +28,8 @@
 *                cannot overflow, never "pos + n > size".
 *
 * \history
-*    -v1.0       ByteWriter, ByteReader, LEB128 varints (Networking
-*                Guide 8.2); the reader also rejects non-minimal varints
+*    -v1.0       ByteWriter, ByteReader, LEB128 varints; the reader
+*                also rejects non-minimal varints
 *
 **************************************************************************/
 #pragma once
