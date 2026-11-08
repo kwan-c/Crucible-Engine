@@ -857,6 +857,66 @@
         {
             "id": "8C6030DEE3E4C017",
             "components": {
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "LevelSelectSlab",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.LevelSelectSlab",
+                            "name": "questTitle",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Elimination",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LevelSelectSlab",
+                            "name": "questType",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Main Quest",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LevelSelectSlab",
+                            "name": "description",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Destroy every enemy in the area.",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LevelSelectSlab",
+                            "name": "levelScene",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Scenes/Game/Game Scene.scene",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
                 "Transform": {
                     "positions": {
                         "x": 0.08798098564147949,
@@ -1132,6 +1192,66 @@
         {
             "id": "ACB5F8DEDFB90041",
             "components": {
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "LevelSelectSlab",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.LevelSelectSlab",
+                            "name": "questTitle",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Tutorial",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LevelSelectSlab",
+                            "name": "questType",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Main Quest",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LevelSelectSlab",
+                            "name": "description",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Learn to pilot your mech: moving, aiming and fighting.",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LevelSelectSlab",
+                            "name": "levelScene",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Scenes/Game/TestFolder/TutorialMap.scene",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
                 "Transform": {
                     "positions": {
                         "x": 0.08798098564147949,
@@ -1534,6 +1654,123 @@
                 },
                 "EntityName": {
                     "name": "mainQuestText"
+                }
+            }
+        },
+        {
+            "id": "7A5E1EC7000000A1",
+            "parent": "ACB5F8DEDFB90041",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.2,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Point",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.800000011920929,
+                        "z": 0.44999998807907104
+                    },
+                    "intensity": 4.0,
+                    "range": 3.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": false
+                },
+                "EntityName": {
+                    "name": "Glow"
+                }
+            }
+        },
+        {
+            "id": "7A5E1EC7000000A3",
+            "parent": "8C6030DEE3E4C017",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.2,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Point",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.800000011920929,
+                        "z": 0.44999998807907104
+                    },
+                    "intensity": 4.0,
+                    "range": 3.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": false
+                },
+                "EntityName": {
+                    "name": "Glow"
+                }
+            }
+        },
+        {
+            "id": "7A5E1EC7000000A5",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "LevelSelectController",
+                    "fields": []
+                },
+                "EntityName": {
+                    "name": "LevelSelect"
                 }
             }
         }
