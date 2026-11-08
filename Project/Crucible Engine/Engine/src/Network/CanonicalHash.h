@@ -26,9 +26,9 @@
 *                job here.
 *
 * \history
-*    -v1.0       FNV-1a 64 with U8/U32/U64/Str (Networking Guide 18.3,
-*                issue 7); U8 is public so the algorithm can be checked
-*                against the published FNV test vectors
+*    -v1.0       FNV-1a 64 with U8/U32/U64/Str; U8 is public so the
+*                algorithm can be checked against the published FNV
+*                test vectors
 *
 **************************************************************************/
 #pragma once

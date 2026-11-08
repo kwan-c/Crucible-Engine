@@ -84,9 +84,12 @@ add_custom_command(TARGET Engine POST_BUILD
         "$<TARGET_FILE:Engine>"
         "$<TARGET_FILE_DIR:Game>"
 
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "$<TARGET_FILE:Engine>"
-	"$<TARGET_FILE_DIR:Editor>"
+    # Into the Editor's folder without failing if that Editor is running and has it locked
+    # (File > Package Game from a Release Editor) - see CopyToRunningEditor.cmake.
+    COMMAND ${CMAKE_COMMAND}
+        "-DSOURCE=$<TARGET_FILE:Engine>"
+        "-DDESTINATION=$<TARGET_FILE_DIR:Editor>"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/CopyToRunningEditor.cmake"
 
     COMMENT "Copying Engine.dll to Game output directory..."
 )

@@ -27,10 +27,9 @@
 *    -v1.1       trimmed to a single placeholder; the rest of the network
 *                design is left for later
 *    -v1.2       SessionStarted, SessionEnded, PeerJoined, PeerLeft,
-*                JoinRefused (Networking Guide Milestone 1.3)
-*    -v1.3       PeerReady, WorldReady, SpawnFailed (Networking Guide 9.3,
-*                18.3 issue 4, PR 8)
-*    -v1.4       GameplayEventReceived: generic gameplay events (PR 12)
+*                JoinRefused
+*    -v1.3       PeerReady, WorldReady, SpawnFailed
+*    -v1.4       GameplayEventReceived: generic gameplay events
 *
 **************************************************************************/
 #pragma once

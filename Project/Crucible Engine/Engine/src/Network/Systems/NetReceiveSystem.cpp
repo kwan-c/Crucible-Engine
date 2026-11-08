@@ -10,20 +10,19 @@
 *                and snapshots on clients.
 *
 * \history
-*    -v1.0       connection handling (Networking Guide PR 4)
-*    -v1.1       destroys rejected identities; Debug id-map check (PR 6)
+*    -v1.0       connection handling
+*    -v1.1       destroys rejected identities; Debug id-map check
 *    -v1.2       host spawns; client WorldBegin/SpawnBatch/WorldEnd/
 *                DespawnBatch, validated whole before applying; proxies
-*                made in a fixed order and destroyed on failure (PR 8)
+*                made in a fixed order and destroyed on failure
 *    -v1.3       snapshots validated whole, applied with a per-entity stale
 *                check, acknowledged only once applied; 30 Hz heartbeat
-*                Input with acks and appliedLifecycle (PR 9)
+*                Input with acks and appliedLifecycle
 *    -v1.4       the heartbeat moved to NetInputSystem (it sends commands
 *                too); applied snapshots go to the session's SnapshotAcks()
-*                (PR 11)
 *    -v1.5       a snapshot's root pose goes into the proxy's interpolation
 *                buffer instead of its Transform, and feeds the server time
-*                estimate; GameplayEvents are delivered (PR 12)
+*                estimate; GameplayEvents are delivered
 *    -v1.6       SceneObjectBatch decoded and checked; binding comes in
 *                Networking Phase 14.5
 *    -v1.7       scene objects: adoption, lockdown, scene identity check,
@@ -129,7 +128,7 @@ namespace Crucible
 
 	// ---- host --------------------------------------------------------------------------------
 
-	// The spawns gameplay requested last frame (Networking Guide 9.3). NetworkIdentity goes on
+	// The spawns gameplay requested last frame. NetworkIdentity goes on
 	// LAST: its hook maps the id, so the map, and the send system that announces the spawn, only
 	// ever see a finished entity. On any failure the root - and with it the whole subtree - is
 	// destroyed, and the spawn is reported instead of broadcast.
@@ -272,7 +271,7 @@ namespace Crucible
 
 	bool NetReceiveSystem::ApplySpawnBatch(World& world, ByteReader& reader)
 	{
-		// Phase 1: the whole message, without touching the World (issue 3).
+		// Phase 1: the whole message, without touching the World.
 		if (!Decode(reader, m_spawnBatch)) { Leave(CloseReason::Malformed, "malformed SpawnBatch"); return false; }
 		if (!CheckSequence(m_spawnBatch.lifecycleSeq, "SpawnBatch")) return false;
 		for (std::size_t i = 0; i < m_spawnBatch.spawns.size(); ++i)
@@ -294,7 +293,7 @@ namespace Crucible
 		}
 
 		// Phase 2: one proxy per record. If one fails the worlds have diverged: undo this
-		// message's proxies and leave (issue 4).
+		// message's proxies and leave.
 		m_created.clear();
 		for (const SpawnView& spawn : m_spawnBatch.spawns)
 		{
@@ -527,12 +526,12 @@ namespace Crucible
 
 	// ---- snapshots ---------------------------------------------------------------------------
 
-	// One snapshot (Networking Guide 6.2, client steps 1-4; 9.5). All or nothing: the whole message
+	// One snapshot. All or nothing: the whole message
 	// is decoded and every record for a live entity validated before anything is written. Then each
 	// record is applied unless the entity already holds something as new (the per-entity tick,
 	// NetInterpolation::lastApplied, so a late or reordered snapshot never moves anything back).
 	// The snapshot is acknowledged only if every record was applied or deliberately skipped (stale,
-	// or an entity despawned since): delivery alone acknowledges nothing (issues 1, 12).
+	// or an entity despawned since): delivery alone acknowledges nothing.
 	void NetReceiveSystem::ApplySnapshot(World& world, ByteReader& reader)
 	{
 		NetStats& stats = m_session.MutableStats();

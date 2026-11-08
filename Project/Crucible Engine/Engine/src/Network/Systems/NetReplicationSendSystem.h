@@ -16,14 +16,14 @@
 *                written is destroyed here. Not SimulationOnly: joins,
 *                despawns and acknowledgements keep flowing while Paused.
 *
-*                The tick (Networking Guide 18.4, 6.2 "steps 6-7"): every
+*                The tick: every
 *                frame the clock advances by the fixed steps physics really
 *                ran (the StepSource: Core reads ECSPhysicsSystem's
 *                GetStepsLastFrame() while Playing, 0 otherwise), so a
 *                snapshot's tick names an exact simulation step and a paused
 *                host neither advances the tick nor sends snapshots.
 *
-*                Each frame, on the host (Networking Guide 9.3, 9.4):
+*                Each frame, on the host:
 *                  1. Joining clients (JoinAccepted sent this frame): their
 *                     whole world, from the World as it is now - WorldBegin
 *                     (with the host's scene identity), SceneObjectBatches
@@ -44,8 +44,8 @@
 *                later incremental message", which lane 0's ordering then
 *                delivers in order.
 *
-*                Snapshots: a budget per client (Networking Guide 10.4 to
-*                10.8, issues 1, 9, 11, 12, 14). Every 2 steps (30 Hz), for
+*                Snapshots: a budget per client. Every 2 steps (30 Hz),
+*                for
 *                every InGame client:
 *                  - Gating: only entities whose spawn that client APPLIED
 *                    (Input.appliedLifecycle, or ClientReady for the world)
@@ -86,7 +86,7 @@
 *                    not fit waits for the next snapshot (recordsDeferred).
 *                  - Nothing changed: one header-only message still goes out,
 *                    so the client's clock estimate and its acks keep going.
-*                  - Adaptive allowance (issue 14): from 1,100 bytes; if the
+*                  - Adaptive allowance: from 1,100 bytes; if the
 *                    client's lane 1 (snapshots) queues more than 50 ms in
 *                    GNS it is cut by 25% (at least 300); after 2 s under
 *                    10 ms it grows by 10% (at most 2,200).
@@ -102,16 +102,13 @@
 *                counted.
 *
 * \history
-*    -v1.0       lifecycle only: world stream, spawns, despawns (Networking
-*                Guide 9.3, 9.4, PR 8)
+*    -v1.0       lifecycle only: world stream, spawns, despawns
 *    -v1.1       snapshots: step-stamped tick, confirmed-spawn gating, full
-*                state every snapshot, acks (PR 9)
+*                state every snapshot, acks
 *    -v1.2       gameplay events after the frame's spawns and despawns
-*                (PR 12)
 *    -v1.3       per-client budget: priority and maximum age by class,
 *                change detection against confirmed and acknowledged
 *                baselines, adaptive allowance from lane 1, instrumentation
-*                (PR 13)
 *    -v1.4       the world stream binds scene objects (SceneObjectBatch)
 *                and names the scene in WorldBegin (Networking Phase 14.5)
 *

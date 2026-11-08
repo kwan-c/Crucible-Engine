@@ -170,16 +170,46 @@ namespace Crucible {
 
         /*!
             \brief
-            Hides and captures the cursor so the mouse keeps reporting movement instead of
-            stopping at the screen edge. This is the mode a first- or third-person camera
-            runs in. Unity: Cursor.lockState plus Cursor.visible = false.
+            The game's request to hide and capture the cursor, so the mouse keeps reporting
+            movement instead of stopping at the screen edge. This is the mode a first- or
+            third-person camera runs in. Unity: Cursor.lockState plus Cursor.visible = false.
+            Scripts call it (C# Input.SetMouseLocked); nothing in the engine locks on its own.
             \param locked
             True to capture, false to release.
+            \note
+            A request, not a command: while a release hold is on (SetMouseReleased - a menu
+            that needs the pointer, or the editor) the cursor stays free, and the latest
+            request applies the moment the last hold comes off.
         */
         static void SetMouseLocked(const bool& locked);
 
-        /*!  \brief Is the cursor captured right now? */
+        /*!  \brief Is the cursor captured right now (the request, minus any release hold)? */
         static bool IsMouseLocked();
+
+        /*!  \brief Who can hold the cursor free over the game's request. */
+        enum class MouseRelease { Menu, Editor };
+
+        /*!
+            \brief
+            Puts on or takes off a release hold. While any hold is on the cursor is free;
+            when none is, IsMouseLocked() follows the game's latest SetMouseLocked request.
+            Menu: UIMenuSystem, while a menu or a showsCursor canvas is shown. Editor: the
+            release key and Pause; a click on the Game view takes it off.
+        */
+        static void SetMouseReleased(const MouseRelease& source, const bool& released);
+
+        /*!  \brief Is this release hold on? */
+        static bool IsMouseReleased(const MouseRelease& source);
+
+        /*!  \brief What the game last asked for with SetMouseLocked, whatever the holds. */
+        static bool IsMouseLockRequested();
+
+        /*!
+            \brief
+            Drops the request and every hold, so the cursor is free and nothing is waiting
+            to lock it. The editor calls it when Play stops.
+        */
+        static void ResetMouseLock();
 
         /*!
             \brief
@@ -290,6 +320,13 @@ namespace Crucible {
         */
         void PollGamepad();
 
+        /*!
+            \brief
+            Locks or frees the GLFW cursor to match the request and the release holds. Does
+            nothing when it already matches, so the delta skip below only follows a real change.
+        */
+        void ApplyMouseLock();
+
         // --- state ----------------------------------------------------------------------- //
 
         static constexpr std::size_t KEY_COUNT = static_cast<std::size_t>(KeyCode::Count);
@@ -305,6 +342,9 @@ namespace Crucible {
         Math::vec2 m_mouseScroll{ 0.f, 0.f };     // wheel notches this frame
 
         bool m_mouseLocked = false;     // cursor captured for mouse-look
+        bool m_lockRequested = false;   // the game's SetMouseLocked request
+        bool m_releasedByMenu = false;  // release hold: a menu needs the pointer
+        bool m_releasedByEditor = false;// release hold: the editor took the pointer back
         bool m_pointerOverUI = false;   // IsPointerOverUI(), written by UIInputSystem
         bool m_skipNextDelta = true;    // the next cursor event is a teleport, not a movement
         bool m_hasFocus      = true;    // a gamepad is ignored while the window is in the background

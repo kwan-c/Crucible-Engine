@@ -21,6 +21,7 @@
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
 #include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
+#include "ImGui/Panels/ImGuiPanel_PackageGame.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Cook.h"   // Tools/Cook
 
@@ -140,6 +141,13 @@ void Crucible::Menu::Update(float) {
 				}
 			}
 
+			// Builds the Release game, cooks and zips it, in the background (ImGuiPanel_PackageGame.h).
+			if (auto packager = EditorManager::GetInstance().GetPanel<PackageGamePanel>(ImguiPanels::PACKAGEGAME)) {
+				if (ImGui::MenuItem(packager->IsPackaging() ? "Package Game... (packaging)" : "Package Game...", nullptr, false, !playing))
+					packager->Open();
+			}
+
+			ImGui::Separator();
 			if (ImGui::MenuItem("Exit", "Alt+F4"))
 			{
 				// The ImGui GLFW backend stores the GLFWwindow* in the main viewport,
@@ -416,7 +424,7 @@ void Crucible::Menu::DrawOpenScenePopup()
 		return;
 
 	if (m_sceneFiles.empty())
-		ImGui::TextDisabled("No .scene files in Assets/Scenes");
+		ImGui::TextDisabled("No .scene files in Assets/Scenes or its subfolders");
 
 	for (const std::string& name : m_sceneFiles)
 	{
@@ -615,13 +623,25 @@ void Crucible::Menu::OpenSceneFunc() {
 	m_openScenePopup = true;
 }
 
+// Every .scene under Assets/Scenes, subfolders included, as paths relative to Scenes with '/'
+// (e.g. "Game/Main Menu Scene.scene"): callers put "Scenes/" in front.
 std::vector<std::string> Crucible::Menu::ScanSceneFiles() const {
 	std::vector<std::string> files;
+	std::filesystem::path const root = m_assets.Resolve("Scenes");
 	std::error_code ec;
-	for (const auto& e : std::filesystem::directory_iterator(m_assets.Resolve("Scenes"), ec))
-		if (e.is_regular_file() && e.path().extension() == ".scene")
-			files.push_back(e.path().filename().string());
-	std::sort(files.begin(), files.end());
+	for (auto it = std::filesystem::recursive_directory_iterator(root, std::filesystem::directory_options::skip_permission_denied, ec);
+	     !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+		if (!it->is_regular_file(ec) || it->path().extension() != ".scene")
+			continue;
+		std::u8string const relative = it->path().lexically_relative(root).generic_u8string();
+		files.emplace_back(reinterpret_cast<char const*>(relative.data()), relative.size());
+	}
+	// Scenes directly in Scenes first, then each subfolder's, each group alphabetical.
+	std::sort(files.begin(), files.end(), [](std::string const& a, std::string const& b) {
+		bool const aNested = a.find('/') != std::string::npos;
+		bool const bNested = b.find('/') != std::string::npos;
+		return aNested != bNested ? !aNested : a < b;
+	});
 	return files;
 }
 

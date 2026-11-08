@@ -9,7 +9,7 @@
 *                header).
 *
 * \history
-*    -v1.0       Networking Guide 5.4, 8.4, 18.3 issue 7 (PR 7); review
+*    -v1.0       replication registry and serializers; review
 *                fixes: maxBytes limited to one record, bounded Write;
 *                decode/commit, bounded readers, owned names; records
 *                applied as transactions with rollback

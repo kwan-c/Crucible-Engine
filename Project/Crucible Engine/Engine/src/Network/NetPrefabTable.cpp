@@ -8,9 +8,9 @@
 *                NetPrefabTable (see the header).
 *
 * \history
-*    -v1.0       Networking Guide 5.4, 18.3 issues 4, 6, 7 (PR 7); review
+*    -v1.0       network prefab table with explicit ids; review
 *                fixes: IsRegistered before metadata, record-size limit
-*    -v1.1       sendPriority checked (PR 13)
+*    -v1.1       sendPriority checked
 *    -v1.2       a known prefabGuid is used instead of the path; Remove,
 *                FindByGuid, FindByName, HighestId (Networking Phase 14.2)
 *

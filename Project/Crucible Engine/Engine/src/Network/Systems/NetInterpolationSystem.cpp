@@ -9,10 +9,10 @@
 *                between snapshot samples; the key-to-motion measurement.
 *
 * \history
-*    -v1.0       Networking Guide 11.4, 11.7 (PR 12)
+*    -v1.0       snapshot interpolation of remote proxies
 *    -v1.1       review fix: the own rotation stays local only while Face
 *                Camera applies the local yaw
-*    -v1.2       NetStats::interpolateMicros (PR 13)
+*    -v1.2       NetStats::interpolateMicros
 *
 **************************************************************************/
 #include "Network/Systems/NetInterpolationSystem.h"

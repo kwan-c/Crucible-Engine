@@ -1,0 +1,106 @@
+{
+ "model": "SHOULDER_Cannon",
+ "source": "LithomachiaGolems_Set1.blend",
+ "fps": 30.0,
+ "note": "index = the clip number in the GLB (Crucible). Unity finds clips by name.",
+ "clips": [
+  {
+   "name": "Cannon_ChargeLoop",
+   "index": 0,
+   "frames": 24,
+   "seconds": 0.8,
+   "loop": true,
+   "markers": [],
+   "speed_mps": 0.0,
+   "notes": "Loop while charging. The orb turns 2.5 times a second; the barrel shivers.",
+   "props": {
+    "notes": "Loop while charging. The orb turns 2.5 times a second; the barrel shivers."
+   }
+  },
+  {
+   "name": "Cannon_ChargeStart",
+   "index": 1,
+   "frames": 24,
+   "seconds": 0.8,
+   "loop": false,
+   "markers": [
+    {
+     "name": "charge_start",
+     "frame": 0,
+     "seconds": 0.0
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Barrel draws back and dips as it loads; the orb spins up to full speed (one turn). Ends in ChargeLoop's first pose.",
+   "props": {
+    "notes": "Barrel draws back and dips as it loads; the orb spins up to full speed (one turn). Ends in ChargeLoop's first pose."
+   }
+  },
+  {
+   "name": "Cannon_Fire",
+   "index": 2,
+   "frames": 48,
+   "seconds": 1.6,
+   "loop": false,
+   "markers": [
+    {
+     "name": "fire",
+     "frame": 1,
+     "seconds": 0.0333
+    },
+    {
+     "name": "cancel",
+     "frame": 30,
+     "seconds": 1.0
+    }
+   ],
+   "speed_mps": 0.0,
+   "notes": "Fire on frame 1: the barrel slides back 0.38 m and rocks 10 degrees back, then settles. The orb slows from full speed to a stop (two turns).",
+   "props": {
+    "notes": "Fire on frame 1: the barrel slides back 0.38 m and rocks 10 degrees back, then settles. The orb slows from full speed to a stop (two turns)."
+   }
+  }
+ ],
+ "moves": {
+  "PowerUp": {
+   "parts": {
+    "legs": "LegsBiped_PowerUp",
+    "torso": "TorsoSpecialist_PowerUp",
+    "head": "HeadSpecialist_PowerUp"
+   },
+   "seconds": 2.0,
+   "events_from": "torso",
+   "events": {
+    "release": 0.533,
+    "cancel": 1.467
+   },
+   "notes": "Start all three on the same frame. While moving, play only the torso and head clips; the legs keep their locomotion."
+  },
+  "CannonShot_L": {
+   "parts": {
+    "shoulder_weapon": "Cannon_Fire",
+    "torso": "Torso_CannonFire_L"
+   },
+   "seconds": 1.6,
+   "events_from": "shoulder_weapon",
+   "events": {
+    "fire": 0.033,
+    "cancel": 1.0
+   },
+   "notes": "Play after Cannon_ChargeStart (0.8 s) and Cannon_ChargeLoop (looped while held). Start both clips on the same frame."
+  },
+  "CannonShot_R": {
+   "parts": {
+    "shoulder_weapon": "Cannon_Fire",
+    "torso": "Torso_CannonFire_R"
+   },
+   "seconds": 1.6,
+   "events_from": "shoulder_weapon",
+   "events": {
+    "fire": 0.033,
+    "cancel": 1.0
+   },
+   "notes": "Play after Cannon_ChargeStart (0.8 s) and Cannon_ChargeLoop (looped while held). Start both clips on the same frame."
+  }
+ }
+}

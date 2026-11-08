@@ -330,6 +330,18 @@ namespace Crucible {
          *********************************************************************/
         AudioClip GetAudioClip(AssetId id, AudioClipLoadType loadType);
 
+        /*********************************************************************
+         \brief  Unloads every cached clip of one audio file, or of every
+                 file under a folder, so the file is no longer open.
+         \param[in] virtualPath The file or folder, e.g. "Audio/SFX/hit.mp3".
+         \return How many clips were unloaded.
+         \details A Streaming clip keeps its file open, and Windows will not
+                  rename or delete an open file. The editor calls this first;
+                  the next GetAudioClip opens the file again by GUID, at its
+                  new path.
+         *********************************************************************/
+        std::size_t ReleaseAudioFiles(const std::string& virtualPath);
+
         /// The font UIText uses when it names none (or its own can't be loaded): the compiled
         /// font itself, so a packaged game does not need the .ttf (compile
         /// Fonts/LiberationSans-Regular.ttf in the Font Importer to rebuild it).

@@ -11,7 +11,7 @@
 *                arrive every 33 ms with jitter and loss.
 *
 * \details
-*                Networking Guide 11.4. NetReceiveSystem no longer writes a
+*                NetReceiveSystem no longer writes a
 *                snapshot's position and rotation into the Transform: it
 *                adds them as a sample to the proxy's NetInterpolation
 *                (PushSample). Each frame this system advances the
@@ -35,7 +35,7 @@
 *                ECSPlayerControllerSystem applies it under; the host
 *                applies the same yaw), so a camera rig parented to it
 *                stays steady instead of trailing 100 ms behind the mouse
-*                (the guide's interim improvement in 11.7). Face Camera
+*                (an interim improvement until prediction). Face Camera
 *                off, or no PlayerController: the host's rotation is
 *                interpolated like any proxy's.
 *
@@ -49,7 +49,7 @@
 *                renders the authoritative entities directly).
 *
 * \history
-*    -v1.0       Networking Guide 11.4, 11.7 (PR 12)
+*    -v1.0       snapshot interpolation of remote proxies
 *    -v1.1       review fix: own rotation kept only under Face Camera
 *
 **************************************************************************/

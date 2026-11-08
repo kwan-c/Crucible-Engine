@@ -285,6 +285,9 @@ namespace Crucible
             if (type == typeof(PlayerController)) return (int)ComponentKind.PlayerController;
             if (type == typeof(WorldText)) return (int)ComponentKind.WorldText;
             if (type == typeof(MaterialParams)) return (int)ComponentKind.MaterialParams;
+            if (type == typeof(FlowFieldAgent)) return (int)ComponentKind.FlowFieldAgent;
+            if (type == typeof(FlowFieldSurface)) return (int)ComponentKind.FlowFieldSurface;
+            if (type == typeof(StateGraphAgent)) return (int)ComponentKind.StateGraphAgent;
             if (type == typeof(UIText)) return (int)ComponentKind.UIText;
             if (type == typeof(UIImage)) return (int)ComponentKind.UIImage;
             if (type == typeof(UISlider)) return (int)ComponentKind.UISlider;

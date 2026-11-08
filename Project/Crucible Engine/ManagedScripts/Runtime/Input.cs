@@ -18,8 +18,10 @@
 *            Vector2 look = Input.MouseDelta;   // pixels this frame - do not scale by deltaTime
 *        }
 *
-*    Read-only: the cursor lock belongs to the UI system, so scripts can
-*    check IsMouseLocked but not change it.
+*    The cursor lock is the game's to ask for: Input.SetMouseLocked(true)
+*    when gameplay starts, false for a menu of your own. Nothing locks it
+*    automatically. A menu canvas (or the editor's release key / Pause)
+*    can still hold it free; your latest request applies once it lets go.
 *
 *    C++ side: Engine/src/Scripting/Bindings/InputBindings.cpp.
 *
@@ -93,10 +95,21 @@ namespace Crucible
             get { Vector2 v; return GetMouseScrollInternal(out v) != 0 ? v : Vector2.Zero; }
         }
 
-        /// <summary>Is the cursor hidden and captured (mouse-look mode)? Set by the UI system.</summary>
+        /// <summary>Is the cursor hidden and captured (mouse-look mode) right now?</summary>
         public static bool IsMouseLocked
         {
             get { int v; return IsMouseLockedInternal(out v) != 0 && v != 0; }
+        }
+
+        /// <summary>
+        /// Asks for the cursor to be hidden and captured (true) or free (false). Call it when
+        /// gameplay starts or resumes, and with false for a menu of your own. While a menu
+        /// canvas is shown, or the editor has taken the mouse back, the cursor stays free and
+        /// this request applies once they let go.
+        /// </summary>
+        public static void SetMouseLocked(bool locked)
+        {
+            SetMouseLockedInternal(locked ? 1 : 0);
         }
 
         /// <summary>
@@ -166,6 +179,8 @@ namespace Crucible
         private static extern int GetMouseScrollInternal(out Vector2 value);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int IsMouseLockedInternal(out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetMouseLockedInternal(int locked);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int IsPointerOverUIInternal(out int value);
 

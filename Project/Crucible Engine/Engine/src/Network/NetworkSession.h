@@ -34,7 +34,7 @@
 *                    AwaitingWorld -> Receiving (WorldBegin) -> Ready
 *                    (WorldEnd applied, ClientReady sent)
 *
-*                The lifecycle stream (Networking Guide 8.4, 9.3, 9.4)
+*                The lifecycle stream
 *                  Every reliable lane-0 message to a client carries the
 *                  next number of one per-client counter (JoinAccepted is 1).
 *                  Server: SendLifecycle stamps and sends; a failed send
@@ -66,7 +66,7 @@
 *                Refusals are GNS close reasons, so the client learns why
 *                even though no message of ours reaches it.
 *
-*                Defensive limits (Networking Guide 8.7, issue 10)
+*                Defensive limits
 *                  - At most 256 messages and 256 KB processed per Update,
 *                    counted message by message. A message that would cross
 *                    the byte budget waits, in order, for the next frame
@@ -92,7 +92,7 @@
 *                    type the client may send. More than 50 bad messages from
 *                    one client closes it.
 *
-*                Networked entities (Networking Guide 9.2, issues 8, 9)
+*                Networked entities
 *                  Entities() maps each NetworkId to its local entity. Only
 *                  the NetworkIdentity hooks write it (NetIdentityHooks.h),
 *                  so every add, remove and destroy path keeps it right:
@@ -113,7 +113,7 @@
 *                listener), never from inside Update; code running inside
 *                Update calls RequestStop, which the next Update performs.
 *
-*                Player input (server, Networking Guide 6.2, 11.3): a
+*                Player input (server): a
 *                client's Input carries up to 3 commands (each one is sent
 *                in 3 packets in a row). Only an InGame peer's commands
 *                count; each is taken once, by sequence (copies and old ones
@@ -125,7 +125,7 @@
 *                intent goes neutral, so a frozen or cut-off client's mech
 *                stops instead of walking until GNS times it out.
 *
-*                Gameplay events (Networking Guide 9.5, 13.3): the host
+*                Gameplay events: the host
 *                sends a generic event - a game-defined kind and payload
 *                bytes - with SendGameplayEvent. The send system delivers it
 *                reliably on lane 0 after that frame's spawns and despawns,
@@ -143,7 +143,7 @@
 *                world stream binds them on each client instead of spawning
 *                them. SceneAsset()/SceneHash() name the loaded scene.
 *
-*                Client time (Networking Guide 11.4, 11.7): ServerTime() is
+*                Client time: ServerTime() is
 *                the estimate interpolation renders behind; the latency
 *                probe measures key-down to the first rendered frame in
 *                which the own player moved.
@@ -151,27 +151,24 @@
 * \history
 *    -v1.8       gameplay events (SendGameplayEvent, TakeGameplayEvents,
 *                DeliverGameplayEvent), ServerTime(), the input latency
-*                probe (PR 12); review fix: the probe is cancelled with its
+*                probe; review fix: the probe is cancelled with its
 *                entity and expires on its own
 *    -v1.7       client commands: per-peer command state, TakePeerIntent and
-*                the input timeout; the client's SnapshotAcks() (PR 11)
+*                the input timeout; the client's SnapshotAcks()
 *    -v1.6       snapshots: SendSnapshot, SendInput, the Input handler
-*                (appliedLifecycle and snapshot acks, validated) (PR 9)
+*                (appliedLifecycle and snapshot acks, validated)
 *    -v1.5       spawn requests, the lifecycle stream (send, apply, world
 *                state), ClientReady and the Synchronizing timeout
-*                (Networking Guide 9.3, 18.3 issues 3, 4, 13, PR 8)
 *    -v1.4       SetContentError: invalid network content refuses Start
-*                (Networking Guide PR 7)
 *    -v1.3       identity map and hooks: rejection, despawn ownership,
-*                per-client cleanup ids (Networking Guide PR 6); oversized
+*                per-client cleanup ids; oversized
 *                messages count towards the frame limit and peer quota
 *    -v1.2       LastStartError and LastEndReason for the editor's panel
 *    -v1.1       review fixes: a refused Start changes nothing (validated
 *                first; the running session uses ActiveSettings()); FreeSlot
 *                guarded; per-message receive budget with a bounded carry-
 *                over queue; client JoinAccepted deadline
-*    -v1.0       Networking Guide 5.4, 8.7, 18.3 issues 10 and 13, PR 4:
-*                settings-driven Start, connection handling, join handshake
+*    -v1.0       settings-driven Start, connection handling, join handshake
 *                with version/hash/full refusals, quotas, timeouts, events
 *    -v1.9       scene objects: AdoptSceneObject, SceneIdOf, the scene
 *                identity (Networking Phase 14.5)
@@ -242,7 +239,7 @@ namespace Crucible
 		std::uint16_t newestAckedSnapshot = 0;     // from Input: newest snapshot the client applied
 		std::uint32_t ackBits = 0;                 // bit i: (newestAckedSnapshot - 1 - i) applied too
 
-		// Input commands (InGame only; Networking Guide 6.2)
+		// Input commands (InGame only)
 		bool          hasCommand = false;          // latest is meaningful (a command was taken)
 		std::uint32_t lastInputSequence = 0;       // newest command taken; copies and older ones are skipped
 		Net::NetTick  lastInputTick = 0;           // Clock().Tick() when it was taken: the input timeout
@@ -289,7 +286,7 @@ namespace Crucible
 		std::vector<std::byte> payload;
 	};
 
-	/// Client: where it is in the host's lifecycle stream (Networking Guide 9.3).
+	/// Client: where it is in the host's lifecycle stream.
 	enum class ClientWorld : std::uint8_t
 	{
 		AwaitingWorld,   // joined; only WorldBegin may come next
@@ -423,7 +420,7 @@ namespace Crucible
 		void TakePendingDespawns(std::vector<Net::NetworkId>& out);
 
 		/// Every role: ids unmapped since they were last taken, so per-client replication state
-		/// for them can be dropped (issue 9). The send system (Phase 8) takes them each frame.
+		/// for them can be dropped. The send system (Phase 8) takes them each frame.
 		std::span<const Net::NetworkId> DestroyedThisFrame() const noexcept { return m_destroyedThisFrame; }
 		void TakeDestroyedThisFrame(std::vector<Net::NetworkId>& out);
 
@@ -495,7 +492,7 @@ namespace Crucible
 		// ---- player input (server) --------------------------------------------------------------
 
 		/// Simulation steps without a new command after which a client's intent goes neutral:
-		/// 16 steps at 60 Hz is about 270 ms, 8 input packets (Networking Guide 6.2).
+		/// 16 steps at 60 Hz is about 270 ms, 8 input packets.
 		static constexpr Net::NetTick kInputTimeoutTicks = 16;
 
 		// ---- scene objects (Networking Phase 14.5) -----------------------------------------------

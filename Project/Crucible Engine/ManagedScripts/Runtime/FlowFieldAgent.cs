@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          5 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Script access to an enemy's FlowFieldAgent: how it moves,
 *                what it's told to do, and how far it has got. Unity's
 *                NavMeshAgent. Part of Crucible.ScriptCore.dll.
@@ -24,6 +24,13 @@
 *    walls), so these calls are cheap: they only set what the agent wants.
 *
 *    C++ side: Engine/src/Scripting/Bindings/NavigationBindings.cpp.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       AvoidancePriority replaces SeparationRadius and
+*                SeparationWeight (the crowd now works like Unity's);
+*                FaceTarget(); MoveTo() takes optional stopping and slowing
+*                distances
 *
 **************************************************************************/
 using System.Runtime.CompilerServices;
@@ -47,8 +54,17 @@ namespace Crucible
         /// <summary>Follow the shared flow field: head for the nearest player, round the walls.</summary>
         public void FollowField() { FollowFieldInternal(I, G); }
 
-        /// <summary>Walk to a point and stop StoppingDistance from it (Unity's SetDestination).</summary>
-        public void MoveTo(Vector3 point) { MoveToInternal(I, G, ref point); }
+        /// <summary>
+        /// Walk to a point (Unity's SetDestination) and stop StoppingDistance from it - or
+        /// stoppingDistance from it, for this order only, when given (e.g. 0.3 for an exact
+        /// firing spot, without changing the attack range that Arrive stops at).
+        /// slowingDistance likewise replaces SlowingDistance for this order (e.g. 1.6 to walk
+        /// at full speed until nearly there). Negative = use the setting.
+        /// </summary>
+        public void MoveTo(Vector3 point, float stoppingDistance = -1f, float slowingDistance = -1f)
+        {
+            MoveToInternal(I, G, ref point, stoppingDistance, slowingDistance);
+        }
 
         /// <summary>
         /// Chase an entity, slowing from SlowingDistance and stopping at StoppingDistance -
@@ -61,6 +77,17 @@ namespace Crucible
 
         /// <summary>Stand still. HasArrived reads true while stopped.</summary>
         public void Stop() { StopInternal(I, G); }
+
+        /// <summary>
+        /// Face this entity whatever it is told to do, e.g. strafing while it walks
+        /// somewhere else (Unity: updateRotation = false, then turning it yourself).
+        /// Null goes back to facing the way it walks (and not turning at all while stopped).
+        /// Kept until changed - Stop doesn't clear it.
+        /// </summary>
+        public void FaceTarget(Entity target)
+        {
+            FaceTargetInternal(I, G, target != null ? (int)target.Index : 0, target != null ? (int)target.Generation : 0);
+        }
 
         // --- how it's going ----------------------------------------------------- //
 
@@ -101,10 +128,13 @@ namespace Crucible
         public float SlowingDistance { get { float v; return GetSlowingDistanceInternal(I, G, out v) != 0 ? v : 0f; } set { SetSlowingDistanceInternal(I, G, ref value); } }
         /// <summary>Metres: which other agents it reacts to at all.</summary>
         public float NeighbourRadius { get { float v; return GetNeighbourRadiusInternal(I, G, out v) != 0 ? v : 0f; } set { SetNeighbourRadiusInternal(I, G, ref value); } }
-        /// <summary>Metres: closer than this to another agent and it pushes away.</summary>
-        public float SeparationRadius { get { float v; return GetSeparationRadiusInternal(I, G, out v) != 0 ? v : 0f; } set { SetSeparationRadiusInternal(I, G, ref value); } }
-        /// <summary>How hard that push is, against following its order (1). 0 = off.</summary>
-        public float SeparationWeight { get { float v; return GetSeparationWeightInternal(I, G, out v) != 0 ? v : 0f; } set { SetSeparationWeightInternal(I, G, ref value); } }
+        /// <summary>
+        /// 0-99, Unity's NavMeshAgent.avoidancePriority: LOWER is more important. When two
+        /// agents' bodies overlap, the less important one gives way (at equal priority, the
+        /// one still on its way gives way to one that has arrived). Values outside 0-99 are
+        /// clamped, as in Unity.
+        /// </summary>
+        public int AvoidancePriority { get { int v; return GetAvoidancePriorityInternal(I, G, out v) != 0 ? v : 50; } set { SetAvoidancePriorityInternal(I, G, value); } }
         /// <summary>How much it matches its neighbours' heading. 0 = off.</summary>
         public float AlignmentWeight { get { float v; return GetAlignmentWeightInternal(I, G, out v) != 0 ? v : 0f; } set { SetAlignmentWeightInternal(I, G, ref value); } }
         /// <summary>Body radius, metres. Match the surface's padding.</summary>
@@ -117,9 +147,10 @@ namespace Crucible
         public override string ToString() { return "FlowFieldAgent on " + Entity; }
 
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int FollowFieldInternal(int index, int generation);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int MoveToInternal(int index, int generation, ref Vector3 point);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int MoveToInternal(int index, int generation, ref Vector3 point, float stoppingDistance, float slowingDistance);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int ArriveInternal(int index, int generation, int targetIndex, int targetGeneration);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int StopInternal(int index, int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int FaceTargetInternal(int index, int generation, int targetIndex, int targetGeneration);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int HasArrivedInternal(int index, int generation, out int value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetRemainingDistanceInternal(int index, int generation, out float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetVelocityInternal(int index, int generation, out Vector3 value);
@@ -138,10 +169,8 @@ namespace Crucible
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetSlowingDistanceInternal(int index, int generation, ref float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetNeighbourRadiusInternal(int index, int generation, out float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetNeighbourRadiusInternal(int index, int generation, ref float value);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetSeparationRadiusInternal(int index, int generation, out float value);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetSeparationRadiusInternal(int index, int generation, ref float value);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetSeparationWeightInternal(int index, int generation, out float value);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetSeparationWeightInternal(int index, int generation, ref float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetAvoidancePriorityInternal(int index, int generation, out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetAvoidancePriorityInternal(int index, int generation, int value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetAlignmentWeightInternal(int index, int generation, out float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetAlignmentWeightInternal(int index, int generation, ref float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetRadiusInternal(int index, int generation, out float value);

@@ -29,9 +29,8 @@
 *
 * \history
 *    -v1.0       NetworkIdentity, NetInterpolation, PlayerInput
-*                (Networking Guide 4.2)
 *    -v1.1       PlayerInput::hasYaw (the controller faces yawDegrees only
-*                when something set it) (PR 10)
+*                when something set it)
 *    -v1.2       NetworkObjectAuthoring (Phase 14.1)
 *
 **************************************************************************/

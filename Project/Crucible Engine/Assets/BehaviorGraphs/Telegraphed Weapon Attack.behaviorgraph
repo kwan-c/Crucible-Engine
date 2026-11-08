@@ -1,0 +1,75 @@
+{
+    "version":  1,
+    "variables":  [
+                      {
+                          "name":  "Self",
+                          "type":  "Entity"
+                      },
+                      {
+                          "name":  "Target",
+                          "type":  "Entity"
+                      }
+                  ],
+    "tree":  {
+                 "root":  0,
+                 "nodes":  [
+                               {
+                                   "id":  0,
+                                   "type":  "start",
+                                   "editor":  [
+                                                  0,
+                                                  0
+                                              ],
+                                   "fields":  {
+                                                  "repeat":  false
+                                              },
+                                   "children":  [
+                                                    1
+                                                ]
+                               },
+                               {
+                                   "id":  1,
+                                   "type":  "sequence",
+                                   "editor":  [
+                                                  0,
+                                                  140
+                                              ],
+                                   "fields":  {
+
+                                              },
+                                   "children":  [
+                                                    2,
+                                                    3
+                                                ]
+                               },
+                               {
+                                   "id":  2,
+                                   "type":  "1fbd2471ec2a41b88bad9cc8e502427e",
+                                   "editor":  [
+                                                  -120,
+                                                  280
+                                              ],
+                                   "fields":  {
+
+                                              },
+                                   "children":  [
+
+                                                ]
+                               },
+                               {
+                                   "id":  3,
+                                   "type":  "48e8f62d4ecb4d8d8b3334a212a34449",
+                                   "editor":  [
+                                                  120,
+                                                  280
+                                              ],
+                                   "fields":  {
+
+                                              },
+                                   "children":  [
+
+                                                ]
+                               }
+                           ]
+             }
+}

@@ -1570,6 +1570,13 @@ bool Crucible::AssetBrowser::DeleteOnDisk(std::string const& virtualPath) {
 		return false;
 	}
 
+	// Same as a rename: an open (streamed) clip would make Windows refuse the delete.
+	if (m_audio != nullptr && m_audio->ReleaseFiles(virtualPath) && m_audioInInspector) {
+		if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR))
+			inspector->ClearTarget();
+		m_audioInInspector = false;
+	}
+
 	std::string why;
 	if (!RemoveFile(path, why)) {
 		CRU_USER_WARN("Cannot delete '{}': {}", virtualPath, why);
@@ -1659,6 +1666,25 @@ void Crucible::AssetBrowser::ApplyPendingRename() {
 	Refresh();
 	m_selected = to;
 
+	// The clip preview let go of its file for the move (MoveOnDisk): show it again under its
+	// new name. If a folder was renamed, the previewed clip was somewhere inside it, so just
+	// close the preview - selecting the clip again brings it back.
+	if (m_previewMoved) {
+		m_previewMoved = false;
+		std::error_code ec;
+		auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+		if (inspector && m_audioInInspector) {
+			if (!fs::is_directory(AbsolutePathOf(to), ec)) {
+				bool const loaded = m_audio->LoadPreview(to);
+				inspector->SetCustomTarget([this, name = fs::path(to).filename().string(), loaded] { DrawAudioPreview(name, loaded); });
+			}
+			else {
+				inspector->ClearTarget();
+				m_audioInInspector = false;
+			}
+		}
+	}
+
 	// Renamed the folder being browsed, or one of its parents: follow it.
 	if (m_currentFolder == from)
 		m_currentFolder = to;
@@ -1722,11 +1748,18 @@ bool Crucible::AssetBrowser::MoveOnDisk(std::string const& from, std::string con
 
 	fs::create_directories(dst.parent_path(), ec);
 	ec.clear();
+
+	// FMOD keeps a streamed clip's file open (the Inspector's clip preview always is one), and
+	// Windows will not move an open file. Let go of it first; it is loaded again on demand.
+	bool const previewReleased = m_audio != nullptr && m_audio->ReleaseFiles(from);
+
 	fs::rename(src, dst, ec);
 	if (ec) {
 		error = ec.message();
+		if (previewReleased) m_audio->LoadPreview(from);   // nothing moved: put the preview back
 		return false;
 	}
+	m_previewMoved = previewReleased;
 
 	// A file's .meta moves with it, so the asset keeps its guid directly - nothing depends on
 	// the content-hash rename detection. (A folder's .meta files are inside it: they moved.)

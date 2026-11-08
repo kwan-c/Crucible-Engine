@@ -9,7 +9,7 @@
 *                Protocol.h for the wire layouts and the rules).
 *
 * \history
-*    -v1.0       protocol version 3 codecs (Networking Guide 8.4, 8.7)
+*    -v1.0       protocol version 3 codecs
 *
 **************************************************************************/
 #include "Network/Protocol.h"

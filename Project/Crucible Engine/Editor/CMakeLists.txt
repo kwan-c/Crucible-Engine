@@ -60,6 +60,14 @@ if(CRUCIBLE_ENABLE_MONO)
     target_compile_definitions(Editor PRIVATE CRUCIBLE_MONO_SDK="${CRUCIBLE_MONO_ROOT}")
 endif()
 
+# File > Package Game builds the Release game with this machine's CMake, from this build folder,
+# then zips it with CPack (Editor/src/Packaging/PackageJob.h).
+target_compile_definitions(Editor PRIVATE
+    CRUCIBLE_CMAKE_COMMAND="${CMAKE_COMMAND}"
+    CRUCIBLE_CPACK_COMMAND="${CMAKE_CPACK_COMMAND}"
+    CRUCIBLE_BUILD_DIR="${CMAKE_BINARY_DIR}"
+)
+
 # Copy Engine.dll to Editor output directory (ImGui is static, so no imgui.dll)
 add_custom_command(TARGET Editor POST_BUILD
 

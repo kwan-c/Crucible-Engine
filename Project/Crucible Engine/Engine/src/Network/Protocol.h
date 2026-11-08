@@ -17,7 +17,7 @@
 *                join handshake (JoinRequest.protocolVersion), together
 *                with the content hash (CanonicalHash.h).
 *
-*                Decoding rules (Networking Guide 8.7):
+*                Decoding rules:
 *                  - Decode* reads a message whose type byte was already
 *                    consumed (ReadMessageType), and returns true only if
 *                    the WHOLE message is well-formed: every count within
@@ -38,7 +38,7 @@
 *                rules as Decode*, plus MaxMessageBytes, and returns
 *                false instead of writing something the receiver would
 *                reject. Never aggregate-initialize these structs
-*                positionally; set fields by name (guide issue 2).
+*                positionally; set fields by name.
 *
 *                Wire layouts (after the u8 type):
 *                  JoinRequest    u32 protocolVersion, u64 contentHash,
@@ -83,10 +83,9 @@
 *
 * \history
 *    -v1.0       protocol version 3: every message type, codecs, size
-*                limits, views (Networking Guide 8.4, 8.7, 18.3 issues 2
-*                and 3). SpawnBatch decoding is split: structure here,
+*                limits, views. SpawnBatch decoding is split: structure here,
 *                prefab/state checks in the replication registry later.
-*    -v1.1       kMaxGameplayEventPayload (a constant; no wire change) (PR 12)
+*    -v1.1       kMaxGameplayEventPayload (a constant; no wire change)
 *    -v1.2       protocol version 4: SceneObjectBatch; WorldBegin carries the
 *                scene identity (Networking Phase 14.4)
 *
@@ -107,8 +106,8 @@
 namespace Crucible
 {
 	// Bump on ANY change to the bytes of any message. (4 = scene objects and the scene identity
-	// in WorldBegin; 3 = lifecycle sequence; versions 1 and 2 only existed in earlier guide
-	// revisions.)
+	// in WorldBegin; 3 = lifecycle sequence; versions 1 and 2 were
+	// earlier development versions.)
 	inline constexpr std::uint32_t kProtocolVersion = 4;
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message

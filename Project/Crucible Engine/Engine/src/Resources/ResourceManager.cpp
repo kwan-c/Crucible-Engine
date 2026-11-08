@@ -859,6 +859,28 @@ namespace Crucible {
 
     }   // ResourceManager::ReloadAudioClip()
 
+    std::size_t ResourceManager::ReleaseAudioFiles(const std::string& virtualPath) {
+
+        if (virtualPath.empty()) { return 0; }
+        const std::string folderPrefix = virtualPath + "/";
+
+        std::size_t released = 0;
+        for (auto it = m_audioClips.begin(); it != m_audioClips.end();) {
+            const AssetEntry* entry = m_assets.FindByGuid(ToGuid(it->first.first));
+            const bool match = entry != nullptr &&
+                (entry->virtualPath == virtualPath || entry->virtualPath.rfind(folderPrefix, 0) == 0);
+            if (!match) { ++it; continue; }
+
+            if (m_audio && it->second.IsValid()) {
+                m_audio->UnloadClip(it->second);
+                ++released;
+            }
+            it = m_audioClips.erase(it);
+        }
+        return released;
+
+    }   // ResourceManager::ReleaseAudioFiles()
+
     // ------------------------------------------------------------------------------------------------------------- //
     //  UNLOADING
     // ------------------------------------------------------------------------------------------------------------- //

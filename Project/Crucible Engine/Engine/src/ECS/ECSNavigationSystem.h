@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and static colliders, and draws
@@ -31,15 +31,22 @@
 *
 *                Then it moves every FlowFieldAgent by what it was told to
 *                do (FollowField, Stop), the way Unity moves a NavMeshAgent
-*                after SetDestination, with separation and alignment from
-*                its neighbours (found through an AgentSpatialHash) so a
-*                crowd spreads out instead of stacking, and collision: a
+*                after SetDestination, with Unity's crowd rules (bodies that
+*                overlap are moved apart, and the less important agent gives
+*                way) and alignment from its neighbours (found through an
+*                AgentSpatialHash), and collision: a
 *                body-sized sphere cast that swerves agents round walls
 *                early and slides them along walls they still reach.
 *
 * \history
 *    -v1.0       first version: bake and draw the grid; the flow field
 *                towards the players, and its arrows; moving the agents
+*    -v1.1       Unity's crowd: body overlap and avoidance priority replace
+*                separation (AgentRef carries radius, priority, arrived);
+*                Active(), IsWalkable() and IsPathClear() for C# Navigation;
+*                ground heights: the Play bake samples the colliders into a
+*                HeightfieldNavTerrain (slopes, ledges), and colliders that
+*                are ground no longer count as obstacles
 *
 **************************************************************************/
 #pragma once
@@ -52,6 +59,7 @@
 #include "Math/Math.h"
 #include "Navigation/AgentSpatialHash.h"
 #include "Navigation/FlowField.h"
+#include "Navigation/HeightfieldNavTerrain.h"
 #include "Navigation/NavGrid.h"
 #include "Navigation/NavTerrain.h"
 #include "Systems/IECSSystems.h"
@@ -79,6 +87,57 @@ namespace Crucible {
         // on first use, because physics is registered after this system).
         // Core owns both and they outlive this system.
         ECSNavigationSystem(const PlayMode& playMode, ECSSystemManager& systems);
+        ~ECSNavigationSystem() override;
+
+        // Rule of 5: copying would leave two systems claiming to be Active().
+        ECSNavigationSystem(const ECSNavigationSystem&) = delete;
+        ECSNavigationSystem& operator=(const ECSNavigationSystem&) = delete;
+
+        /*!
+            \brief
+            The navigation system that exists right now, or null before Core
+            has made it (and after it is gone). How the script bindings reach
+            the grid for the C# Navigation class - the same idea as Unity's
+            NavMesh being one static, global thing.
+
+            \details
+            A static pointer rather than a setter through ScriptRuntime (the
+            way physics is handed over): that keeps it inside the navigation
+            files. Fine while there is one Core per process, which there is.
+        */
+        static ECSNavigationSystem* Active() { return s_active; }
+
+        // --- Queries (C# Navigation, ranged positioning, the horde) -------- //
+
+        /*!
+            \brief
+            Could an enemy stand here? The grid cell under it is open (inside
+            the surface, no obstacle) and the terrain is not a wall there.
+            Height is ignored: this is the top-down map only.
+
+            \return
+            False if the grid isn't baked (nothing is known yet).
+        */
+        bool IsWalkable(const Math::vec3& position) const;
+
+        /*!
+            \brief
+            Could an enemy walk in a straight line from `from` to `to` without
+            crossing a blocked cell or a terrain wall? Unity's
+            EnemyLocalPositionQuery.ClearSegment (its grid half): samples
+            every half cell.
+
+            \details
+            An enemy pushed into a blocked cell (by the crowd or a blast) must
+            still be able to walk OUT, so blocked cells at the very start of
+            the line are allowed; once it has reached an open cell, the next
+            blocked one fails it. Without that it would be stuck forever,
+            every way out "blocked".
+
+            \return
+            False if the grid isn't baked.
+        */
+        bool IsPathClear(const Math::vec3& from, const Math::vec3& to) const;
 
         // --- IECSSystem ---------------------------------------------------- //
 
@@ -113,27 +172,43 @@ namespace Crucible {
         Entity NearestGoalEntity(const Math::vec3& from) const;
         void UpdateField(const FlowFieldSurface& surface);
         void UpdateAgents(World& world);
+        void StandOnGround(Entity self, FlowFieldAgent& agent, Math::vec3& position, float dt) const;
+        bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
         bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
                    float distance, EntityHit& hit) const;
+        bool SampleTerrain(const NavGridSettings& settings, float stepHeight);
         void DrawGrid() const;
         void DrawArrows() const;
+
+        static inline ECSNavigationSystem* s_active = nullptr;   // see Active()
 
         const PlayMode&          m_playMode;
         ECSSystemManager&        m_systems;
         ECSPhysicsSystem*        m_physics   = nullptr;           // found in m_systems on first use; null = no collision
         PlayState                m_lastState = PlayState::Edit;   // last frame's, to catch Edit -> Playing and back
+        bool                     m_bakePending = false;           // Play started; bake once the surface's WorldTransform is worked out
         float                    m_stepHeight = 0.3f;             // the surface's, from the last bake: where the probe's sweep starts
 
         NavGrid                  m_grid;
         FlowField                m_field;        // flows over m_grid, which it points at: declared after it
-        FlatNavTerrain           m_terrain;      // until a terrain system exists: no walls, ground at the surface's height (set by Bake)
-        std::vector<NavObstacle> m_obstacles;    // kept between bakes so a re-bake reuses its memory
+
+        // The ground. m_terrain points at one of the two below, chosen by Bake:
+        // the heightfield when physics could be sampled (Play), else the flat
+        // plane at the surface's height (the Edit preview, or no physics).
+        // A pointer so every user asks "the terrain" without caring which.
+        FlatNavTerrain           m_flatTerrain;
+        HeightfieldNavTerrain    m_heightTerrain;
+        const NavTerrain*        m_terrain = &m_flatTerrain;
+
+        std::vector<NavObstacle> m_obstacles;        // kept between bakes so a re-bake reuses its memory
+        std::vector<Entity>      m_obstacleEntities; // whose collider each obstacle is, same order: ground ones are dropped
+        std::vector<Entity>      m_groundEntities;   // colliders the sampling found agents stand on (sorted, for binary search)
+        bool                     m_physicsStepped = false;   // physics has stepped this Play, so its bodies exist to be sampled
 
         std::vector<Math::vec3>  m_goals;         // this frame's player positions (reused every frame)
         std::vector<Entity>      m_goalEntities;  // the same players, same order - for Arrive(nearest player)
         std::vector<Math::vec3>  m_goalsAtBuild;  // where they were at the last rebuild; empty = rebuild as soon as there is a player
         bool                     m_warnedParented = false;   // "agents must be roots" said once per session, not every frame
-        bool                     m_warnedDynamic  = false;   // "tick isKinematic" said once per session
 
         // One agent for this frame's two-pass update: where to write, plus where
         // it was and how it moved at the START of the frame (what neighbours see).
@@ -144,6 +219,16 @@ namespace Crucible {
             Transform*      transform = nullptr;
             Math::vec3      start{ 0.0f };
             Math::vec3      velocity{ 0.0f };
+
+            // For the crowd: who gives way when two bodies overlap. Copied at the
+            // start of the frame, like start and velocity, so an agent pass 2 has
+            // already handled (and maybe marked arrived) can't change the answer
+            // for the ones after it.
+            float           radius   = 0.0f;
+            int             priority = 50;
+            bool            arrived  = false;
+            bool            dynamic  = false;      // has a dynamic RigidBody: physics moves it, the agent steers its velocity
+            Math::vec3      bodyVelocity{ 0.0f };  // dynamic: the body's own XZ velocity, as physics left it
 
         };  // AGENTREF STRUCT
 

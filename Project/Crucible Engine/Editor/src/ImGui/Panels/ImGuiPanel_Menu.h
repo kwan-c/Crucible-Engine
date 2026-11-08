@@ -96,7 +96,7 @@ namespace Crucible {
 		// ---- File > Project Settings (Assets/Config/EngineConfig.json) ----
 		void EditConfigSettings();          // loads the shared settings and opens the popup
 		void DrawProjectSettingsPopup();
-		std::vector<std::string> ScanSceneFiles() const;   // file names of the .scene files in Assets/Scenes
+		std::vector<std::string> ScanSceneFiles() const;   // every .scene under Assets/Scenes, subfolders too, relative to it ("Game/Main Menu Scene.scene")
 
 		bool                     m_openProjectSettingsPopup = false;
 		EngineConfig             m_projectSettings;           // SHARED values being edited - never core.GetConfig() (that has the editor's overrides merged in)
