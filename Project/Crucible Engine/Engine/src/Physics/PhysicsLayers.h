@@ -57,6 +57,7 @@ namespace Crucible {
         Player,         // the mech
         Enemy,          // the horde
         Projectile,     // for when bullets become real bodies; unused while weapons are hitscan
+        Corpse,         // a dead body still falling: touches the arena only, and queries skip it (LayerMask::All)
 
         Count           // keep last: how many layers there are, used to size Jolt's tables
 
@@ -90,7 +91,9 @@ namespace Crucible {
             requires (std::is_same_v<Rest, PhysicsLayer> && ...)
         constexpr explicit LayerMask(PhysicsLayer first, Rest... rest) : m_bits((Bit(first) | ... | Bit(rest))) {}
 
-        static constexpr LayerMask All() { LayerMask mask; mask.m_bits = (1u << kPhysicsLayerCount) - 1u; return mask; }
+        // Every layer but Corpse: shots, sight lines and aim go straight through the dead.
+        // A query that really wants them asks with .With(PhysicsLayer::Corpse).
+        static constexpr LayerMask All() { LayerMask mask; mask.m_bits = ((1u << kPhysicsLayerCount) - 1u) & ~Bit(PhysicsLayer::Corpse); return mask; }
 
         constexpr LayerMask With(PhysicsLayer layer)    const { LayerMask mask = *this; mask.m_bits |= Bit(layer);  return mask; }
         constexpr LayerMask Without(PhysicsLayer layer) const { LayerMask mask = *this; mask.m_bits &= ~Bit(layer); return mask; }

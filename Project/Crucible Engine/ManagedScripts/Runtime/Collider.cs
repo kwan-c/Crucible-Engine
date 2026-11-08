@@ -57,6 +57,8 @@ namespace Crucible
         Enemy = 3,
         /// <summary>Bullets as real bodies.</summary>
         Projectile = 4,
+        /// <summary>A dead body: lands on the arena, touches nothing else, and LayerMask.All skips it.</summary>
+        Corpse = 5,
     }
 
     /// <summary>An entity's Collider component. Unity's Box/Sphere/CapsuleCollider.</summary>

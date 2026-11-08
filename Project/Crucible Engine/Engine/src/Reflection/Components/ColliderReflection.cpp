@@ -61,7 +61,8 @@ RTTR_REGISTRATION
         rttr::value("Moving",     PhysicsLayer::Moving),
         rttr::value("Player",     PhysicsLayer::Player),
         rttr::value("Enemy",      PhysicsLayer::Enemy),
-        rttr::value("Projectile", PhysicsLayer::Projectile)
+        rttr::value("Projectile", PhysicsLayer::Projectile),
+        rttr::value("Corpse",     PhysicsLayer::Corpse)
     );
 
     rttr::registration::class_<Collider>("Collider")

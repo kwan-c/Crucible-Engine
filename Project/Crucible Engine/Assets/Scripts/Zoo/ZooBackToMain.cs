@@ -20,7 +20,7 @@ namespace Crucible.Scripts
         public override void OnCreate()
         {
             pad = new ZooPad(this);
-            pad.SetText("Back to Menu");
+            pad.SetText("Press F here to return to main Menu");
         }
 
         public override void OnUpdate(float deltaTime)

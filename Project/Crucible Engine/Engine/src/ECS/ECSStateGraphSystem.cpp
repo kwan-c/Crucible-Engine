@@ -131,9 +131,12 @@ namespace Crucible {
         // The players, for the temporary "Target = nearest player".
         m_players.clear();
         m_playerPositions.clear();
-        world.CreateQuery<const PlayerController, const WorldTransform>()
+        // Switched-off PlayerControllers count, as in ECSNavigationSystem::CollectGoals:
+        // MechPlayer switches its own off and moves itself.
+        world.BuildQuery<const PlayerController, const WorldTransform>().IncludeDisabled().Build()
             .ForEach([&](Entity player, const PlayerController&, const WorldTransform& transform) {
                 if (!transform.valid) return;
+                if (world.HasComponent<CharacterController>(player) && !world.IsComponentActive<CharacterController>(player)) return;
                 m_players.push_back(player);
                 m_playerPositions.push_back(Math::vec3(transform.matrix[3]));
             });

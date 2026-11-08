@@ -72,6 +72,10 @@ namespace Crucible.Scripts
             base.OnCreate();                  // full health first: CombatHealth's Awake
             All.Add(this);
 
+            // The mech's lock-on and weapons only see what is in this list. The root is the
+            // golem's middle, so that is where they aim.
+            MechCombatTargets.Register(Entity, (amount, from) => ApplyDamage(amount), 0f);
+
             body = Entity.FindChild("Body");
             bar = Entity.FindChild("Health Bar");
             if (hitFlash && (body == null || !body.HasComponent<MaterialParams>()))
@@ -145,6 +149,7 @@ namespace Crucible.Scripts
         public override void OnDestroy()
         {
             All.Remove(this);
+            MechCombatTargets.Unregister(Entity);
         }
 
         protected override void OnDamaged(float amount)
@@ -157,6 +162,7 @@ namespace Crucible.Scripts
 
         protected override void OnDied()
         {
+            MechCombatTargets.Unregister(Entity);   // a toppling golem can't be locked on to or hit
             CancelAttack();                   // a half-done swing must not land from a dead golem
             HideTelegraph();
             if (toppleOnDeath) Topple();
@@ -182,6 +188,10 @@ namespace Crucible.Scripts
             if (agent != null) { agent.Stop(); Entity.SetEnabled<FlowFieldAgent>(false); }
             if (HasComponent<StateGraphAgent>()) Entity.SetEnabled<StateGraphAgent>(false);
             if (bar != null && bar.HasComponent<MeshRenderer>()) bar.MeshRenderer.Visible = false;
+
+            // It still falls and lands on the floor, but the player, other enemies and
+            // shots go straight through it. Set before the unlock below: one rebuild for both.
+            if (HasComponent<Collider>()) Entity.Collider.Layer = PhysicsLayer.Corpse;
 
             if (HasComponent<RigidBody>() && !RigidBody.IsKinematic)
             {

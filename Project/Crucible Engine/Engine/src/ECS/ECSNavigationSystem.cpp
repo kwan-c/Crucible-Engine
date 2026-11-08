@@ -394,7 +394,7 @@ namespace Crucible {
             // Say why there will be no arrows, once, rather than leaving the
             // designer to guess.
             bool hasPlayer = false;
-            world.CreateQuery<const PlayerController>().ForEach([&](Entity, const PlayerController&) { hasPlayer = true; });
+            world.BuildQuery<const PlayerController>().IncludeDisabled().Build().ForEach([&](Entity, const PlayerController&) { hasPlayer = true; });
             if (!hasPlayer) CRU_WARN("Navigation: no PlayerController in the scene - the flow field has no goal");
 
         }
@@ -452,9 +452,13 @@ namespace Crucible {
 
         m_goals.clear();
         m_goalEntities.clear();
-        world.CreateQuery<const PlayerController, const WorldTransform>()
+        // IncludeDisabled: a scripted player (MechPlayer) switches its PlayerController off and
+        // moves itself, but it is still the player. Its CharacterController is only off when
+        // the whole entity was (Entity.SetActive(false)), and then it is out of the game.
+        world.BuildQuery<const PlayerController, const WorldTransform>().IncludeDisabled().Build()
             .ForEach([&](Entity player, const PlayerController&, const WorldTransform& transform) {
                 if (!transform.valid) return;
+                if (world.HasComponent<CharacterController>(player) && !world.IsComponentActive<CharacterController>(player)) return;
                 m_goals.push_back(Math::vec3(transform.matrix[3]));
                 m_goalEntities.push_back(player);   // same index as its position
             });

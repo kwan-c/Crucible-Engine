@@ -38,6 +38,11 @@ namespace Crucible {
             return (a == x && b == y) || (a == y && b == x);
         };
 
+        // A dead body lands on the floor and nothing else: the player and the
+        // horde walk through it, and corpses don't pile up on each other.
+        if (a == PhysicsLayer::Corpse) return b == PhysicsLayer::NonMoving;
+        if (b == PhysicsLayer::Corpse) return a == PhysicsLayer::NonMoving;
+
         // The arena never moves, so two pieces of it can never touch for the
         // first time. Jolt would otherwise test every wall against every floor.
         if (pair(PhysicsLayer::NonMoving, PhysicsLayer::NonMoving)) return false;
@@ -57,6 +62,7 @@ namespace Crucible {
             case PhysicsLayer::Player:      return "Player";
             case PhysicsLayer::Enemy:       return "Enemy";
             case PhysicsLayer::Projectile:  return "Projectile";
+            case PhysicsLayer::Corpse:      return "Corpse";
             case PhysicsLayer::Count:       break;
         }
 

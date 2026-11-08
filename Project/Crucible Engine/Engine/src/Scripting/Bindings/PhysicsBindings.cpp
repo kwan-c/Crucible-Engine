@@ -87,6 +87,8 @@ namespace Crucible::ScriptBindings
 		// layers that don't exist are dropped.
 		LayerMask MaskFromBits(uint32_t bits)
 		{
+			if (bits == 0xFFFFFFFFu)
+				return LayerMask::All();   // C# LayerMask.All: means the same, so it skips corpses too
 			LayerMask mask;
 			for (uint32_t layer = 0; layer < static_cast<uint32_t>(kPhysicsLayerCount); ++layer)
 				if ((bits >> layer) & 1u)

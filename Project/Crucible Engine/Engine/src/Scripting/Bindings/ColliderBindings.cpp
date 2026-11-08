@@ -44,7 +44,8 @@ namespace Crucible::ScriptBindings
 		              "ShapeType changed - update ColliderShape in ManagedScripts/Runtime/Collider.cs");
 		static_assert(static_cast<int>(PhysicsLayer::NonMoving) == 0 && static_cast<int>(PhysicsLayer::Moving) == 1 &&
 		                  static_cast<int>(PhysicsLayer::Player) == 2 && static_cast<int>(PhysicsLayer::Enemy) == 3 &&
-		                  static_cast<int>(PhysicsLayer::Projectile) == 4 && static_cast<int>(PhysicsLayer::Count) == 5,
+		                  static_cast<int>(PhysicsLayer::Projectile) == 4 && static_cast<int>(PhysicsLayer::Corpse) == 5 &&
+		                  static_cast<int>(PhysicsLayer::Count) == 6,
 		              "PhysicsLayer changed - update PhysicsLayer in ManagedScripts/Runtime/Collider.cs");
 
 		/*********************************************************************

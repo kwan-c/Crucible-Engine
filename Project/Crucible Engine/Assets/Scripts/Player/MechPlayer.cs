@@ -22,7 +22,9 @@
 *              '- Torso ...  sockets; "Mount ShoulderL|ShoulderR|ArmL|ArmR|Head"
 *                            entities hold the equipped MechPart entities
 *
-*    No PlayerController component: this script is the controller. The
+*    This script is the controller. A PlayerController component is optional
+*    and only marks the entity as the player for enemies and checkpoints
+*    (it is switched off at start). The
 *    engine still turns the CameraOrbit pivot with the mouse and cancels the
 *    mech's own rotation, so the camera orbits freely while this script
 *    turns the body (Unity's faceCameraDirection).
@@ -62,7 +64,10 @@ namespace Crucible.Scripts
 {
     public enum MechMovementState { Grounded, GroundBoost, Airborne, QuickBoost }
 
-    public sealed class MechPlayer : EntityScript
+    // A CombatHealth so the enemies' attacks and bolts find it (CombatHealth.Find). The health
+    // itself is MechHealth (the HUD reads it), so the two overrides below hand over to that;
+    // CombatHealth's own Maximum Health field does nothing on the mech.
+    public sealed class MechPlayer : CombatHealth
     {
         // --- Ground locomotion (MechMovementController defaults) ------------------- //
         public float moveSpeed = 10f;           // m/s when the legs have no Speed stat (FullPlayer_mech_specialist: 10)
@@ -179,18 +184,24 @@ namespace Crucible.Scripts
 
         float ActiveBoostDuration { get { return Math.Max(0.01f, quickBoostDuration); } }
 
+        public override bool IsDead { get { return Health == null || Health.IsDead; } }
+
+        public override bool ApplyDamage(float amount)
+        {
+            return Health != null && Health.ApplyDamage(amount);
+        }
+
         public override void OnCreate()
         {
+            base.OnCreate();
             active = this;
             body = CharacterController;
             if (body == null)
                 Log.Error("MechPlayer on " + Entity.Name + " needs a CharacterController component.");
+            // The built-in controller would SimpleMove the mech too and fight this script. Kept on
+            // the entity, switched off: it is how enemies and checkpoints know this is the player.
             if (HasComponent<PlayerController>())
-            {
-                // The built-in controller would SimpleMove the mech too and fight this script.
                 Entity.SetEnabled<PlayerController>(false);
-                Log.Warning("MechPlayer: switched off the PlayerController on " + Entity.Name + "; MechPlayer moves the mech.");
-            }
             Weapons = new MechWeapon[MechLoadout.WeaponSockets.Length];
             Abilities = new MechAbility[MechLoadout.AbilitySockets.Length];
             Health = new MechHealth(250f);

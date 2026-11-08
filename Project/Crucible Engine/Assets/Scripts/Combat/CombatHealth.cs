@@ -21,7 +21,8 @@ namespace Crucible.Scripts
 
         public float CurrentHealth { get; private set; }
         public float MaximumHealth { get { return maximumHealth; } }
-        public bool IsDead { get { return CurrentHealth <= 0f; } }
+        // Virtual, with ApplyDamage: the mech (MechPlayer) keeps its health in MechHealth instead.
+        public virtual bool IsDead { get { return CurrentHealth <= 0f; } }
 
         // Unity's Awake. A class deriving from this must call base.OnCreate() first,
         // or it starts at 0 health and counts as dead.
@@ -41,7 +42,7 @@ namespace Crucible.Scripts
 
         // Returns false if nothing was taken: already dead, or a zero, negative or broken
         // amount. "!(amount > 0f)" also catches NaN, which fails every comparison.
-        public bool ApplyDamage(float amount)
+        public virtual bool ApplyDamage(float amount)
         {
             if (IsDead || !(amount > 0f) || float.IsInfinity(amount)) return false;
 
