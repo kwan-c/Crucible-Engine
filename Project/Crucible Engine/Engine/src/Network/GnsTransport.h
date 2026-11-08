@@ -52,8 +52,7 @@
 *                (Connect) or arrives (Incoming event) until it is freed.
 *
 * \history
-*    -v1.0       Networking Guide 7.5, 19.4, 18.3 issues 10 and 14: spec-
-*                based Listen/Connect, SendResult, per-lane metrics,
+*    -v1.0       spec-based Listen/Connect, SendResult, per-lane metrics,
 *                ownership-based event routing, deferred free of closed
 *                connections, one poll group for every connection
 *    -v1.1       review fixes: every connection-specific call checks
@@ -115,7 +114,7 @@ namespace Crucible
 		SceneMismatch    = 1008,   // the client's loaded scene is not the host's (protocol 4)
 	};
 
-	/// Why a send did not happen (Networking Guide issue 10). Each caller has a policy:
+	/// Why a send did not happen. Each caller has a policy:
 	/// a failed reliable lifecycle message closes that peer; a failed snapshot or input is
 	/// counted and superseded by the next one.
 	enum class SendResult : std::uint8_t
@@ -171,7 +170,7 @@ namespace Crucible
 		std::int64_t queueTimeUs = 0;       // how long a message queued now would wait
 	};
 
-	/// One outbound lane's queue (Networking Guide issue 14: budget snapshots from lane 1
+	/// One outbound lane's queue (snapshots are budgeted from lane 1
 	/// alone, so a burst of spawns on lane 0 does not shrink them).
 	struct LaneMetrics
 	{

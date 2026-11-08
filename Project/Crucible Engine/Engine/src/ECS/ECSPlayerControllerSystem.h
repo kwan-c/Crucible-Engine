@@ -43,7 +43,7 @@
 *    -v1.4       gamepad: left stick walks, right stick turns the camera,
 *                A jumps
 *    -v1.5       takes the player's InputSettings (sensitivity, invert Y)
-*    -v1.6       split (Networking Guide PR 10, Abhishek Akilandeswari
+*    -v1.6       split (Abhishek Akilandeswari
 *                Patchamuthu): input, cursor and camera pivot moved to
 *                LocalPlayerInputSystem (with the InputSettings); this
 *                applies PlayerInput

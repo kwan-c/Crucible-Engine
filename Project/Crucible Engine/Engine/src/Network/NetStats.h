@@ -21,11 +21,10 @@
 *    -v1.2       identityRejected, despawnsQueued, lastFrameOversized (Phase 6)
 *    -v1.3       spawn, despawn, world stream and proxy counters (Phase 8)
 *    -v1.4       snapshot, ack and input counters (Phase 9)
-*    -v1.5       command, input timeout and player spawn counters (PR 11)
+*    -v1.5       command, input timeout and player spawn counters
 *    -v1.6       gameplay event, interpolation and input latency counters
-*                (PR 12)
 *    -v1.7       snapshot budget, change detection, update ages, bytes by
-*                message type, replication CPU time (PR 13)
+*                message type, replication CPU time
 *    -v1.8       kMessageTypes 12: SceneObjectBatch (Networking Phase 14.4)
 *    -v1.9       scene object counters (Networking Phase 14.5)
 *    -v1.10      scenePlayersPlaced (Networking Phase 14.6)
@@ -107,7 +106,7 @@ namespace Crucible
 		std::uint64_t unknownEntity = 0;       // client: a record for an id it does not have (despawned since)
 		std::uint32_t lastSnapshotTick = 0;    // client: server tick of the newest snapshot applied
 
-		// Player input (Networking Guide 6.2)
+		// Player input
 		std::uint64_t commandsAccepted = 0;    // server: new commands taken (newest wins)
 		std::uint64_t commandsDuplicate = 0;   // server: copies (redundancy) or older ones, skipped
 		std::uint32_t inputTimeouts = 0;       // server: a peer's commands stopped for kInputTimeoutTicks
@@ -115,14 +114,14 @@ namespace Crucible
 		std::uint32_t playersSpawned = 0;      // server: player prefabs NetInputSystem requested
 		std::uint32_t playersRemoved = 0;      // server: players of clients that left, destroyed
 
-		// Gameplay events (Networking Guide 9.5)
+		// Gameplay events
 		std::uint64_t gameplayEventsQueued = 0;     // server: events for clients (one per SendGameplayEvent)
 		std::uint64_t gameplayEventsSent = 0;       // server: event messages sent, all clients
 		std::uint32_t gameplayEventsRefused = 0;    // SendGameplayEvent said no (see its rules)
 		std::uint32_t gameplayEventsSkipped = 0;    // server: not sent to a client receiving the world that frame
 		std::uint64_t gameplayEventsReceived = 0;   // client
 
-		// Interpolation and responsiveness (client, Networking Guide 11.4, 11.7)
+		// Interpolation and responsiveness (client)
 		std::uint64_t interpolationSamples = 0;     // snapshot states buffered instead of written
 		std::uint32_t interpolationTeleports = 0;   // a jump of more than 5 m: snapped, not slid
 		std::uint32_t inputLatencySamples = 0;      // key-to-motion measurements
@@ -132,7 +131,7 @@ namespace Crucible
 		std::uint64_t totalInputLatencyMs = 0;      // / inputLatencySamples = the average
 		std::uint32_t inputLatencyAbandoned = 0;    // no visible motion within 2 s (blocked, or no player)
 
-		// The snapshot budget (server, Networking Guide 10.4 to 10.8, issues 11 and 14)
+		// The snapshot budget (server)
 		std::uint64_t recordsUnchanged = 0;         // the client already holds this state: not sent (0 bytes)
 		std::uint32_t budgetOverflow = 0;           // a message beyond the allowance, for urgent entities only
 		std::uint32_t urgentDeferred = 0;           // critical or overdue, but even the hard cap was full

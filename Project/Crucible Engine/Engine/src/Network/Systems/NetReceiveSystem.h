@@ -26,7 +26,7 @@
 *                other system (World::RequireStructuralChange). No Query is
 *                iterating while it runs.
 *
-*                Host, each frame (Networking Guide 9.3):
+*                Host, each frame:
 *                  the session's Update, then the spawns gameplay requested
 *                  last frame (RequestSpawn): instantiate, place, switch off
 *                  owner-local components of a player the host does not own,
@@ -34,9 +34,8 @@
 *                  subtree and is reported (NetworkEvents::SpawnFailed); the
 *                  spawn is never broadcast.
 *
-*                Client, each frame (Networking Guide 9.3, 9.4, 18.3 issues
-*                3, 4): every lifecycle message, in arrival order, is first
-*                decoded and validated WHOLE (structure, lifecycle sequence,
+*                Client, each frame: every lifecycle message, in arrival
+*                order, is first decoded and validated WHOLE (structure, lifecycle sequence,
 *                prefab, owner, mask, every record), and only then applied.
 *                A message that fails validation closes the connection with
 *                Malformed: the reliable stream is corrupt, and skipping a
@@ -60,7 +59,7 @@
 *                queries that skip disabled components), scripts start in
 *                theirs, and both run after PreUpdate.
 *
-*                Snapshots (client, Networking Guide 6.2, 9.5, issues 1, 12):
+*                Snapshots (client):
 *                unreliable, so a bad one is dropped, never fatal. Each is
 *                decoded and every record for a live entity validated (whole-
 *                entity records only) before anything is written; then each
@@ -96,18 +95,18 @@
 *
 *                Each applied snapshot is marked in the session's
 *                SnapshotAcks(); NetInputSystem reports them in the client's
-*                Input message (it took over the Phase 9 heartbeat, PR 11).
+*                Input message (it took over the Phase 9 heartbeat).
 *
 * \history
-*    -v1.0       connection handling (Networking Guide PR 4)
-*    -v1.1       destroys rejected identities; Debug id-map check (PR 6)
+*    -v1.0       connection handling
+*    -v1.1       destroys rejected identities; Debug id-map check
 *    -v1.2       Exclusive; host spawns; client lifecycle stream and safe
-*                proxy creation (PR 8)
-*    -v1.3       snapshots, SnapshotAckWindow, heartbeat Input (PR 9)
+*                proxy creation
+*    -v1.3       snapshots, SnapshotAckWindow, heartbeat Input
 *    -v1.4       the heartbeat moved to NetInputSystem and the ack window
-*                into the session (SnapshotAckWindow.h) (PR 11)
+*                into the session (SnapshotAckWindow.h)
 *    -v1.5       snapshots buffered for interpolation, server time fed;
-*                GameplayEvents delivered (PR 12)
+*                GameplayEvents delivered
 *    -v1.6       scene objects: adopted on the host, locked down and bound
 *                on clients, scene identity checked (Networking Phase 14.5)
 *    -v1.7       placed players become spawn points (Networking Phase 14.6)

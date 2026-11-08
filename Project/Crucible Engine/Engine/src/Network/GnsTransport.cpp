@@ -9,7 +9,7 @@
 *                file in the engine that includes GNS headers.
 *
 * \history
-*    -v1.0       Networking Guide 7.5, 19.4, 18.3 issues 10 and 14
+*    -v1.0       GNS transport: Listen/Connect, sends, lanes, events
 *    -v1.1       review fixes: ownership checks on every connection-
 *                specific call, safe Accept, geometric Receive growth
 *    -v1.2       IsIpAddress

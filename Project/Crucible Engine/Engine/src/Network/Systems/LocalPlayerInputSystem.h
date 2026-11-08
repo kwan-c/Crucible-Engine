@@ -13,10 +13,10 @@
 *
 * \details
 *                Split out of ECSPlayerControllerSystem (Hugo's), whose input
-*                code it carries over unchanged (Networking Guide 6.2,
-*                PR 10). The controller now only applies PlayerInput, so the
-*                same applying code serves the local player (offline, and
-*                the host's own mech) and, in a later phase, remote players
+*                code it carries over unchanged. The controller now only applies
+*                PlayerInput, so the same applying code serves the local
+*                player (offline, and the host's own mech) and, in a later
+*                phase, remote players
 *                whose PlayerInput comes from their network commands.
 *
 *                Each Update (PreUpdate, after the UI's menu and input):
@@ -33,7 +33,7 @@
 *                     sample (see MaySample: Paused, or the in-game menu
 *                     open) - and its sampleSerial moves on
 *
-*                Not SimulationOnly (Networking Guide 18.3 issue 5): while
+*                Not SimulationOnly: while
 *                Paused it still runs, writing neutral input, so a held key
 *                is never left standing in PlayerInput (and later, never
 *                sent to the host). In Edit and Paused it does not touch the
@@ -49,8 +49,7 @@
 *                server-only component).
 *
 * \history
-*    -v1.0       sampling split from ECSPlayerControllerSystem (Networking
-*                Guide 6.2, 18.3 issue 5, PR 10)
+*    -v1.0       sampling split from ECSPlayerControllerSystem
 *    -v1.1       no cursor lock on Play start: scripts lock it with
 *                Input.SetMouseLocked
 *

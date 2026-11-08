@@ -17,14 +17,14 @@
 *                sampled input) and NetReceiveSystem (this frame's
 *                messages). Not SimulationOnly: a client must keep sending
 *                while Paused, because the same message is its heartbeat
-*                and carries every acknowledgement (Networking Guide 6.2).
+*                and carries every acknowledgement.
 *
 *                Client, every input interval (30 Hz, NetClock::InputDue):
 *                  - a command for the player this machine owns, if it has
 *                    one: a new sequence number, the walk direction, yaw
 *                    and jump. NEUTRAL (no walk, no jump; yaw kept) when the
 *                    sampler did not write since the last command
-*                    (PlayerInput::sampleSerial, issue 5). The jump is
+*                    (PlayerInput::sampleSerial). The jump is
 *                    consumed by the command that carries it;
 *                  - the last 3 commands go in every message (redundancy:
 *                    a command is lost only if 3 packets in a row are), with
@@ -51,10 +51,9 @@
 *
 * \history
 *    -v1.0       client commands with redundancy, server intents with the
-*                input timeout, auto-spawned players (Networking Guide 6.2,
-*                6.3, 11.3, PR 11)
+*                input timeout, auto-spawned players
 *    -v1.1       client: the own player starting to move starts the
-*                session's key-to-motion measurement (PR 12)
+*                session's key-to-motion measurement
 *    -v1.2       the player prefab: the discovered spawnPerPlayer one, else
 *                the constructor's (Networking Phase 14.2)
 *    -v1.3       players spawn at the scene's placed players (Phase 14.6)

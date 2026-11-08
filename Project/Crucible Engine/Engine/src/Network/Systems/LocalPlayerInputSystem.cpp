@@ -15,9 +15,9 @@
 *                a comment says "Split:".
 *
 * \history
-*    -v1.0       sampling split from ECSPlayerControllerSystem (PR 10)
+*    -v1.0       sampling split from ECSPlayerControllerSystem
 *    -v1.1       on a client, movement is sampled although the proxy's
-*                controller is switched off (the host applies it) (PR 11)
+*                controller is switched off (the host applies it)
 *    -v1.2       no cursor lock on Play start: scripts lock it with
 *                Input.SetMouseLocked
 *
@@ -59,7 +59,7 @@ namespace Crucible
 
 	void LocalPlayerInputSystem::Describe(SystemDesc& desc) const
 	{
-		// Not SimulationOnly (issue 5): runs while Paused too, to write neutral input. After the
+		// Not SimulationOnly: runs while Paused too, to write neutral input. After the
 		// menu (this frame's open state) and the UI (it gets the mouse first), as before.
 		desc.RunAfterIfPresent<UIMenuSystem>()
 			.RunAfterIfPresent<UIInputSystem>()
@@ -309,7 +309,7 @@ namespace Crucible
 				input.hasYaw = yawOf(e, yaw);   // clear stale facing when its camera disappears
 				if (input.hasYaw) input.yawDegrees = yaw;
 			}   // preserve facing during pause/menu handling
-			++input.sampleSerial;   // the sampler ran this frame (issue 5)
+			++input.sampleSerial;   // the sampler ran this frame
 		});
 	}
 }

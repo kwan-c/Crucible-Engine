@@ -18,7 +18,7 @@
 *                everything above GnsTransport (session, protocol, ECS
 *                systems) is identical for both. Adding Phase B means
 *                filling in the P2PEndpoint branch inside GnsTransport.cpp
-*                and nothing else (Networking Guide 19.4).
+*                and nothing else.
 *
 * \history
 *    -v1.0       IpEndpoint, P2PEndpoint (reserved), ListenSpec,

@@ -19,8 +19,8 @@
 *                speed and never visibly jumps or goes back. Only a first
 *                sample, or falling more than kSnapTicks (~330 ms) behind
 *                (a long stall on this side), re-syncs it in one go, and
-*                only ever forwards (Networking Guide 11.4, the Revision 2
-*                fix: the newest tick is recorded on every path).
+*                only ever forwards (the newest tick is recorded on every
+*                path).
 *
 *                Never ahead of what arrived: the estimate stops at most
 *                kMaxAheadTicks past the newest snapshot (+ transit). The
@@ -44,7 +44,7 @@
 *                NetInterpolationSystem advances and reads it.
 *
 * \history
-*    -v1.0       Networking Guide 11.4 (PR 12)
+*    -v1.0       smoothed server time estimate
 *    -v1.1       review fix: never ahead of the newest snapshot by more
 *                than kMaxAheadTicks; re-sync forwards only (host pause and
 *                resume no longer replay positions)

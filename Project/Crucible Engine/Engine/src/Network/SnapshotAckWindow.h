@@ -7,7 +7,7 @@
 * \brief
 *                Client: which snapshots were applied, the way an Input
 *                message reports them - the newest sequence, and bit i for
-*                (newest - 1 - i), 32 back (Networking Guide 6.2).
+*                (newest - 1 - i), 32 back.
 *
 * \details
 *                The client's NetworkSession owns one (SnapshotAcks()):
@@ -22,8 +22,8 @@
 *                more) starts a fresh window.
 *
 * \history
-*    -v1.0       moved out of NetReceiveSystem.h (it was there since PR 9)
-*                into the session, which both network systems share (PR 11)
+*    -v1.0       moved out of NetReceiveSystem.h
+*                into the session, which both network systems share
 *
 **************************************************************************/
 #pragma once
