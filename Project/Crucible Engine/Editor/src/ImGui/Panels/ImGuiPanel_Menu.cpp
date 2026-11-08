@@ -24,6 +24,7 @@
 #include "ImGui/Panels/ImGuiPanel_PackageGame.h"
 #include "Configuration/EngineConfigLoader.h"
 #include "Cook.h"   // Tools/Cook
+#include "Assets/BuildProblems.h"
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -86,6 +87,11 @@ void Crucible::Menu::Update(float) {
 			m_scriptHotReload.Configure(paths);
 		}
 		m_scriptHotReload.Tick(core->GetScriptRuntime(), playing);
+
+		// Play is refused while scripts have errors or are still compiling (BuildProblems).
+		ScriptHotReload::Status const scripts = m_scriptHotReload.GetStatus();
+		BuildProblems::SetScriptState(scripts == ScriptHotReload::Status::Compiling,
+			scripts == ScriptHotReload::Status::Errors ? std::max(m_scriptHotReload.ErrorCount(), 1) : 0);
 	}
 
 	// Keyboard shortcuts. Checked here every frame, NOT inside BeginMenu("File"),

@@ -23,6 +23,8 @@
 #include "Undo/EntityCommands.h"
 #include "Prefabs/PrefabAuthoring.h"
 #include "Resources/ResourceManager.h"
+#include "AssetPipe/Assetmanager.h"
+#include "Core.h"
 #include "Spatial/Bounds.h"
 #include "UI/WorldUIPlane.h"      // world UI boxes for this view (WorldText, world canvases): outline, picking, framing
 #include "UI/UISystem.h"          // UI::LayoutWorldCanvas: which element on a world canvas a click is on
@@ -32,6 +34,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <filesystem>
 #include <memory>
 #include <string>
 
@@ -144,8 +147,10 @@ void Crucible::SceneView::Update(float dt) {
 			if (PrefabAuthoring::IsPrefabFile(virtualPath)) {
 				// Lands where the cursor points; one undo step, and the copy is selected.
 				PrefabAuthoring::PlacePrefab(m_world, virtualPath, kNullEntity, DropPoint(min, avail));
+			} else if (IsModelAsset(virtualPath)) {
+				PlaceModel(virtualPath, DropPoint(min, avail));
 			} else {
-				CRU_INFO("[Scene] Asset dropped into scene: {} (only prefabs can be placed so far)", virtualPath);
+				CRU_INFO("[Scene] Asset dropped into scene: {} (only prefabs and models can be placed)", virtualPath);
 			}
 		}
 		ImGui::EndDragDropTarget();
@@ -743,6 +748,47 @@ bool Crucible::SceneView::MouseRay(ImVec2 viewMin, ImVec2 viewSize, glm::vec3& o
 	origin = glm::vec3(nearPoint);
 	toFar  = glm::vec3(farPoint) - origin;
 	return true;
+}
+
+bool Crucible::SceneView::IsModelAsset(std::string const& virtualPath) const {
+	Core* core = EditorManager::GetInstance().GetCore();
+	if (core == nullptr) { return false; }
+	AssetEntry const* entry = core->GetAssets().Find(virtualPath);
+	return entry != nullptr && entry->type == AssetType::Model;
+}
+
+// A model from the Asset Browser: a new root entity named after the file, with a MeshRenderer
+// showing the whole model, placed where the cursor points. One undo step, and it is selected.
+void Crucible::SceneView::PlaceModel(std::string const& virtualPath, glm::vec3 position) {
+	ResourceManager* resources = EditorManager::GetInstance().GetResources();
+	if (resources == nullptr) { return; }
+
+	// The .glb and its compiled .cmodel share this id; the renderer loads the .cmodel.
+	AssetId const modelId = resources->GetIdForPath(virtualPath);
+	if (modelId == 0) {
+		CRU_USER_WARN("Could not place '{}': it is not in the asset index yet (refresh the Asset Browser)", virtualPath);
+		return;
+	}
+
+	std::string const name = std::filesystem::path(virtualPath).stem().string();
+	Entity const entity = m_world.CreateNamedEntity(name);
+	if (Transform* transform = m_world.Write<Transform>(entity)) { transform->positions = position; }
+
+	MeshRenderer renderer{};
+	renderer.modelAsset = modelId;   // modelRoot stays Invalid = the complete model
+	m_world.AddComponent<MeshRenderer>(entity, renderer);
+
+	// Select first: that commits any Inspector edit still open on the previous entity, so it
+	// lands in the history BEFORE this create (same order as Hierarchy::CreatePrimitive).
+	if (auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR)) {
+		inspector->SetSelectedEntity(entity);
+	}
+
+	UndoHistory& history = EditorManager::GetInstance().GetHistory();
+	history.Push(std::make_unique<CreateEntityCommand>(
+		history.KeyOf(entity), EntityState::Capture(m_world, entity), "Place " + name));
+
+	m_scenes.MarkDirty();
 }
 
 glm::vec3 Crucible::SceneView::DropPoint(ImVec2 viewMin, ImVec2 viewSize) {

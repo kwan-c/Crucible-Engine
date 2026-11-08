@@ -343,6 +343,10 @@ namespace Crucible {
                     // required to sample TEXCOORD_0 only (checked in the texture slot).
                     if (name.rfind("TEXCOORD_", 0) == 0)
                         continue;
+                    // Extra color sets (COLOR_1+) are ignored too: glTF only gives COLOR_0
+                    // a meaning, and Blender often exports leftover all-white layers.
+                    if (name.rfind("COLOR_", 0) == 0 && name != "COLOR_0")
+                        continue;
                     Check(name == "POSITION" || name == "NORMAL" || name == "TEXCOORD_0" ||
                               name == "COLOR_0" || name == "TANGENT" || name == "JOINTS_0" ||
                               name == "WEIGHTS_0",

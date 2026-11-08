@@ -45,6 +45,7 @@
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "ImGui/Panels/ImGuiPanel_StateGraph.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
+#include "Assets/BuildProblems.h"       // failed asset/script compiles block Play
 
 
 std::unique_ptr<Crucible::EditorManager> Crucible::EditorManager::s_Instance;
@@ -417,6 +418,13 @@ void Crucible::EditorManager::Init(Core& core)
 
 	for (auto& panel : m_panels)
 		panel.second->Init();
+
+	// Assets the last build could not compile (it carries on instead of failing, so the editor
+	// opens), and scripts with errors: listed in the Console, and Play is refused until fixed.
+#ifdef CRUCIBLE_BUILD_DIR
+	BuildProblems::LoadBuildReports(std::filesystem::path(CRUCIBLE_BUILD_DIR));
+#endif
+	core.GetPlayMode().SetPlayGuard([] { return BuildProblems::PlayBlockReason(); });
 
 	// The mouse-release key. A bad value in the file falls back to the default (and says so).
 	{

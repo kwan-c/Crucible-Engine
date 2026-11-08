@@ -188,6 +188,16 @@ namespace Crucible
 		//! Why the last failed request failed; cleared by the next applied transition.
 		const std::string& LastError() const noexcept { return m_lastError; }
 
+		/*********************************************************************
+		 \brief  A check run before every Play. It returns why Play is not
+				 allowed right now, or "" to allow it. A non-empty reason
+				 fails the Play like any other failure (logged, LastError,
+				 PlayRequestFailed). The editor uses it to stop Play while
+				 assets or scripts failed to compile. One guard; setting
+				 another replaces it, an empty function removes it.
+		 *********************************************************************/
+		void SetPlayGuard(std::function<std::string()> guard) { m_playGuard = std::move(guard); }
+
 		// ===================================================================
 		//  Driven by Core::Run, once per frame, in this order
 		// ===================================================================
@@ -246,6 +256,7 @@ namespace Crucible
 		SceneManager::Snapshot            m_snapshot;     // the scene at Play; empty when not restorable
 		std::string                       m_lastError;
 		std::vector<std::function<void()>> m_beforeStop;  // OnBeforeStop listeners
+		std::function<std::string()>       m_playGuard;   // SetPlayGuard; empty = Play always allowed
 
 		// Level switch during a play session: the old scene's bodies must leave Jolt before the
 		// new scene's bodies are built. Subscribed in the constructor (SceneManager::OnSceneChanged).

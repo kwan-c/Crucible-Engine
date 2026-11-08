@@ -28,9 +28,12 @@ endif()
 set_target_properties(CrucibleTextureCompiler PROPERTIES FOLDER "Tools")
 
 # Runs on every build (Engine depends on it); images whose .bill is up to date are skipped.
+# --report: an image that fails is listed in the report instead of failing the build (see
+# Tools/Common/AssetBuildReport.h). Cook runs it strict.
 add_custom_target(CompiledTextures
     COMMAND $<TARGET_FILE:CrucibleTextureCompiler> --compile-tree
         "${CMAKE_SOURCE_DIR}/Assets" "${CMAKE_SOURCE_DIR}/Resources"
+        --report "${CMAKE_BINARY_DIR}/AssetBuildReports/Textures.txt"
     DEPENDS CrucibleTextureCompiler
     COMMENT "Compiling images (Assets) into GPU textures (Resources)..."
     VERBATIM

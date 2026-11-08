@@ -2132,67 +2132,6 @@
             }
         },
         {
-            "id": "0C89E0DE51528047",
-            "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 6,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": -1.0609582662582397,
-                        "y": 0.47008973360061646,
-                        "z": -6.440953731536865
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 4.834674835205078,
-                        "y": 0.9895758628845215,
-                        "z": 4.604801654815674
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 3578055278504480029,
-                    "materialAsset": 15112841005028671489
-                },
-                "Collider": {
-                    "type": "Box",
-                    "size": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    },
-                    "radius": 0.5,
-                    "height": 2.0,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "friction": 0.20000000298023224,
-                    "bounciness": 0.0,
-                    "layer": "NonMoving",
-                    "isTrigger": false
-                },
-                "EntityName": {
-                    "name": "Cube"
-                }
-            }
-        },
-        {
             "id": "0CF055A74411182F",
             "parent": "3BFEF9CA33A4E8C3",
             "siblingIndex": 13,
@@ -5034,67 +4973,6 @@
             }
         },
         {
-            "id": "1C89E0DE51528041",
-            "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 3,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": -1.0609582662582397,
-                        "y": 0.47008973360061646,
-                        "z": -1.4148058891296387
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 4.834673881530762,
-                        "y": 0.9895758628845215,
-                        "z": 1.0
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 3578055278504480029,
-                    "materialAsset": 15112841005028671489
-                },
-                "Collider": {
-                    "type": "Box",
-                    "size": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    },
-                    "radius": 0.5,
-                    "height": 2.0,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "friction": 0.20000000298023224,
-                    "bounciness": 0.0,
-                    "layer": "NonMoving",
-                    "isTrigger": false
-                },
-                "EntityName": {
-                    "name": "Cube"
-                }
-            }
-        },
-        {
             "id": "1C89E0DE5553406F",
             "parent": "E0CFF8DE8F304009",
             "siblingIndex": 0,
@@ -7528,7 +7406,7 @@
         {
             "id": "2C89E0DE505D003F",
             "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 9,
+            "siblingIndex": 4,
             "components": {
                 "Transform": {
                     "positions": {
@@ -7583,67 +7461,6 @@
                 },
                 "EntityName": {
                     "name": "Ground"
-                }
-            }
-        },
-        {
-            "id": "2C89E0DE51528043",
-            "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 4,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": -1.0609582662582397,
-                        "y": 1.4258873462677002,
-                        "z": -1.4148058891296387
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 4.834673881530762,
-                        "y": 0.9895758628845215,
-                        "z": 1.0
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 3578055278504480029,
-                    "materialAsset": 15112841005028671489
-                },
-                "Collider": {
-                    "type": "Box",
-                    "size": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    },
-                    "radius": 0.5,
-                    "height": 2.0,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "friction": 0.20000000298023224,
-                    "bounciness": 0.0,
-                    "layer": "NonMoving",
-                    "isTrigger": false
-                },
-                "EntityName": {
-                    "name": "Cube"
                 }
             }
         },
@@ -9315,7 +9132,7 @@
         {
             "id": "3489E0DE5217C05D",
             "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 10,
+            "siblingIndex": 5,
             "components": {
                 "Transform": {
                     "positions": {
@@ -12607,13 +12424,13 @@
         {
             "id": "4C89E0DE52224061",
             "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 12,
+            "siblingIndex": 7,
             "components": {
                 "Transform": {
                     "positions": {
                         "x": 0.0,
-                        "y": 2.3695244789123535,
-                        "z": -10.660184860229492
+                        "y": 1.342355489730835,
+                        "z": -9.691904067993164
                     },
                     "rotation": {
                         "x": 0.0,
@@ -12623,7 +12440,7 @@
                     },
                     "scale": {
                         "x": 9.815089225769043,
-                        "y": 0.9895758628845215,
+                        "y": 2.615468740463257,
                         "z": 1.0
                     }
                 },
@@ -16202,67 +16019,6 @@
                 },
                 "EntityName": {
                     "name": "Wall_Block"
-                }
-            }
-        },
-        {
-            "id": "6489E0DE51B4C04F",
-            "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 7,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.47008973360061646,
-                        "z": -10.660127639770508
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 9.815092086791992,
-                        "y": 0.9895758628845215,
-                        "z": 1.0
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 3578055278504480029,
-                    "materialAsset": 15112841005028671489
-                },
-                "Collider": {
-                    "type": "Box",
-                    "size": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    },
-                    "radius": 0.5,
-                    "height": 2.0,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "friction": 0.20000000298023224,
-                    "bounciness": 0.0,
-                    "layer": "NonMoving",
-                    "isTrigger": false
-                },
-                "EntityName": {
-                    "name": "Cube"
                 }
             }
         },
@@ -19874,67 +19630,6 @@
             }
         },
         {
-            "id": "7C89E0DE51B4C051",
-            "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 8,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 1.4258873462677002,
-                        "z": -10.660184860229492
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 9.815089225769043,
-                        "y": 0.9895758628845215,
-                        "z": 1.0
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 3578055278504480029,
-                    "materialAsset": 15112841005028671489
-                },
-                "Collider": {
-                    "type": "Box",
-                    "size": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    },
-                    "radius": 0.5,
-                    "height": 2.0,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "friction": 0.20000000298023224,
-                    "bounciness": 0.0,
-                    "layer": "NonMoving",
-                    "isTrigger": false
-                },
-                "EntityName": {
-                    "name": "Cube"
-                }
-            }
-        },
-        {
             "id": "7D513F73E4C7B655",
             "parent": "80BB70BF83D065ED",
             "siblingIndex": 19,
@@ -20854,8 +20549,8 @@
                 "Transform": {
                     "positions": {
                         "x": -1.0609585046768188,
-                        "y": 0.47008973360061646,
-                        "z": 2.008155345916748
+                        "y": 0.47008609771728516,
+                        "z": -1.005185604095459
                     },
                     "rotation": {
                         "x": 0.0,
@@ -20866,7 +20561,7 @@
                     "scale": {
                         "x": 4.8346734046936035,
                         "y": 0.9895758628845215,
-                        "z": 1.0
+                        "z": 5.5237226486206055
                     }
                 },
                 "MeshRenderer": {
@@ -21870,13 +21565,13 @@
         {
             "id": "8C89E0DE51528045",
             "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 5,
+            "siblingIndex": 3,
             "components": {
                 "Transform": {
                     "positions": {
                         "x": -1.0609582662582397,
-                        "y": 1.4258874654769897,
-                        "z": -6.441056728363037
+                        "y": 0.9308937191963196,
+                        "z": -6.461690425872803
                     },
                     "rotation": {
                         "x": 0.0,
@@ -21886,8 +21581,8 @@
                     },
                     "scale": {
                         "x": 4.834675312042236,
-                        "y": 0.9895758628845215,
-                        "z": 4.604798793792725
+                        "y": 1.7515621185302734,
+                        "z": 5.59882116317749
                     }
                 },
                 "MeshRenderer": {
@@ -34355,7 +34050,7 @@
         {
             "id": "D489E0DE5217C05F",
             "parent": "AC89E0DE51EF8057",
-            "siblingIndex": 11,
+            "siblingIndex": 6,
             "components": {
                 "Transform": {
                     "positions": {

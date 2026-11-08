@@ -12,6 +12,7 @@
 
 #include "Packaging/PackageJob.h"
 #include "Cook.h"   // Tools/Cook
+#include "AssetBuildReport.h"   // Tools/Common: assets the build could not compile
 
 #include <exception>
 #include <fstream>
@@ -314,6 +315,17 @@ namespace Crucible {
 	void PackageJob::RunCook()
 	{
 		Append("\n== Cooking Assets into Resources ==\n");
+
+		// The Release build just run lets a model or image that failed to compile through (it only
+		// lists it, so the Editor can still open). A shipped game must not have one.
+		std::vector<AssetBuildReport::Problem> const failed = AssetBuildReport::ReadAll(m_settings.buildDir);
+		if (!failed.empty()) {
+			for (AssetBuildReport::Problem const& p : failed) Append("error: " + p.asset + ": " + p.message + "\n");
+			Finish(Stage::Failed, std::to_string(failed.size()) + " asset(s) failed to compile, listed above. "
+			       "Fix them, then package again.");
+			return;
+		}
+
 		Cook::Report report;
 		try {
 			report = Cook::Run(m_settings.assets, m_settings.resources);

@@ -24,7 +24,12 @@ set_target_properties(CrucibleCook PROPERTIES FOLDER "Tools")
 
 # For the installer build: cmake --build Build --config Release --target Cook
 # Compiles models, textures and shaders first (their targets), then copies the rest into Resources.
+# The models and images are compiled again here WITHOUT --report: the everyday build lets a bad
+# asset through (so the Editor opens), but a shipped game must not, so Cook stops on one.
+# Up-to-date files are skipped, so this costs nothing when the build already compiled them.
 add_custom_target(Cook
+    COMMAND $<TARGET_FILE:CrucibleModelCompiler> --compile-tree "${CMAKE_SOURCE_DIR}/Assets" "${CMAKE_SOURCE_DIR}/Resources"
+    COMMAND $<TARGET_FILE:CrucibleTextureCompiler> --compile-tree "${CMAKE_SOURCE_DIR}/Assets" "${CMAKE_SOURCE_DIR}/Resources"
     COMMAND $<TARGET_FILE:CrucibleCook> "${CMAKE_SOURCE_DIR}/Assets" "${CMAKE_SOURCE_DIR}/Resources"
     COMMENT "Cooking Assets into Resources..."
     VERBATIM

@@ -2,6 +2,7 @@
 #include "AssetPipe/GLTFLoader.h"
 #include "Resources/CompiledModel.h"
 #include "ModelBuild.h"     // Tools/Common: the compile itself, shared with the editor's Asset Browser
+#include "AssetBuildReport.h"
 
 #include <algorithm>
 #include <filesystem>
@@ -36,7 +37,8 @@ namespace {
                 Check(ids.insert(entry.guid.m_Value).second,"Duplicate asset GUID in "+assets.GetAssetRoot()+": "+entry.virtualPath);
     }
 
-    int CompileTree(const fs::path& sourceRoot,const fs::path& outputRoot,bool verify) {
+    // problems: each model that failed, for the --report file.
+    int CompileTree(const fs::path& sourceRoot,const fs::path& outputRoot,bool verify,std::vector<AssetBuildReport::Problem>& problems) {
         Check(fs::is_directory(sourceRoot) && fs::is_directory(outputRoot),"Source and runtime asset roots must exist");
         const auto sourcePath=fs::weakly_canonical(sourceRoot),outputPath=fs::weakly_canonical(outputRoot);
         auto within=[](const fs::path& a,const fs::path& b) {
@@ -75,7 +77,10 @@ namespace {
                 } else ModelBuild::Write(target,compiled.bytes,guid,relative.generic_string());
                 Summary((verify?"Verified ":"Compiled ")+relative.generic_string(),compiled.model);
                 ++built;
-            } catch (const std::exception& e) { std::cerr<<"[ModelCompiler] "<<source->virtualPath<<": "<<e.what()<<'\n'; ++failed; }
+            } catch (const std::exception& e) {
+                std::cerr<<"[ModelCompiler] "<<source->virtualPath<<": "<<e.what()<<'\n'; ++failed;
+                problems.push_back({source->virtualPath,e.what()});
+            }
         }
         std::cout<<"[ModelCompiler] "<<(verify?"verified=":"compiled=")<<built<<" unchanged="<<unchanged<<" failed="<<failed<<'\n';
         return failed?1:0;
@@ -84,8 +89,26 @@ namespace {
 
 int main(int argc,char** argv) {
     try {
-        if (argc==4 && (std::string(argv[1])=="--compile-tree" || std::string(argv[1])=="--verify-tree"))
-            return CompileTree(argv[2],argv[3],std::string(argv[1])=="--verify-tree");
+        // --compile-tree <Assets> <Resources> [--report <file>]: with --report, models that fail
+        // are written to <file> instead of failing the build (see AssetBuildReport.h).
+        const bool tree=argc>=4 && (std::string(argv[1])=="--compile-tree" || std::string(argv[1])=="--verify-tree");
+        const bool report=tree && argc==6 && std::string(argv[4])=="--report";
+        if (tree && (argc==4 || report)) {
+            std::vector<AssetBuildReport::Problem> problems;
+            int result=0;
+            try { result=CompileTree(argv[2],argv[3],std::string(argv[1])=="--verify-tree",problems); }
+            catch (const std::exception& e) {
+                if (!report) throw;
+                std::cerr<<"[ModelCompiler] "<<e.what()<<'\n';
+                problems.push_back({"Assets (all models)",e.what()});
+            }
+            if (!report) return result;
+            if (!AssetBuildReport::Write(argv[5],problems)) { std::cerr<<"[ModelCompiler] Cannot write report "<<argv[5]<<'\n'; return 1; }
+            if (!problems.empty())
+                std::cout<<"[ModelCompiler] warning: "<<problems.size()<<" model(s) failed to compile. The build carries on; "
+                           "the editor lists them and blocks Play until they are fixed.\n";
+            return 0;
+        }
         if (argc==3 && std::string(argv[1])=="--inspect") {
             CompiledModelInfo info;
             auto decoded=DecodeCompiledModel(ReadFile(argv[2]),0,&info);
@@ -93,8 +116,8 @@ int main(int argc,char** argv) {
             std::cout<<"Crucible model v"<<info.version<<" GUID="<<AssetRegistry::GuidToString(xresource::instance_guid{info.assetGuid})<<'\n';
             Summary(argv[2],decoded.model); return 0;
         }
-        std::cerr<<"Usage: CrucibleModelCompiler --compile-tree <Assets> <Resources>\n"
-                   "       CrucibleModelCompiler --verify-tree <Assets> <Resources>\n"
+        std::cerr<<"Usage: CrucibleModelCompiler --compile-tree <Assets> <Resources> [--report <file>]\n"
+                   "       CrucibleModelCompiler --verify-tree <Assets> <Resources> [--report <file>]\n"
                    "       CrucibleModelCompiler --inspect <file.cmodel>\n";
         return 2;
     } catch (const std::exception& e) { std::cerr<<"[ModelCompiler] "<<e.what()<<'\n'; return 1; }
