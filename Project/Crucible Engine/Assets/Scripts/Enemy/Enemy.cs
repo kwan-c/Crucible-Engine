@@ -91,6 +91,7 @@ namespace Crucible.Scripts
             CreateController();               // EnemyController.cs
             CreateWeapon();                   // EnemyWeapon.cs
             CreateAnimation();                // EnemyAnimation.cs
+            if (startAsleep) Sleep();
         }
 
         public override void OnUpdate(float deltaTime)

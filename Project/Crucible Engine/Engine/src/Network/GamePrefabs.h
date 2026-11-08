@@ -19,8 +19,7 @@
 *                prefab with "spawnPerPlayer" set.
 *
 *                This file stays for content that must be registered from
-*                code (engine-side tests, tools). Rules for it (Networking
-*                Guide 18.3, issue 6):
+*                code (engine-side tests, tools). Rules for it:
 *                  - every id is written here, once; registration order
 *                    never decides an id;
 *                  - never renumber; a retired prefab keeps its id as a
@@ -44,10 +43,10 @@
 *                mistake here is reported then and refuses every session.
 *
 * \history
-*    -v1.0       Networking Guide 13.2, 18.3 issue 6 (PR 7)
-*    -v1.1       Player = 1 reserved for NetInputSystem's auto-spawn (PR 11)
+*    -v1.0       code-registered network prefabs with fixed ids
+*    -v1.1       Player = 1 reserved for NetInputSystem's auto-spawn
 *    -v1.2       a generic example for any other prefab (an AI enemy); no id
-*                reserved for it (PR 12)
+*                reserved for it
 *    -v1.3       optional: authored prefabs are discovered; the reserved
 *                Player id is gone (the player is the spawnPerPlayer
 *                prefab) (Networking Phase 14.2)

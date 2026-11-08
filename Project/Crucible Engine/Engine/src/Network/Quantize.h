@@ -32,7 +32,7 @@
 *
 * \history
 *    -v1.0       Finite, I8 axes, U16 angles, fixed-point positions, yaw
-*                helpers, smallest-three quaternions (Networking Guide 8.3)
+*                helpers, smallest-three quaternions
 *
 **************************************************************************/
 #pragma once

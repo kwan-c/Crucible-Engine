@@ -3,11 +3,10 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          5 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                LocalPlayerInputSystem: this machine's input into its
-*                players' PlayerInput, plus the cursor lock and the camera
-*                pivot. See the header for what happens each frame.
+*                players' PlayerInput, plus the camera pivot. See the header for what happens each frame.
 *
 * \details
 *                The cursor, camera-pivot, keys and camera blocks are Hugo
@@ -16,9 +15,11 @@
 *                a comment says "Split:".
 *
 * \history
-*    -v1.0       sampling split from ECSPlayerControllerSystem (PR 10)
+*    -v1.0       sampling split from ECSPlayerControllerSystem
 *    -v1.1       on a client, movement is sampled although the proxy's
-*                controller is switched off (the host applies it) (PR 11)
+*                controller is switched off (the host applies it)
+*    -v1.2       no cursor lock on Play start: scripts lock it with
+*                Input.SetMouseLocked
 *
 **************************************************************************/
 #include "Network/Systems/LocalPlayerInputSystem.h"
@@ -58,7 +59,7 @@ namespace Crucible
 
 	void LocalPlayerInputSystem::Describe(SystemDesc& desc) const
 	{
-		// Not SimulationOnly (issue 5): runs while Paused too, to write neutral input. After the
+		// Not SimulationOnly: runs while Paused too, to write neutral input. After the
 		// menu (this frame's open state) and the UI (it gets the mouse first), as before.
 		desc.RunAfterIfPresent<UIMenuSystem>()
 			.RunAfterIfPresent<UIInputSystem>()
@@ -82,15 +83,7 @@ namespace Crucible
 		const bool playing = m_play.State() == PlayState::Playing;
 		const bool sampling = MaySample();
 
-		// THE CURSOR -------------------------------------------------------------- //
-		// Play or Resume has just begun: hide and capture the cursor, the way a Unity
-		// game sets Cursor.lockState at start. Only on that first frame - after Esc
-		// frees the cursor, clicking the Game view is what takes it back (the editor's
-		// job), not this.
-		// Split: this system also runs while Paused, so "just began" is the play state
-		// turning to Playing, not the controller's old gap in the World's tick.
-		if (sampling && !m_wasPlaying) Input::SetMouseLocked(true);
-		m_wasPlaying = playing;
+		// The cursor is not locked here: scripts ask for it (Input.SetMouseLocked).
 
 		m_yaws.clear();
 		Math::vec3 direction(0.0f);
@@ -316,7 +309,7 @@ namespace Crucible
 				input.hasYaw = yawOf(e, yaw);   // clear stale facing when its camera disappears
 				if (input.hasYaw) input.yawDegrees = yaw;
 			}   // preserve facing during pause/menu handling
-			++input.sampleSerial;   // the sampler ran this frame (issue 5)
+			++input.sampleSerial;   // the sampler ran this frame
 		});
 	}
 }

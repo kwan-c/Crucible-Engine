@@ -37,6 +37,11 @@ namespace Crucible.Scripts
         public float rangedPlanningInterval = 0.35f;   // seconds between re-planning its spot
         public float rangedSpacing = 3f;               // metres it keeps from other shooters
 
+        // Tutorial/encounter use: stands idle with its brain off until Wake() is called.
+        public bool startAsleep = false;
+        public string wakeGroup = "";
+        bool asleep;
+
         enum Intent { Hold, HoldFacing, Wander, Chase, Arrive, Retreat, Position, Pressure }
 
         // Horde pressure (EnemyCoordinationMember's part of it): the ring point the scene's
@@ -104,8 +109,22 @@ namespace Crucible.Scripts
             }
         }
 
+        void Sleep()
+        {
+            asleep = true;
+            if (agent != null) agent.Stop();                                        // stop walking first: a switched-off brain gives no more orders
+            if (HasComponent<StateGraphAgent>()) Entity.SetEnabled<StateGraphAgent>(false);
+        }
+
         // Unity's IsReady: alive, switched on, and able to move.
         public bool IsReady { get { return Entity.IsActive && !IsDead && agent != null; } }
+
+        public void Wake()
+        {
+            if (!asleep) return;
+            asleep = false;
+            if (HasComponent<StateGraphAgent>()) Entity.SetEnabled<StateGraphAgent>(true);
+        }
 
         void CreateController()
         {

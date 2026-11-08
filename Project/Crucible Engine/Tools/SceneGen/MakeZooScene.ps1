@@ -169,6 +169,9 @@ foreach ($p in $pickups) {
 [void](Add-PlayerRig $S (U -2.224197 3 -81.38426))
 [void](Add-UnityHud $S ($PlayerControls -replace 'walk 5 s to auto-run', 'walk 5 s to auto-run  |  F on a pad: use it'))
 
+# The engine never locks the cursor itself: this scene asks for mouse-look (CursorLock.cs).
+[void](Add-Entity $S 'Cursor Lock' $null ([ordered]@{ ScriptComponent = (Script 'CursorLock' @((FBool 'locked' $true))) }))
+
 $scenePath = Join-Path $assets 'Scenes\Game\TestFolder\Zoo Scene.scene'
 Write-JsonFile $scenePath ([ordered]@{ version = 1; name = 'Zoo Scene'; entities = $S.Entities })
 "Wrote $($S.Entities.Count) entities to $scenePath"

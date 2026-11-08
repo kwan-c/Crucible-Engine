@@ -19,6 +19,7 @@ namespace Crucible.Scripts
         public float explosionRadius = 8f;
         public float killAt = 13f;
         public float killKnockback = 800f;       // impulse: 4 m/s on a 200 kg golem
+        public string killGroup = "";            // set: at killAt, kill EVERY enemy with this Wake Group instead (tests EnemyGroupGate)
 
         bool exploded, killed;
         float watchUntil, nextWatch;
@@ -45,6 +46,16 @@ namespace Crucible.Scripts
                 int reached = Physics.Explode(centre, explosionRadius, explosionForce, 1f);
                 Log.Info("[DynamicTest]   Explode reached " + reached + " entities");
                 watchUntil = now + 2.5f;
+            }
+
+            if (!killed && now >= killAt && killGroup.Length > 0)
+            {
+                killed = true;
+                int count = 0;
+                foreach (Enemy e in Enemy.All.ToArray())
+                    if (e.wakeGroup == killGroup && !e.IsDead) { e.ApplyDamage(100000f); ++count; }
+                Log.Info("[DynamicTest] KILL GROUP \"" + killGroup + "\": " + count + " enemies. Expect: an EnemyGroupGate for that group opens.");
+                return;
             }
 
             if (!killed && now >= killAt)

@@ -267,12 +267,12 @@ namespace Crucible {
 		- Play mode only. The menu starts closed whenever Play (or Resume)
 		  starts, so menu canvases can stay visible while you lay them out in
 		  the editor - they are hidden as the game begins.
-		- Escape still frees / locks the cursor when there is no menu canvas,
-		  so the standalone game never traps the mouse.
-		- The cursor: free while the menu is open or any shown canvas has
-		  UICanvas::showsCursor (a title screen); locked again when that stops.
-		  So loading a level from a menu goes back to mouse-look, and a title
-		  scene starts with a usable cursor.
+		- Escape only works in a scene with a menu canvas (a screen-space
+		  canvas with toggleWithEscape); in any other scene it does nothing.
+		- The cursor: held free (Input::MouseRelease::Menu) while the menu is
+		  open or any shown canvas has UICanvas::showsCursor (a title screen).
+		  When that stops, the game's latest Input::SetMouseLocked request
+		  applies again - this never locks a cursor the game left free.
 		- Menu canvases are kept matching the menu every frame, so a scene
 		  loaded mid-Play has its menus hidden too.
 		- Runs before UIInputSystem, so a menu opened this frame can already be
@@ -286,7 +286,7 @@ namespace Crucible {
 
 	private:
 		std::uint64_t       m_lastTick = 0;          // a gap means Play / Resume just started (same trick as ECSPlayerControllerSystem)
-		bool                m_cursorNeeded = false;  // last frame's answer, to lock once when the need ends
+		bool                m_cursorNeeded = false;  // last frame's answer (the Menu release hold)
 		std::vector<Entity> m_menus;                 // reused
 	};
 

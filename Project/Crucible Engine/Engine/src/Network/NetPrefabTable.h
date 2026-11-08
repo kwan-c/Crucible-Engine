@@ -12,7 +12,7 @@
 * \details
 *                Ids are written in the source (GamePrefabs.h), never taken
 *                from registration order, so moving a Register call cannot
-*                renumber prefabs (Networking Guide 18.3, issue 6).
+*                renumber prefabs.
 *
 *                Three steps, each stricter than the last:
 *                  Register        the description alone: id range,
@@ -29,19 +29,18 @@
 *                                  still requires the root), and the replicated
 *                                  serializers' maxBytes together fit one
 *                                  spawn record (kMaxRecordBytes). A session
-*                                  refuses to start while this fails (issue 4,
-*                                  step 1).
-*                HashInto feeds the canonical content hash (issue 7): every
+*                                  refuses to start while this fails.
+*                HashInto feeds the canonical content hash: every
 *                prefab in id order with its asset identity and lists, by
 *                component NAME, so a teammate inserting a ComponentKind
 *                does not change it on its own.
 *
 * \history
-*    -v1.0       Networking Guide 5.4, 18.3 issues 4, 6, 7 (PR 7); review
+*    -v1.0       network prefab table with explicit ids; review
 *                fixes: unregistered component ids reported, not thrown;
 *                a prefab's replicated state must fit one record
 *    -v1.1       sendPriority and critical: host-side snapshot scheduling,
-*                outside the content hash (PR 13)
+*                outside the content hash
 *    -v1.2       prefabGuid (found by asset GUID: renames and moves are
 *                harmless); Remove, FindByGuid, FindByName, HighestId for
 *                discovered network prefabs (Networking Phase 14.2)

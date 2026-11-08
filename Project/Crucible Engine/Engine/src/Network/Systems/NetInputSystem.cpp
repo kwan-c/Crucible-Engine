@@ -9,8 +9,8 @@
 *                per-client intents, and the auto-spawned players.
 *
 * \history
-*    -v1.0       Networking Guide 6.2, 6.3, 11.3, 18.3 issue 5 (PR 11)
-*    -v1.1       starts the key-to-motion measurement (PR 12)
+*    -v1.0       client commands, server intents, player spawns
+*    -v1.1       starts the key-to-motion measurement
 *    -v1.2       the player is the discovered spawnPerPlayer prefab when
 *                there is one (Networking Phase 14.2)
 *    -v1.3       players spawn at the scene's placed players (Phase 14.6)
@@ -82,7 +82,7 @@ namespace Crucible
 
 	// ---- client ----------------------------------------------------------------------------------
 
-	// Networking Guide 6.2, client steps 3-6. The message goes out every input interval whether or
+	// The message goes out every input interval whether or
 	// not this client owns a player right now: before the host spawns it, while it is dead, after a
 	// despawn there is simply no command in it. It runs after NetReceiveSystem in the same stage, so
 	// the appliedLifecycle and acks it reports describe the World as it is now.
@@ -91,7 +91,7 @@ namespace Crucible
 		if (!m_session.IsJoined() || m_session.IsStopRequested()) return;
 
 		// Every frame: the own player's input going from still to moving starts a key-to-motion
-		// measurement (Networking Guide 11.7); NetInterpolationSystem ends it when it draws the move.
+		// measurement; NetInterpolationSystem ends it when it draws the move.
 		bool moving = false;
 		world.CreateQuery<const NetworkIdentity, const PlayerInput>().ForEach([&](Entity e, const NetworkIdentity& identity, const PlayerInput& input) {
 			if (moving || identity.owner != m_session.LocalPeer() || input.moveDirection == Math::vec3(0.f)) return;
@@ -110,7 +110,7 @@ namespace Crucible
 			commanded = true;
 
 			// Fresh: the sampler wrote since the last command. If it did not (it stopped running),
-			// the command is neutral, so a held key is never repeated (issue 5).
+			// the command is neutral, so a held key is never repeated.
 			const bool fresh = input.sampleSerial != m_lastSentSerial;
 			m_lastSentSerial = input.sampleSerial;
 
@@ -120,7 +120,7 @@ namespace Crucible
 			if (!input.hasYaw)
 				if (const Transform* t = world.Read<Transform>(e)) yaw = Quantize::YawDegrees(t->rotation);
 
-			InputCommand command;   // fields by name (issue 2)
+			InputCommand command;   // fields by name
 			command.sequence = ++m_sequence;                                   // strictly increasing
 			command.clientTick = m_session.Stats().lastSnapshotTick;           // the newest server tick seen (an estimator comes later)
 			command.moveX = fresh ? Quantize::SignedUnitToI8(input.moveDirection.x) : std::int8_t{ 0 };
@@ -196,8 +196,8 @@ namespace Crucible
 		});
 	}
 
-	// The host's player when the session starts; a client's when it reaches InGame (the guide's
-	// 9.3 step 5); a departed client's player destroyed. Only while the player prefab is registered.
+	// The host's player when the session starts; a client's when it reaches InGame;
+	// a departed client's player destroyed. Only while the player prefab is registered.
 	void NetInputSystem::SpawnAndRemovePlayers(World& world, CommandBuffer& commands)
 	{
 		const bool autoSpawn = AutoSpawn();

@@ -87,7 +87,9 @@ namespace Crucible.Scripts
                          // A dynamic golem's real velocity, as physics left it (speed= above also
                          // counts steering not yet used by a physics step), and its fall speed.
                          + (e.HasComponent<RigidBody>() && !e.RigidBody.IsKinematic
-                            ? " body=" + Flat(e.RigidBody.Velocity).ToString("F2") + " vy=" + e.RigidBody.Velocity.Y.ToString("F2") : ""));
+                            ? " body=" + Flat(e.RigidBody.Velocity).ToString("F2") + " vy=" + e.RigidBody.Velocity.Y.ToString("F2") : "")
+                         // Is its brain (StateGraphAgent) switched on? A sleeping enemy reads "off".
+                         + (e.HasComponent<StateGraphAgent>() ? " brain=" + (e.IsEnabled<StateGraphAgent>() ? "on" : "off") : ""));
             }
         }
 
