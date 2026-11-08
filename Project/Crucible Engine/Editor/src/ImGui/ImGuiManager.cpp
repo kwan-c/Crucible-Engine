@@ -301,12 +301,13 @@ void Crucible::ImGuiManager::Update(float dt) {
 	// frame's systems ran (see the release-key rule below).
 	static bool s_cursorLockedLastFrame = false;
 
-	// The game's mouse look, with Unity's Game-view cursor rules. The game locks the cursor
-	// when Play or Resume starts (ECSPlayerControllerSystem); getting it back is the editor's
-	// job: the release key (Shift+F1 by default, Project Settings > Editor) frees it, a left
-	// click on the Game view takes it again, and Pause / Stop always free it. Escape is the
-	// game's (UIMenuSystem's pause menu), exactly as in the built game. After the panel loop on
-	// purpose, so the Game view's hover state is this frame's.
+	// The game's mouse look, with Unity's Game-view cursor rules. Scripts lock the cursor
+	// (Input.SetMouseLocked); nothing locks it on Play. Getting it back is the editor's job: the
+	// release key (Shift+F1 by default, Project Settings > Editor) and Pause put on the Editor
+	// release hold, which no script can undo; a left click on the Game view takes that hold off,
+	// so it only restores a lock the editor took away. Stop drops the request and every hold.
+	// Escape is the game's (UIMenuSystem's pause menu), exactly as in the built game. After the
+	// panel loop on purpose, so the Game view's hover state is this frame's.
 	if (Core* core = EditorManager::GetInstance().GetCore()) {
 		ImGuiIO& io = ImGui::GetIO();
 		if (core->GetPlayState() == PlayState::Playing) {
@@ -315,15 +316,19 @@ void Crucible::ImGuiManager::Update(float dt) {
 			// be set to one the game also answers (Escape for its menu), a press that re-locked the
 			// cursor this same frame is the game's - the editor must not undo it.
 			if (Input::IsMouseLocked() && s_cursorLockedLastFrame && IsChordPressed(EditorManager::GetInstance().GetReleaseCursorKey()))
-				Input::SetMouseLocked(false);
+				Input::SetMouseReleased(Input::MouseRelease::Editor, true);
 			// ...but not when the click is on the game's UI (that click is for a button), nor while the
 			// game wants a free cursor (its menu is open, or a title-screen canvas is shown).
-			else if (!Input::IsMouseLocked() && gameView && gameView->IsViewportHovered() && ImGui::IsMouseClicked(ImGuiMouseButton_Left)
-			         && !Input::IsPointerOverUI() && !UI::IsCursorNeeded())
-				Input::SetMouseLocked(true);
+			else if (Input::IsMouseReleased(Input::MouseRelease::Editor) && gameView && gameView->IsViewportHovered()
+			         && ImGui::IsMouseClicked(ImGuiMouseButton_Left) && !Input::IsPointerOverUI() && !UI::IsCursorNeeded())
+				Input::SetMouseReleased(Input::MouseRelease::Editor, false);
 		}
-		else if (Input::IsMouseLocked()) {
-			Input::SetMouseLocked(false);   // Paused or Stopped: the editor needs its pointer back
+		else if (core->GetPlayState() == PlayState::Paused) {
+			if (Input::IsMouseLocked())
+				Input::SetMouseReleased(Input::MouseRelease::Editor, true);   // the editor needs its pointer; a click after Resume returns it
+		}
+		else {
+			Input::ResetMouseLock();   // Stopped: free, and nothing left waiting to lock it
 		}
 
 		// A locked cursor is hidden but still moves, and ImGui still follows it - so a click

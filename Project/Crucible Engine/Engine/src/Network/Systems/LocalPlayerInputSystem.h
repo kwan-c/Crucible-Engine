@@ -3,13 +3,13 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          5 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                The sampling half of the player controller: keyboard,
 *                mouse and gamepad of THIS machine in, PlayerInput of the
 *                locally controlled player(s) out. Also the local
-*                presentation that goes with it: the cursor lock and the
-*                third-person camera pivot.
+*                presentation that goes with it: the third-person camera
+*                pivot.
 *
 * \details
 *                Split out of ECSPlayerControllerSystem (Hugo's), whose input
@@ -20,7 +20,8 @@
 *                whose PlayerInput comes from their network commands.
 *
 *                Each Update (PreUpdate, after the UI's menu and input):
-*                  1. the cursor is locked when Play or Resume starts
+*                  1. (no cursor lock: scripts ask for it with
+*                     Input.SetMouseLocked; mouse-look below needs it)
 *                  2. while Playing, every locally controlled CameraOrbit
 *                     pivot turns with the mouse and the right stick, exactly
 *                     as before; its yaw is what the mech will face
@@ -50,6 +51,8 @@
 * \history
 *    -v1.0       sampling split from ECSPlayerControllerSystem (Networking
 *                Guide 6.2, 18.3 issue 5, PR 10)
+*    -v1.1       no cursor lock on Play start: scripts lock it with
+*                Input.SetMouseLocked
 *
 **************************************************************************/
 #pragma once
@@ -108,7 +111,6 @@ namespace Crucible
 		const NetworkSession* m_session;
 		const PlayMode&       m_play;
 		InputOwnedElsewhere   m_ownedElsewhere;
-		bool                  m_wasPlaying = false;   // the cursor is locked when Playing starts
 
 		std::optional<Query<const PlayerController>> m_missingInput;   // players without a PlayerInput yet
 		std::vector<std::pair<Entity, float>>         m_yaws;           // this frame: mech -> its pivot's yaw
