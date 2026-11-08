@@ -98,6 +98,9 @@ namespace Crucible {
 		// Where a prefab dropped at the cursor lands: on the surface under it, else on the y = 0
 		// ground plane, else 10 units in front of the camera.
 		glm::vec3 DropPoint(ImVec2 viewMin, ImVec2 viewSize);
+		// Models (.glb) dragged in from the Asset Browser become a new entity at the drop point.
+		bool IsModelAsset(std::string const& virtualPath) const;
+		void PlaceModel(std::string const& virtualPath, glm::vec3 position);
 		void Select(Entity entity);
 
 		// ---- Move / Rotate / Scale gizmo (ImGuizmo) ----

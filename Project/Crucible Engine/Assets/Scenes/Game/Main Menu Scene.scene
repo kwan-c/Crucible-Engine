@@ -6153,8 +6153,8 @@
                     "textureAsset": 0
                 },
                 "UIButton": {
-                    "onClick": "None",
-                    "sceneAsset": 0,
+                    "onClick": "LoadScene",
+                    "sceneAsset": 6657086465852588033,
                     "actionId": "",
                     "normal": {
                         "x": 1.0,
@@ -6183,7 +6183,7 @@
                     "interactable": true
                 },
                 "UIText": {
-                    "text": "Gym",
+                    "text": "Zoo",
                     "colour": {
                         "x": 1.0,
                         "y": 1.0,

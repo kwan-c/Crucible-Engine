@@ -1,0 +1,14 @@
+{
+  "outputType": "SDF",
+  "bitmapSizes": [
+    16,
+    32
+  ],
+  "glyphSize": 48,
+  "pixelRange": 8.0,
+  "padding": 2,
+  "includeAscii": true,
+  "ranges": [],
+  "sampleTextFiles": [],
+  "atlasMaxSize": 4096
+}

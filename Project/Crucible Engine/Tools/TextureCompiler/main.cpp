@@ -35,6 +35,7 @@
 #include "Resources/CompiledTexture.h"
 #include "Resources/CompiledSky.h"
 #include "TextureImport.h"   // Tools/Common
+#include "AssetBuildReport.h"
 
 #include <chrono>
 #include <filesystem>
@@ -79,7 +80,8 @@ namespace {
         }
     }
 
-    int CompileTree(const fs::path& sourceRoot, const fs::path& outputRoot) {
+    // problems: each image that failed, for the --report file.
+    int CompileTree(const fs::path& sourceRoot, const fs::path& outputRoot, std::vector<AssetBuildReport::Problem>& problems) {
         Check(fs::is_directory(sourceRoot) && fs::is_directory(outputRoot), "Source and runtime asset roots must exist");
         const auto sourcePath = fs::weakly_canonical(sourceRoot), outputPath = fs::weakly_canonical(outputRoot);
         auto within = [](const fs::path& a, const fs::path& b) {
@@ -129,7 +131,10 @@ namespace {
                 const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
                 std::cout << "Compiled " << relative.generic_string() << ": " << compiled.summary << " | " << seconds << " s\n";
                 ++built;
-            } catch (const std::exception& e) { std::cerr << "[TextureCompiler] " << source->virtualPath << ": " << e.what() << '\n'; ++failed; }
+            } catch (const std::exception& e) {
+                std::cerr << "[TextureCompiler] " << source->virtualPath << ": " << e.what() << '\n'; ++failed;
+                problems.push_back({ source->virtualPath, e.what() });
+            }
         }
         std::cout << "[TextureCompiler] compiled=" << built << " unchanged=" << unchanged << " failed=" << failed << '\n';
         return failed ? 1 : 0;
@@ -139,8 +144,26 @@ namespace {
 
 int main(int argc, char** argv) {
     try {
-        if (argc == 4 && std::string(argv[1]) == "--compile-tree")
-            return CompileTree(argv[2], argv[3]);
+        // --compile-tree <Assets> <Resources> [--report <file>]: with --report, images that fail
+        // are written to <file> instead of failing the build (see AssetBuildReport.h).
+        const bool tree = argc >= 4 && std::string(argv[1]) == "--compile-tree";
+        const bool report = tree && argc == 6 && std::string(argv[4]) == "--report";
+        if (tree && (argc == 4 || report)) {
+            std::vector<AssetBuildReport::Problem> problems;
+            int result = 0;
+            try { result = CompileTree(argv[2], argv[3], problems); }
+            catch (const std::exception& e) {
+                if (!report) throw;
+                std::cerr << "[TextureCompiler] " << e.what() << '\n';
+                problems.push_back({ "Assets (all images)", e.what() });
+            }
+            if (!report) return result;
+            if (!AssetBuildReport::Write(argv[5], problems)) { std::cerr << "[TextureCompiler] Cannot write report " << argv[5] << '\n'; return 1; }
+            if (!problems.empty())
+                std::cout << "[TextureCompiler] warning: " << problems.size() << " image(s) failed to compile. The build carries on; "
+                             "the editor lists them and blocks Play until they are fixed.\n";
+            return 0;
+        }
         if (argc == 3 && std::string(argv[1]) == "--compare") {
             // Every BC format on this image, with its own .texsettings - the Texture Importer's comparison.
             std::string settingsText;
@@ -179,7 +202,7 @@ int main(int argc, char** argv) {
                 std::cout << "  mip " << i << ": " << texture.mips[i].width << 'x' << texture.mips[i].height << ", " << texture.mips[i].size << " bytes\n";
             return 0;
         }
-        std::cerr << "Usage: CrucibleTextureCompiler --compile-tree <Assets> <Resources>\n"
+        std::cerr << "Usage: CrucibleTextureCompiler --compile-tree <Assets> <Resources> [--report <file>]\n"
                      "       CrucibleTextureCompiler --inspect <file.bill | file.sky>\n"
                      "       CrucibleTextureCompiler --compare <image>\n";
         return 2;

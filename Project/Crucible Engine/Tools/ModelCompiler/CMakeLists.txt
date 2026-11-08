@@ -32,9 +32,12 @@ set_target_properties(CrucibleModelCompiler PROPERTIES FOLDER "Tools")
 
 # A lightweight hash/format check on each build picks up exports without needing
 # to regenerate the solution. Actual source parsing happens only offline here.
+# --report: a model that fails is listed in the report instead of failing the build, so the
+# Editor still opens (it shows the problems and blocks Play). Cook runs it strict.
 add_custom_target(CompiledModels
     COMMAND $<TARGET_FILE:CrucibleModelCompiler> --compile-tree
         "${CMAKE_SOURCE_DIR}/Assets" "${CMAKE_SOURCE_DIR}/Resources"
+        --report "${CMAKE_BINARY_DIR}/AssetBuildReports/Models.txt"
     DEPENDS CrucibleModelCompiler
     COMMENT "Compiling source models (Assets) into Crucible resources (Resources)..."
     VERBATIM

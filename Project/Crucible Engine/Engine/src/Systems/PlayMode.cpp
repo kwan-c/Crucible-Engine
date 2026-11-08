@@ -212,6 +212,16 @@ namespace Crucible
 
 	bool PlayMode::ApplyPlay(bool restoreOnStop)
 	{
+		// 0. The guard (SetPlayGuard): e.g. the editor refusing Play while assets or scripts
+		//    failed to compile.
+		if (m_playGuard)
+		{
+			std::string reason;
+			try { reason = m_playGuard(); }
+			catch (const std::exception& e) { reason = std::string("the Play check failed - ") + e.what(); }
+			if (!reason.empty()) return Fail(PlayRequest::Play, std::move(reason));
+		}
+
 		// 1. The snapshot. Nothing has changed yet, so failing here costs nothing.
 		SceneManager::Snapshot snapshot;
 		if (restoreOnStop && !m_scenes.CaptureSnapshot(snapshot))

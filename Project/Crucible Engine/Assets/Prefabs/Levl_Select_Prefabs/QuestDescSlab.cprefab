@@ -1,0 +1,626 @@
+{
+    "version": 3,
+    "name": "QuestDescSlab",
+    "entities": [
+        {
+            "id": "F4B5F8DEDEDDC01B",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "QuestDescSlab"
+                }
+            }
+        },
+        {
+            "id": "8CB5F8DEDEDDC01D",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.7099999785423279,
+                        "z": 2.2152600288391113
+                    },
+                    "rotation": {
+                        "x": -0.00005411585880210623,
+                        "y": 0.7071067690849304,
+                        "z": 0.7071067690849304,
+                        "w": 0.00005405404226621613
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "TitleText"
+                },
+                "WorldText": {
+                    "text": "Title Text",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.4399999976158142,
+                    "size": {
+                        "x": 4.400000095367432,
+                        "y": 0.44999998807907104
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "F4B5F8DEDEDDC01F",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.7099999785423279,
+                        "z": 1.7389318943023682
+                    },
+                    "rotation": {
+                        "x": -0.00005411585880210623,
+                        "y": 0.7071067690849304,
+                        "z": 0.7071067690849304,
+                        "w": 0.00005405404226621613
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "QuestTypeText"
+                },
+                "WorldText": {
+                    "text": "Quest Type Text",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.25,
+                    "size": {
+                        "x": 4.400000095367432,
+                        "y": 0.44999998807907104
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "7CB5F8DEDEDDC021",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.33769798278808594,
+                        "y": 0.7099999785423279,
+                        "z": 1.205169916152954
+                    },
+                    "rotation": {
+                        "x": -0.00005411585880210623,
+                        "y": 0.7071067690849304,
+                        "z": 0.7071067690849304,
+                        "w": 0.00005405404226621613
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "DescriptionText"
+                },
+                "WorldText": {
+                    "text": "Description Text",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.25999999046325684,
+                    "size": {
+                        "x": 4.400000095367432,
+                        "y": 0.44999998807907104
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "C4B5F8DEDEDDC023",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -1.1566362380981445,
+                        "y": 0.6299999952316284,
+                        "z": -1.9837791919708252
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.8500000238418579,
+                        "y": 0.8500000238418579,
+                        "z": 0.8500000238418579
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 647578121545793543,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "quest_accept_button"
+                }
+            }
+        },
+        {
+            "id": "7CB5F8DEDEDDC025",
+            "parent": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.000031948089599609375,
+                        "y": 0.15000000596046448,
+                        "z": -0.050704002380371094
+                    },
+                    "rotation": {
+                        "x": -3.0908619663705394e-8,
+                        "y": -0.7071067690849304,
+                        "z": -0.7071067690849304,
+                        "w": 3.090862321641907e-8
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "Accept_Text"
+                },
+                "WorldText": {
+                    "text": "Accept",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.3400000035762787,
+                    "size": {
+                        "x": 1.2999999523162842,
+                        "y": 0.3499999940395355
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.29411765933036804,
+                        "y": 0.0,
+                        "z": 0.3607843220233917,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "2CB5F8DEDEDDC027",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.3443759679794312,
+                        "y": 0.6301210522651672,
+                        "z": -2.070558547973633
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.8500000238418579,
+                        "y": 0.8500000238418579,
+                        "z": 0.8500000238418579
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 8141567901490970633,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "quest_decline_button"
+                }
+            }
+        },
+        {
+            "id": "CCB5F8DEDEDDC029",
+            "parent": 6,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.006159782409667969,
+                        "y": 0.15000000596046448,
+                        "z": 0.05503714084625244
+                    },
+                    "rotation": {
+                        "x": -3.0908619663705394e-8,
+                        "y": -0.7071067690849304,
+                        "z": -0.7071067690849304,
+                        "w": 3.090862321641907e-8
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "Decline_Text"
+                },
+                "WorldText": {
+                    "text": "Decline",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.3400000035762787,
+                    "size": {
+                        "x": 1.350000023841858,
+                        "y": 0.3499999940395355
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.29411765933036804,
+                        "y": 0.0,
+                        "z": 0.3607843220233917,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "7CB5F8DEDEDDC02B",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 2376960378457210891,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 14421452136295092753
+                },
+                "EntityName": {
+                    "name": "questDescriptionSlab"
+                }
+            }
+        }
+    ]
+}

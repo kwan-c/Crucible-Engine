@@ -17,6 +17,7 @@
 #include <functional>
 
 #include "Core.h"
+#include "Assets/BuildProblems.h"   // why Play is refused, for the button's tooltip
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 
@@ -180,7 +181,12 @@ void PlayPause::Update(float)
         bool const playKey  = ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_P, ImGuiInputFlags_RouteGlobal);
         bool const pauseKey = ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiMod_Shift | ImGuiKey_P, ImGuiInputFlags_RouteGlobal);
 
-        if (TransportButton("##Play", running ? "Exit Play Mode (Ctrl+P)" : "Play (Ctrl+P)",
+        // Still clickable while blocked: the click logs the reason to the Console and shows it
+        // in the status here (PlayMode's guard). The tooltip says it up front.
+        std::string const blocked = running ? std::string() : BuildProblems::PlayBlockReason();
+        std::string const playTip = running ? "Exit Play Mode (Ctrl+P)"
+                                  : blocked.empty() ? "Play (Ctrl+P)" : "Play is blocked: " + blocked;
+        if (TransportButton("##Play", playTip.c_str(),
                             TransportIcon::Play, PlayColor(), running && !paused, !waiting, buttonSize)
             || (playKey && !waiting)) {
             CommitInspectorEdit();

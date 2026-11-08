@@ -1,0 +1,1541 @@
+{
+    "version": 1,
+    "name": "Level_Select",
+    "entities": [
+        {
+            "id": "04B5F8DEDCA48001",
+            "parent": "5CB5F8DEDD19C003",
+            "siblingIndex": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 2376960378457210891,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 14421452136295092753
+                },
+                "EntityName": {
+                    "name": "questDescriptionSlab"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 8986362267593195563,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "146030DEE40D801D",
+            "parent": "ACB5F8DEDFB90041",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.3048285245895386,
+                        "y": 0.3113289475440979,
+                        "z": -0.0000011920928955078125
+                    },
+                    "rotation": {
+                        "x": -0.5001220703125,
+                        "y": 0.4998779594898224,
+                        "z": 0.4998778998851776,
+                        "w": 0.5001220703125
+                    },
+                    "scale": {
+                        "x": 0.776005744934082,
+                        "y": 0.776005744934082,
+                        "z": 0.7760056853294373
+                    }
+                },
+                "EntityName": {
+                    "name": "World Text"
+                },
+                "WorldText": {
+                    "text": "TUTORIAL",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.30000001192092896,
+                    "size": {
+                        "x": 2.200000047683716,
+                        "y": 0.3499999940395355
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.29411765933036804,
+                        "y": 0.0,
+                        "z": 0.3607843220233917,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "246030DEE15E8001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "UICanvas"
+                },
+                "UICanvas": {
+                    "enabled": true,
+                    "renderMode": "ScreenSpace",
+                    "referenceResolution": {
+                        "x": 1920.0,
+                        "y": 1080.0
+                    },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 0,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
+                }
+            }
+        },
+        {
+            "id": "2CB5F8DEDD19C009",
+            "parent": "44B5F8DEDD19C005",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.000031948089599609375,
+                        "y": 0.15000000596046448,
+                        "z": -0.050704002380371094
+                    },
+                    "rotation": {
+                        "x": -3.0908619663705394e-8,
+                        "y": -0.7071067690849304,
+                        "z": -0.7071067690849304,
+                        "w": 3.090862321641907e-8
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "Accept_Text"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 8986362267593195557,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "Accept",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.3400000035762787,
+                    "size": {
+                        "x": 1.2999999523162842,
+                        "y": 0.3499999940395355
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.29411765933036804,
+                        "y": 0.0,
+                        "z": 0.3607843220233917,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "3C6030DEE429C01F",
+            "parent": "8C6030DEE3E4C017",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.3050000071525574,
+                        "y": 0.3109999895095825,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -0.5001220703125,
+                        "y": 0.4998779594898224,
+                        "z": 0.4998779296875,
+                        "w": 0.5001220107078552
+                    },
+                    "scale": {
+                        "x": 0.7760056853294373,
+                        "y": 0.7760056853294373,
+                        "z": 0.7760055661201477
+                    }
+                },
+                "EntityName": {
+                    "name": "World Text"
+                },
+                "WorldText": {
+                    "text": "ELIMINATION",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.30000001192092896,
+                    "size": {
+                        "x": 2.200000047683716,
+                        "y": 0.3499999940395355
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.29411765933036804,
+                        "y": 0.0,
+                        "z": 0.3607843220233917,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "44B5F8DEDD19C005",
+            "parent": "5CB5F8DEDD19C003",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -1.1566362380981445,
+                        "y": 0.6299999952316284,
+                        "z": -1.9837791919708252
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.8500000238418579,
+                        "y": 0.8500000238418579,
+                        "z": 0.8500000238418579
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 647578121545793543,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "quest_accept_button"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 14174509038324006947,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "54B5F8DEDDA7800D",
+            "parent": "5CB5F8DEDD19C003",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.7099999785423279,
+                        "z": 2.2152600288391113
+                    },
+                    "rotation": {
+                        "x": -0.00005411585880210623,
+                        "y": 0.7071067690849304,
+                        "z": 0.7071067690849304,
+                        "w": 0.00005405404226621613
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "TitleText"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 10139283772200042525,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "Title Text",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.4399999976158142,
+                    "size": {
+                        "x": 4.400000095367432,
+                        "y": 0.44999998807907104
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "54B5F8DEE066004D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 3.7456979751586914,
+                        "y": 14.281000137329102,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -0.43503841757774353,
+                        "y": 0.5574420094490051,
+                        "z": 0.43503841757774353,
+                        "w": 0.5574420094490051
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 0
+                },
+                "EntityName": {
+                    "name": "Camera"
+                }
+            }
+        },
+        {
+            "id": "5CB5F8DEDD19C003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 12.811031341552734,
+                        "y": 0.0,
+                        "z": -4.024050235748291
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071067690849304,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "QuestDescSlab"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 17633273552144547867,
+                    "isRoot": true,
+                    "prefabHash": 4153276630885510881,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "74B5F8DEDDDC4011",
+            "parent": "5CB5F8DEDD19C003",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.33769798278808594,
+                        "y": 0.7099999785423279,
+                        "z": 1.205169916152954
+                    },
+                    "rotation": {
+                        "x": -0.00005411585880210623,
+                        "y": 0.7071067690849304,
+                        "z": 0.7071067690849304,
+                        "w": 0.00005405404226621613
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "DescriptionText"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 8986362267593195553,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "Description Text",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.25999999046325684,
+                    "size": {
+                        "x": 4.400000095367432,
+                        "y": 0.44999998807907104
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Left",
+                    "verticalAlign": "Top",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "84B5F8DEDD27C00B",
+            "parent": "A4B5F8DEDD19C007",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.006159782409667969,
+                        "y": 0.15000000596046448,
+                        "z": 0.05503714084625244
+                    },
+                    "rotation": {
+                        "x": -3.0908619663705394e-8,
+                        "y": -0.7071067690849304,
+                        "z": -0.7071067690849304,
+                        "w": 3.090862321641907e-8
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "Decline_Text"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 14750969790627430441,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "Decline",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.3400000035762787,
+                    "size": {
+                        "x": 1.350000023841858,
+                        "y": 0.3499999940395355
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.29411765933036804,
+                        "y": 0.0,
+                        "z": 0.3607843220233917,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "84B5F8DEDF56C031",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -0.0,
+                        "y": 1.0,
+                        "z": -0.0,
+                        "w": -4.371138828673793e-8
+                    },
+                    "scale": {
+                        "x": 0.9198696613311768,
+                        "y": 1.0,
+                        "z": 1.2163971662521362
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7256980010690412591,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "table"
+                }
+            }
+        },
+        {
+            "id": "8C6030DEE3E4C017",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.08798098564147949,
+                        "y": 1.0,
+                        "z": -2.63749623298645
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.2886500358581543,
+                        "y": 1.2886500358581543,
+                        "z": 1.2886500358581543
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7256980010695049267,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Level1_Slab"
+                }
+            }
+        },
+        {
+            "id": "8CB5F8DEDDC9800F",
+            "parent": "5CB5F8DEDD19C003",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.7099999785423279,
+                        "z": 1.7389318943023682
+                    },
+                    "rotation": {
+                        "x": -0.00005411585880210623,
+                        "y": 0.7071067690849304,
+                        "z": 0.7071067690849304,
+                        "w": 0.00005405404226621613
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 0.9999999403953552,
+                        "z": 0.9999999403953552
+                    }
+                },
+                "EntityName": {
+                    "name": "QuestTypeText"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 17633273552144547871,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "Quest Type Text",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.25,
+                    "size": {
+                        "x": 4.400000095367432,
+                        "y": 0.44999998807907104
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "9C6030DEE3B4C011",
+            "parent": "ACB5F8DEDFB90041",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.5762786865234375e-7,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.280409574508667,
+                        "y": 1.280409574508667,
+                        "z": 1.280409574508667
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 15879746019940728841,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Logo3"
+                }
+            }
+        },
+        {
+            "id": "A4B5F8DEDD19C007",
+            "parent": "5CB5F8DEDD19C003",
+            "siblingIndex": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.3443759679794312,
+                        "y": 0.6301210522651672,
+                        "z": -2.070558547973633
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.8500000238418579,
+                        "y": 0.8500000238418579,
+                        "z": 0.8500000238418579
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 8141567901490970633,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "quest_decline_button"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 14174509038324006957,
+                    "fileId": 3221754744558960679,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "AC6030DEE3E4C019",
+            "parent": "8C6030DEE3E4C017",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 3.5762786865234375e-7,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.280409574508667,
+                        "y": 1.280409574508667,
+                        "z": 1.280409574508667
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 8385756239996223493,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Logo"
+                }
+            }
+        },
+        {
+            "id": "ACB5F8DEDFB90041",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.08798098564147949,
+                        "y": 1.0,
+                        "z": 3.4704647064208984
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.2886500358581543,
+                        "y": 1.2886500358581543,
+                        "z": 1.2886500358581543
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7256980010695049267,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Tutorial_Slab"
+                }
+            }
+        },
+        {
+            "id": "B46030DEE15E8003",
+            "parent": "246030DEE15E8001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Button"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -753.2710571289063,
+                        "y": 365.84417724609375
+                    },
+                    "size": {
+                        "x": 344.0,
+                        "y": 86.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 0
+                },
+                "UIButton": {
+                    "onClick": "LoadScene",
+                    "sceneAsset": 17525275114992484373,
+                    "actionId": "",
+                    "normal": {
+                        "x": 0.3866666555404663,
+                        "y": 0.3866666555404663,
+                        "z": 0.3866666555404663,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.9111111164093018,
+                        "y": 0.7507555484771729,
+                        "z": 0.6924444437026978,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
+                },
+                "UIText": {
+                    "text": "Back to Main Menu",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 0.25,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": true,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "B4B5F8DEE09D004F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Skybox": {
+                    "visible": true,
+                    "intensity": 0.0,
+                    "ambientSky": {
+                        "x": 0.30000001192092896,
+                        "y": 0.36000001430511475,
+                        "z": 0.44999998807907104
+                    },
+                    "ambientGround": {
+                        "x": 0.20000000298023224,
+                        "y": 0.18000000715255737,
+                        "z": 0.1599999964237213
+                    },
+                    "ambientIntensity": 1.0,
+                    "exposure": 1.0,
+                    "ambientFromSky": true,
+                    "fogDensity": 0.0,
+                    "fogColour": {
+                        "x": 0.550000011920929,
+                        "y": 0.6299999952316284,
+                        "z": 0.7200000286102295
+                    },
+                    "fogHeightFalloff": 0.07999999821186066,
+                    "fogBaseHeight": 0.0,
+                    "fogStart": 0.0,
+                    "fogMaxOpacity": 1.0,
+                    "volumetricFog": true,
+                    "volumetricIntensity": 1.0,
+                    "volumetricAnisotropy": 0.5,
+                    "volumetricDistance": 100.0,
+                    "volumetricAmbient": 1.0,
+                    "volumetricSkyAmbient": false,
+                    "contrast": 1.0,
+                    "saturation": 1.0,
+                    "temperature": 0.0,
+                    "colourFilter": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "vignetteIntensity": 0.0,
+                    "vignetteSoftness": 0.5,
+                    "filmGrain": 0.0,
+                    "chromaticAberration": 0.0,
+                    "toonShading": true,
+                    "toonThreshold": 0.08799999952316284,
+                    "toonSoftness": 0.05400000140070915,
+                    "toonShadeColour": {
+                        "x": 0.8500000238418579,
+                        "y": 0.8700000047683716,
+                        "z": 0.949999988079071
+                    },
+                    "toonShadeBrightness": 0.9890000224113464,
+                    "toonLitShading": 0.36800000071525574,
+                    "toonEdgeColour": {
+                        "x": 1.0,
+                        "y": 0.6200000047683716,
+                        "z": 0.41999998688697815
+                    },
+                    "toonEdgeWidth": 0.15000000596046448,
+                    "toonEdgeStrength": 0.6000000238418579,
+                    "toonAmbientFlatten": 0.699999988079071,
+                    "toonHighlight": 0.0,
+                    "toonReflections": 0.0,
+                    "toonLines": true,
+                    "toonLineDarkness": 0.6000000238418579,
+                    "toonLineWidth": 1.0,
+                    "toonLineCreaseAngle": 75.0,
+                    "toonLineCreaseStrength": 0.5,
+                    "toonLineDepthGap": 0.029999999329447746,
+                    "toonLineBreakup": 0.3499999940395355,
+                    "toonLineBreakupSize": 0.25,
+                    "toonLineFadeDistance": 60.0,
+                    "skyboxAsset": 0
+                },
+                "EntityName": {
+                    "name": "Skybox"
+                }
+            }
+        },
+        {
+            "id": "D46030DEE3E4C01B",
+            "parent": "8C6030DEE3E4C017",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.4137909710407257,
+                        "y": 0.10177922248840332,
+                        "z": -0.04300880432128906
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.34955182671546936,
+                        "y": 0.34955182671546936,
+                        "z": 0.34955182671546936
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 3774070221596770317,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 10691599249240457237
+                },
+                "EntityName": {
+                    "name": "mainQuestText"
+                }
+            }
+        },
+        {
+            "id": "E0FCA8DEDAEE4003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 99.00934600830078,
+                        "y": 100.0,
+                        "z": 100.0
+                    },
+                    "rotation": {
+                        "x": -0.25508004426956177,
+                        "y": 0.615993082523346,
+                        "z": 0.6138776540756226,
+                        "w": 0.42265939712524414
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 4.650000095367432,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Directional Light"
+                }
+            }
+        },
+        {
+            "id": "FC6030DEE3B4C013",
+            "parent": "ACB5F8DEDFB90041",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.4137909710407257,
+                        "y": 0.10177922248840332,
+                        "z": -0.04300880432128906
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.34955182671546936,
+                        "y": 0.34955182671546936,
+                        "z": 0.34955182671546936
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 3774070221596770317,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 10691599249240457237
+                },
+                "EntityName": {
+                    "name": "mainQuestText"
+                }
+            }
+        }
+    ]
+}

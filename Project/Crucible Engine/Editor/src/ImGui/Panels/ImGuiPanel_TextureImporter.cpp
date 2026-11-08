@@ -8,6 +8,7 @@
 */
 
 #include "ImGui/Panels/ImGuiPanel_TextureImporter.h"
+#include "Assets/BuildProblems.h"   // a failed image blocks Play until it compiles
 
 #include "Resources/CompiledSky.h"
 #include "Resources/CompiledTexture.h"
@@ -571,8 +572,10 @@ void Crucible::TextureImporter::FinishCompile(CompileResult result) {
 	if (!result.ok) {
 		CRU_USER_ERROR("[Textures] {} failed to compile: {}", result.imagePath, result.error);
 		if (result.imagePath == m_imagePath) { m_actionError = "Compile failed: " + result.error; }
+		BuildProblems::SetAssetFailed(result.imagePath, result.error);   // blocks Play until it compiles
 		return;
 	}
+	BuildProblems::ClearAsset(result.imagePath);
 	CRU_USER_INFO("[Textures] Compiled {} -> {}: {} in {:.2f} s", result.imagePath, result.compiledPath, result.summary, result.seconds);
 
 	// Only one compiled file may claim the GUID: drop the other kind (a .bill left from before the

@@ -17,6 +17,7 @@
 #include "Diagnostics/Logger.h"
 #include "Scene/SceneManager.h"
 #include "ModelBuild.h"   // Tools/Common
+#include "Assets/BuildProblems.h"   // a failed model blocks Play until it compiles
 
 #include <GLFW/glfw3.h>
 #include <imgui_internal.h>   // FindWindowByName, ImGuiWindow, ImGuiDockNode: where the panel is when its tab is hidden
@@ -562,6 +563,9 @@ void Crucible::AssetBrowser::QueueModelCompiles() {
 	std::unordered_set<std::uint64_t> changed;
 	for (xresource::instance_guid const guid : m_assets.GetChangedOnLastRefresh()) changed.insert(guid.m_Value);
 
+	// A broken asset that was deleted no longer blocks Play.
+	BuildProblems::PruneAssets([this](std::string const& path) { return m_assets.Find(path) != nullptr; });
+
 	for (AssetEntry const& entry : m_assets.GetAll()) {
 		if (entry.compiled || entry.type != AssetType::Model) continue;
 		std::uint64_t const guid = entry.guid.m_Value;
@@ -571,7 +575,8 @@ void Crucible::AssetBrowser::QueueModelCompiles() {
 
 		if (entry.extension != ".glb") {
 			m_modelFailures[guid] = entry.contentHash;
-			m_importProblems.push_back({ entry.virtualPath, "only .glb models can be compiled, and the next build will stop on this file - remove it or export a .glb" });
+			m_importProblems.push_back({ entry.virtualPath, "only .glb models can be compiled, and Play is blocked until it is fixed - remove it or export a .glb" });
+			BuildProblems::SetAssetFailed(entry.virtualPath, "only .glb models can be compiled");
 			continue;
 		}
 
@@ -602,6 +607,7 @@ void Crucible::AssetBrowser::QueueModelCompiles() {
 			if (stillOwned) {
 				m_modelFailures[guid] = entry.contentHash;
 				m_importProblems.push_back({ entry.virtualPath, "another model already compiles to " + job.compiledPath + " - rename this file" });
+				BuildProblems::SetAssetFailed(entry.virtualPath, "another model already compiles to " + job.compiledPath);
 				continue;
 			}
 		}
@@ -619,11 +625,16 @@ void Crucible::AssetBrowser::UpdateModelCompiles() {
 			m_modelFailures[job.guid] = job.contentHash;
 			CRU_USER_ERROR("[Models] {} failed to compile: {}", job.virtualPath, result.error);
 			m_importProblems.push_back({ job.virtualPath, "it could not be compiled: " + result.error });
+			BuildProblems::SetAssetFailed(job.virtualPath, result.error);
 		}
-		else if (m_modelCompiled[job.guid] = job.contentHash; !result.unchanged) {
-			m_modelFailures.erase(job.guid);
-			CRU_USER_INFO("[Models] Compiled {} -> {}: {} in {:.2f} s", job.virtualPath, job.compiledPath, result.summary, result.seconds);
-			m_modelRefreshPending = true;
+		else {
+			BuildProblems::ClearAsset(job.virtualPath);   // fixed: no longer blocks Play
+			m_modelCompiled[job.guid] = job.contentHash;
+			if (!result.unchanged) {
+				m_modelFailures.erase(job.guid);
+				CRU_USER_INFO("[Models] Compiled {} -> {}: {} in {:.2f} s", job.virtualPath, job.compiledPath, result.summary, result.seconds);
+				m_modelRefreshPending = true;
+			}
 		}
 	}
 
