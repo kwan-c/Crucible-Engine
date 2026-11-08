@@ -6105,6 +6105,149 @@
                     "name": "Cursor Lock"
                 }
             }
+        },
+        {
+            "id": "5E00000000000A01",
+            "parent": "E973B8DE6A69C1A5",
+            "siblingIndex": 8,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Main Menu button"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -560.0,
+                        "y": 310.0
+                    },
+                    "size": {
+                        "x": 240.0,
+                        "y": 60.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 0
+                },
+                "UIButton": {
+                    "onClick": "Custom",
+                    "sceneAsset": 0,
+                    "actionId": "ReturnToMainMenu",
+                    "normal": {
+                        "x": 0.25333333015441895,
+                        "y": 0.04503703489899635,
+                        "z": 0.04503703489899635,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.2549019753932953,
+                        "y": 0.04313725605607033,
+                        "z": 0.04313725605607033,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
+                },
+                "UIText": {
+                    "text": "Main Menu",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 31.799999237060547,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
         }
     ]
 }

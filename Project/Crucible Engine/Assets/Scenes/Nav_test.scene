@@ -54,7 +54,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 5067099792209742713,
+                    "meshAsset": 3578055278504480029,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -83,7 +83,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 7306435685216836802,
+                    "prefabHash": 17290836789032328677,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -95,8 +95,7 @@
                     "stoppingDistance": 10.0,
                     "slowingDistance": 20.0,
                     "neighbourRadius": 10.0,
-                    "separationRadius": 1.5,
-                    "separationWeight": 1.5,
+                    "avoidancePriority": 50,
                     "alignmentWeight": 0.4000000059604645,
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
@@ -156,7 +155,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 5067099792209742713,
+                    "meshAsset": 3578055278504480029,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -185,7 +184,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 7306435685216836802,
+                    "prefabHash": 17290836789032328677,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -197,8 +196,7 @@
                     "stoppingDistance": 10.0,
                     "slowingDistance": 20.0,
                     "neighbourRadius": 10.0,
-                    "separationRadius": 1.5,
-                    "separationWeight": 1.5,
+                    "avoidancePriority": 50,
                     "alignmentWeight": 0.4000000059604645,
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
@@ -386,6 +384,53 @@
             }
         },
         {
+            "id": "D81908E4FDA9AEDF",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Cursor Lock"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "CursorLock",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CursorLock",
+                            "name": "locked",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
             "id": "E68540DC9CCE8005",
             "components": {
                 "Transform": {
@@ -440,53 +485,6 @@
                 },
                 "EntityName": {
                     "name": "Player"
-                }
-            }
-        },
-        {
-            "id": "D81908E4FDA9AEDF",
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "CursorLock",
-                    "fields": [
-                        {
-                            "declaringType": "Crucible.Scripts.CursorLock",
-                            "name": "locked",
-                            "type": "Boolean",
-                            "boolean": true,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        }
-                    ]
-                },
-                "EntityName": {
-                    "name": "Cursor Lock"
                 }
             }
         }
