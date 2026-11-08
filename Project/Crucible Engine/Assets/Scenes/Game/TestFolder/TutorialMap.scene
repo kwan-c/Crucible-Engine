@@ -419,6 +419,67 @@
             }
         },
         {
+            "id": "030208DEEC788013",
+            "parent": "0B0208DEEC788019",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Image"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": -50.25482177734375
+                    },
+                    "size": {
+                        "x": 100.0,
+                        "y": 100.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 9550411730343297149
+                }
+            }
+        },
+        {
             "id": "039AB560DB75F759",
             "parent": "AB4814CB818A9EB9",
             "siblingIndex": 5,
@@ -1857,6 +1918,92 @@
                 },
                 "EntityName": {
                     "name": "Wall_Moss"
+                }
+            }
+        },
+        {
+            "id": "0B0208DEEC788019",
+            "parent": "59DB70DEB6198001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 11.747249603271484,
+                        "y": 1.6035223007202148,
+                        "z": -0.22482681274414063
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071067094802856,
+                        "z": 0.0,
+                        "w": 0.7071068286895752
+                    },
+                    "scale": {
+                        "x": 1.7099997997283936,
+                        "y": 1.709999918937683,
+                        "z": 1.7099997997283936
+                    }
+                },
+                "EntityName": {
+                    "name": "No_entry_UI"
+                },
+                "UICanvas": {
+                    "enabled": true,
+                    "renderMode": "WorldSpace",
+                    "referenceResolution": {
+                        "x": 400.0,
+                        "y": 220.0
+                    },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 0,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": true,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Flashing",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.Flashing",
+                            "name": "period",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 2.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Flashing",
+                            "name": "minAlpha",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.10000000149011612,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
                 }
             }
         },
@@ -4343,6 +4490,55 @@
             }
         },
         {
+            "id": "184E60DEE5BD8003",
+            "parent": "804E60DEE5BD8005",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9399999976158142,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.019999999552965164,
+                        "z": 3.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.4000000059604645,
+                        "z": 0.11999999731779099,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890417,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "1888CAAFFE3778B9",
             "parent": "3BFEF9CA33A4E8C3",
             "siblingIndex": 16,
@@ -4857,6 +5053,63 @@
                 },
                 "EntityName": {
                     "name": "Wall_TopStone"
+                }
+            }
+        },
+        {
+            "id": "1B0208DEEBE44009",
+            "parent": "8B0208DEEBE44001",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.6319713592529297,
+                        "y": 2.38352370262146,
+                        "z": -0.39488720893859863
+                    },
+                    "rotation": {
+                        "x": -4.371138828673793e-8,
+                        "y": 4.371138828673793e-8,
+                        "z": -4.371138828673793e-8,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4000000059604645,
+                        "y": 0.4000000059604645,
+                        "z": 0.4000000059604645
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 9363837801095872521,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Shoulder Cannon"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 14869901761965572211,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -6043,6 +6296,101 @@
                 },
                 "EntityName": {
                     "name": "Tower_Plinth"
+                }
+            }
+        },
+        {
+            "id": "230208DEEC788015",
+            "parent": "0B0208DEEC788019",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -4.357064931070909e-9,
+                        "y": 0.19151073694229126,
+                        "z": -0.1837902069091797
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 5.014057159423828,
+                        "y": 2.076219081878662,
+                        "z": 0.22608299553394318
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 2.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Blockage"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "EnemyGroupGate",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.EnemyGroupGate",
+                            "name": "enemyGroup",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Part 5",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.EnemyGroupGate",
+                            "name": "hide",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 793206237913710617,
+                            "assetId": 0
+                        }
+                    ]
                 }
             }
         },
@@ -7776,6 +8124,19 @@
                             "stringIsNull": false,
                             "entityId": 0,
                             "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "wake",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 9245433595491614725,
+                            "assetId": 0
                         }
                     ]
                 }
@@ -8103,6 +8464,77 @@
                 },
                 "EntityName": {
                     "name": "Wall_Block"
+                }
+            }
+        },
+        {
+            "id": "2EA048DEEB8D4015",
+            "parent": "6EA048DEEB8D401D",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 14686256933579063307,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 5334910539341692929,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -8934,6 +9366,63 @@
             }
         },
         {
+            "id": "330208DEEBE44007",
+            "parent": "8B0208DEEBE44001",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.027778983116149902,
+                        "z": -0.39488697052001953
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4000000059604645,
+                        "y": 0.4000000059604645,
+                        "z": 0.4000000059604645
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 16281366828736954375,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Legs"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 11411137248145031281,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "3321204290A7A111",
             "parent": "70061E5CAD2D87B5",
             "siblingIndex": 31,
@@ -9524,6 +10013,160 @@
                 },
                 "EntityName": {
                     "name": "Rubble"
+                }
+            }
+        },
+        {
+            "id": "36A048DEEB8D4025",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 49.84004211425781,
+                        "y": 1.1826021671295166,
+                        "z": -50.53269958496094
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071066498756409,
+                        "z": 0.0,
+                        "w": 0.70710688829422
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 1.0,
+                        "z": 0.9999998807907104
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 200.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 3.041851282119751,
+                        "y": 2.0844321250915527,
+                        "z": 1.7326987981796265
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -0.22885863482952118
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Enemy",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Fodder Part 5 (3)"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Enemy",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "maximumHealth",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 120.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "dropPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5267962757949921808
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "startAsleep",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "wakeGroup",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Part 5",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890403,
+                    "isRoot": true,
+                    "prefabHash": 1811445575636163755,
+                    "overrides": [
+                        "Transform/scale",
+                        "ScriptComponent/fields"
+                    ]
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.200000047683716,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 1.600000023841858,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 4968574966415897207,
+                    "logStateChanges": false
                 }
             }
         },
@@ -10141,6 +10784,63 @@
                 },
                 "EntityName": {
                     "name": "Tower_Body"
+                }
+            }
+        },
+        {
+            "id": "3B0208DEEBE44003",
+            "parent": "8B0208DEEBE44001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 2.184018611907959,
+                        "z": -0.4577176570892334
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4000000059604645,
+                        "y": 0.4000000059604645,
+                        "z": 0.4000000059604645
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7634455544185602053,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 13140519505055301741,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -10777,6 +11477,77 @@
                 },
                 "EntityName": {
                     "name": "Wall_Collider"
+                }
+            }
+        },
+        {
+            "id": "404E60DEE5BD8009",
+            "parent": "484E60DEE5BD8007",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 14686256933579063307,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 5334910539341692929,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -11884,6 +12655,71 @@
             }
         },
         {
+            "id": "484E60DEE5BD8007",
+            "parent": "804E60DEE5BD8005",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9718225002288818,
+                        "z": -0.2288585901260376
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 4175691030365061123,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 15446362514300043429,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "489F65C597FCF9C3",
             "parent": "C1DCA42CDB2C2315",
             "siblingIndex": 22,
@@ -12235,6 +13071,212 @@
                 },
                 "EntityName": {
                     "name": "Back_Crenel"
+                }
+            }
+        },
+        {
+            "id": "4B0208DEEBE4400B",
+            "parent": "6B0208DEEBE44011",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.600000023841858,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 9681754991234760821,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.20000000298023224,
+                        "z": 0.20000000298023224,
+                        "w": 1.0
+                    },
+                    "fontAsset": 8612070892498599937,
+                    "fontSize": 0.5,
+                    "size": {
+                        "x": 4.0,
+                        "y": 1.0
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "FaceCamera",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.10000000149011612,
+                    "maxFontSize": 1.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 0.019999999552965164,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 0.029999999329447746,
+                    "glowSoftness": 0.5,
+                    "shadow": true,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 0.019999999552965164,
+                        "y": 0.019999999552965164
+                    },
+                    "shadowSoftness": 0.0
+                }
+            }
+        },
+        {
+            "id": "4B0208DEEC788017",
+            "parent": "0B0208DEEC788019",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Text"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 36.821563720703125
+                    },
+                    "size": {
+                        "x": 199.99998474121094,
+                        "y": 50.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "/// No Entry ///",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 24.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
                 }
             }
         },
@@ -12937,6 +13979,142 @@
             }
         },
         {
+            "id": "4EA048DEEB8D4017",
+            "parent": "4EA048DEEB8D401F",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 14686256933579063307,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 5334910539341692929,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "4EA048DEEB8D401F",
+            "parent": "C6A048DEEB8D4027",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9718225002288818,
+                        "z": -0.2288585901260376
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 4175691030365061123,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 15446362514300043429,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "4EB054562721AC93",
             "parent": "81228E07381DFB2D",
             "siblingIndex": 0,
@@ -13120,6 +14298,55 @@
                 },
                 "EntityName": {
                     "name": "Tower_Fallen"
+                }
+            }
+        },
+        {
+            "id": "504E60DEE5BD8001",
+            "parent": "804E60DEE5BD8005",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658961575,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -13950,14 +15177,14 @@
         },
         {
             "id": "5489E0DE55FA407F",
-            "parent": "2C89E0DE55534069",
-            "siblingIndex": 7,
+            "parent": "7489E0DE5553406D",
+            "siblingIndex": 2,
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -7.450580596923828e-9,
-                        "y": 1.931005597114563,
-                        "z": -3.7041854858398438
+                        "x": -4.357064931070909e-9,
+                        "y": 0.19151073694229126,
+                        "z": -0.1837902069091797
                     },
                     "rotation": {
                         "x": 0.0,
@@ -13966,9 +15193,9 @@
                         "w": 1.0
                     },
                     "scale": {
-                        "x": 8.574037551879883,
-                        "y": 3.5503344535827637,
-                        "z": 0.38660189509391785
+                        "x": 5.014057159423828,
+                        "y": 2.076219081878662,
+                        "z": 0.22608299553394318
                     }
                 },
                 "MeshRenderer": {
@@ -14006,6 +15233,40 @@
                 },
                 "EntityName": {
                     "name": "Blockage"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "EnemyGroupGate",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.EnemyGroupGate",
+                            "name": "enemyGroup",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Part 3",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.EnemyGroupGate",
+                            "name": "hide",
+                            "type": "Entity",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 8397490225727881325,
+                            "assetId": 0
+                        }
+                    ]
                 }
             }
         },
@@ -15002,6 +16263,63 @@
                 },
                 "EntityName": {
                     "name": "Tower_Ruin"
+                }
+            }
+        },
+        {
+            "id": "5B0208DEEBE44005",
+            "parent": "8B0208DEEBE44001",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.488553524017334,
+                        "z": -0.39488720893859863
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.4000000059604645,
+                        "y": 0.4000000059604645,
+                        "z": 0.4000000059604645
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 7057994791882178571,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.3499999940395355,
+                        "y": 0.44999998807907104,
+                        "z": 0.6000000238418579,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 9105294238931337327,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -16981,6 +18299,71 @@
             }
         },
         {
+            "id": "66A048DEEB8D4019",
+            "parent": "DEA048DEEB8D4021",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9718225002288818,
+                        "z": -0.2288585901260376
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 4175691030365061123,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 15446362514300043429,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "66C3DF3C0DE19187",
             "parent": "F22B2B96BC7E27B1",
             "siblingIndex": 21,
@@ -17254,7 +18637,7 @@
         {
             "id": "68CFF8DE8F30400B",
             "parent": "59DB70DEB6198001",
-            "siblingIndex": 0,
+            "siblingIndex": 1,
             "components": {
                 "Transform": {
                     "positions": {
@@ -17287,6 +18670,25 @@
                     },
                     "meshAsset": 2856787514755437467,
                     "materialAsset": 10703333234877988937
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
                 },
                 "EntityName": {
                     "name": "Ground"
@@ -17462,6 +18864,78 @@
             }
         },
         {
+            "id": "6B0208DEEBE44011",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.09051620960235596,
+                        "y": 0.08554553985595703,
+                        "z": 26.96825408935547
+                    },
+                    "rotation": {
+                        "x": -0.0,
+                        "y": 1.0,
+                        "z": -0.0,
+                        "w": -4.371138828673793e-8
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 2.0,
+                        "z": 2.0
+                    }
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": -0.3499999940395355
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player Golem"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "CombatHealth",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "deactivateOnDeath",
+                            "type": "Bool",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 13140519505055301737,
+                    "isRoot": true,
+                    "prefabHash": 3326835317903766686,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "6BA0CD01272EA5CD",
             "parent": "386E203FA578F205",
             "siblingIndex": 1,
@@ -17603,41 +19077,6 @@
                 },
                 "EntityName": {
                     "name": "Rubble"
-                }
-            }
-        },
-        {
-            "id": "6D2560DE478D401F",
-            "parent": "C52560DE478D4023",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 5.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "Camera": {
-                    "enabled": true,
-                    "fovY": 60.0,
-                    "nearZ": 0.10000000149011612,
-                    "farZ": 1000.0,
-                    "priority": 1
-                },
-                "EntityName": {
-                    "name": "Player Camera"
                 }
             }
         },
@@ -17919,6 +19358,71 @@
                 },
                 "EntityName": {
                     "name": "Section_8"
+                }
+            }
+        },
+        {
+            "id": "6EA048DEEB8D401D",
+            "parent": "36A048DEEB8D4025",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9718225002288818,
+                        "z": -0.2288585901260376
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 4175691030365061123,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 15446362514300043429,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -19126,6 +20630,104 @@
             }
         },
         {
+            "id": "76A048DEEB8D400B",
+            "parent": "36A048DEEB8D4025",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9399999976158142,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.019999999552965164,
+                        "z": 3.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.4000000059604645,
+                        "z": 0.11999999731779099,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890417,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "76A048DEEB8D400F",
+            "parent": "C6A048DEEB8D4027",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9399999976158142,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.019999999552965164,
+                        "z": 3.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.4000000059604645,
+                        "z": 0.11999999731779099,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890417,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "7799096A9AB34BFF",
             "parent": "5F6BB58075B79675",
             "siblingIndex": 4,
@@ -19613,6 +21215,50 @@
                 },
                 "EntityName": {
                     "name": "Wall_Block"
+                }
+            }
+        },
+        {
+            "id": "7B0208DEEBE4400F",
+            "parent": "D30208DEEBE4400D",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 4.470348358154297e-8,
+                        "y": 0.6238206624984741,
+                        "z": 3.7707862854003906
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 5646529725110796409,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": [
+                        "Transform/positions"
+                    ]
                 }
             }
         },
@@ -20141,6 +21787,55 @@
             }
         },
         {
+            "id": "7EA048DEEB8D4003",
+            "parent": "DEA048DEEB8D4021",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9399999976158142,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.019999999552965164,
+                        "z": 3.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.4000000059604645,
+                        "z": 0.11999999731779099,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890417,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "7F76104A1B0933ED",
             "parent": "5BE2B625E90CC0A7",
             "siblingIndex": 8,
@@ -20179,6 +21874,159 @@
                 },
                 "EntityName": {
                     "name": "Tower_Crenel"
+                }
+            }
+        },
+        {
+            "id": "804E60DEE5BD8005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.013652503490447998,
+                        "y": 1.142624855041504,
+                        "z": -42.74751663208008
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 200.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 3.041851282119751,
+                        "y": 2.0844321250915527,
+                        "z": 1.7326987981796265
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -0.22885863482952118
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Enemy",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Fodder Mace Part 3"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Enemy",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "maximumHealth",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 120.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "dropPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5267962757949921808
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "startAsleep",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "wakeGroup",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Part 3",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890403,
+                    "isRoot": true,
+                    "prefabHash": 1811445575636163755,
+                    "overrides": [
+                        "ScriptComponent/fields"
+                    ]
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.200000047683716,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 1.600000023841858,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 4968574966415897207,
+                    "logStateChanges": false
                 }
             }
         },
@@ -21296,6 +23144,55 @@
             }
         },
         {
+            "id": "86A048DEEB8D4005",
+            "parent": "D6A048DEEB8D4023",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658961575,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "8734D554312767C1",
             "parent": "B901CD7F91DFFDBD",
             "siblingIndex": 18,
@@ -21677,6 +23574,41 @@
                 },
                 "EntityName": {
                     "name": "Wall_TopStone"
+                }
+            }
+        },
+        {
+            "id": "8B0208DEEBE44001",
+            "parent": "6B0208DEEBE44011",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": -4.371139183945161e-8,
+                        "y": 1.0,
+                        "z": -4.371139183945161e-8,
+                        "w": -4.371138473402425e-8
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "EntityName": {
+                    "name": "rotation"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 4493608220503949419,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -25063,6 +26995,55 @@
                 },
                 "EntityName": {
                     "name": "Gate_Pier"
+                }
+            }
+        },
+        {
+            "id": "9EA048DEEB8D4009",
+            "parent": "36A048DEEB8D4025",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658961575,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -28791,6 +30772,19 @@
                             "stringIsNull": false,
                             "entityId": 0,
                             "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Checkpoint",
+                            "name": "wakeGroup",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Part 5",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
                         }
                     ]
                 }
@@ -29609,6 +31603,55 @@
                 },
                 "EntityName": {
                     "name": "Wall_TopStone"
+                }
+            }
+        },
+        {
+            "id": "B6A048DEEB8D4007",
+            "parent": "D6A048DEEB8D4023",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9399999976158142,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.019999999552965164,
+                        "z": 3.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.4000000059604645,
+                        "z": 0.11999999731779099,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890417,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },
@@ -30553,77 +32596,6 @@
                 },
                 "EntityName": {
                     "name": "Paving_Tile"
-                }
-            }
-        },
-        {
-            "id": "BD2560DE478D4021",
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 1.0,
-                        "z": 32.06548309326172
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "MeshRenderer": {
-                    "visible": true,
-                    "modelAsset": 0,
-                    "modelRoot": 4294967295,
-                    "materialOverrides": [],
-                    "colour": {
-                        "x": 0.5,
-                        "y": 0.5,
-                        "z": 0.5,
-                        "w": 0.5
-                    },
-                    "meshAsset": 5067099792209742713,
-                    "materialAsset": 0
-                },
-                "AudioSource": {
-                    "clip": 0,
-                    "loadType": "DecompressOnLoad",
-                    "output": "SFX",
-                    "playOnAwake": true,
-                    "loop": false,
-                    "volume": 1.0,
-                    "pitch": 1.0,
-                    "spatialBlend": 0.0,
-                    "minDistance": 1.0,
-                    "maxDistance": 500.0,
-                    "rolloffMode": "Logarithmic"
-                },
-                "CharacterController": {
-                    "height": 2.0,
-                    "radius": 0.5,
-                    "center": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "slopeLimit": 45.0,
-                    "stepOffset": 0.30000001192092896,
-                    "pushStrength": 100.0,
-                    "layer": "Player"
-                },
-                "PlayerController": {
-                    "moveSpeed": 6.0,
-                    "jumpHeight": 1.5,
-                    "faceCamera": true
-                },
-                "EntityName": {
-                    "name": "Player"
                 }
             }
         },
@@ -31912,42 +33884,6 @@
             }
         },
         {
-            "id": "C52560DE478D4023",
-            "parent": "BD2560DE478D4021",
-            "siblingIndex": 0,
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 1.5,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
-                },
-                "CameraOrbit": {
-                    "sensitivity": 0.10000000149011612,
-                    "stickSpeed": 180.0,
-                    "minPitch": -30.0,
-                    "maxPitch": 70.0,
-                    "yaw": 0.0,
-                    "pitch": 0.0
-                },
-                "EntityName": {
-                    "name": "Camera Pivot"
-                }
-            }
-        },
-        {
             "id": "C538B646667B8E6D",
             "parent": "D3A13987FF8EB587",
             "siblingIndex": 0,
@@ -32238,6 +34174,274 @@
                 },
                 "EntityName": {
                     "name": "Tower_Band"
+                }
+            }
+        },
+        {
+            "id": "C6A048DEEB8D400D",
+            "parent": "C6A048DEEB8D4027",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658961575,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "C6A048DEEB8D401B",
+            "parent": "D6A048DEEB8D4023",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9718225002288818,
+                        "z": -0.2288585901260376
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 4175691030365061123,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 15446362514300043429,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "C6A048DEEB8D4027",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 49.84004211425781,
+                        "y": 1.1826021671295166,
+                        "z": -55.542240142822266
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071066498756409,
+                        "z": 0.0,
+                        "w": 0.70710688829422
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 1.0,
+                        "z": 0.9999998807907104
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 200.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 3.041851282119751,
+                        "y": 2.0844321250915527,
+                        "z": 1.7326987981796265
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -0.22885863482952118
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Enemy",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Fodder Part 5 (4)"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Enemy",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "maximumHealth",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 120.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "dropPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5267962757949921808
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "startAsleep",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "wakeGroup",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Part 5",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890403,
+                    "isRoot": true,
+                    "prefabHash": 1811445575636163755,
+                    "overrides": [
+                        "Transform/scale",
+                        "ScriptComponent/fields"
+                    ]
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.200000047683716,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 1.600000023841858,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 4968574966415897207,
+                    "logStateChanges": false
                 }
             }
         },
@@ -34115,6 +36319,49 @@
             }
         },
         {
+            "id": "D30208DEEBE4400D",
+            "parent": "6B0208DEEBE44011",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.5707324743270874,
+                        "z": 0.16197001934051514
+                    },
+                    "rotation": {
+                        "x": -0.0,
+                        "y": -1.0,
+                        "z": -0.0,
+                        "w": 4.371138828673793e-8
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 10834676495841607803,
+                    "fileId": 6222990477414219895,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "D307E2CCDD4B6A15",
             "parent": "C524F1D88BAFEA6D",
             "siblingIndex": 9,
@@ -34694,6 +36941,209 @@
                 },
                 "EntityName": {
                     "name": "Wall_Moss"
+                }
+            }
+        },
+        {
+            "id": "D6A048DEEB8D4001",
+            "parent": "DEA048DEEB8D4021",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658961575,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "D6A048DEEB8D4023",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 54.32228088378906,
+                        "y": 1.1826021671295166,
+                        "z": -48.88822937011719
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071066498756409,
+                        "z": 0.0,
+                        "w": 0.70710688829422
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 1.0,
+                        "z": 0.9999998807907104
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 200.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 3.041851282119751,
+                        "y": 2.0844321250915527,
+                        "z": 1.7326987981796265
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -0.22885863482952118
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Enemy",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Fodder Part 5 (2)"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Enemy",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "maximumHealth",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 120.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "dropPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5267962757949921808
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "startAsleep",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "wakeGroup",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Part 5",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890403,
+                    "isRoot": true,
+                    "prefabHash": 1811445575636163755,
+                    "overrides": [
+                        "Transform/scale",
+                        "ScriptComponent/fields"
+                    ]
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.200000047683716,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 1.600000023841858,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 4968574966415897207,
+                    "logStateChanges": false
                 }
             }
         },
@@ -36305,6 +38755,160 @@
                 },
                 "EntityName": {
                     "name": "Ruin_Tower_East_2"
+                }
+            }
+        },
+        {
+            "id": "DEA048DEEB8D4021",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 54.32228088378906,
+                        "y": 1.1826021671295166,
+                        "z": -56.922935485839844
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": -0.7071066498756409,
+                        "z": 0.0,
+                        "w": 0.70710688829422
+                    },
+                    "scale": {
+                        "x": 0.9999998807907104,
+                        "y": 1.0,
+                        "z": 0.9999998807907104
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 200.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 3.041851282119751,
+                        "y": 2.0844321250915527,
+                        "z": 1.7326987981796265
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -0.22885863482952118
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Enemy",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Fodder Part 5 (1)"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "Enemy",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.CombatHealth",
+                            "name": "maximumHealth",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 120.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "dropPrefab",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 5267962757949921808
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "startAsleep",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "wakeGroup",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.0,
+                            "real": 0.0,
+                            "text": "Part 5",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890403,
+                    "isRoot": true,
+                    "prefabHash": 1811445575636163755,
+                    "overrides": [
+                        "Transform/scale",
+                        "ScriptComponent/fields"
+                    ]
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.200000047683716,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 1.600000023841858,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 4968574966415897207,
+                    "logStateChanges": false
                 }
             }
         },
@@ -40051,6 +42655,77 @@
             }
         },
         {
+            "id": "F6A048DEEB8D4011",
+            "parent": "66A048DEEB8D4019",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 14686256933579063307,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 5334910539341692929,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
             "id": "F7B2B398ADE323D1",
             "parent": "F54FBBFB9E8DBDA5",
             "siblingIndex": 3,
@@ -41472,6 +44147,77 @@
                 },
                 "EntityName": {
                     "name": "Wall_Block"
+                }
+            }
+        },
+        {
+            "id": "FEA048DEEB8D4013",
+            "parent": "C6A048DEEB8D401B",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 14686256933579063307,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 5334910539341692929,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         },

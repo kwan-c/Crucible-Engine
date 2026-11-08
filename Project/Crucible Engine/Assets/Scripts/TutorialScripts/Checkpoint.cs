@@ -17,6 +17,8 @@ namespace Crucible.Scripts
     public sealed class Checkpoint : EntityScript
     {
         public Entity marker;              // child visual that bobs and spins (optional)
+        public Entity wake;                // an enemy to wake up when this checkpoint is reached 
+        public string wakeGroup = "";   // wakes every enemy with this Wake Group (optional)
         public string message = "";        // shown on the marker's WorldText, if it has one (empty = leave as is)
         public Entity next;                // checkpoint to show once this one is reached (optional)
         public bool startHidden = false;   // tick for checkpoints that wait for an earlier one
@@ -75,6 +77,17 @@ namespace Crucible.Scripts
                 next.SetActive(true);
 
             Entity.SetActive(false);   // hides the area, the marker and anything else under it
+
+            if (wake != null)
+            {
+                Enemy enemy = CombatHealth.Find(wake) as Enemy;
+                if (enemy != null) enemy.Wake();
+            }
+            
+            if (wakeGroup.Length > 0)
+                foreach (Enemy enemy in Enemy.All)
+                    if (enemy.wakeGroup == wakeGroup) enemy.Wake();
+
         }
     }
 }
