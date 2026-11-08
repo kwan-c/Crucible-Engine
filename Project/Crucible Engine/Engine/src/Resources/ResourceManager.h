@@ -414,6 +414,51 @@ namespace Crucible {
         void KeepLoaded(AssetId id);
         void ReleaseKeepLoaded(AssetId id);   //!< \copydoc KeepLoaded
 
+        // ---- Preloading (loading screens) -------------------------------------------------------
+        //
+        // Loads the assets a scene will need a few at a time, spread over frames, so a loading
+        // screen can draw a progress bar between them. Call BeginPreload with the NEXT scene's
+        // document while the current scene is still open, StepPreload once per frame until it
+        // returns 1, then load the scene. UnloadUnused (run after the scene change) keeps
+        // everything the new scene refers to, so what was preloaded stays loaded; the old
+        // scene's assets are freed then, as usual.
+
+        /*********************************************************************
+         \brief  Queues every asset `sceneDocument` refers to that isn't
+                 loaded yet (prefabs it names included, nested ones too).
+         \param[in] sceneDocument The next scene, as JSON (ReadScene, or
+                     the .scene file's text).
+         \return How many assets were queued; 0 = nothing to load (progress
+                 is then already 1). Replaces any preload still running.
+         \details Models, .mat materials, textures, skybox cubemaps, fonts,
+                  prefabs, animator controllers, state and behaviour graphs.
+                  Audio is not preloaded: its load type is chosen by each
+                  AudioSource when it plays.
+         *********************************************************************/
+        std::size_t BeginPreload(const std::string& sceneDocument);
+
+        /*********************************************************************
+         \brief  Loads queued assets until `budgetMs` milliseconds have passed
+                 (always at least one, so a large asset still makes progress).
+         \param[in] budgetMs Time to spend this call, in milliseconds.
+         \return Progress, 0-1 (see PreloadProgress).
+         *********************************************************************/
+        float StepPreload(double budgetMs);
+
+        /*********************************************************************
+         \brief  How much of the preload is done, 0-1, weighted by each
+                 asset's size on disk - a big model moves the bar more than a
+                 small material, so the bar follows the loading time. 1 when
+                 nothing is queued.
+         *********************************************************************/
+        float PreloadProgress() const;
+
+        /// Whether queued assets are still waiting to load.
+        bool IsPreloading() const { return m_preloadNext < m_preload.size(); }
+
+        /// Drops what is still queued (already loaded assets stay loaded).
+        void CancelPreload();
+
         /*********************************************************************
          \brief  Everything currently in memory here (loaded or remembered
                  as failed), sorted by kind then name - for the editor's
@@ -621,6 +666,17 @@ namespace Crucible {
 
         void RegisterBuiltins();
         void WarnOnce(AssetId id, const std::string& message);
+
+        // Preloading - see BeginPreload.
+        enum class PreloadAction : std::uint8_t { Model, Material, Texture, Cubemap, Font, Prefab, AnimatorController, StateGraph, BehaviorGraph };
+        struct PreloadItem { AssetId id = 0; PreloadAction action = PreloadAction::Model; std::uintmax_t weight = 1; };
+        bool IsResident(const PreloadItem& item) const;   // already loaded (or failed): nothing to do
+        void Preload(const PreloadItem& item);            // the matching Get*
+
+        std::vector<PreloadItem> m_preload;               // the queue, in load order
+        std::size_t              m_preloadNext = 0;       // next item to load
+        std::uintmax_t           m_preloadTotal = 0;      // sum of every item's weight
+        std::uintmax_t           m_preloadDone = 0;       // sum of the loaded items' weights
 
         AssetManager& m_assets;
         Renderer&     m_renderer;

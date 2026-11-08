@@ -1,0 +1,236 @@
+{
+    "version": 3,
+    "name": "LoadingScreen",
+    "entities": [
+        {
+            "id": "39A651E79B10B201",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                },
+                "EntityName": {
+                    "name": "LoadingScreen"
+                },
+                "UICanvas": {
+                    "enabled": false,
+                    "renderMode": "ScreenSpace",
+                    "referenceResolution": { "x": 1920.0, "y": 1080.0 },
+                    "toggleWithEscape": false,
+                    "showsCursor": false,
+                    "scaleWithScreenSize": true,
+                    "sortOrder": 1000,
+                    "pixelsPerUnit": 100.0,
+                    "pivot": { "x": 0.5, "y": 0.5 },
+                    "billboard": "Off",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1.0,
+                    "fade": false,
+                    "fadeStart": 20.0,
+                    "fadeEnd": 30.0
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "LoadingScreen",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.LoadingScreen",
+                            "name": "fadeTime",
+                            "type": "Single",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.30000001192092896,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LoadingScreen",
+                            "name": "minimumShowTime",
+                            "type": "Single",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.5,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LoadingScreen",
+                            "name": "loadBudgetMs",
+                            "type": "Single",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 8.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.LoadingScreen",
+                            "name": "barSpeed",
+                            "type": "Single",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 4.0,
+                            "real": 0.0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                }
+            }
+        },
+        {
+            "id": "177F959298FB2401",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                },
+                "EntityName": {
+                    "name": "Background"
+                },
+                "UIRect": {
+                    "anchorMin": { "x": 0.0, "y": 0.0 },
+                    "anchorMax": { "x": 1.0, "y": 1.0 },
+                    "pivot": { "x": 0.5, "y": 0.5 },
+                    "position": { "x": 0.0, "y": 0.0 },
+                    "size": { "x": 0.0, "y": 0.0 },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 0.0 },
+                    "textureAsset": 0
+                }
+            }
+        },
+        {
+            "id": "130C8CB4276FAB01",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                },
+                "EntityName": {
+                    "name": "Content"
+                },
+                "UIRect": {
+                    "anchorMin": { "x": 0.0, "y": 0.0 },
+                    "anchorMax": { "x": 1.0, "y": 1.0 },
+                    "pivot": { "x": 0.5, "y": 0.5 },
+                    "position": { "x": 0.0, "y": 0.0 },
+                    "size": { "x": 0.0, "y": 0.0 },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                }
+            }
+        },
+        {
+            "id": "66F404E4F9650C01",
+            "parent": 2,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                },
+                "EntityName": {
+                    "name": "Bar"
+                },
+                "UIRect": {
+                    "anchorMin": { "x": 0.5, "y": 0.85 },
+                    "anchorMax": { "x": 0.5, "y": 0.85 },
+                    "pivot": { "x": 0.5, "y": 0.5 },
+                    "position": { "x": 0.0, "y": 0.0 },
+                    "size": { "x": 900.0, "y": 18.0 },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UISlider": {
+                    "minValue": 0.0,
+                    "maxValue": 1.0,
+                    "value": 0.0,
+                    "wholeNumbers": false,
+                    "interactable": false,
+                    "direction": "LeftToRight",
+                    "trackColour": { "x": 0.18, "y": 0.18, "z": 0.2, "w": 1.0 },
+                    "fillColour": { "x": 0.92, "y": 0.92, "z": 0.92, "w": 1.0 },
+                    "handleColour": { "x": 1.0, "y": 1.0, "z": 1.0, "w": 0.0 },
+                    "handleSize": 0.0,
+                    "trackThickness": 1.0
+                }
+            }
+        },
+        {
+            "id": "6D933750A69E5401",
+            "parent": 2,
+            "components": {
+                "Transform": {
+                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+                    "rotation": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                },
+                "EntityName": {
+                    "name": "Label"
+                },
+                "UIRect": {
+                    "anchorMin": { "x": 0.5, "y": 0.85 },
+                    "anchorMax": { "x": 0.5, "y": 0.85 },
+                    "pivot": { "x": 0.5, "y": 0.5 },
+                    "position": { "x": 0.0, "y": -45.0 },
+                    "size": { "x": 900.0, "y": 50.0 },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Loading 0%",
+                    "colour": { "x": 1.0, "y": 1.0, "z": 1.0, "w": 1.0 },
+                    "fontAsset": 0,
+                    "fontSize": 32.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": false,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": false,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 1.0 },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": { "x": 1.0, "y": 0.85, "z": 0.4, "w": 0.8 },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": { "x": 0.0, "y": 0.0, "z": 0.0, "w": 0.6 },
+                    "shadowOffset": { "x": 2.0, "y": 2.0 },
+                    "shadowSoftness": 0.0
+                }
+            }
+        }
+    ]
+}

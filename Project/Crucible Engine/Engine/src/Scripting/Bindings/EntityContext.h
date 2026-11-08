@@ -54,6 +54,13 @@ namespace Crucible
 		bool IsPrefabAsset(uint64_t assetId);
 
 		/*********************************************************************
+		 \brief  Spawns a prefab (by asset guid) as a root entity, the way C#
+		         Prefab.Instantiate does. Defined in Bindings/PrefabBindings.cpp.
+		 \return The new root, or kNullEntity if it could not be spawned.
+		 *********************************************************************/
+		Entity SpawnPrefab(uint64_t assetId);
+
+		/*********************************************************************
 		 \brief  true if `assetId` is an indexed audio file (AssetType::Audio).
 		 *********************************************************************/
 		bool IsAudioAsset(uint64_t assetId);

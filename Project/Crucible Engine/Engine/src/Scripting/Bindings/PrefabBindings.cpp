@@ -188,6 +188,23 @@ namespace Crucible::ScriptBindings
 		}
 	}
 
+	Entity EntityContext::SpawnPrefab(uint64_t assetId)
+	{
+		try
+		{
+			const Prefab* prefab = GetPrefab(assetId);
+			World* world = EntityContext::GetWorld();
+			if (!prefab || !world)
+				return kNullEntity;
+			return prefab->Instantiate(*world, kNullEntity, &EntityContext::EnsureSceneId);
+		}
+		catch (const std::exception& error)
+		{
+			CRU_USER_ERROR("Spawning prefab {:X} failed: {}", assetId, error.what());
+			return kNullEntity;
+		}
+	}
+
 	void RegisterPrefabBindings()
 	{
 		mono_add_internal_call("Crucible.Prefab::InstantiateInternal",

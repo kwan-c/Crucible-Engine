@@ -21,6 +21,7 @@
 #include "AssetPipe/Assetmanager.h"
 #include "Diagnostics/Logger.h"
 #include "Scene/SceneManager.h"
+#include "Resources/ResourceManager.h"
 #if CRUCIBLE_WITH_MONO
 #include <filesystem>
 #include <mono/metadata/appdomain.h>
@@ -37,7 +38,7 @@ namespace Crucible::ScriptBindings
 		 \return 1 if queued; 0 (with a log line) if the file is not a scene,
 		         does not exist, or it is not Play.
 		 *********************************************************************/
-		int32_t ManagedSceneLoad(MonoString* path) noexcept
+		int32_t LoadScenePath(MonoString* path, bool bypassLoadGate) noexcept
 		{
 			try
 			{
@@ -53,7 +54,7 @@ namespace Crucible::ScriptBindings
 					CRU_USER_WARN("[Script] Scene.Load: '{}' is not a .scene file", virtualPath);
 					return 0;
 				}
-				if (!scenes->RequestLoad(assets->Resolve(virtualPath)))
+				if (!scenes->RequestLoad(assets->Resolve(virtualPath), bypassLoadGate))
 				{
 					CRU_USER_WARN("[Script] Scene.Load: '{}' was not found under Assets", virtualPath);
 					return 0;
@@ -64,6 +65,68 @@ namespace Crucible::ScriptBindings
 			{
 				return 0;
 			}
+		}
+
+		/// C# Scene.Load: through the loading screen, if there is one.
+		int32_t ManagedSceneLoad(MonoString* path) noexcept { return LoadScenePath(path, false); }
+
+		/// C# Scene.LoadImmediate: straight away, past the loading screen.
+		int32_t ManagedSceneLoadImmediate(MonoString* path) noexcept { return LoadScenePath(path, true); }
+
+		/*********************************************************************
+		 \brief  C# Scene.ClaimLoads(bool): the loading screen takes (1) or
+		         gives back (0) every runtime scene change
+		         (SceneManager::SetLoadGate).
+		 *********************************************************************/
+		void ManagedSceneClaimLoads(int32_t claimed) noexcept
+		{
+			if (SceneManager* scenes = EntityContext::GetScenes())
+				scenes->SetLoadGate(claimed != 0);
+		}
+
+		/// C# Scene.HasHeldLoad: a scene change is waiting for the loading screen.
+		int32_t ManagedSceneHasHeldLoad() noexcept
+		{
+			SceneManager* scenes = EntityContext::GetScenes();
+			return scenes && scenes->HasHeldLoad() ? 1 : 0;
+		}
+
+		/// C# Scene.HeldLoadSerial: changes when a newer scene change replaces the held one.
+		int32_t ManagedSceneHeldLoadSerial() noexcept
+		{
+			SceneManager* scenes = EntityContext::GetScenes();
+			return scenes ? static_cast<int32_t>(scenes->HeldLoadSerial()) : 0;
+		}
+
+		/*********************************************************************
+		 \brief  C# Scene.BeginPreloadHeld: queues the held scene's assets
+		         (ResourceManager::BeginPreload).
+		 \return How many were queued; 0 if there is nothing to preload (a New
+		         scene, or all loaded already) or the file can't be read - the
+		         load itself then reports why.
+		 *********************************************************************/
+		int32_t ManagedSceneBeginPreloadHeld() noexcept
+		{
+			try
+			{
+				SceneManager* scenes = EntityContext::GetScenes();
+				ResourceManager* resources = scenes ? scenes->Resources() : nullptr;
+				std::string text;
+				if (!resources || !scenes->ReadHeldScene(text))
+					return 0;
+				return static_cast<int32_t>(resources->BeginPreload(text));
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/// C# Scene.ReleaseHeldLoad: lets the held scene change through (next frame).
+		void ManagedSceneReleaseHeldLoad() noexcept
+		{
+			if (SceneManager* scenes = EntityContext::GetScenes())
+				scenes->ReleaseHeldLoad();
 		}
 
 		/*********************************************************************
@@ -83,6 +146,81 @@ namespace Crucible::ScriptBindings
 			{
 				return 0;
 			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Scene.BeginPreload("Scenes/Level2.scene"): queues the
+		         assets that scene uses (ResourceManager::BeginPreload). The
+		         scene is read through the ResourceManager, so this works in
+		         the packaged game too.
+		 \return How many assets were queued (0 = all loaded already), or -1
+		         (with a log line) if the scene can't be found or it is not
+		         Play.
+		 *********************************************************************/
+		int32_t ManagedSceneBeginPreload(MonoString* path) noexcept
+		{
+			try
+			{
+				GcRoot root(reinterpret_cast<MonoObject*>(path));
+				std::string virtualPath;
+				SceneManager* scenes = EntityContext::GetScenes();
+				ResourceManager* resources = scenes ? scenes->Resources() : nullptr;
+				if (!resources || !EntityContext::InPlaySession() || !root.Get() ||
+				    !FromManagedString(reinterpret_cast<MonoString*>(root.Get()), virtualPath) || virtualPath.empty())
+					return -1;
+				const AssetId scene = resources->GetIdForPath(virtualPath);
+				std::string text;
+				if (!resources->IsScene(scene) || !resources->ReadScene(scene, text))
+				{
+					CRU_USER_WARN("[Script] Scene.BeginPreload: '{}' is not a scene in the project", virtualPath);
+					return -1;
+				}
+				return static_cast<int32_t>(resources->BeginPreload(text));
+			}
+			catch (...)
+			{
+				return -1;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Scene.StepPreload(budgetMs): loads queued assets for up
+		         to budgetMs milliseconds. Returns progress, 0-1.
+		 *********************************************************************/
+		float ManagedSceneStepPreload(float budgetMs) noexcept
+		{
+			try
+			{
+				SceneManager* scenes = EntityContext::GetScenes();
+				ResourceManager* resources = scenes ? scenes->Resources() : nullptr;
+				if (!resources || !EntityContext::InPlaySession())
+					return 1.0f;
+				return resources->StepPreload(static_cast<double>(budgetMs > 0.0f ? budgetMs : 0.0f));
+			}
+			catch (...)
+			{
+				return 1.0f;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Scene.PreloadProgress: 0-1, 1 when nothing is queued.
+		 *********************************************************************/
+		float ManagedSceneGetPreloadProgress() noexcept
+		{
+			SceneManager* scenes = EntityContext::GetScenes();
+			ResourceManager* resources = scenes ? scenes->Resources() : nullptr;
+			return resources ? resources->PreloadProgress() : 1.0f;
+		}
+
+		/*********************************************************************
+		 \brief  C# Scene.CancelPreload: drops what is still queued.
+		 *********************************************************************/
+		void ManagedSceneCancelPreload() noexcept
+		{
+			SceneManager* scenes = EntityContext::GetScenes();
+			if (ResourceManager* resources = scenes ? scenes->Resources() : nullptr)
+				resources->CancelPreload();
 		}
 
 		/*********************************************************************
@@ -159,6 +297,16 @@ namespace Crucible::ScriptBindings
 		mono_add_internal_call("Crucible.Scene::LoadInternal", reinterpret_cast<const void*>(ManagedSceneLoad));
 		mono_add_internal_call("Crucible.Scene::ReloadInternal", reinterpret_cast<const void*>(ManagedSceneReload));
 		mono_add_internal_call("Crucible.Scene::GetNameInternal", reinterpret_cast<const void*>(ManagedSceneGetName));
+		mono_add_internal_call("Crucible.Scene::BeginPreloadInternal", reinterpret_cast<const void*>(ManagedSceneBeginPreload));
+		mono_add_internal_call("Crucible.Scene::StepPreloadInternal", reinterpret_cast<const void*>(ManagedSceneStepPreload));
+		mono_add_internal_call("Crucible.Scene::GetPreloadProgressInternal", reinterpret_cast<const void*>(ManagedSceneGetPreloadProgress));
+		mono_add_internal_call("Crucible.Scene::CancelPreloadInternal", reinterpret_cast<const void*>(ManagedSceneCancelPreload));
+		mono_add_internal_call("Crucible.Scene::LoadImmediateInternal", reinterpret_cast<const void*>(ManagedSceneLoadImmediate));
+		mono_add_internal_call("Crucible.Scene::ClaimLoadsInternal", reinterpret_cast<const void*>(ManagedSceneClaimLoads));
+		mono_add_internal_call("Crucible.Scene::HasHeldLoadInternal", reinterpret_cast<const void*>(ManagedSceneHasHeldLoad));
+		mono_add_internal_call("Crucible.Scene::HeldLoadSerialInternal", reinterpret_cast<const void*>(ManagedSceneHeldLoadSerial));
+		mono_add_internal_call("Crucible.Scene::BeginPreloadHeldInternal", reinterpret_cast<const void*>(ManagedSceneBeginPreloadHeld));
+		mono_add_internal_call("Crucible.Scene::ReleaseHeldLoadInternal", reinterpret_cast<const void*>(ManagedSceneReleaseHeldLoad));
 	}
 }
 #endif

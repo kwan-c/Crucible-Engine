@@ -54,7 +54,7 @@ namespace Crucible {
 				 level switch): it is applied, and Stop still restores the
 				 scene that was open at Play.
 		 *********************************************************************/
-		void RequestNew();
+		void RequestNew(bool bypassLoadGate = false);
 
 		/*********************************************************************
 		 \brief  Ask for a scene file to be loaded at the next safe point.
@@ -65,7 +65,7 @@ namespace Crucible {
 		 \note   During a play session this is a runtime scene change, as
 				 for RequestNew.
 		 *********************************************************************/
-		bool RequestLoad(const std::filesystem::path& file);
+		bool RequestLoad(const std::filesystem::path& file, bool bypassLoadGate = false);
 
 		/*********************************************************************
 		 \brief  Ask for a scene to be loaded, by its asset GUID, at the next
@@ -82,13 +82,16 @@ namespace Crucible {
 		 \note   During a play session this is a runtime scene change, as
 				 for RequestNew.
 		 *********************************************************************/
-		bool RequestLoadAsset(std::uint64_t sceneAsset);
+		bool RequestLoadAsset(std::uint64_t sceneAsset, bool bypassLoadGate = false);
 
 		/*********************************************************************
 		 \brief  The ResourceManager scenes are loaded through. Core sets it
 				 once the ResourceManager exists (it is created after this).
 		 *********************************************************************/
 		void SetResources(ResourceManager* resources) noexcept { m_resources = resources; }
+
+		/// The ResourceManager set by SetResources, or nullptr (scripts' Scene.BeginPreload uses it).
+		ResourceManager* Resources() const noexcept { return m_resources; }
 
 		/*********************************************************************
 		 \brief  Write a new .scene file holding the default objects, without
@@ -158,7 +161,12 @@ namespace Crucible {
 		void SetPlaySessionActive(bool active) noexcept
 		{
 			m_playSession = active;
-			if (!active) m_persistent.clear();   // persistence lasts one play session
+			if (!active)
+			{
+				m_persistent.clear();   // persistence lasts one play session
+				m_gateClaimed = false;  // and so does the loading screen's claim
+				ClearHeld();
+			}
 		}
 		bool IsPlaySessionActive() const noexcept { return m_playSession; }
 
@@ -186,6 +194,46 @@ namespace Crucible {
 				 of its ancestors, was marked with DontDestroyOnLoad.
 		 *********************************************************************/
 		bool IsPersistent(Entity entity) const;
+
+		// ===================================================================
+		//  Load gate (the loading screen)
+		// ===================================================================
+
+		/// The prefab the engine spawns at the start of every play session as the loading
+		/// screen (Prefabs/LoadingScreen.cprefab, a path inside Assets / Resources).
+		static constexpr const char* kLoadingScreenPrefab = "Prefabs/Loading Screen/LoadingScreen.cprefab";
+
+		/*********************************************************************
+		 \brief  A loading screen takes over runtime scene changes (true), or
+				 gives them back (false).
+		 \details
+			While claimed, a New / Load / LoadAsset during play is HELD instead
+			of queued: the loading screen sees it (HasHeldLoad), preloads its
+			assets with a progress bar, then lets it through (ReleaseHeldLoad).
+			Every way of changing scene goes through this - Scene.Load,
+			Scene.Reload and a UIButton's LoadScene - unless the caller passes
+			bypassLoadGate. Releasing the claim lets a held load through, so a
+			destroyed loading screen never leaves the game stuck. Lasts one
+			play session; outside play nothing is ever held.
+		 *********************************************************************/
+		void SetLoadGate(bool claimed);
+		bool IsLoadGateClaimed() const noexcept { return m_gateClaimed; }
+
+		/// Whether a scene change is waiting for the loading screen.
+		bool HasHeldLoad() const noexcept { return m_held != Pending::None; }
+
+		/// Goes up by one every time a new scene change is held (a newer request replaces an older one).
+		std::uint32_t HeldLoadSerial() const noexcept { return m_heldSerial; }
+
+		/*********************************************************************
+		 \brief  The held scene's file text, for preloading its assets.
+		 \return false if nothing is held, the held change is a New scene
+				 (nothing to preload), or the file can't be read.
+		 *********************************************************************/
+		bool ReadHeldScene(std::string& text) const;
+
+		/// Lets the held scene change through: it is applied at the next frame's safe point.
+		void ReleaseHeldLoad();
 
 
 		// ===================================================================
@@ -288,6 +336,16 @@ namespace Crucible {
 		void NotifyChanged();
 		// The live DontDestroyOnLoad roots a scene change keeps (none outside play).
 		std::vector<Entity> KeepRoots();
+		// Whether a request now should be held for the loading screen.
+		bool ShouldHold(bool bypassLoadGate) const noexcept { return !bypassLoadGate && m_playSession && m_gateClaimed; }
+		// Holds a request for the loading screen (replacing an older held one).
+		void Hold(Pending kind, std::filesystem::path path, std::uint64_t asset);
+		void ClearHeld() noexcept
+		{
+			m_held = Pending::None;
+			m_heldPath.clear();
+			m_heldAsset = 0;
+		}
 
 		World&								 m_world;
 		Scene								 m_scene;
@@ -303,6 +361,12 @@ namespace Crucible {
 		std::vector<std::function<void()>>	 m_listeners;
 		std::vector<std::function<void()>>	 m_beforeSave;   // OnBeforeSave
 		std::vector<Entity>					 m_persistent;   // DontDestroyOnLoad roots; may hold dead handles
+
+		bool								 m_gateClaimed = false;   // SetLoadGate: a loading screen takes scene changes
+		Pending								 m_held = Pending::None;  // a scene change waiting for the loading screen
+		std::filesystem::path				 m_heldPath;
+		std::uint64_t						 m_heldAsset = 0;
+		std::uint32_t						 m_heldSerial = 0;
 	};
 
 #ifdef _MSC_VER

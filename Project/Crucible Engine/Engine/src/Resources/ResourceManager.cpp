@@ -17,10 +17,12 @@
 
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
+#include <set>
 #include <string_view>
 #include <unordered_set>
 
@@ -1052,6 +1054,175 @@ namespace Crucible {
         if (--it->second == 0) { m_pins.erase(it); }
 
     }   // ResourceManager::ReleaseKeepLoaded()
+
+    // ------------------------------------------------------------------------------------------------------------- //
+    //  PRELOADING
+    // ------------------------------------------------------------------------------------------------------------- //
+
+    namespace {
+
+        // Like CollectIds, but remembers which ids sit under a key naming a skybox (Skybox::
+        // skyboxAsset): that image is loaded as a cubemap, not a 2D texture. Insertion order is
+        // kept, so assets load in the order the scene lists them.
+        void CollectPreloadIds(const rapidjson::Value& value, bool underSkybox,
+                               std::vector<std::pair<AssetId, bool>>& out, std::unordered_set<AssetId>& seen) {
+            if (value.IsObject()) {
+                for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it) {
+                    std::string key(it->name.GetString(), it->name.GetStringLength());
+                    std::transform(key.begin(), key.end(), key.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+                    CollectPreloadIds(it->value, underSkybox || key.find("skybox") != std::string::npos, out, seen);
+                }
+            } else if (value.IsArray()) {
+                for (const rapidjson::Value& element : value.GetArray()) { CollectPreloadIds(element, underSkybox, out, seen); }
+            } else {
+                AssetId id = 0;
+                if (value.IsUint64()) {
+                    id = value.GetUint64();
+                } else if (value.IsString() && value.GetStringLength() == 16) {
+                    const char* text = value.GetString();
+                    if (std::all_of(text, text + 16, [](unsigned char c) { return std::isxdigit(c) != 0; })) { id = FromHex(text); }
+                }
+                if (id != 0 && seen.insert(id).second) { out.emplace_back(id, underSkybox); }
+            }
+        }
+
+    }   // anonymous namespace
+
+    std::size_t ResourceManager::BeginPreload(const std::string& sceneDocument) {
+
+        CancelPreload();
+
+        rapidjson::Document document;
+        document.Parse(sceneDocument.c_str(), sceneDocument.size());
+        if (document.HasParseError()) {
+            CRU_WARN("[Resources] BeginPreload: could not read the scene document - nothing preloaded");
+            return 0;
+        }
+
+        // Every id the scene mentions, then everything its prefabs mention (nested too): a
+        // script may spawn them as soon as the scene starts. Same reach as UnloadUnused's keep set,
+        // so nothing preloaded here is thrown away by the scene change.
+        std::vector<std::pair<AssetId, bool>> ids;
+        std::unordered_set<AssetId>           seen;
+        CollectPreloadIds(document, false, ids, seen);
+        for (std::size_t i = 0; i < ids.size(); ++i) {   // grows while it runs: nested prefabs
+            const AssetEntry* entry = m_assets.FindByGuid(ToGuid(ids[i].first));
+            if (!entry || entry->type != AssetType::Prefab) { continue; }
+            std::string text;
+            rapidjson::Document prefab;
+            if (!m_assets.ReadText(entry->virtualPath, text)) { continue; }
+            prefab.Parse(text.c_str(), text.size());
+            if (!prefab.HasParseError()) { CollectPreloadIds(prefab, false, ids, seen); }
+        }
+
+        // Ids -> what to load. Anything that isn't a loadable asset (entity ids, numbers that just
+        // look like ids, built-ins, scenes, scripts, audio) is skipped.
+        std::set<std::pair<AssetId, PreloadAction>> queued;   // an image can be both a texture and a skybox
+        for (const auto& [id, underSkybox] : ids) {
+            if (m_builtinNames.count(id) != 0) { continue; }
+
+            PreloadItem item;
+            item.id = id;
+            if (auto sub = m_subAssets.find(id); sub != m_subAssets.end()) {   // a model's own material: load the model
+                item.id     = sub->second.parent;
+                item.action = PreloadAction::Model;
+            }
+            const AssetEntry* entry = m_assets.FindByGuid(ToGuid(item.id));
+            if (!entry) { continue; }
+            if (item.id == id) {
+                switch (entry->type) {
+                case AssetType::Model:              item.action = PreloadAction::Model; break;
+                case AssetType::Material:           item.action = PreloadAction::Material; break;
+                case AssetType::Texture:            item.action = underSkybox ? PreloadAction::Cubemap : PreloadAction::Texture; break;
+                case AssetType::Font:               item.action = PreloadAction::Font; break;
+                case AssetType::Prefab:             item.action = PreloadAction::Prefab; break;
+                case AssetType::AnimatorController: item.action = PreloadAction::AnimatorController; break;
+                case AssetType::StateGraph:         item.action = PreloadAction::StateGraph; break;
+                case AssetType::BehaviorGraph:      item.action = PreloadAction::BehaviorGraph; break;
+                default: continue;
+                }
+            }
+            item.weight = std::max<std::uintmax_t>(entry->sizeBytes, 1);
+            if (IsResident(item) || !queued.emplace(item.id, item.action).second) { continue; }
+
+            m_preload.push_back(item);
+            m_preloadTotal += item.weight;
+        }
+
+        CRU_INFO("[Resources] Preloading {} assets ({} KB)", m_preload.size(), m_preloadTotal / 1024);
+        return m_preload.size();
+
+    }   // ResourceManager::BeginPreload()
+
+    float ResourceManager::StepPreload(double budgetMs) {
+
+        using Clock = std::chrono::steady_clock;
+        const Clock::time_point start = Clock::now();
+        do {
+            if (!IsPreloading()) { break; }
+            const PreloadItem& item = m_preload[m_preloadNext++];
+            Preload(item);   // a failure is logged once and cached by the Get*; it still counts as done
+            m_preloadDone += item.weight;
+        } while (std::chrono::duration<double, std::milli>(Clock::now() - start).count() < budgetMs);
+
+        if (!IsPreloading() && !m_preload.empty()) {
+            CRU_INFO("[Resources] Preload finished");
+            CancelPreload();   // nothing left: back to "no preload" (progress 1)
+        }
+        return PreloadProgress();
+
+    }   // ResourceManager::StepPreload()
+
+    float ResourceManager::PreloadProgress() const {
+
+        if (m_preloadTotal == 0) { return 1.0f; }
+        return static_cast<float>(static_cast<double>(m_preloadDone) / static_cast<double>(m_preloadTotal));
+
+    }   // ResourceManager::PreloadProgress()
+
+    void ResourceManager::CancelPreload() {
+
+        m_preload.clear();
+        m_preloadNext  = 0;
+        m_preloadTotal = 0;
+        m_preloadDone  = 0;
+
+    }   // ResourceManager::CancelPreload()
+
+    bool ResourceManager::IsResident(const PreloadItem& item) const {
+
+        const AssetId id = item.id;
+        switch (item.action) {
+        case PreloadAction::Model:              return m_meshes.count(id) != 0;
+        case PreloadAction::Material:           return m_materials.count(id) != 0;
+        case PreloadAction::Texture:            { auto it = m_textures.find(id); return it != m_textures.end() && it->second.triedSrgb; }
+        case PreloadAction::Cubemap:            return m_cubemaps.count(id) != 0;
+        case PreloadAction::Font:               { const AssetId font = ResolveFontId(id); return font == 0 || m_fonts.count(font) != 0; }
+        case PreloadAction::Prefab:             return m_prefabs.count(id) != 0;
+        case PreloadAction::AnimatorController: return m_controllers.count(id) != 0;
+        case PreloadAction::StateGraph:         return m_stateGraphs.count(id) != 0;
+        case PreloadAction::BehaviorGraph:      return m_behaviorGraphs.count(id) != 0;
+        }
+        return true;
+
+    }   // ResourceManager::IsResident()
+
+    void ResourceManager::Preload(const PreloadItem& item) {
+
+        // The same calls the systems make on first use, so the result lands in the same caches.
+        switch (item.action) {
+        case PreloadAction::Model:              GetMesh(item.id); break;   // GetRenderedModel + the first-primitive aliases
+        case PreloadAction::Material:           GetMaterial(item.id); break;
+        case PreloadAction::Texture:            GetTexture(item.id, true); break;   // UI images, particles: colour data
+        case PreloadAction::Cubemap:            GetCubemap(item.id); break;
+        case PreloadAction::Font:               GetFont(item.id); break;
+        case PreloadAction::Prefab:             GetPrefab(item.id); break;
+        case PreloadAction::AnimatorController: GetAnimatorController(item.id); break;
+        case PreloadAction::StateGraph:         GetStateGraph(item.id); break;
+        case PreloadAction::BehaviorGraph:      GetBehaviorGraph(item.id); break;
+        }
+
+    }   // ResourceManager::Preload()
 
     std::vector<LoadedResourceInfo> ResourceManager::ListLoaded() const {
 

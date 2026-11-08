@@ -25,7 +25,7 @@ namespace Crucible.Scripts
 
         public override void OnUpdate(float deltaTime)
         {
-            if (!pad.WasUsed(KeyCode.F)) return;
+            if (!pad.WasUsed(KeyCode.F) || LoadingScreen.IsLoading) return;
             if (!Scene.Load(menuScene)) Log.Error("ZooBackToMain: could not load " + menuScene);
         }
 

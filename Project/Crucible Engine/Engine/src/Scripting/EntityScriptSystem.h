@@ -99,6 +99,13 @@ namespace Crucible
 
 	private:
 		/*********************************************************************
+		 \brief  Spawns SceneManager::kLoadingScreenPrefab and marks it
+		         DontDestroyOnLoad, at the start of every play session. A
+		         missing prefab is a warning: scene changes are then instant.
+		 *********************************************************************/
+		void SpawnLoadingScreen();
+
+		/*********************************************************************
 		 \brief  Bookkeeping for one entity's script.
 		 *********************************************************************/
 		struct Record

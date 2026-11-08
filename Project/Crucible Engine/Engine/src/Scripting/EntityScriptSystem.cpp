@@ -14,6 +14,7 @@
 #include "Scene/SceneManager.h"
 #include "Systems/PlayMode.h"
 #include "Diagnostics/Logger.h"
+#include "AssetPipe/Assetmanager.h"
 #include <algorithm>
 #include <vector>
 
@@ -139,6 +140,13 @@ namespace Crucible
 		}
 		m_sceneChanged = false;
 		m_session = m_play.SessionRevision();
+
+#if CRUCIBLE_WITH_MONO
+		// A new play session: the engine's loading screen joins it before any script runs,
+		// so its script starts this frame with the rest (step 4).
+		if (sessionChanged && m_play.InSession())
+			SpawnLoadingScreen();
+#endif
 
 		// --- Step 2: destroy scripts whose ScriptComponent was removed.
 		for (const auto key : m_removed)
@@ -382,6 +390,32 @@ namespace Crucible
 		// --- Step 8: this frame's UI clicks have been seen by every script; forget
 		// them so UIButton.WasClicked etc. are true for one frame only.
 		ScriptBindings::EntityContext::ClearUIEvents();
+#endif
+	}
+
+	void EntityScriptSystem::SpawnLoadingScreen()
+	{
+#if CRUCIBLE_WITH_MONO
+		// Found by path, so no scene or script has to reference it. Cook copies every prefab
+		// into Resources with its .meta, so the packaged game finds it the same way.
+		AssetManager* assets = ScriptBindings::EntityContext::GetAssets();
+		const AssetEntry* entry = assets ? assets->Find(SceneManager::kLoadingScreenPrefab) : nullptr;
+		if (!entry)
+		{
+			CRU_USER_WARN("No loading screen: '{}' is not in the project - scene changes will switch instantly",
+			              SceneManager::kLoadingScreenPrefab);
+			return;
+		}
+		const Entity root = ScriptBindings::EntityContext::SpawnPrefab(entry->guid.m_Value);
+		if (!root.IsValid())
+		{
+			CRU_USER_WARN("No loading screen: '{}' could not be spawned - scene changes will switch instantly",
+			              SceneManager::kLoadingScreenPrefab);
+			return;
+		}
+		// Kept through every scene change. Its script claims the scene changes (SetLoadGate)
+		// once it starts; until then a scene change is instant.
+		m_scenes.DontDestroyOnLoad(root);
 #endif
 	}
 

@@ -1,7 +1,9 @@
 
 
 #include <algorithm>
+#include <fstream>
 #include <memory>
+#include <sstream>
 #include <utility>
 #include <system_error>
 
@@ -56,7 +58,12 @@ namespace Crucible {
 	// =======================================================================
 	//  Requests
 	// =======================================================================
-	void SceneManager::RequestNew() {
+	void SceneManager::RequestNew(bool bypassLoadGate) {
+		if (ShouldHold(bypassLoadGate))
+		{
+			Hold(Pending::New, {}, 0);
+			return;
+		}
 		m_pending = Pending::New;
 		m_pendingPath.clear();
 		m_pendingAsset = 0;
@@ -87,12 +94,17 @@ namespace Crucible {
 		return true;
 	}
 
-	bool SceneManager::RequestLoad(const std::filesystem::path& file) {
+	bool SceneManager::RequestLoad(const std::filesystem::path& file, bool bypassLoadGate) {
 		std::error_code ec;
 		if (!std::filesystem::is_regular_file(file, ec))
 		{
 			CRU_USER_ERROR("SceneManager: cannot load '{}' - file does not exist", file.string());
 			return false;
+		}
+		if (ShouldHold(bypassLoadGate))
+		{
+			Hold(Pending::Load, file, 0);
+			return true;
 		}
 
 		m_pending = Pending::Load;
@@ -101,7 +113,7 @@ namespace Crucible {
 		return true;
 	}
 
-	bool SceneManager::RequestLoadAsset(std::uint64_t sceneAsset) {
+	bool SceneManager::RequestLoadAsset(std::uint64_t sceneAsset, bool bypassLoadGate) {
 		if (m_resources == nullptr)
 		{
 			CRU_USER_ERROR("SceneManager: cannot load scene {:X} - no ResourceManager to load it through", sceneAsset);
@@ -114,11 +126,66 @@ namespace Crucible {
 						   m_resources->GetName(sceneAsset));
 			return false;
 		}
+		if (ShouldHold(bypassLoadGate))
+		{
+			Hold(Pending::LoadAsset, {}, sceneAsset);
+			return true;
+		}
 
 		m_pending = Pending::LoadAsset;
 		m_pendingAsset = sceneAsset;
 		m_pendingPath.clear();
 		return true;
+	}
+
+	// =======================================================================
+	//  Load gate
+	// =======================================================================
+	void SceneManager::Hold(Pending kind, std::filesystem::path path, std::uint64_t asset) {
+		// A plain request still queued from before the claim is superseded, as "last wins".
+		m_pending = Pending::None;
+		m_pendingPath.clear();
+		m_pendingAsset = 0;
+
+		m_held = kind;
+		m_heldPath = std::move(path);
+		m_heldAsset = asset;
+		++m_heldSerial;
+	}
+
+	void SceneManager::SetLoadGate(bool claimed) {
+		m_gateClaimed = claimed && m_playSession;
+		if (!m_gateClaimed && HasHeldLoad())
+		{
+			ReleaseHeldLoad();   // nobody left to show it: load straight away
+		}
+	}
+
+	bool SceneManager::ReadHeldScene(std::string& text) const {
+		switch (m_held)
+		{
+		case Pending::LoadAsset:
+			return m_resources != nullptr && m_resources->ReadScene(m_heldAsset, text);
+		case Pending::Load: {
+			std::ifstream in(m_heldPath, std::ios::binary);
+			if (!in) return false;
+			std::ostringstream buffer;
+			buffer << in.rdbuf();
+			text = buffer.str();
+			return true;
+		}
+		case Pending::New:
+		case Pending::None:
+			break;
+		}
+		return false;
+	}
+
+	void SceneManager::ReleaseHeldLoad() {
+		if (!HasHeldLoad()) return;
+		m_pending = std::exchange(m_held, Pending::None);
+		m_pendingPath = std::exchange(m_heldPath, std::filesystem::path{});
+		m_pendingAsset = std::exchange(m_heldAsset, std::uint64_t{ 0 });
 	}
 
 	void SceneManager::ApplyPending() {
@@ -275,6 +342,8 @@ namespace Crucible {
 		m_path  = snapshot.path;
 		m_dirty = snapshot.dirty;
 		m_persistent.clear();   // every handle is stale now
+		m_gateClaimed = false;  // the loading screen was part of the play world
+		ClearHeld();
 		return true;
 	}
 
