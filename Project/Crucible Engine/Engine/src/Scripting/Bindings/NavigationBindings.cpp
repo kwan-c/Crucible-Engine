@@ -410,6 +410,9 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.FlowFieldSurface::SetFloodRadiusInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_floodRadius>);
 		Add("Crucible.FlowFieldSurface::GetRebuildDistanceInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_rebuildDistance>);
 		Add("Crucible.FlowFieldSurface::SetRebuildDistanceInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_rebuildDistance>);
+		// Read by the next bake (Play, or Navigation.Rebake): Jean David, 10 Nov 2026
+		Add("Crucible.FlowFieldSurface::GetMaxWalkableSlopeInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_maxWalkableSlope>);
+		Add("Crucible.FlowFieldSurface::SetMaxWalkableSlopeInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_maxWalkableSlope>);
 
 		// Navigation: grid queries
 		Add("Crucible.Navigation::IsWalkableInternal", &ManagedNavigationIsWalkable);

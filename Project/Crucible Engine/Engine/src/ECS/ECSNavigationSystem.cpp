@@ -28,7 +28,8 @@
 *                Dynamic agents: a dynamic RigidBody is moved by physics and
 *                the agent steers only its XZ velocity (knockback fades at
 *                m_acceleration; no steering while airborne)
-*    -v1.2       RequestBake(); a HeightField collider (terrain) is always
+*    -v1.2       FlowFieldSurface::m_maxWalkableSlope instead of a fixed
+*                35 degrees; RequestBake(); a HeightField collider (terrain) is always
 *                ground, never an obstacle: its heights come from the
 *                sampling like any other floor
 *
@@ -1198,7 +1199,7 @@ namespace Crucible {
         // ramp is "taller than a step" and would wall itself off.
         if (!m_physics) m_physics = m_systems.FindSystem<ECSPhysicsSystem>();
         if (m_playMode.State() == PlayState::Playing && m_physics && m_physics->IsInSession()
-            && SampleTerrain(settings, surface.m_stepHeight)) {
+            && SampleTerrain(settings, surface.m_stepHeight, surface.m_maxWalkableSlope)) {
 
             m_terrain = &m_heightTerrain;
             std::size_t kept = 0;
@@ -1238,8 +1239,9 @@ namespace Crucible {
         \details
         A cell is a wall when:
           - nothing is under it (a hole, or past the edge of the floor);
-          - its surface is steeper than kMaxSlopeDegrees (35, Jean David's
-            limit, for players and enemies alike);
+          - its surface is steeper than maxSlopeDegrees (the surface's
+            m_maxWalkableSlope, 35 by default; the level generator sets the
+            same limit on the player);
           - it is a LEDGE: higher than a neighbour by more than the slope
             between them explains, plus the step height. That is what tells a
             crate's flat top (1 m above the flat floor beside it, where flat
@@ -1259,9 +1261,9 @@ namespace Crucible {
         False if nothing was hit at all (no colliders under the surface): the
         caller then keeps the flat ground.
     */
-    bool ECSNavigationSystem::SampleTerrain(const NavGridSettings& settings, float stepHeight) {
+    bool ECSNavigationSystem::SampleTerrain(const NavGridSettings& settings, float stepHeight, float maxSlopeDegrees) {
 
-        constexpr float kMaxSlopeDegrees = 35.0f;
+        const float slopeLimit = std::clamp(maxSlopeDegrees, 1.0f, 89.0f);   // a vertical limit would make every wall walkable
         constexpr long long kMaxSamples  = 1000000;   // one ray each; past this, bigger cells are the fix (NavGrid says so too)
 
         m_groundEntities.clear();
@@ -1308,8 +1310,8 @@ namespace Crucible {
 
         // 2. Steep cells, then ledges between each pair of side-by-side cells
         // (each pair once: the right and the forward neighbour).
-        const float maxSlopeTan = std::tan(glm::radians(kMaxSlopeDegrees));
-        const float minNormalY  = std::cos(glm::radians(kMaxSlopeDegrees));
+        const float maxSlopeTan = std::tan(glm::radians(slopeLimit));
+        const float minNormalY  = std::cos(glm::radians(slopeLimit));
 
         // How steep a surface is, as rise per metre, from its normal; capped
         // at the walkable limit so a wall's normal can't excuse a huge jump.

@@ -200,7 +200,7 @@ namespace Crucible {
         bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
         bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
                    float distance, EntityHit& hit) const;
-        bool SampleTerrain(const NavGridSettings& settings, float stepHeight);
+        bool SampleTerrain(const NavGridSettings& settings, float stepHeight, float maxSlopeDegrees);
         void DrawGrid() const;
         void DrawArrows() const;
 
