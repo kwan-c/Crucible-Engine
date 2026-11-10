@@ -3,7 +3,7 @@
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         Internal calls behind C# Physics.Raycast and
 *                Physics.Explode (ManagedScripts/Runtime/Physics.cs),
 *                RigidBody.AddExplosionForce and RigidBody.FreezeRotation
@@ -16,6 +16,10 @@
 *                explosions and toppling over on death; Physics.Raycast with
 *                a layer mask, Physics.SphereCast, Physics.CheckSphere and
 *                CharacterController.Center, for the enemies' position checks
+*    -v1.3       (Jean David Vidal Cruzado) Physics.OverlapSphereNonAlloc,
+*                OverlapBoxNonAlloc, OverlapCapsuleNonAlloc, RaycastNonAlloc
+*                and CapsuleCast: the entity queries ECSPhysicsSystem already
+*                had, for melee, blasts, spawning and objectives
 *
 * \details
 *    Bindings only - Physics/ and ECSPhysicsSystem (Hugo's) are unchanged.
@@ -45,9 +49,12 @@
 #include "ECS/ECSPhysicsSystem.h"
 #include "ECS/Systems/EventBus/EventBuses.h"
 #if CRUCIBLE_WITH_MONO
+#include <algorithm>   // std::sort, RaycastAll
 #include <cmath>
+#include <cstddef>
 #include <vector>
 #include <mono/metadata/loader.h>
+#include <mono/metadata/object.h>   // MonoArray, for the NonAlloc results
 
 namespace Crucible::ScriptBindings
 {
@@ -541,6 +548,201 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		// ======================================================================
+		// Physics.OverlapSphereNonAlloc / OverlapBoxNonAlloc / OverlapCapsuleNonAlloc,
+		// RaycastNonAlloc and CapsuleCast (Jean David, 10 Nov 2026)
+		//
+		// Unity's non-allocating forms: C# passes the results array and gets the
+		// count, so a horde asking every frame makes no garbage. The C++ side
+		// writes into a C# scratch array (ints, or blittable hits) that
+		// Physics.cs sizes to the caller's results; entities destroyed this
+		// frame (their bodies linger until physics steps) are left out.
+		// ======================================================================
+
+		// Must match Physics.NativeHit in Physics.cs, field for field.
+		struct ScriptHit
+		{
+			int32_t    index;
+			int32_t    generation;
+			ScriptVec3 point;
+			ScriptVec3 normal;
+			float      distance;
+		};
+		static_assert(sizeof(ScriptHit) == 36, "ScriptHit must match Physics.NativeHit in Physics.cs");
+
+		bool IsAlive(const Entity& entity)
+		{
+			Entity alive;
+			return EntityContext::ResolveEntity(static_cast<int32_t>(entity.index), static_cast<int32_t>(entity.generation), alive);
+		}
+
+		// The live entities of `found` into a C# int[] of (index, generation)
+		// pairs: at most maxCount (the caller's results length), and never more
+		// than the scratch array holds. Returns how many were written.
+		int32_t WriteEntities(const std::vector<Entity>& found, MonoArray* pairs, int32_t maxCount)
+		{
+			const std::size_t room     = pairs ? static_cast<std::size_t>(mono_array_length(pairs)) / 2 : 0;
+			const std::size_t capacity = maxCount > 0 ? std::min(room, static_cast<std::size_t>(maxCount)) : 0;
+			std::size_t written = 0;
+			for (const Entity& entity : found)
+			{
+				if (written == capacity)
+					break;
+				if (!IsAlive(entity))
+					continue;
+				*mono_array_addr(pairs, int32_t, written * 2)     = static_cast<int32_t>(entity.index);
+				*mono_array_addr(pairs, int32_t, written * 2 + 1) = static_cast<int32_t>(entity.generation);
+				++written;
+			}
+			return static_cast<int32_t>(written);
+		}
+
+		int32_t ManagedPhysicsOverlapSphere(const ScriptVec3* center, float radius, uint32_t layerMask, int32_t ignoreIndex,
+		                                    int32_t ignoreGeneration, MonoArray* pairs, int32_t maxCount) noexcept
+		{
+			try
+			{
+				if (!center || !pairs || !physics || !EntityContext::InPlaySession() || !IsFinite(*center) ||
+				    !(radius > 0.0f) || !std::isfinite(radius))
+					return 0;
+				thread_local std::vector<Entity> found;   // reused between calls, main thread only
+				physics->OverlapSphere(Math::vec3(center->x, center->y, center->z), radius, found,
+				                       MakeFilter(layerMask, ignoreIndex, ignoreGeneration));
+				return WriteEntities(found, pairs, maxCount);
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedPhysicsOverlapBox(const ScriptVec3* center, const ScriptVec3* halfExtents, const ScriptQuat* orientation,
+		                                 uint32_t layerMask, int32_t ignoreIndex, int32_t ignoreGeneration, MonoArray* pairs,
+		                                 int32_t maxCount) noexcept
+		{
+			try
+			{
+				if (!center || !halfExtents || !orientation || !pairs || !physics || !EntityContext::InPlaySession() ||
+				    !IsFinite(*center) || !IsFinite(*halfExtents) || !std::isfinite(orientation->x) ||
+				    !std::isfinite(orientation->y) || !std::isfinite(orientation->z) || !std::isfinite(orientation->w))
+					return 0;
+				thread_local std::vector<Entity> found;
+				const Math::quat rotation(orientation->w, orientation->x, orientation->y, orientation->z);   // glm takes w first
+				physics->OverlapBox(Math::vec3(center->x, center->y, center->z),
+				                    Math::vec3(halfExtents->x, halfExtents->y, halfExtents->z), rotation, found,
+				                    MakeFilter(layerMask, ignoreIndex, ignoreGeneration));
+				return WriteEntities(found, pairs, maxCount);
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedPhysicsOverlapCapsule(const ScriptVec3* point0, const ScriptVec3* point1, float radius, uint32_t layerMask,
+		                                     int32_t ignoreIndex, int32_t ignoreGeneration, MonoArray* pairs, int32_t maxCount) noexcept
+		{
+			try
+			{
+				if (!point0 || !point1 || !pairs || !physics || !EntityContext::InPlaySession() || !IsFinite(*point0) ||
+				    !IsFinite(*point1) || !(radius > 0.0f) || !std::isfinite(radius))
+					return 0;
+				thread_local std::vector<Entity> found;
+				physics->OverlapCapsule(Math::vec3(point0->x, point0->y, point0->z), Math::vec3(point1->x, point1->y, point1->z),
+				                        radius, found, MakeFilter(layerMask, ignoreIndex, ignoreGeneration));
+				return WriteEntities(found, pairs, maxCount);
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		// Every body along the ray, nearest first, into a C# NativeHit[].
+		int32_t ManagedPhysicsRaycastAll(const ScriptVec3* origin, const ScriptVec3* direction, float maxDistance, uint32_t layerMask,
+		                                 int32_t ignoreIndex, int32_t ignoreGeneration, MonoArray* hits, int32_t maxCount) noexcept
+		{
+			try
+			{
+				if (!origin || !direction || !hits || !physics || !EntityContext::InPlaySession() || !IsFinite(*origin) ||
+				    !IsFinite(*direction) || !(maxDistance > 0.0f))
+					return 0;
+				const Math::vec3 heading(direction->x, direction->y, direction->z);
+				const float length = std::sqrt(heading.x * heading.x + heading.y * heading.y + heading.z * heading.z);
+				if (!(length > 1e-6f))
+					return 0;
+
+				thread_local std::vector<EntityHit> found;
+				physics->RaycastAll(Math::vec3(origin->x, origin->y, origin->z), heading / length,
+				                    std::isfinite(maxDistance) ? maxDistance : 1.0e6f, found,
+				                    MakeFilter(layerMask, ignoreIndex, ignoreGeneration));
+				std::sort(found.begin(), found.end(), [](const EntityHit& a, const EntityHit& b) { return a.distance < b.distance; });
+
+				const std::size_t capacity = maxCount > 0 ? std::min(static_cast<std::size_t>(mono_array_length(hits)), static_cast<std::size_t>(maxCount)) : 0;
+				std::size_t written = 0;
+				for (const EntityHit& hit : found)
+				{
+					if (written == capacity)
+						break;
+					if (!IsAlive(hit.entity))
+						continue;
+					ScriptHit& out = *mono_array_addr(hits, ScriptHit, written);
+					out.index      = static_cast<int32_t>(hit.entity.index);
+					out.generation = static_cast<int32_t>(hit.entity.generation);
+					out.point      = {hit.point.x, hit.point.y, hit.point.z};
+					out.normal     = {hit.normal.x, hit.normal.y, hit.normal.z};
+					out.distance   = hit.distance;
+					++written;
+				}
+				return static_cast<int32_t>(written);
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		// A capsule from point1 to point2 swept along direction: the nearest hit.
+		// Same rules as SphereCast (a body overlapped at the start is hit at 0).
+		int32_t ManagedPhysicsCapsuleCast(const ScriptVec3* point1, const ScriptVec3* point2, float radius, const ScriptVec3* direction,
+		                                  float maxDistance, uint32_t layerMask, int32_t ignoreIndex, int32_t ignoreGeneration,
+		                                  int32_t* outIndex, int32_t* outGeneration, ScriptVec3* outPoint, ScriptVec3* outNormal,
+		                                  float* outDistance) noexcept
+		{
+			try
+			{
+				if (!point1 || !point2 || !direction || !outIndex || !outGeneration || !outPoint || !outNormal || !outDistance)
+					return 0;
+				*outIndex = 0;
+				*outGeneration = 0;
+				if (!physics || !EntityContext::InPlaySession() || !IsFinite(*point1) || !IsFinite(*point2) || !IsFinite(*direction) ||
+				    !(maxDistance > 0.0f) || !(radius > 0.0f) || !std::isfinite(radius))
+					return 0;
+				const Math::vec3 heading(direction->x, direction->y, direction->z);
+				const float length = std::sqrt(heading.x * heading.x + heading.y * heading.y + heading.z * heading.z);
+				if (!(length > 1e-6f))
+					return 0;
+
+				EntityHit hit;
+				if (!physics->CapsuleCast(Math::vec3(point1->x, point1->y, point1->z), Math::vec3(point2->x, point2->y, point2->z), radius,
+				                          heading / length, hit, std::isfinite(maxDistance) ? maxDistance : 1.0e6f,
+				                          MakeFilter(layerMask, ignoreIndex, ignoreGeneration)))
+					return 0;
+				if (!IsAlive(hit.entity))
+					return 0;
+				*outIndex = static_cast<int32_t>(hit.entity.index);
+				*outGeneration = static_cast<int32_t>(hit.entity.generation);
+				*outPoint = {hit.point.x, hit.point.y, hit.point.z};
+				*outNormal = {hit.normal.x, hit.normal.y, hit.normal.z};
+				*outDistance = hit.distance;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		template <typename Fn>
 		void Add(const char* name, Fn* function)
 		{
@@ -619,6 +821,11 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Physics::RaycastMaskedInternal", &ManagedPhysicsRaycastMasked);
 		Add("Crucible.Physics::SphereCastInternal", &ManagedPhysicsSphereCast);
 		Add("Crucible.Physics::CheckSphereInternal", &ManagedPhysicsCheckSphere);
+		Add("Crucible.Physics::OverlapSphereInternal", &ManagedPhysicsOverlapSphere);
+		Add("Crucible.Physics::OverlapBoxInternal", &ManagedPhysicsOverlapBox);
+		Add("Crucible.Physics::OverlapCapsuleInternal", &ManagedPhysicsOverlapCapsule);
+		Add("Crucible.Physics::RaycastAllInternal", &ManagedPhysicsRaycastAll);
+		Add("Crucible.Physics::CapsuleCastInternal", &ManagedPhysicsCapsuleCast);
 		Add("Crucible.Physics::ExplodeInternal", &ManagedPhysicsExplode);
 		Add("Crucible.RigidBody::AddExplosionForceInternal", &ManagedRigidBodyAddExplosionForce);
 		Add("Crucible.RigidBody::GetFreezeRotationInternal", &ManagedRigidBodyGetFreezeRotation);

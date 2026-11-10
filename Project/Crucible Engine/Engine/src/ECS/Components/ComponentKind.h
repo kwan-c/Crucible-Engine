@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -31,6 +31,7 @@
 *                (33-35); NotToggleable and RuntimeOnly traits
 *    -v1.5       NetworkObjectAuthoring kind (39): persistent networking
 *                settings of an object (Networking Phase 14)
+*    -v1.6       Terrain kind (40): generated ground (Jean David)
 *
 *
 **************************************************************************/
@@ -103,8 +104,9 @@ namespace Crucible
 		FlowFieldAgent = 37,     // Navigation: one enemy's legs, Unity's NavMeshAgent (Navigation/NavigationComponents.h)
 		StateGraphAgent = 38,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
 		NetworkObjectAuthoring = 39,   // Network: an object's saved networking settings (Network/NetComponents.h)
+		Terrain = 40,            // Terrain: generated uneven ground, drawn and collided with (Terrain/TerrainComponents.h)
 
-		MAXCOMPONENT = 40
+		MAXCOMPONENT = 41
 	};
 
 
@@ -319,5 +321,6 @@ namespace Crucible
  X(FlowFieldAgent)                                                             \
  X(StateGraphAgent)                                                            \
  X(NetworkObjectAuthoring)                                                     \
+ X(Terrain)                                                                    \
 
 }

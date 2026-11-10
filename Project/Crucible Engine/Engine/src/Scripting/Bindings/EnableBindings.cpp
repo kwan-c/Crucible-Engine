@@ -79,6 +79,7 @@ namespace Crucible::ScriptBindings
 			case 21: return ComponentTypeId<FlowFieldAgent>();     // Hugo, 7 Nov 2026: the AI components
 			case 22: return ComponentTypeId<FlowFieldSurface>();
 			case 23: return ComponentTypeId<StateGraphAgent>();
+			case 24: return ComponentTypeId<Terrain>();             // Jean David, 10 Nov 2026: generated ground
 			default: return kInvalid; // 0 = Transform: mandatory
 			}
 		}

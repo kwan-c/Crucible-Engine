@@ -1,9 +1,11 @@
 /*************************************************************************
 * \file:         ECSNavigationSystem.cpp
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Hugo Low Ren Hao (main author),
+*                Jean David Vidal Cruzado (v1.2: terrain, re-bake on request)
+* \par:          Email: low.h@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          31 October 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -26,6 +28,9 @@
 *                Dynamic agents: a dynamic RigidBody is moved by physics and
 *                the agent steers only its XZ velocity (knockback fades at
 *                m_acceleration; no steering while airborne)
+*    -v1.2       RequestBake(); a HeightField collider (terrain) is always
+*                ground, never an obstacle: its heights come from the
+*                sampling like any other floor
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
@@ -84,6 +89,8 @@ namespace Crucible {
                 // A capsule stands along its local Y. m_height is the full height, ends
                 // included, but never less than the two end caps together.
                 case ShapeType::Capsule: half = Math::vec3(collider.m_radius, std::max(collider.m_height * 0.5f, collider.m_radius), collider.m_radius); break;
+                // Never an obstacle (Bake skips it): terrain is ground.
+                case ShapeType::HeightField: break;
             }
 
             // Transform all 8 corners and keep the smallest and biggest of each axis.
@@ -366,13 +373,20 @@ namespace Crucible {
         const PlayState state = m_playMode.State();
         if (m_lastState == PlayState::Edit && state == PlayState::Playing) { m_bakePending = true; m_physicsStepped = false; }
 
+        // A script changed the level mid-Play (RequestBake): bake again, and wait
+        // for a physics step AFTER this frame, because the step physics reported
+        // last frame came before the new bodies existed.
+        const bool rebakeNow = m_rebakeRequested && state == PlayState::Playing;
+        m_rebakeRequested = false;
+        if (rebakeNow) { m_bakePending = true; m_physicsStepped = false; }
+
         // And not before physics has stepped once: its bodies are created when
         // Play starts (it runs after this system, in PostUpdate), and the bake
         // samples the ground heights from them. Without the wait, the first
         // bake's rays would find nothing and the level would bake flat. It is
         // a frame or two; with no physics system at all there is nothing to wait for.
         if (!m_physics) m_physics = m_systems.FindSystem<ECSPhysicsSystem>();
-        if (state == PlayState::Playing && (!m_physics || m_physics->GetStepsLastFrame() > 0)) m_physicsStepped = true;
+        if (!rebakeNow && state == PlayState::Playing && (!m_physics || m_physics->GetStepsLastFrame() > 0)) m_physicsStepped = true;
 
         // Not on the very frame Play starts, though, if the surface's world
         // matrix isn't worked out yet: the Game starts Playing on its first
@@ -1162,6 +1176,7 @@ namespace Crucible {
             .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
                 if (collider.m_isTrigger || collider.m_layer != PhysicsLayer::NonMoving || !transform.valid) return;
                 if (world.HasComponent<RigidBody>(entity)) return;
+                if (collider.m_type == ShapeType::HeightField) return;   // terrain is ground: SampleTerrain reads its heights
                 m_obstacles.push_back(WorldBounds(collider, transform.matrix));
                 m_obstacleEntities.push_back(entity);
             });
@@ -1208,6 +1223,7 @@ namespace Crucible {
             return false;
         }
         m_field.BuildCostField(m_grid, surface.m_wallAdjacencyCost);
+        ++m_bakeCount;
         return true;
 
     }   // ECSNavigationSystem::Bake()

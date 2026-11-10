@@ -166,5 +166,6 @@ namespace Crucible
 		void RegisterScreenBindings();         // Bindings/ScreenBindings.cpp         (C# Screen: window mode)
 		void RegisterNavigationBindings();     // Bindings/NavigationBindings.cpp     (C# FlowFieldAgent, FlowFieldSurface)
 		void RegisterStateGraphBindings();     // Bindings/StateGraphBindings.cpp     (C# StateGraphAgent: variables, current state)
+		void RegisterTerrainBindings();        // Bindings/TerrainBindings.cpp        (C# Terrain: Build, GroundHeight)
 	}
 }

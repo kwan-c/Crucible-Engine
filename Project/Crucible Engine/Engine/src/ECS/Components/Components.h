@@ -51,6 +51,7 @@
 #include"Physics/PhysicsComponents.h"
 #include"Player/PlayerComponents.h"   // PlayerController, CameraOrbit (moved out of PhysicsComponents.h)
 #include"Navigation/NavigationComponents.h"   // FlowFieldSurface, FlowFieldAgent
+#include"Terrain/TerrainComponents.h"         // Terrain
 #include"AI/AIComponents.h"                   // StateGraphAgent
 #include"Audio/AudioComponents.h"
 #include"../Core/ECSCore.h"   // Entity (HierarchyNode links)
@@ -845,6 +846,7 @@ namespace Crucible
 	template <> struct RequiresComponents<PlayerController> { using type = ComponentTypeList<CharacterController>; };
 	template <> struct RequiresComponents<AnimatedModel>    { using type = ComponentTypeList<MeshRenderer>; };
 	template <> struct RequiresComponents<MaterialParams>   { using type = ComponentTypeList<MeshRenderer>; };
+	template <> struct RequiresComponents<Terrain>          { using type = ComponentTypeList<MeshRenderer>; };   // it draws through the MeshRenderer
 	template <> struct RequiresComponents<UIImage>          { using type = ComponentTypeList<UIRect>; };
 	template <> struct RequiresComponents<UIText>           { using type = ComponentTypeList<UIRect>; };
 	template <> struct RequiresComponents<UISlider>         { using type = ComponentTypeList<UIRect>; };

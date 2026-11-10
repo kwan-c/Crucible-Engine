@@ -1,11 +1,13 @@
 /*************************************************************************
 * \file:         PhysicsSystem.h
 * \author:       Hugo Low Ren Hao (main author),
-*                Tan Chun Kwang Xavier (v1.3: gravity, damping, axis locks)
+*                Tan Chun Kwang Xavier (v1.3: gravity, damping, axis locks),
+*                Jean David Vidal Cruzado (v1.10: heightfields)
 * \par:          Email: low.h@digipen.edu,
-*                Email: chunkwangxavier.tan@digipen.edu
+*                Email: chunkwangxavier.tan@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          22 September 2026
-* \version       1.9
+* \version       1.10
 * \brief
 *                Crucible::Physics: the public face of the Jolt physics
 *                world. Bodies, characters, joints, raycasts and forces,
@@ -34,6 +36,8 @@
 *                Raycast, plus RaycastAll, SphereCast, CapsuleCast,
 *                OverlapSphere, OverlapBox and OverlapCapsule
 *    -v1.9       GetCenterOfMass and ClosestPointOnBody (for explosions)
+*    -v1.10      ShapeType::HeightField: static uneven ground from a
+*                HeightGrid (Math/HeightGrid.h), for generated terrain
 *
 **************************************************************************/
 #pragma once
@@ -42,12 +46,15 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>   // ForEachContact
+#include <memory>       // ShapeDesc::m_heightGrid
 #include <vector>       // RaycastAll, Overlap*
 
 // Crucible engine
 #include "EngineExport.h"
 #include "Math/Math.h"
 #include "Physics/PhysicsLayers.h"
+
+namespace Crucible { struct HeightGrid; }   // Math/HeightGrid.h: only PhysicsShapes.cpp needs the whole thing
 
 // ---------------------------------------------------------------------------
 // Crucible::Physics
@@ -131,7 +138,8 @@ namespace Crucible {
 
         Box,
         Sphere,
-        Capsule     // the character shape: a cylinder with rounded ends, so it does not snag on steps
+        Capsule,    // the character shape: a cylinder with rounded ends, so it does not snag on steps
+        HeightField // uneven ground from a HeightGrid (terrain). Static bodies only: Jolt cannot move one
 
     };  // SHAPETYPE ENUM
 
@@ -142,6 +150,13 @@ namespace Crucible {
         float      m_radius      = 0.5f;                           // Sphere, Capsule
         float      m_halfHeight  = 0.5f;                           // Capsule: half the straight middle; the caps are extra
         Math::vec3 m_center      = Math::vec3(0.0f, 0.0f, 0.0f);   // Unity's Collider.center: the shape's offset from the body's origin
+
+        // HeightField only. The grid is shared, never copied: a new grid is a new
+        // pointer, which is how a rebuild is spotted (the same pointer = the same
+        // ground). m_gridScale stretches it (the entity's world scale), so a
+        // scaled terrain entity collides where its mesh is drawn.
+        std::shared_ptr<const HeightGrid> m_heightGrid;
+        Math::vec3                        m_gridScale = Math::vec3(1.0f, 1.0f, 1.0f);
 
     };  // SHAPEDESC STRUCT
 

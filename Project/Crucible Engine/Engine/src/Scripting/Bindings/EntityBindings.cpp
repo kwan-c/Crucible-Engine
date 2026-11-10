@@ -154,6 +154,7 @@ namespace Crucible::ScriptBindings
 			FlowFieldAgent = 21,
 			FlowFieldSurface = 22,
 			StateGraphAgent = 23,
+			Terrain = 24,      // Jean David, 10 Nov 2026: generated ground
 		};
 
 		/*********************************************************************
@@ -245,6 +246,9 @@ namespace Crucible::ScriptBindings
 					return 1;
 				case ScriptComponentKind::StateGraphAgent:
 					*out = world.HasComponent<Crucible::StateGraphAgent>(entity) ? 1 : 0;
+					return 1;
+				case ScriptComponentKind::Terrain:
+					*out = world.HasComponent<Crucible::Terrain>(entity) ? 1 : 0;
 					return 1;
 				}
 				return 0;

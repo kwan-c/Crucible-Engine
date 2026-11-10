@@ -3,12 +3,13 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          1 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                See DebugDrawSystem.h for what is drawn and the colour key.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       HeightField colliders are not outlined (Jean David)
 *
 **************************************************************************/
 
@@ -83,6 +84,10 @@ namespace Crucible {
 					break;
 				case ShapeType::Capsule:
 					DebugDraw::Capsule(center, c.m_radius, std::max(c.m_height * 0.5f - c.m_radius, 0.0f), t.rotation, style);
+					break;
+				case ShapeType::HeightField:
+					// Not outlined: the terrain's own mesh IS its collision shape (same grid, same
+					// triangles), and a wireframe of thousands of cells would bury the view.
 					break;
 			}
 		}

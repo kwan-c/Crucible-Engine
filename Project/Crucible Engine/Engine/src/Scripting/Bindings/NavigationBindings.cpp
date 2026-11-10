@@ -21,7 +21,8 @@
 *    changing them from a script would do nothing until the next Play.
 *
 *    Navigation: IsWalkable and IsPathClear on the baked grid, through
-*    ECSNavigationSystem::Active().
+*    ECSNavigationSystem::Active(); Rebake (RequestBake) for a script that
+*    built new ground mid-Play, and IsBaked to know when it is ready.
 *
 *    Same shape as PlayerControllerBindings.cpp: 1 = done, 0 = refused (dead
 *    entity, no such component, a bad value); never throws into C#.
@@ -300,6 +301,50 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		// Navigation.Rebake (Jean David, 10 Nov 2026): bakes again once physics has
+		// built the new bodies. 0 with no navigation system or outside Play.
+		int32_t ManagedNavigationRebake() noexcept
+		{
+			try
+			{
+				ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				if (!navigation || !EntityContext::InPlaySession())
+					return 0;
+				navigation->RequestBake();
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedNavigationGetBakeCount() noexcept
+		{
+			try
+			{
+				const ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				return navigation ? static_cast<int32_t>(navigation->BakeCount()) : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedNavigationIsBaked() noexcept
+		{
+			try
+			{
+				const ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				return navigation && navigation->IsBaked() ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		int32_t ManagedNavigationIsPathClear(const ScriptVec3* from, const ScriptVec3* to) noexcept
 		{
 			try
@@ -369,6 +414,9 @@ namespace Crucible::ScriptBindings
 		// Navigation: grid queries
 		Add("Crucible.Navigation::IsWalkableInternal", &ManagedNavigationIsWalkable);
 		Add("Crucible.Navigation::IsPathClearInternal", &ManagedNavigationIsPathClear);
+		Add("Crucible.Navigation::RebakeInternal", &ManagedNavigationRebake);
+		Add("Crucible.Navigation::IsBakedInternal", &ManagedNavigationIsBaked);
+		Add("Crucible.Navigation::GetBakeCountInternal", &ManagedNavigationGetBakeCount);
 	}
 }
 #endif

@@ -42,6 +42,8 @@ namespace Crucible
         Sphere = 1,
         /// <summary>Reads Radius and Height (total height, rounded ends included).</summary>
         Capsule = 2,
+        /// <summary>Reads no size: the ground of the Terrain on the same entity. Static only (no RigidBody).</summary>
+        HeightField = 3,
     }
 
     /// <summary>What a collider collides with. Same values as Physics/PhysicsLayers.h.</summary>
