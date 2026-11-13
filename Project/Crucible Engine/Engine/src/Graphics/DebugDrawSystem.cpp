@@ -49,6 +49,7 @@ namespace Crucible {
 		const glm::vec4 kAudioRangeDim   { 0.22f, 0.40f, 0.55f, 1.0f };	  // Max Distance with Logarithmic rolloff (still heard beyond it)
 		const glm::vec4 kAudioOff        { 0.50f, 0.50f, 0.50f, 1.0f };	  // switched off, or no clip
 		const glm::vec4 kAudioListener   { 0.95f, 0.95f, 0.95f, 1.0f };
+		const glm::vec4 kParticleShape   { 1.00f, 0.75f, 0.30f, 1.0f };
 
 		// The Scene view's camera (SetViewCamera). Main thread only, like the rest of the system.
 		bool      g_hasViewCamera = false;
@@ -134,7 +135,7 @@ namespace Crucible {
 	void DebugDrawSystem::Describe(SystemDesc& desc) const {
 
 		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent,
-		           UICanvas, UIRect, HierarchyNode, AudioSource, AudioListener>()   // world canvases' pages and the selected element's rect
+		           UICanvas, UIRect, HierarchyNode, AudioSource, AudioListener, ParticleEmitter>()   // world canvases' pages and the selected element's rect
 			.RunAfter<HierarchyTransformSystem>()        // WorldTransform must be this frame's
 			.Affinity(SystemAffinity::MainThread);       // Renderer/ResourceManager aren't thread-safe
 
@@ -148,6 +149,7 @@ namespace Crucible {
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Velocities)) { DrawVelocities(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Lights))     { DrawLights(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Audio))      { DrawAudio(world); }
+		if (DebugDraw::IsCategoryEnabled(DebugCategory::Particles))  { DrawParticleShape(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Grid))       { DrawGrid(); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Selection))  { DrawSelection(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::WorldUI))    { DrawWorldUI(world); }
@@ -350,6 +352,71 @@ namespace Crucible {
 				if (length > 1e-6f) { DebugDraw::Arrow(p, p + forward / length, style); }
 			});
 	}	// DebugDrawSystem::DrawAudio()
+
+	void DebugDrawSystem::DrawParticleShape(World& world) {
+
+		const Entity selected = GetSelectedEntity();
+		if (selected == kNullEntity || !world.IsAlive(selected)) { return; }
+		const ParticleEmitter* 	emitter = world.Read<ParticleEmitter>(selected);
+		const WorldTransform*	wt		= world.Read<WorldTransform>(selected);
+		if (!emitter || !wt || !wt->valid) { return; }
+
+		DebugStyle style;
+		style.category 	= DebugCategory::Particles;
+		style.depthTest = false;	// the shape is usually inside the effect's own particles or a mesh
+		style.color		= kParticleShape;
+
+		const glm::mat4& m = wt->matrix;
+		auto world3 = [&](const glm::vec3& local) { return glm::vec3(m * glm::vec4(local, 1.0f)); };
+		// A circle of 'radius' around local point 'centre', in the plane of local axes a and b.
+		auto circle = [&](const glm::vec3& centre, const glm::vec3& a, const glm::vec3& b, float radius) {
+			if (radius <= 0.0f) { return; }
+			constexpr int kSegments = 32;
+			for (int i = 0; i < kSegments; ++i) {
+				const float a0 = 6.2831853f * static_cast<float>(i) / kSegments;
+				const float a1 = 6.2831853f * static_cast<float>(i + 1) / kSegments;
+				DebugDraw::Line(world3(centre + (a * std::cos(a0) + b * std::sin(a0)) * radius),
+								world3(centre + (a * std::cos(a1) + b * std::sin(a1)) * radius), style);
+			}
+		};
+		const glm::vec3 X(1.0f, 0.0f, 0.0f), Y(0.0f, 1.0f, 0.0f), Z(0.0f, 0.0f, 1.0f), O(0.0f);
+		const float radius = std::max(emitter->shapeRadius, 0.0f);
+
+		switch (emitter->shape) {
+			case ParticleShape::Point: {
+				break;
+			}
+			case ParticleShape::Sphere: {
+				circle(O, X, Z, radius);
+				circle(O, X, Y, radius);
+				circle(O, Y, Z, radius);
+				break;
+			}
+			case ParticleShape::Box: {
+				const glm::vec3 half = glm::max(emitter->boxExtents, glm::vec3(0.0f));
+				DebugDraw::TransformedBox(-half, half, m, style);
+				break;
+			}
+			case ParticleShape::Circle: {
+				circle(O, X, Z, radius);
+				break;
+			}
+			case ParticleShape::Cone: {
+				// The near end (where particles start) and the far end 1 m along +Y, joined by four
+				// lines down the cone's wall: what a rim particle follows.
+				constexpr float kLength = 1.0f;
+				const float angle = glm::radians(std::clamp(emitter->coneAngleDeg, 0.0f, 90.0f));
+				const float lean = std::min(angle, glm::radians(89.0f)); 	// 90 = flat: tan() would be infinite
+				const float farRadius = radius + kLength * std::tan(lean); 	// not "far": a macro in <windows.h>
+				circle(O, X, Z, radius);
+				circle(Y * kLength, X, Z, farRadius);
+				for (const glm::vec3& side : { X, Z, -X, -Z }) {
+					DebugDraw::Line(world3(side * radius), world3(Y * kLength + side * farRadius), style);
+				}
+				break;
+			}
+		}
+	}
 
 	void DebugDrawSystem::DrawGrid() {
 

@@ -205,9 +205,13 @@ namespace Crucible {
 
             // Where: a point in the emitter's local space, by shape.
             glm::vec3 local(0.0f);
+            glm::vec3 dir(0.0f, 1.0f, 0.0f);
+            bool      shapeSetsDirection = false;
+
             switch (settings.shape) {
-                case ParticleShape::Point:
+                case ParticleShape::Point: {
                     break;
+                }
                 case ParticleShape::Sphere: {
                     // Rejection sampling: uniform inside the unit sphere.
                     glm::vec3 v;
@@ -217,17 +221,43 @@ namespace Crucible {
                     local = v * std::max(settings.shapeRadius, 0.0f);
                     break;
                 }
-                case ParticleShape::Box:
+                case ParticleShape::Box: {
                     local = glm::vec3(RandRange(state.rng, -1.0f, 1.0f), RandRange(state.rng, -1.0f, 1.0f), RandRange(state.rng, -1.0f, 1.0f))
                           * glm::max(settings.boxExtents, glm::vec3(0.0f));
                     break;
+                }
+                case ParticleShape::Circle: {
+                    // Uniform over a flat disc in the local XZ plane (facing +Y). The square root
+                    // spreads them evenly by area: a ring twice as far out is twice as long, so it
+                    // gets twice the particles - without it they bunch up in the middle.
+                    const float r   = std::max(settings.shapeRadius, 0.0f) * std::sqrt(Rand01(state.rng));
+                    const float phi = Rand01(state.rng) * kTwoPi;
+                    local           = glm::vec3(r * std::cos(phi), 0.0f, r * std::sin(phi));
+                    break;
+                }
+                case ParticleShape::Cone: {
+                    // Unity's Cone. Start on the base disc, evenly by area like Circle; s is how far
+                    // out (0 = centre, 1 = rim). Then lean the direction out from +Y by s times the
+                    // angle, towards the side the particle started on, so the rim follows the cone's
+                    // wall and the middle goes straight. Works with shapeRadius 0 too (a point).
+                    const float s       = std::sqrt(Rand01(state.rng));
+                    const float phi     = Rand01(state.rng) * kTwoPi;
+                    const float r       = std::max(settings.shapeRadius, 0.0f) * s;
+                    const float lean    = glm::radians(std::clamp(settings.coneAngleDeg, 0.0f, 90.f)) * s;
+                    local   = glm::vec3(r * std::cos(phi), 0.0f, r * std::sin(phi));
+                    dir     = glm::vec3(std::sin(lean) * std::cos(phi), std::cos(lean), std::sin(lean) * std::sin(phi));
+                    shapeSetsDirection = true;
+                    break;
+                }
             }
 
-            // Which way: uniformly inside a cone of half-angle spreadDeg around local +Y.
-            const float cosTheta = RandRange(state.rng, cosSpread, 1.0f);
-            const float sinTheta = std::sqrt(std::max(1.0f - cosTheta * cosTheta, 0.0f));
-            const float phi      = Rand01(state.rng) * kTwoPi;
-            const glm::vec3 dir(sinTheta * std::cos(phi), cosTheta, sinTheta * std::sin(phi));
+            // Which way (all but Cone): uniformly inside a cone of half-angle spreadDeg around local +Y.
+            if (!shapeSetsDirection) {
+                const float cosTheta = RandRange(state.rng, cosSpread, 1.0f);
+                const float sinTheta = std::sqrt(std::max(1.0f - cosTheta * cosTheta, 0.0f));
+                const float phi      = Rand01(state.rng) * kTwoPi;
+                const glm::vec3 dir(sinTheta * std::cos(phi), cosTheta, sinTheta * std::sin(phi));
+            }
             const float speed = RandRange(state.rng, settings.speedMin, settings.speedMax);
 
             if (settings.worldSpace) {

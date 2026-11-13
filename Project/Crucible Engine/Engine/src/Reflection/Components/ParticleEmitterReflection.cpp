@@ -23,7 +23,9 @@ RTTR_REGISTRATION
     (
         rttr::value("Point",  ParticleShape::Point),
         rttr::value("Sphere", ParticleShape::Sphere),
-        rttr::value("Box",    ParticleShape::Box)
+        rttr::value("Box",    ParticleShape::Box),
+        rttr::value("Circle", ParticleShape::Circle),
+        rttr::value("Cone",   ParticleShape::Cone)
     );
 
     rttr::registration::enumeration<ParticleBlend>("ParticleBlend")
@@ -44,6 +46,8 @@ RTTR_REGISTRATION
         .property("shapeRadius",    &ParticleEmitter::shapeRadius)
         .property("boxExtents",     &ParticleEmitter::boxExtents)
         .property("spreadDeg",      &ParticleEmitter::spreadDeg)
+        .property("coneAngleDeg",   &ParticleEmitter::coneAngleDeg)
+            (rttr::metadata(MetaDataTypes::SLIDER, Math::vec2{ 0.0f, 90.f }))
         .property("worldSpace",     &ParticleEmitter::worldSpace)
         .property("lifetimeMin",    &ParticleEmitter::lifetimeMin)
         .property("lifetimeMax",    &ParticleEmitter::lifetimeMax)

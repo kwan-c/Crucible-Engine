@@ -593,7 +593,11 @@ namespace Crucible
 	{
 		Point,    // all at the emitter
 		Sphere,   // anywhere inside a sphere of shapeRadius
-		Box       // anywhere inside a box of boxExtents (half sizes)
+		Box,      // anywhere inside a box of boxExtents (half sizes)
+		Circle,   // anywhere on a flat disc of shapeRadius, facing local +Y (a round Plane)
+		Cone	  // Unity's Cone: from a disc of shapeRadius (the near end), sent outwards
+		          // along a cone that opens by coneAngleDeg (the far end) - see ParticleEmitter
+
 	};
 
 	/// How a ParticleEmitter's particles are mixed with what is behind them.
@@ -627,6 +631,13 @@ namespace Crucible
 		  - shape / shapeRadius / boxExtents: where they appear.
 		  - spreadDeg: half-angle of the cone of directions around local +Y
 		    (0 = straight up, 90 = a hemisphere, 180 = every direction).
+		  - coneAngleDeg (Cone only): how far the cone opens, like Unity's
+		    Angle. A particle from the middle of the disc goes straight
+			along +Y, one from the the rim tilts out by the full angle, the rest
+			in between - so the far and is shapeRadius + tan(angle) wider
+			per metre travelled. 0 = a straight column (a cylinder),
+			90 = flat out sideways. shapeRadius is the near end (Unity's
+			Radius); 0 = everything from one point.
 		  - worldSpace: true = once spawned, particles ignore the emitter's
 		    movement (a trail); false = they move with it.
 		Each particle
@@ -665,6 +676,7 @@ namespace Crucible
 		float         shapeRadius = 0.25f;
 		Math::vec3    boxExtents{ 0.5f, 0.5f, 0.5f };
 		float         spreadDeg = 25.f;
+		float		  coneAngleDeg = 25.f;
 		bool          worldSpace = true;
 
 		float         lifetimeMin = 0.8f;
