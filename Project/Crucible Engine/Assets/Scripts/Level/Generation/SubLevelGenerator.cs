@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Generates a sub-level from a seed. Terrain only for now:
 *                chunks, roads and decor are later port steps.
 *
@@ -26,6 +26,16 @@
 *
 *    Defaults are the values the Unity mission presets used
 *    (LevelCatalogue/SubLevelGen_*.asset).
+*
+*    Generate is also an Inspector button ([EditorButton]): outside Play
+*    it builds only the terrain, as a preview. Sizing the Nav Surface,
+*    the player's slope and the re-bake need Play (and would otherwise be
+*    saved into the scene with no undo). The preview is not saved: it is
+*    gone after Play stops or the scene reloads; click Generate again.
+*
+* \history
+*    -v1.0       terrain from a seed, shared with navigation and the player
+*    -v1.1       Generate as an [EditorButton] preview in Edit mode
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -65,8 +75,6 @@ namespace Crucible.@Scripts
         public override void OnCreate()
         {
             if (randomSeedOnPlay) seed = (int)new SeededRandom(System.Environment.TickCount).NextUInt();
-            if (terrain == null) terrain = Entity.FindChild("Terrain");
-            if (navSurface == null) navSurface = Entity.FindChild("Nav Surface");
             Generate();
         }
 
@@ -76,9 +84,17 @@ namespace Crucible.@Scripts
             if (!playerPlaced && map != null) playerPlaced = PlacePlayer();
         }
 
-        /// <summary>Builds the ground from the seed and settings, and hands it to the terrain and navigation.</summary>
+        /// <summary>
+        /// Builds the ground from the seed and settings and hands it to the terrain; in Play, also to
+        /// navigation and the player. Also an Inspector button, which previews the terrain outside Play.
+        /// </summary>
+        [EditorButton]
         public void Generate()
         {
+            // Found by name when not set (OnCreate doesn't run for an Inspector button, so not there).
+            if (terrain == null) terrain = Entity.FindChild("Terrain");
+            if (navSurface == null) navSurface = Entity.FindChild("Nav Surface");
+
             Terrain ground = terrain != null ? terrain.GetComponent<Terrain>() : null;
             if (ground == null)
             {
@@ -94,12 +110,15 @@ namespace Crucible.@Scripts
                 return;
             }
 
-            ShareWithNavigation();
-            ApplyPlayerSlope();
-            Navigation.Rebake();
+            if (Application.IsPlaying)
+            {
+                ShareWithNavigation();
+                ApplyPlayerSlope();
+                Navigation.Rebake();
+            }
 
             int percent = map.WalkableCount * 100 / (map.Cols * map.Rows);
-            Log.Info("SubLevelGenerator: seed " + seed + ", " + map.Cols + " x " + map.Rows + " cells, " + percent +
+            Log.Info("SubLevelGenerator: " + (Application.IsPlaying ? "" : "preview, ") + "seed " + seed + ", " + map.Cols + " x " + map.Rows + " cells, " + percent +
                      "% walkable, height hash " + map.HeightHash().ToString("X8"));
         }
 

@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         EntityContext.h
-* \author:       Tan Chun Kwang Xavier
-* \par:          Email: chunkwangxavier.tan@digipen.edu
+* \author:       Tan Chun Kwang Xavier (main author),
+*                Jean David Vidal Cruzado (EditorCallScope)
+* \par:          Email: chunkwangxavier.tan@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          1 November 2026
 * \version       1.0
 * \brief         INTERNAL: the world, Play state and scene that entity
@@ -115,6 +117,27 @@ namespace Crucible
 		 \brief  true during a Play session (Playing or Paused).
 		 *********************************************************************/
 		bool InPlaySession();
+
+		/*********************************************************************
+		 \brief  Edit mode: while one is alive, ResolveEntity accepts live
+		         entities, so a script method run from an Inspector button
+		         ([EditorButton], ScriptRuntime::RunEditorButton) can read and
+		         write components. Opened for that one call only.
+		 \details
+		    Bindings whose systems only exist in Play (physics, navigation,
+		    audio, UI) still refuse: they check InPlaySession() themselves.
+		 *********************************************************************/
+		class EditorCallScope
+		{
+		public:
+			EditorCallScope();
+			~EditorCallScope();
+			EditorCallScope(const EditorCallScope&) = delete;
+			EditorCallScope& operator=(const EditorCallScope&) = delete;
+		};
+
+		// true while an EditorCallScope is open.
+		bool InEditorCall();
 
 		// --- Play clock (C# Time) ------------------------------------------ //
 
@@ -245,7 +268,8 @@ namespace Crucible
 
 		/*********************************************************************
 		 \brief  Turns the (index, generation) a script passed in into a live
-		         Entity. Fails outside a Play session, before SetWorld(), or if
+		         Entity. Fails outside a Play session (unless an EditorCallScope
+		         is open), before SetWorld(), or if
 		         the entity was destroyed (its generation no longer matches,
 		         e.g. after a scene reload).
 		 *********************************************************************/

@@ -1,7 +1,8 @@
 /*!
 * @file			ImGuiPanel_Inspector.cpp
-* @author		Tan Chun Kwang Xavier
-* @par			chunkwangxavier.tan@digipen.edu
+* @author		Tan Chun Kwang Xavier (main author),
+*				Jean David Vidal Cruzado ([EditorButton] buttons on scripts)
+* @par			chunkwangxavier.tan@digipen.edu, jeandavidvidal.c@digipen.edu
 * @date			17 September 2026
 *
 * @brief		The editor's inspector for viewing and editing object properties.
@@ -54,6 +55,18 @@ namespace {
 	template<class T> std::string ComponentHeader(const T&) { return std::string(Crucible::ComponentTraits<T>::name); }
 	std::string ComponentHeader(const Crucible::ScriptComponent& script) {
 		return script.className.empty() ? "Missing C# script" : script.className + ".cs";
+	}
+
+	// A C# member name as an Inspector label: "maxWalkableSlope" -> "Max Walkable Slope", "_x" -> " X".
+	std::string ScriptMemberLabel(const std::string& name) {
+		std::string label;
+		for (size_t i = 0; i < name.size(); ++i) {
+			const char c = name[i];
+			if (c == '_') { label += ' '; continue; }
+			if (i && c >= 'A' && c <= 'Z' && name[i-1] >= 'a' && name[i-1] <= 'z') label += ' ';
+			label += label.empty() && c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+		}
+		return label;
 	}
 
 	bool SameScriptName(std::string_view a, std::string_view b) {
@@ -2088,12 +2101,13 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
         m_scriptFieldReload != reload) {
         m_scriptFieldAssembly = script.assembly; m_scriptFieldNamespace = script.nameSpace; m_scriptFieldClass = script.className;
         m_scriptFieldReload = reload;
-        m_scriptFieldDefaults.clear(); m_scriptFieldError.clear();
+        m_scriptFieldDefaults.clear(); m_scriptFieldError.clear(); m_scriptButtons.clear();
         ScriptAssemblyHandle assembly;
         if (!runtime) m_scriptFieldError = "A Mono-enabled Editor is needed to inspect compiled public fields.";
         else if (!runtime->LoadAssembly(script.assembly, assembly) ||
                  !runtime->GetEntityFieldDefaults(assembly, script.nameSpace, script.className, m_scriptFieldDefaults))
             m_scriptFieldError = runtime->LastError();
+        else runtime->GetEditorButtons(assembly, script.nameSpace, script.className, m_scriptButtons);   // none if it has no [EditorButton]
     }
     auto fields = m_scriptFieldDefaults;
     if (!m_scriptFieldError.empty()) fields = script.fields; // authored values survive unavailable assemblies
@@ -2114,13 +2128,7 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
     bool changed = false;
     ImGui::BeginDisabled(inSession && !live);
     for (auto field : fields) {
-        std::string label;
-        for (size_t i = 0; i < field.name.size(); ++i) {
-            const char c = field.name[i];
-            if (c == '_') { label += ' '; continue; }
-            if (i && c >= 'A' && c <= 'Z' && field.name[i-1] >= 'a' && field.name[i-1] <= 'z') label += ' ';
-            label += label.empty() && c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
-        }
+        std::string label = ScriptMemberLabel(field.name);
         if (std::count_if(fields.begin(), fields.end(), [&](const auto& other) { return other.name == field.name; }) > 1)
             label += " (" + field.declaringType + ")";
         label += "###" + field.name;
@@ -2165,6 +2173,25 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
         ImGui::PopID();
     }
     ImGui::EndDisabled();
+    // [EditorButton] methods (Unity's [ContextMenu]): each runs once on a temporary copy of the
+    // script with the fields above, outside Play only (ScriptRuntime::RunEditorButton).
+    if (runtime && !m_scriptButtons.empty() && m_scriptFieldError.empty()) {
+        ImGui::BeginDisabled(inSession);
+        for (const auto& method : m_scriptButtons) {
+            ImGui::PushID(method.c_str());
+            if (ImGui::Button(ScriptMemberLabel(method).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+                ScriptAssemblyHandle assembly;
+                const bool ran = runtime->LoadAssembly(script.assembly, assembly) &&
+                    runtime->RunEditorButton(assembly, script.nameSpace, script.className, m_selected.index, m_selected.generation,
+                                             fields, method);
+                m_scriptNoticeTarget = m_selected;
+                m_scriptNotice = ran ? std::string() : ScriptMemberLabel(method) + " failed: " + runtime->LastError();
+            }
+            if (inSession) ImGui::SetItemTooltip("Runs outside Play only");
+            ImGui::PopID();
+        }
+        ImGui::EndDisabled();
+    }
     if (fields.empty() && m_scriptFieldError.empty()) ImGui::TextDisabled("No public fields.");
     std::string error = !status.error.empty() ? status.error : m_scriptFieldError;
     if (status.instance.value == m_scriptFieldReadFailure.value && status.instance) error = m_scriptFieldReadError;

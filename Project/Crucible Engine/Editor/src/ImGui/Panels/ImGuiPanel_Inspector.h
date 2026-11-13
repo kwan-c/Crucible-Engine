@@ -160,6 +160,7 @@ namespace Crucible {
         bool m_scriptCreateRequested = false;
         std::string m_scriptFieldAssembly, m_scriptFieldNamespace, m_scriptFieldClass, m_scriptFieldError;
         std::vector<ScriptFieldValue> m_scriptFieldDefaults;
+        std::vector<std::string> m_scriptButtons;   // the shown class's [EditorButton] methods (Jean David)
         uint64_t m_scriptFieldReload = 0;   // ScriptRuntime::ReloadCount() the defaults were read at
         ScriptInstanceHandle m_scriptFieldReadFailure;
         std::string m_scriptFieldReadError;

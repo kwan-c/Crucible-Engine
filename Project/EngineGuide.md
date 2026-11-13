@@ -145,6 +145,8 @@ Rules:
 | TextMeshPro in world space | `WorldText` (sizes in metres) |
 | `Mathf`, `Vector3.MoveTowards`, `ProjectOnPlane`, `ClampMagnitude` | not in ScriptCore; use `Assets/Scripts/Player/MechMath.cs` |
 | ScriptableObject data | plain static C# tables (see `MechPartCatalogue`) or JSON assets |
+| `[ContextMenu]` on a method | `[EditorButton]` on a public, parameterless `void` method: an Inspector button that runs it outside Play |
+| `Application.isPlaying` | `Application.IsPlaying` (false only inside an `[EditorButton]` call) |
 
 ## 5. Scripting API reference
 
@@ -260,7 +262,15 @@ returns false when the entity has no AnimatedModel controller with that paramete
 The grid is centred on the entity and is never saved. C++ side: `Engine/src/Terrain`,
 `ECS/ECSTerrainSystem`, and the HeightField case in `Physics/PhysicsShapes.cpp`.
 
-**Other:** `Log.Info/Warning/Error`; `Screen` (`Width`, `Height`, `Mode`, `FullScreen`,
+**Editor buttons:** `[EditorButton]` on a public `void` method with no parameters shows it as a
+button under the script's fields in the Inspector (Unity's `[ContextMenu]`). A click builds a
+temporary copy of the script with the Inspector's field values and calls only that method: no
+OnCreate, OnUpdate or OnDestroy, and only outside Play. Entity calls work during it; physics,
+navigation and audio do nothing, so guard them with `Application.IsPlaying`. See
+`SubLevelGenerator.Generate`. C++ side: `ScriptRuntime::RunEditorButton`,
+`EntityContext::EditorCallScope`.
+
+**Other:** `Log.Info/Warning/Error`; `Application.IsPlaying`; `Screen` (`Width`, `Height`, `Mode`, `FullScreen`,
 `SetResolution`, `Resolutions`, `IsEditor`).
 
 ## 6. Coordinates and conventions
@@ -522,8 +532,12 @@ chunk (4-byte aligned), add a bufferView, then replace `images[i].uri` with `buf
 - `CharacterController.SimpleMove` is a velocity that persists. Call `SimpleMove(Vector3.Zero)`
   to stop.
 - `SetActive(false)` on your own entity pauses your own script.
-- **A Terrain shows nothing in Edit mode**: scripts only run in Play, and the grid a script builds
-  is never saved. An Inspector Generate button is planned.
+- **A Terrain shows nothing in Edit mode** until something builds it: the grid is never saved. Use
+  an `[EditorButton]` (the Sub Level Generator's **Generate**) to preview it; the preview is gone
+  after Play stops or the scene reloads.
+- **An `[EditorButton]` method's changes are real**: components it writes are saved with the scene
+  and can't be undone, and prefabs it instantiates become scene entities. Keep previews to
+  runtime-only data (a Terrain's grid) until a "generated, don't save" mark exists.
 - **A HeightField collider needs a built Terrain on the same entity**, and no RigidBody: until
   `Terrain.Build` runs it has no body at all (no error).
 - The Editor locks the cursor at Play start. Esc frees it and clicking the Game view captures

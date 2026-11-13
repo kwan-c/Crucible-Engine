@@ -38,6 +38,7 @@ namespace Crucible::ScriptBindings
 		RegisterNavigationBindings();
 		RegisterStateGraphBindings();
 		RegisterTerrainBindings();
+		RegisterApplicationBindings();
 	}
 
 	void ClearAll()
