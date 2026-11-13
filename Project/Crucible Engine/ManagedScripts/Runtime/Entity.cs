@@ -167,8 +167,36 @@ namespace Crucible
         }
 
         /// <summary>
+        /// Every component or script of type T on the entity, in Inspector order (empty if none).
+        /// Mostly for scripts: an entity can have several, including several of one class, and
+        /// GetComponents&lt;EntityScript&gt;() returns all of them. Engine components exist at most
+        /// once per entity, so for those it is GetComponent&lt;T&gt;() as an array of 0 or 1.
+        /// </summary>
+        public T[] GetComponents<T>() where T : class
+        {
+            if (typeof(EntityScript).IsAssignableFrom(typeof(T)))
+            {
+                object[] scripts = GetScriptsInternal((int)index, (int)generation);
+                if (scripts == null)
+                    return new T[0];
+                var matches = new System.Collections.Generic.List<T>(scripts.Length);
+                foreach (object script in scripts)
+                {
+                    T match = script as T;
+                    if (match != null)
+                        matches.Add(match);
+                }
+                return matches.ToArray();
+            }
+            T component = GetComponent<T>();
+            return component != null ? new T[] { component } : new T[0];
+        }
+
+        /// <summary>
         /// The entity's component or script of type T, or null if it has none.
         /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, FlowFieldAgent, FlowFieldSurface, StateGraphAgent, UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, or a script class (e.g. GetComponent&lt;Door&gt;()).
+        /// With several scripts on the entity: the first (in Inspector order) that is a T - a
+        /// base class or EntityScript itself matches any script that derives from it.
         /// A script found during OnCreate may not have run its own OnCreate yet.
         /// </summary>
         public T GetComponent<T>() where T : class
@@ -215,7 +243,17 @@ namespace Crucible
             if (type == typeof(UIRect))   return Has(ComponentKind.UIRect)   ? (T)(object)new UIRect(Identity)   : null;
             if (type == typeof(UICanvas)) return Has(ComponentKind.UICanvas) ? (T)(object)new UICanvas(Identity) : null;
             if (typeof(EntityScript).IsAssignableFrom(type))
-                return GetScriptInternal((int)index, (int)generation) as T;
+            {
+                object[] scripts = GetScriptsInternal((int)index, (int)generation);
+                if (scripts != null)
+                    foreach (object script in scripts)
+                    {
+                        T match = script as T;
+                        if (match != null)
+                            return match;
+                    }
+                return null;
+            }
             throw new ArgumentException("GetComponent<" + type.Name +
                                         ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, FlowFieldAgent, FlowFieldSurface, StateGraphAgent, a UI component or a script class.");
         }
@@ -231,19 +269,43 @@ namespace Crucible
         /// <summary>
         /// Switches one component on or off (Unity's .enabled). Its data is kept; while off,
         /// it does nothing (not drawn, no physics, silent, script paused...). T is any type
-        /// GetComponent accepts; a script class means this entity's script. Transform can't
-        /// be switched off. Returns false if the entity has no such component.
+        /// GetComponent accepts. A script class switches that script (the first one of that
+        /// class, as GetComponent finds it) - the same as its Enabled; EntityScript itself
+        /// switches ALL of the entity's scripts at once. Transform can't be switched off.
+        /// Returns false if the entity has no such component.
         /// </summary>
         public bool SetEnabled<T>(bool enabled) where T : class
         {
+            if (IsOneScript(typeof(T)))
+            {
+                EntityScript script = GetComponent<T>() as EntityScript;
+                if (script == null)
+                    return false;
+                script.Enabled = enabled;
+                return true;
+            }
             return SetComponentEnabledInternal((int)index, (int)generation, KindOf(typeof(T)), enabled ? 1 : 0) != 0;
         }
 
-        /// <summary>Is the component switched on (its own choice)? False if the entity has none.</summary>
+        /// <summary>
+        /// Is the component switched on (its own choice)? False if the entity has none. A script
+        /// class reads that script's Enabled; EntityScript reads the switch for all scripts.
+        /// </summary>
         public bool IsEnabled<T>() where T : class
         {
+            if (IsOneScript(typeof(T)))
+            {
+                EntityScript script = GetComponent<T>() as EntityScript;
+                return script != null && script.Enabled;
+            }
             int on;
             return IsComponentEnabledInternal((int)index, (int)generation, KindOf(typeof(T)), out on) != 0 && on != 0;
+        }
+
+        // A particular script class (not EntityScript itself, which means every script).
+        private static bool IsOneScript(Type type)
+        {
+            return type != typeof(EntityScript) && typeof(EntityScript).IsAssignableFrom(type);
         }
 
         /// <summary>
@@ -379,7 +441,7 @@ namespace Crucible
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int HasComponentInternal(int index, int generation, int kind, out int has);
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern EntityScript GetScriptInternal(int index, int generation);
+        private static extern object[] GetScriptsInternal(int index, int generation);   // every running script, Inspector order
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int FindChildInternal(int index, int generation, string name, out int childIndex,
                                                     out int childGeneration);

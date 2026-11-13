@@ -2,8 +2,8 @@
 * \file:         EntityScriptSystem.cpp
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
-* \date          30 October 2026
-* \version       1.0
+* \date          13 November 2026
+* \version       1.1
 * \brief         Implementation - see EntityScriptSystem.h.
 *
 **************************************************************************/
@@ -50,7 +50,7 @@ namespace Crucible
 		    });
 #if CRUCIBLE_WITH_MONO
 		// Lets C# GetComponent<SomeScript>() reach the scripts this system owns.
-		ScriptBindings::EntityContext::SetScriptLookup(&EntityScriptSystem::LookupScript, this);
+		ScriptBindings::EntityContext::SetScriptLookup(&EntityScriptSystem::LookupScripts, this);
 #endif
 	}
 
@@ -71,20 +71,27 @@ namespace Crucible
 		record.instance = {};
 	}
 
+	void EntityScriptSystem::ReleaseAll(std::vector<Record>& records)
+	{
+		for (auto it = records.rbegin(); it != records.rend(); ++it)
+			Release(*it);
+	}
+
 	void EntityScriptSystem::StopAll()
 	{
 		for (auto it = m_records.rbegin(); it != m_records.rend(); ++it)
-			Release(it->second);
+			ReleaseAll(it->second);
 		m_records.clear();
 		m_removed.clear();
 	}
 
-	EntityScriptStatus EntityScriptSystem::Status(Entity entity) const
+	EntityScriptStatus EntityScriptSystem::Status(Entity entity, std::size_t slot) const
 	{
 		const auto found = m_records.find(Key(entity));
-		if (found == m_records.end())
+		if (found == m_records.end() || slot >= found->second.size())
 			return {};
-		return {found->second.instance, found->second.error};
+		const Record& record = found->second[slot];
+		return {record.instance, record.error};
 	}
 
 	void EntityScriptSystem::Update(World& world, [[maybe_unused]] SystemContext& ctx)
@@ -127,7 +134,7 @@ namespace Crucible
 					++it;
 					continue;
 				}
-				Release(it->second);
+				ReleaseAll(it->second);
 				it = m_records.erase(it);
 			}
 #if CRUCIBLE_WITH_MONO
@@ -154,7 +161,7 @@ namespace Crucible
 			const auto found = m_records.find(key);
 			if (found != m_records.end())
 			{
-				Release(found->second);
+				ReleaseAll(found->second);
 				m_records.erase(found);
 			}
 		}
@@ -172,111 +179,144 @@ namespace Crucible
 
 		// --- Step 3: copy every ScriptComponent out of the ECS.
 		// Copy before callbacks: no managed execution while a query pins columns.
-		std::vector<std::pair<Entity, ScriptComponent>> definitions;
-		// Switched off (World::SetComponentEnabled) pauses the script exactly like its own
-		// `enabled` field: the instance and its state are kept, not destroyed and recreated.
+		// Every script on the entity, in order. Switched off (World::SetComponentEnabled)
+		// pauses all of them exactly like each one's own `enabled` field: the instances
+		// and their state are kept, not destroyed and recreated.
+		std::vector<std::pair<Entity, std::vector<ScriptEntry>>> definitions;
 		world.BuildQuery<const ScriptComponent>().IncludeDisabled().Build().ForEach(
-		    [&](Entity entity, const ScriptComponent& script)
+		    [&](Entity entity, const ScriptComponent& component)
 		    {
-			    definitions.emplace_back(entity, script);
+			    definitions.emplace_back(entity, component.scripts);
 			    if (!world.IsComponentActive<ScriptComponent>(entity))
-				    definitions.back().second.enabled = false;
+				    for (ScriptEntry& script : definitions.back().second)
+					    script.enabled = false;
 		    });
 
-		// --- Step 4: bring each entity's live script in line with its component.
-		std::set<uint64_t> present; // entities that still have a ScriptComponent
-		std::vector<Entity> created; // new scripts still waiting for OnCreate (step 5)
-		for (const auto& [entity, definition] : definitions)
+		// --- Step 4: bring each entity's live scripts in line with its component.
+		std::set<uint64_t> present;                           // entities that still have a ScriptComponent
+		std::vector<std::pair<Entity, std::size_t>> created; // (entity, slot) still waiting for OnCreate (step 5)
+		for (const auto& [entity, scripts] : definitions)
 		{
 			const auto key = Key(entity);
 			present.insert(key);
-			auto found = m_records.find(key);
+			std::vector<Record> old;
+			if (const auto found = m_records.find(key); found != m_records.end())
+				old = std::move(found->second);
 
-			// 4a. Existing script: has the class changed, or only field values?
-			if (found != m_records.end())
+			// 4a. Match each entry to the record of the same script, preferring the same
+			// place in the list, so reordering or removing one script keeps the others'
+			// instances (and their state). Duplicates of one class pair up in order.
+			std::vector<Record> next(scripts.size());
+			std::vector<bool> claimed(old.size(), false);
+			for (std::size_t slot = 0; slot < scripts.size(); ++slot)
 			{
-				auto old = found->second.definition;
-				old.enabled = definition.enabled; // enable changes retain the managed instance
-				old.fields = definition.fields;   // public field edits are not a class change
-				if (!(old == definition))
+				const ScriptEntry& definition = scripts[slot];
+				std::size_t match = old.size();
+				if (slot < old.size() && !claimed[slot] && SameScript(old[slot].definition, definition))
+					match = slot;
+				for (std::size_t i = 0; match == old.size() && i < old.size(); ++i)
+					if (!claimed[i] && SameScript(old[i].definition, definition))
+						match = i;
+
+				if (match == old.size())
 				{
-					// Different class/assembly: throw the old instance away; it is
-					// recreated below.
-					Release(found->second);
-					m_records.erase(found);
-					found = m_records.end();
+					next[slot].definition = definition; // new (or changed class): created below
+					continue;
 				}
-				else if (found->second.definition.fields != definition.fields)
+				claimed[match] = true;
+				Record& record = next[slot] = std::move(old[match]);
+
+				// Same class, but the Inspector changed some field values: collect only the
+				// fields that differ and write them into the live C# object.
+				if (record.definition.fields != definition.fields)
 				{
-					// Same class, but the Inspector changed some field values:
-					// collect only the fields that differ and write them into the
-					// live C# object.
 					std::vector<ScriptFieldValue> changes;
+					const auto& previous = record.definition.fields;
 					for (const auto& field : definition.fields)
 					{
-						const auto& previous = found->second.definition.fields;
 						const auto saved = std::find_if(previous.begin(), previous.end(),
-						                                [&](const auto& value)
-						                                {
-							                                return SameScriptField(field, value);
-						                                });
+						                                [&](const auto& value) { return SameScriptField(field, value); });
 						if (saved == previous.end() || !(*saved == field))
 							changes.push_back(field);
 					}
 					ScriptInstanceInfo state;
-					if (found->second.instance && m_runtime.GetInstanceInfo(found->second.instance, state) &&
+					if (record.instance && m_runtime.GetInstanceInfo(record.instance, state) &&
 					    state.state != ScriptInstanceState::Faulted)
 					{
-						if (!m_runtime.SetEntityFields(found->second.instance, changes))
-							found->second.error = m_runtime.LastError();
+						if (!m_runtime.SetEntityFields(record.instance, changes))
+							record.error = m_runtime.LastError();
 						else
-							found->second.error.clear();
+							record.error.clear();
 					}
-					found->second.definition.fields = definition.fields;
+					record.definition.fields = definition.fields;
 				}
 			}
 
-			// 4b. No script yet: create one (only while Playing, enabled and assigned).
-			// OnCreate is deferred to step 5, after every new script exists.
-			if (found == m_records.end())
+			// 4b. Scripts that were removed or changed class: OnDestroy, last first.
+			for (std::size_t i = old.size(); i-- > 0;)
+				if (!claimed[i])
+					Release(old[i]);
+
+			// 4c. Scripts not made yet: create them while Playing - switched off ones too, as
+			// in Unity, so GetComponent finds them and another script can switch them on (a
+			// failed one is not retried every frame). OnCreate waits for step 5, after every
+			// new script exists, and for a script that is off, until it is first switched on.
+			for (std::size_t slot = 0; slot < next.size(); ++slot)
 			{
-				if (m_play.State() != PlayState::Playing || !definition.enabled ||
-				    definition.className.empty())
-					continue;
-				Record record{definition, {}, {}};
-				ScriptAssemblyHandle assembly;
-				if (!m_runtime.LoadAssembly(definition.assembly, assembly) ||
-				    !m_runtime.CreateEntityInstance(assembly, definition.nameSpace, definition.className,
-				                                    entity.index, entity.generation, record.instance,
-				                                    definition.fields, true))
+				Record& record = next[slot];
+				const ScriptEntry& definition = scripts[slot];
+				if (!record.attempted && m_play.State() == PlayState::Playing && !definition.className.empty())
 				{
-					// Keep a record anyway, so the error is shown and creation is
-					// not retried every frame.
-					record.error = m_runtime.LastError();
-					CRU_USER_ERROR("Script on entity {}:{} could not start: {}", entity.index,
-					               entity.generation, record.error);
+					record.definition = definition;
+					record.attempted = true;
+					ScriptAssemblyHandle assembly;
+					if (!m_runtime.LoadAssembly(definition.assembly, assembly) ||
+					    !m_runtime.CreateEntityInstance(assembly, definition.nameSpace, definition.className,
+					                                    entity.index, entity.generation, record.instance,
+					                                    definition.fields, true))
+					{
+						// The record stays, so the error is shown and creation is not retried.
+						record.error = m_runtime.LastError();
+						CRU_USER_ERROR("Script {} on entity {}:{} could not start: {}", definition.className, entity.index,
+						               entity.generation, record.error);
+					}
 				}
-				else
-					created.push_back(entity);
-				m_records.emplace(key, std::move(record));
+				// Made but never started, and on now (just created, or switched on since):
+				// OnCreate in step 5, then OnUpdate this same frame.
+				if (record.instance && !record.started && definition.enabled && m_play.State() == PlayState::Playing)
+					created.emplace_back(entity, slot);
 			}
+
+			if (next.empty())
+				m_records.erase(key);
+			else
+				m_records[key] = std::move(next);
 		}
 
-		// --- Step 5: OnCreate for every script created above. All of them exist
-		// by now, so one script's OnCreate can find another's (GetComponent).
-		for (const Entity entity : created)
+		// --- Step 5: OnCreate for every script that starts this frame (created above while
+		// on, or switched on for the first time), in entity then list order. Every script
+		// exists by now, so one script's OnCreate can find another's (GetComponent), on its
+		// own entity or any other.
+		for (const auto& [entity, slot] : created)
 		{
 			const auto found = m_records.find(Key(entity));
-			if (found == m_records.end() || !found->second.instance)
+			if (found == m_records.end() || slot >= found->second.size())
 				continue;
-			if (!m_runtime.StartEntityInstance(found->second.instance))
+			Record& record = found->second[slot];
+			if (!record.instance || record.started)
+				continue;
+			// OnCreate runs C#, which never changes m_records directly (removals and scene
+			// changes are only noted by the hooks in Init), so `record` stays valid.
+			if (!m_runtime.StartEntityInstance(record.instance))
 			{
 				// The runtime already destroyed the instance; keep the error.
-				found->second.error = m_runtime.LastError();
-				found->second.instance = {};
-				CRU_USER_ERROR("Script on entity {}:{} could not start: {}", entity.index, entity.generation,
-				               found->second.error);
+				record.error = m_runtime.LastError();
+				record.instance = {};
+				CRU_USER_ERROR("Script {} on entity {}:{} could not start: {}", record.definition.className, entity.index,
+				               entity.generation, record.error);
 			}
+			else
+				record.started = true;
 		}
 
 #if CRUCIBLE_WITH_MONO
@@ -296,16 +336,21 @@ namespace Crucible
 				{
 					const auto [self, other] = receivers[side];
 					const auto found = m_records.find(Key(self));
-					if (found == m_records.end() || !found->second.instance || !found->second.definition.enabled)
+					if (found == m_records.end())
 						continue;
-					auto& record = found->second;
-					if (!m_runtime.DispatchPhysicsEvent(record.instance, static_cast<int32_t>(contact.kind), other.index,
-					                                    other.generation, contact.point,
-					                                    side == 0 ? contact.normal : flipped, contact.impactSpeed))
+					// Every script on the entity, in order (Unity sends to all of them).
+					for (Record& record : found->second)
 					{
-						record.error = m_runtime.LastError();
-						CRU_USER_ERROR("Script {}.{} stopped in a physics callback: {}", record.definition.nameSpace,
-						               record.definition.className, record.error);
+						if (!record.instance || !record.started || !record.definition.enabled)
+							continue;
+						if (!m_runtime.DispatchPhysicsEvent(record.instance, static_cast<int32_t>(contact.kind), other.index,
+						                                    other.generation, contact.point,
+						                                    side == 0 ? contact.normal : flipped, contact.impactSpeed))
+						{
+							record.error = m_runtime.LastError();
+							CRU_USER_ERROR("Script {}.{} stopped in a physics callback: {}", record.definition.nameSpace,
+							               record.definition.className, record.error);
+						}
 					}
 				}
 			}
@@ -313,53 +358,61 @@ namespace Crucible
 
 			for (const auto& event : ScriptBindings::EntityContext::UIEvents())
 			{
-				for ([[maybe_unused]] auto& [key, record] : m_records)
+				for ([[maybe_unused]] auto& [key, records] : m_records)
 				{
-					if (!record.instance || !record.definition.enabled)
-						continue;
-					if (!m_runtime.DispatchUIEvent(record.instance, static_cast<int32_t>(event.kind), event.source.index,
-					                               event.source.generation, event.value, event.actionId))
+					for (Record& record : records)
 					{
-						record.error = m_runtime.LastError();
-						CRU_USER_ERROR("Script {}.{} stopped in a UI callback: {}", record.definition.nameSpace,
-						               record.definition.className, record.error);
+						if (!record.instance || !record.started || !record.definition.enabled)
+							continue;
+						if (!m_runtime.DispatchUIEvent(record.instance, static_cast<int32_t>(event.kind), event.source.index,
+						                               event.source.generation, event.value, event.actionId))
+						{
+							record.error = m_runtime.LastError();
+							CRU_USER_ERROR("Script {}.{} stopped in a UI callback: {}", record.definition.nameSpace,
+							               record.definition.className, record.error);
+						}
 					}
 				}
 			}
 		}
 #endif
 
-		// --- Step 6: apply enable/disable and call OnUpdate.
-		for (const auto& [entity, definition] : definitions)
+		// --- Step 6: apply enable/disable and call OnUpdate, entity by entity, each
+		// entity's scripts in list order (Unity's component order).
+		for (const auto& [entity, scripts] : definitions)
 		{
 			const auto found = m_records.find(Key(entity));
 			if (found == m_records.end())
 				continue;
-			auto& record = found->second;
-			record.definition.enabled = definition.enabled;
-			if (!record.instance)
-				continue; // failed creation is retried only after a config/session change
-			ScriptInstanceInfo info;
-			if (!m_runtime.GetInstanceInfo(record.instance, info))
+			for (std::size_t slot = 0; slot < found->second.size() && slot < scripts.size(); ++slot)
 			{
-				record.error = m_runtime.LastError();
-				record.instance = {};
-				continue;
-			}
-			if (info.state == ScriptInstanceState::Faulted)
-			{
-				// A callback threw earlier; the runtime already cleaned it up.
-				record.error = info.lastError;
-				continue;
-			}
-			if ((info.state == ScriptInstanceState::Running) != definition.enabled)
-				m_runtime.SetInstanceEnabled(record.instance, definition.enabled);
-			if (m_play.State() == PlayState::Playing && definition.enabled &&
-			    !m_runtime.UpdateEntityInstance(record.instance, world.DeltaTime()))
-			{
-				record.error = m_runtime.LastError();
-				CRU_USER_ERROR("Script on entity {}:{} stopped: {}", entity.index, entity.generation,
-				               record.error);
+				Record& record = found->second[slot];
+				const bool enabled = scripts[slot].enabled;
+				record.definition.enabled = enabled;
+				if (!record.instance || !record.started)
+					continue; // not made yet, failed (retried only after a script/session change), or off since Play
+				ScriptInstanceInfo info;
+				if (!m_runtime.GetInstanceInfo(record.instance, info))
+				{
+					record.error = m_runtime.LastError();
+					record.instance = {};
+					continue;
+				}
+				if (info.state == ScriptInstanceState::Faulted)
+				{
+					// A callback threw earlier; the runtime already cleaned it up.
+					record.error = info.lastError;
+					continue;
+				}
+				if ((info.state == ScriptInstanceState::Running) != enabled)
+					m_runtime.SetInstanceEnabled(record.instance, enabled);
+				if (m_play.State() == PlayState::Playing && enabled &&
+				    !m_runtime.UpdateEntityInstance(record.instance, world.DeltaTime()))
+				{
+					record.error = m_runtime.LastError();
+					CRU_USER_ERROR("Script {} on entity {}:{} stopped: {}", record.definition.className, entity.index,
+					               entity.generation, record.error);
+				}
 			}
 		}
 
@@ -379,7 +432,7 @@ namespace Crucible
 		{
 			if (!present.contains(it->first))
 			{
-				Release(it->second);
+				ReleaseAll(it->second);
 				it = m_records.erase(it);
 			}
 			else
@@ -465,8 +518,10 @@ namespace Crucible
 					const auto found = m_records.find(Key(*it));
 					if (found != m_records.end())
 					{
-						Release(found->second);
+						// Moved out first: OnDestroy runs C#, and the entry is gone either way.
+						std::vector<Record> scripts = std::move(found->second);
 						m_records.erase(found);
+						ReleaseAll(scripts);
 					}
 				}
 				if (world.IsAlive(root)) // an OnDestroy could have destroyed it already
@@ -480,13 +535,22 @@ namespace Crucible
 #endif
 	}
 
-	uint32_t EntityScriptSystem::LookupScript(void* self, Entity entity)
+	void EntityScriptSystem::LookupScripts(void* self, Entity entity,
+	                                       std::vector<ScriptBindings::EntityContext::RunningScript>& out)
 	{
+		// Every running script on the entity, in list order, with its place in the list
+		// (records line up with ScriptComponent::scripts). C# GetComponent<T> takes the first
+		// that is a T, GetComponents<T> all of them; EntityScript.Enabled finds its own slot.
 		auto& system = *static_cast<EntityScriptSystem*>(self);
 		const auto found = system.m_records.find(Key(entity));
-		uint32_t handle = 0;
-		if (found != system.m_records.end() && found->second.instance)
-			system.m_runtime.GetInstanceGcHandle(found->second.instance, handle);
-		return handle;
+		if (found == system.m_records.end())
+			return;
+		for (std::size_t slot = 0; slot < found->second.size(); ++slot)
+		{
+			const Record& record = found->second[slot];
+			uint32_t handle = 0;
+			if (record.instance && system.m_runtime.GetInstanceGcHandle(record.instance, handle) && handle)
+				out.push_back({handle, static_cast<uint32_t>(slot)});
+		}
 	}
 }

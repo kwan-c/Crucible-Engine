@@ -275,10 +275,21 @@ namespace Crucible
 		uint64_t EnsureSceneId(Entity entity);
 
 		/*********************************************************************
-		 \brief  Finds the GC handle of the C# script running on an entity
-		         (0 = none). `context` is passed back unchanged.
+		 \brief  One C# script running on an entity: its GC handle and its
+		         place in ScriptComponent::scripts.
 		 *********************************************************************/
-		using ScriptLookup = uint32_t (*)(void* context, Entity entity);
+		struct RunningScript
+		{
+			uint32_t handle = 0;
+			uint32_t slot = 0;
+		};
+
+		/*********************************************************************
+		 \brief  Fills `out` with every C# script running on an entity, in
+		         ScriptComponent::scripts order (empty = none). `context` is
+		         passed back unchanged.
+		 *********************************************************************/
+		using ScriptLookup = void (*)(void* context, Entity entity, std::vector<RunningScript>& out);
 
 		/*********************************************************************
 		 \brief  Installs (or clears, with nullptr) the script lookup.
@@ -287,10 +298,11 @@ namespace Crucible
 		void SetScriptLookup(ScriptLookup lookup, void* context);
 
 		/*********************************************************************
-		 \brief  GC handle of the script on `entity`, or 0 if it has none, it
-		         failed, or no lookup is installed. The script may not have had
-		         OnCreate yet (see EntityScriptSystem step 5).
+		 \brief  The scripts running on `entity`, in list order (cleared
+		         first). Scripts that failed or are not made yet are left out;
+		         none at all if no lookup is installed. A script may not have
+		         had OnCreate yet (see EntityScriptSystem step 5).
 		 *********************************************************************/
-		uint32_t FindScriptHandle(Entity entity);
+		void FindScripts(Entity entity, std::vector<RunningScript>& out);
 	}
 }

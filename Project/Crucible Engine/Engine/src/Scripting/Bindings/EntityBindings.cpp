@@ -24,6 +24,8 @@
 #if CRUCIBLE_WITH_MONO
 #include <mono/metadata/appdomain.h>
 #include <mono/metadata/loader.h>
+#include <mono/metadata/object.h>   // mono_array_new / mono_array_setref (GetScriptsInternal)
+#include <vector>
 
 namespace Crucible::ScriptBindings
 {
@@ -256,20 +258,27 @@ namespace Crucible::ScriptBindings
 		}
 
 		/*********************************************************************
-		 \brief  C# Entity.GetComponent<SomeScript>(): the C# script object
-		         running on the entity, or null if it has none (no
-		         ScriptComponent, disabled before it ever started, or failed).
-		         C# then checks the object is actually a SomeScript.
+		 \brief  C# Entity.GetComponent<SomeScript>() / GetComponents: every
+		         C# script object running on the entity, in Inspector order,
+		         as an object[] (empty if none: no ScriptComponent, disabled
+		         before they ever started, or failed). C# picks the ones that
+		         are a SomeScript. null only for a stale entity or an error.
 		 *********************************************************************/
-		MonoObject* ManagedEntityGetScript(int32_t index, int32_t generation) noexcept
+		MonoArray* ManagedEntityGetScripts(int32_t index, int32_t generation) noexcept
 		{
 			try
 			{
 				Entity entity;
 				if (!EntityContext::ResolveEntity(index, generation, entity))
 					return nullptr;
-				const uint32_t handle = EntityContext::FindScriptHandle(entity);
-				return handle ? mono_gchandle_get_target(handle) : nullptr;
+				std::vector<EntityContext::RunningScript> running;
+				EntityContext::FindScripts(entity, running);
+				MonoArray* scripts = mono_array_new(mono_domain_get(), mono_get_object_class(), running.size());
+				if (!scripts)
+					return nullptr;
+				for (std::size_t i = 0; i < running.size(); ++i)
+					mono_array_setref(scripts, i, mono_gchandle_get_target(running[i].handle));
+				return scripts;
 			}
 			catch (...)
 			{
@@ -344,7 +353,7 @@ namespace Crucible::ScriptBindings
 		mono_add_internal_call("Crucible.Entity::FindInternal", reinterpret_cast<const void*>(ManagedEntityFind));
 		mono_add_internal_call("Crucible.Entity::HasComponentInternal",
 		                       reinterpret_cast<const void*>(ManagedEntityHasComponent));
-		mono_add_internal_call("Crucible.Entity::GetScriptInternal", reinterpret_cast<const void*>(ManagedEntityGetScript));
+		mono_add_internal_call("Crucible.Entity::GetScriptsInternal", reinterpret_cast<const void*>(ManagedEntityGetScripts));
 	}
 }
 #endif

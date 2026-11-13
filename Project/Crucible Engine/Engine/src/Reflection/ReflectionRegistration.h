@@ -142,5 +142,20 @@ enum class MetaDataTypes {
 					rttr::metadata(MetaDataTypes::ENTITY_REF, true)
 				)
 	*/
-	ENTITY_REF
+	ENTITY_REF,
+
+	/*!
+	* @brief    Read from files but never written: a key an older file format
+	*			used, kept so those files still load (the setter moves the
+	*			value to where it lives now). Saving writes only the current
+	*			format, so a file is upgraded the next time it is saved.
+	*
+	* @values	true
+	*
+	* @usage	.property("class", &ScriptComponent::LegacyClass, &ScriptComponent::SetLegacyClass)
+				(
+					rttr::metadata(MetaDataTypes::LOAD_ONLY, true)
+				)
+	*/
+	LOAD_ONLY
 };

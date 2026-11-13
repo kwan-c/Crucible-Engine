@@ -81,6 +81,9 @@ namespace Crucible
         /// <summary>This entity's component or script of type T, or null. See Entity.GetComponent.</summary>
         public T GetComponent<T>() where T : class { return Entity.GetComponent<T>(); }
 
+        /// <summary>Every component or script of type T on this entity. See Entity.GetComponents.</summary>
+        public T[] GetComponents<T>() where T : class { return Entity.GetComponents<T>(); }
+
         /// <summary>Does this entity have a component or script of type T?</summary>
         public bool HasComponent<T>() where T : class { return Entity.HasComponent<T>(); }
 
@@ -98,13 +101,21 @@ namespace Crucible
 
         /// <summary>
         /// This script on or off (Unity's MonoBehaviour.enabled). While off it gets no OnUpdate
-        /// or UI callbacks but keeps its fields; switch it back on from another script.
+        /// or callbacks but keeps its fields; switch it back on from another script. Only this
+        /// script: the entity's other scripts carry on. Applies from the next frame.
+        /// (Entity.SetEnabled&lt;EntityScript&gt;(false) / SetActive(false) pause ALL of the
+        /// entity's scripts without changing this.)
         /// </summary>
         public bool Enabled
         {
-            get { return Entity.IsEnabled<EntityScript>(); }
-            set { Entity.SetEnabled<EntityScript>(value); }
+            get { int on; return GetEnabledInternal(this, (int)Entity.Index, (int)Entity.Generation, out on) != 0 && on != 0; }
+            set { SetEnabledInternal(this, (int)Entity.Index, (int)Entity.Generation, value ? 1 : 0); }
         }
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetEnabledInternal(EntityScript script, int index, int generation, out int enabled);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetEnabledInternal(EntityScript script, int index, int generation, int enabled);
 
         /// <summary>
         /// Called by the engine (ScriptRuntime) right after construction and
