@@ -130,6 +130,14 @@ namespace Crucible {
          *********************************************************************/
         std::uint32_t GetParticleCount(Entity entity) const;
 
+        /*********************************************************************
+         \brief  Radius of a Cone emitter's far end (coneLength along +Y):
+                 shapeRadius + coneLength x tan(coneAngleDeg), never below 0.
+                 One place for the rule, so the Scene view's outline
+                 (DebugDrawSystem) always matches where particles go.
+         *********************************************************************/
+        static float ConeFarRadius(const ParticleEmitter& settings);
+
     private:
         struct Particle {
             glm::vec3 position{ 0.0f };   // world space, or emitter-local when !worldSpace

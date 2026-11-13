@@ -117,6 +117,8 @@
                         "z": 0.5
                     },
                     "spreadDeg": 15.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
                     "worldSpace": true,
                     "lifetimeMin": 2.5,
                     "lifetimeMax": 4.0,
@@ -432,7 +434,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -461,7 +463,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": [
                         "FlowFieldAgent/stoppingDistance",
                         "FlowFieldAgent/slowingDistance"
@@ -1033,9 +1035,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -4.020785808563232,
-                        "y": 0.5,
-                        "z": -2.538909435272217
+                        "x": -4.298933982849121,
+                        "y": 0.5000000596046448,
+                        "z": -6.987565040588379
                     },
                     "rotation": {
                         "x": 0.0,
@@ -1056,7 +1058,7 @@
                     "rate": 0.0,
                     "burstCount": 60,
                     "maxParticles": 200,
-                    "shape": "Point",
+                    "shape": "Cone",
                     "shapeRadius": 0.25,
                     "boxExtents": {
                         "x": 0.5,
@@ -1064,15 +1066,17 @@
                         "z": 0.5
                     },
                     "spreadDeg": 70.0,
+                    "coneAngleDeg": 12.569999694824219,
+                    "coneLength": 1.6059999465942383,
                     "worldSpace": true,
-                    "lifetimeMin": 0.3499999940395355,
-                    "lifetimeMax": 0.8999999761581421,
+                    "lifetimeMin": 0.25,
+                    "lifetimeMax": 0.44999998807907104,
                     "speedMin": 3.0,
                     "speedMax": 8.0,
                     "sizeMin": 0.02500000037252903,
                     "sizeMax": 0.05000000074505806,
                     "endSizeScale": 0.30000001192092896,
-                    "gravityScale": 1.0,
+                    "gravityScale": 0.0,
                     "drag": 0.800000011920929,
                     "spinDeg": 0.0,
                     "stretch": 0.03999999910593033,
@@ -1372,7 +1376,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -1401,7 +1405,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -1697,7 +1701,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -1726,7 +1730,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -2733,7 +2737,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -2762,7 +2766,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": [
                         "+StateGraphAgent"
                     ]
@@ -2840,7 +2844,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -2869,7 +2873,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -3361,7 +3365,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -3390,7 +3394,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -3679,7 +3683,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -3708,7 +3712,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -3780,7 +3784,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -3809,7 +3813,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -4527,7 +4531,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -4556,7 +4560,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {

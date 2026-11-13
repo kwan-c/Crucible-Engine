@@ -594,9 +594,9 @@ namespace Crucible
 		Point,    // all at the emitter
 		Sphere,   // anywhere inside a sphere of shapeRadius
 		Box,      // anywhere inside a box of boxExtents (half sizes)
-		Circle,   // anywhere on a flat disc of shapeRadius, facing local +Y (a round Plane)
-		Cone	  // Unity's Cone: from a disc of shapeRadius (the near end), sent outwards
-		          // along a cone that opens by coneAngleDeg (the far end) - see ParticleEmitter
+		Circle,   // anywhere on a flat disc of shapeRadius (local XZ), sent straight out from its centre
+		Cone	  // Unity's Cone: from a disc of shapeRadius (the near end) towards a disc coneLength
+		          // along +Y, wider or narrower by coneAngleDeg (the far end) - see ParticleEmitter
 
 	};
 
@@ -631,13 +631,20 @@ namespace Crucible
 		  - shape / shapeRadius / boxExtents: where they appear.
 		  - spreadDeg: half-angle of the cone of directions around local +Y
 		    (0 = straight up, 90 = a hemisphere, 180 = every direction).
-		  - coneAngleDeg (Cone only): how far the cone opens, like Unity's
-		    Angle. A particle from the middle of the disc goes straight
-			along +Y, one from the the rim tilts out by the full angle, the rest
-			in between - so the far and is shapeRadius + tan(angle) wider
-			per metre travelled. 0 = a straight column (a cylinder),
-			90 = flat out sideways. shapeRadius is the near end (Unity's
-			Radius); 0 = everything from one point.
+		    Not used by Circle or Cone, which set the direction themselves.
+		  - Circle: particles start anywhere on the disc and move outwards
+		    from its centre, along the disc (a ring burst, a shockwave).
+		  - Cone: a cut-off cone along local +Y. shapeRadius is the near end
+		    (Unity's Radius), where particles start. coneLength is how far
+		    along +Y the far end is. coneAngleDeg sets the far end's size:
+		    shapeRadius + coneLength x tan(angle), so a positive angle widens
+		    it (a spray), 0 keeps it the same (a column) and a negative angle
+		    narrows it (gathering in). It never goes below 0: past that the
+		    cone simply closes to a point at coneLength. Each particle heads
+		    from its spot on the near end to the matching spot on the far end,
+		    so a narrowing cone's particles all meet at its tip - and, still
+		    alive, carry on through it and spread out again (give them a
+		    lifetime that ends there).
 		  - worldSpace: true = once spawned, particles ignore the emitter's
 		    movement (a trail); false = they move with it.
 		Each particle
@@ -676,7 +683,8 @@ namespace Crucible
 		float         shapeRadius = 0.25f;
 		Math::vec3    boxExtents{ 0.5f, 0.5f, 0.5f };
 		float         spreadDeg = 25.f;
-		float		  coneAngleDeg = 25.f;
+		float		  coneAngleDeg = 25.f;   // Cone only: -90..90, negative narrows
+		float         coneLength = 1.f;      // Cone only: metres along +Y to the far end
 		bool          worldSpace = true;
 
 		float         lifetimeMin = 0.8f;

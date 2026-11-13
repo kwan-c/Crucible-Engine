@@ -21,6 +21,7 @@
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/DebugDraw.h"
 #include "Graphics/RenderSystem.h"
+#include "Graphics/ParticleSystem.h"   // ParticleSystem::ConeFarRadius: the gizmo's cone is the one particles follow
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"      // UI::LayoutWorldCanvas: the selected element's rect on its page
 #include "UI/WorldUIPlane.h"  // where a world canvas's page is for the Scene view's camera
@@ -398,20 +399,23 @@ namespace Crucible {
 				break;
 			}
 			case ParticleShape::Circle: {
+				// The disc, and four short arrows from its rim: particles go straight out, along it.
 				circle(O, X, Z, radius);
+				for (const glm::vec3& side : { X, Z, -X, -Z }) {
+					DebugDraw::Arrow(world3(side * radius), world3(side * (radius + 0.3f)), style);
+				}
 				break;
 			}
 			case ParticleShape::Cone: {
-				// The near end (where particles start) and the far end 1 m along +Y, joined by four
-				// lines down the cone's wall: what a rim particle follows.
-				constexpr float kLength = 1.0f;
-				const float angle = glm::radians(std::clamp(emitter->coneAngleDeg, 0.0f, 90.0f));
-				const float lean = std::min(angle, glm::radians(89.0f)); 	// 90 = flat: tan() would be infinite
-				const float farRadius = radius + kLength * std::tan(lean); 	// not "far": a macro in <windows.h>
+				// The near end (where particles start) and the far end coneLength along +Y, joined by
+				// four lines down the cone's wall: what a rim particle follows. A cone that closes
+				// has no far circle (radius 0): the four lines meet at its tip.
+				const float length = std::max(emitter->coneLength, 0.01f);
+				const float farRadius = ParticleSystem::ConeFarRadius(*emitter);   // not "far": a macro in <windows.h>
 				circle(O, X, Z, radius);
-				circle(Y * kLength, X, Z, farRadius);
+				circle(Y * length, X, Z, farRadius);
 				for (const glm::vec3& side : { X, Z, -X, -Z }) {
-					DebugDraw::Line(world3(side * radius), world3(Y * kLength + side * farRadius), style);
+					DebugDraw::Line(world3(side * radius), world3(Y * length + side * farRadius), style);
 				}
 				break;
 			}
