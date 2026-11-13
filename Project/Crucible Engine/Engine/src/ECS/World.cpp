@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.8
+* \version       1.9
 * \brief
 *                Implementation of World: entity creation/destruction
 *                and the archetype-move logic used by
@@ -65,10 +65,14 @@
 *                FirstDisabledRequirement, active-state hook dispatch,
 *                ApplySpawnDisabled, OnComponentActiveChanged by id,
 *                OnComponentRemoved by id
+*    -v1.9       entity tags: TrySetEntityTag / SetEntityTag (registry
+*                check), GetEntityTag, CompareTag, FindWithTag,
+*                FindAllWithTag, NormalizeTag (restored values), ToString
 *
 **************************************************************************/
 
 #include "World.h"
+#include "TagRegistry.h"
 #include "Animation/ModelSockets.h"
 
 #include <algorithm>
@@ -290,6 +294,92 @@ namespace Crucible
 	{
 		NameOf(entity) = std::move(name);
 		NormalizeName(entity);
+	}
+
+	// --- entity tags --------------------------------------------------------------------------
+
+	TagResult World::TrySetEntityTag(Entity entity, std::string_view tag)
+	{
+		// A plain write of EntityTag (no shared counter, no archetype change): fine in declared
+		// systems that declare it, and while a Query iterates.
+		CheckDeclaredAccess(ComponentSignature{}, MakeSignature<EntityTag>(), "writes tags via World::SetEntityTag and");
+		if (!m_entities.IsAlive(entity)) return TagResult::DeadEntity;
+		if (!TagRegistry::Get().IsDefined(tag)) return TagResult::UndefinedTag;
+
+		const EntityRecord& record = m_entities.Record(entity);
+		constexpr ComponentId id = ComponentTypeId<EntityTag>();
+		std::string& stored = static_cast<EntityTag*>(record.archetype->GetComponentPtr(id, record.row))->tag;
+		if (stored != tag)
+		{
+			stored.assign(tag);
+			record.archetype->GetColumn(id).Touch(record.row, m_currentTick);   // only a real change
+		}
+		return TagResult::Ok;
+	}
+
+	void World::SetEntityTag(Entity entity, std::string_view tag)
+	{
+		const TagResult result = TrySetEntityTag(entity, tag);
+		if (result != TagResult::Ok)
+		{
+			throw std::invalid_argument("World::SetEntityTag('" + std::string(tag) + "'): " + ToString(result));
+		}
+	}
+
+	std::string_view World::GetEntityTag(Entity entity) const
+	{
+		const EntityTag* tag = GetComponent<EntityTag>(entity);   // access check; null if dead
+		return tag ? std::string_view(tag->tag) : std::string_view{};
+	}
+
+	bool World::CompareTag(Entity entity, std::string_view tag) const
+	{
+		const EntityTag* own = GetComponent<EntityTag>(entity);
+		return own != nullptr && own->tag == tag;
+	}
+
+	Entity World::FindWithTag(std::string_view tag) const
+	{
+		Entity found = kNullEntity;
+		ScanTags("reads tags via World::FindWithTag and", [&](Entity entity, std::string_view mine)
+			{
+				if (mine != tag) return true;
+				found = entity;
+				return false;   // stop at the first
+			});
+		return found;
+	}
+
+	std::vector<Entity> World::FindAllWithTag(std::string_view tag) const
+	{
+		std::vector<Entity> out;
+		FindAllWithTag(tag, out);
+		return out;
+	}
+
+	std::size_t World::FindAllWithTag(std::string_view tag, std::vector<Entity>& out) const
+	{
+		const std::size_t before = out.size();
+		ScanTags("reads tags via World::FindAllWithTag and", [&](Entity entity, std::string_view mine)
+			{
+				if (mine == tag) out.push_back(entity);
+				return true;
+			});
+		return out.size() - before;
+	}
+
+	void World::NormalizeTag(Entity entity)
+	{
+		const EntityRecord& record = m_entities.Record(entity);
+		std::string& tag = static_cast<EntityTag*>(record.archetype->GetComponentPtr(ComponentTypeId<EntityTag>(), record.row))->tag;
+		if (IsBlankName(tag))
+		{
+			tag.assign(kUntaggedTag);   // no tag saved: the default
+			return;
+		}
+		// Kept exactly as saved, even if the project no longer defines it: a deleted or renamed
+		// tag must not silently turn into another one. Logged once per tag name.
+		TagRegistry::Get().ReportUnknown(tag);
 	}
 
 	void World::EndDeferredNaming() noexcept
@@ -891,6 +981,17 @@ namespace Crucible
 		rotation = SafeNormalize(q);
 		scale = s;
 		return true;
+	}
+
+	const char* ToString(TagResult result) noexcept
+	{
+		switch (result)
+		{
+		case TagResult::Ok:           return "Ok";
+		case TagResult::DeadEntity:   return "entity is dead or null";
+		case TagResult::UndefinedTag: return "tag is not defined in the project's tag list (Config/Tags.json)";
+		default:                      return "unknown";
+		}
 	}
 
 	const char* ToString(ParentResult result) noexcept

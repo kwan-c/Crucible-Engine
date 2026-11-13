@@ -28,7 +28,13 @@
 *    into a new object, without running a constructor - keep those field
 *    names, and keep everything else lazily created).
 *
-*    C++ side: Engine/src/Scripting/Bindings/EntityBindings.cpp.
+*    Tags (Unity's GameObject.tag): Tag, CompareTag, FindWithTag,
+*    FindAllWithTag, IsTagDefined. Tags come from the project's tag list
+*    (Editor: Inspector > Tag > Manage Tags..., saved in
+*    Assets/Config/Tags.json) and are case-sensitive.
+*
+*    C++ side: Engine/src/Scripting/Bindings/EntityBindings.cpp, and
+*    Bindings/TagBindings.cpp for the tag calls.
 *
 **************************************************************************/
 using System;
@@ -122,6 +128,84 @@ namespace Crucible
         public string Name
         {
             get { return GetNameInternal((int)index, (int)generation) ?? string.Empty; }
+        }
+
+        // --- tags ------------------------------------------------------------------ //
+
+        /// <summary>The tag every entity starts with.</summary>
+        public const string Untagged = "Untagged";
+
+        // SetTagInternal results. Must match TagBindings.cpp.
+        private const int TagSet = 0;
+        private const int TagDeadEntity = 1;
+        private const int TagUndefined = 2;
+
+        /// <summary>
+        /// The entity's tag ("Untagged" by default; empty once it is gone). Setting it to a tag
+        /// the project does not define throws an ArgumentException. Setting it on a destroyed
+        /// entity does nothing. A tag set during Play is restored by Stop.
+        /// </summary>
+        public string Tag
+        {
+            get { return GetTagInternal((int)index, (int)generation) ?? string.Empty; }
+            set
+            {
+                if (value == null)
+                    throw new ArgumentNullException("value", "An entity's tag can't be null - use Entity.Untagged.");
+                int result = SetTagInternal((int)index, (int)generation, value);
+                if (result == TagUndefined)
+                    throw new ArgumentException("Tag '" + value + "' is not defined. Add it in the Editor: " +
+                                                "Inspector > Tag > Manage Tags... (tags are case-sensitive).", "value");
+                if (result != TagSet && result != TagDeadEntity)
+                    throw new InvalidOperationException("Could not set the tag of " + ToString() + ".");
+            }
+        }
+
+        /// <summary>
+        /// True if the entity is alive and its tag is exactly <paramref name="tag"/>
+        /// (case-sensitive). Like Unity's CompareTag.
+        /// </summary>
+        public bool CompareTag(string tag)
+        {
+            if (tag == null)
+                return false;
+            int result;
+            return CompareTagInternal((int)index, (int)generation, tag, out result) != 0 && result != 0;
+        }
+
+        /// <summary>
+        /// An entity whose tag is exactly <paramref name="tag"/>, or null. If several have it,
+        /// the same one is returned while the scene is unchanged, but which one is unspecified.
+        /// It searches every entity: call it in OnCreate and keep the result.
+        /// </summary>
+        public static Entity FindWithTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+                return null;
+            int foundIndex, foundGeneration;
+            return FindWithTagInternal(tag, out foundIndex, out foundGeneration) != 0
+                ? new Entity(unchecked((uint)foundIndex), unchecked((uint)foundGeneration))
+                : null;
+        }
+
+        /// <summary>Every entity whose tag is exactly <paramref name="tag"/> (empty if none).</summary>
+        public static Entity[] FindAllWithTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+                return new Entity[0];
+            int[] pairs = FindAllWithTagInternal(tag);
+            if (pairs == null)
+                return new Entity[0];
+            Entity[] found = new Entity[pairs.Length / 2];
+            for (int i = 0; i < found.Length; ++i)
+                found[i] = new Entity(unchecked((uint)pairs[i * 2]), unchecked((uint)pairs[i * 2 + 1]));
+            return found;
+        }
+
+        /// <summary>Whether the project's tag list has <paramref name="tag"/> (case-sensitive).</summary>
+        public static bool IsTagDefined(string tag)
+        {
+            return !string.IsNullOrEmpty(tag) && IsTagDefinedInternal(tag) != 0;
         }
 
         // --- finding entities and components -------------------------------------- //
@@ -455,5 +539,17 @@ namespace Crucible
         private static extern int SetActiveInternal(int index, int generation, int active);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int IsActiveInternal(int index, int generation, int self, out int active);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string GetTagInternal(int index, int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetTagInternal(int index, int generation, string tag);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int CompareTagInternal(int index, int generation, string tag, out int result);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int FindWithTagInternal(string tag, out int index, out int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int[] FindAllWithTagInternal(string tag);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int IsTagDefinedInternal(string tag);
     }
 }
