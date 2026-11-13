@@ -2,15 +2,16 @@
 * \file:         EntityScriptSystem.h
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
-* \date          30 October 2026
-* \version       1.0
+* \date          13 November 2026
+* \version       1.1
 * \brief         ECS system that runs the C# scripts attached to entities
 *                through ScriptComponent.
 *
 * \details
-*    ScriptComponent only stores WHICH C# class to run and its saved field
-*    values. This system decides WHEN to create, update and destroy the
-*    live C# objects, following Play mode:
+*    ScriptComponent only stores WHICH C# classes to run (any number per
+*    entity, in ScriptComponent::scripts) and their saved field values.
+*    This system decides WHEN to create, update and destroy the live C#
+*    objects - one per script, run in list order - following Play mode:
 *
 *      Edit mode    nothing runs
 *      Play         create (OnCreate) once, then OnUpdate every frame
@@ -29,12 +30,17 @@
 #include <map>
 #include <set>
 #include <memory>
+#include <vector>
 
 namespace Crucible
 {
 	class ScriptRuntime;
 	class PlayMode;
 	class SceneManager;
+	namespace ScriptBindings::EntityContext
+	{
+		struct RunningScript; // Scripting/Bindings/EntityContext.h
+	}
 
 	/*********************************************************************
 	 \brief  What the Inspector shows for an entity's script: its live
@@ -92,10 +98,11 @@ namespace Crucible
 		void StopAll();
 
 		/*********************************************************************
-		 \brief  Live instance and last error for one entity's script, for the
-		         Inspector. Empty if the entity has no running script.
+		 \brief  Live instance and last error for one of an entity's scripts
+		         (`slot` = its place in ScriptComponent::scripts), for the
+		         Inspector. Empty if that script is not running.
 		 *********************************************************************/
-		EntityScriptStatus Status(Entity entity) const;
+		EntityScriptStatus Status(Entity entity, std::size_t slot = 0) const;
 
 	private:
 		/*********************************************************************
@@ -106,14 +113,27 @@ namespace Crucible
 		void SpawnLoadingScreen();
 
 		/*********************************************************************
-		 \brief  Bookkeeping for one entity's script.
+		 \brief  Bookkeeping for one script on an entity (one entry of
+		         ScriptComponent::scripts).
 		 *********************************************************************/
 		struct Record
 		{
-			ScriptComponent definition;    // copy of the component when the instance was made
-			ScriptInstanceHandle instance; // live C# object (empty if creation failed)
+			ScriptEntry definition;        // copy of the script entry when the instance was made
+			ScriptInstanceHandle instance; // live C# object (empty if not made yet, or creation failed)
 			std::string error;             // last failure, shown in the Inspector
+			bool attempted = false;        // creation was tried: not tried again until the script or session changes
+			bool started = false;          // OnCreate has run. A script that is off at Play is created (GetComponent
+			                               // finds it) but not started until it is first switched on.
 		};
+
+		/*********************************************************************
+		 \brief  Same script for keeping an instance: same class, namespace
+		         and assembly (enabled and field values may differ).
+		 *********************************************************************/
+		static bool SameScript(const ScriptEntry& a, const ScriptEntry& b)
+		{
+			return a.className == b.className && a.nameSpace == b.nameSpace && a.assembly == b.assembly;
+		}
 
 		/*********************************************************************
 		 \brief  Packs an entity's generation and index into one 64-bit map key.
@@ -130,11 +150,18 @@ namespace Crucible
 		void Release(Record& record);
 
 		/*********************************************************************
-		 \brief  For C# GetComponent<SomeScript>(): the GC handle of the script
-		         running on `entity`, or 0. Registered with the script bindings
-		         in Init (EntityContext::SetScriptLookup).
+		 \brief  Release() for every script on one entity, last first (the
+		         reverse of the order they were created in).
 		 *********************************************************************/
-		static uint32_t LookupScript(void* self, Entity entity);
+		void ReleaseAll(std::vector<Record>& records);
+
+		/*********************************************************************
+		 \brief  For C# GetComponent<SomeScript>() / GetComponents: the GC
+		         handles of the scripts running on `entity`, in list order.
+		         Registered with the script bindings in Init
+		         (EntityContext::SetScriptLookup).
+		 *********************************************************************/
+		static void LookupScripts(void* self, Entity entity, std::vector<ScriptBindings::EntityContext::RunningScript>& out);
 
 		/*********************************************************************
 		 \brief  Carries out C# Entity.Destroy requests that are due: calls
@@ -148,7 +175,7 @@ namespace Crucible
 		World& m_world;
 		PlayMode& m_play;
 		SceneManager& m_scenes;
-		std::map<uint64_t, Record> m_records; // entity key -> its script
+		std::map<uint64_t, std::vector<Record>> m_records; // entity key -> its scripts, in ScriptComponent::scripts order
 		std::set<uint64_t> m_removed;         // entities whose ScriptComponent was removed since last Update
 		std::shared_ptr<int> m_lifetime = std::make_shared<int>(0); // lets event callbacks detect this system is gone
 		uint64_t m_session = 0;               // Play session revision the records belong to

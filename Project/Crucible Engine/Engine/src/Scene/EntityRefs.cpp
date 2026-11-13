@@ -62,9 +62,12 @@ namespace Crucible::EntityRefs {
     bool Remap(ScriptComponent& component, const Map& map)
     {
         bool changed = false;
-        for (ScriptFieldValue& field : component.fields)
+        for (ScriptEntry& script : component.scripts)
         {
-            if (field.type == ScriptFieldType::Entity) changed |= Apply(field.entityId, map);
+            for (ScriptFieldValue& field : script.fields)
+            {
+                if (field.type == ScriptFieldType::Entity) changed |= Apply(field.entityId, map);
+            }
         }
         return changed;
     }

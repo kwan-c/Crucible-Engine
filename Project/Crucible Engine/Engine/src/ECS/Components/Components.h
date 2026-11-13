@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -35,6 +35,8 @@
 	*             also stops); component fields unchanged
 	* -v1.7       includes Network/NetComponents.h (NetworkIdentity,
 	*             NetInterpolation, PlayerInput)
+	* -v1.8       EntityTag (mandatory gameplay tag, WorldValidated) and
+	*             kUntaggedTag
 	*
 	*
 	**************************************************************************/
@@ -43,6 +45,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include "Animation/ModelPose.h"
 #include "Animation/AnimatorController.h"
 
@@ -65,15 +68,48 @@
 
 namespace Crucible
 {
-    // Authored configuration only. Managed objects and transient diagnostics
-    // belong to EntityScriptSystem, never to scene/undo/component copies.
-    struct ScriptComponent {
+    // One C# script attached to an entity: which class to run and its saved
+    // public field values. Authored configuration only - managed objects and
+    // transient diagnostics belong to EntityScriptSystem.
+    struct ScriptEntry {
         bool enabled = true;
         std::string assembly = "Managed/Crucible.Scripts.dll";
         std::string nameSpace = "Crucible.Scripts";
         std::string className;
         std::vector<ScriptFieldValue> fields;
+        bool operator==(const ScriptEntry&) const = default;
+    };
+
+    // Every C# script on an entity, in Inspector order (the ECS allows one
+    // component of a type per entity, so the scripts are a list inside it).
+    // Switching the component off (World::SetComponentEnabled) pauses all of
+    // them; ScriptEntry::enabled pauses one.
+    struct ScriptComponent {
+        std::vector<ScriptEntry> scripts;
         bool operator==(const ScriptComponent&) const = default;
+
+        // --- Older files: one script, its keys at the top level -----------------
+        // ("enabled", "assembly", "namespace", "class", "fields" - exactly a
+        // ScriptEntry's). Registered as LOAD_ONLY properties
+        // (ScriptComponentReflection.cpp): read into the first entry wherever
+        // component JSON is read (scenes, prefabs, undo, EntityRefs), never
+        // written - files are saved with "scripts". A setter given the value the
+        // getter already reports does nothing, so copying these properties never
+        // adds an empty entry.
+        bool LegacyEnabled() const { return scripts.empty() ? ScriptEntry{}.enabled : scripts.front().enabled; }
+        std::string LegacyAssembly() const { return scripts.empty() ? ScriptEntry{}.assembly : scripts.front().assembly; }
+        std::string LegacyNamespace() const { return scripts.empty() ? ScriptEntry{}.nameSpace : scripts.front().nameSpace; }
+        std::string LegacyClass() const { return scripts.empty() ? std::string{} : scripts.front().className; }
+        std::vector<ScriptFieldValue> LegacyFields() const { return scripts.empty() ? std::vector<ScriptFieldValue>{} : scripts.front().fields; }
+        void SetLegacyEnabled(bool value) { if (value != LegacyEnabled()) LegacyEntry().enabled = value; }
+        // Setters take the same types the getters return (RTTR requires matching signatures).
+        void SetLegacyAssembly(std::string value) { if (value != LegacyAssembly()) LegacyEntry().assembly = std::move(value); }
+        void SetLegacyNamespace(std::string value) { if (value != LegacyNamespace()) LegacyEntry().nameSpace = std::move(value); }
+        void SetLegacyClass(std::string value) { if (value != LegacyClass()) LegacyEntry().className = std::move(value); }
+        void SetLegacyFields(std::vector<ScriptFieldValue> value) { if (value != LegacyFields()) LegacyEntry().fields = std::move(value); }
+
+    private:
+        ScriptEntry& LegacyEntry() { if (scripts.empty()) scripts.emplace_back(); return scripts.front(); }
     };
 	/*************************************************************************
 	 \brief  Position of an entity in local/world space.
@@ -788,6 +824,33 @@ namespace Crucible
 		std::string name;
 	};
 
+	/// The tag every entity starts with, and the one tag that always exists (TagRegistry).
+	inline constexpr std::string_view kUntaggedTag = "Untagged";
+
+	/*************************************************************************
+	 \brief
+		The entity's gameplay tag (Unity's GameObject.tag): one label, from
+		the project's tag list (TagRegistry, Assets/Config/Tags.json), that
+		other systems filter by - e.g. "Obstacle" for navigation.
+	 \details
+		Mandatory: every entity has exactly one, "Untagged" unless set, so
+		changing it never moves the entity between archetypes. Saved with
+		the scene like any other component. Case-sensitive; any number of
+		entities may share a tag. Separate from EntityName and from physics
+		layers, and carries no behaviour.
+
+		Read-only outside World (WorldValidated): assign with
+		World::SetEntityTag / TrySetEntityTag, which refuse tags the project
+		does not define. Loading paths (scenes, prefabs, undo, paste) restore
+		the saved value through AddComponent, which keeps a tag that is no
+		longer defined - reported, never renamed - and turns a blank one into
+		"Untagged".
+	 *************************************************************************/
+	struct EntityTag
+	{
+		std::string tag{ kUntaggedTag };
+	};
+
 	/*************************************************************************
 	 \brief  Links an entity to the prefab (.cprefab) it was placed from.
 	 \details
@@ -832,6 +895,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(StressMover, StressMover);
 	CRUCIBLE_COMPONENT(Vine, Vine);
 	CRUCIBLE_COMPONENT(EntityName, EntityName);
+	CRUCIBLE_COMPONENT(EntityTag, EntityTag);
 	CRUCIBLE_COMPONENT(Water, Water);
 	CRUCIBLE_COMPONENT(PrefabInstance, PrefabInstance);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
@@ -852,9 +916,12 @@ namespace Crucible
 	template <> struct Mandatory<WorldTransform> : std::true_type {};
 	template <> struct Mandatory<HierarchyNode> : std::true_type {};
 	template <> struct Mandatory<EntityName> : std::true_type {};
+	template <> struct Mandatory<EntityTag> : std::true_type {};
 
 	// Read anywhere; written only through World (SetEntityName, AddComponent), which applies the naming rules.
 	template <> struct WorldValidated<EntityName> : std::true_type {};
+	// Read anywhere; written only through World (SetEntityTag checks the project's tag list).
+	template <> struct WorldValidated<EntityTag> : std::true_type {};
 
 	// What each component needs on the SAME entity to run (RequiresComponents in
 	// ComponentKind.h): while a requirement is switched off, the component counts as

@@ -2,12 +2,13 @@
 * \file:         EnableBindings.cpp
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
-* \date          2 November 2026
-* \version       1.0
+* \date          13 November 2026
+* \version       1.1
 * \brief         Internal calls behind switching components and whole
 *                entities on and off from C#: Entity.SetEnabled<T> /
-*                IsEnabled<T>, EntityScript.Enabled, Entity.SetActive /
-*                IsActive / IsActiveSelf.
+*                IsEnabled<T>, EntityScript.Enabled (one script of several:
+*                its ScriptEntry::enabled), Entity.SetActive / IsActive /
+*                IsActiveSelf.
 *
 * \details
 *    Bindings only, on World's public per-component on/off API
@@ -42,6 +43,7 @@
 #include <utility>
 #include <vector>
 #include <mono/metadata/loader.h>
+#include <mono/metadata/object.h>   // mono_gchandle_get_target (EntityScript.Enabled)
 
 namespace Crucible::ScriptBindings
 {
@@ -159,6 +161,88 @@ namespace Crucible::ScriptBindings
 		}
 
 		// ======================================================================
+		// One script (EntityScript.Enabled)
+		// ======================================================================
+
+		/*********************************************************************
+		 \brief  Which entry of the entity's ScriptComponent::scripts the C#
+		         object `script` is (EntityScriptSystem's records line up with
+		         that list). False if it is not one of the entity's running
+		         scripts.
+		 *********************************************************************/
+		bool FindScriptSlot(Entity entity, MonoObject* script, uint32_t& slot)
+		{
+			if (!script)
+				return false;
+			std::vector<EntityContext::RunningScript> running;
+			EntityContext::FindScripts(entity, running);
+			for (const EntityContext::RunningScript& candidate : running)
+			{
+				if (mono_gchandle_get_target(candidate.handle) == script)
+				{
+					slot = candidate.slot;
+					return true;
+				}
+			}
+			return false;
+		}
+
+		/*********************************************************************
+		 \brief  C# EntityScript.Enabled (get): that one script's own on/off
+		         choice (ScriptEntry::enabled). Switching the whole
+		         ScriptComponent off (SetActive, SetEnabled<EntityScript>)
+		         pauses it too but does not change this.
+		 *********************************************************************/
+		int32_t ManagedScriptGetEnabled(MonoObject* script, int32_t index, int32_t generation, int32_t* out) noexcept
+		{
+			try
+			{
+				Entity entity;
+				uint32_t slot = 0;
+				if (!out || !EntityContext::ResolveEntity(index, generation, entity) || !FindScriptSlot(entity, script, slot))
+					return 0;
+				const ScriptComponent* component = EntityContext::GetWorld()->Read<ScriptComponent>(entity);
+				if (!component || slot >= component->scripts.size())
+					return 0;
+				*out = component->scripts[slot].enabled ? 1 : 0;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# EntityScript.Enabled (set): switches only that script
+		         (ScriptEntry::enabled). EntityScriptSystem pauses or resumes
+		         its instance at its next Update, keeping its state; the
+		         entity's other scripts carry on.
+		 *********************************************************************/
+		int32_t ManagedScriptSetEnabled(MonoObject* script, int32_t index, int32_t generation, int32_t enabled) noexcept
+		{
+			try
+			{
+				Entity entity;
+				uint32_t slot = 0;
+				if (!EntityContext::ResolveEntity(index, generation, entity) || !FindScriptSlot(entity, script, slot))
+					return 0;
+				World& world = *EntityContext::GetWorld();
+				const ScriptComponent* current = world.Read<ScriptComponent>(entity);
+				if (!current || slot >= current->scripts.size())
+					return 0;
+				if (current->scripts[slot].enabled == (enabled != 0))
+					return 1; // already so: no write, so the component isn't marked changed
+				world.Write<ScriptComponent>(entity)->scripts[slot].enabled = enabled != 0;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		// ======================================================================
 		// Whole entity (Unity's SetActive)
 		// ======================================================================
 
@@ -263,6 +347,8 @@ namespace Crucible::ScriptBindings
 		                       reinterpret_cast<const void*>(ManagedSetComponentEnabled));
 		mono_add_internal_call("Crucible.Entity::IsComponentEnabledInternal",
 		                       reinterpret_cast<const void*>(ManagedIsComponentEnabled));
+		mono_add_internal_call("Crucible.EntityScript::GetEnabledInternal", reinterpret_cast<const void*>(ManagedScriptGetEnabled));
+		mono_add_internal_call("Crucible.EntityScript::SetEnabledInternal", reinterpret_cast<const void*>(ManagedScriptSetEnabled));
 		mono_add_internal_call("Crucible.Entity::SetActiveInternal", reinterpret_cast<const void*>(ManagedSetActive));
 		mono_add_internal_call("Crucible.Entity::IsActiveInternal", reinterpret_cast<const void*>(ManagedIsActive));
 	}

@@ -74,6 +74,17 @@ namespace {
 
     /*************************************************************************
      \brief
+        True if the property is only read from files (MetaDataTypes::LOAD_ONLY):
+        an older format's key, upgraded by its setter. Writing skips it.
+     *************************************************************************/
+    bool IsLoadOnly(const property& prop)
+    {
+        const variant meta = prop.get_metadata(MetaDataTypes::LOAD_ONLY);
+        return meta.is_valid() && meta.to_bool();
+    }
+
+    /*************************************************************************
+     \brief
         Write a number, bool, string or enum into a JSON value.
 
      \param[in]
@@ -216,7 +227,7 @@ namespace {
 
         for (const property& prop : target.get_derived_type().get_properties())
         {
-            if (IsSkipped(prop))
+            if (IsSkipped(prop) || IsLoadOnly(prop))
                 continue;
 
             const variant value = prop.get_value(target);

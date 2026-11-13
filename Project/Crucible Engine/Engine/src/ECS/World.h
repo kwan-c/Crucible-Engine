@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          13 September 2026
-* \version       1.11
+* \version       1.12
 * \brief
 *                composes EntityManager + ComponentRegistry into the single
 *                API systems and gameplay code actually call
@@ -84,6 +84,12 @@
 *                OnComponentRemoved by id; kComponentEnabledKey. A switched-off SocketAttachment
 *                doesn't mount (ReadNodeRow, and World.cpp's socket checks).
 *                Component fields untouched.
+*    -v1.12      entity tags: EntityTag joins the mandatory base;
+*                TagResult, TrySetEntityTag / SetEntityTag (checked
+*                against TagRegistry), GetEntityTag, CompareTag,
+*                CompareAnyTag, FindWithTag, FindAllWithTag,
+*                FindAllWithAnyTag; AddComponent<EntityTag> restores
+*                (blank -> "Untagged", undefined kept and reported)
 *
 **************************************************************************/
 #pragma once
@@ -96,8 +102,10 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -137,6 +145,22 @@ namespace Crucible
 	ENGINE_API const char* ToString(ParentResult result) noexcept;
 
 	/*************************************************************************
+	 \brief  Why World::TrySetEntityTag() refused a tag (Ok = set, or the
+			 entity already had it).
+	 *************************************************************************/
+	enum class TagResult : std::uint8_t
+	{
+		Ok,
+		DeadEntity,     // null, dead or stale handle
+		UndefinedTag    // not in the project's tag list (TagRegistry), "" included
+	};
+
+	/*************************************************************************
+	 \brief  Human-readable reason for a TagResult (for logs/exceptions).
+	 *************************************************************************/
+	ENGINE_API const char* ToString(TagResult result) noexcept;
+
+	/*************************************************************************
 	 \brief  Crucible's mandatory base scene components. World ORs this into
 			 every creation signature (CreateEntity, CreateEntities,
 			 CommandBuffer spawns), so each entity is born in its final
@@ -146,11 +170,12 @@ namespace Crucible
 			   HierarchyNode  all links null, childCount 0 (a root)
 			   EntityName     "Entity N", the next numbered default, unless
 							  a name was given (see CreateNamedEntity)
+			   EntityTag      "Untagged" (see "Entity tags" below)
 	 \note   Must agree with the Mandatory<T> specialisations in
 			 Components.h - checked for every registered component below.
 	 *************************************************************************/
 	inline constexpr ComponentSignature kMandatoryComponents =
-		MakeSignature<Transform, WorldTransform, HierarchyNode, EntityName>();
+		MakeSignature<Transform, WorldTransform, HierarchyNode, EntityName, EntityTag>();
 
 	/*************************************************************************
 	 \brief  JSON member a scene/prefab/snapshot writer stores a switched-off
@@ -488,6 +513,120 @@ namespace Crucible
 				 restore), not per entity.
 		 *********************************************************************/
 		void RecalculateEntityNameCounter();
+
+		// ---------------------------------------------------------------------
+		// Entity tags (the mandatory EntityTag component)
+		//
+		// One tag per entity, "Untagged" by default, chosen from the project's
+		// tag list (TagRegistry, Assets/Config/Tags.json). Tags are labels for
+		// other systems to filter by (navigation obstacles, pickups...): no
+		// behaviour, independent of names and physics layers. Case-sensitive,
+		// compared byte for byte; any number of entities may share one.
+		//
+		// Writing:
+		//   - SetEntityTag / TrySetEntityTag accept only tags the registry
+		//     defines - the path for editors, scripts and gameplay code.
+		//   - AddComponent<EntityTag> (scene, prefab and snapshot loading,
+		//     undo/redo, paste, CommandBuffer::AddComponent<EntityTag>)
+		//     restores a saved value: blank becomes "Untagged", and a tag the
+		//     registry no longer defines is KEPT and reported once
+		//     (TagRegistry::ReportUnknown) - never swapped for another tag.
+		// EntityTag is WorldValidated: read it with GetEntityTag,
+		// Read<EntityTag>() or a const query; a mutable pointer does not
+		// compile.
+		//
+		// Semantics, for every function below:
+		//   - dead / stale / null entity: GetEntityTag gives "", CompareTag
+		//     and CompareAnyTag false, TrySetEntityTag DeadEntity,
+		//     SetEntityTag throws std::invalid_argument;
+		//   - an undefined tag is only refused when ASSIGNED; comparing and
+		//     searching are plain string matches (an entity loaded with an
+		//     undefined tag still matches it), so they never consult the
+		//     registry and never allocate.
+		//
+		// Threading: a tag change is a write of EntityTag, a lookup a read -
+		// declared systems must declare that access, as for any component.
+		// No archetype changes, so all of these are allowed inside declared
+		// systems and while a Query iterates. The registry is internally
+		// locked.
+		//
+		// Searching scans every entity (no index): fine for level setup
+		// (navigation baking, OnCreate lookups), not for per-entity calls
+		// every frame. Results come in the world's storage order -
+		// deterministic for the same world, unrelated to creation or
+		// Hierarchy order.
+		// ---------------------------------------------------------------------
+
+		/*********************************************************************
+		 \brief  Gives entity a tag from the project's tag list.
+		 \return Ok (also when it already had the tag), DeadEntity, or
+				 UndefinedTag (tag not in TagRegistry::Get(); nothing changes).
+		 \note   Marks EntityTag changed only when the value changes.
+		 *********************************************************************/
+		TagResult TrySetEntityTag(Entity entity, std::string_view tag);
+
+		/*********************************************************************
+		 \brief  TrySetEntityTag that throws std::invalid_argument when the
+				 tag is refused (dead entity or undefined tag).
+		 *********************************************************************/
+		void SetEntityTag(Entity entity, std::string_view tag);
+
+		/*********************************************************************
+		 \brief  The entity's tag, or "" if entity is dead/stale.
+		 \note   Views the component's storage: valid until the entity's tag
+				 changes, it is destroyed, or a structural change moves it.
+				 Copy it (std::string) to keep it.
+		 *********************************************************************/
+		std::string_view GetEntityTag(Entity entity) const;
+
+		/*********************************************************************
+		 \brief  Unity's GameObject.CompareTag: true if entity is alive and
+				 its tag is exactly tag. No allocation.
+		 *********************************************************************/
+		bool CompareTag(Entity entity, std::string_view tag) const;
+
+		/*********************************************************************
+		 \brief  True if entity is alive and its tag equals any of tags.
+		 \param tags Any range of string-like values (std::vector<std::string>,
+				std::array<std::string_view, N>, ...), or a braced list:
+				world.CompareAnyTag(e, {"Obstacle", "Wall"}).
+		 *********************************************************************/
+		template <typename TagRange>
+		bool CompareAnyTag(Entity entity, const TagRange& tags) const;
+		bool CompareAnyTag(Entity entity, std::initializer_list<std::string_view> tags) const
+		{
+			return CompareAnyTag<std::initializer_list<std::string_view>>(entity, tags);
+		}
+
+		/*********************************************************************
+		 \brief  Unity's GameObject.FindWithTag: the first entity (storage
+				 order) whose tag is tag, or kNullEntity if there is none.
+		 *********************************************************************/
+		Entity FindWithTag(std::string_view tag) const;
+
+		/*********************************************************************
+		 \brief  Unity's GameObject.FindGameObjectsWithTag: every entity whose
+				 tag is tag (empty if none).
+		 *********************************************************************/
+		std::vector<Entity> FindAllWithTag(std::string_view tag) const;
+
+		/*********************************************************************
+		 \brief  FindAllWithTag that APPENDS to out (reuse one vector to avoid
+				 reallocating). \return How many entities were appended.
+		 *********************************************************************/
+		std::size_t FindAllWithTag(std::string_view tag, std::vector<Entity>& out) const;
+
+		/*********************************************************************
+		 \brief  Appends every entity whose tag equals any of tags (each
+				 entity once). Same tags argument as CompareAnyTag.
+		 \return How many entities were appended.
+		 *********************************************************************/
+		template <typename TagRange>
+		std::size_t FindAllWithAnyTag(const TagRange& tags, std::vector<Entity>& out) const;
+		std::size_t FindAllWithAnyTag(std::initializer_list<std::string_view> tags, std::vector<Entity>& out) const
+		{
+			return FindAllWithAnyTag<std::initializer_list<std::string_view>>(tags, out);
+		}
 
 		/*********************************************************************
 		 \brief  Destroys an entity AND all its descendants (Unity's
@@ -903,7 +1042,7 @@ namespace Crucible
 		// Per-component on/off state (Unity's Behaviour.enabled)
 		//
 		// Every component except the mandatory base ones (Transform,
-		// WorldTransform, HierarchyNode, EntityName) can be switched off
+		// WorldTransform, HierarchyNode, EntityName, EntityTag) can be switched off
 		// without being removed (ToggleableComponent, ComponentKind.h). Its
 		// data stays: HasComponent, Read and GetComponent see it as before.
 		//
@@ -1078,6 +1217,15 @@ namespace Crucible
 		void EndDeferredNaming() noexcept;            // ~DeferredNaming
 		// SetEntityName / ReissueDefaultName: alive, and not inside a declared system.
 		const EntityRecord& RequireRenamableEntity(Entity entity, const char* operation) const;
+
+		// Tag internals (World.cpp): a restored tag (AddComponent<EntityTag>) - blank becomes
+		// "Untagged", an undefined one is kept and reported. The entity must be alive.
+		void NormalizeTag(Entity entity);
+		// One read-access check, then fn(entity, tag) for every entity in storage order
+		// until fn returns false. No allocation; every archetype holding entities has
+		// EntityTag (mandatory).
+		template <typename Fn>
+		void ScanTags(const char* operation, Fn&& fn) const;
 
 		// fireHooks == false removes an entity whose add hooks never ran (a
 		// rolled-back spawn or bulk create), so no remove/destroy hook may run.
@@ -1320,6 +1468,13 @@ namespace Crucible
 			NormalizeName(entity);
 			return name;
 		}
+		else if constexpr (std::is_same_v<T, EntityTag>)
+		{
+			// Mandatory, so always an overwrite; a restored value (see "Entity tags").
+			const T& tag = OverwriteComponent<T>(record, id, std::move(value));
+			NormalizeTag(entity);
+			return tag;
+		}
 		else
 		{
 			if (record.archetype->Contains(id)) return OverwriteComponent<T>(record, id, std::move(value));
@@ -1428,6 +1583,51 @@ namespace Crucible
 			{
 				cb(world, entity, *static_cast<T*>(component), active);
 			});
+	}
+
+	template <typename Fn>
+	void World::ScanTags(const char* operation, Fn&& fn) const
+	{
+		CheckDeclaredAccess(MakeSignature<EntityTag>(), ComponentSignature{}, operation);   // once, not per entity
+		constexpr ComponentId id = ComponentTypeId<EntityTag>();
+		for (const Archetype* archetype : m_archetypes.All())
+		{
+			if (!archetype->Contains(id)) continue;   // only the empty root archetype, which holds no entity
+			const ComponentColumn& column = archetype->GetColumn(id);
+			const std::uint32_t count = archetype->EntityCount();
+			for (std::uint32_t row = 0; row < count; ++row)
+			{
+				if (!fn(archetype->EntityAt(row), std::string_view(static_cast<const EntityTag*>(column.At(row))->tag))) return;
+			}
+		}
+	}
+
+	template <typename TagRange>
+	bool World::CompareAnyTag(Entity entity, const TagRange& tags) const
+	{
+		const EntityTag* own = GetComponent<EntityTag>(entity);   // access check + liveness, once
+		if (own == nullptr) return false;
+		const std::string_view mine = own->tag;
+		for (const auto& tag : tags)
+		{
+			if (mine == std::string_view(tag)) return true;
+		}
+		return false;
+	}
+
+	template <typename TagRange>
+	std::size_t World::FindAllWithAnyTag(const TagRange& tags, std::vector<Entity>& out) const
+	{
+		const std::size_t before = out.size();
+		ScanTags("reads tags via World::FindAllWithAnyTag and", [&](Entity entity, std::string_view mine)
+			{
+				for (const auto& tag : tags)
+				{
+					if (mine == std::string_view(tag)) { out.push_back(entity); break; }
+				}
+				return true;
+			});
+		return out.size() - before;
 	}
 
 	template<typename... T>

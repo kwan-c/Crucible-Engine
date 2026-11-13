@@ -230,6 +230,36 @@ Setup: entity with a WorldText. Optional "Damage Number" (prefab with a WorldTex
 - [ ] K spawns a red damage number that floats up and is gone after 1 s.
 - [ ] N cycles the canvas's Billboard; M draws the canvas through walls.
 
+## 20. Several scripts on one entity - `MultiScriptTest` + `MultiScriptPartner`
+
+Setup: Add Component -> MultiScriptTest, then Add Component -> MultiScriptPartner on the SAME
+entity. Press Play.
+
+Inspector (Edit mode):
+
+- [ ] Each script has its own section ("MultiScriptTest.cs", "MultiScriptPartner.cs") with its own
+      checkbox and fields; the old "One script per entity" message is gone.
+- [ ] Right-click a header: Move Up / Move Down swap them; Remove Script removes just that one;
+      removing the last one removes the component. Ctrl+Z undoes each step.
+- [ ] Unticking one script greys its header only. Save, reopen: order and ticks are kept.
+- [ ] Create C# script on an entity that already has a script adds a second one.
+
+In Play:
+
+- [ ] Both OnCreates log; MultiScriptTest lists 2 scripts (MultiScriptTest, MultiScriptPartner).
+- [ ] It logs "is me: True", "partner found", 1 MultiScriptPartner and 1 Transform.
+- [ ] MultiScriptPartner logs "MultiScriptTest here too: True".
+- [ ] Y makes the partner log "count is now 1", 2, ... (one script calling the other).
+- [ ] U logs "partner Enabled False ... mine still True, all scripts switch True". Y then logs
+      only from MultiScriptTest - the partner stays quiet.
+- [ ] U again: the partner wakes up and logs the count it reached in one line.
+- [ ] Untick MultiScriptPartner in the Inspector before Play: the test still lists 2 scripts and
+      "partner found" (a switched-off script exists, as in Unity), but the partner's OnCreate does
+      NOT log. Y counts silently.
+- [ ] Then U switches it on: the partner's OnCreate logs now (first time on), then its count.
+- [ ] Move MultiScriptPartner above MultiScriptTest: its OnCreate now logs first.
+- [ ] Single-script entities in other scenes behave exactly as before.
+
 ---
 
 ## Editor checks (no script)

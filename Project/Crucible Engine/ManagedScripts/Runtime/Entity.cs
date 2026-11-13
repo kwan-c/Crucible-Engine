@@ -28,7 +28,13 @@
 *    into a new object, without running a constructor - keep those field
 *    names, and keep everything else lazily created).
 *
-*    C++ side: Engine/src/Scripting/Bindings/EntityBindings.cpp.
+*    Tags (Unity's GameObject.tag): Tag, CompareTag, FindWithTag,
+*    FindAllWithTag, IsTagDefined. Tags come from the project's tag list
+*    (Editor: Inspector > Tag > Manage Tags..., saved in
+*    Assets/Config/Tags.json) and are case-sensitive.
+*
+*    C++ side: Engine/src/Scripting/Bindings/EntityBindings.cpp, and
+*    Bindings/TagBindings.cpp for the tag calls.
 *
 **************************************************************************/
 using System;
@@ -124,6 +130,84 @@ namespace Crucible
             get { return GetNameInternal((int)index, (int)generation) ?? string.Empty; }
         }
 
+        // --- tags ------------------------------------------------------------------ //
+
+        /// <summary>The tag every entity starts with.</summary>
+        public const string Untagged = "Untagged";
+
+        // SetTagInternal results. Must match TagBindings.cpp.
+        private const int TagSet = 0;
+        private const int TagDeadEntity = 1;
+        private const int TagUndefined = 2;
+
+        /// <summary>
+        /// The entity's tag ("Untagged" by default; empty once it is gone). Setting it to a tag
+        /// the project does not define throws an ArgumentException. Setting it on a destroyed
+        /// entity does nothing. A tag set during Play is restored by Stop.
+        /// </summary>
+        public string Tag
+        {
+            get { return GetTagInternal((int)index, (int)generation) ?? string.Empty; }
+            set
+            {
+                if (value == null)
+                    throw new ArgumentNullException("value", "An entity's tag can't be null - use Entity.Untagged.");
+                int result = SetTagInternal((int)index, (int)generation, value);
+                if (result == TagUndefined)
+                    throw new ArgumentException("Tag '" + value + "' is not defined. Add it in the Editor: " +
+                                                "Inspector > Tag > Manage Tags... (tags are case-sensitive).", "value");
+                if (result != TagSet && result != TagDeadEntity)
+                    throw new InvalidOperationException("Could not set the tag of " + ToString() + ".");
+            }
+        }
+
+        /// <summary>
+        /// True if the entity is alive and its tag is exactly <paramref name="tag"/>
+        /// (case-sensitive). Like Unity's CompareTag.
+        /// </summary>
+        public bool CompareTag(string tag)
+        {
+            if (tag == null)
+                return false;
+            int result;
+            return CompareTagInternal((int)index, (int)generation, tag, out result) != 0 && result != 0;
+        }
+
+        /// <summary>
+        /// An entity whose tag is exactly <paramref name="tag"/>, or null. If several have it,
+        /// the same one is returned while the scene is unchanged, but which one is unspecified.
+        /// It searches every entity: call it in OnCreate and keep the result.
+        /// </summary>
+        public static Entity FindWithTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+                return null;
+            int foundIndex, foundGeneration;
+            return FindWithTagInternal(tag, out foundIndex, out foundGeneration) != 0
+                ? new Entity(unchecked((uint)foundIndex), unchecked((uint)foundGeneration))
+                : null;
+        }
+
+        /// <summary>Every entity whose tag is exactly <paramref name="tag"/> (empty if none).</summary>
+        public static Entity[] FindAllWithTag(string tag)
+        {
+            if (string.IsNullOrEmpty(tag))
+                return new Entity[0];
+            int[] pairs = FindAllWithTagInternal(tag);
+            if (pairs == null)
+                return new Entity[0];
+            Entity[] found = new Entity[pairs.Length / 2];
+            for (int i = 0; i < found.Length; ++i)
+                found[i] = new Entity(unchecked((uint)pairs[i * 2]), unchecked((uint)pairs[i * 2 + 1]));
+            return found;
+        }
+
+        /// <summary>Whether the project's tag list has <paramref name="tag"/> (case-sensitive).</summary>
+        public static bool IsTagDefined(string tag)
+        {
+            return !string.IsNullOrEmpty(tag) && IsTagDefinedInternal(tag) != 0;
+        }
+
         // --- finding entities and components -------------------------------------- //
 
         /// <summary>
@@ -167,8 +251,36 @@ namespace Crucible
         }
 
         /// <summary>
+        /// Every component or script of type T on the entity, in Inspector order (empty if none).
+        /// Mostly for scripts: an entity can have several, including several of one class, and
+        /// GetComponents&lt;EntityScript&gt;() returns all of them. Engine components exist at most
+        /// once per entity, so for those it is GetComponent&lt;T&gt;() as an array of 0 or 1.
+        /// </summary>
+        public T[] GetComponents<T>() where T : class
+        {
+            if (typeof(EntityScript).IsAssignableFrom(typeof(T)))
+            {
+                object[] scripts = GetScriptsInternal((int)index, (int)generation);
+                if (scripts == null)
+                    return new T[0];
+                var matches = new System.Collections.Generic.List<T>(scripts.Length);
+                foreach (object script in scripts)
+                {
+                    T match = script as T;
+                    if (match != null)
+                        matches.Add(match);
+                }
+                return matches.ToArray();
+            }
+            T component = GetComponent<T>();
+            return component != null ? new T[] { component } : new T[0];
+        }
+
+        /// <summary>
         /// The entity's component or script of type T, or null if it has none.
         /// T can be Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, FlowFieldAgent, FlowFieldSurface, StateGraphAgent, UIText, UIImage, UISlider, UIButton, UIRect, UICanvas, or a script class (e.g. GetComponent&lt;Door&gt;()).
+        /// With several scripts on the entity: the first (in Inspector order) that is a T - a
+        /// base class or EntityScript itself matches any script that derives from it.
         /// A script found during OnCreate may not have run its own OnCreate yet.
         /// </summary>
         public T GetComponent<T>() where T : class
@@ -215,7 +327,17 @@ namespace Crucible
             if (type == typeof(UIRect))   return Has(ComponentKind.UIRect)   ? (T)(object)new UIRect(Identity)   : null;
             if (type == typeof(UICanvas)) return Has(ComponentKind.UICanvas) ? (T)(object)new UICanvas(Identity) : null;
             if (typeof(EntityScript).IsAssignableFrom(type))
-                return GetScriptInternal((int)index, (int)generation) as T;
+            {
+                object[] scripts = GetScriptsInternal((int)index, (int)generation);
+                if (scripts != null)
+                    foreach (object script in scripts)
+                    {
+                        T match = script as T;
+                        if (match != null)
+                            return match;
+                    }
+                return null;
+            }
             throw new ArgumentException("GetComponent<" + type.Name +
                                         ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, FlowFieldAgent, FlowFieldSurface, StateGraphAgent, a UI component or a script class.");
         }
@@ -231,19 +353,43 @@ namespace Crucible
         /// <summary>
         /// Switches one component on or off (Unity's .enabled). Its data is kept; while off,
         /// it does nothing (not drawn, no physics, silent, script paused...). T is any type
-        /// GetComponent accepts; a script class means this entity's script. Transform can't
-        /// be switched off. Returns false if the entity has no such component.
+        /// GetComponent accepts. A script class switches that script (the first one of that
+        /// class, as GetComponent finds it) - the same as its Enabled; EntityScript itself
+        /// switches ALL of the entity's scripts at once. Transform can't be switched off.
+        /// Returns false if the entity has no such component.
         /// </summary>
         public bool SetEnabled<T>(bool enabled) where T : class
         {
+            if (IsOneScript(typeof(T)))
+            {
+                EntityScript script = GetComponent<T>() as EntityScript;
+                if (script == null)
+                    return false;
+                script.Enabled = enabled;
+                return true;
+            }
             return SetComponentEnabledInternal((int)index, (int)generation, KindOf(typeof(T)), enabled ? 1 : 0) != 0;
         }
 
-        /// <summary>Is the component switched on (its own choice)? False if the entity has none.</summary>
+        /// <summary>
+        /// Is the component switched on (its own choice)? False if the entity has none. A script
+        /// class reads that script's Enabled; EntityScript reads the switch for all scripts.
+        /// </summary>
         public bool IsEnabled<T>() where T : class
         {
+            if (IsOneScript(typeof(T)))
+            {
+                EntityScript script = GetComponent<T>() as EntityScript;
+                return script != null && script.Enabled;
+            }
             int on;
             return IsComponentEnabledInternal((int)index, (int)generation, KindOf(typeof(T)), out on) != 0 && on != 0;
+        }
+
+        // A particular script class (not EntityScript itself, which means every script).
+        private static bool IsOneScript(Type type)
+        {
+            return type != typeof(EntityScript) && typeof(EntityScript).IsAssignableFrom(type);
         }
 
         /// <summary>
@@ -379,7 +525,7 @@ namespace Crucible
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int HasComponentInternal(int index, int generation, int kind, out int has);
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern EntityScript GetScriptInternal(int index, int generation);
+        private static extern object[] GetScriptsInternal(int index, int generation);   // every running script, Inspector order
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int FindChildInternal(int index, int generation, string name, out int childIndex,
                                                     out int childGeneration);
@@ -393,5 +539,17 @@ namespace Crucible
         private static extern int SetActiveInternal(int index, int generation, int active);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int IsActiveInternal(int index, int generation, int self, out int active);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string GetTagInternal(int index, int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetTagInternal(int index, int generation, string tag);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int CompareTagInternal(int index, int generation, string tag, out int result);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int FindWithTagInternal(string tag, out int index, out int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int[] FindAllWithTagInternal(string tag);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int IsTagDefinedInternal(string tag);
     }
 }
