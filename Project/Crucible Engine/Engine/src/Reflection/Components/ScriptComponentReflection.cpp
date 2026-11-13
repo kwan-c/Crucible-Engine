@@ -20,11 +20,34 @@ RTTR_REGISTRATION {
         .property("text", &ScriptFieldValue::text).property("stringIsNull", &ScriptFieldValue::stringIsNull)
         .property("entityId", &ScriptFieldValue::entityId)  // missing in older scenes - stays 0
         .property("assetId", &ScriptFieldValue::assetId);
+
+    // One script. The same keys the single-script ScriptComponent used to have.
+    rttr::registration::class_<ScriptEntry>("ScriptEntry")
+        .constructor<>()
+        .property("enabled", &ScriptEntry::enabled)
+        .property("assembly", &ScriptEntry::assembly)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("namespace", &ScriptEntry::nameSpace)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("class", &ScriptEntry::className)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("fields", &ScriptEntry::fields)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true));
+
+    // Every script on the entity: { "scripts": [ {...}, {...} ] }. The Inspector
+    // draws scripts itself (Inspector::DrawComponentExtras), so nothing here is
+    // drawn by the generic property view.
+    //
+    // The LOAD_ONLY properties read files saved before multiple scripts, which
+    // held one script's keys at the top level, into scripts[0]. They are never
+    // written, so such a file is upgraded the next time it is saved.
     rttr::registration::class_<ScriptComponent>("ScriptComponent")
         .constructor<>()
-        .property("enabled", &ScriptComponent::enabled)
-        .property("assembly", &ScriptComponent::assembly)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
-        .property("namespace", &ScriptComponent::nameSpace)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
-        .property("class", &ScriptComponent::className)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
-        .property("fields", &ScriptComponent::fields)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true));
+        .property("scripts", &ScriptComponent::scripts)(rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("enabled", &ScriptComponent::LegacyEnabled, &ScriptComponent::SetLegacyEnabled)(
+            rttr::metadata(MetaDataTypes::LOAD_ONLY, true), rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("assembly", &ScriptComponent::LegacyAssembly, &ScriptComponent::SetLegacyAssembly)(
+            rttr::metadata(MetaDataTypes::LOAD_ONLY, true), rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("namespace", &ScriptComponent::LegacyNamespace, &ScriptComponent::SetLegacyNamespace)(
+            rttr::metadata(MetaDataTypes::LOAD_ONLY, true), rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("class", &ScriptComponent::LegacyClass, &ScriptComponent::SetLegacyClass)(
+            rttr::metadata(MetaDataTypes::LOAD_ONLY, true), rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true))
+        .property("fields", &ScriptComponent::LegacyFields, &ScriptComponent::SetLegacyFields)(
+            rttr::metadata(MetaDataTypes::LOAD_ONLY, true), rttr::metadata(MetaDataTypes::NOT_ON_IMGUI, true));
 }

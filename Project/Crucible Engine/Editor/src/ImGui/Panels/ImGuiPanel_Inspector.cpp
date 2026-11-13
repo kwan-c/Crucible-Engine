@@ -53,7 +53,8 @@ namespace {
 	constexpr char ProjectScriptAssembly[] = "Managed/Crucible.Scripts.dll";
 	constexpr char ProjectScriptNamespace[] = "Crucible.Scripts";
 	template<class T> std::string ComponentHeader(const T&) { return std::string(Crucible::ComponentTraits<T>::name); }
-	std::string ComponentHeader(const Crucible::ScriptComponent& script) {
+	// One script's section header: its file name.
+	std::string ScriptHeader(const Crucible::ScriptEntry& script) {
 		return script.className.empty() ? "Missing C# script" : script.className + ".cs";
 	}
 
@@ -840,7 +841,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, PrefabInstance>) \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, PrefabInstance> && !std::is_same_v<T, ScriptComponent>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \
@@ -882,6 +883,9 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 
 CRUCIBLE_COMPONENT_LIST(CRU_INSPECT_COMPONENT)
 #undef CRU_INSPECT_COMPONENT
+
+		// C# scripts last, one section each (ScriptComponent was skipped above).
+		if (DrawScripts(entity, deferredRemove, removeLabel)) { changed = true; }
 
 		if (deferredRemove) { deferredRemove(); changed = true; NoteEdit(removeLabel); }
 
@@ -929,10 +933,8 @@ CRUCIBLE_COMPONENT_LIST(CRU_ADD_COMPONENT_ITEM)
 
 		// ScriptComponent is an implementation detail here: users attach a named C# class.
 		auto* core = EditorManager::GetInstance().GetCore();
-		const auto* attached = m_world.Read<ScriptComponent>(entity);
-		const char* blocked = core && core->IsInPlaySession() ? "Stop to attach or create scripts." :
-			attached && !attached->className.empty() ?
-			"One script per entity is supported. Remove the existing script component before attaching another." : nullptr;
+		// Any number of scripts per entity, including the same class twice (as in Unity).
+		const char* blocked = core && core->IsInPlaySession() ? "Stop to attach or create scripts." : nullptr;
 		std::string search = m_addComponentFilter.InputBuf;
 		const auto first = search.find_first_not_of(" \t\r\n");
 		search = first == std::string::npos ? "" : search.substr(first, search.find_last_not_of(" \t\r\n") - first + 1);
@@ -2080,43 +2082,145 @@ void Crucible::Inspector::AssignScript(Entity entity, const std::string& assembl
     CommitPendingEdit();
     m_editBefore = EntityState::Capture(m_world, entity); m_editEntity = entity;
     if (!m_world.HasComponent<ScriptComponent>(entity)) m_world.AddComponent<ScriptComponent>(entity, ScriptComponent{});
-    auto* script = m_world.Write<ScriptComponent>(entity);
-    script->assembly = assembly; script->nameSpace = nameSpace; script->className = name;
-    script->fields.clear();
+    auto* component = m_world.Write<ScriptComponent>(entity);
+    // Added at the end of the list (a "Missing C# script" placeholder is filled in instead).
+    const auto placeholder = std::find_if(component->scripts.begin(), component->scripts.end(),
+                                          [](const ScriptEntry& entry) { return entry.className.empty(); });
+    ScriptEntry& script = placeholder != component->scripts.end() ? *placeholder : component->scripts.emplace_back();
+    script.enabled = true; script.assembly = assembly; script.nameSpace = nameSpace; script.className = name;
+    script.fields.clear();
     if (m_scriptNoticeTarget == entity) m_scriptNotice.clear();
     NoteEdit("Attach " + name); m_scenes.MarkDirty(); CommitPendingEdit();
 }
 
-bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
-    if (script.className.empty()) {
-        ImGui::TextDisabled("Remove this component and attach a C# script through Add Component.");
-        return false;
+bool Crucible::Inspector::DrawScripts(Entity entity, std::function<void()>& deferredRemove, std::string& removeLabel) {
+    auto* component = m_world.GetComponent<ScriptComponent>(entity);
+    if (!component) return false;
+    constexpr std::string_view componentName = ComponentTraits<ScriptComponent>::name;
+    bool changed = false;
+
+    // The whole component switched off (SetActive in Play, or a scene saved that way) pauses every
+    // script whatever its own checkbox says; offer to switch it back on.
+    const bool allOn = m_world.IsComponentEnabled<ScriptComponent>(entity);
+    const bool running = IsComponentRunning<ScriptComponent>(m_world, entity);
+    if (!allOn && !component->scripts.empty()) {
+        ImGui::TextDisabled("All scripts on this entity are switched off.");
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Switch on")) {
+            m_world.SetComponentEnabled<ScriptComponent>(entity, true);
+            changed = true; NoteEdit("Enable scripts");
+        }
     }
+
+    // Applied after the loop: the list must not change while it is being drawn.
+    enum class Change { None, Remove, Up, Down } change = Change::None;
+    std::size_t target = 0;
+
+    ImGui::PushID(componentName.data());
+    for (std::size_t slot = 0; slot < component->scripts.size(); ++slot) {
+        ScriptEntry& script = component->scripts[slot];
+        const std::string header = ScriptHeader(script);
+        ImGui::PushID(static_cast<int>(slot));
+
+        const bool greyed = !running || !script.enabled;   // switched off: greyed header, like components
+        if (greyed) { ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled)); }
+        const bool open = ImGui::CollapsingHeader(HeaderLabelWithToggle(header, "Script").c_str(),
+                                                  ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+        if (greyed) { ImGui::PopStyleColor(); }
+        const ImVec2 headerMin = ImGui::GetItemRectMin();
+        PrefabAuthoring::MarkComponentHeader(m_world, entity, componentName);   // prefab override bar (all scripts)
+
+        if (ImGui::BeginPopupContextItem("##ScriptMenu")) {
+            if (ImGui::MenuItem("Remove Script")) { change = Change::Remove; target = slot; }
+            if (ImGui::MenuItem("Move Up", nullptr, false, slot > 0)) { change = Change::Up; target = slot; }
+            if (ImGui::MenuItem("Move Down", nullptr, false, slot + 1 < component->scripts.size())) { change = Change::Down; target = slot; }
+            PrefabAuthoring::ComponentMenuItems(m_world, entity, componentName);   // Revert to Prefab (all scripts)
+            ImGui::EndPopup();
+        }
+
+        // This script's own on/off checkbox, over the left end of its header (ScriptEntry::enabled,
+        // the same flag as C# EntityScript.Enabled).
+        const ImVec2 resume = ImGui::GetCursorScreenPos();
+        ImGui::SetCursorScreenPos(ImVec2(headerMin.x + ImGui::GetTreeNodeToLabelSpacing(), headerMin.y));
+        bool enabled = script.enabled;
+        if (ImGui::Checkbox("##Enabled", &enabled)) {
+            script.enabled = enabled;
+            changed = true; NoteEdit((enabled ? "Enable " : "Disable ") + header);
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip)) {
+            ImGui::SetTooltip(!running ? "All scripts on this entity are switched off (see above)"
+                              : enabled ? "Enabled - untick to pause this script (its other scripts carry on)"
+                                        : "Disabled - tick to run this script again");
+        }
+        ImGui::SetCursorScreenPos(resume);   // the fields continue under the header
+
+        if (open) {
+            if (script.className.empty()) {
+                ImGui::TextDisabled("Remove this script (right-click its header) and attach one through Add Component.");
+            } else if (DrawScriptFields(script, slot)) {
+                changed = true; NoteEdit("Edit " + header);
+            }
+        }
+        ImGui::PopID();
+    }
+    ImGui::PopID();
+    // "Created X.cs - compiling..." after Create C# script, once under the scripts.
+    if (m_scriptNoticeTarget == entity && !m_scriptNotice.empty()) ImGui::TextWrapped("%s", m_scriptNotice.c_str());
+
+    switch (change) {
+    case Change::Remove:
+		if (component->scripts.size() <= 1) {
+            // The last one: the component goes too, with the other component removals.
+            deferredRemove = MakeComponentRemover<ScriptComponent>(m_world, entity);
+            removeLabel = "Remove " + ScriptHeader(component->scripts.front());
+        } else {
+            const std::string header = ScriptHeader(component->scripts[target]);
+            component->scripts.erase(component->scripts.begin() + static_cast<std::ptrdiff_t>(target));
+            changed = true; NoteEdit("Remove " + header);
+        }
+        break;
+    case Change::Up:
+    case Change::Down: {
+        const std::size_t other = change == Change::Up ? target - 1 : target + 1;
+        std::swap(component->scripts[target], component->scripts[other]);
+        changed = true; NoteEdit("Reorder scripts");
+        break;
+    }
+    case Change::None:
+        break;
+    }
+    return changed;
+}
+
+bool Crucible::Inspector::DrawScriptFields(ScriptEntry& script, std::size_t slot) {
     auto* core = EditorManager::GetInstance().GetCore();
     const bool inSession = core && core->IsInPlaySession();
     auto* runtime = core && core->GetScriptRuntime().IsRunning() ? &core->GetScriptRuntime() : nullptr;
-    // Re-read after Scripts > Reload Scripts too: fields may have been added, removed or re-defaulted.
+    // The class's public fields and their defaults, cached per class. Re-read after Scripts >
+    // Reload Scripts too: fields may have been added, removed or re-defaulted.
     const uint64_t reload = runtime ? runtime->ReloadCount() : 0;
-    if (m_scriptFieldAssembly != script.assembly || m_scriptFieldNamespace != script.nameSpace || m_scriptFieldClass != script.className ||
-        m_scriptFieldReload != reload) {
-        m_scriptFieldAssembly = script.assembly; m_scriptFieldNamespace = script.nameSpace; m_scriptFieldClass = script.className;
-        m_scriptFieldReload = reload;
-        m_scriptFieldDefaults.clear(); m_scriptFieldError.clear(); m_scriptButtons.clear();
+    const std::string cacheKey = script.assembly + "|" + script.nameSpace + "." + script.className;
+    const auto cached = m_scriptFieldCache.find(cacheKey);
+    if (cached == m_scriptFieldCache.end() || cached->second.reload != reload) {
+        ScriptFieldCache entry;
+        entry.reload = reload;
         ScriptAssemblyHandle assembly;
-        if (!runtime) m_scriptFieldError = "A Mono-enabled Editor is needed to inspect compiled public fields.";
+        if (!runtime) entry.error = "A Mono-enabled Editor is needed to inspect compiled public fields.";
         else if (!runtime->LoadAssembly(script.assembly, assembly) ||
-                 !runtime->GetEntityFieldDefaults(assembly, script.nameSpace, script.className, m_scriptFieldDefaults))
-            m_scriptFieldError = runtime->LastError();
-        else runtime->GetEditorButtons(assembly, script.nameSpace, script.className, m_scriptButtons);   // none if it has no [EditorButton]
+                 !runtime->GetEntityFieldDefaults(assembly, script.nameSpace, script.className, entry.defaults))
+            entry.error = runtime->LastError();
+        else runtime->GetEditorButtons(assembly, script.nameSpace, script.className, entry.buttons);   // none if it has no [EditorButton]
+        m_scriptFieldCache[cacheKey] = std::move(entry);
     }
-    auto fields = m_scriptFieldDefaults;
-    if (!m_scriptFieldError.empty()) fields = script.fields; // authored values survive unavailable assemblies
+    const ScriptFieldCache& classFields = m_scriptFieldCache[cacheKey];
+    auto fields = classFields.defaults;
+    if (!classFields.error.empty()) fields = script.fields; // authored values survive unavailable assemblies
     else for (auto& field : fields) {
         const auto saved = std::find_if(script.fields.begin(), script.fields.end(), [&](const auto& value) { return SameScriptField(field, value); });
         if (saved != script.fields.end()) field = *saved;
     }
     EntityScriptStatus status;
-    if (core) if (auto* system = core->Systems().FindSystem<EntityScriptSystem>()) status = system->Status(m_selected);
+    if (core) if (auto* system = core->Systems().FindSystem<EntityScriptSystem>()) status = system->Status(m_selected, slot);
     ScriptInstanceInfo info;
     bool live = inSession && runtime && status.instance && runtime->GetInstanceInfo(status.instance, info) && info.state != ScriptInstanceState::Faulted;
     if (live) {
@@ -2175,9 +2279,9 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
     ImGui::EndDisabled();
     // [EditorButton] methods (Unity's [ContextMenu]): each runs once on a temporary copy of the
     // script with the fields above, outside Play only (ScriptRuntime::RunEditorButton).
-    if (runtime && !m_scriptButtons.empty() && m_scriptFieldError.empty()) {
+    if (runtime && !classFields.buttons.empty() && classFields.error.empty()) {
         ImGui::BeginDisabled(inSession);
-        for (const auto& method : m_scriptButtons) {
+        for (const auto& method : classFields.buttons) {
             ImGui::PushID(method.c_str());
             if (ImGui::Button(ScriptMemberLabel(method).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
                 ScriptAssemblyHandle assembly;
@@ -2192,11 +2296,10 @@ bool Crucible::Inspector::DrawComponentExtras(ScriptComponent& script) {
         }
         ImGui::EndDisabled();
     }
-    if (fields.empty() && m_scriptFieldError.empty()) ImGui::TextDisabled("No public fields.");
-    std::string error = !status.error.empty() ? status.error : m_scriptFieldError;
+    if (fields.empty() && classFields.error.empty()) ImGui::TextDisabled("No public fields.");
+    std::string error = !status.error.empty() ? status.error : classFields.error;
     if (status.instance.value == m_scriptFieldReadFailure.value && status.instance) error = m_scriptFieldReadError;
     if (!error.empty()) { ImGui::TextDisabled("Script unavailable or failed (hover for details)"); ImGui::SetItemTooltip("%s", error.c_str()); }
-    if (m_scriptNoticeTarget == m_selected && !m_scriptNotice.empty()) ImGui::TextWrapped("%s", m_scriptNotice.c_str());
     return changed;
 }
 
@@ -2210,9 +2313,8 @@ void Crucible::Inspector::DrawCreateScriptModal() {
     ImGui::InputText("Namespace", &m_scriptNewNamespace);
     ImGui::TextUnformatted("Creates C# source and attaches it to the selected entity.\nIt compiles and reloads by itself (see the menu bar).");
     auto* core = EditorManager::GetInstance().GetCore();
-    const auto* existing = m_world.IsAlive(m_scriptCreateTarget) ? m_world.Read<ScriptComponent>(m_scriptCreateTarget) : nullptr;
+    // Added alongside any scripts the entity already has.
     const bool valid = m_scriptCreateTarget == m_selected && m_world.IsAlive(m_scriptCreateTarget) &&
-        (!existing || existing->className.empty()) &&
         (!core || !core->IsInPlaySession());
     ImGui::BeginDisabled(!valid);
     if (ImGui::Button("Create and assign")) {

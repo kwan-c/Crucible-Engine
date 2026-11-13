@@ -36,6 +36,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -107,7 +108,11 @@ namespace Crucible {
 		bool DrawComponentExtras(MeshRenderer& renderer);   // mesh name + material
 		bool DrawComponentExtras(AnimatedModel& animation);
 		bool DrawComponentExtras(SocketAttachment& socket);
-		bool DrawComponentExtras(ScriptComponent& script);
+		// Every C# script on the entity, one section each (ScriptComponent itself is never shown):
+		// header with the script's own on/off checkbox; right-click to remove or reorder. True if
+		// something changed. Removing the last script removes the component (deferredRemove).
+		bool DrawScripts(Entity entity, std::function<void()>& deferredRemove, std::string& removeLabel);
+		bool DrawScriptFields(ScriptEntry& script, std::size_t slot);   // public fields, status, errors
 		void DrawCreateScriptModal();
 		void RefreshScriptClasses(const std::string& assembly);
 		void RequestCreateScript(Entity entity, std::string name, std::string nameSpace);
@@ -158,10 +163,15 @@ namespace Crucible {
         std::string m_scriptNewName, m_scriptNewNamespace;
         Entity m_scriptCreateTarget = kNullEntity, m_scriptNoticeTarget = kNullEntity;
         bool m_scriptCreateRequested = false;
-        std::string m_scriptFieldAssembly, m_scriptFieldNamespace, m_scriptFieldClass, m_scriptFieldError;
-        std::vector<ScriptFieldValue> m_scriptFieldDefaults;
-        std::vector<std::string> m_scriptButtons;   // the shown class's [EditorButton] methods (Jean David)
-        uint64_t m_scriptFieldReload = 0;   // ScriptRuntime::ReloadCount() the defaults were read at
+        // A script class's public fields with their default values, read from the compiled
+        // assembly - per class, since an entity can show several scripts at once.
+        struct ScriptFieldCache {
+            uint64_t reload = 0;                     // ScriptRuntime::ReloadCount() they were read at
+            std::vector<ScriptFieldValue> defaults;
+            std::vector<std::string> buttons;        // the class's [EditorButton] methods (Jean David)
+            std::string error;
+        };
+        std::map<std::string, ScriptFieldCache> m_scriptFieldCache;   // "assembly|namespace.class" -> fields
         ScriptInstanceHandle m_scriptFieldReadFailure;
         std::string m_scriptFieldReadError;
 

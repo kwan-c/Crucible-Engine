@@ -288,9 +288,11 @@ namespace Crucible::ScriptBindings
 			scriptLookupContext = context;
 		}
 
-		uint32_t FindScriptHandle(Entity entity)
+		void FindScripts(Entity entity, std::vector<RunningScript>& out)
 		{
-			return scriptLookup ? scriptLookup(scriptLookupContext, entity) : 0;
+			out.clear();
+			if (scriptLookup)
+				scriptLookup(scriptLookupContext, entity, out);
 		}
 	}
 }

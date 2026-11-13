@@ -1,7 +1,7 @@
 # S5 - Entity script components
 
 The S5 entity workflow attaches C# instances to the existing ECS using one
-ScriptComponent per entity. It adds Inspector creation/selection, authored scene
+ScriptComponent per entity, which holds any number of scripts. It adds Inspector creation/selection, authored scene
 data, PlayMode scheduling, owner identity and managed logging. The animation-only
 follow-up adds Animator parameter writes and example graphs; see
 [AnimatorParameterPreview.md](AnimatorParameterPreview.md). Transform, physics,
@@ -38,9 +38,15 @@ alongside native components. It hides the raw ScriptComponent entry. Results
 include namespaces to distinguish equally named classes. A source file with the
 searched name that has not appeared in the assembly produces a build/restart hint
 instead of an offer to create a duplicate. Attachment/creation is disabled during
-Play/Pause. There is currently one script per entity: to replace an assigned class,
-remove the existing component first. An unassigned
-ScriptComponent can be filled through Add Component without adding a duplicate.
+Play/Pause. An entity can have any number of scripts, including one class twice
+(as in Unity): each attach adds a script at the end of the list. Each script gets
+its own Inspector section ("Door.cs") with its own on/off checkbox (its
+`ScriptEntry::enabled` - the same flag as `EntityScript.Enabled`) and public
+fields; right-click a script's header to Remove Script, Move Up or Move Down (the
+order OnCreate / OnUpdate run in). Removing the last script removes the
+component. All of it is undoable. If the whole ScriptComponent is switched off
+(e.g. a scene saved after SetActive), a "Switch on" line appears above the
+scripts. A "Missing C# script" entry is filled by the next attach.
 
 Creation from Add Component adds the component and assignment as one undo step;
 Cancel adds neither a component nor a source file. Source files stay on disk after
@@ -655,8 +661,39 @@ stale owners. No teardown ordering between different entities is promised.
 
 ## Native integration and serialization
 
-ScriptComponent stores enabled, assembly path, namespace, class name and public
-field overrides.
+ScriptComponent stores a list of scripts (`scripts`); each `ScriptEntry` holds
+enabled, assembly path, namespace, class name and public field overrides. Saved as
+`"ScriptComponent": { "scripts": [ { "enabled", "assembly", "namespace", "class",
+"fields" }, ... ] }`. Files saved before the list held one script's keys directly
+on the component; they still load, into `scripts[0]`: ScriptComponent registers
+those keys as `MetaDataTypes::LOAD_ONLY` properties (read, never written - see
+`Serialization.cpp`), so every reader of component JSON (EntityIO, EntityRefs,
+prefab authoring, undo) upgrades them, and the file is saved in the new format the
+next time it is saved. EntityScriptSystem runs every entry: one record (and C#
+instance) per script, matched to the list each frame by class (same position
+first), so reordering or removing one script keeps the others' instances and
+state. OnCreate, callbacks (collision, trigger, UI) and OnUpdate go to every
+script on the entity in list order; OnDestroy runs last-first. A script that is
+switched off at Play (its own checkbox, or the whole component) is still created,
+as in Unity: GetComponent finds it and another script can switch it on. Its
+OnCreate waits until it is first switched on (then OnUpdate that same frame);
+one that is never switched on gets no OnCreate, OnUpdate, callbacks or OnDestroy. C#
+`GetComponent<SomeScript>()` returns the first running script (list order) that
+is a SomeScript - a base class, or `EntityScript`, matches any script deriving
+from it - and `GetComponents<T>()` returns all of them (`Entity` and
+`EntityScript`; for engine components it is an array of 0 or 1). C++ hands C# the
+entity's scripts as an `object[]` (`Entity.GetScriptsInternal`,
+`EntityContext::FindScripts`, which also gives each script's list slot).
+`EntityScript.Enabled` is per script: it reads and writes that script's
+`ScriptEntry::enabled` (EnableBindings.cpp finds the slot by matching the C#
+object to the running scripts), so the entity's other scripts carry on.
+`Entity.SetEnabled<SomeScript>()` / `IsEnabled<SomeScript>()` do the same for
+the first script of that class; `SetEnabled<EntityScript>()` (and `SetActive`)
+still switch the whole ScriptComponent - every script - without changing each
+one's own flag. The Inspector draws ScriptComponent itself
+(`Inspector::DrawScripts` / `DrawScriptFields`; field defaults are cached per
+class). Test:
+`Assets/Scripts/TestScripts/MultiScriptTest.cs` + `MultiScriptPartner.cs`.
 The existing component registry/X-macro, RTTR, EntityIO, prefab, clone, undo and
 PlayMode snapshot paths handle those values. Runtime handles, errors, counters
 and live managed objects stay in EntityScriptSystem/ScriptRuntime. Authored public
