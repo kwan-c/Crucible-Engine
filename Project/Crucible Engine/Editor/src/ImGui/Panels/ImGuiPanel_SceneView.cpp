@@ -826,6 +826,7 @@ void Crucible::SceneView::DrawGizmoMenu() {
 		{ "Velocities",     DebugCategory::Velocities },
 		{ "Light gizmos",   DebugCategory::Lights     },
 		{ "Audio gizmos",   DebugCategory::Audio      },
+		{ "Particle shapes", DebugCategory::Particles },
 		{ "Nav grid",       DebugCategory::NavGrid    },
 		{ "Flow field arrows", DebugCategory::FlowField },
 		{ "Grid",           DebugCategory::Grid       },

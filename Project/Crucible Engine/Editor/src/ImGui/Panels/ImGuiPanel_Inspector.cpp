@@ -32,6 +32,7 @@
 #include "Core.h"
 #include "Undo/EntityCommands.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "Tags/TagEditor.h"                        // the Tag field and the Tag Manager window
 #include "Network/NetContent.h"                    // the registered serializers, for the networking policy table
 #include "Network/NetworkAuthoringInspector.h"     // NetworkObjectAuthoring's table (Networking Phase 14.3)
 #include "../EditorWidgets.h"
@@ -800,6 +801,7 @@ void Crucible::Inspector::Update(float) {
 	}
 
 	ImGui::End();
+	TagEditor::DrawManager(m_world, m_scenes);   // the Tag Manager window, while open (Inspector > Tag > Manage Tags...)
 }
 
 void Crucible::Inspector::DrawEntityInspector(Entity entity) {
@@ -825,6 +827,22 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 		ImGui::PopID();
 		if (left) { ApplyPendingName(); }   // before this frame's commit captures the "after" state
 	}
+	// Tag, under the name (Unity). Picking one is an ordinary edit: one undo step. A tag made
+	// with "Add New Tag..." is its own undo step first (Tags/TagEditor.h).
+	{
+		TagEditor::TagPick const tagPick = TagEditor::DrawTagField(m_world, entity);
+		if (tagPick.create) {
+			CommitPendingEdit();
+			if (!TagEditor::CreateTag(tagPick.tag)) { CRU_USER_WARN("[Inspector] Could not create tag '{}'", tagPick.tag); }
+			m_editBefore = EntityState::Capture(m_world, entity);   // the assignment's "before"
+			m_editEntity = entity;
+		}
+		if (tagPick.assign && !m_world.CompareTag(entity, tagPick.tag)
+			&& m_world.TrySetEntityTag(entity, tagPick.tag) == TagResult::Ok) {
+			NoteEdit("Change Tag");
+			m_scenes.MarkDirty();
+		}
+	}
 	// Prefab instances: "Prefab: Crate  [Select] [Unpack]" (PrefabInstance itself is never listed).
 	PrefabAuthoring::DrawInspectorBar(m_world, entity);
 	ImGui::Separator();
@@ -841,7 +859,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, PrefabInstance> && !std::is_same_v<T, ScriptComponent>) \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, EntityTag> && !std::is_same_v<T, PrefabInstance> && !std::is_same_v<T, ScriptComponent>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \

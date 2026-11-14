@@ -31,7 +31,9 @@
 *                (33-35); NotToggleable and RuntimeOnly traits
 *    -v1.5       NetworkObjectAuthoring kind (39): persistent networking
 *                settings of an object (Networking Phase 14)
-*    -v1.6       Terrain kind (40): generated ground (Jean David)
+*    -v1.6       EntityTag kind (40): every entity's gameplay tag
+*                (mandatory, WorldValidated - see Components.h)
+*    -v1.7       Terrain kind (41): generated ground (Jean David)
 *
 *
 **************************************************************************/
@@ -104,9 +106,10 @@ namespace Crucible
 		FlowFieldAgent = 37,     // Navigation: one enemy's legs, Unity's NavMeshAgent (Navigation/NavigationComponents.h)
 		StateGraphAgent = 38,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
 		NetworkObjectAuthoring = 39,   // Network: an object's saved networking settings (Network/NetComponents.h)
-		Terrain = 40,            // Terrain: generated uneven ground, drawn and collided with (Terrain/TerrainComponents.h)
+		EntityTag = 40,          // every entity's gameplay tag, "Untagged" by default (mandatory) - Components.h
+		Terrain = 41,            // Terrain: generated uneven ground, drawn and collided with (Terrain/TerrainComponents.h)
 
-		MAXCOMPONENT = 41
+		MAXCOMPONENT = 42
 	};
 
 
@@ -321,6 +324,7 @@ namespace Crucible
  X(FlowFieldAgent)                                                             \
  X(StateGraphAgent)                                                            \
  X(NetworkObjectAuthoring)                                                     \
+ X(EntityTag)                                                                  \
  X(Terrain)                                                                    \
 
 }

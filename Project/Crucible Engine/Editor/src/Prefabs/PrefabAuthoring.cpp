@@ -649,6 +649,9 @@ namespace Crucible::PrefabAuthoring {
 				if constexpr (std::is_same_v<T, EntityName>) {
 					world.SetEntityName(item.entity, current.name);   // EntityName is only written through World
 				}
+				else if constexpr (std::is_same_v<T, EntityTag>) {
+					world.AddComponent<EntityTag>(item.entity, std::move(current));   // the prefab's tag as saved (only written through World)
+				}
 				else {
 					*world.Write<T>(item.entity) = std::move(current);
 				}
@@ -1183,6 +1186,9 @@ namespace Crucible::PrefabAuthoring {
 				}
 				if constexpr (std::is_same_v<T, EntityName>) {
 					if (current.name != world.Read<EntityName>(e)->name) { world.SetEntityName(e, current.name); }
+				}
+				else if constexpr (std::is_same_v<T, EntityTag>) {
+					if (current.tag != world.Read<EntityTag>(e)->tag) { world.AddComponent<EntityTag>(e, std::move(current)); }
 				}
 				else {
 					*world.Write<T>(e) = std::move(current);

@@ -168,5 +168,6 @@ namespace Crucible
 		void RegisterStateGraphBindings();     // Bindings/StateGraphBindings.cpp     (C# StateGraphAgent: variables, current state)
 		void RegisterTerrainBindings();        // Bindings/TerrainBindings.cpp        (C# Terrain: Build, GroundHeight)
 		void RegisterApplicationBindings();    // Bindings/ApplicationBindings.cpp    (C# Application: IsPlaying)
+		void RegisterTagBindings();            // Bindings/TagBindings.cpp            (C# Entity.Tag, CompareTag, FindWithTag)
 	}
 }

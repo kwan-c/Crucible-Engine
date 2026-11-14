@@ -3,7 +3,7 @@
 * \author : Abhishek Akilandeswari Patchamuthu
 * \par : Email : a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 * Defines the actual per - entity component structs(plain
 	* data, no logic) and binds each one to its
@@ -35,6 +35,8 @@
 	*             also stops); component fields unchanged
 	* -v1.7       includes Network/NetComponents.h (NetworkIdentity,
 	*             NetInterpolation, PlayerInput)
+	* -v1.8       EntityTag (mandatory gameplay tag, WorldValidated) and
+	*             kUntaggedTag
 	*
 	*
 	**************************************************************************/
@@ -43,6 +45,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include "Animation/ModelPose.h"
 #include "Animation/AnimatorController.h"
 
@@ -627,7 +630,11 @@ namespace Crucible
 	{
 		Point,    // all at the emitter
 		Sphere,   // anywhere inside a sphere of shapeRadius
-		Box       // anywhere inside a box of boxExtents (half sizes)
+		Box,      // anywhere inside a box of boxExtents (half sizes)
+		Circle,   // anywhere on a flat disc of shapeRadius (local XZ), sent straight out from its centre
+		Cone	  // Unity's Cone: from a disc of shapeRadius (the near end) towards a disc coneLength
+		          // along +Y, wider or narrower by coneAngleDeg (the far end) - see ParticleEmitter
+
 	};
 
 	/// How a ParticleEmitter's particles are mixed with what is behind them.
@@ -661,6 +668,20 @@ namespace Crucible
 		  - shape / shapeRadius / boxExtents: where they appear.
 		  - spreadDeg: half-angle of the cone of directions around local +Y
 		    (0 = straight up, 90 = a hemisphere, 180 = every direction).
+		    Not used by Circle or Cone, which set the direction themselves.
+		  - Circle: particles start anywhere on the disc and move outwards
+		    from its centre, along the disc (a ring burst, a shockwave).
+		  - Cone: a cut-off cone along local +Y. shapeRadius is the near end
+		    (Unity's Radius), where particles start. coneLength is how far
+		    along +Y the far end is. coneAngleDeg sets the far end's size:
+		    shapeRadius + coneLength x tan(angle), so a positive angle widens
+		    it (a spray), 0 keeps it the same (a column) and a negative angle
+		    narrows it (gathering in). It never goes below 0: past that the
+		    cone simply closes to a point at coneLength. Each particle heads
+		    from its spot on the near end to the matching spot on the far end,
+		    so a narrowing cone's particles all meet at its tip - and, still
+		    alive, carry on through it and spread out again (give them a
+		    lifetime that ends there).
 		  - worldSpace: true = once spawned, particles ignore the emitter's
 		    movement (a trail); false = they move with it.
 		Each particle
@@ -699,6 +720,8 @@ namespace Crucible
 		float         shapeRadius = 0.25f;
 		Math::vec3    boxExtents{ 0.5f, 0.5f, 0.5f };
 		float         spreadDeg = 25.f;
+		float		  coneAngleDeg = 25.f;   // Cone only: -90..90, negative narrows
+		float         coneLength = 1.f;      // Cone only: metres along +Y to the far end
 		bool          worldSpace = true;
 
 		float         lifetimeMin = 0.8f;
@@ -802,6 +825,33 @@ namespace Crucible
 		std::string name;
 	};
 
+	/// The tag every entity starts with, and the one tag that always exists (TagRegistry).
+	inline constexpr std::string_view kUntaggedTag = "Untagged";
+
+	/*************************************************************************
+	 \brief
+		The entity's gameplay tag (Unity's GameObject.tag): one label, from
+		the project's tag list (TagRegistry, Assets/Config/Tags.json), that
+		other systems filter by - e.g. "Obstacle" for navigation.
+	 \details
+		Mandatory: every entity has exactly one, "Untagged" unless set, so
+		changing it never moves the entity between archetypes. Saved with
+		the scene like any other component. Case-sensitive; any number of
+		entities may share a tag. Separate from EntityName and from physics
+		layers, and carries no behaviour.
+
+		Read-only outside World (WorldValidated): assign with
+		World::SetEntityTag / TrySetEntityTag, which refuse tags the project
+		does not define. Loading paths (scenes, prefabs, undo, paste) restore
+		the saved value through AddComponent, which keeps a tag that is no
+		longer defined - reported, never renamed - and turns a blank one into
+		"Untagged".
+	 *************************************************************************/
+	struct EntityTag
+	{
+		std::string tag{ kUntaggedTag };
+	};
+
 	/*************************************************************************
 	 \brief  Links an entity to the prefab (.cprefab) it was placed from.
 	 \details
@@ -846,6 +896,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(StressMover, StressMover);
 	CRUCIBLE_COMPONENT(Vine, Vine);
 	CRUCIBLE_COMPONENT(EntityName, EntityName);
+	CRUCIBLE_COMPONENT(EntityTag, EntityTag);
 	CRUCIBLE_COMPONENT(Water, Water);
 	CRUCIBLE_COMPONENT(PrefabInstance, PrefabInstance);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
@@ -866,9 +917,12 @@ namespace Crucible
 	template <> struct Mandatory<WorldTransform> : std::true_type {};
 	template <> struct Mandatory<HierarchyNode> : std::true_type {};
 	template <> struct Mandatory<EntityName> : std::true_type {};
+	template <> struct Mandatory<EntityTag> : std::true_type {};
 
 	// Read anywhere; written only through World (SetEntityName, AddComponent), which applies the naming rules.
 	template <> struct WorldValidated<EntityName> : std::true_type {};
+	// Read anywhere; written only through World (SetEntityTag checks the project's tag list).
+	template <> struct WorldValidated<EntityTag> : std::true_type {};
 
 	// What each component needs on the SAME entity to run (RequiresComponents in
 	// ComponentKind.h): while a requirement is switched off, the component counts as
