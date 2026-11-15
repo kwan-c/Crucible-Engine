@@ -1744,6 +1744,13 @@ namespace Crucible {
             ReadFloat(doc, "metallic",  data.factors.metallicFactor);
             ReadFloat(doc, "roughness", data.factors.roughnessFactor);
 
+            // "shader": the mesh shader that draws it, by name - Assets/Shaders/<name>.slang, a
+            // surface function followed by SurfaceTemplate.slang. Missing or empty = the built-in
+            // shader, so files from before the key still load as they did.
+            if (auto it = doc.FindMember("shader"); it != doc.MemberEnd() && it->value.IsString()) {
+                data.shader = m_renderer.LoadMaterialShader(it->value.GetString());
+            }
+
             if (auto it = doc.FindMember("shading"); it != doc.MemberEnd() && it->value.IsString()) {
                 data.shading = ShadingFromName(it->value.GetString());
             }
@@ -1802,6 +1809,7 @@ namespace Crucible {
 
         writer.StartObject();
         writer.Key("version");   writer.Int(1);
+        writer.Key("shader");    writer.String(m_renderer.GetMaterialShaderName(data.shader).c_str());   // "" = the built-in shader
         floats("albedoTint",     &data.factors.albedoTint.x,     4);
         floats("emissiveFactor", &data.factors.emissiveFactor.x, 3);
         writer.Key("metallic");  writer.Double(data.factors.metallicFactor);

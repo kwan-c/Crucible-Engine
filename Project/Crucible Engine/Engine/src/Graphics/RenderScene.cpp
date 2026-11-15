@@ -248,7 +248,8 @@ namespace Crucible {
         const uint32_t treeTasks = treeParts * passes;
         if (m_treeHits.size() < size_t{ treeParts } * kMaxPasses) { m_treeHits.resize(size_t{ treeParts } * kMaxPasses); }
 
-        // A hit's sort key: by (material, mesh) in the main pass; by mesh alone in the depth-only
+        // A hit's sort key: by (material, mesh) in the main pass (GroupPass then orders the
+        // materials by shader); by mesh alone in the depth-only
         // cascades (DepthKey), where the material doesn't matter and batches can merge across
         // materials - unless it is cut-out or double-sided. Returns false for what can't be drawn
         // (it still counts as seen).
@@ -436,10 +437,22 @@ namespace Crucible {
             total += static_cast<uint32_t>(list.items.size());
         });
 
-        // Lay the buckets out in key order (few of them).
+        // Lay the buckets out in key order (few of them). The main pass goes by shader first -
+        // shader, then material, then mesh - so the scene pass changes pipeline only where the
+        // shader does. (A material has one shader, so this only moves whole materials around.)
         ps.keyOrder.resize(ps.buckets.size());
         for (uint32_t b = 0; b < ps.keyOrder.size(); ++b) { ps.keyOrder[b] = b; }
-        std::sort(ps.keyOrder.begin(), ps.keyOrder.end(), [&](uint32_t a, uint32_t b) { return ps.buckets[a].key < ps.buckets[b].key; });
+        if (pass == 0) {
+            const auto shaderOf = [&](uint32_t bucket) {
+                return m_resources.MaterialShaderOf(MaterialHandle{ static_cast<uint32_t>(ps.buckets[bucket].key >> 32) }).id;
+            };
+            std::sort(ps.keyOrder.begin(), ps.keyOrder.end(), [&](uint32_t a, uint32_t b) {
+                const uint32_t shaderA = shaderOf(a), shaderB = shaderOf(b);
+                return shaderA != shaderB ? shaderA < shaderB : ps.buckets[a].key < ps.buckets[b].key;
+            });
+        } else {
+            std::sort(ps.keyOrder.begin(), ps.keyOrder.end(), [&](uint32_t a, uint32_t b) { return ps.buckets[a].key < ps.buckets[b].key; });
+        }
         uint32_t first = 0;
         for (uint32_t b : ps.keyOrder) for (uint32_t orientation = 0; orientation < 2; ++orientation) {
             auto& bucket = ps.buckets[b];

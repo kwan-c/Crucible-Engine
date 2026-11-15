@@ -2415,7 +2415,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 8362592118289502741,
-                    "materialAsset": 6913985107136102423
+                    "materialAsset": 16347548646000803841
                 },
                 "Collider": {
                     "type": "Sphere",
@@ -3499,7 +3499,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 5067099792209742713,
-                    "materialAsset": 0
+                    "materialAsset": 16347548646000803841
                 },
                 "Collider": {
                     "type": "Box",
@@ -3528,7 +3528,9 @@
                     "fileId": 10905713735968489483,
                     "isRoot": true,
                     "prefabHash": 7306435685216836802,
-                    "overrides": []
+                    "overrides": [
+                        "MeshRenderer/materialAsset"
+                    ]
                 },
                 "FlowFieldAgent": {
                     "speed": 6.0,

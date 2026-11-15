@@ -5,14 +5,18 @@
 * @date			16 November 2026
 *
 * @brief		Runs ShaderHotReload as a Core layer, and says which shaders it keeps up to date
-*				and how each reaches the renderer.
+*				and how each reaches the renderer: every mesh shader the renderer has loaded -
+*				the built-in one, and each one a material names ("shader" in a .mat).
 *
 * Lives in the Editor project only: the Game never compiles shaders. Pushed in Editor/src/main.cpp:
 *
 *     core.PushLayer(std::make_unique<Crucible::ShaderHotReloadLayer>(core));
 *
 * Layers are updated on the frame thread before the renderer draws, which is where
-* Renderer::ReloadMeshShader must be called from.
+* Renderer::ReloadMaterialShader must be called from.
+*
+* A mesh shader with a source file but no .spv yet (written while the Editor runs, not built
+* since) is compiled here the first time a material uses it, so it works without a rebuild.
 *
 * Header-only, so it is only compiled where it is included.
 *
@@ -42,22 +46,29 @@ namespace Crucible {
 			settings.cacheDir  = ExecutableDirectory() / "Cache" / "Shaders";
 			settings.compiler  = ShaderCompiler::FindCompiler(ExecutableDirectory());
 			m_hotReload.Configure(std::move(settings), ResourcePath("Shaders"));
-
-			// The mesh shader (DefaultSurface.slang + SurfaceTemplate.slang). Entry points as in
-			// Engine/CompileShaders.cmake.
-			m_hotReload.Watch({ "DefaultShader", { "vertMain", "fragMain" },
-				[this](std::span<const uint32_t> spirv, std::string& error) {
-					return m_core.GetRenderer().ReloadMeshShader(spirv, error);
-				} });
 		}
 
-		void OnUpdate(float) override { m_hotReload.Tick(); }
+		void OnUpdate(float) override {
+			// Watch each mesh shader as it appears: the built-in one (handle 0) from the first
+			// frame, the others when a material first names them. Every mesh shader has the same
+			// two entry points (SurfaceTemplate.slang; Engine/CompileShaders.cmake lists them too).
+			Renderer& renderer = m_core.GetRenderer();
+			for (const uint32_t count = renderer.GetMaterialShaderCount(); m_watched < count; ++m_watched) {
+				const MaterialShaderHandle shader{ m_watched };
+				m_hotReload.Watch({ renderer.GetMaterialShaderName(shader), { "vertMain", "fragMain" },
+					[this, shader](std::span<const uint32_t> spirv, std::string& error) {
+						return m_core.GetRenderer().ReloadMaterialShader(shader, spirv, error);
+					} });
+			}
+			m_hotReload.Tick();
+		}
 
 		ShaderHotReload& GetHotReload() { return m_hotReload; }
 
 	private:
 		Core&           m_core;
 		ShaderHotReload m_hotReload;
+		uint32_t        m_watched = 0;   // mesh shaders handed to m_hotReload so far (handles 0 .. m_watched - 1)
 	};
 
 }

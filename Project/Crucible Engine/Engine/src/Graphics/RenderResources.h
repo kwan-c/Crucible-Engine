@@ -283,6 +283,11 @@ namespace Crucible {
             return d.alphaCutoff > 0.0f || d.doubleSided;
         }
 
+        /// The mesh shader a material is drawn with (MaterialData::shader); Invalid = the built-in one.
+        MaterialShaderHandle MaterialShaderOf(MaterialHandle handle) const {
+            return IsMaterialUsable(handle) ? m_materials[handle.id].data.shader : MaterialShaderHandle{};
+        }
+
     private:
         // ---- Texture/Material helpers ----
         // Shared core of every texture-creation path: creates a new device-local image + view

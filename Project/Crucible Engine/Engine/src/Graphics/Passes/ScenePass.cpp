@@ -8,22 +8,22 @@
 #include "Graphics/Passes/ParticlePass.h"
 #include "Graphics/Passes/WaterPass.h"
 #include "Graphics/Passes/WorldUIPass.h"
+#include "Graphics/MaterialShaders.h"
 #include "Graphics/RenderResources.h"
 #include "Graphics/Vulkan/RenderLayouts.h"
-#include "Graphics/Vulkan/DeferredDestroy.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
 #include "Graphics/Vulkan/VulkanShader.h"
 
-#include <utility>  // std::exchange
 
 namespace Crucible {
 
     static_assert(RenderLayouts::kMsaaLevels == 3, "ScenePass keeps one pipeline per MSAA level");
+    static_assert(MaterialShaders::kLevels == RenderLayouts::kMsaaLevels, "MaterialShaders builds one pair of mesh pipelines per MSAA level");
 
     void ScenePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout,
                            vk::DescriptorSetLayout skySetLayout, vk::Format colourFormat, vk::Format depthFormat) {
 
-        // The mesh pipelines are built again when the shader is reloaded (ReloadMeshShader).
+        // The mesh pipelines are built later, per shader and more than once (BuildMeshPipelines).
         m_colourFormat = colourFormat;
         m_depthFormat  = depthFormat;
 
@@ -47,9 +47,6 @@ namespace Crucible {
                 .pPushConstantRanges    = &pushConstantRange
             };
             m_meshLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
-
-            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "DefaultShader.spv");
-            BuildMeshPipelines(context, *shaderModule, m_meshPipelines, m_cutoutPipelines);
         }
 
         // ---- Sky ----
@@ -153,7 +150,8 @@ namespace Crucible {
         }
     }   // ScenePass::Create()
 
-    void ScenePass::BuildMeshPipelines(VulkanContext& context, vk::ShaderModule shader, MeshPipelines& solid, MeshPipelines& cutout) const {
+    void ScenePass::BuildMeshPipelines(VulkanContext& context, vk::ShaderModule shader, uint32_t msaaIndex,
+                                       vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const {
 
         // Programmable stages (Vertex and Fragment shaders) ----------------------------------- //
         vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
@@ -246,39 +244,21 @@ namespace Crucible {
             },
             {.colorAttachmentCount = 2, .pColorAttachmentFormats = colourFormats, .depthAttachmentFormat = m_depthFormat }
         };
-        // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
-        // pipeline and must match the target it draws into. `multisampling` is referenced by
-        // pointer above, so changing it here changes what the next pipeline is built with.
-        // Each level twice: solid, and cut-out (DefaultShader's kCutout specialization constant
-        // on, so only cut-out materials pay for a shader that can discard).
+        // The sample count (1, 2 or 4 per pixel) is baked into a pipeline and must match the target
+        // it draws into: this builds the pair for one level. `multisampling` is referenced by
+        // pointer above, so setting it here sets what the pipelines are built with.
+        // The pair: solid, and cut-out (the shader's kCutout specialization constant on, so only
+        // cut-out materials pay for a shader that can discard).
         const vk::Bool32               cutoutOn = vk::True;
         const vk::SpecializationMapEntry cutoutEntry{ .constantID = 0, .offset = 0, .size = sizeof(vk::Bool32) };
         const vk::SpecializationInfo   cutoutInfo{ .mapEntryCount = 1, .pMapEntries = &cutoutEntry, .dataSize = sizeof(vk::Bool32), .pData = &cutoutOn };
-        for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
-            multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
-            shaderStages[1].pSpecializationInfo = nullptr;
-            solid[i] = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-            shaderStages[1].pSpecializationInfo = &cutoutInfo;
-            cutout[i] = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-        }
+        multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << msaaIndex);
         shaderStages[1].pSpecializationInfo = nullptr;
+        solid = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+        shaderStages[1].pSpecializationInfo = &cutoutInfo;
+        cutout = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
 
     }   // ScenePass::BuildMeshPipelines()
-
-    void ScenePass::ReloadMeshShader(VulkanContext& context, std::span<const uint32_t> spirv, DeferredDestroyQueue& retired) {
-
-        // The whole new set first: if anything here throws, the pipelines in use are untouched.
-        vk::raii::ShaderModule shaderModule = CreateShaderModule(context, spirv);
-        MeshPipelines solid{ nullptr, nullptr, nullptr };
-        MeshPipelines cutout{ nullptr, nullptr, nullptr };
-        BuildMeshPipelines(context, *shaderModule, solid, cutout);
-
-        // Frames already recorded still draw with the old pipelines, so those are not destroyed
-        // here: the queue does it once the GPU has finished with them.
-        retired.Retire(std::exchange(m_meshPipelines, std::move(solid)));
-        retired.Retire(std::exchange(m_cutoutPipelines, std::move(cutout)));
-
-    }   // ScenePass::ReloadMeshShader()
 
     void ScenePass::Record(vk::CommandBuffer cmd, PostTargets& t, vk::Image depthImage, vk::ImageView depthView, vk::Extent2D extent,
                            vk::DescriptorSet frameSet, const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet,
@@ -515,21 +495,24 @@ namespace Crucible {
 
         const std::vector<DrawBatch>& batches = meshes;
 
+        // Starts on the built-in shader's solid pipeline; each material then binds its own shader's
+        // (below). Every mesh pipeline shares m_meshLayout, so the sets stay bound across them.
         const uint32_t msaa = RenderLayouts::MsaaIndex(samples);
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_meshPipelines[msaa]);
+        vk::Pipeline boundPipeline = m_shaders.Pipeline(MaterialShaderHandle{}, msaa, false);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, boundPipeline);
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
         cmd.setCullMode(vk::CullModeFlagBits::eBack);
         cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
         bool mirroredBound = false;
-        bool cutoutBound = false;
         bool cullBack    = true;
 
         // Per-view data (camera, lights, instances, shadow map) is bound once for the whole pass.
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_meshLayout, 0, cameraSet, nullptr);
 
-        // One instanced draw per batch (PrepareView/AppendBatches). Batches are in (material, mesh)
-        // order, so the material set (set 1) and the mesh's buffers rebind only on change.
+        // One instanced draw per batch (PrepareView/AppendBatches). Batches are in (shader, material,
+        // mesh) order, so the pipeline, the material set (set 1) and the mesh's buffers rebind only
+        // on change.
         MeshHandle     boundMesh;       // starts Invalid
         MaterialHandle boundMaterial;   // starts Invalid
         uint32_t       indexCount = 0;  // of boundMesh
@@ -543,12 +526,14 @@ namespace Crucible {
             const GpuMaterial& mat  = m_resources.Materials()[batch.material.id];   // default-substituted when batched
 
             if (!(batch.material == boundMaterial)) {
-                // Cut-out materials use the pipelines that can discard; double-sided ones draw
-                // without culling. Both pipelines share the layout, so the sets stay bound.
-                const bool cutout = mat.data.alphaCutoff > 0.0f;
-                if (cutout != cutoutBound) {
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, cutout ? *m_cutoutPipelines[msaa] : *m_meshPipelines[msaa]);
-                    cutoutBound = cutout;
+                // The pipeline is the material's shader's - the one that can discard, for a cut-out
+                // material. While a shader's pipelines are still being built, its materials get the
+                // built-in shader's (MaterialShaders::Pipeline). Double-sided materials draw
+                // without culling.
+                const vk::Pipeline pipeline = m_shaders.Pipeline(mat.data.shader, msaa, mat.data.alphaCutoff > 0.0f);
+                if (pipeline != boundPipeline) {
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+                    boundPipeline = pipeline;
                 }
                 if (mat.data.doubleSided == cullBack) {
                     cullBack = !mat.data.doubleSided;

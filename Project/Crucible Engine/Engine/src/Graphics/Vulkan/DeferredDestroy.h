@@ -6,9 +6,9 @@
     (once per frame) destroys it a few frames later, when no frame that
     could have used it is still in flight.
   \details
-    Made for swapping a shader's pipelines while the editor runs (ScenePass::
-    ReloadMeshShader): the frame being recorded, and the frames before it
-    that the GPU has not finished, still draw with the old pipelines.
+    Made for swapping a shader's pipelines while the program runs
+    (MaterialShaders::Update): the frames the GPU has not finished still
+    draw with the old pipelines.
     Anything movable can be retired - a vk::raii::Pipeline, a std::array of
     them, a vk::raii::ShaderModule, a descriptor set - without the queue
     knowing its type. It is the same waiting rule RenderResources::

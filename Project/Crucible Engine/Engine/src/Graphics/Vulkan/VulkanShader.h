@@ -47,24 +47,25 @@ namespace Crucible {
     }
 
     /*********************************************************************
-     \brief  Reads <Resources>/Shaders/<shaderName> and makes a shader module from it.
-     \param[in] context     The VulkanContext to create it through.
+     \brief  Reads <Resources>/Shaders/<shaderName>: a compiled shader's
+             SPIR-V, as 32-bit words. For a shader whose code is kept after
+             its pipelines are built, to build more later (MaterialShaders).
      \param[in] shaderName  The compiled shader's file name only, e.g. "Post.spv" -
                             not a path. CompileShaders.cmake writes them into
                             Resources/Shaders.
-     \return The shader module. Only needed while pipelines are being built.
+     \return The whole file.
      \throws std::runtime_error if the name is a path, or the file is missing,
              unreadable, empty or not whole 32-bit SPIR-V words.
      *********************************************************************/
-    [[nodiscard]] inline vk::raii::ShaderModule LoadShaderModule(VulkanContext& context, std::string_view shaderName) {
+    [[nodiscard]] inline std::vector<uint32_t> LoadShaderWords(std::string_view shaderName) {
 
         // A name, never a path: keeps working-directory-relative loads ("../../../Assets/...")
         // from creeping back in, and keeps every shader inside Resources/Shaders.
         if (shaderName.empty() ||
             shaderName.find_first_of("/\\") != std::string_view::npos ||
             shaderName.find("..") != std::string_view::npos) {
-            throw std::runtime_error("[Renderer | Shader] LoadShaderModule takes a file name from Resources/Shaders "
-                                     "(e.g. \"Post.spv\"), not a path: \"" + std::string(shaderName) + "\"");
+            throw std::runtime_error("[Renderer | Shader] A shader is loaded by its file name in Resources/Shaders "
+                                     "(e.g. \"Post.spv\"), not by a path: \"" + std::string(shaderName) + "\"");
         }
 
         const std::filesystem::path path = ResourcePath("Shaders") / shaderName;
@@ -92,8 +93,20 @@ namespace Crucible {
         if (!ifs.read(reinterpret_cast<char*>(code.data()), byteCount)) {
             throw std::runtime_error("[Renderer | Shader] Failed to read " + PathToUtf8(path));
         }
+        return code;
+    }
 
-        return CreateShaderModule(context, code);
+    /*********************************************************************
+     \brief  Reads <Resources>/Shaders/<shaderName> and makes a shader module from it.
+     \param[in] context     The VulkanContext to create it through.
+     \param[in] shaderName  The compiled shader's file name only, e.g. "Post.spv" -
+                            not a path (see LoadShaderWords).
+     \return The shader module. Only needed while pipelines are being built.
+     \throws std::runtime_error if the name is a path, or the file is missing,
+             unreadable, empty or not whole 32-bit SPIR-V words.
+     *********************************************************************/
+    [[nodiscard]] inline vk::raii::ShaderModule LoadShaderModule(VulkanContext& context, std::string_view shaderName) {
+        return CreateShaderModule(context, LoadShaderWords(shaderName));
     }
 
 }   // NAMESPACE CRUCIBLE

@@ -15,6 +15,7 @@
 
 #include "RenderSystem.h"
 #include "Vulkan/VulkanCommands.h"
+#include "Vulkan/VulkanShader.h"   // LoadShaderWords
 
 // STL
 #include <stdexcept>
@@ -65,6 +66,14 @@ namespace Crucible {
         // Passes that own their pipelines.
         m_scenePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(),
                            *m_layouts.GetSkyboxDescriptorSetLayout(), RenderLayouts::kSceneColorFormat, m_swapchain.GetDepthFormat());
+        // The mesh shaders. The built-in one's pipelines are built here, for every MSAA level; the
+        // others in the background as materials ask for them. After m_scenePass.Create(): they are
+        // built with its layout.
+        m_materialShaders.Init(m_context,
+            [this](vk::ShaderModule shader, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) {
+                m_scenePass.BuildMeshPipelines(m_context, shader, level, solid, cutout);
+            },
+            "DefaultShader", LoadShaderWords("DefaultShader.spv"));
         m_outlinePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format);
         m_aoPass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), *m_layouts.GetTonemapDescriptorSetLayout());
         m_bloomPass.Create(m_context, *m_layouts.GetSingleTextureSetLayout(), RenderLayouts::kSceneColorFormat);
@@ -203,6 +212,10 @@ namespace Crucible {
         m_resources.UploadDynamicMeshes(frameIndex);
 
         ApplyMsaaSetting();
+
+        // Mesh shaders: take in the pipelines built since last frame, and ask for whatever the MSAA
+        // level in use still needs (a shader a material has just named, a reloaded one).
+        m_materialShaders.Update(RenderLayouts::MsaaIndex(m_msaaSamples), m_deferred);
 
         // Lights first: every view's uniforms read the light count and shadow light this picks.
         m_lights.BuildFrameLights(frameIndex);
@@ -823,20 +836,51 @@ namespace Crucible {
     MaterialHandle Renderer::CreateMaterial(const MaterialData& data) { return m_resources.CreateMaterial(data); }
     void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) { m_resources.UpdateMaterial(handle, data); }
     
-    bool Renderer::ReloadMeshShader(std::span<const uint32_t> spirv, std::string& error) {
+    MaterialShaderHandle Renderer::LoadMaterialShader(const std::string& name) {
 
+        if (name.empty()) { return {}; }   // the built-in shader
+        if (const MaterialShaderHandle loaded = m_materialShaders.Find(name); loaded.IsValid()) { return loaded; }
+
+        // The name becomes a file name: only what is safe in one.
+        const bool usable = name.front() != '.' && name.find("..") == std::string::npos &&
+            std::all_of(name.begin(), name.end(), [](char c) {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+            });
+        if (!usable) {
+            CRU_USER_WARN("[Renderer] \"{}\" is not a usable shader name (letters, digits, '_', '-' and '.' only) - "
+                          "the material draws with the default shader.", name);
+            return {};
+        }
+
+        // Its compiled code, if the build has made it. Without it the shader is registered all
+        // the same: its materials draw with the built-in shader, and under the Editor the shader
+        // hot reload compiles Assets/Shaders/<name>.slang and hands the result to
+        // ReloadMaterialShader.
+        std::vector<uint32_t> spirv;
         try {
-            m_scenePass.ReloadMeshShader(m_context, spirv, m_deferred);
+            spirv = LoadShaderWords(name + ".spv");
         } catch (const std::exception& e) {
-            // Nothing was swapped: ScenePass builds the whole new set before touching the old one.
-            error = e.what();
-            CRU_ERROR("[Renderer] The mesh shader could not be reloaded: {}", error);
+            CRU_USER_WARN("[Renderer] Shader '{}' has no compiled code yet - its materials draw with the default shader "
+                          "until it does. ({})", name, e.what());
+        }
+        return m_materialShaders.Add(name, std::move(spirv));
+
+    }   // Renderer::LoadMaterialShader()
+
+    const std::string& Renderer::GetMaterialShaderName(MaterialShaderHandle shader) const { return m_materialShaders.Name(shader); }
+    uint32_t Renderer::GetMaterialShaderCount() const { return m_materialShaders.Count(); }
+
+    bool Renderer::ReloadMaterialShader(MaterialShaderHandle shader, std::span<const uint32_t> spirv, std::string& error) {
+
+        // Built in the background from the next frame on; what is drawing now keeps drawing
+        // until the new pipelines are in (MaterialShaders::Update).
+        if (!m_materialShaders.SetCode(shader, std::vector<uint32_t>(spirv.begin(), spirv.end()), error)) {
+            CRU_ERROR("[Renderer] Shader '{}' could not be reloaded: {}", m_materialShaders.Name(shader), error);
             return false;
         }
-        CRU_INFO("[Renderer] Mesh shader reloaded ({} bytes of SPIR-V).", spirv.size_bytes());
         return true;
 
-    }   // Renderer::ReloadMeshShader()
+    }   // Renderer::ReloadMaterialShader()
     
     const MaterialData& Renderer::GetMaterialData(MaterialHandle handle) const { return m_resources.GetMaterialData(handle); }
     bool Renderer::DestroyMesh(MeshHandle handle)         { return m_resources.DestroyMesh(handle); }

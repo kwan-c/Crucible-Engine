@@ -35,6 +35,7 @@
 #include "MeshHandle.h"
 #include "TextureHandle.h"
 #include "MaterialHandle.h"
+#include "MaterialShaderHandle.h"
 #include "CubemapHandle.h"
 #include "LightTypes.h"
 #include "Vulkan/RenderLayouts.h"   // for Vertex (adjust if Vertex lives elsewhere)
@@ -855,6 +856,9 @@ namespace Crucible {
         // Both sides drawn (leaf cards, thin sheets); the back side is lit as its own front.
         bool             doubleSided = false;
         MaterialToon     toon{};
+        // The mesh shader that draws it (Renderer::LoadMaterialShader). Invalid, the default, is
+        // the built-in shader (DefaultShader.slang). Many materials share one shader.
+        MaterialShaderHandle shader{};
     };
 
     /*************************************************************************

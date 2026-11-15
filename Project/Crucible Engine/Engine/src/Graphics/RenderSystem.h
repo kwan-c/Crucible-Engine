@@ -70,6 +70,7 @@
 #include "Passes/WorldUIPass.h"
 #include "DrawList.h"
 #include "RenderResources.h"
+#include "MaterialShaders.h"
 #include "EnvironmentMaps.h"
 #include "GpuProfiler.h"
 #include "SceneLights.h"
@@ -347,19 +348,55 @@ namespace Crucible {
         ENGINE_API void UpdateMaterial(MaterialHandle handle, const MaterialData& data);
 
         /*********************************************************************
-         \brief  Replaces the mesh shader (DefaultShader) with newly compiled
-                 SPIR-V while the program runs. The Editor's shader hot
-                 reload calls this (ShaderHotReloadLayer); the Game never
-                 does - it has no compiler.
-         \param[in] spirv   The compiled shader: the same entry points
-                           (vertMain, fragMain) and the same interface as
-                           DefaultShader.spv.
-         \param[out] error  Why it failed, when it did.
-         \return false if the pipelines could not be built; the renderer
-                 then carries on with the shader it had.
+         \brief  The mesh shader called `name`, loaded the first time it is
+                 asked for. A material is drawn with it by setting
+                 MaterialData::shader to the handle (a .mat file's "shader"
+                 key does this - see ResourceManager).
+         \details
+            A mesh shader is Assets/Shaders/<name>.slang - a surface function
+            followed by SurfaceTemplate.slang - compiled to
+            Resources/Shaders/<name>.spv by the build. Its pipelines are
+            built in the background: until they are ready, and whenever the
+            .spv is missing, its materials draw with the built-in shader.
+         \param[in] name  The shader's name, without folder or extension
+                          ("MagicOrb"). Empty = the built-in shader.
+         \return Its handle (the same one every time), or an Invalid handle -
+                 the built-in shader - for an empty or unusable name.
+         \note  Frame thread only. Shaders are never unloaded.
+         *********************************************************************/
+        ENGINE_API MaterialShaderHandle LoadMaterialShader(const std::string& name);
+
+        /*********************************************************************
+         \brief  A mesh shader's name, as given to LoadMaterialShader.
+         \return Empty for an Invalid handle (the built-in shader, when a
+                 material never named one).
+         *********************************************************************/
+        ENGINE_API const std::string& GetMaterialShaderName(MaterialShaderHandle shader) const;
+
+        /*********************************************************************
+         \brief  How many mesh shaders are loaded. Their handles are
+                 0 .. count - 1; 0 is the built-in shader ("DefaultShader").
+         *********************************************************************/
+        ENGINE_API uint32_t GetMaterialShaderCount() const;
+
+        /*********************************************************************
+         \brief  Replaces a mesh shader's code with newly compiled SPIR-V
+                 while the program runs. The Editor's shader hot reload
+                 calls this (ShaderHotReloadLayer); the Game never does - it
+                 has no compiler.
+         \param[in] shader  The shader; handle 0 is the built-in one.
+         \param[in] spirv   The compiled shader: the entry points vertMain
+                           and fragMain, and the mesh shader's interface
+                           (anything that ends with SurfaceTemplate.slang).
+         \param[out] error  Why it was refused, when it was.
+         \return false if `spirv` is not such a module. On true, the new
+                 pipelines are built in the background and swapped in a few
+                 frames later; the shader's materials keep drawing with the
+                 previous ones until then (and after, if the build fails -
+                 that is logged).
          \note  Call on the frame thread, outside DrawFrame().
          *********************************************************************/
-        ENGINE_API bool ReloadMeshShader(std::span<const uint32_t> spirv, std::string& error);
+        ENGINE_API bool ReloadMaterialShader(MaterialShaderHandle shader, std::span<const uint32_t> spirv, std::string& error);
 
         /*********************************************************************
          \brief  Reads back a material's current texture bindings/scalar
@@ -972,7 +1009,10 @@ namespace Crucible {
         ParticlePass                m_particlePass{ m_context, m_resources };
         WaterPass                   m_waterPass{ m_resources };   // water surfaces, drawn inside the scene pass
         WorldUIPass                 m_worldUIPass{ m_context, m_resources };   // world-space UI (WorldText, world canvases), drawn inside the scene pass
-        ScenePass                   m_scenePass{ m_resources, m_particlePass, m_waterPass, m_worldUIPass };
+        ScenePass                   m_scenePass{ m_resources, m_particlePass, m_waterPass, m_worldUIPass, m_materialShaders };
+        // The mesh shaders and their scene pipelines. AFTER m_scenePass: it is destroyed first, which
+        // stops its background thread while the pass whose layout that thread builds with is still there.
+        MaterialShaders             m_materialShaders;
         DebugLinePass               m_debugLinePass;
         UIPass                      m_uiPass{ m_context, m_resources };   // also holds m_resources (declared below; used once frames start)
         VolumetricFogPass           m_fogPass{ m_context };   // froxel fog (compute); its pool is BEFORE every view's FogVolumeTargets
