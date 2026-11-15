@@ -10,8 +10,11 @@
 #include "Graphics/Passes/WorldUIPass.h"
 #include "Graphics/RenderResources.h"
 #include "Graphics/Vulkan/RenderLayouts.h"
+#include "Graphics/Vulkan/DeferredDestroy.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
 #include "Graphics/Vulkan/VulkanShader.h"
+
+#include <utility>  // std::exchange
 
 namespace Crucible {
 
@@ -20,79 +23,12 @@ namespace Crucible {
     void ScenePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout,
                            vk::DescriptorSetLayout skySetLayout, vk::Format colourFormat, vk::Format depthFormat) {
 
+        // The mesh pipelines are built again when the shader is reloaded (ReloadMeshShader).
+        m_colourFormat = colourFormat;
+        m_depthFormat  = depthFormat;
+
         // ---- Meshes ----
         {
-            // Programmable stages (Vertex and Fragment shaders) ----------------------------------- //
-            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "DefaultShader.spv");
-
-            vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-                .stage = vk::ShaderStageFlagBits::eVertex,
-                .module = shaderModule,
-                .pName = "vertMain"
-            };
-            vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-                .stage = vk::ShaderStageFlagBits::eFragment,
-                .module = shaderModule,
-                .pName = "fragMain"
-            };
-            vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
-
-            // Fixed functions --------------------------------------------------------------------- //
-            auto bindingDescription = Vertex::GetBindingDescription();
-            auto attributeDescriptions = Vertex::GetAttributeDescriptions();
-            vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-                .vertexBindingDescriptionCount = 1,
-                .pVertexBindingDescriptions = &bindingDescription,
-                .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
-                .pVertexAttributeDescriptions = attributeDescriptions.data()
-            };
-            vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
-
-            // Set viewport to entire swapchain extent, make them dynamic for more flexibility in future.
-            // Cull mode too (core in Vulkan 1.3): double-sided materials switch it off per draw.
-            std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
-                vk::DynamicState::eCullMode, vk::DynamicState::eFrontFace };
-            vk::PipelineDynamicStateCreateInfo dynamicState = {
-                .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
-                .pDynamicStates = dynamicStates.data()
-            };
-            vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
-
-            vk::PipelineRasterizationStateCreateInfo rasterizer{
-                .depthClampEnable = vk::False,
-                .rasterizerDiscardEnable = vk::False,
-                .polygonMode = vk::PolygonMode::eFill,
-                .cullMode = vk::CullModeFlagBits::eBack,
-                .frontFace = vk::FrontFace::eCounterClockwise,
-                .depthBiasEnable = vk::False,
-                .lineWidth = 1.0f
-            };
-
-            // Disable multisampling and color blending for now...
-            vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
-            // Two outputs: the lit colour, and the line data the toon outline pass reads (both
-            // written as they are; identical states, as independentBlend is not enabled).
-            const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-                .blendEnable = vk::False,
-                .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
-            const vk::PipelineColorBlendAttachmentState colorBlendAttachments[2] = { colorBlendAttachment, colorBlendAttachment };
-            vk::PipelineColorBlendStateCreateInfo colorBlending{
-                .logicOpEnable = vk::False,
-                .logicOp = vk::LogicOp::eCopy,
-                .attachmentCount = 2,
-                .pAttachments = colorBlendAttachments
-            };
-
-            // Depth testing so overlapping meshes sort correctly (a single hard-coded cube never
-            // needed this; multiple/imported models will).
-            vk::PipelineDepthStencilStateCreateInfo depthStencil{
-                .depthTestEnable = vk::True,
-                .depthWriteEnable = vk::True,
-                .depthCompareOp = vk::CompareOp::eLess,
-                .depthBoundsTestEnable = vk::False,
-                .stencilTestEnable = vk::False
-            };
-
             // Pipeline layout object. Set 0 = per-view frame data (camera, lights, instances, shadow
             // map). Set 1 = the current draw's material (five texture bindings - see
             // CreateMaterialDescriptorSetLayout). The push constant carries the material's scalar
@@ -112,44 +48,8 @@ namespace Crucible {
             };
             m_meshLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
 
-            // The scene is drawn into the HDR image, not the swapchain (see kSceneColorFormat).
-            const vk::Format colourFormats[2] = { colourFormat, RenderLayouts::kLineDataFormat };
-
-            // Consolidate all information to create Graphics Pipeline.
-            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
-            {
-                {
-                    .stageCount = 2,
-                    .pStages = shaderStages,
-                    .pVertexInputState = &vertexInputInfo,
-                    .pInputAssemblyState = &inputAssembly,
-                    .pViewportState = &viewportState,
-                    .pRasterizationState = &rasterizer,
-                    .pMultisampleState = &multisampling,
-                    .pDepthStencilState = &depthStencil,
-                    .pColorBlendState = &colorBlending,
-                    .pDynamicState = &dynamicState,
-                    .layout = m_meshLayout,
-                    .renderPass = nullptr
-                },
-                {.colorAttachmentCount = 2, .pColorAttachmentFormats = colourFormats, .depthAttachmentFormat = depthFormat }
-            };
-            // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
-            // pipeline and must match the target it draws into. `multisampling` is referenced by
-            // pointer above, so changing it here changes what the next pipeline is built with.
-            // Each level twice: solid, and cut-out (DefaultShader's kCutout specialization constant
-            // on, so only cut-out materials pay for a shader that can discard).
-            const vk::Bool32               cutoutOn = vk::True;
-            const vk::SpecializationMapEntry cutoutEntry{ .constantID = 0, .offset = 0, .size = sizeof(vk::Bool32) };
-            const vk::SpecializationInfo   cutoutInfo{ .mapEntryCount = 1, .pMapEntries = &cutoutEntry, .dataSize = sizeof(vk::Bool32), .pData = &cutoutOn };
-            for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
-                multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
-                shaderStages[1].pSpecializationInfo = nullptr;
-                m_meshPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-                shaderStages[1].pSpecializationInfo = &cutoutInfo;
-                m_cutoutPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-            }
-            shaderStages[1].pSpecializationInfo = nullptr;
+            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "DefaultShader.spv");
+            BuildMeshPipelines(context, *shaderModule, m_meshPipelines, m_cutoutPipelines);
         }
 
         // ---- Sky ----
@@ -248,11 +148,137 @@ namespace Crucible {
             // pointer above, so changing it here changes what the next pipeline is built with.
             for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
                 multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
-                m_skyPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+                m_skyPipelines[i] = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
             }
         }
-
     }   // ScenePass::Create()
+
+    void ScenePass::BuildMeshPipelines(VulkanContext& context, vk::ShaderModule shader, MeshPipelines& solid, MeshPipelines& cutout) const {
+
+        // Programmable stages (Vertex and Fragment shaders) ----------------------------------- //
+        vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+            .stage = vk::ShaderStageFlagBits::eVertex,
+            .module = shader,
+            .pName = "vertMain"
+        };
+        vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+            .stage = vk::ShaderStageFlagBits::eFragment,
+            .module = shader,
+            .pName = "fragMain"
+        };
+        vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+        // Fixed functions --------------------------------------------------------------------- //
+        auto bindingDescription = Vertex::GetBindingDescription();
+        auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+            .vertexBindingDescriptionCount = 1,
+            .pVertexBindingDescriptions = &bindingDescription,
+            .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+            .pVertexAttributeDescriptions = attributeDescriptions.data()
+        };
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+
+        // Set viewport to entire swapchain extent, make them dynamic for more flexibility in future.
+        // Cull mode too (core in Vulkan 1.3): double-sided materials switch it off per draw.
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+            vk::DynamicState::eCullMode, vk::DynamicState::eFrontFace };
+        vk::PipelineDynamicStateCreateInfo dynamicState = {
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode = vk::PolygonMode::eFill,
+            .cullMode = vk::CullModeFlagBits::eBack,
+            .frontFace = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable = vk::False,
+            .lineWidth = 1.0f
+        };
+
+        // Disable multisampling and color blending for now...
+        vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        // Two outputs: the lit colour, and the line data the toon outline pass reads (both
+        // written as they are; identical states, as independentBlend is not enabled).
+        const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+            .blendEnable = vk::False,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
+        const vk::PipelineColorBlendAttachmentState colorBlendAttachments[2] = { colorBlendAttachment, colorBlendAttachment };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{
+            .logicOpEnable = vk::False,
+            .logicOp = vk::LogicOp::eCopy,
+            .attachmentCount = 2,
+            .pAttachments = colorBlendAttachments
+        };
+
+        // Depth testing so overlapping meshes sort correctly (a single hard-coded cube never
+        // needed this; multiple/imported models will).
+        vk::PipelineDepthStencilStateCreateInfo depthStencil{
+            .depthTestEnable = vk::True,
+            .depthWriteEnable = vk::True,
+            .depthCompareOp = vk::CompareOp::eLess,
+            .depthBoundsTestEnable = vk::False,
+            .stencilTestEnable = vk::False
+        };
+
+        // The scene is drawn into the HDR image, not the swapchain (see kSceneColorFormat).
+        const vk::Format colourFormats[2] = { m_colourFormat, RenderLayouts::kLineDataFormat };
+
+        // Consolidate all information to create Graphics Pipeline.
+        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
+        {
+            {
+                .stageCount = 2,
+                .pStages = shaderStages,
+                .pVertexInputState = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState = &multisampling,
+                .pDepthStencilState = &depthStencil,
+                .pColorBlendState = &colorBlending,
+                .pDynamicState = &dynamicState,
+                .layout = m_meshLayout,
+                .renderPass = nullptr
+            },
+            {.colorAttachmentCount = 2, .pColorAttachmentFormats = colourFormats, .depthAttachmentFormat = m_depthFormat }
+        };
+        // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
+        // pipeline and must match the target it draws into. `multisampling` is referenced by
+        // pointer above, so changing it here changes what the next pipeline is built with.
+        // Each level twice: solid, and cut-out (DefaultShader's kCutout specialization constant
+        // on, so only cut-out materials pay for a shader that can discard).
+        const vk::Bool32               cutoutOn = vk::True;
+        const vk::SpecializationMapEntry cutoutEntry{ .constantID = 0, .offset = 0, .size = sizeof(vk::Bool32) };
+        const vk::SpecializationInfo   cutoutInfo{ .mapEntryCount = 1, .pMapEntries = &cutoutEntry, .dataSize = sizeof(vk::Bool32), .pData = &cutoutOn };
+        for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
+            multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
+            shaderStages[1].pSpecializationInfo = nullptr;
+            solid[i] = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+            shaderStages[1].pSpecializationInfo = &cutoutInfo;
+            cutout[i] = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+        }
+        shaderStages[1].pSpecializationInfo = nullptr;
+
+    }   // ScenePass::BuildMeshPipelines()
+
+    void ScenePass::ReloadMeshShader(VulkanContext& context, std::span<const uint32_t> spirv, DeferredDestroyQueue& retired) {
+
+        // The whole new set first: if anything here throws, the pipelines in use are untouched.
+        vk::raii::ShaderModule shaderModule = CreateShaderModule(context, spirv);
+        MeshPipelines solid{ nullptr, nullptr, nullptr };
+        MeshPipelines cutout{ nullptr, nullptr, nullptr };
+        BuildMeshPipelines(context, *shaderModule, solid, cutout);
+
+        // Frames already recorded still draw with the old pipelines, so those are not destroyed
+        // here: the queue does it once the GPU has finished with them.
+        retired.Retire(std::exchange(m_meshPipelines, std::move(solid)));
+        retired.Retire(std::exchange(m_cutoutPipelines, std::move(cutout)));
+
+    }   // ScenePass::ReloadMeshShader()
 
     void ScenePass::Record(vk::CommandBuffer cmd, PostTargets& t, vk::Image depthImage, vk::ImageView depthView, vk::Extent2D extent,
                            vk::DescriptorSet frameSet, const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet,

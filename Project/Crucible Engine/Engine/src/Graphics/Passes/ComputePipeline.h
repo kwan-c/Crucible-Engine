@@ -32,7 +32,7 @@ namespace Crucible {
             .stage  = { .stage = vk::ShaderStageFlagBits::eCompute, .module = *shaderModule, .pName = entry },
             .layout = layout
         };
-        return vk::raii::Pipeline(context.GetDevice(), nullptr, info);
+        return vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), info);
 
     }   // CreateComputePipeline()
 

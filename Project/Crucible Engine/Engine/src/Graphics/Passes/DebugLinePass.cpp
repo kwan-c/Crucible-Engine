@@ -126,7 +126,7 @@ namespace Crucible {
                 },
                 {.colorAttachmentCount = 1, .pColorAttachmentFormats = &swapchainFormat, .depthAttachmentFormat = depthFormat }
             };
-            return vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+            return vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
         };
         m_debugLinePipeline         = build(true, shaderStages, vertexInputInfo);
         m_debugLineOnTopPipeline    = build(false, shaderStages, vertexInputInfo);

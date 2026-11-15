@@ -16,12 +16,35 @@
 #include <cstdint>
 #include <filesystem>
 #include <fstream>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace Crucible {
+
+    /*********************************************************************
+     \brief  Makes a shader module from SPIR-V that is already in memory (a
+             shader the Editor has just compiled - see ShaderHotReload).
+     \param[in] context  The VulkanContext to create it through.
+     \param[in] spirv    The whole module, as 32-bit words.
+     \return The shader module. Only needed while pipelines are being built.
+     \throws std::runtime_error if it does not start like a SPIR-V module.
+     *********************************************************************/
+    [[nodiscard]] inline vk::raii::ShaderModule CreateShaderModule(VulkanContext& context, std::span<const uint32_t> spirv) {
+
+        // Header (5 words) starting with SPIR-V's magic number: anything else would be handed
+        // to the driver as it is, and the driver does not have to check.
+        if (spirv.size() < 5 || spirv.front() != 0x07230203u) {
+            throw std::runtime_error("[Renderer | Shader] That is not a SPIR-V module (" + std::to_string(spirv.size()) + " words)");
+        }
+        vk::ShaderModuleCreateInfo createInfo{
+            .codeSize = spirv.size_bytes(),
+            .pCode = spirv.data()
+        };
+        return { context.GetDevice(), createInfo };
+    }
 
     /*********************************************************************
      \brief  Reads <Resources>/Shaders/<shaderName> and makes a shader module from it.
@@ -70,11 +93,7 @@ namespace Crucible {
             throw std::runtime_error("[Renderer | Shader] Failed to read " + PathToUtf8(path));
         }
 
-        vk::ShaderModuleCreateInfo createInfo{
-            .codeSize = code.size() * sizeof(uint32_t),
-            .pCode    = code.data()
-        };
-        return { context.GetDevice(), createInfo };
+        return CreateShaderModule(context, code);
     }
 
 }   // NAMESPACE CRUCIBLE

@@ -78,6 +78,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 1"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -160,6 +163,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 24"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -221,6 +227,9 @@
                         "w": 1.0
                     },
                     "textureAsset": 0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -300,6 +309,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 2"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -379,6 +391,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 3"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -483,6 +498,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -523,6 +541,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 28"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -573,6 +594,9 @@
                     "fade": false,
                     "fadeStart": 20.0,
                     "fadeEnd": 30.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -652,6 +676,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 4"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -731,6 +758,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 5"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -810,6 +840,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 6"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -889,6 +922,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 7"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -968,6 +1004,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 8"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1027,6 +1066,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 32"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1071,8 +1113,8 @@
                     "worldSpace": true,
                     "lifetimeMin": 0.25,
                     "lifetimeMax": 0.44999998807907104,
-                    "speedMin": 3.0,
-                    "speedMax": 8.0,
+                    "speedMin": 10.350000381469727,
+                    "speedMax": 15.149999618530273,
                     "sizeMin": 0.02500000037252903,
                     "sizeMax": 0.05000000074505806,
                     "endSizeScale": 0.30000001192092896,
@@ -1109,6 +1151,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 25"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1242,6 +1287,9 @@
                 },
                 "EntityName": {
                     "name": "test 1"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1321,6 +1369,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 9"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1422,6 +1473,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1450,25 +1504,32 @@
                     "name": "Cursor Lock"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "CursorLock",
-                    "fields": [
+                    "scripts": [
                         {
-                            "declaringType": "Crucible.Scripts.CursorLock",
-                            "name": "locked",
-                            "type": "Bool",
-                            "boolean": true,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "CursorLock",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CursorLock",
+                                    "name": "locked",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
                         }
                     ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1508,6 +1569,9 @@
                 },
                 "EntityName": {
                     "name": "Empty"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1567,6 +1631,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 33"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1646,6 +1713,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 10"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1747,6 +1817,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1808,6 +1881,9 @@
                         "w": 0.95686274766922
                     },
                     "textureAsset": 3715637708821250059
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1887,6 +1963,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 11"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2030,6 +2109,9 @@
                         "y": 2.0
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2110,6 +2192,9 @@
                     },
                     "handleSize": 0.0,
                     "trackThickness": 0.4000000059604645
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2189,6 +2274,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 12"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2268,6 +2356,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 13"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2347,6 +2438,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 14"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2415,6 +2509,9 @@
                     "floodRadius": 100.0,
                     "rebuildDistance": 3.0,
                     "wallAdjacencyCost": 4.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2465,6 +2562,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 46"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2524,6 +2624,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 35"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2603,6 +2706,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 15"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2682,6 +2788,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 16"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2789,6 +2898,9 @@
                 "StateGraphAgent": {
                     "graph": 0,
                     "logStateChanges": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2890,6 +3002,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2969,6 +3084,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 17"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3073,6 +3191,9 @@
                         "y": 2.0
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3132,6 +3253,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 36"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3191,6 +3315,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 37"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3270,6 +3397,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 18"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3310,6 +3440,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 29"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3411,6 +3544,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3470,6 +3606,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 38"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3549,6 +3688,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 19"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3628,6 +3770,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 20"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3729,6 +3874,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3830,6 +3978,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3973,6 +4124,9 @@
                         "y": 2.0
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4032,6 +4186,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 39"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4111,6 +4268,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 21"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4151,6 +4311,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 30"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4200,6 +4363,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 47"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4259,6 +4425,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 40"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4338,6 +4507,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 22"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4397,6 +4569,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 41"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4476,6 +4651,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 23"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4577,6 +4755,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         }

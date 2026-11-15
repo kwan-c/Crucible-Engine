@@ -45,6 +45,7 @@
 #include "Math/Math.h"
  
 #include "Vulkan/VulkanContext.h"
+#include "Vulkan/DeferredDestroy.h"
 #include "Vulkan/VulkanSwapchain.h"
 #include "Vulkan/RenderLayouts.h"
 #include "Vulkan/VulkanFrameManager.h"
@@ -344,6 +345,21 @@ namespace Crucible {
             every frame.
          *********************************************************************/
         ENGINE_API void UpdateMaterial(MaterialHandle handle, const MaterialData& data);
+
+        /*********************************************************************
+         \brief  Replaces the mesh shader (DefaultShader) with newly compiled
+                 SPIR-V while the program runs. The Editor's shader hot
+                 reload calls this (ShaderHotReloadLayer); the Game never
+                 does - it has no compiler.
+         \param[in] spirv   The compiled shader: the same entry points
+                           (vertMain, fragMain) and the same interface as
+                           DefaultShader.spv.
+         \param[out] error  Why it failed, when it did.
+         \return false if the pipelines could not be built; the renderer
+                 then carries on with the shader it had.
+         \note  Call on the frame thread, outside DrawFrame().
+         *********************************************************************/
+        ENGINE_API bool ReloadMeshShader(std::span<const uint32_t> spirv, std::string& error);
 
         /*********************************************************************
          \brief  Reads back a material's current texture bindings/scalar
@@ -1030,6 +1046,10 @@ namespace Crucible {
         // m_viewTargets, whose pool their PostTargets sets come from.
         ViewportSet                                m_viewportSet{ m_context, m_viewTargets };
 
+        // GPU objects that were replaced while frames using them may still be in flight (a
+        // reloaded shader's old pipelines). Declared last: what is still waiting in it at
+        // shutdown is destroyed first, before the pools and layouts it came from.
+        DeferredDestroyQueue                       m_deferred;
 
         // Vulkan helpers
         void RecordCommandBuffer(FrameContext& fc);

@@ -34,7 +34,7 @@ SurfaceData EvaluateSurface(SurfaceInput s) {
 
     o.occlusion = occlusionTex.Sample(s.uv).r;
     o.emissive  = emissiveTex.Sample(s.uv).rgb * pc.emissiveFactor;
-
+    
     // Unpack x and y [0,1] -> [-1,1] and rebuild z from them (a unit vector pointing out of the
     // surface): BC5 normal maps store only x and y, and for every other normal map this gives the
     // z it already had.
