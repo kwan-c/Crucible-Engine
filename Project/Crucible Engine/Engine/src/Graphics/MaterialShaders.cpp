@@ -183,6 +183,19 @@ namespace Crucible {
 
     }   // MaterialShaders::Name()
 
+    const MaterialShaderParams& MaterialShaders::Params(MaterialShaderHandle shader) const {
+
+        static const MaterialShaderParams none;
+        return shader.id < Count() ? m_entries[shader.id].params : none;
+
+    }   // MaterialShaders::Params()
+
+    void MaterialShaders::SetParams(MaterialShaderHandle shader, MaterialShaderParams params) {
+
+        if (shader.id < Count()) { m_entries[shader.id].params = std::move(params); }
+
+    }   // MaterialShaders::SetParams()
+
     bool MaterialShaders::IsBuilt(MaterialShaderHandle shader, uint32_t level) const {
 
         return shader.id < Count() && level < kLevels && m_entries[shader.id].levels[level].built != 0;

@@ -36,6 +36,7 @@
 #pragma once
 
 #include "MaterialShaderHandle.h"
+#include "MaterialShaderParams.h"
 #include "Vulkan/VulkanContext.h"
 
 #include <array>
@@ -143,6 +144,14 @@ namespace Crucible {
         /// A shader's name. Empty for a handle that is not one of ours (Invalid included).
         const std::string& Name(MaterialShaderHandle shader) const;
 
+        /// A shader's own parameters and textures (see MaterialShaderParams.h). Empty for the
+        /// built-in shader, for a shader without a list, and for a handle that is not one of ours.
+        const MaterialShaderParams& Params(MaterialShaderHandle shader) const;
+
+        /// Replaces a shader's list. The materials using it are the caller's to bring in line
+        /// (RenderResources::OnShaderParamsChanged). Nothing happens for a handle that is not ours.
+        void SetParams(MaterialShaderHandle shader, MaterialShaderParams params);
+
         /// Whether the shader's own pipelines exist for this level (false = it draws with the built-in ones).
         bool IsBuilt(MaterialShaderHandle shader, uint32_t level) const;
 
@@ -168,6 +177,7 @@ namespace Crucible {
             Code        code;                      // null = no compiled code yet
             uint32_t    version = 0;               // +1 each time the code changes; 0 = no code
             uint32_t    failed  = 0;               // newest version whose build failed (not retried)
+            MaterialShaderParams params;           // its own parameters and textures (empty = none)
             std::array<Level, kLevels> levels;
         };
         struct Job {                               // frame thread -> background thread

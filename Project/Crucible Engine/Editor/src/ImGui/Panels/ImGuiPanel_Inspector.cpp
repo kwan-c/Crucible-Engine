@@ -14,6 +14,7 @@
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/EditorWidgets.h"
 #include "ImGui/EditorTheme.h"
+#include "Shaders/MaterialShaderUI.h"
 #include "Diagnostics/Logger.h"
 #include "Scene/SceneManager.h"
 #include "AssetPipe/Assetmanager.h"   // AssetRefField
@@ -1117,6 +1118,10 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool impor
 	changed |= ImGui::SliderFloat("Metallic", &data.factors.metallicFactor, 0.0f, 1.0f);
 	changed |= ImGui::SliderFloat("Roughness", &data.factors.roughnessFactor, 0.0f, 1.0f);
 	changed |= ImGui::ColorEdit3("Emissive Factor", &data.factors.emissiveFactor.x);
+
+	// The material's shader, and that shader's own parameters and textures (shader graphs,
+	// hand-written surfaces) - see Shaders/MaterialShaderUI.h.
+	changed |= DrawMaterialShaderParams(m_renderer, data);
 
 	ImGui::Separator();
 	// ---- How it is lit, and its shape ----

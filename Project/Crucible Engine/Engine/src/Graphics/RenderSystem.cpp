@@ -29,6 +29,8 @@
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <fstream>
+#include <iterator>
 
 #include <glm/gtc/packing.hpp>   // packHalf4x16 - RGBA16F cubemap texels
 
@@ -52,6 +54,27 @@ namespace Crucible {
         // sRGB like UI colours, but Vulkan clear values for an sRGB image are linear.
         float SrgbToLinear(float c) {
             return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+        }
+
+        // A mesh shader's parameter list, <name>.params.json: beside its compiled code
+        // (Resources/Shaders, where the build copies it) or, when the shader has not been built
+        // yet and the sources are there (the Editor), beside its source. False if it has none -
+        // or one that cannot be used, which is reported.
+        bool LoadShaderParamList(const std::string& name, MaterialShaderParams& out) {
+            const std::string file = name + ".params.json";
+            std::vector<std::filesystem::path> places{ ResourcePath("Shaders") / file };
+            if (!IsCookedRun()) { places.push_back(AssetPath("Shaders") / file); }
+
+            for (const std::filesystem::path& path : places) {
+                std::ifstream in(path, std::ios::binary);
+                if (!in) { continue; }
+                const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                std::string error;
+                if (MaterialShaderParams::Parse(text, out, error)) { return true; }
+                CRU_USER_ERROR("[Renderer] {} cannot be used: {}. Materials on '{}' get no parameters of its own.", PathToUtf8(path), error, name);
+                return false;
+            }
+            return false;
         }
 
     }   // anonymous namespace
@@ -97,6 +120,7 @@ namespace Crucible {
         static_assert(SceneLights::kMaxClusterViews >= ViewportSet::kMaxViewports + 1, "one cluster grid per viewport, plus the window");
         m_lights.Init(m_context, m_frameManager.MaxFramesInFlight());   // light buffer + cluster buffers
         m_scene.Init(m_frameManager.MaxFramesInFlight());   // instance buffers
+        m_resources.InitMaterialParams(m_frameManager.MaxFramesInFlight());   // the materials' shader-parameter buffers
         CreateShadowResources();
         m_viewTargets.Init(ViewportSet::kMaxViewports + 1, *m_layouts.GetSingleTextureSetLayout(), *m_layouts.GetTonemapDescriptorSetLayout(),
                            m_swapchain.GetDepthFormat());   // samplers and the pool every view's targets use
@@ -108,7 +132,7 @@ namespace Crucible {
         m_viewportSet.Init(m_frameManager.MaxFramesInFlight(), *m_layouts.GetDescriptorSetLayout(), *m_outlinePass.GetMaskSetLayout(),
                            m_swapchain.GetSurfaceFormat().format, m_swapchain.GetDepthFormat());
 
-        m_resources.InitMaterials(*m_layouts.GetMaterialDescriptorSetLayout());   // sampler, placeholders, default material
+        m_resources.InitMaterials(*m_layouts.GetMaterialDescriptorSetLayout(), m_materialShaders);   // sampler, placeholders, default material
         m_particlePass.EnsureTextureSet(m_resources.DefaultWhiteTexture());   // the particle pipeline's fallback texture set
         // Screen-space UI: drawn into viewport images and the swapchain, which share one format.
         m_uiPass.Create(*m_layouts.GetSingleTextureSetLayout(), m_swapchain.GetSurfaceFormat().format,
@@ -210,6 +234,8 @@ namespace Crucible {
 
         // ...and with this index's dynamic-mesh buffers: refill the ones whose geometry changed.
         m_resources.UploadDynamicMeshes(frameIndex);
+        // ...and with this index's copy of the materials' shader parameters: refill it if any changed.
+        m_resources.UploadMaterialParams(frameIndex);
 
         ApplyMsaaSetting();
 
@@ -770,14 +796,15 @@ namespace Crucible {
     void Renderer::CreateDescriptorPool() {
 
         uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
-        // Each set 0 = FrameUniforms UBO (binding 0), five storage buffers (lights 1, instances 2,
-        // particles 5, light-cluster grid 6 and indices 7), shadow map image + comparison sampler (3, 4).
+        // Each set 0 = FrameUniforms UBO (binding 0), six storage buffers (lights 1, instances 2,
+        // particles 5, light-cluster grid 6 and indices 7, material parameters 11), shadow map image
+        // + comparison sampler (3, 4).
         // ... plus three textures: the environment map (8), the view's ambient occlusion (9) and
         // its fog volume (10).
         std::array<vk::DescriptorPoolSize, 5> poolSizes{ {
             { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxFrames * 3 },
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFrames },
-            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 5 },
+            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 6 },
             { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxFrames },
             { .type = vk::DescriptorType::eSampler,       .descriptorCount = maxFrames }
         } };
@@ -863,9 +890,32 @@ namespace Crucible {
             CRU_USER_WARN("[Renderer] Shader '{}' has no compiled code yet - its materials draw with the default shader "
                           "until it does. ({})", name, e.what());
         }
-        return m_materialShaders.Add(name, std::move(spirv));
+        const MaterialShaderHandle shader = m_materialShaders.Add(name, std::move(spirv));
+
+        // Its own parameters and textures, if it has any. No material uses the shader yet, so
+        // there is nothing to bring in line.
+        MaterialShaderParams list;
+        if (LoadShaderParamList(name, list)) { m_materialShaders.SetParams(shader, std::move(list)); }
+        return shader;
 
     }   // Renderer::LoadMaterialShader()
+
+    const MaterialShaderParams& Renderer::GetMaterialShaderParams(MaterialShaderHandle shader) const { return m_materialShaders.Params(shader); }
+
+    bool Renderer::SetMaterialShaderParams(MaterialShaderHandle shader, const MaterialShaderParams& params) {
+
+        // Handle 0 is the built-in shader: its settings are MaterialData's fixed fields.
+        if (shader.id == 0 || shader.id >= m_materialShaders.Count()) { return false; }
+
+        const MaterialShaderParams before = m_materialShaders.Params(shader);
+        if (before == params) { return true; }
+        m_materialShaders.SetParams(shader, params);
+        m_resources.OnShaderParamsChanged(shader, before);   // its materials keep their values, by name
+        CRU_INFO("[Renderer] Shader '{}' now has {} parameter(s) and {} texture(s).", m_materialShaders.Name(shader),
+                 params.params.size(), params.textures.size());
+        return true;
+
+    }   // Renderer::SetMaterialShaderParams()
 
     const std::string& Renderer::GetMaterialShaderName(MaterialShaderHandle shader) const { return m_materialShaders.Name(shader); }
     uint32_t Renderer::GetMaterialShaderCount() const { return m_materialShaders.Count(); }
@@ -903,7 +953,8 @@ namespace Crucible {
     void Renderer::WriteSharedFrameDescriptors(std::vector<vk::raii::DescriptorSet>& sets) {
 
         for (size_t i = 0; i < sets.size() && i < m_lights.BufferCount() && i < m_scene.InstanceBufferCount()
-                           && i < m_particlePass.BufferCount(); ++i) {
+                           && i < m_particlePass.BufferCount() && i < m_resources.MaterialParamBufferCount(); ++i) {
+            vk::DescriptorBufferInfo materialParamInfo{ .buffer = m_resources.MaterialParamBuffers(i), .offset = 0, .range = vk::WholeSize };
             vk::DescriptorBufferInfo particleInfo{ .buffer = m_particlePass.Buffer(static_cast<uint32_t>(i)), .offset = 0, .range = vk::WholeSize };
             vk::DescriptorBufferInfo clusterGridInfo{ .buffer = m_lights.ClusterGridBuffer(i), .offset = 0, .range = vk::WholeSize };
             vk::DescriptorBufferInfo clusterIndexInfo{ .buffer = m_lights.ClusterIndexBuffer(i), .offset = 0, .range = vk::WholeSize };
@@ -922,7 +973,9 @@ namespace Crucible {
             // Binding 10 starts at the "no fog" volume; WriteViewTextures points it at the view's own.
             vk::DescriptorImageInfo fogInfo = m_fogPass.SampledVolume(nullptr);
 
-            const std::array<vk::WriteDescriptorSet, 8> writes{ {
+            const std::array<vk::WriteDescriptorSet, 9> writes{ {
+                { .dstSet = *sets[i], .dstBinding = 11, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &materialParamInfo },
                 { .dstSet = *sets[i], .dstBinding = 5, .descriptorCount = 1,
                   .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &particleInfo },
                 { .dstSet = *sets[i], .dstBinding = 6, .descriptorCount = 1,

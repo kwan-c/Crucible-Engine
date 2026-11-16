@@ -28,6 +28,7 @@
 #include "Shaders/ShaderHotReload.h"
 
 #include "AssetPipe/AssetPaths.h"
+#include "Graphics/MaterialShaderParams.h"
 #include "Systems/ExecutablePath.h"
 #include "Systems/Layer.h"
 #include <Graphics/RenderSystem.h>
@@ -55,10 +56,20 @@ namespace Crucible {
 			Renderer& renderer = m_core.GetRenderer();
 			for (const uint32_t count = renderer.GetMaterialShaderCount(); m_watched < count; ++m_watched) {
 				const MaterialShaderHandle shader{ m_watched };
+				// Its parameter list too (<Name>.params.json) - not for the built-in shader, which has none.
+				ShaderHotReload::ApplyParams applyParams;
+				if (shader.id != 0) {
+					applyParams = [this, shader](std::string_view json, std::string& error) {
+						MaterialShaderParams list;
+						if (!MaterialShaderParams::Parse(json, list, error)) { return false; }
+						return m_core.GetRenderer().SetMaterialShaderParams(shader, list);
+					};
+				}
 				m_hotReload.Watch({ renderer.GetMaterialShaderName(shader), { "vertMain", "fragMain" },
 					[this, shader](std::span<const uint32_t> spirv, std::string& error) {
 						return m_core.GetRenderer().ReloadMaterialShader(shader, spirv, error);
-					} });
+					},
+					std::move(applyParams) });
 			}
 			m_hotReload.Tick();
 		}

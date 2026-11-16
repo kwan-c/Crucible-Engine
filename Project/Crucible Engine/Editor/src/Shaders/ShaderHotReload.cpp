@@ -16,6 +16,8 @@
 
 #include <algorithm>
 #include <fstream>
+#include <iterator>
+#include <string_view>
 #include <system_error>
 #include <utility>
 
@@ -28,6 +30,7 @@ namespace Crucible {
 		constexpr auto   kScanInterval = std::chrono::milliseconds(500);   // how often Assets/Shaders is checked
 		constexpr auto   kSettleTime   = std::chrono::milliseconds(300);   // a change must be this old before compiling
 		constexpr size_t kMaxReported  = 25;                               // Console lines per compile
+		constexpr std::string_view kParamsSuffix = ".params.json";         // a mesh shader's parameter list: <Name>.params.json
 
 		std::string ToUtf8(const fs::path& path) {
 			const std::u8string text = path.generic_u8string();
@@ -129,12 +132,14 @@ namespace Crucible {
 	}
 
 	uint64_t ShaderHotReload::FolderSignature() const {
-		// Name, size and time of every .slang file, order not mattering (the hashes are summed).
+		// Name, size and time of every .slang file and every parameter list (.params.json), order
+		// not mattering (the hashes are summed).
 		uint64_t signature = 0;
 		std::error_code ec;
 		for (const fs::directory_entry& entry : fs::directory_iterator(m_compiler->GetSettings().shaderDir, ec)) {
-			if (!entry.is_regular_file(ec) || entry.path().extension() != ".slang") { continue; }
+			if (!entry.is_regular_file(ec)) { continue; }
 			const std::string name = ToUtf8(entry.path().filename());
+			if (entry.path().extension() != ".slang" && !name.ends_with(kParamsSuffix)) { continue; }
 			const uint64_t facts[2] = {
 				static_cast<uint64_t>(entry.file_size(ec)),
 				static_cast<uint64_t>(entry.last_write_time(ec).time_since_epoch().count())
@@ -174,6 +179,8 @@ namespace Crucible {
 		if (m_dirty && autoReload && now - m_seenAt >= kSettleTime) {
 			m_dirty = false;
 			for (Watched& watched : m_watched) {
+				CheckParams(watched);   // its parameter list first: the materials are ready when the new code arrives
+
 				ShaderCompiler::Request request;
 				request.name = watched.shader.name;
 				request.entryPoints = watched.shader.entryPoints;
@@ -191,6 +198,28 @@ namespace Crucible {
 		const bool compiling = std::any_of(m_watched.begin(), m_watched.end(), [](const Watched& w) { return w.ticket != 0; });
 		m_status = compiling ? Status::Compiling : (ErrorCount() > 0 ? Status::Errors : Status::UpToDate);
 		if (m_status != Status::Errors) { m_firstError.clear(); }
+	}
+
+	void ShaderHotReload::CheckParams(Watched& watched) {
+		if (!watched.shader.applyParams) { return; }
+
+		// The list's text now ("" = no such file), against what was last handed over.
+		const fs::path file = m_compiler->GetSettings().shaderDir / (watched.shader.name + std::string(kParamsSuffix));
+		std::string text;
+		if (std::ifstream in(file, std::ios::binary); in) {
+			text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+		}
+		const uint64_t hash = text.empty() ? 0 : HashBytes(text.data(), text.size());
+		if (hash == watched.paramsHash) { return; }
+		watched.paramsHash = hash;   // a list with a mistake in it is not handed over again until it changes
+
+		std::string error;
+		if (watched.shader.applyParams(text.empty() ? std::string_view("{}") : std::string_view(text), error)) {
+			CRU_INFO("[Editor | Shaders] {}{} applied.", watched.shader.name, kParamsSuffix);
+		} else {
+			CRU_USER_ERROR("{}{}: {} - still using the previous parameter list.", watched.shader.name, kParamsSuffix,
+			               error.empty() ? "the renderer could not use it" : error);
+		}
 	}
 
 	void ShaderHotReload::OnCompiled(Watched& watched, const ShaderCompiler::Result& result) {

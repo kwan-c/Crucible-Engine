@@ -16,6 +16,11 @@
 *      whose own source or #includes changed is compiled again. A shader that does not include
 *      the file is left alone.
 *
+* A mesh shader's parameter list (<Name>.params.json beside the .slang, see the engine's
+* Graphics/MaterialShaderParams.h) is watched the same way: when it is saved, its text goes to the
+* shader's `applyParams` function. No compile is needed for that; the shader's source usually
+* changes with it and is recompiled as above.
+*
 * At start, each watched shader is compiled once (normally straight from the compiler's cache)
 * and compared with the .spv the build produced, which is what the renderer loaded. Identical:
 * nothing happens. Different - a shader was edited while the Editor was closed and the project
@@ -38,6 +43,7 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace Crucible {
@@ -46,11 +52,15 @@ namespace Crucible {
 	public:
 		/// Gives the renderer newly compiled SPIR-V. Returns false, and why, if it could not use it.
 		using Apply = std::function<bool(std::span<const uint32_t> spirv, std::string& error)>;
+		/// Gives the renderer a shader's parameter list: the text of its .params.json ("{}" when the
+		/// file has gone). Returns false, and why, if it is not a usable list.
+		using ApplyParams = std::function<bool(std::string_view json, std::string& error)>;
 
 		struct Shader {
 			std::string              name;          // "DefaultShader": Assets/Shaders/DefaultShader.slang, built to DefaultShader.spv
 			std::vector<std::string> entryPoints;   // as in Engine/CompileShaders.cmake
 			Apply                    apply;         // called on the thread that calls Tick()
+			ApplyParams              applyParams;   // optional: for a shader that can have a <name>.params.json
 		};
 
 		enum class Status {
@@ -90,9 +100,11 @@ namespace Crucible {
 			uint64_t    ticket = 0;        // the compile that is running (0 = none)
 			uint64_t    runningHash = 0;   // hash of the SPIR-V the renderer has now
 			int         errors = 0;        // from the last compile (0 = it was fine)
+			uint64_t    paramsHash = 0;    // hash of the .params.json text last handed over (0 = none)
 		};
 
 		void OnCompiled(Watched& watched, const ShaderCompiler::Result& result);
+		void CheckParams(Watched& watched);
 		uint64_t FolderSignature() const;
 
 		std::unique_ptr<ShaderCompiler> m_compiler;

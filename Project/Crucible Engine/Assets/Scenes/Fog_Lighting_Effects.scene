@@ -170,6 +170,49 @@
             }
         },
         {
+            "id": "185FA0E18977C001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 6.030394077301025,
+                        "y": 0.9342334270477295,
+                        "z": -1.5029271841049194
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.190000057220459,
+                        "y": 1.190000057220459,
+                        "z": 1.190000057220459
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5644444227218628,
+                        "y": 0.5644444227218628,
+                        "z": 0.5644444227218628,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 5295002677416493057
+                },
+                "EntityName": {
+                    "name": "Sphere"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "1B1400D810888001",
             "parent": "2CF768D80E590001",
             "siblingIndex": 2,

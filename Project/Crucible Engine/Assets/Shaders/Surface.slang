@@ -17,6 +17,11 @@
 //     #include "DefaultSurface.slang"
 //     #include "SurfaceTemplate.slang"
 //
+// A surface of its own (MagicOrb.slang, a shader graph) can have PARAMETERS of its own, set per
+// material: numbers and colours read with MaterialParam(slot), textures declared with
+// MATERIAL_TEXTURE(slot, name). Which slot is what is listed in <ShaderName>.params.json beside
+// the shader - see the end of this file.
+//
 // (Any .slang that CompileShaders.cmake doesn't list is a shared include: editing it rebuilds
 // every shader.)
 
@@ -65,9 +70,29 @@ struct PushConstants {
     float4 toonEdge;      // x = edge position, y = softness (the material's own, flag bit 2)
     float4 toonShade;     // rgb = shade tint, linear (the material's own, flag bit 3)
     float4 toonLit;       // rgb = tint of the lit side, linear (white = none)
+    uint   paramOffset;   // where this material's own parameters start in materialParams (below)
 };
 
 [[vk::push_constant]]
 ConstantBuffer<PushConstants> pc;
+
+// ---- A shader's own parameters -------------------------------------------------------------------
+// Every material's values for its shader's parameters, one float4 per parameter, all materials one
+// after another (set 0, binding 11; one buffer per frame in flight, filled by RenderResources).
+// The built-in surface has none: its settings are the factors in the push constant above.
+[[vk::binding(11, 0)]] StructuredBuffer<float4> materialParams;
+
+// This material's value for parameter `slot` - its position in the shader's parameter list
+// (<ShaderName>.params.json, first = 0). A float is in .x, a float2 in .xy, a colour in .rgb.
+float4 MaterialParam(uint slot) {
+    return materialParams[pc.paramOffset + slot];
+}
+
+// Declares this shader's texture `slot` (0-7: its position in the list's "textures") under the
+// name `name`, to sample as usual: name.Sample(s.uv). Set 1 holds eight texture slots for every
+// material; a slot the material leaves empty holds the default the list names (white, black or a
+// flat normal).
+//     MATERIAL_TEXTURE(0, patternTex);
+#define MATERIAL_TEXTURE(slot, name) [[vk::binding(slot, 1)]] Sampler2D name
 
 #endif // CRUCIBLE_SURFACE_SLANG

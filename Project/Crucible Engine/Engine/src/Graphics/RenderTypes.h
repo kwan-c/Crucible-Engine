@@ -859,6 +859,11 @@ namespace Crucible {
         // The mesh shader that draws it (Renderer::LoadMaterialShader). Invalid, the default, is
         // the built-in shader (DefaultShader.slang). Many materials share one shader.
         MaterialShaderHandle shader{};
+        // Its values for that shader's own parameters and textures (the shader's list:
+        // MaterialShaderParams), by slot. Shorter than the list - empty, usually, for a material
+        // that sets none - means the list's defaults for the rest. Unused by the built-in shader.
+        std::vector<glm::vec4>     params;
+        std::vector<TextureHandle> shaderTextures;
     };
 
     /*************************************************************************
@@ -891,13 +896,14 @@ namespace Crucible {
         glm::vec4        toonEdge{ 0.1f, 0.03f, 0.0f, 0.0f };   // x = edge position, y = softness (flag bit 2)
         glm::vec4        toonShade{ 1.0f };                     // rgb = shade tint, linear (flag bit 3)
         glm::vec4        toonLit{ 1.0f };                       // rgb = lit tint, linear
+        uint32_t         paramOffset = 0;      // where the material's own parameters start in the parameter buffer (MaterialParamBuffer)
     };
     inline constexpr uint32_t kMaterialFlagOwnEdge  = 1u << 2;
     inline constexpr uint32_t kMaterialFlagOwnShade = 1u << 3;
     static_assert(sizeof(MaterialFactors) == 36 && offsetof(PushConstants, alphaCutoff) == 36 && offsetof(PushConstants, flags) == 40
                   && offsetof(PushConstants, outline) == 44 && offsetof(PushConstants, toonEdge) == 48 && offsetof(PushConstants, toonShade) == 64 && offsetof(PushConstants, toonLit) == 80
-                  && sizeof(PushConstants) == 96,
-        "PushConstants must match DefaultShader.slang's (checked against the compiled SPIR-V).");
+                  && offsetof(PushConstants, paramOffset) == 96 && sizeof(PushConstants) == 100,
+        "PushConstants must match Surface.slang's (checked against the compiled SPIR-V).");
 
     /// Push constant of the depth-only passes' cut-out pipelines (shadow, ambient occlusion,
     /// selection mask): what decides which pixels of a cut-out material are drawn.

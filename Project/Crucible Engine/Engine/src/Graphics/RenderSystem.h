@@ -399,6 +399,30 @@ namespace Crucible {
         ENGINE_API bool ReloadMaterialShader(MaterialShaderHandle shader, std::span<const uint32_t> spirv, std::string& error);
 
         /*********************************************************************
+         \brief  A mesh shader's own parameters and textures: what a
+                 material using it can set (MaterialData::params and
+                 shaderTextures, by slot) - see MaterialShaderParams.h.
+                 Loaded with the shader from <name>.params.json.
+         \return The list; empty for the built-in shader, a shader without
+                 one, and an Invalid handle.
+         *********************************************************************/
+        ENGINE_API const MaterialShaderParams& GetMaterialShaderParams(MaterialShaderHandle shader) const;
+
+        /*********************************************************************
+         \brief  Replaces a mesh shader's list while the program runs (the
+                 Editor, when <name>.params.json is saved). Every material
+                 using the shader keeps its values by name; new parameters
+                 start from their defaults.
+         \param[in] shader  The shader. Not the built-in one (handle 0),
+                           which has no list.
+         \param[in] params  The new list.
+         \return false for the built-in shader or a handle that is not ours.
+         \note  Call on the frame thread, outside DrawFrame(). Waits for the
+                GPU once if the list's textures changed.
+         *********************************************************************/
+        ENGINE_API bool SetMaterialShaderParams(MaterialShaderHandle shader, const MaterialShaderParams& params);
+
+        /*********************************************************************
          \brief  Reads back a material's current texture bindings/scalar
                  factors.
          \param[in] handle The material to look up.

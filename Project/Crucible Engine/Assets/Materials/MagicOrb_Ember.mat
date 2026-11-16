@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "shader": "MagicOrb",
+  "albedoTint": [0.8999999761581421, 0.25, 0.05000000074505806, 1.0],
+  "emissiveFactor": [1.600000023841858, 0.41999998688697815, 0.05999999865889549],
+  "metallic": 0.0,
+  "roughness": 0.3499999940395355,
+  "shading": "Scene",
+  "alphaCutoff": 0.0,
+  "doubleSided": false,
+  "toon": {
+    "ownEdge": false,
+    "threshold": 0.10000000149011612,
+    "softness": 0.029999999329447746,
+    "ownShadeColour": false,
+    "shadeColour": [0.8500000238418579, 0.8700000047683716, 0.949999988079071],
+    "litColour": [1.0, 1.0, 1.0],
+    "outline": 1.0
+  },
+  "params": {
+    "wispColour": [1.0, 1.0, 1.0],
+    "swirlSpeed": -3.1649999618530273,
+    "twist": 2.627000093460083,
+    "drift": 0.6439999938011169,
+    "coreHeat": 1.9019999504089355,
+    "rimGlow": 3.2750000953674316
+  },
+  "textures": {
+    "pattern": ""
+  }
+}

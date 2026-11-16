@@ -1767,19 +1767,54 @@ namespace Crucible {
                 ReadFloat(t,  "outline",        data.toon.outline);
             }
 
+            // The shader's own parameters and textures (its list: MaterialShaderParams), stored by
+            // NAME and kept by slot. A name the list does not have is ignored; a parameter the
+            // file does not have keeps the list's default - so a list can grow, shrink or be
+            // reordered without touching the .mat files.
+            const MaterialShaderParams& shaderList = m_renderer.GetMaterialShaderParams(data.shader);
+            if (!shaderList.params.empty()) {
+                data.params.resize(shaderList.params.size());
+                for (size_t i = 0; i < shaderList.params.size(); ++i) { data.params[i] = shaderList.params[i].defaultValue; }
+                if (auto params = doc.FindMember("params"); params != doc.MemberEnd() && params->value.IsObject()) {
+                    for (size_t i = 0; i < shaderList.params.size(); ++i) {
+                        const auto it = params->value.FindMember(shaderList.params[i].name.c_str());
+                        if (it == params->value.MemberEnd()) continue;
+                        if (it->value.IsNumber()) {
+                            data.params[i].x = it->value.GetFloat();   // a float
+                        } else if (it->value.IsArray()) {
+                            for (rapidjson::SizeType c = 0; c < it->value.Size() && c < 4; ++c) {
+                                if (it->value[c].IsNumber()) { data.params[i][static_cast<glm::length_t>(c)] = it->value[c].GetFloat(); }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // One texture reference: a texture asset's GUID, or a model's GUID and the index of a
+            // texture embedded in it.
+            const auto readTexture = [&](const rapidjson::Value& value, bool isSRGB) -> TextureHandle {
+                if (value.IsString()) { return GetTexture(FromHex(value.GetString()), isSRGB); }
+                if (value.IsObject()) {
+                    const auto parent = value.FindMember("model");
+                    const auto index = value.FindMember("texture");
+                    if (parent != value.MemberEnd() && parent->value.IsString() &&
+                        index != value.MemberEnd() && index->value.IsUint())
+                        return GetModelTexture(FromHex(parent->value.GetString()), index->value.GetUint(), isSRGB);
+                }
+                return {};
+            };
             if (auto textures = doc.FindMember("textures"); textures != doc.MemberEnd() && textures->value.IsObject()) {
                 for (const SlotDesc& slot : kSlots) {
                     auto it = textures->value.FindMember(slot.key);
                     if (it == textures->value.MemberEnd()) continue;
-                    if (it->value.IsString()) {
-                        data.*slot.member = GetTexture(FromHex(it->value.GetString()), slot.isSRGB);
-                    } else if (it->value.IsObject()) {
-                        const auto parent = it->value.FindMember("model");
-                        const auto index = it->value.FindMember("texture");
-                        if (parent != it->value.MemberEnd() && parent->value.IsString() &&
-                            index != it->value.MemberEnd() && index->value.IsUint())
-                            data.*slot.member = GetModelTexture(FromHex(parent->value.GetString()), index->value.GetUint(), slot.isSRGB);
-                    }
+                    data.*slot.member = readTexture(it->value, slot.isSRGB);
+                }
+                // The shader's own textures, under the names in its list.
+                data.shaderTextures.resize(shaderList.textures.size());
+                for (size_t i = 0; i < shaderList.textures.size(); ++i) {
+                    auto it = textures->value.FindMember(shaderList.textures[i].name.c_str());
+                    if (it == textures->value.MemberEnd()) continue;
+                    data.shaderTextures[i] = readTexture(it->value, shaderList.textures[i].srgb);
                 }
             }
         }
@@ -1829,27 +1864,54 @@ namespace Crucible {
         writer.Key("outline");        writer.Double(data.toon.outline);
         writer.EndObject();
 
+        // The shader's own parameters, by name (see LoadMaterialFile): a number for a float, a
+        // list for a vector or a colour. Only for a shader that has any.
+        const MaterialShaderParams& shaderList = m_renderer.GetMaterialShaderParams(data.shader);
+        if (!shaderList.params.empty()) {
+            writer.Key("params");
+            writer.StartObject();
+            for (size_t i = 0; i < shaderList.params.size(); ++i) {
+                const MaterialParamDesc& desc = shaderList.params[i];
+                const glm::vec4 value = i < data.params.size() ? data.params[i] : desc.defaultValue;
+                const uint32_t components = MaterialParamComponents(desc.type);
+                if (components == 1) {
+                    writer.Key(desc.name.c_str()); writer.Double(value.x);
+                } else {
+                    floats(desc.name.c_str(), &value.x, static_cast<int>(components));
+                }
+            }
+            writer.EndObject();
+        }
+
         // Standalone textures use asset GUIDs; embedded textures use a compiled-model GUID
         // and texture index so editable material copies retain their images after restart.
-        writer.Key("textures");
-        writer.StartObject();
-        for (const SlotDesc& slot : kSlots) {
-            const TextureHandle handle = data.*slot.member;
+        const auto writeTexture = [&](const char* key, TextureHandle handle) {
             const AssetId textureId = handle.IsValid() ? FindId(handle) : 0;
-            writer.Key(slot.key);
+            writer.Key(key);
             const auto embedded = m_modelTextureSources.find(handle.id);
             if (handle.IsValid() && textureId == 0 && embedded != m_modelTextureSources.end()) {
                 writer.StartObject();
                 writer.Key("model"); writer.String(ToHex(embedded->second.model).c_str());
                 writer.Key("texture"); writer.Uint(embedded->second.texture);
                 writer.EndObject();
-                continue;
+                return;
             }
             if (handle.IsValid() && textureId == 0) {
                 // A procedural/untracked runtime texture has no reloadable asset reference.
-                CRU_USER_WARN("[Resources] SerializeMaterial: '{}' texture has no asset id - saved as empty", slot.key);
+                CRU_USER_WARN("[Resources] SerializeMaterial: '{}' texture has no asset id - saved as empty", key);
             }
             writer.String(textureId ? ToHex(textureId).c_str() : "");
+        };
+        writer.Key("textures");
+        writer.StartObject();
+        if (shaderList.textures.empty()) {
+            for (const SlotDesc& slot : kSlots) { writeTexture(slot.key, data.*slot.member); }
+        } else {
+            // A shader with textures of its own: those, under its list's names (the five
+            // built-in slots are not bound for it).
+            for (size_t i = 0; i < shaderList.textures.size(); ++i) {
+                writeTexture(shaderList.textures[i].name.c_str(), i < data.shaderTextures.size() ? data.shaderTextures[i] : TextureHandle{});
+            }
         }
         writer.EndObject();
         writer.EndObject();

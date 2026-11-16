@@ -17,11 +17,15 @@
     "litColour": [1.0, 1.0, 1.0],
     "outline": 1.0
   },
+  "params": {
+    "wispColour": [1.0, 1.0, 1.0],
+    "swirlSpeed": 0.6000000238418579,
+    "twist": 2.5,
+    "drift": 0.3499999940395355,
+    "coreHeat": 1.600000023841858,
+    "rimGlow": 0.800000011920929
+  },
   "textures": {
-    "albedo": "",
-    "normal": "",
-    "metallicRoughness": "",
-    "emissive": "",
-    "occlusion": ""
+    "pattern": ""
   }
 }

@@ -22,6 +22,8 @@
 #include "MeshHandle.h"
 #include "MaterialHandle.h"
 #include "TextureHandle.h"
+#include "MaterialParamBuffer.h"
+#include "MaterialShaderParams.h"
 
 #include <deque>
 #include <memory>
@@ -31,6 +33,8 @@
 #include <vector>
 
 namespace Crucible {
+
+    class MaterialShaders;
 
     struct CompiledTexture;
 
@@ -106,6 +110,10 @@ namespace Crucible {
         PushConstants            push;            // what the scene pass pushes for it (MakeMaterialPush)
         vk::raii::DescriptorSet   descriptorSet = nullptr;
         bool                      destroyed = false;   // DestroyMaterial: the slot stays (never reused) but is empty
+        // Its range in the parameter buffer: one float4 per parameter of its shader's list
+        // (push.paramOffset says where). None for a shader without parameters.
+        uint32_t                  paramOffset = MaterialParamBuffer::kNone;
+        uint32_t                  paramCount  = 0;
     };
 
     /// The scene pass's push constant for a material: its factors plus its cut-out, shading and
@@ -196,9 +204,46 @@ namespace Crucible {
                  material descriptor sets, the two placeholder textures and
                  the default material. Call once, before any material is made.
          \param[in] materialSetLayout  Layout of the mesh pipeline's set 1
-                                      (the five material textures).
+                                      (the material's eight texture slots).
+         \param[in] shaders            The mesh shaders: a material's shader's
+                                      list says what its parameters and
+                                      texture slots are.
          *********************************************************************/
-        void InitMaterials(vk::DescriptorSetLayout materialSetLayout);
+        void InitMaterials(vk::DescriptorSetLayout materialSetLayout, const MaterialShaders& shaders);
+
+        /*********************************************************************
+         \brief  Creates the parameter buffer (MaterialParamBuffer): every
+                 material's values for its shader's own parameters. Call
+                 once, BEFORE the frame descriptor sets are written - set 0,
+                 binding 11 points at it - and before InitMaterials.
+         *********************************************************************/
+        void InitMaterialParams(uint32_t framesInFlight) { m_materialParams.Init(m_context, framesInFlight); }
+
+        /// Copies the parameter values into this frame's buffer if they changed. Once per frame,
+        /// after BeginFrame() has waited on the frame index's fence.
+        void UploadMaterialParams(uint32_t frameIndex) { m_materialParams.Upload(frameIndex); }
+
+        /// The parameter buffers, one per frame in flight (set 0, binding 11).
+        size_t     MaterialParamBufferCount() const        { return m_materialParams.BufferCount(); }
+        vk::Buffer MaterialParamBuffers(size_t frame) const { return m_materialParams.Buffer(frame); }
+
+        /*********************************************************************
+         \brief  A shader's list has changed (it was edited while the Editor
+                 runs): brings every material using that shader in line with
+                 the new list.
+         \details
+            Values are kept by slot, and a slot is a position in the list, so
+            they are carried over BY NAME: a parameter or texture that is
+            still in the list (with the same type) keeps the material's
+            value wherever it has moved to, a new one gets its default, a
+            removed one is dropped. Each material's range in the parameter
+            buffer is resized, and its texture set rewritten if the textures
+            changed (one wait for the GPU - an Editor-time event).
+         \param[in] shader  The shader. Its new list is already in place
+                           (MaterialShaders::SetParams).
+         \param[in] before  The list it had.
+         *********************************************************************/
+        void OnShaderParamsChanged(MaterialShaderHandle shader, const MaterialShaderParams& before);
 
         /// Raw texels (not an image file). Throws std::runtime_error for no pixels, a zero size, or a
         /// size past the GPU's limit. Not cached: every call makes a new texture.
@@ -306,9 +351,16 @@ namespace Crucible {
         // and appends it to m_materialDescriptorPools. Called once up front for the first block,
         // and again by CreateMaterial() whenever the current block is full - see that function.
         void CreateMaterialDescriptorPool();
-        // Writes all five combined-image-sampler bindings of `set` from `data`, substituting
-        // m_defaultWhiteTexture/m_defaultNormalTexture for any Invalid handle in `data`.
+        // Writes all eight texture slots of `set` from `data`: the five built-in textures, or -
+        // for a shader with a texture list of its own - `data.shaderTextures` in the list's order.
+        // An empty or unused slot gets a placeholder (white, black or a flat normal).
         void WriteMaterialDescriptorSet(vk::DescriptorSet set, const MaterialData& data);
+        // The list of a material's shader (empty for the built-in shader).
+        const MaterialShaderParams& ParamsOf(MaterialShaderHandle shader) const;
+        // Brings one material's share of the parameter buffer in line with its shader's list: its
+        // range is (re)allocated if the number of parameters changed, its values are written
+        // (the list's defaults where the material has none), and mat.push.paramOffset is set.
+        void ApplyShaderParams(GpuMaterial& mat);
 
         void UploadMesh(MeshHandle handle, const MeshData& data, const std::string& debugName);
 
@@ -346,8 +398,13 @@ namespace Crucible {
 
         TextureHandle                               m_defaultWhiteTexture;    // (255,255,255,255)
         TextureHandle                               m_defaultNormalTexture;   // flat tangent-space normal (128,128,255,255)
+        TextureHandle                               m_defaultBlackTexture;    // (0,0,0,255): a shader texture slot whose default is "black"
         MaterialHandle                              m_defaultMaterial;
         vk::DescriptorSetLayout                     m_materialSetLayout;      // set 1 of the mesh pipeline (InitMaterials)
+        const MaterialShaders*                      m_shaders = nullptr;      // the mesh shaders and their lists (InitMaterials)
+        MaterialParamBuffer                         m_materialParams;         // every material's shader-parameter values (set 0, binding 11)
+        std::vector<glm::vec4>                      m_paramScratch;           // ApplyShaderParams' working values
+        bool                                        m_paramsFullReported = false;
 
         // Pending async mesh uploads (see CreateMeshAsync).
         struct PendingMeshUpload { MeshHandle handle; MeshData data; std::string debugName; };
