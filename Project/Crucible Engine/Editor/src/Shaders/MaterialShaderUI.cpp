@@ -13,6 +13,8 @@
 #include "Shaders/MaterialShaderUI.h"
 
 #include "ShaderGraph/ShaderGraphAsset.h"
+#include "ImGui/Panels/ImGuiPanel_ShaderGraph.h"
+#include "AssetPipe/AssetRegistry.h"
 
 #include "ImGui/EditorWidgets.h"   // kAssetPayload: what the Asset Browser drags
 #include "ImGui/ImGuiManager.h"    // EditorManager::GetResources
@@ -120,8 +122,12 @@ namespace Crucible {
 			// A shader graph goes by its GUID: show its file's name instead.
 			const std::vector<ShaderGraphFile>& graphs = ShaderGraphs();
 			std::string shown = current;
+			bool isGraph = false;
 			for (const ShaderGraphFile& graph : graphs) {
-				if (graph.shaderName == current) { shown = GraphLabel(graph); }
+				if (graph.shaderName == current) {
+					shown = GraphLabel(graph);
+					isGraph = true;
+				}
 			}
 
 			bool changed = false;
@@ -151,6 +157,16 @@ namespace Crucible {
 			}
 			ImGui::SetItemTooltip("What draws this material: the built-in shader (the factors and five textures here),\n"
 			                      "or a mesh shader from Assets/Shaders or a shader graph, which add parameters of their own below.");
+			if (isGraph) {
+				// Straight to the graph, in the Shader Graph window.
+				ImGui::SameLine();
+				if (ImGui::SmallButton("Edit")) {
+					if (auto panel = EditorManager::GetInstance().GetPanel<ShaderGraphPanel>(ImguiPanels::SHADERGRAPH)) {
+						panel->RequestOpen(AssetRegistry::GuidFromString(current).m_Value);
+					}
+				}
+				ImGui::SetItemTooltip("Open this shader graph in the Shader Graph window.");
+			}
 			return changed;
 		}
 
@@ -222,6 +238,22 @@ namespace Crucible {
 		}
 
 	}   // anonymous namespace
+
+	MaterialBuiltIns MaterialBuiltInsUsed(Renderer& renderer, const MaterialData& data) {
+		MaterialBuiltIns used;
+		const std::string name = renderer.GetMaterialShaderName(data.shader);
+		if (name.empty() || name == kBuiltInName) { return used; }
+
+		for (const ShaderGraphFile& graph : ShaderGraphs()) {
+			if (graph.shaderName == name) {
+				used.factors = false;
+				used.textures = false;
+				return used;
+			}
+		}
+		used.textures = renderer.GetMaterialShaderParams(data.shader).textures.empty();
+		return used;
+	}
 
 	bool DrawMaterialShaderParams(Renderer& renderer, MaterialData& data) {
 		bool changed = DrawShaderPicker(renderer, data);

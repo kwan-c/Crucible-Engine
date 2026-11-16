@@ -44,6 +44,7 @@
 #pragma once
 
 #include "ShaderGraph/ShaderGraph.h"
+#include "ShaderGraph/ShaderGraphNodes.h"
 
 #include <cstdint>
 #include <string>
@@ -71,6 +72,16 @@ namespace Crucible::ShaderGraph {
 		/// For each line of `source` (first line = index 0) the node it was written for, or 0.
 		/// A compiler error on a line can be shown on that node.
 		std::vector<uint32_t> lineNodes;
+
+		/// What the check worked out about one node - for an editor to colour its pins by.
+		struct NodeResult {
+			uint32_t               node = 0;
+			bool                   valid = false;                ///< its inputs are fine: `outputs` are its pins' types
+			bool                   used = false;                 ///< the Output uses it
+			ValueType              working = ValueType::Float;   ///< the type a node with "any" pins works in
+			std::vector<ValueType> outputs;                      ///< per output pin, in the node table's order
+		};
+		std::vector<NodeResult> nodes;   ///< one per node of a known kind; filled whether `ok` or not
 	};
 
 	/// Checks `graph` and writes its shader. See the file comment.

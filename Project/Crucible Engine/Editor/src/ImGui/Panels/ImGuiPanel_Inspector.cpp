@@ -1114,10 +1114,16 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool impor
 
 	ImGui::BeginDisabled(!editable);
 
+	// Greyed out where the material's shader makes no use of them (a shader graph decides the
+	// whole surface itself) - see Shaders/MaterialShaderUI.h.
+	const MaterialBuiltIns builtIns = MaterialBuiltInsUsed(m_renderer, data);
+	ImGui::BeginDisabled(!builtIns.factors);
 	changed |= ImGui::ColorEdit4("Albedo Tint", &data.factors.albedoTint.x);
 	changed |= ImGui::SliderFloat("Metallic", &data.factors.metallicFactor, 0.0f, 1.0f);
 	changed |= ImGui::SliderFloat("Roughness", &data.factors.roughnessFactor, 0.0f, 1.0f);
 	changed |= ImGui::ColorEdit3("Emissive Factor", &data.factors.emissiveFactor.x);
+	ImGui::EndDisabled();
+	if (!builtIns.factors) ImGui::TextDisabled("Not used: this material's shader graph sets these itself.");
 
 	// The material's shader, and that shader's own parameters and textures (shader graphs,
 	// hand-written surfaces) - see Shaders/MaterialShaderUI.h.
@@ -1164,7 +1170,8 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool impor
 	}
 
 	ImGui::Separator();
-	ImGui::TextDisabled("Drag a texture asset from the Asset Browser onto a slot:");
+	ImGui::TextDisabled(builtIns.textures ? "Drag a texture asset from the Asset Browser onto a slot:"
+	                                      : "Not used: this material's shader has its own textures, above.");
 
 	struct Slot { char const* label; TextureHandle MaterialData::* member; bool isSRGB; };
 
@@ -1180,6 +1187,7 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool impor
 		{ "Occlusion",          &MaterialData::occlusion,         false },
 	};
 
+	ImGui::BeginDisabled(!builtIns.textures);
 	for (Slot const& slot : kSlots) {
 		ImGui::PushID(slot.label);
 
@@ -1208,6 +1216,7 @@ bool Crucible::Inspector::DrawMaterialSection(MeshRenderer& renderer, bool impor
 
 		ImGui::PopID();
 	}
+	ImGui::EndDisabled();   // !builtIns.textures
 
 	ImGui::EndDisabled();
 

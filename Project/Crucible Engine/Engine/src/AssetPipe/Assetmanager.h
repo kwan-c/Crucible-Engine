@@ -80,6 +80,8 @@ namespace Crucible {
         AnimatorController,
         StateGraph,         // .stategraph: an enemy's state machine (AI/StateGraph.h)
         BehaviorGraph,      // .behaviorgraph: a behaviour tree (AI/BehaviorGraph.h)
+        ShaderGraph,        // .shadergraph: a mesh shader made of nodes (Editor/src/ShaderGraph). The Editor
+                            // turns it into a compiled shader; the game never reads the file itself.
 
         Count
     };

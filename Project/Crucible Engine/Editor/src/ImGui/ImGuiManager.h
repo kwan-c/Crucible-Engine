@@ -44,7 +44,8 @@ enum class ImguiPanels
 	NETWORK,			// multiplayer Offline/Host/Client for this editor instance (Network/NetworkSession)
 	BEHAVIORGRAPH,	// floating window: edit a .behaviorgraph (View > Behavior Graph, or double-click one in the Asset Browser)
 	STATEGRAPH,		// floating window: edit a .stategraph (View > State Graph, or double-click one in the Asset Browser)
-	PACKAGEGAME		// floating window: File > Package Game... builds and zips the game (Packaging/PackageJob)
+	PACKAGEGAME,	// floating window: File > Package Game... builds and zips the game (Packaging/PackageJob)
+	SHADERGRAPH		// floating window: edit a .shadergraph (View > Shader Graph, or double-click one in the Asset Browser)
 };
 
 namespace Crucible {

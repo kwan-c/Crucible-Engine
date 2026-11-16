@@ -4,7 +4,8 @@
 * @par			kwan.c@digipen.edu
 * @date			16 November 2026
 *
-* @brief		Tests for the shader graph's data, file and generator (Editor/src/ShaderGraph).
+* @brief		Tests for the shader graph's data, file, generator, edits and undo
+*				(Editor/src/ShaderGraph - everything there that needs no window).
 *
 * A small program of its own, because that code needs neither the engine nor a window:
 *
@@ -16,12 +17,16 @@
 * graph; old and odd files load (or are refused, saying why); the generator finds loops, links
 * that do not fit, missing pieces and bad parameters, and tells problems that stop the shader
 * from ones on nodes the Output does not use; the generated text and parameter list are what
-* they should be; and one graph per input type uses every row of the table.
+* they should be; one graph per input type uses every row of the table; the editor's edits
+* keep their rules (one Output, one link per input, no loops, types that fit); and undo and
+* redo bring back exactly what was there.
 *
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
 * All Rights Reserved
 */
 #include "ShaderGraph/ShaderGraph.h"
+#include "ShaderGraph/ShaderGraphDocument.h"
+#include "ShaderGraph/ShaderGraphEdit.h"
 #include "ShaderGraph/ShaderGraphGenerator.h"
 #include "ShaderGraph/ShaderGraphNodes.h"
 
@@ -635,6 +640,140 @@ namespace {
 		}
 	}
 
+	// ---- The editor's edits, and undo ----------------------------------------------------------------
+
+	void TestEdits() {
+		std::printf("edits\n");
+		Graph graph = NewGraph();
+		const uint32_t output = OutputNodeOf(graph);
+		CHECK(output != 0 && graph.nodes.size() == 1);
+		CHECK(AddNode(graph, "Output", 0.0f, 0.0f) == 0);       // never a second one
+		CHECK(AddNode(graph, "NoSuchNode", 0.0f, 0.0f) == 0);
+		const uint32_t uv = AddNode(graph, "UV", 0.0f, 0.0f);
+		const uint32_t position = AddNode(graph, "WorldPosition", 0.0f, 50.0f);
+		const uint32_t add = AddNode(graph, "Add", 200.0f, 0.0f);
+
+		// Links: refused when the types do not fit, and then nothing has changed.
+		std::string why;
+		CHECK(Connect(graph, uv, "out", add, "a", why));
+		CHECK(!Connect(graph, position, "out", add, "b", why) && !why.empty());   // a float3 beside a float2
+		CHECK(graph.links.size() == 1);
+		CHECK(!Connect(graph, uv, "out", output, "emissive", why) && Contains(why, "Vector node"));
+
+		// One link per input: a new one replaces the old.
+		CHECK(Connect(graph, position, "out", add, "a", why));
+		CHECK(graph.links.size() == 1 && graph.FindLinkInto(add, "a")->fromNode == position);
+		CHECK(Connect(graph, add, "out", output, "albedo", why));
+
+		// No loops, no pins that are not there.
+		const uint32_t one = AddNode(graph, "OneMinus", 300.0f, 100.0f);
+		CHECK(Connect(graph, add, "out", one, "in", why));
+		CHECK(!Connect(graph, one, "out", add, "b", why) && Contains(why, "loop"));
+		CHECK(!Connect(graph, add, "out", add, "b", why));
+		CHECK(!Connect(graph, add, "nope", one, "in", why) && !Connect(graph, 99, "out", one, "in", why));
+		CHECK(graph.links.size() == 3);
+
+		// A problem the node already had is not the new link's fault.
+		const uint32_t sample = AddNode(graph, "SampleTexture", 0.0f, 200.0f);   // its texture pin is empty
+		CHECK(Connect(graph, uv, "out", sample, "uv", why));
+
+		// Deleting: the Output stays, a node's links go with it.
+		CHECK(DeleteNodes(graph, { add, output }) == 1);
+		CHECK(OutputNodeOf(graph) == output && graph.FindNode(add) == nullptr);
+		CHECK(graph.links.size() == 1);   // only uv -> sample is left
+		CHECK(DeleteLinkInto(graph, sample, "uv") && !DeleteLinkInto(graph, sample, "uv"));
+		CHECK(Generate(graph).ok);
+
+		// Copy and paste: new ids, the links between the copied nodes, never the Output.
+		Graph second = NewGraph();
+		const uint32_t time = AddNode(second, "Time", 10.0f, 20.0f);
+		const uint32_t sine = AddNode(second, "Sine", 110.0f, 40.0f);
+		CHECK(Connect(second, time, "out", sine, "in", why) && Connect(second, sine, "out", OutputNodeOf(second), "roughness", why));
+		second.FindNode(sine)->inputs["in"] = { 2.0f };
+		const Clipboard clipboard = Copy(second, { time, sine, OutputNodeOf(second) });
+		CHECK(clipboard.nodes.size() == 2 && clipboard.links.size() == 1);
+		const std::vector<uint32_t> pasted = Paste(second, clipboard, 500.0f, 600.0f);
+		CHECK(pasted.size() == 2 && pasted[0] != time && pasted[1] != sine && pasted[0] != pasted[1] && second.nodes.size() == 5);
+		CHECK(second.FindNode(pasted[0])->x == 500.0f && second.FindNode(pasted[0])->y == 600.0f);
+		CHECK(second.FindNode(pasted[1])->x == 600.0f && second.FindNode(pasted[1])->y == 620.0f);
+		CHECK(second.FindLinkInto(pasted[1], "in") && second.FindLinkInto(pasted[1], "in")->fromNode == pasted[0]);
+		CHECK(second.FindNode(pasted[1])->inputs.count("in") == 1);
+		CHECK(second.FindLinkInto(sine, "in")->fromNode == time);   // the originals are as they were
+		CHECK(Generate(second).ok);
+		Graph third = NewGraph();
+		CHECK(Paste(third, clipboard, 0.0f, 0.0f).size() == 2 && third.links.size() == 1 && Generate(third).ok);
+
+		// Parameters: unique names; a rename reaches the nodes; a delete takes them along.
+		Graph fourth = NewGraph();
+		const size_t first = AddParameter(fourth, ParameterType::Colour);
+		const size_t other = AddParameter(fourth, ParameterType::Colour);
+		CHECK(fourth.parameters[first].name == "colour" && fourth.parameters[other].name == "colour2");
+		const uint32_t reader = AddNode(fourth, "Parameter", 0.0f, 0.0f, "colour");
+		CHECK(Connect(fourth, reader, "out", OutputNodeOf(fourth), "albedo", why));
+		CHECK(RenameParameter(fourth, first, "tint", why) && fourth.FindNode(reader)->settings.at("parameter") == "tint" && Generate(fourth).ok);
+		CHECK(!RenameParameter(fourth, first, "colour2", why) && !RenameParameter(fourth, first, "two words", why));
+		CHECK(RenameParameter(fourth, first, "tint", why));   // to its own name: fine, nothing to do
+		CHECK(MoveParameter(fourth, 0, 1) && fourth.parameters[1].name == "tint" && !MoveParameter(fourth, 1, 1) && !MoveParameter(fourth, 0, -1));
+		DeleteParameter(fourth, 1);
+		CHECK(fourth.parameters.size() == 1 && fourth.FindNode(reader) == nullptr && fourth.links.empty() && Generate(fourth).ok);
+
+		// What the generator tells an editor about each node's pins.
+		Trial trial = MakeTrial("Multiply", "out", "albedo", "WorldNormal", "out", "a");
+		const Generated typed = Generate(trial.graph);
+		CHECK(typed.nodes.size() == 3);
+		for (const Generated::NodeResult& node : typed.nodes) {
+			if (node.node != trial.node) { continue; }
+			CHECK(node.valid && node.used && node.working == ValueType::Float3 && node.outputs.size() == 1 && node.outputs[0] == ValueType::Float3);
+		}
+	}
+
+	void TestDocument() {
+		std::printf("undo and redo\n");
+		Document document;
+		CHECK(!document.Dirty() && !document.CanUndo() && !document.CanRedo());
+
+		const uint32_t time = AddNode(document.GetGraph(), "Time", 0.0f, 0.0f);
+		document.Commit();
+		CHECK(document.Dirty() && document.CanUndo());
+		document.Commit();   // nothing changed: not another step
+		document.GetGraph().FindNode(time)->x = 40.0f;
+		document.Commit();
+
+		CHECK(document.Undo() && document.GetGraph().FindNode(time)->x == 0.0f);
+		CHECK(document.Undo() && document.GetGraph().FindNode(time) == nullptr && !document.CanUndo() && !document.Dirty());
+		CHECK(!document.Undo());
+		CHECK(document.Redo() && document.Redo() && !document.Redo() && document.GetGraph().FindNode(time)->x == 40.0f);
+
+		// A new edit after an undo forgets what could have been redone; ids are still never reused.
+		CHECK(document.Undo());
+		const uint32_t uv = AddNode(document.GetGraph(), "UV", 0.0f, 0.0f);
+		document.Commit();
+		CHECK(!document.CanRedo() && uv > time);
+
+		// Saved, then undone: changed again. Redone: as saved.
+		document.MarkSaved();
+		CHECK(!document.Dirty());
+		CHECK(document.Undo() && document.Dirty() && document.Redo() && !document.Dirty());
+
+		// Check() follows the graph once told it changed.
+		CHECK(document.Check().ok);
+		std::string why;
+		const uint32_t sample = AddNode(document.GetGraph(), "SampleTexture", 0.0f, 0.0f);
+		CHECK(Connect(document.GetGraph(), sample, "rgb", OutputNodeOf(document.GetGraph()), "albedo", why));
+		document.Touch();
+		CHECK(!document.Check().ok);
+		document.Commit();
+		CHECK(document.Undo() && document.Check().ok);
+
+		// A file that does not load leaves the document alone; one that does starts clean.
+		std::string error;
+		CHECK(!document.Load("{ nope", error) && document.GetGraph().FindNode(uv) != nullptr && document.CanUndo());
+		CHECK(document.Load(R"({ "version": 1, "nodes": [ { "id": 5, "type": "Output" } ] })", error) && !document.Dirty() && !document.CanUndo());
+		CHECK(document.GetGraph().nextId == 6);
+		document.New();
+		CHECK(document.Dirty() && document.GetGraph().nodes.size() == 1 && !document.CanUndo());
+	}
+
 }   // anonymous namespace
 
 int main(int argc, char** argv) {
@@ -649,6 +788,8 @@ int main(int argc, char** argv) {
 	TestStructure();
 	TestParameters();
 	TestAllNodes(writeTo);
+	TestEdits();
+	TestDocument();
 
 	if (g_failed != 0) {
 		std::printf("\n%d of %d checks FAILED\n", g_failed, g_checks);

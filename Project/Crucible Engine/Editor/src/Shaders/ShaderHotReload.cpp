@@ -96,6 +96,8 @@ namespace Crucible {
 			return shader.label.empty() ? shader.name : shader.label;
 		}
 
+		ShaderHotReload* s_active = nullptr;   // ShaderHotReload::Active()
+
 		const char* SeverityWord(ShaderCompiler::Severity severity) {
 			switch (severity) {
 			case ShaderCompiler::Severity::Error:   return "error";
@@ -125,6 +127,35 @@ namespace Crucible {
 
 	}   // anonymous namespace
 
+	ShaderHotReload::~ShaderHotReload() {
+		if (s_active == this) { s_active = nullptr; }
+	}
+
+	ShaderHotReload* ShaderHotReload::Active() { return s_active; }
+
+	const ShaderHotReload::Watched* ShaderHotReload::Find(std::string_view name) const {
+		for (const Watched& watched : m_watched) {
+			if (watched.shader.name == name) { return &watched; }
+		}
+		return nullptr;
+	}
+
+	bool ShaderHotReload::IsCompiling(std::string_view name) const {
+		const Watched* watched = Find(name);
+		return watched && watched->ticket != 0;
+	}
+
+	bool ShaderHotReload::HasErrors(std::string_view name) const {
+		const Watched* watched = Find(name);
+		return watched && watched->errors + watched->generateErrors > 0;
+	}
+
+	const std::vector<ShaderCompiler::Diagnostic>& ShaderHotReload::ErrorsOf(std::string_view name) const {
+		static const std::vector<ShaderCompiler::Diagnostic> none;
+		const Watched* watched = Find(name);
+		return watched ? watched->diagnostics : none;
+	}
+
 	void ShaderHotReload::Configure(ShaderCompiler::Settings settings, fs::path builtDir) {
 		m_builtDir = std::move(builtDir);
 		m_watched.clear();
@@ -146,6 +177,7 @@ namespace Crucible {
 		m_nextScan = Clock::now() + kScanInterval;
 		m_dirty = true;   // check every watched shader against its sources once, at the first Tick
 		m_status = Status::UpToDate;
+		s_active = this;
 	}
 
 	void ShaderHotReload::Watch(Shader shader) {
@@ -310,6 +342,7 @@ namespace Crucible {
 
 	void ShaderHotReload::OnCompiled(Watched& watched, const ShaderCompiler::Result& result) {
 		const std::string& name = Label(watched.shader);
+		watched.diagnostics.clear();
 
 		// The compiler's messages: errors always, warnings too when it was really run.
 		size_t reported = 0;
@@ -320,6 +353,7 @@ namespace Crucible {
 			if (shown.file == watched.shader.name) { shown.file = name; }   // a generated shader: its file, not its GUID
 			const std::string text = Describe(shown);
 			if (d.severity == ShaderCompiler::Severity::Error) {
+				watched.diagnostics.push_back(d);
 				if (firstError.empty()) { firstError = text; }
 				if (reported++ < kMaxReported) { CRU_USER_ERROR("{}", text); }
 			} else if (reported++ < kMaxReported) {

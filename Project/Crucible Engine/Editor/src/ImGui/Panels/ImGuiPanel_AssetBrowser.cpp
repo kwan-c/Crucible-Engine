@@ -24,6 +24,7 @@
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "Graph/GraphAssets.h"   // Create State Graph / Behavior Graph
 #include "ImGui/Panels/ImGuiPanel_StateGraph.h"
+#include "ImGui/Panels/ImGuiPanel_ShaderGraph.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 #include "Prefabs/PrefabAuthoring.h"
@@ -109,6 +110,7 @@ namespace {
 		case AssetType::Script:   return IM_COL32(100, 185, 120, 255);
 		case AssetType::Text:     return IM_COL32(150, 150, 165, 255);
 		case AssetType::AnimatorController: return IM_COL32(170, 120, 220, 255);
+		case AssetType::ShaderGraph: return IM_COL32(170, 100, 200, 255);   // a shader, like the Shader type
 		default:                  return IM_COL32(90, 90, 95, 255);
 		}
 	}
@@ -1216,6 +1218,11 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	case AssetType::StateGraph:
 		if (auto states = EditorManager::GetInstance().GetPanel<StateGraphPanel>(ImguiPanels::STATEGRAPH)) {
 			if (const auto* entry = m_assets.Find(item.virtualPath)) states->RequestOpen(entry->guid.m_Value);
+		}
+		return;
+	case AssetType::ShaderGraph:
+		if (auto shaders = EditorManager::GetInstance().GetPanel<ShaderGraphPanel>(ImguiPanels::SHADERGRAPH)) {
+			if (const auto* entry = m_assets.Find(item.virtualPath)) shaders->RequestOpen(entry->guid.m_Value);
 		}
 		return;
 	case AssetType::Scene: {

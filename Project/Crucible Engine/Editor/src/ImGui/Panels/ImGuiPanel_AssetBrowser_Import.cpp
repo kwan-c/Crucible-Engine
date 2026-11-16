@@ -80,6 +80,7 @@ namespace {
 		case AssetType::AnimatorController: return { "Animation" };
 		case AssetType::StateGraph:         return { "StateGraphs" };
 		case AssetType::BehaviorGraph:      return { "StateGraphs" };
+		case AssetType::ShaderGraph:        return { "ShaderGraphs" };
 		default:                            return {};
 		}
 	}

@@ -44,6 +44,7 @@
 #include "ImGui/Panels/ImGuiPanel_Network.h"
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "ImGui/Panels/ImGuiPanel_StateGraph.h"
+#include "ImGui/Panels/ImGuiPanel_ShaderGraph.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
 #include "Assets/BuildProblems.h"       // failed asset/script compiles block Play
 
@@ -419,6 +420,7 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::NETWORK] = std::make_shared<NetworkPanel>(core);   // this instance's Offline/Host/Client settings, used at the next Play
 	m_panels[ImguiPanels::BEHAVIORGRAPH] = std::make_shared<BehaviorGraphPanel>(core);   // floating: edit .behaviorgraph files (AI)
 	m_panels[ImguiPanels::STATEGRAPH] = std::make_shared<StateGraphPanel>(core);         // floating: edit .stategraph files (AI)
+	m_panels[ImguiPanels::SHADERGRAPH] = std::make_shared<ShaderGraphPanel>(core);       // floating: edit .shadergraph files (mesh shaders made of nodes)
 	m_panels[ImguiPanels::PACKAGEGAME] = std::make_shared<PackageGamePanel>(core);       // floating: File > Package Game... (zip for players)
 
 	for (auto& panel : m_panels)

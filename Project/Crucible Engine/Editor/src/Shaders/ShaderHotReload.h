@@ -86,6 +86,15 @@ namespace Crucible {
 			Errors       // a shader's last compile failed; the renderer still has the one before
 		};
 
+		ShaderHotReload() = default;
+		~ShaderHotReload();
+		ShaderHotReload(const ShaderHotReload&) = delete;
+		ShaderHotReload& operator=(const ShaderHotReload&) = delete;
+
+		/// The Editor's hot reload - the one Configure() was last called on - or null. For a panel
+		/// that wants to show what a shader it edits is doing (the Shader Graph window).
+		static ShaderHotReload* Active();
+
 		/*********************************************************************
 		 \brief  Sets the folders and the compiler to use (once).
 		 \param  settings  See ShaderCompiler::Settings.
@@ -107,6 +116,13 @@ namespace Crucible {
 		int ErrorCount() const;                                   // errors in the shaders that failed
 		const std::string& FirstError() const { return m_firstError; }
 
+		// One watched shader, by Shader::name. All false / empty for a shader that is not watched.
+		bool IsCompiling(std::string_view name) const;
+		bool HasErrors(std::string_view name) const;    // its last generate or compile failed
+		/// The compiler's errors from its last compile. A generated shader's own lines carry
+		/// Diagnostic::file == its name.
+		const std::vector<ShaderCompiler::Diagnostic>& ErrorsOf(std::string_view name) const;
+
 	private:
 		using Clock = std::chrono::steady_clock;
 
@@ -117,6 +133,7 @@ namespace Crucible {
 			uint64_t    runningHash = 0;   // hash of the SPIR-V the renderer has now
 			int         errors = 0;        // from the last compile (0 = it was fine)
 			uint64_t    paramsHash = 0;    // hash of the .params.json text last handed over (0 = none)
+			std::vector<ShaderCompiler::Diagnostic> diagnostics;   // the errors of the last compile
 
 			// A generated shader:
 			std::string source;                // what `generate` last made (kept: recompiled when an include changes)
@@ -130,6 +147,7 @@ namespace Crucible {
 		bool HandOverParams(Watched& watched, const std::string& text, const std::string& what);
 		bool Regenerate(Watched& watched);
 		uint64_t FolderSignature() const;
+		const Watched* Find(std::string_view name) const;
 
 		std::unique_ptr<ShaderCompiler> m_compiler;
 		std::filesystem::path           m_builtDir;

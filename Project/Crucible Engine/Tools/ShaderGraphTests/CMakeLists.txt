@@ -13,6 +13,10 @@ add_executable(ShaderGraphTests
     ../../Editor/src/ShaderGraph/ShaderGraphNodes.h
     ../../Editor/src/ShaderGraph/ShaderGraphGenerator.cpp
     ../../Editor/src/ShaderGraph/ShaderGraphGenerator.h
+    ../../Editor/src/ShaderGraph/ShaderGraphEdit.cpp
+    ../../Editor/src/ShaderGraph/ShaderGraphEdit.h
+    ../../Editor/src/ShaderGraph/ShaderGraphDocument.cpp
+    ../../Editor/src/ShaderGraph/ShaderGraphDocument.h
 )
 target_include_directories(ShaderGraphTests PRIVATE ../../Editor/src)
 target_link_libraries(ShaderGraphTests PRIVATE rapidjson)

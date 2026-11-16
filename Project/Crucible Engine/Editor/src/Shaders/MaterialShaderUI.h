@@ -44,4 +44,22 @@ namespace Crucible {
 	 *********************************************************************/
 	bool DrawMaterialShaderParams(Renderer& renderer, MaterialData& data);
 
+	/// Which of a material's BUILT-IN controls its shader makes use of, so the Inspector can
+	/// grey out the ones that would do nothing.
+	struct MaterialBuiltIns {
+		bool factors = true;    ///< Albedo Tint, Metallic, Roughness, Emissive Factor
+		bool textures = true;   ///< the five texture slots (Albedo, Normal, ...)
+	};
+
+	/*********************************************************************
+	 rief  What the material's shader does with the built-in controls.
+	         - The built-in shader uses them all.
+	         - A shader graph uses none: the graph decides the whole
+	           surface from its own parameters and textures.
+	         - A hand-written shader may read the factors (MagicOrb does),
+	           so they stay on; if it has textures of its own, those take
+	           the material's texture slots and the built-in five are unused.
+	 *********************************************************************/
+	MaterialBuiltIns MaterialBuiltInsUsed(Renderer& renderer, const MaterialData& data);
+
 }

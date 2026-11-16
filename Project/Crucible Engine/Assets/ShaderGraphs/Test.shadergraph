@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "domain": "surface",
+  "nextId": 10,
+  "parameters": [
+    { "name": "vector", "type": "vec2", "default": [0.0, 0.0], "min": 0.0, "max": 1.0 },
+    { "name": "texture", "type": "texture", "colour": true, "default": "white" }
+  ],
+  "nodes": [
+    { "id": 1, "type": "Output", "x": 59.4627, "y": 220.43575 },
+    { "id": 4, "type": "Parameter", "x": -422.14804, "y": 259.98727, "settings": { "parameter": "texture" } },
+    { "id": 5, "type": "SampleTexture", "x": -195.90602, "y": 207.84528 },
+    { "id": 6, "type": "Sine", "x": -197.18973, "y": 403.7283 },
+    { "id": 7, "type": "Time", "x": -422.47513, "y": 418.75745 }
+  ],
+  "links": [
+    { "from": [4, "out"], "to": [5, "texture"] },
+    { "from": [5, "rgb"], "to": [1, "albedo"] },
+    { "from": [6, "out"], "to": [1, "metallic"] },
+    { "from": [7, "out"], "to": [6, "in"] }
+  ]
+}

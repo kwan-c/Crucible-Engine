@@ -114,6 +114,9 @@ namespace Crucible::ShaderGraph {
 					}
 					if (problem.stops) { m_result.ok = false; }
 				}
+				for (const NodeInfo& info : m_nodes) {
+					if (info.type) { m_result.nodes.push_back({ info.node->id, info.valid, info.used, info.working, info.outTypes }); }
+				}
 				if (m_result.ok) {
 					Write();
 					WriteParameterList();

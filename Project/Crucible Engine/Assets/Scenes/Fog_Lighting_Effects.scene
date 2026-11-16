@@ -2324,6 +2324,49 @@
             }
         },
         {
+            "id": "974EE0E1A2B00007",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 3.3075497150421143,
+                        "y": 0.9911396503448486,
+                        "z": 2.4789505004882813
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2832448475356102659
+                },
+                "EntityName": {
+                    "name": "Cylinder"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "9E4D08D31F6AC00F",
             "components": {
                 "Transform": {
