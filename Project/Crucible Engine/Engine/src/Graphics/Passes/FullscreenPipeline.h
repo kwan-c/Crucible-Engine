@@ -93,7 +93,7 @@ namespace Crucible {
         },
         {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat, .depthAttachmentFormat = depthFormat }
     };
-    return vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+    return vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
     }
 
     /// The same, with `additive` choosing FullscreenBlend::Add (true) or Replace (false).

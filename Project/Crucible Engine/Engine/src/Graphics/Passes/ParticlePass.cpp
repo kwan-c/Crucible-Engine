@@ -111,7 +111,7 @@ namespace Crucible {
         // pointer above, so changing it here changes what the next pipeline is built with.
         for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
             multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
-            m_particlePipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+            m_particlePipelines[i] = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
         }
 
     }   // ParticlePass::Create()

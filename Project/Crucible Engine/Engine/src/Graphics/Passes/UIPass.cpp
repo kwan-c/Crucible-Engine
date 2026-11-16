@@ -173,7 +173,7 @@ namespace Crucible {
             },
             { .colorAttachmentCount = 1, .pColorAttachmentFormats = &colourFormat, .depthAttachmentFormat = depthFormat }
         };
-        m_pipeline = vk::raii::Pipeline(m_context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        m_pipeline = vk::raii::Pipeline(m_context.GetDevice(), m_context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
 
     }   // UIPass::Create()
 

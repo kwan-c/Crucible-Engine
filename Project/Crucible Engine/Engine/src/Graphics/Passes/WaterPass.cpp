@@ -122,7 +122,7 @@ namespace Crucible {
         // One pipeline per MSAA level: `multisampling` is referenced by pointer above.
         for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
             multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
-            m_pipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+            m_pipelines[i] = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
         }
 
     }   // WaterPass::Create()

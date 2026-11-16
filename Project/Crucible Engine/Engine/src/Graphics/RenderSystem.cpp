@@ -53,7 +53,7 @@ namespace Crucible {
             return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
         }
 
-    }   // namespace
+    }   // anonymous namespace
 
     Renderer::Renderer(WindowManager& window) 
         : m_window{ window }, m_context{ m_window }, m_swapchain{ m_context, m_window } {
@@ -115,7 +115,11 @@ namespace Crucible {
         CreatePrimitiveMeshes();
         m_profiler.Init(m_context, m_frameManager.MaxFramesInFlight());
 
-    }
+        // Every pipeline now exists: keep what the driver compiled for the next start, even if
+        // this run never reaches ShutDown() (stopped from the debugger, for example).
+        m_context.SavePipelineCache();
+
+    }   // Renderer::Renderer()
 
     void Renderer::ShutDown() { m_context.ShutDown(); }
 
@@ -193,6 +197,7 @@ namespace Crucible {
         m_uploads.ReleaseFrame(frameIndex);
         m_resources.ReleaseDestroyed();   // frees meshes/textures/materials destroyed long enough ago
         m_environmentMaps.ReleaseDestroyed();   // ... and skyboxes
+        m_deferred.Release();                   // ... and pipelines a shader reload replaced
 
         // ...and with this index's dynamic-mesh buffers: refill the ones whose geometry changed.
         m_resources.UploadDynamicMeshes(frameIndex);
@@ -817,6 +822,22 @@ namespace Crucible {
     }
     MaterialHandle Renderer::CreateMaterial(const MaterialData& data) { return m_resources.CreateMaterial(data); }
     void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) { m_resources.UpdateMaterial(handle, data); }
+    
+    bool Renderer::ReloadMeshShader(std::span<const uint32_t> spirv, std::string& error) {
+
+        try {
+            m_scenePass.ReloadMeshShader(m_context, spirv, m_deferred);
+        } catch (const std::exception& e) {
+            // Nothing was swapped: ScenePass builds the whole new set before touching the old one.
+            error = e.what();
+            CRU_ERROR("[Renderer] The mesh shader could not be reloaded: {}", error);
+            return false;
+        }
+        CRU_INFO("[Renderer] Mesh shader reloaded ({} bytes of SPIR-V).", spirv.size_bytes());
+        return true;
+
+    }   // Renderer::ReloadMeshShader()
+    
     const MaterialData& Renderer::GetMaterialData(MaterialHandle handle) const { return m_resources.GetMaterialData(handle); }
     bool Renderer::DestroyMesh(MeshHandle handle)         { return m_resources.DestroyMesh(handle); }
     bool Renderer::DestroyTexture(TextureHandle handle)   { return m_resources.DestroyTexture(handle); }

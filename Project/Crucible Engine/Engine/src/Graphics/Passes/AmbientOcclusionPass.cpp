@@ -96,7 +96,7 @@ namespace Crucible {
             },
             {.colorAttachmentCount = 1, .pColorAttachmentFormats = &normalFormat, .depthAttachmentFormat = RenderLayouts::kAoDepthFormat }
         };
-        m_depthPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        m_depthPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
 
         // Cut-out materials: also the uv (location 2), and pixels the material cuts out are dropped.
         const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
@@ -106,7 +106,7 @@ namespace Crucible {
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
         vertexInputInfo.pVertexAttributeDescriptions = cutoutAttributes.data();   // position, normal, uv
         chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;
-        m_cutoutPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        m_cutoutPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
 
 
         // Occlusion and its blur: fullscreen steps reading two textures each (Post.spv).

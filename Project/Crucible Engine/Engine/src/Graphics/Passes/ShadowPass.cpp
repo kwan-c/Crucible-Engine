@@ -106,7 +106,7 @@ namespace Crucible {
             },
             {.colorAttachmentCount = 0, .depthAttachmentFormat = depthFormat }
         };
-        m_shadowPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        m_shadowPipeline = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
 
         // Cut-out: also the uv (location 2), and a fragment shader that drops cut-out pixels.
         const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
@@ -118,7 +118,7 @@ namespace Crucible {
         vertexInputInfo.pVertexAttributeDescriptions    = cutoutAttributes.data();
         chain.get<vk::GraphicsPipelineCreateInfo>().stageCount = 2;
         chain.get<vk::GraphicsPipelineCreateInfo>().pStages    = cutoutStages;
-        m_shadowCutoutPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        m_shadowCutoutPipeline = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
 
     }   // ShadowPass::Create()
 

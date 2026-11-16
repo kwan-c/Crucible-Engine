@@ -82,7 +82,7 @@ namespace Crucible {
                 },
                 {.colorAttachmentCount = 1, .pColorAttachmentFormats = &maskFormat }
             };
-            m_outlineMaskPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+            m_outlineMaskPipeline = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
 
             // Cut-out materials: also the uv (location 2), so the mask follows the leaf, not its card.
             const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
@@ -93,7 +93,7 @@ namespace Crucible {
             vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
             vertexInputInfo.pVertexAttributeDescriptions    = cutoutAttributes.data();
             chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;
-            m_outlineMaskCutoutPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+            m_outlineMaskCutoutPipeline = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
         }
 
         // ---- Composite: fullscreen triangle, edge of the mask -> outline colour, blended ----
@@ -152,7 +152,7 @@ namespace Crucible {
                 },
                 {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat }
             };
-            m_outlineCompositePipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+            m_outlineCompositePipeline = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
         }
 
     }   // OutlinePass::Create()
