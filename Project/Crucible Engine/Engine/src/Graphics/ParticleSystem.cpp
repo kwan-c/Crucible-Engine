@@ -65,6 +65,7 @@ namespace Crucible {
 
         desc.Uses<EmitterQuery>()                    // reads WorldTransform + ParticleEmitter
             .Writes<ParticleEmitter>()               // playing = false when a run finishes, after the query
+            .Reads<SceneHidden>()                    // editor scene visibility: the batch is flagged, the simulation is unchanged
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer/ResourceManager
 
@@ -114,7 +115,7 @@ namespace Crucible {
             if (request && request->emit > 0) {
                 Spawn(state, settings, worldTransform.matrix, request->emit);   // playing or not; maxParticles still applies
             }
-            Submit(state, settings, worldTransform.matrix);
+            Submit(state, settings, worldTransform.matrix, world.HasComponent<SceneHidden>(entity));
             m_liveParticles += static_cast<std::uint32_t>(state.particles.size());
 
             // A non-looping run past its Duration spawns nothing more: switch it off (Unity's
@@ -353,7 +354,7 @@ namespace Crucible {
 
     }   // ParticleSystem::Simulate()
 
-    void ParticleSystem::Submit(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix) {
+    void ParticleSystem::Submit(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, bool sceneHidden) {
 
         if (state.particles.empty()) { return; }
 
@@ -411,6 +412,7 @@ namespace Crucible {
         desc.flipbookRows = static_cast<std::uint32_t>(rows);
         desc.boundsMin    = boundsMin - glm::vec3(maxReach);
         desc.boundsMax    = boundsMax + glm::vec3(maxReach);
+        desc.sceneHidden  = sceneHidden;   // hidden in the editor's Scene view only; still simulated and still lit
         m_renderer.SubmitParticles(desc, m_gpuScratch.data(), static_cast<std::uint32_t>(m_gpuScratch.size()));
 
         // One light for the whole emitter, at the middle of its hot particles. Its strength follows

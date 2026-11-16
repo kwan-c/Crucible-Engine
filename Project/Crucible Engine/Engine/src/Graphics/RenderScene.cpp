@@ -63,9 +63,11 @@ namespace Crucible {
         }
     }
 
-    void RenderScene::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) {
+    void RenderScene::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params, bool sceneHidden) {
 
-        m_renderQueue.push_back(RenderItem{ mesh, material, model, params });
+        RenderItem item{ mesh, material, model, params };
+        item.sceneHidden = sceneHidden;
+        m_renderQueue.push_back(item);
 
     }   // RenderScene::Submit()
 
@@ -73,10 +75,11 @@ namespace Crucible {
 
         uint32_t id;
         if (!m_freeProxies.empty()) { id = m_freeProxies.back(); m_freeProxies.pop_back(); }
-        else { id = static_cast<uint32_t>(m_proxies.size()); m_proxies.emplace_back(); m_proxyDraw.emplace_back(); }
+        else { id = static_cast<uint32_t>(m_proxies.size()); m_proxies.emplace_back(); m_proxyDraw.emplace_back(); m_sceneHidden.emplace_back(); }
 
         m_proxies[id]   = RenderProxy{};
         m_proxyDraw[id] = ProxyDraw{};
+        m_sceneHidden[id] = 0;
         m_proxies[id].alive = true;
         m_proxies[id].userData = userData;
         ++m_proxyRevision;
@@ -113,9 +116,19 @@ namespace Crucible {
         std::erase(m_animatedProxies, handle.id);
         ++m_proxyRevision;
         m_proxyDraw[handle.id] = ProxyDraw{};
+        m_sceneHidden[handle.id] = 0;
         m_freeProxies.push_back(handle.id);
 
     }   // RenderScene::DestroyProxy()
+
+    void RenderScene::SetProxySceneHidden(RenderProxyHandle handle, bool hidden) {
+
+        if (!handle.IsValid() || handle.id >= m_proxies.size() || !m_proxies[handle.id].alive) { return; }
+        // Only a flag: the proxy stays in the spatial index (the Game view still draws it), so
+        // nothing else needs refreshing.
+        m_sceneHidden[handle.id] = hidden ? 1 : 0;
+
+    }   // RenderScene::SetProxySceneHidden()
 
     void RenderScene::RefreshProxyBounds(uint32_t id) {
 
@@ -227,7 +240,7 @@ namespace Crucible {
     }   // RenderScene::RunTasks()
 
     void RenderScene::BuildViewBatches(const Camera& camera, std::span<const glm::mat4> cascadeViewProj, RenderCullStats& stats,
-                                       std::vector<DrawBatch>& mainOut, std::span<std::vector<DrawBatch>> shadowOut) {
+                                       std::vector<DrawBatch>& mainOut, std::span<std::vector<DrawBatch>> shadowOut, bool sceneView) {
 
         const uint32_t cascades = static_cast<uint32_t>(std::min({ cascadeViewProj.size(), shadowOut.size(), size_t{ kMaxShadowCascades } }));
         const uint32_t passes   = 1 + cascades;
@@ -248,11 +261,15 @@ namespace Crucible {
         const uint32_t treeTasks = treeParts * passes;
         if (m_treeHits.size() < size_t{ treeParts } * kMaxPasses) { m_treeHits.resize(size_t{ treeParts } * kMaxPasses); }
 
+        const bool hideInThisView = sceneView && !m_showSceneHidden;   // read-only in the culling tasks
+
         // A hit's sort key: by (material, mesh) in the main pass; by mesh alone in the depth-only
         // cascades (DepthKey), where the material doesn't matter and batches can merge across
         // materials - unless it is cut-out or double-sided. Returns false for what can't be drawn
-        // (it still counts as seen).
+        // (it still counts as seen) - which, in a Scene view, includes the proxies the editor hid
+        // there (SetProxySceneHidden): this is the one place they are filtered, for every pass.
         const auto keysOf = [&](uint32_t proxy, uint64_t& mainKey, uint64_t& depthKey) {
+            if (hideInThisView && m_sceneHidden[proxy]) { return false; }
             const ProxyDraw& d = m_proxyDraw[proxy];
             if (!IsDrawable(d.mesh)) { return false; }
             const MaterialHandle material = ResolveMaterial(d.material);
@@ -306,6 +323,7 @@ namespace Crucible {
             glm::vec3 mn, mx;
             for (uint32_t q = 0; q < static_cast<uint32_t>(m_renderQueue.size()); ++q) {
                 const RenderItem& item = m_renderQueue[q];
+                if (hideInThisView && item.sceneHidden) { continue; }   // hidden in the editor's Scene view (e.g. a vine)
                 if (m_resources.GetMeshBounds(item.mesh, mn, mx) && !frusta[pass].Intersects(AABB::Transform(AABB(mn, mx), item.model))) { continue; }
                 ++immediate.seen;
                 if (!IsDrawable(item.mesh)) { continue; }
@@ -467,7 +485,8 @@ namespace Crucible {
         m_casterItems.clear();
         // A model entity owns several proxies. Outline every part sharing its entity key.
         for (uint32_t id : m_outlineProxies) {
-            if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid) {
+            // Hidden in the Scene view: no outline around nothing (only Scene views draw the outline).
+            if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid && (m_showSceneHidden || !m_sceneHidden[id])) {
                 // The material only when the mask needs it (a cut-out leaf's outline follows the leaf).
                 const MaterialHandle material = ResolveMaterial(m_proxyDraw[id].material);
                 m_casterItems.push_back(RenderItem{ m_proxies[id].mesh,
@@ -587,7 +606,8 @@ namespace Crucible {
         return true;
     }
 
-    bool RenderScene::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const {
+    bool RenderScene::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit,
+                              bool ignoreSceneHidden) const {
 
         const float len = glm::length(direction);
         if (len < 1e-8f || maxDistance <= 0.0f) { return false; }
@@ -598,7 +618,9 @@ namespace Crucible {
 
         m_spatial.RayCast(ray, maxDistance, [&](SpatialIndex::Handle h, float tBox) {
             if (tBox >= best) { return best; }
-            const RenderProxy& p = m_proxies[static_cast<uint32_t>(m_spatial.GetUserData(h))];
+            const uint32_t id = static_cast<uint32_t>(m_spatial.GetUserData(h));
+            if (ignoreSceneHidden && m_sceneHidden[id]) { return best; }   // the ray passes through it
+            const RenderProxy& p = m_proxies[id];
             if (!p.mesh.IsValid() || p.mesh.id >= m_resources.Meshes().size()) { return best; }
             if (m_resources.Meshes()[p.mesh.id].indexCount == 0 && !m_resources.Meshes()[p.mesh.id].dynamic) { return best; }   // destroyed / not uploaded yet
             const GpuMesh& mesh = m_resources.Meshes()[p.mesh.id];

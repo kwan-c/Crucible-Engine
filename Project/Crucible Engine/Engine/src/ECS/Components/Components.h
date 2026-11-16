@@ -879,6 +879,22 @@ namespace Crucible
 		std::vector<std::string> overrides;
 	};
 
+	/*************************************************************************
+	 \brief  Tag: the entity is hidden in the editor's Scene view.
+	 \details
+		Editor-only state, like Unity's scene visibility (the eye in the
+		Hierarchy). RenderExtractSystem passes it to the Renderer, which
+		leaves the entity's meshes out of Scene-role viewports only: the Game
+		view, Play Mode and the built game draw it as usual. It is RuntimeOnly
+		(see below), so it is never written to a scene or .cprefab, never
+		captured by undo, the Play snapshot or copy/paste, and never counts
+		as a prefab override. Not inherited: hiding a parent tags each
+		descendant (the editor does that). No fields - having it is the state.
+	 *************************************************************************/
+	struct SceneHidden
+	{
+	};
+
 	// Bind each component above to its ComponentKind (see ComponentKind.h)
 	// and give ComponentRegistry a compile-time name for it.
 	CRUCIBLE_COMPONENT(Transform, Transform);
@@ -899,6 +915,7 @@ namespace Crucible
 	CRUCIBLE_COMPONENT(EntityTag, EntityTag);
 	CRUCIBLE_COMPONENT(Water, Water);
 	CRUCIBLE_COMPONENT(PrefabInstance, PrefabInstance);
+	CRUCIBLE_COMPONENT(SceneHidden, SceneHidden);
 	// Written out by hand instead of CRUCIBLE_COMPONENT so the name shown in the Inspector and
 	// used as the scene-file key is "Camera", not "CameraComponent".
 	template<>
@@ -907,6 +924,10 @@ namespace Crucible
 		static constexpr ComponentKind kind = ComponentKind::Camera;
 		static constexpr std::string_view name = "Camera";
 	};
+
+	// Editor session state: never saved, never switched off (remove the tag instead).
+	template <> struct RuntimeOnly<SceneHidden>   : std::true_type {};
+	template <> struct NotToggleable<SceneHidden> : std::true_type {};
 
 	// Links span several entities: only World may write them.
 	template <> struct WorldManaged<HierarchyNode> : std::true_type {};

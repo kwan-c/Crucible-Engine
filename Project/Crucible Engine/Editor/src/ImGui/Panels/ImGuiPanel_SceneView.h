@@ -122,6 +122,9 @@ namespace Crucible {
 		struct IconHit { Entity entity; ImVec2 pos; float depth; };
 		std::vector<IconHit> m_iconHits;
 		bool                 m_showIcons = true;
+		// Gizmos > "Show hidden objects": draw what was hidden with the Hierarchy's eye anyway
+		// (SceneVisibility.h). The entities stay marked hidden; this only changes what the view shows.
+		bool                 m_showHidden = false;
 		bool                 m_showStats = false;
 
 		ViewportPanel       m_viewport;

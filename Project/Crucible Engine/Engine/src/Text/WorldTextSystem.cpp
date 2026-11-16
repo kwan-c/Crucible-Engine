@@ -94,6 +94,7 @@ namespace Crucible {
     void WorldTextSystem::Describe(SystemDesc& desc) const {
 
         desc.Uses<TextQuery>()                        // reads WorldTransform + WorldText
+            .Reads<SceneHidden>()                     // editor scene visibility: the panel is flagged
             .RunAfter<HierarchyTransformSystem>()     // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);    // touches the Renderer and ResourceManager
 
@@ -140,6 +141,7 @@ namespace Crucible {
             desc.alwaysOnTop = text.alwaysOnTop;
             desc.doubleSided = text.doubleSided;
             desc.intensity   = std::max(text.intensity, 0.0f);
+            if (world.HasComponent<SceneHidden>(entity)) { desc.views = WorldUIViews::NotInSceneViews; }   // hidden in the editor's Scene view only
             if (text.fade) {
                 desc.fadeStart = std::max(text.fadeStart, 0.0f);
                 desc.fadeEnd   = std::max(text.fadeEnd, desc.fadeStart + 0.001f);

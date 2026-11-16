@@ -127,7 +127,7 @@ namespace Crucible {
 
     }   // WaterPass::Create()
 
-    void WaterPass::Submit(MeshHandle mesh, const glm::mat4& model, const WaterSettings& s) {
+    void WaterPass::Submit(MeshHandle mesh, const glm::mat4& model, const WaterSettings& s, bool sceneHidden) {
 
         if (!mesh.IsValid()) { return; }
 
@@ -135,6 +135,7 @@ namespace Crucible {
         const auto toLinear = [](const glm::vec3& srgb) { return glm::pow(glm::clamp(srgb, glm::vec3(0.0f), glm::vec3(1.0f)), glm::vec3(2.2f)); };
 
         Submitted item;
+        item.sceneHidden = sceneHidden;
         item.model     = model;
         item.draw.mesh = mesh;
         WaterPush& p   = item.draw.push;
@@ -164,13 +165,14 @@ namespace Crucible {
 
     }   // WaterPass::Submit()
 
-    void WaterPass::Prepare(const Camera& camera, std::vector<WaterDraw>& out) const {
+    void WaterPass::Prepare(const Camera& camera, std::vector<WaterDraw>& out, bool hideSceneHidden) const {
 
         out.clear();
         if (m_submitted.empty()) { return; }
 
         const Frustum frustum = Frustum::FromViewProjection(camera.GetProjection() * camera.GetView());
         for (const Submitted& item : m_submitted) {
+            if (hideSceneHidden && item.sceneHidden) { continue; }   // hidden in the editor's Scene view
             glm::vec3 boundsMin, boundsMax;
             if (!m_resources.GetMeshBounds(item.draw.mesh, boundsMin, boundsMax)) { continue; }   // not uploaded yet
             if (!frustum.Intersects(AABB::Transform(AABB(boundsMin, boundsMax), item.model))) { continue; }

@@ -121,6 +121,7 @@ namespace Crucible
 		using CameraQuery  = Query<const WorldTransform, const CameraComponent>;
 		using ParamsQuery  = Query<const MeshRenderer, const MaterialParams>;
 		using WaterQuery   = Query<const WorldTransform, const Water>;
+		using HiddenQuery  = Query<const SceneHidden>;
 
 		Renderer& m_renderer;
 		ResourceManager* m_resources = nullptr;   // resolves asset ids (MeshRenderer/Skybox); may be null
@@ -130,6 +131,7 @@ namespace Crucible
 		std::optional<CameraQuery>  m_cameraQuery;   // same
 		std::optional<ParamsQuery>  m_paramsQuery;   // same
 		std::optional<WaterQuery>   m_waterQuery;    // same
+		std::optional<HiddenQuery>  m_hiddenQuery;   // same
 
 		// One record per MeshRenderer entity, indexed by Entity::index (a flat array, so the
 		// per-frame lookup is O(1) even with tens of thousands of enemies). An entity not seen in
@@ -140,6 +142,7 @@ namespace Crucible
 			std::uint64_t     seenFrame  = 0;
 			glm::vec4         params{ 1.0f, 0.0f, 0.0f, 0.0f };   // from a MaterialParams component, when the entity has one
 			std::uint64_t     paramsFrame = 0;                    // frame `params` was last written
+			std::uint64_t     hiddenFrame = 0;                    // frame the entity was last seen with a SceneHidden (editor: hidden in the Scene view)
 			// A Water component on the same entity: its MeshRenderer's mesh is the water's
 			// surface (waterMesh, resolved this frame) instead of an ordinary object.
 			std::uint64_t     waterFrame = 0;                     // frame the entity was last seen with a Water
@@ -161,6 +164,7 @@ namespace Crucible
 		struct WaterItem {
 			std::uint32_t entityIndex = 0;
 			glm::mat4     model{ 1.0f };
+			bool          sceneHidden = false;   // the entity has the SceneHidden tag (editor: hidden in the Scene view)
 			WaterSettings settings;
 		};
 		std::vector<WaterItem> m_waterItems;

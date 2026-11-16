@@ -159,6 +159,14 @@ namespace Crucible
 		static bool   GetCollidersThroughWalls();
 
 		/*********************************************************************
+		 \brief  The editor's "Show hidden objects". Entities hidden in the
+				 Scene view (the SceneHidden tag) get no collider, velocity or
+				 light lines unless this is on.
+		 \param[in] shown True to draw their lines as usual.
+		 *********************************************************************/
+		static void   SetSceneHiddenShown(bool shown);
+
+		/*********************************************************************
 		 \brief  Whether every 3D AudioSource shows its ranges, or only the
 				 selected one. Off by default: Max Distance is 500 m unless
 				 changed, so a scene of sources is mostly spheres.

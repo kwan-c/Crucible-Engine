@@ -93,7 +93,7 @@ namespace Crucible {
 		std::optional<Query<const HierarchyNode>> m_query;
 		// Actions requested by the right-click menu or a shortcut. They change the World, which is not
 		// allowed while m_query is iterating, so they are stored and run after the loop.
-		enum class PendingAction { None, Copy, Paste, Duplicate, Delete, Reparent, Place, Reorder, CreatePrefab, PlacePrefab, UnpackPrefab };
+		enum class PendingAction { None, Copy, Paste, Duplicate, Delete, Reparent, Place, Reorder, CreatePrefab, PlacePrefab, UnpackPrefab, SetHidden, ShowAllHidden };
 		PendingAction m_pendingAction = PendingAction::None;
 		std::string   m_pendingPrefab;                 // PlacePrefab: virtual path of the dropped .cprefab
 		Entity        m_pendingTarget = kNullEntity;   // the row acted on; if it is selected, the whole selection is
@@ -105,6 +105,16 @@ namespace Crucible {
 		Entity        m_pendingAnchor = kNullEntity;
 		DropZone      m_pendingZone   = DropZone::Into;
 		OrderMove     m_pendingMove   = OrderMove::Forward;   // Reorder
+
+		// SetHidden: scene visibility (the eye on a row, the row menu's Hide / Show, the H key) -
+		// see SceneVisibility.h. Not an undo step, and the scene is not marked as changed.
+		bool          m_pendingHidden        = false;   // hide (true) or show
+		bool          m_pendingHideChildren  = true;    // also everything under each target (Alt+click on the eye: off)
+		bool          m_pendingHideSelection = false;   // the whole selection if the row is part of it (menu, H); the eye: only its row
+		void RequestSetHidden(Entity target, bool hidden, bool children, bool selection) {
+			m_pendingHidden = hidden; m_pendingHideChildren = children; m_pendingHideSelection = selection;
+			RequestAction(PendingAction::SetHidden, target);
+		}
 
 		// One copied entity: its component snapshot, and the index of its parent in the same list
 		// (-1 for the top entity). Parents always come before their children.

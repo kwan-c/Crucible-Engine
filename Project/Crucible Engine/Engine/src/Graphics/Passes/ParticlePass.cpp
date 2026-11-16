@@ -154,7 +154,7 @@ namespace Crucible {
 
     }   // ParticlePass::Submit()
 
-    void ParticlePass::Prepare(const Camera& camera, std::vector<ParticleBatch>& out, RenderCullStats& stats) {
+    void ParticlePass::Prepare(const Camera& camera, std::vector<ParticleBatch>& out, RenderCullStats& stats, bool hideSceneHidden) {
 
         if (m_particleSubmits.empty()) { return; }
 
@@ -165,6 +165,7 @@ namespace Crucible {
         m_particleOrder.clear();
         for (uint32_t i = 0; i < m_particleSubmits.size(); ++i) {
             const ParticleDrawDesc& desc = m_particleSubmits[i].desc;
+            if (hideSceneHidden && desc.sceneHidden) { continue; }   // hidden in the editor's Scene view
             if (!frustum.Intersects(AABB(desc.boundsMin, desc.boundsMax))) { continue; }
             const glm::vec3 d = (desc.boundsMin + desc.boundsMax) * 0.5f - eye;
             m_particleOrder.emplace_back(glm::dot(d, d), i);

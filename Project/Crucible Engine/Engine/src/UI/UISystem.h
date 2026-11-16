@@ -251,6 +251,7 @@ namespace Crucible {
 		// Reused every frame, so steady-state frames don't allocate.
 		std::vector<Entity>         m_canvases;
 		std::vector<UI::LayoutItem> m_layout;
+		std::vector<UI::LayoutItem> m_sceneLayout;   // m_layout without the elements hidden in the editor's Scene view
 		std::vector<UIVertex>       m_vertices;
 		std::vector<std::uint32_t>  m_indices;
 		std::vector<UIDrawCommand>  m_commands;

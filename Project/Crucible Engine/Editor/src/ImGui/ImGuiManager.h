@@ -196,6 +196,7 @@ namespace Crucible {
 		KeyChord      m_releaseCursorKey{ KeyCode::F1, false, true, false };   // Shift+F1 until Init reads the config
 		bool          m_uiPositionYUp = true;                                  // display only, not saved: +Y up on every start
 		std::vector<std::uint64_t> m_selectionBeforePlay;   // scene guids of the entities selected at Play; active one last
+		std::vector<std::uint64_t> m_hiddenBeforePlay;      // scene guids of the entities hidden in the Scene view at Play (SceneVisibility.h)
 	};
 
 	namespace ImGuiManager {

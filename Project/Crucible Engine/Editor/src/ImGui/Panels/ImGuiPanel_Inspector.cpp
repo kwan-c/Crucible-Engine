@@ -32,6 +32,7 @@
 #include "Core.h"
 #include "Undo/EntityCommands.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "SceneVisibility.h"
 #include "Tags/TagEditor.h"                        // the Tag field and the Tag Manager window
 #include "Network/NetContent.h"                    // the registered serializers, for the networking policy table
 #include "Network/NetworkAuthoringInspector.h"     // NetworkObjectAuthoring's table (Networking Phase 14.3)
@@ -843,6 +844,15 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 			m_scenes.MarkDirty();
 		}
 	}
+	// Scene visibility, the same switch as the Hierarchy's eye (SceneVisibility.h): editor only,
+	// never saved, not an undo step, and the scene is not marked as changed. Safe to change the
+	// World here: no query is iterating, and the component sections below fetch their own pointers.
+	{
+		bool hidden = SceneVisibility::IsHidden(m_world, entity);
+		if (ImGui::Checkbox("Hidden in editor views", &hidden)) { SceneVisibility::SetHidden(m_world, entity, hidden, true); }
+		ImGui::SetItemTooltip("Hides this entity and its children in the Scene view and the UI Editor tab only.\n"
+		                      "The Game view and the built game still show them. Not saved with the scene.");
+	}
 	// Prefab instances: "Prefab: Crate  [Select] [Unpack]" (PrefabInstance itself is never listed).
 	PrefabAuthoring::DrawInspectorBar(m_world, entity);
 	ImGui::Separator();
@@ -859,7 +869,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, EntityTag> && !std::is_same_v<T, PrefabInstance> && !std::is_same_v<T, ScriptComponent>) \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, EntityTag> && !std::is_same_v<T, PrefabInstance> && !std::is_same_v<T, ScriptComponent> && !std::is_same_v<T, SceneHidden>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \

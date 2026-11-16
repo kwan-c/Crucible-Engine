@@ -2506,6 +2506,7 @@
                     "bodyRadiusPadding": 0.6000000238418579,
                     "stepHeight": 0.30000001192092896,
                     "shoulderHeight": 1.600000023841858,
+                    "maxWalkableSlope": 35.0,
                     "floodRadius": 100.0,
                     "rebuildDistance": 3.0,
                     "wallAdjacencyCost": 4.0
