@@ -47,6 +47,10 @@ namespace Crucible {
 	 *********************************************************************/
 	bool FindShaderGraph(const AssetManager& assets, std::string_view shaderName, ShaderGraphFile& out);
 
+	/// Whether the graph's file has a node that reads one of the material's built-in controls
+	/// (ShaderGraph::IsMaterialFactorNode). False too for a file that cannot be read.
+	bool ShaderGraphReadsMaterialFactors(const AssetManager& assets, const ShaderGraphFile& graph);
+
 	/// Every shader graph in Assets, sorted by label.
 	std::vector<ShaderGraphFile> ListShaderGraphs(const AssetManager& assets);
 

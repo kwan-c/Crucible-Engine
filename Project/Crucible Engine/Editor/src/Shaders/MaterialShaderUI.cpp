@@ -68,6 +68,13 @@ namespace Crucible {
 			return names;
 		}
 
+		// The shader names of the graphs that read the material's built-in controls (a
+		// "Material ..." node). Refilled whenever ShaderGraphs() looks again.
+		std::vector<std::string>& GraphsReadingFactors() {
+			static std::vector<std::string> names;
+			return names;
+		}
+
 		// The shader graphs in Assets (any folder), looked up again every couple of seconds like
 		// the list above.
 		const std::vector<ShaderGraphFile>& ShaderGraphs() {
@@ -78,6 +85,10 @@ namespace Crucible {
 
 			const Core* core = EditorManager::GetInstance().GetCore();
 			graphs = core ? ListShaderGraphs(core->GetAssets()) : std::vector<ShaderGraphFile>();
+			GraphsReadingFactors().clear();
+			for (const ShaderGraphFile& graph : graphs) {
+				if (ShaderGraphReadsMaterialFactors(core->GetAssets(), graph)) { GraphsReadingFactors().push_back(graph.shaderName); }
+			}
 			return graphs;
 		}
 
@@ -246,7 +257,10 @@ namespace Crucible {
 
 		for (const ShaderGraphFile& graph : ShaderGraphs()) {
 			if (graph.shaderName == name) {
-				used.factors = false;
+				// A graph decides the whole surface itself - but it can read the built-in
+				// factors with its Material nodes, and then they are worth setting.
+				const std::vector<std::string>& reading = GraphsReadingFactors();
+				used.factors = std::find(reading.begin(), reading.end(), name) != reading.end();
 				used.textures = false;
 				return used;
 			}

@@ -77,6 +77,20 @@ namespace Crucible::ShaderGraph {
 				  {}, { { "out", Float, "s.time" } } },
 				{ "ObjectCustom", "Input", "The object's own three numbers (its MaterialParams component); all zero by default.",
 				  {}, { { "out", Float3, "s.custom" } } },
+				{ "WorldTangent", "Input", "The direction along the surface in which the texture's U grows, in the world (length 1).",
+				  {}, { { "out", Float3, "s.tangentWS" } } },
+				{ "WorldBitangent", "Input", "The direction along the surface in which the texture's V grows, in the world (length 1).",
+				  {}, { { "out", Float3, "s.bitangentWS" } } },
+				// The material's built-in controls (IsMaterialFactorNode). The Inspector greys those
+				// out on a graph material - unless the graph has one of these nodes to read them.
+				{ "MaterialTint", "Input", "The material's Albedo Tint, set in the Inspector: its colour and its alpha.",
+				  {}, { { "rgb", Float3, "pc.albedoTint.rgb" }, { "a", Float, "pc.albedoTint.a" } } },
+				{ "MaterialMetallic", "Input", "The material's Metallic slider, set in the Inspector.",
+				  {}, { { "out", Float, "pc.metallicFactor" } } },
+				{ "MaterialRoughness", "Input", "The material's Roughness slider, set in the Inspector.",
+				  {}, { { "out", Float, "pc.roughnessFactor" } } },
+				{ "MaterialEmissive", "Input", "The material's Emissive Factor colour, set in the Inspector.",
+				  {}, { { "out", Float3, "pc.emissiveFactor" } } },
 				{ kParameterNode, "Input", "One of the graph's parameters: a value each material sets for itself.",
 				  {}, { { "out", Any, "" } } },   // special: its type and code come from the parameter
 
@@ -135,6 +149,30 @@ namespace Crucible::ShaderGraph {
 				Function("Fraction", "What is left after the whole number: 2.7 gives 0.7. Makes a value repeat.", "frac({in})"),
 				Function("Sine", "The sine (the value is in radians): swings between -1 and 1.", "sin({in})"),
 				Function("Cosine", "The cosine (the value is in radians): swings between -1 and 1.", "cos({in})"),
+				Function("Ceiling", "Rounds up to a whole number.", "ceil({in})"),
+				Function("Round", "Rounds to the nearest whole number.", "round({in})"),
+				Function("Sign", "-1 below zero, 1 above zero, 0 at zero.", "sign({in})"),
+				Function("Exp", "e to the power of the value.", "exp({in})"),
+				Function("Log", "The natural logarithm. A value at or below 0 counts as a very small one.", "log(max({in}, {T}(0.000001)))"),
+				{ "Modulo", "Math", "What is left of A after taking out whole Bs: makes a value repeat every B.",
+				  { { "a", Any, { 0.0f } }, { "b", Any, { 1.0f } } }, { { "out", Any, "{a} - {b} * floor({a} / {b})" } } },
+				{ "InverseLerp", "Math", "Where the value sits between A and B: 0 at A, 1 at B. The opposite of Lerp.",
+				  { { "a", Any, { 0.0f } }, { "b", Any, { 1.0f } }, { "in", Any, { 0.0f } } },
+				  { { "out", Any, "({in} - {a}) / ({b} - {a})" } } },
+
+				// ---- Colour --------------------------------------------------------------------
+				{ "Luminance", "Colour", "How bright a colour looks, as one number.",
+				  { { "in", Float3, { 1.0f, 1.0f, 1.0f }, nullptr, true } }, { { "out", Float, "GraphLuminance({in})" } } },
+				{ "Saturation", "Colour", "0 makes the colour grey, 1 leaves it as it is, above 1 makes it more vivid.",
+				  { { "in", Float3, { 1.0f, 1.0f, 1.0f }, nullptr, true }, { "saturation", Float, { 1.0f } } },
+				  { { "out", Float3, "lerp(float3(GraphLuminance({in})), {in}, float3({saturation}))" } } },
+				{ "HueShift", "Colour", "Turns the colour round the colour wheel: 0.5 is the opposite colour, 1 is back where it started.",
+				  { { "in", Float3, { 1.0f, 1.0f, 1.0f }, nullptr, true }, { "shift", Float, { 0.0f } } },
+				  { { "out", Float3, "GraphHueShift({in}, {shift})" } } },
+				{ "Contrast", "Colour", "Pushes values away from the middle (above 1) or towards it (below 1).",
+				  { { "in", Any, { 0.5f } }, { "contrast", Any, { 1.0f } } }, { { "out", Any, "({in} - 0.5) * {contrast} + 0.5" } } },
+				{ "Posterize", "Colour", "Rounds the value down to a number of even steps: bands instead of a smooth ramp.",
+				  { { "in", Any, { 0.0f } }, { "steps", Any, { 4.0f } } }, { { "out", Any, "floor({in} * {steps}) / {steps}" } } },
 
 				// ---- Vector --------------------------------------------------------------------
 				{ "Split", "Vector", "Takes a vector apart: single numbers, or its first two or three.",
@@ -156,6 +194,16 @@ namespace Crucible::ShaderGraph {
 				  { { "in", Any, { 0.0f } } }, { { "out", Float, "length({in})" } }, 2 },
 				{ "Distance", "Vector", "How far apart two points are.",
 				  { { "a", Any, { 0.0f } }, { "b", Any, { 0.0f } } }, { { "out", Float, "distance({a}, {b})" } }, 2 },
+				{ "AppendZ", "Vector", "A float2 and one more number make a float3.",
+				  { { "xy", Float2, { 0.0f, 0.0f } }, { "z", Float, { 0.0f } } }, { { "out", Float3, "float3({xy}, {z})" } } },
+				{ "AppendW", "Vector", "A float3 and one more number make a float4.",
+				  { { "xyz", Float3, { 0.0f, 0.0f, 0.0f } }, { "w", Float, { 1.0f } } }, { { "out", Float4, "float4({xyz}, {w})" } } },
+				{ "Reflect", "Vector", "A direction bounced off a surface with the given normal.",
+				  { { "in", Float3, { 0.0f, -1.0f, 0.0f } }, { "normal", Float3, {}, "s.normalWS" } },
+				  { { "out", Float3, "reflect({in}, {normal})" } } },
+				{ "NormalBlend", "Vector", "Lays one tangent-space normal over another (detail over base), for the Output's normal.",
+				  { { "base", Float3, { 0.0f, 0.0f, 1.0f } }, { "detail", Float3, { 0.0f, 0.0f, 1.0f } } },
+				  { { "out", Float3, "GraphBlendNormals({base}, {detail})" } } },
 
 				// ---- Texture -------------------------------------------------------------------
 				{ "SampleTexture", "Texture", "Reads a texture parameter at UV.",
@@ -169,6 +217,11 @@ namespace Crucible::ShaderGraph {
 				{ "NormalMap", "Texture", "Reads a normal map (a texture parameter that is not a colour) for the Output's normal.",
 				  { { "texture", Texture }, { "uv", Float2, {}, "s.uv" }, { "strength", Float, { 1.0f } } },
 				  { { "out", Float3, "GraphUnpackNormal({texture}.Sample({uv}).xy, {strength})" } } },
+				{ "TriplanarTexture", "Texture", "Reads a texture by world position from three sides, blended by the normal: needs no UVs and does not stretch.",
+				  { { "texture", Texture }, { "scale", Float, { 1.0f } }, { "sharpness", Float, { 4.0f } } },
+				  { { "rgba", Float4, "GraphTriplanar({texture}, s.worldPos, s.normalWS, {scale}, {sharpness})" },
+				    { "rgb",  Float3, "{rgba}.rgb" },
+				    { "a",    Float,  "{rgba}.a" } } },
 
 				// ---- UV ------------------------------------------------------------------------
 				{ "TilingOffset", "UV", "Repeats (Tiling) and shifts (Offset) texture coordinates.",
@@ -177,6 +230,13 @@ namespace Crucible::ShaderGraph {
 				{ "Panner", "UV", "Slides texture coordinates over time: Speed is in repeats per second.",
 				  { { "uv", Float2, {}, "s.uv" }, { "speed", Float2, { 0.1f, 0.0f } }, { "time", Float, {}, "s.time" } },
 				  { { "out", Float2, "{uv} + {speed} * {time}" } } },
+				{ "RotateUV", "UV", "Turns texture coordinates round a centre. The angle is in turns: 0.25 is a quarter turn.",
+				  { { "uv", Float2, {}, "s.uv" }, { "centre", Float2, { 0.5f, 0.5f } }, { "turns", Float, { 0.0f } } },
+				  { { "out", Float2, "GraphRotate({uv}, {centre}, {turns})" } } },
+				{ "PolarUV", "UV", "Texture coordinates as an angle (0..1 round the centre) and a distance from it: rings, swirls, radial sweeps.",
+				  { { "uv", Float2, {}, "s.uv" }, { "centre", Float2, { 0.5f, 0.5f } } },
+				  { { "angle",    Float, "GraphPolar({uv}, {centre}).x" },
+				    { "distance", Float, "GraphPolar({uv}, {centre}).y" } } },
 
 				// ---- Effect --------------------------------------------------------------------
 				{ "Fresnel", "Effect", "0 where the surface faces the camera, 1 at its edges: rim glow. A higher Power keeps it nearer the edge.",
@@ -185,6 +245,22 @@ namespace Crucible::ShaderGraph {
 				{ "Noise", "Effect", "Soft random blotches between 0 and 1. A higher Scale makes them smaller.",
 				  { { "uv", Float2, {}, "s.uv" }, { "scale", Float, { 8.0f } } },
 				  { { "out", Float, "GraphNoise({uv} * {scale})" } } },
+				{ "GradientNoise", "Effect", "Smooth noise between 0 and 1 without the Noise node's blocky look. A higher Scale makes it finer.",
+				  { { "uv", Float2, {}, "s.uv" }, { "scale", Float, { 8.0f } } },
+				  { { "out", Float, "GraphGradientNoise({uv} * {scale})" } } },
+				{ "Clouds", "Effect", "Four layers of noise, each finer and fainter than the last: clouds, smoke, marble. Between 0 and 1.",
+				  { { "uv", Float2, {}, "s.uv" }, { "scale", Float, { 4.0f } } },
+				  { { "out", Float, "GraphClouds({uv} * {scale})" } } },
+				{ "Voronoi", "Effect", "Cells: the distance to the nearest cell's centre, and a random number (0..1) for each cell.",
+				  { { "uv", Float2, {}, "s.uv" }, { "scale", Float, { 6.0f } } },
+				  { { "distance", Float, "GraphVoronoi({uv} * {scale}).x" },
+				    { "cell",     Float, "GraphVoronoi({uv} * {scale}).y" } } },
+				{ "Checker", "Effect", "A checkerboard of 0 and 1.",
+				  { { "uv", Float2, {}, "s.uv" }, { "scale", Float, { 8.0f } } },
+				  { { "out", Float, "GraphChecker({uv} * {scale})" } } },
+				{ "Pulse", "Effect", "Swings smoothly between 0 and 1 over time, Speed times a second.",
+				  { { "speed", Float, { 1.0f } }, { "time", Float, {}, "s.time" } },
+				  { { "out", Float, "0.5 + 0.5 * sin({time} * {speed} * 6.2831853)" } } },
 			};
 		}
 
@@ -232,6 +308,10 @@ namespace Crucible::ShaderGraph {
 			if (pin == outputs[i].name) { return static_cast<int>(i); }
 		}
 		return -1;
+	}
+
+	bool IsMaterialFactorNode(std::string_view type) {
+		return type == "MaterialTint" || type == "MaterialMetallic" || type == "MaterialRoughness" || type == "MaterialEmissive";
 	}
 
 	const std::vector<NodeType>& NodeTypes() {

@@ -13,6 +13,7 @@
 
 #include "ShaderGraph/ShaderGraph.h"
 #include "ShaderGraph/ShaderGraphGenerator.h"
+#include "ShaderGraph/ShaderGraphNodes.h"
 
 #include "AssetPipe/Assetmanager.h"
 #include "AssetPipe/AssetRegistry.h"
@@ -53,6 +54,13 @@ namespace Crucible {
 		if (!entry || !IsShaderGraph(*entry)) { return false; }
 		out = FileOf(*entry);
 		return true;
+	}
+
+	bool ShaderGraphReadsMaterialFactors(const AssetManager& assets, const ShaderGraphFile& graph) {
+		std::string text, error;
+		ShaderGraph::Graph loaded;
+		if (!assets.ReadText(graph.virtualPath, text) || !ShaderGraph::Load(text, loaded, error)) { return false; }
+		return std::any_of(loaded.nodes.begin(), loaded.nodes.end(), [](const ShaderGraph::Node& node) { return ShaderGraph::IsMaterialFactorNode(node.type); });
 	}
 
 	std::vector<ShaderGraphFile> ListShaderGraphs(const AssetManager& assets) {

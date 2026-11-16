@@ -67,6 +67,7 @@ namespace Crucible {
 			if (category == "Input")    { return IM_COL32(40, 130, 90, 255); }
 			if (category == "Constant") { return IM_COL32(95, 100, 112, 255); }
 			if (category == "Math")     { return IM_COL32(60, 95, 150, 255); }
+			if (category == "Colour")   { return IM_COL32(165, 135, 45, 255); }
 			if (category == "Vector")   { return IM_COL32(110, 85, 160, 255); }
 			if (category == "Texture")  { return IM_COL32(170, 105, 50, 255); }
 			if (category == "UV")       { return IM_COL32(30, 130, 140, 255); }

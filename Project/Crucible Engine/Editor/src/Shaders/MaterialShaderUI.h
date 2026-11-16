@@ -55,7 +55,9 @@ namespace Crucible {
 	 rief  What the material's shader does with the built-in controls.
 	         - The built-in shader uses them all.
 	         - A shader graph uses none: the graph decides the whole
-	           surface from its own parameters and textures.
+	           surface from its own parameters and textures. Unless it
+	           has a Material node (Material Tint, ...): then it reads
+	           the factors, and they stay on.
 	         - A hand-written shader may read the factors (MagicOrb does),
 	           so they stay on; if it has textures of its own, those take
 	           the material's texture slots and the built-in five are unused.

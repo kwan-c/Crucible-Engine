@@ -92,6 +92,10 @@ namespace Crucible::ShaderGraph {
 	inline constexpr const char* kParameterNode = "Parameter";
 	inline constexpr const char* kParameterSetting = "parameter";
 
+	/// Whether a node of this type reads one of the material's built-in controls (Albedo Tint,
+	/// Metallic, Roughness, Emissive Factor). A graph with none makes no use of those controls.
+	bool IsMaterialFactorNode(std::string_view type);
+
 	/// Every row, in menu order.
 	const std::vector<NodeType>& NodeTypes();
 

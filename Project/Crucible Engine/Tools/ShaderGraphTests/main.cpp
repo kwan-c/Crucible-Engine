@@ -86,6 +86,9 @@ namespace {
 		CHECK(FindNodeType("NoSuchNode") == nullptr);
 		CHECK(FindNodeType("Split")->FindOutput("xyz") == 5);
 		CHECK(FindNodeType("Split")->FindInput("xyz") == -1);
+		CHECK(NodeTypes().size() == 77);
+		CHECK(IsMaterialFactorNode("MaterialTint") && IsMaterialFactorNode("MaterialEmissive") && !IsMaterialFactorNode("Parameter") && !IsMaterialFactorNode("Material"));
+		for (const NodeType& type : NodeTypes()) { CHECK(IsMaterialFactorNode(type.name) == (std::string_view(type.name).substr(0, 8) == "Material")); }
 	}
 
 	// ---- The file ----------------------------------------------------------------------------------
@@ -781,7 +784,44 @@ namespace {
 		CHECK(document.Dirty() && document.GetGraph().nodes.size() == 1 && !document.CanUndo());
 	}
 
-	// ---- Constants as hidden parameters, for a live preview ----------------------------------------------
+	// ---- Rows added in step 8: a few whose text is worth pinning down ---------------------------------
+
+	void TestNewNodes() {
+		std::printf("step 8 nodes\n");
+		Graph graph = NewGraph();
+		const uint32_t output = OutputNodeOf(graph);
+		const uint32_t tint = AddNode(graph, "MaterialTint", 0.0f, 0.0f);
+		const uint32_t uv = AddNode(graph, "UV", 0.0f, 0.0f);
+		const uint32_t voronoi = AddNode(graph, "Voronoi", 0.0f, 0.0f);
+		const uint32_t append = AddNode(graph, "AppendZ", 0.0f, 0.0f);
+		const uint32_t multiply = AddNode(graph, "Multiply", 0.0f, 0.0f);
+		const uint32_t roughness = AddNode(graph, "MaterialRoughness", 0.0f, 0.0f);
+		std::string why;
+		CHECK(Connect(graph, uv, "out", append, "xy", why) && Connect(graph, voronoi, "cell", append, "z", why));
+		CHECK(Connect(graph, append, "out", multiply, "a", why) && Connect(graph, tint, "rgb", multiply, "b", why));
+		CHECK(Connect(graph, multiply, "out", output, "albedo", why) && Connect(graph, tint, "a", output, "alpha", why));
+		CHECK(Connect(graph, roughness, "out", output, "roughness", why));
+		// The types the new rows give: a float3 from AppendZ fits albedo; a float2 would not.
+		CHECK(!Connect(graph, uv, "out", output, "emissive", why));
+
+		const Generated result = Generate(graph);
+		if (!result.ok) { PrintProblems(graph, result); }
+		CHECK(result.ok);
+		CHECK(Contains(result.source, "float3 n2_rgb = pc.albedoTint.rgb;") && Contains(result.source, "float n2_a = pc.albedoTint.a;"));
+		CHECK(Contains(result.source, "float n4_cell = GraphVoronoi(s.uv * 6.0).y;") && !Contains(result.source, "n4_distance"));
+		CHECK(Contains(result.source, "float3 n5_out = float3(n3_out, n4_cell);"));
+		CHECK(Contains(result.source, "o.roughness = n7_out;") && Contains(result.source, "float n7_out = pc.roughnessFactor;"));
+
+		// A texture read from three sides, and a pin with nothing linked that is a direction of the surface.
+		Trial trial = MakeTrial("TriplanarTexture", "rgb", "albedo", "Parameter", "out", "texture");
+		trial.graph.parameters.push_back(Parameter{ "rock", ParameterType::Texture });
+		trial.graph.FindNode(trial.feed)->settings["parameter"] = "rock";
+		CHECK(Contains(Generate(trial.graph).source, "float4 n2_rgba = GraphTriplanar(gTex_rock, s.worldPos, s.normalWS, 1.0, 4.0);"));
+		trial = MakeTrial("Reflect", "out", "emissive", nullptr, nullptr, nullptr);
+		CHECK(Contains(Generate(trial.graph).source, "float3 n2_out = reflect(float3(0.0, -1.0, 0.0), s.normalWS);"));
+	}
+
+	// ---- Constants as hidden parameters, for a live preview	// ---- Constants as hidden parameters, for a live preview ----------------------------------------------
 
 	void TestLiveConstants() {
 		std::printf("live constants\n");
@@ -855,6 +895,7 @@ int main(int argc, char** argv) {
 	TestEdits();
 	TestDocument();
 	TestLiveConstants();
+	TestNewNodes();
 
 	if (g_failed != 0) {
 		std::printf("\n%d of %d checks FAILED\n", g_failed, g_checks);
