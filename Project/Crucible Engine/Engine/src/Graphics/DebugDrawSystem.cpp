@@ -3,12 +3,13 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          1 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                See DebugDrawSystem.h for what is drawn and the colour key.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       HeightField colliders are not outlined (Jean David)
 *
 **************************************************************************/
 
@@ -35,6 +36,13 @@ namespace Crucible {
 		std::atomic<std::uint64_t> g_selected{ 0 };   // (index << 32) | generation; 0 = kNullEntity
 		std::atomic<float>         g_velocityScale{ 0.25f };
 		std::atomic<bool>          g_collidersThroughWalls{ false };
+		std::atomic<bool>          g_showSceneHidden{ false };   // the editor's "Show hidden objects"
+
+		// Hidden in the editor's Scene view (SceneHidden tag), the only view that shows these
+		// lines: no lines for it either, unless "Show hidden objects" is on.
+		bool HiddenInScene(const World& world, Entity entity) {
+			return !g_showSceneHidden.load() && world.HasComponent<SceneHidden>(entity);
+		}
 		std::atomic<bool>		   g_audioRangesForAll{ false };
 
 		const glm::vec4 kStaticCollider  { 0.30f, 0.90f, 0.40f, 1.0f };
@@ -86,6 +94,10 @@ namespace Crucible {
 				case ShapeType::Capsule:
 					DebugDraw::Capsule(center, c.m_radius, std::max(c.m_height * 0.5f - c.m_radius, 0.0f), t.rotation, style);
 					break;
+				case ShapeType::HeightField:
+					// Not outlined: the terrain's own mesh IS its collision shape (same grid, same
+					// triangles), and a wireframe of thousands of cells would bury the view.
+					break;
 			}
 		}
 
@@ -119,6 +131,7 @@ namespace Crucible {
 
 	void DebugDrawSystem::SetCollidersThroughWalls(bool enabled) { g_collidersThroughWalls.store(enabled); }
 	bool DebugDrawSystem::GetCollidersThroughWalls() { return g_collidersThroughWalls.load(); }
+	void DebugDrawSystem::SetSceneHiddenShown(bool shown) { g_showSceneHidden.store(shown); }
 
 	void DebugDrawSystem::SetAudioRangesForAll(bool enabled) { g_audioRangesForAll.store(enabled); }
 	bool DebugDrawSystem::GetAudioRangesForAll() { return g_audioRangesForAll.load(); }
@@ -136,7 +149,7 @@ namespace Crucible {
 	void DebugDrawSystem::Describe(SystemDesc& desc) const {
 
 		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent,
-		           UICanvas, UIRect, HierarchyNode, AudioSource, AudioListener, ParticleEmitter>()   // world canvases' pages and the selected element's rect
+		           UICanvas, UIRect, HierarchyNode, AudioSource, AudioListener, ParticleEmitter, SceneHidden>()   // world canvases' pages and the selected element's rect
 			.RunAfter<HierarchyTransformSystem>()        // WorldTransform must be this frame's
 			.Affinity(SystemAffinity::MainThread);       // Renderer/ResourceManager aren't thread-safe
 
@@ -179,6 +192,7 @@ namespace Crucible {
 		const Entity selected = GetSelectedEntity();
 		world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity entity, const WorldTransform& wt, const UICanvas& canvas) {
 			if (canvas.renderMode != UICanvas::RenderMode::WorldSpace || !wt.valid) { return; }
+			if (entity != selected && HiddenInScene(world, entity)) { return; }   // hidden in the Scene view: only outlined while selected
 			const glm::vec4& colour = entity == selected ? kWorldUISelected : canvas.enabled ? kWorldCanvas : kWorldCanvasOff;
 			outline(WorldUIBoxCorners(planeFor(canvas, wt.matrix), WorldCanvasBoxInPlane(canvas)), colour);
 		});
@@ -218,17 +232,18 @@ namespace Crucible {
 		// Static: a Collider with no RigidBody (and not a character - the CharacterController wins).
 		style.color = kStaticCollider;
 		world.BuildQuery<const Transform, const WorldTransform, const Collider>().Exclude<RigidBody, CharacterController>().Build()
-			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const Collider& c) { DrawCollider(WorldPoseOf(t, wt), c, style); });
+			.ForEach([&](Entity e, const Transform& t, const WorldTransform& wt, const Collider& c) { if (!HiddenInScene(world, e)) { DrawCollider(WorldPoseOf(t, wt), c, style); } });
 
 		// Dynamic: Collider + RigidBody.
 		style.color = kDynamicCollider;
 		world.BuildQuery<const Transform, const WorldTransform, const Collider, const RigidBody>().Exclude<CharacterController>().Build()
-			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const Collider& c, const RigidBody&) { DrawCollider(WorldPoseOf(t, wt), c, style); });
+			.ForEach([&](Entity e, const Transform& t, const WorldTransform& wt, const Collider& c, const RigidBody&) { if (!HiddenInScene(world, e)) { DrawCollider(WorldPoseOf(t, wt), c, style); } });
 
 		// Characters: an upright capsule at position + m_center (CharacterVirtual doesn't rotate).
 		style.color = kCharacter;
 		world.CreateQuery<const Transform, const WorldTransform, const CharacterController>()
-			.ForEach([&](Entity, const Transform& local, const WorldTransform& wt, const CharacterController& cc) {
+			.ForEach([&](Entity e, const Transform& local, const WorldTransform& wt, const CharacterController& cc) {
+				if (HiddenInScene(world, e)) { return; }
 				const Transform t = WorldPoseOf(local, wt);
 				DebugDraw::Capsule(t.positions + cc.m_center, cc.m_radius,
 					std::max(cc.m_height * 0.5f - cc.m_radius, 0.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), style);
@@ -239,10 +254,10 @@ namespace Crucible {
 	void DebugDrawSystem::DrawVelocities(World& world) {
 
 		world.CreateQuery<const Transform, const WorldTransform, const RigidBody>()
-			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const RigidBody& rb) { DrawVelocity(WorldPoseOf(t, wt).positions, rb.velocity); });
+			.ForEach([&](Entity e, const Transform& t, const WorldTransform& wt, const RigidBody& rb) { if (!HiddenInScene(world, e)) { DrawVelocity(WorldPoseOf(t, wt).positions, rb.velocity); } });
 
 		world.CreateQuery<const Transform, const WorldTransform, const CharacterController>()
-			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const CharacterController& cc) { DrawVelocity(WorldPoseOf(t, wt).positions + cc.m_center, cc.m_velocity); });
+			.ForEach([&](Entity e, const Transform& t, const WorldTransform& wt, const CharacterController& cc) { if (!HiddenInScene(world, e)) { DrawVelocity(WorldPoseOf(t, wt).positions + cc.m_center, cc.m_velocity); } });
 
 	}   // DebugDrawSystem::DrawVelocities()
 
@@ -254,7 +269,7 @@ namespace Crucible {
 		world.BuildQuery<const WorldTransform, const Light>().IncludeDisabled().Build()
 			.ForEach([&](Entity entity, const WorldTransform& wt, const Light& light) {
 
-				if (!wt.valid) { return; }
+				if (!wt.valid || HiddenInScene(world, entity)) { return; }
 				const glm::vec3 p(wt.matrix[3]);
 				glm::vec3 dir = -glm::vec3(wt.matrix[2]);   // local -Z, same as RenderExtractSystem
 				const float len = glm::length(dir);

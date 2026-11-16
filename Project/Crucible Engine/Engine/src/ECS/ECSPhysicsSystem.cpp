@@ -1,11 +1,13 @@
 /*************************************************************************
 * \file:         ECSPhysicsSystem.cpp
 * \author:       Abhishek Akilandeswari Patchamuthu (v1.0 skeleton),
-*                Hugo Low Ren Hao (v2.0 physics binding)
+*                Hugo Low Ren Hao (v2.0 physics binding),
+*                Jean David Vidal Cruzado (v3.1: terrain)
 * \par:          Email: a.patchamuthu@digipen.edu,
-*                Email: low.h@digipen.edu
+*                Email: low.h@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          27 September 2026
-* \version       3.0
+* \version       3.1
 * \brief
 *                Implementation of ECSPhysicsSystem. See the header for
 *                what happens each frame.
@@ -62,6 +64,9 @@
 *    -v3.0       explosions match Unity's documented rules: a blast inside
 *                the body pushes at its centre of mass; upwardsModifier
 *                also lowers the point the push lands on
+*    -v3.1       a HeightField Collider is the ground of the Terrain on
+*                its entity, stretched by the entity's world scale; no
+*                body until that Terrain has been built
 *
 **************************************************************************/
 #include "ECSPhysicsSystem.h"
@@ -77,6 +82,7 @@
 #include "Diagnostics/Logger.h"
 #include "Physics/PhysicsComponents.h"
 #include "Scene/SceneManager.h"
+#include "Terrain/TerrainComponents.h"     // a HeightField Collider's ground
 #include "ECS/Systems/EventBus/EventWriter.h"   // ctx.events.EmitEngine (SystemContext only forward-declares it)
 #include "Systems/Query.h"
 #include "Systems/SystemContext.h"
@@ -132,6 +138,7 @@ namespace {
 
         return x.m_type == y.m_type && Same(x.m_halfExtents, y.m_halfExtents) && x.m_radius == y.m_radius
             && x.m_halfHeight == y.m_halfHeight && Same(x.m_center, y.m_center)
+            && x.m_heightGrid == y.m_heightGrid && Same(x.m_gridScale, y.m_gridScale)   // a new grid is a new pointer
             && a.m_motion == b.m_motion && a.m_layer == b.m_layer && a.m_mass == b.m_mass
             && a.m_friction == b.m_friction && a.m_restitution == b.m_restitution
             && a.m_gravityFactor == b.m_gravityFactor
@@ -389,7 +396,8 @@ namespace Crucible {
         void BindWorld(World& ecs);
         void ResetClock();
         void Sync(World& ecs);
-        void SyncBody(Record& record, const Transform& transform, const Math::mat4& parentFrame, const Collider& collider, const RigidBody* rigidbody);
+        void SyncBody(Record& record, const Transform& transform, const Math::mat4& parentFrame, const Collider& collider, const RigidBody* rigidbody,
+                      const Terrain* terrain);
         void StopIfNotDynamic(Record& record, const RigidBody* rigidbody);
         void SyncCharacter(CharacterRecord& record, const Transform& transform, const Math::mat4& parentFrame, CharacterController& controller);
         void TakeForces(World& ecs, Record& record, const RigidBody* rigidbody);
@@ -861,8 +869,9 @@ namespace Crucible {
         colliders->ForEach([&](Entity entity, const Transform& transform, const Collider& collider) {
             Record& record = Touch(entity);
             const RigidBody* rigidbody = ecs.IsComponentActive<RigidBody>(entity) ? ecs.Read<RigidBody>(entity) : nullptr;
+            const Terrain*   terrain   = collider.m_type == ShapeType::HeightField ? ecs.Read<Terrain>(entity) : nullptr;
             Math::mat4 parentFrame(1.0f);
-            if (ecs.TryGetParentFrame(entity, parentFrame)) SyncBody(record, transform, parentFrame, collider, rigidbody);
+            if (ecs.TryGetParentFrame(entity, parentFrame)) SyncBody(record, transform, parentFrame, collider, rigidbody, terrain);
             else                                            StopIfNotDynamic(record, rigidbody);
 
             // On BOTH paths, not only when SyncBody ran: it is what clears last frame's
@@ -1108,9 +1117,11 @@ namespace Crucible {
 
     /*!
         \brief
-        Makes one entity's body match its Collider, RigidBody and Transform.
+        Makes one entity's body match its Collider, RigidBody and Transform
+        (and, for a HeightField, its Terrain - null when it has none).
     */
-    void ECSPhysicsSystem::State::SyncBody(Record& record, const Transform& transform, const Math::mat4& parentFrame, const Collider& collider, const RigidBody* rigidbody) {
+    void ECSPhysicsSystem::State::SyncBody(Record& record, const Transform& transform, const Math::mat4& parentFrame, const Collider& collider, const RigidBody* rigidbody,
+                                           const Terrain* terrain) {
 
         if (!Finite(transform.positions) || !Finite(transform.rotation)) {
             WarnOnce(record.warned, kWarnNaN, record.entity, "has NaN or infinity in its Transform - physics is leaving it alone until that is fixed");
@@ -1136,6 +1147,21 @@ namespace Crucible {
         // that below, and the body is rebuilt - nothing extra needed for it. World scale, so a
         // scaled parent scales its children's colliders too.
         desc.m_shape       = ToShapeDesc(ScaledCollider(collider, scale));
+
+        // A heightfield's shape is its Terrain's ground, stretched by the world
+        // scale the same way its mesh is drawn. Until a script builds that ground
+        // (or with no Terrain at all) there is nothing to stand on yet: no body,
+        // and no error, because waiting for the level generator is normal.
+        if (collider.m_type == ShapeType::HeightField) {
+            desc.m_shape.m_heightGrid = terrain != nullptr ? terrain->Heights() : nullptr;
+            desc.m_shape.m_gridScale  = scale;
+            if (desc.m_shape.m_heightGrid == nullptr) {
+                Remove(record);
+                record.failed = false;
+                return;
+            }
+        }
+
         desc.m_position    = position;
         desc.m_rotation    = rotation;
         desc.m_motion      = kinematic ? BodyMotion::Kinematic : rigidbody != nullptr ? BodyMotion::Dynamic : BodyMotion::Static;

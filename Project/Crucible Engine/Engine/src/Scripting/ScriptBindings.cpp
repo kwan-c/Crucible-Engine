@@ -37,6 +37,8 @@ namespace Crucible::ScriptBindings
 		RegisterScreenBindings();
 		RegisterNavigationBindings();
 		RegisterStateGraphBindings();
+		RegisterTerrainBindings();
+		RegisterApplicationBindings();
 		RegisterTagBindings();
 	}
 

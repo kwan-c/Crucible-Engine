@@ -3,7 +3,7 @@
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
 * \date          2 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Physics queries for scripts: Physics.Raycast and RaycastHit.
 *                Part of Crucible.ScriptCore.dll.
 *
@@ -22,6 +22,7 @@
 *
 **************************************************************************/
 using System.Runtime.CompilerServices;
+using System.Runtime.InteropServices;   // StructLayout, NativeHit
 
 namespace Crucible
 {
@@ -144,6 +145,134 @@ namespace Crucible
             return CheckSphereInternal(ref position, radius, unchecked((uint)layerMask),
                                        IgnoreIndex(ignore), IgnoreGeneration(ignore)) != 0;
         }
+
+        // --- non-allocating queries (Jean David, 10 Nov 2026) ------------------- //
+        // Unity's *NonAlloc forms: pass your own results array (keep it between
+        // calls) and get back how many were found, nearest-first for rays. Entities
+        // destroyed this frame are left out. Only during Play, like Raycast.
+
+        /// <summary>Every entity whose collider overlaps a ball. Unity's Physics.OverlapSphereNonAlloc.</summary>
+        /// <returns>How many entries of results were filled.</returns>
+        public static int OverlapSphereNonAlloc(Vector3 position, float radius, Entity[] results,
+                                                int layerMask = LayerMask.All, Entity ignore = null)
+        {
+            if (results == null || results.Length == 0) return 0;
+            int[] pairs = PairScratch(results.Length);
+            int count = OverlapSphereInternal(ref position, radius, unchecked((uint)layerMask),
+                                              IgnoreIndex(ignore), IgnoreGeneration(ignore), pairs, results.Length);
+            FillEntities(pairs, count, results);
+            return count;
+        }
+
+        /// <summary>Every entity whose collider overlaps a box (halfExtents = half its size). Unity's Physics.OverlapBoxNonAlloc.</summary>
+        /// <returns>How many entries of results were filled.</returns>
+        public static int OverlapBoxNonAlloc(Vector3 center, Vector3 halfExtents, Entity[] results, Quaternion orientation,
+                                             int layerMask = LayerMask.All, Entity ignore = null)
+        {
+            if (results == null || results.Length == 0) return 0;
+            int[] pairs = PairScratch(results.Length);
+            int count = OverlapBoxInternal(ref center, ref halfExtents, ref orientation, unchecked((uint)layerMask),
+                                           IgnoreIndex(ignore), IgnoreGeneration(ignore), pairs, results.Length);
+            FillEntities(pairs, count, results);
+            return count;
+        }
+
+        /// <summary>Every entity whose collider overlaps a capsule between two points. Unity's Physics.OverlapCapsuleNonAlloc.</summary>
+        /// <returns>How many entries of results were filled.</returns>
+        public static int OverlapCapsuleNonAlloc(Vector3 point0, Vector3 point1, float radius, Entity[] results,
+                                                 int layerMask = LayerMask.All, Entity ignore = null)
+        {
+            if (results == null || results.Length == 0) return 0;
+            int[] pairs = PairScratch(results.Length);
+            int count = OverlapCapsuleInternal(ref point0, ref point1, radius, unchecked((uint)layerMask),
+                                               IgnoreIndex(ignore), IgnoreGeneration(ignore), pairs, results.Length);
+            FillEntities(pairs, count, results);
+            return count;
+        }
+
+        /// <summary>Every collider a ray passes through, nearest first. Unity's Physics.RaycastNonAlloc.</summary>
+        /// <returns>How many entries of results were filled.</returns>
+        public static int RaycastNonAlloc(Vector3 origin, Vector3 direction, RaycastHit[] results,
+                                          float maxDistance = float.PositiveInfinity, int layerMask = LayerMask.All,
+                                          Entity ignore = null)
+        {
+            if (results == null || results.Length == 0) return 0;
+            if (hitScratch == null || hitScratch.Length < results.Length) hitScratch = new NativeHit[results.Length];
+            int count = RaycastAllInternal(ref origin, ref direction, maxDistance, unchecked((uint)layerMask),
+                                           IgnoreIndex(ignore), IgnoreGeneration(ignore), hitScratch, results.Length);
+            for (int i = 0; i < count; ++i)
+            {
+                NativeHit h = hitScratch[i];
+                results[i] = MakeHit(h.Index, h.Generation, h.Point, h.Normal, h.Distance);
+            }
+            return count;
+        }
+
+        /// <summary>
+        /// Sweeps a capsule (between point1 and point2) along direction and reports the first
+        /// collider it hits. Unity's Physics.CapsuleCast. A collider it already overlaps at
+        /// the start is hit at distance 0, as SphereCast does.
+        /// </summary>
+        public static bool CapsuleCast(Vector3 point1, Vector3 point2, float radius, Vector3 direction, out RaycastHit hit,
+                                       float maxDistance = float.PositiveInfinity, int layerMask = LayerMask.All,
+                                       Entity ignore = null)
+        {
+            hit = new RaycastHit();
+            int index, generation;
+            Vector3 point, normal;
+            float distance;
+            if (CapsuleCastInternal(ref point1, ref point2, radius, ref direction, maxDistance, unchecked((uint)layerMask),
+                                    IgnoreIndex(ignore), IgnoreGeneration(ignore),
+                                    out index, out generation, out point, out normal, out distance) == 0)
+                return false;
+            hit = MakeHit(index, generation, point, normal, distance);
+            return true;
+        }
+
+        // One hit as the C++ side writes it. Must match ScriptHit in PhysicsBindings.cpp.
+        [StructLayout(LayoutKind.Sequential)]
+        private struct NativeHit
+        {
+            public int Index;
+            public int Generation;
+            public Vector3 Point;
+            public Vector3 Normal;
+            public float Distance;
+        }
+
+        // Reused between calls (scripts run on one thread), so a query every frame makes no garbage.
+        private static int[] pairScratch;
+        private static NativeHit[] hitScratch;
+
+        static int[] PairScratch(int count)
+        {
+            if (pairScratch == null || pairScratch.Length < count * 2) pairScratch = new int[count * 2];
+            return pairScratch;
+        }
+
+        static void FillEntities(int[] pairs, int count, Entity[] results)
+        {
+            for (int i = 0; i < count; ++i)
+                results[i] = new Entity(unchecked((uint)pairs[i * 2]), unchecked((uint)pairs[i * 2 + 1]));
+        }
+
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int OverlapSphereInternal(ref Vector3 position, float radius, uint layerMask, int ignoreIndex,
+                                                        int ignoreGeneration, int[] pairs, int maxCount);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int OverlapBoxInternal(ref Vector3 center, ref Vector3 halfExtents, ref Quaternion orientation,
+                                                     uint layerMask, int ignoreIndex, int ignoreGeneration, int[] pairs, int maxCount);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int OverlapCapsuleInternal(ref Vector3 point0, ref Vector3 point1, float radius, uint layerMask,
+                                                         int ignoreIndex, int ignoreGeneration, int[] pairs, int maxCount);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int RaycastAllInternal(ref Vector3 origin, ref Vector3 direction, float maxDistance, uint layerMask,
+                                                     int ignoreIndex, int ignoreGeneration, NativeHit[] hits, int maxCount);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int CapsuleCastInternal(ref Vector3 point1, ref Vector3 point2, float radius, ref Vector3 direction,
+                                                      float maxDistance, uint layerMask, int ignoreIndex, int ignoreGeneration,
+                                                      out int index, out int generation, out Vector3 point, out Vector3 normal,
+                                                      out float distance);
 
         static int IgnoreIndex(Entity ignore) { return ignore != null ? (int)ignore.Index : 0; }
         static int IgnoreGeneration(Entity ignore) { return ignore != null ? (int)ignore.Generation : 0; }

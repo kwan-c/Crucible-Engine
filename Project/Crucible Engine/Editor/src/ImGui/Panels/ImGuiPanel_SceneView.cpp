@@ -22,6 +22,7 @@
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "Undo/EntityCommands.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "SceneVisibility.h"
 #include "Resources/ResourceManager.h"
 #include "AssetPipe/Assetmanager.h"
 #include "Core.h"
@@ -469,6 +470,10 @@ void Crucible::SceneView::SyncSelection() {
 		for (Entity const e : inspector->GetSelection()) { outlined.push_back(EntityToUserData(e)); }
 	}
 	m_renderer.SetOutlinedObjects(outlined);
+
+	// Scene visibility (the Hierarchy's eye): whether this view draws the hidden entities anyway.
+	m_renderer.SetSceneHiddenShown(m_showHidden);
+	DebugDrawSystem::SetSceneHiddenShown(m_showHidden);
 }
 
 void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
@@ -487,6 +492,7 @@ void Crucible::SceneView::DrawIcons(ImVec2 viewMin, ImVec2 viewSize) {
 	// Backdrop + selection ring + glyph, and remember where it went for picking.
 	auto place = [&](Entity entity, const WorldTransform& wt, auto&& glyph) {
 		if (!wt.valid) { return; }
+		if (!m_showHidden && SceneVisibility::IsHidden(m_world, entity)) { return; }   // hidden in this view: no icon, so not clickable either
 		ImVec2 screen; float depth;
 		if (!ProjectToScreen(viewProj, glm::vec3(wt.matrix[3]), viewMin, viewSize, screen, depth)) { return; }
 		dl->AddCircleFilled(screen, kIconRadius, IM_COL32(18, 18, 22, 170));
@@ -601,7 +607,8 @@ void Crucible::SceneView::HandleClickPicking(ImVec2 viewMin, ImVec2 viewSize) {
 	Entity picked = kNullEntity;
 	float  nearest = length;
 	RenderRaycastHit hit;
-	if (m_renderer.Raycast(origin, toFar, length, hit)) {
+	// Meshes hidden in this view are clicked through, to whatever is behind them.
+	if (m_renderer.Raycast(origin, toFar, length, hit, !m_showHidden)) {
 		const Entity entity = UserDataToEntity(hit.userData);
 		if (m_world.IsAlive(entity)) { picked = entity; nearest = hit.distance; }
 	}
@@ -621,6 +628,7 @@ Crucible::Entity Crucible::SceneView::PickWorldText(const glm::vec3& origin, con
 	m_world.CreateQuery<const WorldTransform, const WorldText>().ForEach(
 		[&](Entity e, const WorldTransform& wt, const WorldText& text) {
 			if (!wt.valid || text.text.empty()) { return; }
+			if (!m_showHidden && SceneVisibility::IsHidden(m_world, e)) { return; }   // not drawn in this view: clicked through
 			const WorldUIPlane plane = WorldTextPlaneFor(text, wt.matrix, camera.position, view);
 			float t = 0.0f;
 			if (RayHitsWorldTextBox(text, plane, origin, direction, t) && t < distance) { distance = t; picked = e; }
@@ -686,13 +694,21 @@ Crucible::Entity Crucible::SceneView::PickWorldCanvas(const glm::vec3& origin, c
 		if (!RayHitsWorldUIBox(plane, WorldCanvasBoxInPlane(canvas), origin, direction, t, &local) || t >= distance) { continue; }
 
 		// The topmost element under that point of the page (drawn last = on top), else the canvas.
-		distance = t;
-		picked = canvasEntity;
+		// Whatever is hidden in this view (SceneVisibility.h) is clicked through: a hidden element
+		// to what is under it, a hidden canvas's empty page to what is behind it.
+		const auto hidden = [&](Entity e) { return !m_showHidden && SceneVisibility::IsHidden(m_world, e); };
+		Entity hit = kNullEntity;
 		const glm::vec2 point = WorldCanvasToPage(canvas, local);
 		UI::LayoutWorldCanvas(m_world, canvasEntity, canvas, m_canvasLayout);
 		for (auto it = m_canvasLayout.rbegin(); it != m_canvasLayout.rend(); ++it) {
-			if (it->Contains(point)) { picked = it->entity; break; }
+			if (!hidden(it->entity) && it->Contains(point)) { hit = it->entity; break; }
 		}
+		if (!hit.IsValid()) {
+			if (hidden(canvasEntity)) { continue; }
+			hit = canvasEntity;
+		}
+		distance = t;
+		picked = hit;
 	}
 	return picked;
 }
@@ -800,7 +816,7 @@ glm::vec3 Crucible::SceneView::DropPoint(ImVec2 viewMin, ImVec2 viewSize) {
 
 	// 1. On whatever mesh is under the cursor (the same exact pick as click selection).
 	RenderRaycastHit hit;
-	if (m_renderer.Raycast(origin, toFar, length, hit)) { return hit.point; }
+	if (m_renderer.Raycast(origin, toFar, length, hit, !m_showHidden)) { return hit.point; }   // not on a mesh hidden in this view
 
 	// 2. On the y = 0 ground plane, when the cursor points down at it within the far plane.
 	if (dir.y < -1e-4f) {
@@ -862,6 +878,11 @@ void Crucible::SceneView::DrawGizmoMenu() {
 	ImGui::Checkbox("Icons (lights, cameras, audio, sky, empties)", &m_showIcons);
 	bool outline = m_viewport.GetOutline();
 	if (ImGui::Checkbox("Selection outline", &outline)) { m_viewport.SetOutline(outline); }
+	ImGui::Checkbox("Show hidden objects", &m_showHidden);
+	if (ImGui::IsItemHovered()) {
+		ImGui::SetTooltip("Draws the entities hidden with the Hierarchy's eye anyway.\n"
+		                  "They stay marked hidden: untick this to hide them again.");
+	}
 }
 
 // This view's fly camera. Not saved: each start of the editor begins from FlyCameraController's defaults.

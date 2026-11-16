@@ -1,7 +1,8 @@
 /*!
 * @file			ImGuiPanel_Inspector.cpp
-* @author		Tan Chun Kwang Xavier
-* @par			chunkwangxavier.tan@digipen.edu
+* @author		Tan Chun Kwang Xavier (main author),
+*				Jean David Vidal Cruzado ([EditorButton] buttons on scripts)
+* @par			chunkwangxavier.tan@digipen.edu, jeandavidvidal.c@digipen.edu
 * @date			17 September 2026
 *
 * @brief		The editor's inspector for viewing and editing object properties.
@@ -32,6 +33,7 @@
 #include "Core.h"
 #include "Undo/EntityCommands.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "SceneVisibility.h"
 #include "Tags/TagEditor.h"                        // the Tag field and the Tag Manager window
 #include "Network/NetContent.h"                    // the registered serializers, for the networking policy table
 #include "Network/NetworkAuthoringInspector.h"     // NetworkObjectAuthoring's table (Networking Phase 14.3)
@@ -57,6 +59,18 @@ namespace {
 	// One script's section header: its file name.
 	std::string ScriptHeader(const Crucible::ScriptEntry& script) {
 		return script.className.empty() ? "Missing C# script" : script.className + ".cs";
+	}
+
+	// A C# member name as an Inspector label: "maxWalkableSlope" -> "Max Walkable Slope", "_x" -> " X".
+	std::string ScriptMemberLabel(const std::string& name) {
+		std::string label;
+		for (size_t i = 0; i < name.size(); ++i) {
+			const char c = name[i];
+			if (c == '_') { label += ' '; continue; }
+			if (i && c >= 'A' && c <= 'Z' && name[i-1] >= 'a' && name[i-1] <= 'z') label += ' ';
+			label += label.empty() && c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
+		}
+		return label;
 	}
 
 	bool SameScriptName(std::string_view a, std::string_view b) {
@@ -831,6 +845,15 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 			m_scenes.MarkDirty();
 		}
 	}
+	// Scene visibility, the same switch as the Hierarchy's eye (SceneVisibility.h): editor only,
+	// never saved, not an undo step, and the scene is not marked as changed. Safe to change the
+	// World here: no query is iterating, and the component sections below fetch their own pointers.
+	{
+		bool hidden = SceneVisibility::IsHidden(m_world, entity);
+		if (ImGui::Checkbox("Hidden in editor views", &hidden)) { SceneVisibility::SetHidden(m_world, entity, hidden, true); }
+		ImGui::SetItemTooltip("Hides this entity and its children in the Scene view and the UI Editor tab only.\n"
+		                      "The Game view and the built game still show them. Not saved with the scene.");
+	}
 	// Prefab instances: "Prefab: Crate  [Select] [Unpack]" (PrefabInstance itself is never listed).
 	PrefabAuthoring::DrawInspectorBar(m_world, entity);
 	ImGui::Separator();
@@ -847,7 +870,7 @@ void Crucible::Inspector::DrawEntityInspector(Entity entity) {
 	// itself (same rule EntityIO uses for saving). PushID keeps same-named fields in different
 	// components (Collider::radius vs CharacterController::radius) from sharing a widget ID.
 #define CRU_INSPECT_COMPONENT(T)                                                                         \
-		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, EntityTag> && !std::is_same_v<T, PrefabInstance> && !std::is_same_v<T, ScriptComponent>) \
+		if constexpr (!WorldManaged<T>::value && !std::is_same_v<T, WorldTransform> && !std::is_same_v<T, EntityName> && !std::is_same_v<T, EntityTag> && !std::is_same_v<T, PrefabInstance> && !std::is_same_v<T, ScriptComponent> && !std::is_same_v<T, SceneHidden>) \
 		{                                                                                                    \
 			if (T* component = m_world.GetComponent<T>(entity))                                              \
 			{                                                                                                \
@@ -2188,7 +2211,7 @@ bool Crucible::Inspector::DrawScripts(Entity entity, std::function<void()>& defe
 
     switch (change) {
     case Change::Remove:
-        if (component->scripts.size() <= 1) {
+		if (component->scripts.size() <= 1) {
             // The last one: the component goes too, with the other component removals.
             deferredRemove = MakeComponentRemover<ScriptComponent>(m_world, entity);
             removeLabel = "Remove " + ScriptHeader(component->scripts.front());
@@ -2228,6 +2251,7 @@ bool Crucible::Inspector::DrawScriptFields(ScriptEntry& script, std::size_t slot
         else if (!runtime->LoadAssembly(script.assembly, assembly) ||
                  !runtime->GetEntityFieldDefaults(assembly, script.nameSpace, script.className, entry.defaults))
             entry.error = runtime->LastError();
+        else runtime->GetEditorButtons(assembly, script.nameSpace, script.className, entry.buttons);   // none if it has no [EditorButton]
         m_scriptFieldCache[cacheKey] = std::move(entry);
     }
     const ScriptFieldCache& classFields = m_scriptFieldCache[cacheKey];
@@ -2250,13 +2274,7 @@ bool Crucible::Inspector::DrawScriptFields(ScriptEntry& script, std::size_t slot
     bool changed = false;
     ImGui::BeginDisabled(inSession && !live);
     for (auto field : fields) {
-        std::string label;
-        for (size_t i = 0; i < field.name.size(); ++i) {
-            const char c = field.name[i];
-            if (c == '_') { label += ' '; continue; }
-            if (i && c >= 'A' && c <= 'Z' && field.name[i-1] >= 'a' && field.name[i-1] <= 'z') label += ' ';
-            label += label.empty() && c >= 'a' && c <= 'z' ? static_cast<char>(c - 'a' + 'A') : c;
-        }
+        std::string label = ScriptMemberLabel(field.name);
         if (std::count_if(fields.begin(), fields.end(), [&](const auto& other) { return other.name == field.name; }) > 1)
             label += " (" + field.declaringType + ")";
         label += "###" + field.name;
@@ -2301,6 +2319,25 @@ bool Crucible::Inspector::DrawScriptFields(ScriptEntry& script, std::size_t slot
         ImGui::PopID();
     }
     ImGui::EndDisabled();
+    // [EditorButton] methods (Unity's [ContextMenu]): each runs once on a temporary copy of the
+    // script with the fields above, outside Play only (ScriptRuntime::RunEditorButton).
+    if (runtime && !classFields.buttons.empty() && classFields.error.empty()) {
+        ImGui::BeginDisabled(inSession);
+        for (const auto& method : classFields.buttons) {
+            ImGui::PushID(method.c_str());
+            if (ImGui::Button(ScriptMemberLabel(method).c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
+                ScriptAssemblyHandle assembly;
+                const bool ran = runtime->LoadAssembly(script.assembly, assembly) &&
+                    runtime->RunEditorButton(assembly, script.nameSpace, script.className, m_selected.index, m_selected.generation,
+                                             fields, method);
+                m_scriptNoticeTarget = m_selected;
+                m_scriptNotice = ran ? std::string() : ScriptMemberLabel(method) + " failed: " + runtime->LastError();
+            }
+            if (inSession) ImGui::SetItemTooltip("Runs outside Play only");
+            ImGui::PopID();
+        }
+        ImGui::EndDisabled();
+    }
     if (fields.empty() && classFields.error.empty()) ImGui::TextDisabled("No public fields.");
     std::string error = !status.error.empty() ? status.error : classFields.error;
     if (status.instance.value == m_scriptFieldReadFailure.value && status.instance) error = m_scriptFieldReadError;

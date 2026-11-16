@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         EntityContext.cpp
-* \author:       Tan Chun Kwang Xavier
-* \par:          Email: chunkwangxavier.tan@digipen.edu
+* \author:       Tan Chun Kwang Xavier (main author),
+*                Jean David Vidal Cruzado (EditorCallScope)
+* \par:          Email: chunkwangxavier.tan@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          1 November 2026
 * \version       1.0
 * \brief         Implementation - see EntityContext.h. Also defines
@@ -50,6 +52,8 @@ namespace Crucible::ScriptBindings
 		// C# Time: Playing time and frames since Play started.
 		thread_local double playTime = 0.0;
 		thread_local int32_t playFrames = 0;
+		// Open EditorCallScopes (an Inspector [EditorButton] running a script method in Edit mode).
+		thread_local int editorCalls = 0;
 
 		// A one-shot that has not started after this long never will (missing clip).
 		constexpr float OneShotStartTimeout = 2.0f;
@@ -240,9 +244,17 @@ namespace Crucible::ScriptBindings
 			oneShots.clear();
 		}
 
+		EditorCallScope::EditorCallScope() { ++editorCalls; }
+		EditorCallScope::~EditorCallScope() { --editorCalls; }
+
+		bool InEditorCall()
+		{
+			return editorCalls > 0;
+		}
+
 		bool ResolveEntity(int32_t index, int32_t generation, Entity& entity)
 		{
-			if (!world || !play || !play->InSession())
+			if (!world || (!InPlaySession() && !InEditorCall()))
 				return false;
 			entity = Entity{static_cast<uint32_t>(index), static_cast<uint32_t>(generation)};
 			return world->IsAlive(entity);

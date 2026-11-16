@@ -70,8 +70,11 @@ namespace Crucible {
                  (every alwaysOnTop panel last).
          \param[in] camera  The view's camera.
          \param[out] out    Receives the view's draws.
+         \param[in] hideSceneHidden  true (an editor Scene view that hides
+                            hidden objects): NotInSceneViews panels are left
+                            out. false: SceneViewsOnly panels are (WorldUIViews).
          *********************************************************************/
-        void Prepare(const Camera& camera, std::vector<WorldUIDraw>& out);
+        void Prepare(const Camera& camera, std::vector<WorldUIDraw>& out, bool hideSceneHidden);
 
         /// Copies this frame's vertices into frame `frameIndex`'s buffer and makes the texture sets.
         void Upload(uint32_t frameIndex);

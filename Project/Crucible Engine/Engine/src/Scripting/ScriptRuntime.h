@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         ScriptRuntime.h
-* \author:       Tan Chun Kwang Xavier
-* \par:          Email: chunkwangxavier.tan@digipen.edu
+* \author:       Tan Chun Kwang Xavier (main author),
+*                Jean David Vidal Cruzado (editor buttons)
+* \par:          Email: chunkwangxavier.tan@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          30 October 2026
 * \version       1.0
 * \brief         The C# (Mono) host: starts Mono, loads C# DLLs, creates
@@ -337,6 +339,28 @@ namespace Crucible
 		         until the instance is destroyed - never store it.
 		 *********************************************************************/
 		bool GetInstanceGcHandle(ScriptInstanceHandle instance, uint32_t& handle);
+
+		/*********************************************************************
+		 \brief  The [EditorButton] methods of an entity script class
+		         (Crucible.EditorButtonAttribute on a public instance method
+		         with no parameters that returns void), most-derived class
+		         first. The Inspector shows one button for each.
+		 *********************************************************************/
+		bool GetEditorButtons(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+		                      const std::string& name, std::vector<std::string>& methods);
+
+		/*********************************************************************
+		 \brief  Unity's [ContextMenu]: runs one [EditorButton] method outside
+		         Play. Builds a temporary script bound to the entity with these
+		         field values (deferred: no OnCreate), calls the method with
+		         entity bindings allowed (EntityContext::EditorCallScope), then
+		         releases it (it never started, so no OnDestroy).
+		 \return false during Play, for a method that isn't a button, or if
+		         the script couldn't be built or the method threw (LastError).
+		 *********************************************************************/
+		bool RunEditorButton(ScriptAssemblyHandle assembly, const std::string& nameSpace, const std::string& name,
+		                     uint32_t index, uint32_t generation, const std::vector<ScriptFieldValue>& fields,
+		                     const std::string& method);
 
 		/*********************************************************************
 		 \brief  Hands one UI event to an entity script: its OnButtonClicked

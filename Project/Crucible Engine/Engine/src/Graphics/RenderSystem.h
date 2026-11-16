@@ -742,7 +742,8 @@ namespace Crucible {
             pass in two halves. Not pickable in the editor, casts no shadow,
             and is not in the ambient occlusion pre-pass.
          *********************************************************************/
-        ENGINE_API void SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings);
+        // sceneHidden: editor scene visibility - the surface is left out of Scene-role views only.
+        ENGINE_API void SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings, bool sceneHidden = false);
 
         /*********************************************************************
          \brief
@@ -914,8 +915,9 @@ namespace Crucible {
         ENGINE_API void SetRenderProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
                                                const glm::vec3& boundsMin, const glm::vec3& boundsMax);
 
+        // sceneHidden: editor scene visibility - the item is left out of Scene-role views only.
         ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model,
-                               const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+                               const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f), bool sceneHidden = false);
 
         // ---- Render proxies (persistent, culled objects) -------------------------------------
 
@@ -957,6 +959,29 @@ namespace Crucible {
                                        const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
 
         /*********************************************************************
+         \brief
+            Hides a proxy in Scene-role viewports only (the editor's scene
+            visibility - RenderExtractSystem sets it from the SceneHidden
+            component). Game viewports and the window pass draw it as usual.
+
+         \param[in] handle  The proxy.
+         \param[in] hidden  true = left out of Scene views: not drawn, casts
+                            no shadow there, gets no selection outline, and
+                            Raycast(..., ignoreSceneHidden = true) passes
+                            through it. Cheap to call every frame.
+         *********************************************************************/
+        ENGINE_API void SetRenderProxySceneHidden(RenderProxyHandle handle, bool hidden);
+
+        /*********************************************************************
+         \brief
+            The editor's "Show hidden objects": while true, Scene viewports
+            draw the proxies flagged with SetRenderProxySceneHidden as usual
+            (and outline them when selected). The flags are kept.
+         *********************************************************************/
+        ENGINE_API void SetSceneHiddenShown(bool shown);
+        ENGINE_API bool GetSceneHiddenShown() const;
+
+        /*********************************************************************
          \brief  Unregisters a proxy; its handle may be reused.
          *********************************************************************/
         ENGINE_API void DestroyRenderProxy(RenderProxyHandle handle);
@@ -971,9 +996,13 @@ namespace Crucible {
          \param[in]  direction   Ray direction (any length).
          \param[in]  maxDistance Ignore hits farther than this.
          \param[out] outHit      Nearest hit (userData, distance, point).
+         \param[in]  ignoreSceneHidden  true = skip proxies hidden in the Scene
+                                 view (SetRenderProxySceneHidden), so the
+                                 editor picks what is behind them.
          \return true if anything was hit.
          *********************************************************************/
-        ENGINE_API bool Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const;
+        ENGINE_API bool Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit,
+                                bool ignoreSceneHidden = false) const;
 
         /*********************************************************************
          \brief  Last frame's culling numbers for an editor viewport.
@@ -1147,9 +1176,10 @@ namespace Crucible {
         // ---- Frame preparation (before recording) ----
         // Culls and batches everything one view draws this frame (main pass, shadow cascades,
         // selection mask) into `out`, appending instances to m_instanceScratch, and writes the
-        // view's FrameUniforms to `uniformDst`.
+        // view's FrameUniforms to `uniformDst`. sceneView: an editor Scene-role viewport, which
+        // leaves out the proxies hidden there (SetRenderProxySceneHidden).
         void PrepareView(Camera& camera, vk::Extent2D extent, RenderCullStats& stats, ViewDrawList& out,
-                         bool outline, void* uniformDst);
+                         bool outline, bool sceneView, void* uniformDst);
         // Uploads this frame's instances; re-points set 0, binding 2 if the buffer was replaced.
         void UploadInstances(uint32_t frameIndex);
         // Points set 0's shared bindings (1 lights, 2 instances, 3/4 shadow map) of each per-frame

@@ -1,12 +1,14 @@
 /*************************************************************************
 * \file:         PhysicsShapes.cpp
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Hugo Low Ren Hao (main author),
+*                Jean David Vidal Cruzado (v1.1: heightfields)
+* \par:          Email: low.h@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          27 September 2026
-* \version       1.0
+* \version       1.1
 * \brief
-*                Turns a ShapeDesc (box, sphere, capsule) into a Jolt
-*                shape.
+*                Turns a ShapeDesc (box, sphere, capsule, heightfield) into
+*                a Jolt shape.
 *
 * \details
 *                Sizes below a millimetre are raised to one, because Jolt
@@ -15,6 +17,7 @@
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       HeightField: a HeightGrid as a Jolt HeightFieldShape
 *
 **************************************************************************/
 #include "PhysicsSystem.h"
@@ -23,15 +26,18 @@
 #include <Jolt/Jolt.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
 #include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 
 // STL
 #include <algorithm>    // BuildShape()
 #include <cmath>        // BuildShape()
+#include <vector>       // BuildHeightField()
 
 // Crucible engine
 #include "Diagnostics/Logger.h"
+#include "Math/HeightGrid.h"
 #include "Physics/JoltConversions.h"
 #include "Physics/PhysicsInternal.h"
 
@@ -66,6 +72,42 @@ namespace {
         return result.Get();
 
     }   // Create()
+
+    // Heights are compressed per 2 x 2 block; this keeps the collider within a
+    // centimetre of the grid, so it never visibly floats over or sinks into the
+    // rendered mesh, even on tall cliffs.
+    constexpr float kHeightFieldMaxError = 0.01f;
+
+    // A HeightGrid as Jolt's HeightFieldShape. Jolt wants a square grid of
+    // samples at least 4 wide and a whole number of blocks across, so a
+    // rectangular or tiny grid is padded with "no collision" samples: the
+    // padding is holes, not ground. Jolt places sample (x, z) at
+    // offset + scale * (x, height, z) and splits each cell along the same
+    // diagonal as HeightGrid, so the two describe one surface.
+    JPH::RefConst<JPH::Shape> BuildHeightField(const HeightGrid& grid, const Math::vec3& gridScale) {
+
+        constexpr std::uint32_t kBlockSize = 2;   // Jolt's default; HeightFieldShapeSettings::mBlockSize
+
+        const JPH::Vec3 scale = JPH::Vec3::sMax(ToJolt(gridScale).Abs(), JPH::Vec3::sReplicate(kMinSize));
+
+        std::uint32_t side = std::max({ grid.CornerCols(), grid.CornerRows(), 2 * kBlockSize });
+        side = (side + kBlockSize - 1) / kBlockSize * kBlockSize;
+
+        std::vector<float> samples(static_cast<std::size_t>(side) * side, JPH::HeightFieldShapeConstants::cNoCollisionValue);
+        for (std::uint32_t z = 0; z < grid.CornerRows(); ++z)
+            for (std::uint32_t x = 0; x < grid.CornerCols(); ++x)
+                samples[static_cast<std::size_t>(z) * side + x] = grid.Height(x, z);
+
+        const JPH::Vec3 offset(grid.MinX() * scale.GetX(), 0.0f, grid.MinZ() * scale.GetZ());
+        const JPH::Vec3 step(grid.cellSize * scale.GetX(), scale.GetY(), grid.cellSize * scale.GetZ());
+
+        JPH::HeightFieldShapeSettings settings(samples.data(), offset, step, side);   // copies the samples
+        settings.mBlockSize     = kBlockSize;
+        settings.mBitsPerSample = settings.CalculateBitsPerSampleForError(kHeightFieldMaxError);
+
+        return Create(settings, "heightfield");
+
+    }   // BuildHeightField()
 
 }   // ANONYMOUS NAMESPACE
 
@@ -120,6 +162,23 @@ namespace Crucible {
                 shape = halfHeight > kMinSize
                       ? Create(JPH::CapsuleShapeSettings(halfHeight, radius), "capsule")
                       : Create(JPH::SphereShapeSettings(radius), "capsule (too short for a middle, built as a sphere)");
+                break;
+            }
+
+            case ShapeType::HeightField: {
+
+                // The ground comes from elsewhere (the Terrain on the same entity);
+                // until it exists there is nothing to collide with.
+                if (desc.m_heightGrid == nullptr || !desc.m_heightGrid->IsValid()) {
+                    CRU_ERROR("Physics: a HeightField collider has no ground to build from - give its entity a Terrain and build it");
+                    return nullptr;
+                }
+                if (!IsFinite(desc.m_gridScale)) {
+                    CRU_ERROR("Physics: the heightfield's scale holds NaN or infinity, so no shape was built");
+                    return nullptr;
+                }
+
+                shape = BuildHeightField(*desc.m_heightGrid, desc.m_gridScale);
                 break;
             }
         }

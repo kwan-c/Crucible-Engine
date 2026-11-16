@@ -10,6 +10,7 @@
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
 #include "ImGui/Panels/ImGuiPanel_Hierarchy.h"   // sibling order (Bring to Front, ...)
 #include "ImGui/EditorWidgets.h"
+#include "SceneVisibility.h"
 #include "ECS/World.h"
 #include "Undo/EntityCommands.h"
 
@@ -646,7 +647,18 @@ void Crucible::UIView::BuildCanvasContent() {
 	// resolution instead of the game screen - which is what keeps this tab and the Game view alike.
 	// writeComputed = false: UIRect::computed stays the game screen's numbers.
 	UI::LayoutScreenCanvases(m_world, GetDesignResolution(), m_layout, false);
-	UI::AppendDrawList(m_world, m_layout, EditorManager::GetInstance().GetResources(), m_vertices, m_indices, m_commands);
+	// Scene visibility: this tab is the Scene view of screen-space UI, so elements hidden with the
+	// Hierarchy's eye are not drawn here (the Game view, laid out by UIRenderSystem, still shows them).
+	m_drawLayout.clear();
+	for (UI::LayoutItem const& item : m_layout) {
+		if (!IsHiddenHere(item.entity)) { m_drawLayout.push_back(item); }
+	}
+	UI::AppendDrawList(m_world, m_drawLayout, EditorManager::GetInstance().GetResources(), m_vertices, m_indices, m_commands);
+}
+
+bool Crucible::UIView::IsHiddenHere(Entity entity) const {
+	// "Show hidden objects" (Scene view > Gizmos) shows them here too.
+	return !m_renderer.GetSceneHiddenShown() && SceneVisibility::IsHidden(m_world, entity);
 }
 
 void Crucible::UIView::HandleFrameRequest() {
@@ -675,8 +687,9 @@ Crucible::Entity Crucible::UIView::PickElement(glm::vec2 canvasPos) const {
 	// Topmost element under the point: last drawn = on top, so walk the draw order backwards.
 	// Turned elements are tested in their own space. Unlike the game's hit test, raycastTarget is
 	// ignored: designers need to select purely decorative images too.
+	// An element hidden here is not drawn, so it is clicked through.
 	for (auto it = m_layout.rbegin(); it != m_layout.rend(); ++it) {
-		if (it->Contains(canvasPos)) { return it->entity; }
+		if (!IsHiddenHere(it->entity) && it->Contains(canvasPos)) { return it->entity; }
 	}
 	return kNullEntity;
 }

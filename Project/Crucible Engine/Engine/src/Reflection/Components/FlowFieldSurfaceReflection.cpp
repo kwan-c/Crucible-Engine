@@ -1,7 +1,9 @@
 /*************************************************************************
   \file       FlowFieldSurfaceReflection.cpp
-  \author     Hugo Low Ren Hao
-  \par        Email: low.h@digipen.edu
+  \author     Jean David Vidal Cruzado (main author; design and Unity original),
+              Hugo Low Ren Hao (initial engine port)
+  \par        Email: jeandavidvidal.c@digipen.edu,
+              Email: low.h@digipen.edu
   \date       31 October 2026
   \version    1.0
   \brief
@@ -19,6 +21,7 @@
     ECS/ECSNavigationSystem.h
   \history
     - 1.0 (31 October 2026): First version.
+    - 1.1 (10 November 2026, Jean David): maxWalkableSlope.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -36,6 +39,7 @@ RTTR_REGISTRATION
         .property("bodyRadiusPadding", &FlowFieldSurface::m_bodyRadiusPadding)
         .property("stepHeight",        &FlowFieldSurface::m_stepHeight)
         .property("shoulderHeight",    &FlowFieldSurface::m_shoulderHeight)
+        .property("maxWalkableSlope",  &FlowFieldSurface::m_maxWalkableSlope)   // scenes saved before it load as 35
         .property("floodRadius",       &FlowFieldSurface::m_floodRadius)
         .property("rebuildDistance",   &FlowFieldSurface::m_rebuildDistance)
         .property("wallAdjacencyCost", &FlowFieldSurface::m_wallAdjacencyCost)

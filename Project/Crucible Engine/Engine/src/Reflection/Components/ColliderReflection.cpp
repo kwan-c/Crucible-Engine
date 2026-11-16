@@ -52,7 +52,8 @@ RTTR_REGISTRATION
     (
         rttr::value("Box",     ShapeType::Box),
         rttr::value("Sphere",  ShapeType::Sphere),
-        rttr::value("Capsule", ShapeType::Capsule)
+        rttr::value("Capsule", ShapeType::Capsule),
+        rttr::value("HeightField", ShapeType::HeightField)   // the Terrain on the same entity
     );
 
     rttr::registration::enumeration<PhysicsLayer>("PhysicsLayer")

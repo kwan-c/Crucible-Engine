@@ -131,6 +131,11 @@ namespace Crucible {
 		// This frame's layout of every screen-space canvas at the design resolution, in draw order.
 		// The tab's own copy: it never writes UIRect::computed (that is the game screen's layout).
 		std::vector<UI::LayoutItem> m_layout;
+		// m_layout without the elements hidden with the Hierarchy's eye (SceneVisibility.h): what
+		// this tab draws. m_layout keeps them, so a hidden element that is selected still has its gizmo.
+		std::vector<UI::LayoutItem> m_drawLayout;
+		// Hidden here: the eye is on, and the Scene view's "Show hidden objects" is off.
+		bool IsHiddenHere(Entity entity) const;
 
 		// This frame's preview draw list (canvas pixels).
 		std::vector<UIVertex>      m_vertices;

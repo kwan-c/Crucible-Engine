@@ -58,6 +58,17 @@ namespace Crucible {
         uint32_t      vertexCount = 0;           ///< A multiple of 3.
     };
 
+    /// Which views draw a panel - the editor's scene visibility (the SceneHidden tag). A world
+    /// text hidden in the Scene view is NotInSceneViews. A world canvas with some elements hidden
+    /// is submitted twice: all of it as NotInSceneViews, and without those elements as
+    /// SceneViewsOnly. While the editor's "Show hidden objects" is on, Scene views draw what
+    /// every other view draws.
+    enum class WorldUIViews : uint8_t {
+        All,               ///< Every view (the default).
+        NotInSceneViews,   ///< Game views and the window, not the editor's Scene views.
+        SceneViewsOnly,    ///< Only the editor's Scene views (and only while they hide hidden objects).
+    };
+
     /// Where one panel is and how it is drawn.
     struct WorldUIDesc {
         glm::vec3     anchor{ 0.0f };                ///< The plane's origin in the world (the entity's position).
@@ -70,6 +81,7 @@ namespace Crucible {
         float         intensity = 1.0f;              ///< Multiplies the colour (HDR: > 1 blooms).
         float         fadeStart = 0.0f;              ///< Distance fade: fully visible up to fadeStart, gone at fadeEnd.
         float         fadeEnd = 0.0f;                ///< fadeEnd <= fadeStart: no fade.
+        WorldUIViews  views = WorldUIViews::All;     ///< Editor scene visibility: which views draw it.
     };
 
     /// Push constant of the world UI pipeline. Must match WorldUI.slang's WorldUIPush, 112 bytes.

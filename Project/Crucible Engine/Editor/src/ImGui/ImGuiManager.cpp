@@ -46,6 +46,7 @@
 #include "ImGui/Panels/ImGuiPanel_StateGraph.h"
 #include "ImGui/Panels/ImGuiPanel_ShaderGraph.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
+#include "SceneVisibility.h"            // entities hidden in the Scene view, kept across Play / Stop
 #include "Assets/BuildProblems.h"       // failed asset/script compiles block Play
 
 
@@ -502,6 +503,15 @@ void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateCh
 				if (guid != 0) { m_selectionBeforePlay.push_back(guid); }
 			}
 		}
+		// Scene visibility (the Hierarchy's eye) is a RuntimeOnly tag: the Play snapshot does not
+		// hold it, so a Stop that restores the scene would show everything again. Remembered by
+		// guid like the selection. Without a snapshot the guids are zero - and the world, tags
+		// included, is kept on Stop anyway.
+		m_hiddenBeforePlay.clear();
+		for (Entity const e : SceneVisibility::ListHidden(world)) {
+			std::uint64_t const guid = scenes.Current().IdOf(e).m_Value;
+			if (guid != 0) { m_hiddenBeforePlay.push_back(guid); }
+		}
 		m_history.BeginPlaySession();
 		return;
 	}
@@ -536,6 +546,17 @@ void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateCh
 			inspector->ClearTarget();   // a stale or play-mode-only selection; an asset preview is left alone
 		}
 	}
+
+	// Hide again what was hidden in the Scene view before Play (the restored entities are new
+	// ones, without the tag). Each entity was listed itself, so no walk down its children. What
+	// was hidden or shown while playing is dropped with the play world, like every other change.
+	if (change.sceneRestored) {
+		for (std::uint64_t const guid : m_hiddenBeforePlay) {
+			Entity const e = scenes.Current().EntityOf(xresource::instance_guid{ guid });
+			if (e.IsValid() && world.IsAlive(e)) { SceneVisibility::SetHidden(world, e, true, false); }
+		}
+	}
+	m_hiddenBeforePlay.clear();
 
 	// The Scene view's outline reads this every frame; don't let it hold a stale handle meanwhile.
 	DebugDrawSystem::SetSelectedEntity(inspector ? inspector->GetSelectedEntity() : kNullEntity);

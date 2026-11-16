@@ -40,7 +40,7 @@ namespace Crucible::ScriptBindings
 
 		// C# ColliderShape and PhysicsLayer (Collider.cs) pass these numbers.
 		static_assert(static_cast<int>(ShapeType::Box) == 0 && static_cast<int>(ShapeType::Sphere) == 1 &&
-		                  static_cast<int>(ShapeType::Capsule) == 2,
+		                  static_cast<int>(ShapeType::Capsule) == 2 && static_cast<int>(ShapeType::HeightField) == 3,
 		              "ShapeType changed - update ColliderShape in ManagedScripts/Runtime/Collider.cs");
 		static_assert(static_cast<int>(PhysicsLayer::NonMoving) == 0 && static_cast<int>(PhysicsLayer::Moving) == 1 &&
 		                  static_cast<int>(PhysicsLayer::Player) == 2 && static_cast<int>(PhysicsLayer::Enemy) == 3 &&
@@ -200,7 +200,7 @@ namespace Crucible::ScriptBindings
 		{
 			try
 			{
-				if (value < 0 || value > static_cast<int32_t>(ShapeType::Capsule))
+				if (value < 0 || value > static_cast<int32_t>(ShapeType::HeightField))
 					return 0;
 				const Collider* current = ReadComponent<Collider>(index, generation);
 				if (!current)

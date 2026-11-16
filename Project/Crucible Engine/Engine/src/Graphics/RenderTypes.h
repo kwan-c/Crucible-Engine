@@ -115,6 +115,7 @@ namespace Crucible {
         glm::mat4      model{ 1.0f };
         glm::vec4      params{ 1.0f, 0.0f, 0.0f, 0.0f };   // per-object material parameters, see InstanceData
         glm::uvec4     skin{0u}; // palette offset/count in this frame's instance buffer
+        bool           sceneHidden = false;                // editor: left out of Scene-role views (Renderer::Submit)
     };
 
     inline bool IsMirroredTransform(const glm::mat4& model) {
@@ -308,6 +309,8 @@ namespace Crucible {
           - flipbookCols/Rows: the texture is an atlas of this many frames.
           - boundsMin/Max: world box around the batch, for frustum culling
                       and for ordering batches by distance.
+          - sceneHidden: editor scene visibility (the SceneHidden tag on the
+                      emitter): left out of Scene-role views only.
      *************************************************************************/
     struct ParticleDrawDesc {
         TextureHandle texture{};
@@ -316,6 +319,7 @@ namespace Crucible {
         uint32_t      flipbookRows = 1;
         glm::vec3     boundsMin{ 0.0f };
         glm::vec3     boundsMax{ 0.0f };
+        bool          sceneHidden = false;
     };
 
     /// Push constant of the particle pipeline (Particle.slang's ParticlePush).

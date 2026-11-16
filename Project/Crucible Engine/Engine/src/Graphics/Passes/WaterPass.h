@@ -58,8 +58,9 @@ namespace Crucible {
                               Plane (1 x 1 m, facing +Y), scaled by `model`.
          \param[in] model     Object -> world transform.
          \param[in] settings  How the water looks (colours in sRGB).
+         \param[in] sceneHidden  Editor scene visibility: left out of Scene-role views.
          *********************************************************************/
-        void Submit(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings);
+        void Submit(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings, bool sceneHidden);
 
         /// Forgets everything submitted. Call once the frame has been drawn.
         void ClearSubmitted() { m_submitted.clear(); }
@@ -69,8 +70,10 @@ namespace Crucible {
                  their mesh's bounds; meshes still uploading are skipped).
          \param[in] camera  The view's camera.
          \param[out] out    Receives the view's water draws (cleared first).
+         \param[in] hideSceneHidden  true (an editor Scene view): surfaces
+                            submitted as sceneHidden are left out.
          *********************************************************************/
-        void Prepare(const Camera& camera, std::vector<WaterDraw>& out) const;
+        void Prepare(const Camera& camera, std::vector<WaterDraw>& out, bool hideSceneHidden) const;
 
         /*********************************************************************
          \brief  Draws the surfaces into the rendering pass that is already
@@ -93,7 +96,7 @@ namespace Crucible {
 
         // This frame's surfaces: the draw (mesh + push constant, colours already linear) and the
         // transform its bounds are culled with.
-        struct Submitted { WaterDraw draw; glm::mat4 model{ 1.0f }; };
+        struct Submitted { WaterDraw draw; glm::mat4 model{ 1.0f }; bool sceneHidden = false; };
         std::vector<Submitted> m_submitted;
     };
 

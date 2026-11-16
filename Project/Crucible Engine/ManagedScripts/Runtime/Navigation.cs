@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         Navigation.cs
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          7 November 2026
 * \version       1.0
 * \brief         Questions about where enemies can go, answered from the
@@ -47,7 +49,24 @@ namespace Crucible
         /// </summary>
         public static bool IsPathClear(Vector3 from, Vector3 to) { return IsPathClearInternal(ref from, ref to) != 0; }
 
+        /// <summary>
+        /// Bakes the grid again once physics has caught up (a frame or two), for a script
+        /// that just built or changed the ground mid-Play: call it after Terrain.Build.
+        /// The old grid is used until then: wait for BakeCount to change to know the new one is in.
+        /// </summary>
+        /// <returns>False outside Play or with no navigation.</returns>
+        public static bool Rebake() { return RebakeInternal() != 0; }
+
+        /// <summary>True once a grid has been baked this Play (by Play itself or a Rebake).</summary>
+        public static bool IsBaked { get { return IsBakedInternal() != 0; } }
+
+        /// <summary>How many bakes have finished so far. Read it before Rebake(); once it changes, the new grid is in.</summary>
+        public static int BakeCount { get { return GetBakeCountInternal(); } }
+
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int IsWalkableInternal(ref Vector3 position);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int RebakeInternal();
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int IsBakedInternal();
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetBakeCountInternal();
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int IsPathClearInternal(ref Vector3 from, ref Vector3 to);
     }
 }

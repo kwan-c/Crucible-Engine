@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         ScriptRuntime.cpp
-* \author:       Tan Chun Kwang Xavier
-* \par:          Email: chunkwangxavier.tan@digipen.edu
+* \author:       Tan Chun Kwang Xavier (main author),
+*                Jean David Vidal Cruzado (editor buttons)
+* \par:          Email: chunkwangxavier.tan@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          30 October 2026
 * \version       1.0
 * \brief         Implementation - see ScriptRuntime.h.
@@ -2305,6 +2307,145 @@ namespace Crucible
 	/*********************************************************************
 	 \brief  See ScriptRuntime.h.
 	 *********************************************************************/
+#if CRUCIBLE_WITH_MONO
+	namespace
+	{
+		/*********************************************************************
+		 \brief  May the Inspector show this method as a button? Marked with
+		         `attribute` (EditorButtonAttribute), public, not static or
+		         abstract, no parameters, returns void.
+		 *********************************************************************/
+		bool IsEditorButton(MonoMethod* method, MonoClass* attribute)
+		{
+			const auto flags = mono_method_get_flags(method, nullptr);
+			if ((flags & MONO_METHOD_ATTR_ACCESS_MASK) != MONO_METHOD_ATTR_PUBLIC || (flags & MONO_METHOD_ATTR_STATIC) ||
+			    (flags & MONO_METHOD_ATTR_ABSTRACT))
+				return false;
+			auto* signature = mono_method_signature(method);
+			if (!signature || mono_signature_get_param_count(signature) != 0 ||
+			    mono_type_get_type(mono_signature_get_return_type(signature)) != MONO_TYPE_VOID)
+				return false;
+			MonoCustomAttrInfo* attributes = mono_custom_attrs_from_method(method);
+			if (!attributes)
+				return false;
+			const bool marked = mono_custom_attrs_has_attr(attributes, attribute) != 0;
+			mono_custom_attrs_free(attributes);
+			return marked;
+		}
+	}
+#endif
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Walks the class and its bases up to
+	         EntityScript; an override hides the base method of the same name.
+	 *********************************************************************/
+	bool ScriptRuntime::GetEditorButtons(ScriptAssemblyHandle assembly, const std::string& nameSpace,
+	                                     const std::string& name, std::vector<std::string>& methods)
+	{
+		methods.clear();
+		auto& data = *m_impl;
+		if (!data.Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		ScriptAssemblyHandle core;
+		if (!LoadAssembly("Managed/Crucible.ScriptCore.dll", core))
+			return false;
+		auto* framework = data.GetAssembly(core);
+		auto* attribute = framework ? data.GetClass(*framework, "Crucible", "EditorButtonAttribute") : nullptr;
+		if (!attribute)
+			return data.Fail("EditorButtonAttribute is unavailable; rebuild ScriptCore");
+		auto* loaded = data.GetAssembly(assembly);
+		auto* type = loaded ? data.GetClass(*loaded, nameSpace, name) : nullptr;
+		if (!type)
+			return false;
+		for (auto* klass = type; klass; klass = mono_class_get_parent(klass))
+		{
+			if (std::strcmp(mono_class_get_name(klass), "EntityScript") == 0 &&
+			    std::strcmp(mono_class_get_namespace(klass), "Crucible") == 0)
+				break; // the engine's base class has no buttons
+			void* iterator = nullptr;
+			while (auto* method = mono_class_get_methods(klass, &iterator))
+			{
+				if (!IsEditorButton(method, attribute))
+					continue;
+				std::string methodName = mono_method_get_name(method);
+				if (std::find(methods.begin(), methods.end(), methodName) == methods.end())
+					methods.push_back(std::move(methodName));
+			}
+		}
+		data.error.clear();
+		return true;
+#else
+		(void)assembly;
+		(void)nameSpace;
+		(void)name;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
+	 \brief  See ScriptRuntime.h. The temporary script is a deferred entity
+	         instance, exactly what EntityScriptSystem builds at Play before
+	         OnCreate, so the method sees the same fields and entity.
+	 *********************************************************************/
+	bool ScriptRuntime::RunEditorButton(ScriptAssemblyHandle assembly, const std::string& nameSpace, const std::string& name,
+	                                    uint32_t index, uint32_t generation, const std::vector<ScriptFieldValue>& fields,
+	                                    const std::string& method)
+	{
+		auto& data = *m_impl;
+		if (!data.Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		if (ScriptBindings::EntityContext::InPlaySession())
+			return data.Fail("Editor buttons run outside Play only");
+		std::vector<std::string> buttons;
+		if (!GetEditorButtons(assembly, nameSpace, name, buttons))
+			return false;
+		if (std::find(buttons.begin(), buttons.end(), method) == buttons.end())
+			return data.Fail(name + "." + method + " is not a public void [EditorButton] method with no parameters");
+
+		// While it runs, entity bindings accept this entity and the ones it finds.
+		ScriptBindings::EntityContext::EditorCallScope scope;
+		ScriptInstanceHandle instance;
+		if (!CreateEntityInstance(assembly, nameSpace, name, index, generation, instance, fields, true))
+			return false;
+
+		std::string failure;
+		const auto* owned = data.GetInstance(instance);
+		const auto found = owned ? data.objects.find(owned->object.value) : data.objects.end();
+		if (found == data.objects.end())
+			failure = "The temporary " + name + " was released before " + method + " ran";
+		else
+		{
+			std::string lookup;
+			auto* callable = FindMethod(found->second.type, method, false, {}, lookup);
+			auto* target = callable ? mono_gchandle_get_target(found->second.handle) : nullptr;
+			ScriptValue result;
+			std::string call;
+			if (!callable)
+				failure = lookup;
+			else if (!target)
+				failure = "Managed object was released";
+			else if (!CallManaged(data.Domain(), callable, target, {}, result, call))
+				failure = name + "." + method + ": " + call;
+		}
+		DestroyInstance(instance); // never started: released without OnDestroy
+		if (!failure.empty())
+			return data.Fail(failure);
+		data.error.clear();
+		return true;
+#else
+		(void)assembly;
+		(void)nameSpace;
+		(void)name;
+		(void)index;
+		(void)generation;
+		(void)fields;
+		(void)method;
+		return false;
+#endif
+	}
+
 	bool ScriptRuntime::GetInstanceGcHandle(ScriptInstanceHandle instance, uint32_t& handle)
 	{
 		handle = 0;

@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         HeightfieldNavTerrain.cpp
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author),
+*                Hugo Low Ren Hao (original version: ground heights sampled from physics)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          7 November 2026
 * \version       1.0
 * \brief         See HeightfieldNavTerrain.h.

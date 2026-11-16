@@ -8,6 +8,7 @@
 #include "ECS/ECSPlayerControllerSystem.h"
 #include "ECS/ECSNavigationSystem.h"
 #include "ECS/ECSStateGraphSystem.h"
+#include "ECS/ECSTerrainSystem.h"
 #include "ECS/Components/Components.h"
 #include "Json/JsonWrapper.h"
 #include "Reflection/Serialization.h"
@@ -346,6 +347,7 @@ namespace Crucible {
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
+        m_systems.RegisterSystem<ECSTerrainSystem>(*m_renderer);                          // PreRender, Edit too, before RenderExtract: each Terrain's mesh onto its MeshRenderer (rebuilt only when its grid changes)
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get(), &m_systems);   // PreRender: simulates ParticleEmitters, submits their particles and lights; m_systems: Play vs Edit
         m_systems.RegisterSystem<VineSystem>(*m_renderer, m_resources.get());            // PreRender: grows/simulates Vines (proof of concept), submits their meshes

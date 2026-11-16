@@ -33,6 +33,7 @@
 *                settings of an object (Networking Phase 14)
 *    -v1.6       EntityTag kind (40): every entity's gameplay tag
 *                (mandatory, WorldValidated - see Components.h)
+*    -v1.7       Terrain kind (41): generated ground (Jean David)
 *
 *
 **************************************************************************/
@@ -106,8 +107,10 @@ namespace Crucible
 		StateGraphAgent = 38,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
 		NetworkObjectAuthoring = 39,   // Network: an object's saved networking settings (Network/NetComponents.h)
 		EntityTag = 40,          // every entity's gameplay tag, "Untagged" by default (mandatory) - Components.h
+		Terrain = 41,            // Terrain: generated uneven ground, drawn and collided with (Terrain/TerrainComponents.h)
+		SceneHidden = 42,        // Editor: hidden in the editor's Scene view only, never saved - Components.h
 
-		MAXCOMPONENT = 41
+		MAXCOMPONENT = 43
 	};
 
 
@@ -323,5 +326,7 @@ namespace Crucible
  X(StateGraphAgent)                                                            \
  X(NetworkObjectAuthoring)                                                     \
  X(EntityTag)                                                                  \
+ X(Terrain)                                                                    \
+ X(SceneHidden)                                                                \
 
 }

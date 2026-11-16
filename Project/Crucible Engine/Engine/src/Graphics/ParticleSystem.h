@@ -175,7 +175,8 @@ namespace Crucible {
 
         void Simulate(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, float dt);
         void Spawn(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, int count);
-        void Submit(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix);
+        // sceneHidden: the emitter has the SceneHidden tag (editor: not drawn in the Scene view).
+        void Submit(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, bool sceneHidden);
 
         Renderer&                   m_renderer;
         ResourceManager*            m_resources = nullptr;

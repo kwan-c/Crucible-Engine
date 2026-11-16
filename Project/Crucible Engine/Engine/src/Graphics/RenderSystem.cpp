@@ -267,7 +267,7 @@ namespace Crucible {
                     m_viewTargets.Create(m_windowPost, extent.width, extent.height, m_msaaSamples);
                 }
                 if (fogVolume) { m_fogPass.EnsureTargets(m_windowFog); }
-                PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, m_uniformBuffersMapped[frameIndex]);
+                PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, false, m_uniformBuffersMapped[frameIndex]);
                 WriteViewTextures(*m_descriptorSets[frameIndex], m_windowPost, fogVolume ? &m_windowFog : nullptr);
             } else {
                 m_windowCullStats = RenderCullStats{};
@@ -282,7 +282,9 @@ namespace Crucible {
                 // set from the viewport's own size, in PrepareView).
                 if (vp.role == ViewportRole::Game) { vp.camera = m_camera; }
                 if (fogVolume) { m_fogPass.EnsureTargets(vp.fog); }
-                PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.uniformBuffersMapped[frameIndex]);
+                // Only a Scene view leaves out what the editor hid there (SceneHidden); a Game view never does.
+                PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.role == ViewportRole::Scene,
+                            vp.uniformBuffersMapped[frameIndex]);
                 WriteViewTextures(*vp.descriptorSets[frameIndex], vp.post, fogVolume ? &vp.fog : nullptr);
             }
         }
@@ -314,7 +316,7 @@ namespace Crucible {
                                            const glm::vec3& boundsMin, const glm::vec3& boundsMax) {
         m_scene.SetProxyAnimation(handle, palette, boundsMin, boundsMax);
     }
-    void Renderer::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) { m_scene.Submit(mesh, material, model, params); }
+    void Renderer::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params, bool sceneHidden) { m_scene.Submit(mesh, material, model, params, sceneHidden); }
 
     void Renderer::CreatePrimitiveMeshes() {
 
@@ -1117,6 +1119,9 @@ namespace Crucible {
     void Renderer::SetRenderProxy(RenderProxyHandle handle, MeshHandle mesh, MaterialHandle material, const glm::mat4& model, bool visible, const glm::vec4& params) {
         m_scene.SetProxy(handle, mesh, material, model, visible, params);
     }
+    void Renderer::SetRenderProxySceneHidden(RenderProxyHandle handle, bool hidden) { m_scene.SetProxySceneHidden(handle, hidden); }
+    void Renderer::SetSceneHiddenShown(bool shown) { m_scene.SetSceneHiddenShown(shown); }
+    bool Renderer::GetSceneHiddenShown() const     { return m_scene.GetSceneHiddenShown(); }
     void Renderer::DestroyRenderProxy(RenderProxyHandle handle) { m_scene.DestroyProxy(handle); }
 
     RenderCullStats Renderer::GetViewportCullStats(ViewportHandle handle) const {
@@ -1131,7 +1136,7 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------------------------- //
 
     void Renderer::PrepareView(Camera& camera, vk::Extent2D extent, RenderCullStats& stats, ViewDrawList& out,
-                               bool outline, void* uniformDst) {
+                               bool outline, bool sceneView, void* uniformDst) {
 
         out.Clear();
         camera.SetAspect(static_cast<float>(extent.width), static_cast<float>(extent.height));   // ignores 0 height
@@ -1158,15 +1163,18 @@ namespace Crucible {
         // ---- What the camera and each cascade see: one instanced draw per (material, mesh) run in
         //      the main pass, per mesh run in each cascade. Culled and batched on the worker threads. ----
         m_scene.BuildViewBatches(camera, std::span<const glm::mat4>(cascadeViewProj.data(), cascadeCount), stats,
-                                 out.main, std::span<std::vector<DrawBatch>>(out.shadow.data(), cascadeCount));
+                                 out.main, std::span<std::vector<DrawBatch>>(out.shadow.data(), cascadeCount), sceneView);
         stats.drawCalls  = static_cast<uint32_t>(out.main.size());
         out.cascadeCount = cascadeCount;
 
         // ---- Point/spot lights binned into this view's cluster grid; particles ----
         stats.clusteredLights = m_lights.BuildClusters(camera, extent, ubo);
-        m_particlePass.Prepare(camera, out.particles, stats);
-        m_waterPass.Prepare(camera, out.water);
-        m_worldUIPass.Prepare(camera, out.worldUI);
+        // What the editor hid in the Scene view (SceneHidden) is left out of these too, unless
+        // "Show hidden objects" is on - the same rule BuildViewBatches applies to the meshes.
+        const bool hideSceneHidden = sceneView && !m_scene.GetSceneHiddenShown();
+        m_particlePass.Prepare(camera, out.particles, stats, hideSceneHidden);
+        m_waterPass.Prepare(camera, out.water, hideSceneHidden);
+        m_worldUIPass.Prepare(camera, out.worldUI, hideSceneHidden);
         m_lights.EndView();
 
         // ---- Selection outline mask: just the selected objects ----
@@ -1186,7 +1194,7 @@ namespace Crucible {
 
     void Renderer::SubmitParticles(const ParticleDrawDesc& desc, const GpuParticle* particles, uint32_t count) { m_particlePass.Submit(desc, particles, count); }
 
-    void Renderer::SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings) { m_waterPass.Submit(mesh, model, settings); }
+    void Renderer::SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings, bool sceneHidden) { m_waterPass.Submit(mesh, model, settings, sceneHidden); }
 
     void Renderer::SubmitWorldUI(const WorldUIDesc& desc, std::span<const WorldUIVertex> vertices, std::span<const WorldUIRun> runs) {
         m_worldUIPass.Submit(desc, vertices, runs);
@@ -1384,7 +1392,8 @@ namespace Crucible {
     //  SELECTION OUTLINE
     // ------------------------------------------------------------------------------------------------------------- //
 
-    bool Renderer::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const { return m_scene.Raycast(origin, direction, maxDistance, outHit); }
+    bool Renderer::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit,
+                           bool ignoreSceneHidden) const { return m_scene.Raycast(origin, direction, maxDistance, outHit, ignoreSceneHidden); }
 
     vk::raii::CommandBuffer Renderer::BeginSingleTimeCommand() {
 

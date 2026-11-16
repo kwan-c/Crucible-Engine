@@ -139,10 +139,14 @@ Rules:
 | `Animator.SetBool/SetFloat/SetTrigger` | `Animator.SetBool/SetFloat/SetInteger/SetTrigger` (needs an AnimatedModel with a controller) |
 | `SceneManager.LoadScene(name)` | `Scene.Load("Scenes/Folder/Name.scene")` |
 | `NavMeshAgent.SetDestination` | `FlowFieldAgent.MoveTo(point)` / `Arrive(entity)` / `FollowField()`; the ground needs a FlowFieldSurface |
+| `Terrain`, or a generated mesh plus `MeshCollider` | a `Terrain` component, a `MeshRenderer` and a `Collider` of type `HeightField`; a script calls `Terrain.Build(...)` then `Navigation.Rebake()` |
+| `Physics.OverlapSphereNonAlloc`, `OverlapBoxNonAlloc`, `OverlapCapsuleNonAlloc`, `RaycastNonAlloc`, `CapsuleCast` | the same names; results are `Entity[]` instead of `Collider[]` |
 | uGUI `Text`, `Image`, `Slider`, `Button`, `RectTransform`, `Canvas` | `UIText`, `UIImage`, `UISlider`, `UIButton`, `UIRect`, `UICanvas` |
 | TextMeshPro in world space | `WorldText` (sizes in metres) |
 | `Mathf`, `Vector3.MoveTowards`, `ProjectOnPlane`, `ClampMagnitude` | not in ScriptCore; use `Assets/Scripts/Player/MechMath.cs` |
 | ScriptableObject data | plain static C# tables (see `MechPartCatalogue`) or JSON assets |
+| `[ContextMenu]` on a method | `[EditorButton]` on a public, parameterless `void` method: an Inspector button that runs it outside Play |
+| `Application.isPlaying` | `Application.IsPlaying` (false only inside an `[EditorButton]` call) |
 
 ## 5. Scripting API reference
 
@@ -157,7 +161,7 @@ returns null if the entity does not have one. The shortcut properties (`Entity.T
 **Entity:** `Name`, `IsAlive`, `Index`/`Generation` (`==` compares these), `Transform`,
 `RigidBody`, `Animator`, `AudioSource`, `CharacterController`, `Camera`, `CameraOrbit`, `Light`,
 `ParticleEmitter`, `Collider`, `MeshRenderer`, `PlayerController`, `WorldText`, `MaterialParams`,
-`FlowFieldAgent`, `FlowFieldSurface`, `StateGraphAgent`; static `Find(name)`, `FindChild(name)`,
+`FlowFieldAgent`, `FlowFieldSurface`, `StateGraphAgent`, `Terrain`; static `Find(name)`, `FindChild(name)`,
 static `Destroy(e, delay)`, `GetComponent<T>()` / `HasComponent<T>()` (T: any component above, a
 UI type or a script class), `SetEnabled<T>(bool)` / `IsEnabled<T>()`, `SetActive(bool)`,
 `IsActiveSelf`, `IsActive`.
@@ -187,7 +191,11 @@ are in **InputSettings**: `ForwardKey`, `BackKey`, `LeftKey`, `RightKey`, `JumpK
 **Physics:**
 - `Physics.Raycast(...)`: four overloads, with `(Ray | origin, direction)`, optional
   `out RaycastHit` (`Entity`, `Point`, `Normal`, `Distance`), `maxDistance` and `Entity ignore`.
-- `Collider`: `Shape` (Box, Sphere, Capsule), `Size`, `Center`, `Radius`, `Height`, `IsTrigger`,
+- `Physics.SphereCast`, `CheckSphere`, `CapsuleCast` (first hit), and the non-allocating
+  `OverlapSphereNonAlloc`, `OverlapBoxNonAlloc`, `OverlapCapsuleNonAlloc` and `RaycastNonAlloc`
+  (nearest first): pass your own results array, keep it between calls, and use the returned
+  count. Entities destroyed this frame are left out.
+- `Collider`: `Shape` (Box, Sphere, Capsule, HeightField: the Terrain on the same entity, static only), `Size`, `Center`, `Radius`, `Height`, `IsTrigger`,
   `Layer` (NonMoving, Moving, Player, Enemy, Projectile), `Friction`, `Bounciness`, and
   `World*` sizes.
 - `RigidBody`: `Velocity`, `Mass`, `UseGravity`, `Drag`, `IsKinematic`, `AddForce`, `AddTorque`,
@@ -239,10 +247,30 @@ returns false when the entity has no AnimatedModel controller with that paramete
 - `FlowFieldAgent`: `MoveTo(point)`, `Arrive(entity)` (chase and stop at StoppingDistance),
   `FollowField()`, `Stop()`, `HasArrived`, `RemainingDistance`, `Velocity`, and every setting.
   The agent moves its own entity.
+- `FlowFieldSurface`: `FloodRadius`, `RebuildDistance`, and `MaxWalkableSlope` (degrees, read by the next
+  bake: set it before `Navigation.Rebake()`, and give the player's `CharacterController.SlopeLimit` the same value).
+- `Navigation`: `IsWalkable(pos)`, `IsPathClear(from, to)`, `Rebake()` (after changing the ground
+  mid-Play; it bakes once physics has the new bodies), `IsBaked`, and `BakeCount` (read it before
+  `Rebake()`: when it changes, the new grid is in).
 - `StateGraphAgent`: `CurrentState`, `Set/GetVariableValue<T>`. Behaviour-graph nodes live in
   `ManagedScripts/Runtime/AI`; templates are in `ManagedScripts/Templates`.
 
-**Other:** `Log.Info/Warning/Error`; `Screen` (`Width`, `Height`, `Mode`, `FullScreen`,
+**Terrain** (generated ground): `Build(cols, rows, cellSize, float[] heights, byte[] regions)`,
+`IsBuilt`, `GroundHeight(x, z, out height)` (world space, on the exact triangle). Heights are
+`(cols + 1) * (rows + 1)` corners, row-major (`z * (cols + 1) + x`); regions are `cols * rows`
+`TerrainRegion` values (Ground, Cliff, Road), which set each cell's colour from the component.
+The grid is centred on the entity and is never saved. C++ side: `Engine/src/Terrain`,
+`ECS/ECSTerrainSystem`, and the HeightField case in `Physics/PhysicsShapes.cpp`.
+
+**Editor buttons:** `[EditorButton]` on a public `void` method with no parameters shows it as a
+button under the script's fields in the Inspector (Unity's `[ContextMenu]`). A click builds a
+temporary copy of the script with the Inspector's field values and calls only that method: no
+OnCreate, OnUpdate or OnDestroy, and only outside Play. Entity calls work during it; physics,
+navigation and audio do nothing, so guard them with `Application.IsPlaying`. See
+`SubLevelGenerator.Generate`. C++ side: `ScriptRuntime::RunEditorButton`,
+`EntityContext::EditorCallScope`.
+
+**Other:** `Log.Info/Warning/Error`; `Application.IsPlaying`; `Screen` (`Width`, `Height`, `Mode`, `FullScreen`,
 `SetResolution`, `Resolutions`, `IsEditor`).
 
 ## 6. Coordinates and conventions
@@ -455,6 +483,16 @@ See `MechHud` for the lost-health bar, the cooldown sweeps and dimming.
 
 **Hide or show a HUD block:** call `groupEntity.SetActive(bool)` on its group entity.
 
+**Generated ground** (see `Assets/Scripts/TestScripts/TerrainTest.cs`, `Scenes/Terrain_test.scene`):
+
+```text
+Terrain       Terrain, MeshRenderer (no mesh or model), Collider (HeightField, NonMoving), Script
+Nav Surface   FlowFieldSurface, scaled to cover the terrain (scale = metres)
+```
+
+In OnCreate, fill the heights and regions, call `Terrain.Build`, then `Navigation.Rebake()`.
+The engine draws it, collides with it, and enemies path on it once `Navigation.BakeCount` changes.
+
 ## 11. Scene generation tools
 
 `Tools/SceneGen/` writes scenes from PowerShell, so a layout can be reviewed as code and
@@ -494,6 +532,14 @@ chunk (4-byte aligned), add a bufferView, then replace `images[i].uri` with `buf
 - `CharacterController.SimpleMove` is a velocity that persists. Call `SimpleMove(Vector3.Zero)`
   to stop.
 - `SetActive(false)` on your own entity pauses your own script.
+- **A Terrain shows nothing in Edit mode** until something builds it: the grid is never saved. Use
+  an `[EditorButton]` (the Sub Level Generator's **Generate**) to preview it; the preview is gone
+  after Play stops or the scene reloads.
+- **An `[EditorButton]` method's changes are real**: components it writes are saved with the scene
+  and can't be undone, and prefabs it instantiates become scene entities. Keep previews to
+  runtime-only data (a Terrain's grid) until a "generated, don't save" mark exists.
+- **A HeightField collider needs a built Terrain on the same entity**, and no RigidBody: until
+  `Terrain.Build` runs it has no body at all (no error).
 - The Editor locks the cursor at Play start. Esc frees it and clicking the Game view captures
   it again. Gate gameplay input on `Input.IsMouseLocked`.
 - `Transform.Position` and `Rotation` are **local**. Use the `World*` properties for world space.
@@ -526,4 +572,6 @@ chunk (4-byte aligned), add a bufferView, then replace `images[i].uri` with `buf
 | `.../Player/MechCombatTargets.cs` | stands in for `GetComponentInParent<CombatHealth>` | |
 | `Assets/Scripts/Zoo/*` | ZooSoundplayer, ZooToggle, ZooBacktoMain, ZooEnemyWaves | `ZooEnemy` is a placeholder chaser until the Behavior Graph enemies are ported. |
 | `Scenes/Game/TestFolder/Player Showcase.scene` | FullPlayer_mech_specialist + Mech Cursor Canvas | The player alone: behaviour, animation and HUD, on a test course with a rack of every part. Generated by `Tools/SceneGen/MakePlayerShowcase.ps1`. |
+| `Terrain` component, `ECSTerrainSystem`, HeightField collider | SubLevelGenerator's terrain mesh (TerrainMeshBuilder) and MeshCollider, NavTerrain hand-off | Step 1 of the port: the engine side only. Same layout as Unity's TerrainMap (corner heights, per-cell regions, one diagonal per cell). Tested by `Scenes/Terrain_test.scene` (`TerrainTest.cs`). Terrain generation is ported (next row); chunks, roads and decor are not yet. |
+| `Assets/Scripts/Level/Generation/` `SubLevelGenerator`, `TerrainGenerator`, `SeededNoise`, `SeededRandom` | SubLevelGenerator (terrain part), TerrainGenerator, SeededNoise, SubLevelGenSettings | Algorithm unchanged; settings are fields on the generator (defaults = Unity's mission presets). `SeededRandom` (Mulberry32) replaces `System.Random`, so a seed gives a different map than in Unity but the same one on every machine. The generator sizes the Nav Surface to the map and gives it and the player one slope limit (Unity's ApplyPlayerSlope). Test: `Scenes/Generator_test.scene`. |
 | `Scenes/Game/TestFolder/Zoo Scene.scene` | Scenes/ZooScene.unity | Generated by `Tools/SceneGen/MakeZooScene.ps1`. Uses only the specialist GLBs (`Models/Golem model`, `Models/Weapon model`). Cannon, head and legs use their GLBs; sword, mace, throwing axe and both crossbows are placeholder primitives (built in the mount frame) until they have models. The Blaster is left out: its Unity PartData has no stats. |
