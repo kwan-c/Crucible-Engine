@@ -3,10 +3,11 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                How to listen and how to connect: the only connectivity-
-*                specific types above the transport.
+*                specific types above the transport. Also the simulated
+*                network conditions used for testing.
 *
 * \details
 *                Authority (who decides what is true) never changes; how
@@ -23,6 +24,8 @@
 * \history
 *    -v1.0       IpEndpoint, P2PEndpoint (reserved), ListenSpec,
 *                ConnectSpec with optional timeouts
+*    -v1.1       NetworkSimulation: extra latency and packet loss for
+*                testing (Networking Phase 0)
 *
 **************************************************************************/
 #pragma once
@@ -71,5 +74,29 @@ namespace Crucible
 	{
 		std::variant<IpEndpoint, P2PEndpoint> to = IpEndpoint{};
 		ConnectionTimeouts                    timeouts;
+	};
+
+	/// Bad network conditions on purpose, for testing on one PC or a fast LAN. GNS applies them
+	/// to every packet this PROCESS sends and receives (they are global GNS settings, not
+	/// per connection), so set them on one instance only: the Host to slow every client down,
+	/// or one Client to test just that player. All zero (the default) = a normal network.
+	struct NetworkSimulation
+	{
+		static constexpr std::uint32_t kMaxExtraRoundTripMs = 1000;
+		static constexpr float         kMaxPacketLossPercent = 50.f;
+
+		/// Added to the round trip of every connection of this instance, in milliseconds: half
+		/// to outgoing packets, half to incoming ones. 0..kMaxExtraRoundTripMs.
+		/// Measured: the messages really are delayed by this much, but GNS's own ping estimate
+		/// can read lower (about half, with light traffic) when the simulating instance is a
+		/// client: GNS seems to count the incoming half as the other side's processing time.
+		std::uint32_t extraRoundTripMs = 0;
+
+		/// Share of packets dropped, in percent, applied separately to outgoing and to incoming
+		/// packets (so a message that needs a reply sees it twice). 0..kMaxPacketLossPercent.
+		float packetLossPercent = 0.f;
+
+		bool IsActive() const noexcept { return extraRoundTripMs > 0 || packetLossPercent > 0.f; }
+		bool operator==(const NetworkSimulation&) const = default;
 	};
 }

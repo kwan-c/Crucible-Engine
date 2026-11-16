@@ -38,6 +38,7 @@ namespace Crucible::ScriptBindings
 		RegisterNavigationBindings();
 		RegisterStateGraphBindings();
 		RegisterTagBindings();
+		RegisterNetworkBindings();
 	}
 
 	void ClearAll()
@@ -51,6 +52,7 @@ namespace Crucible::ScriptBindings
 		SetEvents(nullptr);
 		SetCore(nullptr);
 		SetResources(nullptr);
+		SetNetwork(nullptr, nullptr);
 		// Clear new adapters here.
 	}
 }

@@ -3,13 +3,14 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Encoders and decoders for every protocol message (see
 *                Protocol.h for the wire layouts and the rules).
 *
 * \history
 *    -v1.0       protocol version 3 codecs
+*    -v1.1       PeerRoster and Command codecs (protocol version 5)
 *
 **************************************************************************/
 #include "Network/Protocol.h"
@@ -27,6 +28,8 @@ namespace Crucible
 		constexpr std::size_t kWorldBeginMax   = 1 + 4 + 8 + 8;                          // 21
 		constexpr std::size_t kInputCommandSize = 4 + 4 + 1 + 1 + 2 + 1;                 // 13
 		constexpr std::size_t kInputMax = 1 + 1 + kMaxInputCommands * kInputCommandSize + 2 + 4 + 4;   // 51
+		constexpr std::size_t kPeerRosterMax = 1 + 4 + 1 + Net::kMaxPlayers * (1 + 1 + 1 + kMaxPlayerNameBytes);   // 146
+		constexpr std::size_t kCommandMax = 1 + 4 + 2 + 5 + kMaxCommandPayload;                    // 1036
 
 		void WriteType(ByteWriter& w, MessageType type) noexcept { w.U8(static_cast<std::uint8_t>(type)); }
 
@@ -78,6 +81,8 @@ namespace Crucible
 		case MessageType::WorldEnd:
 		case MessageType::ClientReady:   return kSeqOnlyMax;
 		case MessageType::Input:         return kInputMax;
+		case MessageType::PeerRoster:    return kPeerRosterMax;
+		case MessageType::Command:       return kCommandMax;
 		case MessageType::Snapshot:      return kMaxSnapshotBytes;
 		case MessageType::SpawnBatch:
 		case MessageType::SceneObjectBatch:
@@ -380,6 +385,92 @@ namespace Crucible
 		m.lifecycleSeq = r.U32();
 		m.kind = r.U16();
 		if (!r.Ok() || m.lifecycleSeq == 0 || m.kind == 0) return false;
+		m.payload = r.Sub(r.Remaining());   // the payload's own format is checked by its handler
+		return r.Ok() && r.AtEnd();
+	}
+
+	// ---- the roster ------------------------------------------------------------------------
+
+	namespace
+	{
+		// The host first, then clients in strictly ascending PeerId order: no peer twice.
+		bool IsValidRoster(const PeerRoster& m) noexcept
+		{
+			if (m.lifecycleSeq == 0 || m.count == 0 || m.count > Net::kMaxPlayers) return false;
+			if (m.entries[0].peer != Net::kServerPeer) return false;
+			for (std::size_t i = 0; i < m.count; ++i)
+			{
+				const RosterEntry& e = m.entries[i];
+				if (!IsValidOwner(e.peer) || (e.flags & ~RosterEntry::kKnownFlags) != 0) return false;
+				if (i > 0 && e.peer <= m.entries[i - 1].peer) return false;
+				if (e.nameLength > kMaxPlayerNameBytes || !IsValidPlayerName(e.Name())) return false;
+			}
+			return true;
+		}
+	}
+
+	bool Encode(ByteWriter& w, const PeerRoster& m) noexcept
+	{
+		if (!IsValidRoster(m)) return false;
+		const std::size_t start = w.Size();
+		WriteType(w, MessageType::PeerRoster);
+		w.U32(m.lifecycleSeq);
+		w.U8(m.count);
+		for (const RosterEntry& e : m.Entries())
+		{
+			w.U8(e.peer);
+			w.U8(e.flags);
+			w.U8(e.nameLength);
+			w.Bytes(std::as_bytes(std::span(e.name.data(), e.nameLength)));
+		}
+		return Finished(w, start, MessageType::PeerRoster);
+	}
+
+	bool Decode(ByteReader& r, PeerRoster& m) noexcept
+	{
+		m.count = 0;
+		m.lifecycleSeq = r.U32();
+		const std::uint8_t count = r.U8();
+		if (!r.Ok() || count == 0 || count > Net::kMaxPlayers) return false;   // check BEFORE using it
+		for (std::uint8_t i = 0; i < count; ++i)
+		{
+			RosterEntry& e = m.entries[i];
+			e.peer = r.U8();
+			e.flags = r.U8();
+			const std::uint8_t length = r.U8();
+			if (!r.Ok() || length > kMaxPlayerNameBytes) return false;
+			const std::span<const std::byte> bytes = r.Sub(length);
+			if (!r.Ok()) return false;
+			e.name = {};
+			for (std::size_t b = 0; b < bytes.size(); ++b) e.name[b] = static_cast<char>(bytes[b]);
+			e.nameLength = length;
+		}
+		if (!r.AtEnd()) return false;
+		m.count = count;
+		return IsValidRoster(m);
+	}
+
+	// ---- commands --------------------------------------------------------------------------
+
+	bool Encode(ByteWriter& w, const CommandView& m) noexcept
+	{
+		if (m.sequence == 0 || m.kind == 0 || m.payload.size() > kMaxCommandPayload) return false;
+		const std::size_t start = w.Size();
+		WriteType(w, MessageType::Command);
+		w.U32(m.sequence);
+		w.U16(m.kind);
+		w.VarU32(m.target);
+		w.Bytes(m.payload);
+		return Finished(w, start, MessageType::Command);
+	}
+
+	bool Decode(ByteReader& r, CommandView& m) noexcept
+	{
+		m.sequence = r.U32();
+		m.kind = r.U16();
+		m.target = r.VarU32();
+		if (!r.Ok() || m.sequence == 0 || m.kind == 0) return false;
+		if (r.Remaining() > kMaxCommandPayload) return false;
 		m.payload = r.Sub(r.Remaining());   // the payload's own format is checked by its handler
 		return r.Ok() && r.AtEnd();
 	}

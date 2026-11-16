@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       2.0
+* \version       2.1
 * \brief
 *                NetworkSettings: mode names, conversion from EngineConfig,
 *                validation (see the header).
@@ -12,6 +12,7 @@
 *    -v1.0       Validate, ApplyArguments, process arguments, CRUCIBLE_NET
 *    -v2.0       internal configuration only: FromEngineConfig, ParseNetMode,
 *                IP address validation; external parsing removed
+*    -v2.1       Validate checks the network simulation's ranges
 *
 **************************************************************************/
 #include "Network/NetworkSettings.h"
@@ -71,6 +72,17 @@ namespace Crucible
 		if (settings.maxClients < 1 || settings.maxClients > Net::kMaxClients) { error = "Max clients must be 1 to " + std::to_string(Net::kMaxClients) + "."; return false; }
 		if (!IsValidPlayerName(settings.playerName)) { error = "The player name must be at most 32 bytes, without control characters."; return false; }
 		if (settings.joinTimeoutMs == 0) { error = "The join timeout must be above 0."; return false; }
+		if (settings.simulation.extraRoundTripMs > NetworkSimulation::kMaxExtraRoundTripMs)
+		{
+			error = "Simulated latency must be 0 to " + std::to_string(NetworkSimulation::kMaxExtraRoundTripMs) + " ms.";
+			return false;
+		}
+		// Written as a negated range test so NaN is refused too.
+		if (!(settings.simulation.packetLossPercent >= 0.f && settings.simulation.packetLossPercent <= NetworkSimulation::kMaxPacketLossPercent))
+		{
+			error = "Simulated packet loss must be 0 to " + std::to_string(static_cast<int>(NetworkSimulation::kMaxPacketLossPercent)) + " %.";
+			return false;
+		}
 		if (settings.mode == NetMode::Host)
 		{
 			if (settings.hostPort == 0) { error = "Host port must be 1 to 65535."; return false; }

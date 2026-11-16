@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.11
+* \version       1.12
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -29,6 +29,8 @@
 *    -v1.9       scene object counters (Networking Phase 14.5)
 *    -v1.10      scenePlayersPlaced (Networking Phase 14.6)
 *    -v1.11      sceneProfiles (Networking Phase 14.7)
+*    -v1.12      kMessageTypes 14: PeerRoster and Command; roster and command
+*                counters
 *
 **************************************************************************/
 #pragma once
@@ -153,7 +155,7 @@ namespace Crucible
 
 		// Bytes of our messages by MessageType (index = the type's value), both directions; GNS's
 		// own headers, encryption and acks are not included (GnsTransport::Status has those).
-		static constexpr std::size_t kMessageTypes = 12;   // MessageType::Count (checked in NetworkSession.cpp)
+		static constexpr std::size_t kMessageTypes = 14;   // MessageType::Count (checked in NetworkSession.cpp)
 		std::array<std::uint64_t, kMessageTypes> bytesSentByType{};
 		std::array<std::uint64_t, kMessageTypes> bytesReceivedByType{};
 
@@ -171,5 +173,18 @@ namespace Crucible
 		std::uint32_t sceneMismatches = 0;          // client: refused, its scene is not the host's
 		std::uint32_t scenePlayersPlaced = 0;       // placed players removed as spawn points (Phase 14.6)
 		std::uint32_t sceneProfiles = 0;            // scene profiles registered (Phase 14.7)
+
+		// The roster (who is in the session)
+		std::uint32_t rostersSent = 0;              // host: PeerRoster messages sent, all clients
+		std::uint32_t rostersApplied = 0;           // client: PeerRoster messages applied
+
+		// Commands (client to host gameplay requests)
+		std::uint64_t commandMessagesSent = 0;      // client: Command messages GNS accepted
+		std::uint32_t commandSendFailed = 0;        // client: not accepted by GNS (the caller was told)
+		std::uint64_t commandMessagesReceived = 0;  // host: accepted from clients and posted
+		std::uint64_t commandsLocal = 0;            // host or offline: its own, posted without the network
+		std::uint32_t commandsRefused = 0;          // SendCommand said no (see its rules)
+		std::uint64_t commandsMissed = 0;           // host: sequence numbers skipped (dropped by a client's quota)
+		std::uint32_t commandsNoTarget = 0;         // host: aimed at an object that no longer exists (dropped)
 	};
 }

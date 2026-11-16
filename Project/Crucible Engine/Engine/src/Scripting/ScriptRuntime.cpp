@@ -1102,6 +1102,8 @@ namespace Crucible
 		std::map<MonoClass*, MonoMethod*> uiListeners;
 		// Same for the physics callbacks (OnCollisionEnter/Exit, OnTriggerEnter/Exit).
 		std::map<MonoClass*, MonoMethod*> physicsListeners;
+		// Same for the network callbacks (OnNetworkStarted/Stopped, OnPeer*, OnNetworkCommand).
+		std::map<MonoClass*, MonoMethod*> networkListeners;
 
 		// A script instance: its object plus the three cached callbacks.
 		struct Instance
@@ -1371,6 +1373,7 @@ namespace Crucible
 			fieldDefaults.clear();
 			uiListeners.clear();
 			physicsListeners.clear();
+			networkListeners.clear();
 			validatedClasses.clear();
 			assemblies.clear(); // metadata/images are owned by Mono until final cleanup
 		}
@@ -2303,6 +2306,58 @@ namespace Crucible
 	}
 
 	/*********************************************************************
+	 \brief  See ScriptRuntime.h. Calls EntityScript.DispatchNetworkEvent,
+	         which builds the arguments and calls the right callback.
+	 *********************************************************************/
+	bool ScriptRuntime::DispatchNetworkEvent(ScriptInstanceHandle instance, int32_t kind, int32_t peer, int32_t code,
+	                                         int32_t serial, const std::string& text)
+	{
+		auto& data = *m_impl;
+		if (!data.Ready())
+			return false;
+#if CRUCIBLE_WITH_MONO
+		auto* owned = data.GetInstance(instance);
+		if (!owned)
+			return false;
+		if (!owned->info.entityOwned || !owned->started || owned->info.state != ScriptInstanceState::Running)
+			return true;
+		const auto object = data.objects.find(owned->object.value);
+		if (object == data.objects.end())
+			return true;
+
+		MonoMethod* const dispatch =
+		    FindListener(data.networkListeners, object->second.type, "DispatchNetworkEvent", 5,
+		                 {{"OnNetworkStarted", 0}, {"OnNetworkStopped", 1}, {"OnPeerJoined", 1},
+		                  {"OnPeerReady", 1}, {"OnPeerLeft", 1}, {"OnNetworkCommand", 3}});
+		if (!dispatch)
+			return true; // nothing to call
+
+		const std::vector<ScriptValue> arguments{kind, peer, code, serial, text};
+		std::string failure;
+		if (!data.Callback(*owned, dispatch, "network callback", arguments, failure))
+		{
+			// Same as an OnUpdate that throws: the script faults and is cleaned up.
+			owned->info.state = ScriptInstanceState::Faulted;
+			std::string cleanup;
+			if (!data.Dispose(*owned, cleanup))
+				failure += "\nCleanup also failed: " + cleanup;
+			owned->info.lastError = failure;
+			return data.Fail(failure);
+		}
+		data.error.clear();
+		return true;
+#else
+		(void)instance;
+		(void)kind;
+		(void)peer;
+		(void)code;
+		(void)serial;
+		(void)text;
+		return false;
+#endif
+	}
+
+	/*********************************************************************
 	 \brief  See ScriptRuntime.h.
 	 *********************************************************************/
 	bool ScriptRuntime::GetInstanceGcHandle(ScriptInstanceHandle instance, uint32_t& handle)
@@ -2470,6 +2525,7 @@ namespace Crucible
 		ScriptBindings::SetEvents(engine.events);
 		ScriptBindings::SetCore(engine.core);
 		ScriptBindings::SetResources(engine.resources);
+		ScriptBindings::SetNetwork(engine.core, engine.events);
 		return true;
 #else
 		(void)engine;

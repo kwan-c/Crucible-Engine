@@ -10,6 +10,7 @@
 #include "Scripting/EntityScriptSystem.h"
 #include "Scripting/ScriptRuntime.h"
 #include "Scripting/Bindings/EntityContext.h"
+#include "Scripting/Bindings/NetworkContext.h"
 #include "ECS/World.h"
 #include "Scene/SceneManager.h"
 #include "Systems/PlayMode.h"
@@ -117,6 +118,7 @@ namespace Crucible
 			ScriptBindings::EntityContext::ClearCollisionEvents();
 			ScriptBindings::EntityContext::ClearActiveStates();
 			ScriptBindings::EntityContext::ResetPlayClock();
+			ScriptBindings::NetworkContext::TrimEvents(); // an earlier session's network events
 #endif
 		}
 		// A level switch (Scene.Load) during play: only the old scene's scripts end.
@@ -374,6 +376,37 @@ namespace Crucible
 					}
 				}
 			}
+
+			// Network events (the session, the other players, commands from clients), in the
+			// order they arrived: to every running script's OnNetwork* / OnPeer*, except a
+			// command aimed at one network object, which only that entity's scripts hear.
+			const auto toScript = [&](Record& record, const ScriptBindings::NetworkContext::ScriptNetEvent& event)
+			{
+				if (!record.instance || !record.started || !record.definition.enabled)
+					return;
+				if (!m_runtime.DispatchNetworkEvent(record.instance, static_cast<int32_t>(event.kind), event.peer,
+				                                    event.code, event.serial, event.text))
+				{
+					record.error = m_runtime.LastError();
+					CRU_USER_ERROR("Script {}.{} stopped in a network callback: {}", record.definition.nameSpace,
+					               record.definition.className, record.error);
+				}
+			};
+			for (const auto& event : ScriptBindings::NetworkContext::BeginDispatch())
+			{
+				if (event.targeted)
+				{
+					const auto found = m_records.find(Key(event.target));
+					if (found != m_records.end())
+						for (Record& record : found->second)
+							toScript(record, event);
+					continue;
+				}
+				for ([[maybe_unused]] auto& [key, records] : m_records)
+					for (Record& record : records)
+						toScript(record, event);
+			}
+			ScriptBindings::NetworkContext::EndDispatch();
 		}
 #endif
 

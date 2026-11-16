@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                The wire protocol between the host and its clients:
 *                message types, their fields, and an Encode/Decode pair
@@ -63,12 +63,33 @@
 *                                 u32 appliedLifecycle  (12 / 25 / 38 / 51 bytes)
 *                  GameplayEvent  u32 lifecycleSeq, u16 kind (non-zero),
 *                                 payload = the rest of the message
+*                  PeerRoster     u32 lifecycleSeq, u8 count (1..4),
+*                                 count x { u8 peer, u8 flags, u8 nameLength
+*                                           (<= 32), name bytes }
+*                  Command        u32 sequence (non-zero), u16 kind (non-zero),
+*                                 varint target (a NetworkId, 0 = none),
+*                                 payload = the rest (<= kMaxCommandPayload)
 *
 *                Lifecycle sequence: every reliable lane-0 message the
 *                host sends a client (JoinAccepted, WorldBegin, SpawnBatch,
-*                SceneObjectBatch, DespawnBatch, WorldEnd, GameplayEvent)
-*                carries a per-client counter starting at 1. 0 never appears
-*                on the wire.
+*                SceneObjectBatch, DespawnBatch, WorldEnd, GameplayEvent,
+*                PeerRoster) carries a per-client counter starting at 1. 0
+*                never appears on the wire.
+*
+*                The roster (protocol 5): who is in the session. The host
+*                sends every joined client the whole list - itself (peer 0)
+*                first, then the joined clients in PeerId order, each with
+*                its name and whether it is in the game yet - whenever it
+*                changes, so a client can show the other players and tell
+*                them apart. It is always the complete list, never a change.
+*
+*                Commands (protocol 5): the one way gameplay on a client
+*                asks the host to do something ("open this door", "I picked
+*                this up"). A game-defined kind and payload, optionally
+*                aimed at one network object; reliable and in order. The
+*                sequence is per client, starts at 1 and only grows. The
+*                host never trusts a command: it knows the sender from the
+*                connection, and gameplay decides whether to obey.
 *
 *                Scene objects (protocol 4, Networking Phase 14): entities
 *                of the loaded scene that both machines already have. The
@@ -88,6 +109,8 @@
 *    -v1.1       kMaxGameplayEventPayload (a constant; no wire change)
 *    -v1.2       protocol version 4: SceneObjectBatch; WorldBegin carries the
 *                scene identity (Networking Phase 14.4)
+*    -v1.3       protocol version 5: PeerRoster (who is in the session, for
+*                clients) and Command (client to host gameplay requests)
 *
 **************************************************************************/
 #pragma once
@@ -105,14 +128,15 @@
 
 namespace Crucible
 {
-	// Bump on ANY change to the bytes of any message. (4 = scene objects and the scene identity
-	// in WorldBegin; 3 = lifecycle sequence; versions 1 and 2 were
-	// earlier development versions.)
-	inline constexpr std::uint32_t kProtocolVersion = 4;
+	// Bump on ANY change to the bytes of any message. (5 = PeerRoster and Command; 4 = scene
+	// objects and the scene identity in WorldBegin; 3 = lifecycle sequence; versions 1 and 2
+	// were earlier development versions.)
+	inline constexpr std::uint32_t kProtocolVersion = 5;
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message
 	inline constexpr std::size_t   kMaxReliableBytes      = 16 * 1024;   // spawn / despawn / event messages
 	inline constexpr std::size_t   kMaxGameplayEventPayload = kMaxReliableBytes - 7;   // after u8 type, u32 seq, u16 kind
+	inline constexpr std::size_t   kMaxCommandPayload     = 1024;        // a client's request: small on purpose
 	inline constexpr std::uint16_t kMaxEntitiesPerMessage = 512;
 	inline constexpr std::size_t   kMaxRecordBytes        = 255;         // a record's length is one byte
 	inline constexpr std::size_t   kMaxPlayerNameBytes    = 32;
@@ -132,6 +156,8 @@ namespace Crucible
 		WorldEnd      = 9,    // H->C reliable, lane 0, lifecycle: the full world was sent
 		ClientReady   = 10,   // C->H reliable, lane 0: the world is applied
 		SceneObjectBatch = 11,   // H->C reliable, lane 0, lifecycle: scene entities to bind (protocol 4)
+		PeerRoster    = 12,   // H->C reliable, lane 0, lifecycle: everyone in the session (protocol 5)
+		Command       = 13,   // C->H reliable, lane 0: a gameplay request (protocol 5)
 		Count                 // not a message; append new types above it, never renumber
 	};
 
@@ -201,6 +227,44 @@ namespace Crucible
 	};
 	struct WorldEnd    { std::uint32_t lifecycleSeq = 0; };
 	struct ClientReady { std::uint32_t worldEndSeq = 0; };   // must equal the WorldEnd's lifecycleSeq
+
+	// ---- the roster (host to client, reliable) ---------------------------------------------
+
+	/// One player in a PeerRoster.
+	struct RosterEntry
+	{
+		static constexpr std::uint8_t kInGame     = 1u << 0;   // its world is complete: it is playing
+		static constexpr std::uint8_t kKnownFlags = kInGame;
+
+		Net::PeerId   peer = Net::kInvalidPeer;   // 0 = the host, 1..kMaxClients = a client
+		std::uint8_t  flags = 0;                  // only kKnownFlags bits
+		std::array<char, kMaxPlayerNameBytes> name{};
+		std::uint8_t  nameLength = 0;
+
+		std::string_view Name() const noexcept { return { name.data(), nameLength }; }
+		bool             InGame() const noexcept { return (flags & kInGame) != 0; }
+
+		/// False (name unchanged) if IsValidPlayerName rejects it.
+		bool SetName(std::string_view text) noexcept
+		{
+			if (!IsValidPlayerName(text)) return false;
+			name = {};
+			for (std::size_t i = 0; i < text.size(); ++i) name[i] = text[i];
+			nameLength = static_cast<std::uint8_t>(text.size());
+			return true;
+		}
+	};
+
+	/// Everyone in the session: the host (peer 0) first, then the joined clients, PeerIds
+	/// strictly ascending. Always the whole list.
+	struct PeerRoster
+	{
+		std::uint32_t lifecycleSeq = 0;
+		std::array<RosterEntry, Net::kMaxPlayers> entries{};
+		std::uint8_t  count = 0;   // 1..kMaxPlayers
+
+		std::span<const RosterEntry> Entries() const noexcept { return { entries.data(), count }; }
+	};
 
 	// ---- input (client to host) -------------------------------------------------------------
 
@@ -282,6 +346,18 @@ namespace Crucible
 		std::span<const std::byte> payload;    // the rest of the message
 	};
 
+	// ---- commands (client to host, reliable) -------------------------------------------------
+
+	/// A client's gameplay request. `payload` points into the message (decoding) or into the
+	/// sender's own buffer (encoding).
+	struct CommandView
+	{
+		std::uint32_t              sequence = 0;   // per client, from 1, only grows
+		std::uint16_t              kind = 0;       // non-zero; meaning defined by gameplay
+		Net::NetworkId             target = Net::kInvalidNetworkId;   // the object it is about, or none
+		std::span<const std::byte> payload;        // at most kMaxCommandPayload; the game's own format
+	};
+
 	// ---- snapshots (host to client, unreliable) ----------------------------------------------
 
 	/// One entity's state in a snapshot. The length lets a client skip a record it cannot
@@ -339,4 +415,10 @@ namespace Crucible
 
 	ENGINE_API bool Encode(ByteWriter& w, const GameplayEventView& m) noexcept;
 	ENGINE_API bool Decode(ByteReader& r, GameplayEventView& m) noexcept;
+
+	ENGINE_API bool Encode(ByteWriter& w, const PeerRoster& m) noexcept;
+	ENGINE_API bool Decode(ByteReader& r, PeerRoster& m) noexcept;
+
+	ENGINE_API bool Encode(ByteWriter& w, const CommandView& m) noexcept;
+	ENGINE_API bool Decode(ByteReader& r, CommandView& m) noexcept;
 }

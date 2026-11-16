@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.12
+* \version       1.14
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -36,6 +36,10 @@
 *    -v1.11      scene objects: AdoptSceneObject, SceneIdOf, the scene
 *                identity (Networking Phase 14.5)
 *    -v1.12      PlayerSpawnPoints cleared with the entity state (Phase 14.6)
+*    -v1.13      network simulation applied by Start, cleared by Stop;
+*                PeerLinkStatus, HostLinkStatus (Networking Phase 0)
+*    -v1.14      the roster (RefreshRoster, BroadcastRoster,
+*                ApplyPeerRoster) and commands (SendCommand, HandleCommand)
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -162,15 +166,32 @@ namespace Crucible
 		m_snapshotAcks.Reset();
 		m_serverTime.Reset();
 		m_latency = {};
+		m_roster = {};
+		m_rosterChanged = false;
+		m_nextCommandSequence = 1;
 		m_stopRequested = false;
 		m_stopReason.clear();
 		m_state = SessionState::Running;
 		++m_generation;
 
+		// Testing conditions, for the whole process while this session runs. A refusal only
+		// warns: the session itself is fine, it just runs on the real network.
+		if (m_active.simulation.IsActive())
+		{
+			std::string simulationError;
+			m_simulationApplied = true;   // even if GNS took only part of it: Stop clears every value
+			if (GnsTransport::SetSimulation(m_active.simulation, simulationError))
+				CRU_WARN("[Net] simulating a bad network: +{} ms round trip, {}% packet loss each way",
+					m_active.simulation.extraRoundTripMs, m_active.simulation.packetLossPercent);
+			else
+				CRU_ERROR("[Net] network simulation not applied: {}", simulationError);
+		}
+
 		if (m_active.mode == NetMode::Host)
 		{
 			m_role = Net::NetRole::Server;
 			m_localPeer = Net::kServerPeer;
+			RefreshRoster();   // the host is its first player
 			CRU_INFO("[Net] hosting on {}:{} (up to {} clients, content hash {:016x})",
 				m_active.listenAddress.empty() ? "all interfaces" : m_active.listenAddress,
 				m_active.hostPort, m_active.maxClients, m_contentHash);
@@ -222,6 +243,7 @@ namespace Crucible
 			m_carry.clear();
 			m_transport.reset();
 		}
+		ClearSimulation();
 		m_frameEvents.clear();
 		m_peers = {};
 		ClearEntityState();   // entities keep their NetworkIdentity; their later removal finds no mapping
@@ -235,8 +257,41 @@ namespace Crucible
 		m_latency = {};
 		m_serverTickAtJoin = 0;
 		m_joinDeadline = {};
+		m_roster = {};
+		m_rosterChanged = false;
+		m_nextCommandSequence = 1;
 		++m_generation;
 		m_state = SessionState::Offline;
+	}
+
+	void NetworkSession::ClearSimulation() noexcept
+	{
+		if (!m_simulationApplied) return;
+		m_simulationApplied = false;
+		try
+		{
+			std::string error;
+			if (!GnsTransport::SetSimulation(NetworkSimulation{}, error)) CRU_ERROR("[Net] network simulation not cleared: {}", error);
+		}
+		catch (...)
+		{
+			// Only the error text can throw (allocation); the values were set or refused before it.
+		}
+	}
+
+	// ---- link status (diagnostics) ---------------------------------------------------------
+
+	bool NetworkSession::PeerLinkStatus(Net::PeerId peer, ConnectionStatus& out) const
+	{
+		if (!IsServer() || m_transport == nullptr || peer < 1 || peer > Net::kMaxClients) return false;
+		const PeerState& slot = m_peers[peer - 1];
+		return slot.phase != PeerState::Phase::Free && m_transport->Status(slot.connection, out);
+	}
+
+	bool NetworkSession::HostLinkStatus(ConnectionStatus& out) const
+	{
+		return IsClient() && m_transport != nullptr && m_serverConnection != kInvalidConnection
+			&& m_transport->Status(m_serverConnection, out);
 	}
 
 	// ---- networked entities ----------------------------------------------------------------
@@ -392,7 +447,8 @@ namespace Crucible
 		const bool known = ReadMessageType(reader, type);
 		const std::uint32_t seq = reader.U32();
 		const bool lifecycle = type == MessageType::WorldBegin || type == MessageType::SpawnBatch || type == MessageType::DespawnBatch
-			|| type == MessageType::WorldEnd || type == MessageType::GameplayEvent || type == MessageType::SceneObjectBatch;
+			|| type == MessageType::WorldEnd || type == MessageType::GameplayEvent || type == MessageType::SceneObjectBatch
+			|| type == MessageType::PeerRoster;
 		if (!known || !reader.Ok() || !lifecycle)
 		{
 			CRU_ERROR("[Net] SendLifecycle for peer {}: not a lifecycle message - not sent", peerId);
@@ -499,6 +555,13 @@ namespace Crucible
 		{
 			EnforceQuotas();
 			EnforceJoinTimeouts(start);
+			// After everything that can change it this frame, and before the send system streams
+			// the world to a peer that just joined (PostUpdate): its roster comes first.
+			if (m_rosterChanged)
+			{
+				m_rosterChanged = false;
+				BroadcastRoster();   // a failed send closes that peer and marks it again for next frame
+			}
 		}
 		else if (m_clientPhase == ClientPhase::Joining && start >= m_joinDeadline)
 		{
@@ -665,12 +728,14 @@ namespace Crucible
 			if (PeerState* peer = PeerByConnection(event.connection))
 			{
 				CRU_INFO("[Net] peer {} ({}) left: {} ({})", peer->peer, peer->remoteAddress, event.debug, event.endReason);
-				if (peer->IsJoined())
+				const bool wasJoined = peer->IsJoined();
+				if (wasJoined)
 				{
 					++m_stats.peersLeft;
 					Post(NetworkEvents::PeerLeft{ .peer = peer->peer, .endReason = event.endReason, .debug = event.debug });
 				}
 				*peer = PeerState{};   // the transport frees the handle at its next PollEvents
+				if (wasJoined) RefreshRoster();
 			}
 			return;
 		}
@@ -700,6 +765,9 @@ namespace Crucible
 			return;
 		case MessageType::Input:
 			HandleInput(*peer, reader);
+			return;
+		case MessageType::Command:
+			HandleCommand(*peer, reader);
 			return;
 		default:
 			Malformed(*peer, "a host-to-client message type");
@@ -752,6 +820,7 @@ namespace Crucible
 		++m_stats.joined;
 		CRU_INFO("[Net] peer {} '{}' joined from {}", peer.peer, peer.name, peer.remoteAddress);
 		Post(NetworkEvents::PeerJoined{ .peer = peer.peer, .name = peer.name });
+		RefreshRoster();
 	}
 
 	// The client's receipt for the world: accepted only from a Synchronizing peer, and
@@ -773,6 +842,25 @@ namespace Crucible
 		++m_stats.peersReady;
 		CRU_INFO("[Net] peer {} '{}' is in the game", peer.peer, peer.name);
 		Post(NetworkEvents::PeerReady{ .peer = peer.peer });
+		RefreshRoster();
+	}
+
+	// A client's gameplay request. Lane 0 is reliable and ordered, so a sequence that is not
+	// newer than the last one can only be a bug or a forgery; a gap means the quota dropped some
+	// (counted, the newer one still stands). The sender is the connection's peer, never a field of
+	// the packet. A target that no longer exists is an ordinary race with a despawn, not an error.
+	void NetworkSession::HandleCommand(PeerState& peer, ByteReader& reader)
+	{
+		CommandView command;
+		if (!Decode(reader, command)) { Malformed(peer, "an unreadable Command"); return; }
+		if (peer.phase != PeerState::Phase::InGame) { Malformed(peer, "a Command before it is in the game"); return; }
+		if (command.sequence <= peer.lastCommandSequence) { Malformed(peer, "a Command that is not newer than the last one"); return; }
+		m_stats.commandsMissed += command.sequence - peer.lastCommandSequence - 1;
+		peer.lastCommandSequence = command.sequence;
+		if (command.target != Net::kInvalidNetworkId && !m_entities.Contains(command.target)) { ++m_stats.commandsNoTarget; return; }
+		++m_stats.commandMessagesReceived;
+		Post(NetworkEvents::CommandReceived{ .sender = peer.peer, .kind = command.kind, .target = command.target,
+			.payload = { command.payload.begin(), command.payload.end() }, .sequence = command.sequence, .local = false });
 	}
 
 	// Input is the client's heartbeat and carries both acknowledgements
@@ -924,6 +1012,139 @@ namespace Crucible
 		Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = false });
 	}
 
+	// ---- players ---------------------------------------------------------------------------------
+
+	const NetPeerInfo* NetworkSession::FindPlayer(Net::PeerId peer) const noexcept
+	{
+		return peer < m_roster.size() && m_roster[peer].Present() ? &m_roster[peer] : nullptr;
+	}
+
+	std::size_t NetworkSession::PlayerCount() const noexcept
+	{
+		return static_cast<std::size_t>(std::ranges::count_if(m_roster, [](const NetPeerInfo& p) { return p.Present(); }));
+	}
+
+	// The host's roster is its own slots, read again whenever one of them joins, becomes ready or
+	// leaves; Update then sends it to every joined client (BroadcastRoster).
+	void NetworkSession::RefreshRoster()
+	{
+		if (!IsServer()) return;
+		m_roster = {};
+		m_roster[Net::kServerPeer] = NetPeerInfo{ .peer = Net::kServerPeer, .name = m_active.playerName, .inGame = true };
+		for (const PeerState& peer : m_peers)
+			if (peer.IsJoined())
+				m_roster[peer.peer] = NetPeerInfo{ .peer = peer.peer, .name = peer.name, .inGame = peer.phase == PeerState::Phase::InGame };
+		m_rosterChanged = true;
+	}
+
+	// The whole list, to every joined client, each with its own next lifecycle number. A client
+	// whose send fails is closed by SendLifecycle; that changes the roster again, so the others
+	// hear about it next frame.
+	void NetworkSession::BroadcastRoster()
+	{
+		PeerRoster message;
+		for (const NetPeerInfo& info : m_roster)
+		{
+			if (!info.Present()) continue;
+			RosterEntry& entry = message.entries[message.count++];
+			entry.peer = info.peer;
+			entry.flags = info.inGame ? RosterEntry::kInGame : std::uint8_t{ 0 };
+			entry.SetName(info.name);   // valid: Start checked the host's, JoinRequest's decoder each client's
+		}
+		for (std::size_t i = 0; i < m_peers.size(); ++i)   // by index: a failed send resets the slot
+		{
+			if (!m_peers[i].IsJoined()) continue;
+			const Net::PeerId peer = m_peers[i].peer;
+			message.lifecycleSeq = m_peers[i].nextLifecycleSeq;
+			std::array<std::byte, 160> buffer;   // 146 bytes at most
+			ByteWriter writer(buffer);
+			if (!Encode(writer, message))
+			{
+				CRU_ERROR("[Net] the roster for peer {} could not be encoded", peer);
+				continue;
+			}
+			if (SendLifecycle(peer, writer.Written())) ++m_stats.rostersSent;
+		}
+	}
+
+	// The client's roster is whatever the host said last. What changed since the previous one
+	// becomes the same events the host posts for itself, so gameplay needs one listener.
+	bool NetworkSession::ApplyPeerRoster(const PeerRoster& roster)
+	{
+		if (!IsClient() || m_clientPhase != ClientPhase::Joined || m_localPeer >= m_roster.size()) return false;
+		std::array<NetPeerInfo, Net::kMaxPlayers> next{};
+		for (const RosterEntry& entry : roster.Entries())
+		{
+			if (entry.peer >= next.size()) return false;   // the decoder checked; never index on trust
+			next[entry.peer] = NetPeerInfo{ .peer = entry.peer, .name = std::string(entry.Name()), .inGame = entry.InGame() };
+		}
+		if (!next[m_localPeer].Present()) return false;
+
+		for (std::size_t i = 0; i < next.size(); ++i)
+		{
+			if (i == m_localPeer) continue;
+			const NetPeerInfo& was = m_roster[i];
+			const NetPeerInfo& now = next[i];
+			if (!was.Present() && now.Present())
+			{
+				Post(NetworkEvents::PeerJoined{ .peer = now.peer, .name = now.name });
+				if (now.inGame) Post(NetworkEvents::PeerReady{ .peer = now.peer });
+			}
+			else if (was.Present() && !now.Present())
+			{
+				Post(NetworkEvents::PeerLeft{ .peer = was.peer, .endReason = 0, .debug = {} });
+			}
+			else if (was.Present() && now.Present() && !was.inGame && now.inGame)
+			{
+				Post(NetworkEvents::PeerReady{ .peer = now.peer });
+			}
+		}
+		m_roster = std::move(next);
+		++m_stats.rostersApplied;
+		return true;
+	}
+
+	// ---- commands ------------------------------------------------------------------------------
+
+	bool NetworkSession::SendCommand(std::uint16_t kind, std::span<const std::byte> payload, Net::NetworkId target)
+	{
+		const char* refusal = nullptr;
+		if (kind == 0) refusal = "kind 0 is reserved";
+		else if (payload.size() > kMaxCommandPayload) refusal = "the payload is too large";
+		else if (IsActive() && (m_state != SessionState::Running || m_stopRequested)) refusal = "the session is stopping";
+		else if (IsClient() && (m_clientPhase != ClientPhase::Joined || m_clientWorld != ClientWorld::Ready || m_transport == nullptr))
+			refusal = "this client is not in the game yet";
+		if (refusal != nullptr)
+		{
+			++m_stats.commandsRefused;
+			CRU_ERROR("[Net] SendCommand(kind {}, {} bytes, target {}): {}", kind, payload.size(), target, refusal);
+			return false;
+		}
+
+		// The host's own request, and an offline game's, never touch the network: the same event,
+		// so the gameplay that answers commands is written once.
+		if (!IsClient())
+		{
+			++m_stats.commandsLocal;
+			Post(NetworkEvents::CommandReceived{ .sender = Net::kServerPeer, .kind = kind, .target = target,
+				.payload = { payload.begin(), payload.end() }, .sequence = 0, .local = true });
+			return true;
+		}
+
+		std::array<std::byte, 1 + 4 + 2 + 5 + kMaxCommandPayload> buffer;
+		ByteWriter writer(buffer);
+		const CommandView view{ .sequence = m_nextCommandSequence, .kind = kind, .target = target, .payload = payload };
+		if (!Encode(writer, view) || m_transport->Send(m_serverConnection, writer.Written(), Delivery::Reliable, Lane::Gameplay) != SendResult::Ok)
+		{
+			++m_stats.commandSendFailed;   // nothing was sent, so the number is not used up
+			return false;
+		}
+		++m_nextCommandSequence;
+		++m_stats.commandMessagesSent;
+		CountBytes(m_stats.bytesSentByType, writer.Written());
+		return true;
+	}
+
 	// ---- client time and responsiveness --------------------------------------------------------
 
 	// The one instrument: key down to the first rendered frame in which the
@@ -988,12 +1209,14 @@ namespace Crucible
 	{
 		CRU_INFO("[Net] closing peer {} ({}): {}", peer.peer, peer.remoteAddress, debug);
 		m_transport->Close(peer.connection, reason, debug.c_str(), true);   // no Closed event follows our own close
-		if (peer.IsJoined())
+		const bool wasJoined = peer.IsJoined();
+		if (wasJoined)
 		{
 			++m_stats.peersLeft;
 			Post(NetworkEvents::PeerLeft{ .peer = peer.peer, .endReason = static_cast<int>(reason), .debug = debug });
 		}
 		peer = PeerState{};
+		if (wasJoined) RefreshRoster();
 	}
 
 	void NetworkSession::EnforceQuotas()
@@ -1091,6 +1314,7 @@ namespace Crucible
 		case MessageType::JoinRequest:
 		case MessageType::Input:
 		case MessageType::ClientReady:
+		case MessageType::Command:
 			++m_stats.malformed;   // client-to-host types never come from the host
 			return;
 		default:

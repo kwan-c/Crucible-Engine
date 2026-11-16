@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       2.0
+* \version       2.1
 * \brief
 *                What one engine instance should do about networking when
 *                Play starts: stay Offline, Host a session, or join one as
@@ -32,6 +32,8 @@
 *    -v2.0       configuration is internal only: environment and command-
 *                line parsing removed; FromEngineConfig, ParseNetMode;
 *                Validate checks IP addresses
+*    -v2.1       simulation: test latency and packet loss, set only from the
+*                editor's Network panel (Networking Phase 0)
 *
 **************************************************************************/
 #pragma once
@@ -78,6 +80,11 @@ namespace Crucible
 		                                              // long for JoinRequest, a client for JoinAccepted
 		std::string        playerName = "Player";     // sent in JoinRequest (at most 32 bytes)
 		ConnectionTimeouts timeouts;                  // 0 = GNS defaults (10 s)
+
+		// Testing only: bad network conditions for this whole instance while its session runs
+		// (cleared when it stops). Never read from EngineConfig.json: only the editor's Network
+		// panel sets it, so a shipped game always plays on the real network.
+		NetworkSimulation  simulation;
 	};
 
 	/// The shared defaults from EngineConfig.json. An unknown mode text becomes Offline and is

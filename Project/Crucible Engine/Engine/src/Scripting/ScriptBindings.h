@@ -142,6 +142,16 @@ namespace Crucible
 		 *********************************************************************/
 		void SetPhysicsEvents(EventBuses* events);
 
+		/*********************************************************************
+		 \brief  Gives the C# Network class the engine's network session
+		         (Core::GetNetwork) and subscribes the scripts' OnNetwork* /
+		         OnPeer* callbacks to NetworkEvents on the network bus; nullptr
+		         for either disconnects both. Non-owning; main thread only.
+		         Called by ScriptRuntime::ConnectEngine. Defined in
+		         Bindings/NetworkBindings.cpp.
+		 *********************************************************************/
+		void SetNetwork(Core* core, EventBuses* events);
+
 		// --- Per-feature registration, called by RegisterAll() ---
 		void RegisterLogBindings();      // Bindings/LogBindings.cpp      (C# Log)
 		void RegisterAnimatorBindings(); // Bindings/AnimatorBindings.cpp (C# Animator)
@@ -167,5 +177,6 @@ namespace Crucible
 		void RegisterNavigationBindings();     // Bindings/NavigationBindings.cpp     (C# FlowFieldAgent, FlowFieldSurface)
 		void RegisterStateGraphBindings();     // Bindings/StateGraphBindings.cpp     (C# StateGraphAgent: variables, current state)
 		void RegisterTagBindings();            // Bindings/TagBindings.cpp            (C# Entity.Tag, CompareTag, FindWithTag)
+		void RegisterNetworkBindings();        // Bindings/NetworkBindings.cpp        (C# Network, Entity.NetworkId / Owner / IsMine)
 	}
 }

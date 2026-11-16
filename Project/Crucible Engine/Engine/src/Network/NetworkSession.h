@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.10
+* \version       1.12
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -143,6 +143,25 @@
 *                world stream binds them on each client instead of spawning
 *                them. SceneAsset()/SceneHash() name the loaded scene.
 *
+*                Players (Networking C# Phase 1): Roster() is everyone in
+*                the session as this machine knows it, by PeerId - the host
+*                builds it from its slots; a client gets it from the host
+*                (PeerRoster, sent to every joined client whenever it
+*                changes, in the lifecycle stream) and posts PeerJoined,
+*                PeerReady and PeerLeft from the differences, so gameplay
+*                hears the same events in every role.
+*
+*                Commands (Networking C# Phase 2): the one way gameplay on
+*                a client asks the host for something. SendCommand sends a
+*                game-defined kind and payload, optionally aimed at one
+*                network object, reliably and in order on lane 0. The host
+*                accepts it only from a peer in the game, in sequence, and
+*                posts NetworkEvents::CommandReceived with the sender taken
+*                from the connection. On the host itself and offline the
+*                same call posts the same event locally, so one script
+*                serves every role. A command counts against its sender's
+*                64-messages-a-frame quota like everything else.
+*
 *                Client time: ServerTime() is
 *                the estimate interpolation renders behind; the latency
 *                probe measures key-down to the first rendered frame in
@@ -173,6 +192,13 @@
 *    -v1.9       scene objects: AdoptSceneObject, SceneIdOf, the scene
 *                identity (Networking Phase 14.5)
 *    -v1.10      PlayerSpawnPoints (Networking Phase 14.6)
+*    -v1.11      network simulation applied while running (IsSimulating);
+*                PeerLinkStatus and HostLinkStatus for the editor's
+*                statistics (Networking Phase 0)
+*    -v1.12      the roster: Roster, FindPlayer, PlayerCount, PeerRoster
+*                sent by the host and applied by clients (Networking C#
+*                Phase 1); commands: SendCommand and the host's handler
+*                (Networking C# Phase 2)
 *
 **************************************************************************/
 #pragma once
@@ -247,7 +273,20 @@ namespace Crucible
 		bool          jumpLatched = false;         // a jump arrived that TakePeerIntent has not handed out
 		bool          inputTimedOut = false;       // counted once per silence (NetStats::inputTimeouts)
 
+		// Commands (InGame only)
+		std::uint32_t lastCommandSequence = 0;     // newest Command accepted; one that is not newer is malformed
+
 		bool IsJoined() const noexcept { return phase == Phase::Synchronizing || phase == Phase::InGame; }
+	};
+
+	/// One player of the session as this machine knows it (NetworkSession::Roster).
+	struct NetPeerInfo
+	{
+		Net::PeerId peer = Net::kInvalidPeer;   // kInvalidPeer: nobody has this PeerId now
+		std::string name;
+		bool        inGame = false;             // its world is complete (the host always is)
+
+		bool Present() const noexcept { return peer != Net::kInvalidPeer; }
 	};
 
 	/// Server: a spawn requested this frame, performed by NetReceiveSystem at the start of the
@@ -386,6 +425,38 @@ namespace Crucible
 
 		/// The transport while a session runs, otherwise null (diagnostics).
 		const GnsTransport* Transport() const noexcept { return m_transport.get(); }
+
+		/// Host: GNS's live numbers (ping, quality, rates, queues) for client `peer`'s
+		/// connection. False if that slot is free or no session runs. Qualities read -1 for
+		/// about the first second of a connection (not measured yet).
+		bool PeerLinkStatus(Net::PeerId peer, ConnectionStatus& out) const;
+
+		/// Client: the same for the connection to the host. False before connecting or after leaving.
+		bool HostLinkStatus(ConnectionStatus& out) const;
+
+		/// True while this session runs with ActiveSettings().simulation applied (fake latency or
+		/// packet loss for the whole process). Start applies it, Stop clears it.
+		bool IsSimulating() const noexcept { return m_simulationApplied; }
+
+		// ---- players ------------------------------------------------------------------------
+
+		/// Everyone in the running session, as this machine knows it; the index is the PeerId
+		/// (0 = the host) and a slot nobody holds is not Present(). The host: itself and every
+		/// joined client. A client: what the host's latest PeerRoster said (nobody before the
+		/// first one, which follows JoinAccepted). Offline: nobody.
+		std::span<const NetPeerInfo> Roster() const noexcept { return m_roster; }
+
+		/// The roster's entry for `peer`, or null if nobody holds that PeerId.
+		const NetPeerInfo* FindPlayer(Net::PeerId peer) const noexcept;
+
+		/// How many players the roster lists, this machine included.
+		std::size_t PlayerCount() const noexcept;
+
+		/// Client, NetReceiveSystem: a PeerRoster arrived and was decoded. Replaces Roster() and
+		/// posts PeerJoined / PeerReady / PeerLeft for what changed (never for this machine).
+		/// False, changing nothing, if this is not a joined client or the list leaves this
+		/// machine out (the host always lists the receiver).
+		bool ApplyPeerRoster(const PeerRoster& roster);
 
 		/// Why the latest Start failed (empty after a successful one): for the editor's panel.
 		const std::string& LastStartError() const noexcept { return m_lastStartError; }
@@ -545,6 +616,20 @@ namespace Crucible
 		/// Client, NetReceiveSystem: a GameplayEvent arrived and was validated; posts it.
 		void DeliverGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload);
 
+		// ---- commands (client to host) -------------------------------------------------------
+
+		/// Any role: asks the authority to do something. kind: non-zero, chosen by the game (the
+		/// engine never interprets it). payload: at most kMaxCommandPayload bytes, in the game's
+		/// own format. target: the network object it is about, or kInvalidNetworkId.
+		/// A client in the game (its world is Ready) sends it reliably and in order; the host
+		/// posts NetworkEvents::CommandReceived for it in the frame it arrives. The host itself,
+		/// and an offline game, post that event at once with sender 0 and local set - so gameplay
+		/// written as "ask, then act on CommandReceived" runs unchanged in every role.
+		/// False (logged, counted) for kind 0, an oversized payload, while stopping, on a client
+		/// that is not in the game yet, or if GNS did not take the message (its send buffer is
+		/// full: nothing was sent, try again later).
+		bool SendCommand(std::uint16_t kind, std::span<const std::byte> payload, Net::NetworkId target = Net::kInvalidNetworkId);
+
 		// ---- client time and responsiveness ------------------------------------------------
 
 		/// Client: the host's clock as this client estimates it (reset by every Start and Stop).
@@ -602,6 +687,9 @@ namespace Crucible
 		void HandleJoinRequest(PeerState& peer, ByteReader& reader);
 		void HandleClientReady(PeerState& peer, ByteReader& reader);
 		void HandleInput(PeerState& peer, ByteReader& reader);
+		void HandleCommand(PeerState& peer, ByteReader& reader);
+		void RefreshRoster();     // host: Roster() from the slots; marks it for BroadcastRoster
+		void BroadcastRoster();   // host: the whole roster to every joined client
 		void CollectFrameMessages();
 		void RejectOversized(const ReceivedMessage& message);
 		void EnforceQuotas();
@@ -613,6 +701,7 @@ namespace Crucible
 		void       Malformed(PeerState& peer, const char* what);
 		void       ClosePeer(PeerState& peer, CloseReason reason, const std::string& debug);
 		void       AbandonLatencyProbe() noexcept;
+		void       ClearSimulation() noexcept;   // back to a normal network, if Start applied one
 		void       ClearEntityState() noexcept;   // map, rejected, spawns, despawns, ids, world messages
 		void       Post(auto event);
 
@@ -633,6 +722,7 @@ namespace Crucible
 		std::string                    m_stopReason;
 		std::string                    m_lastStartError;
 		std::string                    m_lastEndReason;
+		bool                           m_simulationApplied = false;   // GNS's global fake lag/loss set by Start
 
 		// Client
 		ClientPhase                    m_clientPhase = ClientPhase::None;
@@ -652,6 +742,11 @@ namespace Crucible
 		}                              m_latency;
 		Net::NetTick                   m_serverTickAtJoin = 0;
 		std::chrono::steady_clock::time_point m_joinDeadline{};   // Joining: JoinAccepted due by then
+		std::uint32_t                  m_nextCommandSequence = 1;   // stamped on the next Command
+
+		// Players (every role)
+		std::array<NetPeerInfo, Net::kMaxPlayers> m_roster{};   // index = PeerId
+		bool                           m_rosterChanged = false;   // host: send it at the end of this Update
 
 		// Host
 		std::array<PeerState, Net::kMaxClients> m_peers{};

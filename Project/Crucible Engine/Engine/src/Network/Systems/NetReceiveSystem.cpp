@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.9
+* \version       1.10
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -29,6 +29,7 @@
 *                binding, removal of the host's destroyed ones (Phase 14.5)
 *    -v1.8       placed players removed as spawn points (Networking Phase 14.6)
 *    -v1.9       registers scene profiles (Networking Phase 14.7)
+*    -v1.10      PeerRoster applied through the session (Networking C# Phase 1)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -255,6 +256,17 @@ namespace Crucible
 			if (state != ClientWorld::Ready) { Leave(CloseReason::Malformed, "GameplayEvent inside the world stream"); return false; }
 			m_session.DeliverGameplayEvent(event.kind, event.payload);   // the payload is the game's to check
 			m_session.MarkLifecycleApplied(event.lifecycleSeq);
+			return true;
+		}
+		case MessageType::PeerRoster:
+		{
+			// Who is in the session. It needs no World and may come at any point of the stream
+			// (the first one right after JoinAccepted, before the world).
+			PeerRoster roster;
+			if (!Decode(reader, roster)) { Leave(CloseReason::Malformed, "malformed PeerRoster"); return false; }
+			if (!CheckSequence(roster.lifecycleSeq, "PeerRoster")) return false;
+			if (!m_session.ApplyPeerRoster(roster)) { Leave(CloseReason::Malformed, "a PeerRoster without this client in it"); return false; }
+			m_session.MarkLifecycleApplied(roster.lifecycleSeq);
 			return true;
 		}
 		case MessageType::Snapshot:

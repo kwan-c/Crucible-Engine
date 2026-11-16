@@ -479,6 +479,55 @@ namespace Crucible
             return HasComponentInternal((int)index, (int)generation, (int)kind, out has) != 0 && has != 0;
         }
 
+        // --- networking -------------------------------------------------------------- //
+        // Multiplayer (see Network.cs). A network object is an entity the host shares with
+        // every player: a spawned network prefab, or a scene entity with a Network Object
+        // component. Its NetworkId and owner are the same on every machine.
+
+        /// <summary>Is this entity a network object of the running session?</summary>
+        public bool IsNetworked
+        {
+            get { uint id; int owner; return Network.GetIdentity(index, generation, out id, out owner); }
+        }
+
+        /// <summary>
+        /// The number that names this network object on every machine (an Entity only means
+        /// something on its own machine). 0 if it is not a network object.
+        /// </summary>
+        public uint NetworkId
+        {
+            get { uint id; int owner; return Network.GetIdentity(index, generation, out id, out owner) ? id : 0u; }
+        }
+
+        /// <summary>
+        /// The PeerId of the player this network object belongs to (0 = the host, which also
+        /// owns everything no player does). An entity that is not a network object exists
+        /// separately on each machine, so it belongs to this one: Network.LocalPeerId.
+        /// </summary>
+        public int Owner
+        {
+            get
+            {
+                uint id; int owner;
+                return Network.GetIdentity(index, generation, out id, out owner) ? owner : Network.LocalPeerId;
+            }
+        }
+
+        /// <summary>
+        /// Does this entity belong to the player on THIS machine? The usual test before
+        /// reading input for it or showing its camera and HUD:
+        /// <c>if (!Entity.IsMine) return;</c>  Always true for an entity that is not a
+        /// network object.
+        /// </summary>
+        public bool IsMine
+        {
+            get
+            {
+                uint id; int owner;
+                return !Network.GetIdentity(index, generation, out id, out owner) || owner == Network.LocalPeerId;
+            }
+        }
+
         // --- equality --------------------------------------------------------------- //
 
         /// <summary>True if both refer to the same entity.</summary>

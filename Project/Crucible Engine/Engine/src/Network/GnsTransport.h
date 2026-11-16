@@ -62,6 +62,7 @@
 *                geometrically; IsKnownToGns for leak checks
 *    -v1.2       IsIpAddress, so settings can be validated before Play
 *    -v1.3       CloseReason::SceneMismatch (Networking Phase 14.4)
+*    -v1.4       SetSimulation: GNS's fake lag and loss (Networking Phase 0)
 *
 **************************************************************************/
 #pragma once
@@ -235,6 +236,12 @@ namespace Crucible
 		/// "::1"), exactly what Listen and Connect accept. Host names are not addresses.
 		/// Works before InitLibrary (pure parsing).
 		static bool IsIpAddress(std::string_view text);
+
+		/// Applies `simulation` to the whole process (GNS's fake lag and loss are global, not
+		/// per connection): every transport's packets from the next one on. All zero switches
+		/// it off. The library must be initialized; KillLibrary forgets it too. False (with the
+		/// setting named) if GNS refused a value; the values it did accept stay applied.
+		static bool SetSimulation(const NetworkSimulation& simulation, std::string& error);
 
 		GnsTransport();
 		~GnsTransport();   // CloseAll(SessionEnded, no linger)

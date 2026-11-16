@@ -165,6 +165,70 @@ namespace Crucible
         /// <summary>Something left this trigger - or this left another's trigger.</summary>
         public virtual void OnTriggerExit(Entity other) {}
 
+        // --- network callbacks ------------------------------------------------------
+        // Multiplayer (see Network.cs). Called at the start of the frame the event
+        // happened in, before OnUpdate, in the order the events arrived. Every running
+        // script hears them, except a command aimed at one entity (see OnNetworkCommand).
+        // A script that starts later does not hear earlier events: read Network.Peers,
+        // Network.IsReady etc. in OnCreate.
+
+        /// <summary>
+        /// This machine is in a multiplayer session: the host is listening, or this client
+        /// has joined and received the host's world (Network.IsReady is true from here on).
+        /// Never called in a single-player (offline) game.
+        /// </summary>
+        public virtual void OnNetworkStarted() {}
+        /// <summary>
+        /// The session is over: Play stopped, the host left, the connection was lost - or a
+        /// join failed (then OnNetworkStarted never ran). <paramref name="reason"/> says which.
+        /// </summary>
+        public virtual void OnNetworkStopped(string reason) {}
+        /// <summary>
+        /// Another player is in the session (on a client: also once for everyone who was
+        /// already there when it joined). Never called for this machine's own player.
+        /// </summary>
+        public virtual void OnPeerJoined(int peer) {}
+        /// <summary>
+        /// Another player has finished loading and is in the game. On the host this is the
+        /// moment to give that player what it needs (its character, its score...).
+        /// </summary>
+        public virtual void OnPeerReady(int peer) {}
+        /// <summary>Another player left or lost the connection.</summary>
+        public virtual void OnPeerLeft(int peer) {}
+        /// <summary>
+        /// The authority only (host, or a single-player game): somebody asked for something
+        /// with Network.SendCommand. A command sent with a target reaches only the scripts on
+        /// that entity; one without reaches every script, so check <paramref name="kind"/>.
+        /// <paramref name="sender"/> is who asked (0 = this machine itself) and cannot be
+        /// faked; everything in <paramref name="data"/> can: read it, check data.Ok, then
+        /// check that this player may ask for this before acting. See NetReader.cs.
+        /// </summary>
+        public virtual void OnNetworkCommand(int sender, ushort kind, NetReader data) {}
+
+        /// <summary>
+        /// Called by the engine (ScriptRuntime::DispatchNetworkEvent) with plain values.
+        /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command
+        /// (ScriptNetEvent::Kind in Bindings/NetworkContext.h - keep the two in step).
+        /// </summary>
+        internal void DispatchNetworkEvent(int kind, int peer, int code, int serial, string text)
+        {
+            switch (kind)
+            {
+                case 0: OnNetworkStarted(); break;
+                case 1: OnNetworkStopped(text ?? string.Empty); break;
+                case 2: OnPeerJoined(peer); break;
+                case 3: OnPeerReady(peer); break;
+                case 4: OnPeerLeft(peer); break;
+                case 5:
+                {
+                    // Every script gets its own reader over the same bytes.
+                    byte[] payload = Network.PayloadOf(serial);
+                    OnNetworkCommand(peer, unchecked((ushort)code), new NetReader(payload, payload.Length));
+                    break;
+                }
+            }
+        }
+
         /// <summary>
         /// Called by the engine (ScriptRuntime::DispatchPhysicsEvent) with plain values.
         /// kind: 0 collision enter, 1 collision exit, 2 trigger enter, 3 trigger exit.
