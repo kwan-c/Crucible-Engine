@@ -1,9 +1,10 @@
 /*************************************************************************
 * \file:         NavigationComponents.h
-* \author:       Hugo Low Ren Hao (main author),
-*                Jean David Vidal Cruzado (v1.2: max walkable slope)
-* \par:          Email: low.h@digipen.edu,
-*                Email: jeandavidvidal.c@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original;
+*                v1.2: max walkable slope),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          31 October 2026
 * \version       1.2
 * \brief

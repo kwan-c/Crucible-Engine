@@ -1,10 +1,11 @@
 /*************************************************************************
 * \file:         ECSNavigationSystem.h
-* \author:       Hugo Low Ren Hao (main author),
-*                Jean David Vidal Cruzado (v1.2: re-bake on request;
-*                v1.3: tagged obstacles)
-* \par:          Email: low.h@digipen.edu,
-*                Email: jeandavidvidal.c@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original;
+*                v1.2: re-bake on request;
+*                v1.3: tagged obstacles),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          31 October 2026
 * \version       1.3
 * \brief

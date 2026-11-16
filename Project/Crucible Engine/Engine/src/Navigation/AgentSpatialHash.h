@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         AgentSpatialHash.h
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          1 November 2026
 * \version       1.0
 * \brief
