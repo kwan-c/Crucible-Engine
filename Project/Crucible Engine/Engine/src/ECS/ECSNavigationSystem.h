@@ -1,14 +1,15 @@
 /*************************************************************************
 * \file:         ECSNavigationSystem.h
 * \author:       Hugo Low Ren Hao (main author),
-*                Jean David Vidal Cruzado (v1.2: re-bake on request)
+*                Jean David Vidal Cruzado (v1.2: re-bake on request;
+*                v1.3: tagged obstacles)
 * \par:          Email: low.h@digipen.edu,
 *                Email: jeandavidvidal.c@digipen.edu
 * \date          31 October 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
-*                scene's FlowFieldSurface and static colliders, and draws
+*                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
 *                the result.
 *
 * \details
@@ -52,12 +53,16 @@
 *    -v1.2       RequestBake(): a script that changed the level mid-Play
 *                (generated terrain) asks for a fresh bake, which waits
 *                for physics to build the new bodies, as Play's does
+*    -v1.3       obstacles are the entities tagged "Obstacle"
+*                (kObstacleTag); the ground rays pass through them, and the
+*                ground-entity list that un-blocked floors is gone
 *
 **************************************************************************/
 #pragma once
 
 // STL
 #include <cstdint>   // BakeCount
+#include <string_view>   // kObstacleTag
 #include <vector>
 
 // Crucible engine
@@ -72,6 +77,10 @@
 #include "Systems/PlayState.h"
 
 namespace Crucible {
+
+    // The tag (Assets/Config/Tags.json) that makes a collider a navigation
+    // obstacle: the bake blocks its cells and the ground rays look through it.
+    inline constexpr std::string_view kObstacleTag = "Obstacle";
 
     class ECSPhysicsSystem;
     class ECSSystemManager;
@@ -158,8 +167,11 @@ namespace Crucible {
         /*!
             \brief
             Rebuilds the grid from the scene as it is now: the first
-            FlowFieldSurface gives the size and settings, and every static,
-            non-trigger collider is an obstacle.
+            FlowFieldSurface gives the size and settings, and every
+            non-trigger collider on an entity tagged "Obstacle"
+            (kObstacleTag) is an obstacle. While Playing, the ground is
+            sampled from physics too, so slopes, ledges and untagged walls
+            count as well.
 
             \param world
             The scene to bake.
@@ -200,7 +212,8 @@ namespace Crucible {
         bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
         bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
                    float distance, EntityHit& hit) const;
-        bool SampleTerrain(const NavGridSettings& settings, float stepHeight, float maxSlopeDegrees);
+        bool SampleTerrain(const World& world, const NavGridSettings& settings, float stepHeight,
+                           float maxSlopeDegrees, float top, float bottom);
         void DrawGrid() const;
         void DrawArrows() const;
 
@@ -225,8 +238,6 @@ namespace Crucible {
         const NavTerrain*        m_terrain = &m_flatTerrain;
 
         std::vector<NavObstacle> m_obstacles;        // kept between bakes so a re-bake reuses its memory
-        std::vector<Entity>      m_obstacleEntities; // whose collider each obstacle is, same order: ground ones are dropped
-        std::vector<Entity>      m_groundEntities;   // colliders the sampling found agents stand on (sorted, for binary search)
         bool                     m_physicsStepped = false;   // physics has stepped this Play, so its bodies exist to be sampled
         bool                     m_rebakeRequested = false;  // RequestBake() since the last Update: bake after physics steps again
         std::uint32_t            m_bakeCount = 0;            // successful bakes so far (BakeCount)

@@ -1,19 +1,20 @@
 /*************************************************************************
 * \file:         ECSNavigationSystem.cpp
 * \author:       Hugo Low Ren Hao (main author),
-*                Jean David Vidal Cruzado (v1.2: terrain, re-bake on request)
+*                Jean David Vidal Cruzado (v1.2: terrain, re-bake on request;
+*                v1.3: tagged obstacles)
 * \par:          Email: low.h@digipen.edu,
 *                Email: jeandavidvidal.c@digipen.edu
 * \date          31 October 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
 * \details
 *                The ECS-to-grid translation lives here, so NavGrid itself
-*                never sees a component: this file turns colliders into
-*                NavObstacle boxes and the FlowFieldSurface into
-*                NavGridSettings.
+*                never sees a component: this file turns the colliders of
+*                entities tagged "Obstacle" into NavObstacle boxes and the
+*                FlowFieldSurface into NavGridSettings.
 *
 * \history
 *    -v1.0       first version
@@ -32,12 +33,19 @@
 *                35 degrees; RequestBake(); a HeightField collider (terrain) is always
 *                ground, never an obstacle: its heights come from the
 *                sampling like any other floor
+*    -v1.3       Obstacles are the colliders of entities tagged "Obstacle"
+*                (Unity's NavGrid rule), not every NonMoving collider without
+*                a RigidBody. The ground rays pass through tagged obstacles,
+*                so the ground under one is the floor it stands on, and the
+*                "colliders found to be ground stop being obstacles" step is
+*                gone: the tag alone decides. Untagged walls and crates
+*                still block through the slope and ledge rules
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
 
 // STL
-#include <algorithm>    // std::clamp, std::max, std::sort, std::unique, std::binary_search
+#include <algorithm>    // std::clamp, std::max, std::min
 #include <cmath>        // std::atan2, std::sqrt, std::ceil, std::tan, std::cos
 
 // Crucible engine
@@ -261,13 +269,6 @@ namespace Crucible {
             return best / std::sqrt(bestSq);
 
         }   // TowardsNearest()
-
-        // An order on entities, for the sorted ground list's binary search.
-        bool EntityLess(const Entity& a, const Entity& b) {
-
-            return a.index != b.index ? a.index < b.index : a.generation < b.generation;
-
-        }   // EntityLess()
 
     }   // ANONYMOUS NAMESPACE
 
@@ -1166,20 +1167,24 @@ namespace Crucible {
         m_terrain     = &m_flatTerrain;
         m_stepHeight  = surface.m_stepHeight;   // the agents' probes sweep the same height band the bake uses
 
-        // 2. The obstacles: static, solid colliders. "Static" is Unity's rule:
-        // a collider with no RigidBody. Anything with one moves (crates, even a
-        // kinematic door), so it is steered around later, not baked in - and
-        // checking for the RigidBody too catches a moving body someone left on
-        // the NonMoving layer. Triggers block nothing in physics either.
+        // 2. The obstacles: the colliders of entities tagged "Obstacle" - the
+        // designer's call, as in Unity's NavGrid, not a guess from the layer
+        // and RigidBody. Triggers block nothing in physics, so not here either;
+        // a HeightField is the terrain, which is always ground.
+        // The same pass finds how high and low the arena's static colliders
+        // reach (tagged or not), so the ground rays start above all of them.
         m_obstacles.clear();
-        m_obstacleEntities.clear();
+        float sampleTop    = area.centre.y + 50.0f;
+        float sampleBottom = area.centre.y - 50.0f;
         world.CreateQuery<const Collider, const WorldTransform>()
             .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
-                if (collider.m_isTrigger || collider.m_layer != PhysicsLayer::NonMoving || !transform.valid) return;
-                if (world.HasComponent<RigidBody>(entity)) return;
-                if (collider.m_type == ShapeType::HeightField) return;   // terrain is ground: SampleTerrain reads its heights
-                m_obstacles.push_back(WorldBounds(collider, transform.matrix));
-                m_obstacleEntities.push_back(entity);
+                if (collider.m_isTrigger || !transform.valid || collider.m_type == ShapeType::HeightField) return;
+                const NavObstacle bounds = WorldBounds(collider, transform.matrix);
+                if (collider.m_layer == PhysicsLayer::NonMoving) {
+                    sampleTop    = std::max(sampleTop, bounds.max.y + 1.0f);
+                    sampleBottom = std::min(sampleBottom, bounds.min.y - 1.0f);
+                }
+                if (world.CompareTag(entity, kObstacleTag)) m_obstacles.push_back(bounds);
             });
 
         NavGridSettings settings;
@@ -1193,28 +1198,14 @@ namespace Crucible {
 
         // 3. The ground's heights, sampled from physics - only while Playing,
         // because physics only has bodies then (it is SimulationOnly). The
-        // Edit preview stays flat, so a ramp shows as blocked there until Play.
-        // Colliders found to be ground (the floor, ramps, plateau tops) are
-        // then dropped from the obstacles: judged against the flat plane, a
-        // ramp is "taller than a step" and would wall itself off.
+        // Edit preview stays flat: only tagged obstacles show there, and
+        // slopes, ledges and untagged walls appear once Play samples them.
         if (!m_physics) m_physics = m_systems.FindSystem<ECSPhysicsSystem>();
         if (m_playMode.State() == PlayState::Playing && m_physics && m_physics->IsInSession()
-            && SampleTerrain(settings, surface.m_stepHeight, surface.m_maxWalkableSlope)) {
-
+            && SampleTerrain(world, settings, surface.m_stepHeight, surface.m_maxWalkableSlope, sampleTop, sampleBottom)) {
             m_terrain = &m_heightTerrain;
-            std::size_t kept = 0;
-            for (std::size_t i = 0; i < m_obstacles.size(); ++i) {
-                const bool ground = std::binary_search(m_groundEntities.begin(), m_groundEntities.end(), m_obstacleEntities[i], EntityLess);
-                if (ground) continue;
-                m_obstacles[kept]        = m_obstacles[i];
-                m_obstacleEntities[kept] = m_obstacleEntities[i];
-                ++kept;
-            }
-            CRU_INFO("Navigation: ground heights sampled - {} collider(s) are ground, {} left as obstacles",
-                     m_obstacles.size() - kept, kept);
-            m_obstacles.resize(kept);
-            m_obstacleEntities.resize(kept);
         }
+        CRU_INFO("Navigation: {} collider(s) tagged \"{}\" baked as obstacles", m_obstacles.size(), kObstacleTag);
 
         // 4. The bake itself. NavGrid logs the result, or why it failed. Then
         // the flow field's cost field, which depends on nothing but the grid,
@@ -1232,8 +1223,9 @@ namespace Crucible {
     /*!
         \brief
         Fills m_heightTerrain from physics: one ray straight down through
-        every cell's centre, and the static (NonMoving) surface it lands on
-        first is that cell's ground. Unity's NavMesh bake works out walkable
+        every cell's centre, and the first static (NonMoving) surface it
+        lands on that is not tagged "Obstacle" is that cell's ground. Rays
+        pass through tagged obstacles, which the grid bake blocks on its own. Unity's NavMesh bake works out walkable
         ground the same way, from the geometry, with the same two rules.
 
         \details
@@ -1250,9 +1242,6 @@ namespace Crucible {
             below it, so the grid bake still judges the crate against the
             floor and blocks it with padding as an obstacle, as before.
 
-        Colliders hit in cells that stayed walkable are "ground" and go in
-        m_groundEntities; Bake stops treating them as obstacles.
-
         Not handled: walking UNDER things. The ray lands on top of a bridge or
         an arch, so that cell's ground is the top. Jean David's terrain has no
         overhangs, and a hand-built one can wait.
@@ -1260,13 +1249,17 @@ namespace Crucible {
         \return
         False if nothing was hit at all (no colliders under the surface): the
         caller then keeps the flat ground.
+
+        \param top, bottom
+        Where the rays start and end: above the highest static collider and
+        below the lowest (Bake works them out).
     */
-    bool ECSNavigationSystem::SampleTerrain(const NavGridSettings& settings, float stepHeight, float maxSlopeDegrees) {
+    bool ECSNavigationSystem::SampleTerrain(const World& world, const NavGridSettings& settings, float stepHeight,
+                                            float maxSlopeDegrees, float top, float bottom) {
 
         const float slopeLimit = std::clamp(maxSlopeDegrees, 1.0f, 89.0f);   // a vertical limit would make every wall walkable
         constexpr long long kMaxSamples  = 1000000;   // one ray each; past this, bigger cells are the fix (NavGrid says so too)
 
-        m_groundEntities.clear();
         if (!m_physics || !(settings.cellSize > 0.0f)) return false;
 
         const long long colsLong = static_cast<long long>(std::ceil(settings.width / settings.cellSize));
@@ -1278,17 +1271,8 @@ namespace Crucible {
         const float minX = settings.origin.x - settings.width * 0.5f;   // the same corner NavGrid uses, so cells match
         const float minZ = settings.origin.z - settings.depth * 0.5f;
 
-        // Rays start above the highest static collider and reach below the
-        // lowest, so every floor, hill and pit in the level is found.
-        float top    = settings.origin.y + 50.0f;
-        float bottom = settings.origin.y - 50.0f;
-        for (const NavObstacle& obstacle : m_obstacles) {
-            top    = std::max(top, obstacle.max.y + 1.0f);
-            bottom = std::min(bottom, obstacle.min.y - 1.0f);
-        }
-
         // 1. One ray per cell centre.
-        struct Sample { float height = 0.0f; float normalY = 1.0f; Entity entity{}; bool hit = false; };
+        struct Sample { float height = 0.0f; float normalY = 1.0f; bool hit = false; };
         std::vector<Sample> samples(static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows));
 
         EntityFilter filter;
@@ -1299,10 +1283,22 @@ namespace Crucible {
             for (int col = 0; col < cols; ++col) {
                 const Math::vec3 origin(minX + (static_cast<float>(col) + 0.5f) * cell, top,
                                         minZ + (static_cast<float>(row) + 0.5f) * cell);
-                EntityHit hit;
-                if (!m_physics->Raycast(origin, down, hit, top - bottom, filter)) continue;
+                // Through tagged obstacles to what they stand on: each one hit
+                // is ignored and the ray carries on from there. A few at most
+                // are stacked over one cell; the cap only guards the loop.
+                EntityHit    hit;
+                EntityFilter through = filter;
+                Math::vec3   from    = origin;
+                bool         ground  = false;
+                for (int pass = 0; pass < 8; ++pass) {
+                    if (!m_physics->Raycast(from, down, hit, from.y - bottom, through)) break;
+                    if (!world.CompareTag(hit.entity, kObstacleTag)) { ground = true; break; }
+                    through.ignore = hit.entity;
+                    from.y         = hit.point.y;
+                }
+                if (!ground) continue;
                 Sample& sample = samples[static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(col)];
-                sample = { hit.point.y, hit.normal.y, hit.entity, true };
+                sample = { hit.point.y, hit.normal.y, true };
                 ++hits;
             }
         }
@@ -1349,7 +1345,7 @@ namespace Crucible {
             }
         }
 
-        // 3. Into the terrain, and the ground list.
+        // 3. Into the terrain.
         m_heightTerrain.Reset(minX, minZ, cols, rows, cell, settings.origin.y);
         float lowest = lowered[0], highest = lowered[0];
         for (int row = 0; row < rows; ++row) {
@@ -1358,13 +1354,8 @@ namespace Crucible {
                 m_heightTerrain.SetCell(col, row, lowered[i], wall[i] != 0);
                 lowest  = std::min(lowest, lowered[i]);
                 highest = std::max(highest, lowered[i]);
-                if (wall[i] == 0) m_groundEntities.push_back(samples[i].entity);
             }
         }
-        std::sort(m_groundEntities.begin(), m_groundEntities.end(), EntityLess);
-        m_groundEntities.erase(std::unique(m_groundEntities.begin(), m_groundEntities.end(),
-                                           [](const Entity& a, const Entity& b) { return !EntityLess(a, b) && !EntityLess(b, a); }),
-                               m_groundEntities.end());
 
         CRU_INFO("Navigation: sampled {} x {} ground heights from {:.2f} to {:.2f} m - {} too steep, {} ledges, {} with nothing under them",
                  cols, rows, lowest, highest, steep, ledges, empty);
