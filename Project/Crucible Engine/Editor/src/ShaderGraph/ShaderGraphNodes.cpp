@@ -32,7 +32,6 @@
 #include "ShaderGraph/ShaderGraphNodes.h"
 
 #include <set>
-#include <string>
 
 namespace Crucible::ShaderGraph {
 

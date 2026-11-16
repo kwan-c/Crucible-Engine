@@ -364,7 +364,9 @@ namespace Crucible {
                  the built-in shader - for an empty or unusable name.
          \note  Frame thread only. Shaders are never unloaded.
          *********************************************************************/
-        ENGINE_API MaterialShaderHandle LoadMaterialShader(const std::string& name);
+        /// `quiet`: say nothing if the shader has no compiled code yet - for one that never has
+        /// any on disk and is given its code straight away (the Shader Graph window's preview).
+        ENGINE_API MaterialShaderHandle LoadMaterialShader(const std::string& name, bool quiet = false);
 
         /*********************************************************************
          \brief  A mesh shader's name, as given to LoadMaterialShader.

@@ -23,6 +23,17 @@
 * change, generates the shader, compiles it and swaps it in on every material using it. A
 * graph saved with a problem in it keeps drawing with its last good shader.
 *
+* Since step 7 the graph is also LIVE while it is edited, before any save:
+*   - a PREVIEW at the top of the right-hand side shows it on a sphere, cube or plane (drag to
+*     turn, wheel to zoom). It is the real renderer looking at a mesh parked far above the
+*     scene, so it has the scene's sun, sky and shading. A constant dragged on a node shows
+*     there at once: the preview's shader reads constants as hidden parameters
+*     (ShaderGraph::Options::liveConstants), so no compile is needed for them;
+*   - the SCENE's materials on this graph follow about a third of a second after an edit
+*     ends, when the graph has been generated and compiled again.
+* Discarding the changes (New, Open, undo back to the saved state) puts the scene back on what
+* the file says. A graph with a problem in it keeps showing the last version that worked.
+*
 * Undo and redo cover everything done in the window (ShaderGraph/ShaderGraphDocument.h).
 *
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
@@ -31,6 +42,7 @@
 #pragma once
 
 #include "ImGui/ImGuiManager.h"
+#include <Graphics/ViewportPanel.h>
 #include "ShaderGraph/ShaderGraphDocument.h"
 #include "ShaderGraph/ShaderGraphView.h"
 
@@ -44,7 +56,7 @@ namespace Crucible {
 
 	class ShaderGraphPanel final : public EditorPanel {
 	public:
-		explicit ShaderGraphPanel(Core& core) : m_core(core) {}
+		explicit ShaderGraphPanel(Core& core);
 
 		void Init() override;
 		void Update(float) override;
@@ -70,6 +82,11 @@ namespace Crucible {
 		bool DrawParameters(bool readOnly);   // the left list; true if the graph changed
 		bool DrawDetails(bool readOnly);      // the right side; true if the graph changed
 		void DrawDialogs();
+		void DrawPreview();          // the preview image and its controls, at the top of the right-hand side
+
+		void UpdateLive();           // sends the graph, as it is now, to the preview and the scene - a moment after the last change
+		void StopLive();             // the scene's materials go back to what the graph's file says
+		void SyncPreviewValues();    // the preview material's values <- the graph's parameter defaults and node constants
 
 		/// What the canvas shows on the nodes: the generator's problems with the graph as it is
 		/// now, and the compiler's errors with the shader that was last saved.
@@ -89,7 +106,19 @@ namespace Crucible {
 		bool                   m_pendingCommit = false; // something changed: an undo step is due when the gesture ends
 		std::string            m_message;
 		bool                   m_messageIsError = false;
-		std::vector<uint32_t>  m_savedLines;            // the saved shader's lines -> nodes, for the compiler's errors
+		std::vector<uint32_t>  m_previewLines;          // the preview shader's lines -> nodes, for the compiler's errors
+
+		// The live preview (see the file comment).
+		ViewportPanel          m_preview;               // the renderer's view of the preview mesh
+		MaterialShaderHandle   m_previewShader;         // "ShaderGraphPreview": the open graph, constants as hidden parameters
+		MaterialHandle         m_previewMaterial;       // the one material on it
+		int                    m_previewMesh = 0;       // which of kPreviewMeshes
+		float                  m_orbitYaw = -60.0f;     // the preview camera, turning round the mesh (degrees)
+		float                  m_orbitPitch = -20.0f;
+		float                  m_orbitZoom = 1.0f;      // 1 = the mesh fills the view
+		bool                   m_liveDue = false;       // the graph changed: it is to be sent again
+		double                 m_liveAt = 0.0;          // ... once ImGui's time reaches this
+		std::string            m_liveName;              // the scene shader this window has given a live source ("" = none)
 
 		int                    m_parameter = -1;        // the parameter selected in the left list
 		std::string            m_nameBuffer;            // its name, as being typed

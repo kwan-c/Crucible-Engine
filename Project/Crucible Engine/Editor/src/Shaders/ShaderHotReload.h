@@ -28,6 +28,11 @@
 * where the build keeps the shaders it compiles - so the next start, and the Game run from the
 * build folder, load it like any other shader.
 *
+* A watched shader can also be given a LIVE source (SetLive): text to compile instead of what its
+* file says, until ClearLive. That is how the Shader Graph window shows a graph that has not been
+* saved yet, on the scene's materials and on its own preview. A live result is never written to
+* Resources/Shaders - only what is saved is kept.
+*
 * At start, each watched shader is compiled once (normally straight from the compiler's cache)
 * and compared with the .spv the build produced, which is what the renderer loaded. Identical:
 * nothing happens. Different - a shader was edited while the Editor was closed and the project
@@ -123,6 +128,17 @@ namespace Crucible {
 		/// Diagnostic::file == its name.
 		const std::vector<ShaderCompiler::Diagnostic>& ErrorsOf(std::string_view name) const;
 
+		/*********************************************************************
+		 \brief  Compiles `source` for a watched shader in place of its file's
+		         source, and hands over `paramsJson` as its parameter list
+		         when that code is swapped in. Stays until ClearLive().
+		 \return false if no shader of that name is watched (yet).
+		 *********************************************************************/
+		bool SetLive(std::string_view name, std::string source, std::string paramsJson);
+		/// Back to what the shader's file says (it is read and compiled again).
+		void ClearLive(std::string_view name);
+		bool IsLive(std::string_view name) const;
+
 	private:
 		using Clock = std::chrono::steady_clock;
 
@@ -134,6 +150,11 @@ namespace Crucible {
 			int         errors = 0;        // from the last compile (0 = it was fine)
 			uint64_t    paramsHash = 0;    // hash of the .params.json text last handed over (0 = none)
 			std::vector<ShaderCompiler::Diagnostic> diagnostics;   // the errors of the last compile
+
+			// A live source (SetLive):
+			bool        live = false;
+			std::string liveSource;
+			std::string liveParams;            // its parameter list, handed over with its code
 
 			// A generated shader:
 			std::string source;                // what `generate` last made (kept: recompiled when an include changes)

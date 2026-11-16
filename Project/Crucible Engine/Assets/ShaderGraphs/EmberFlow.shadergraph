@@ -1,11 +1,11 @@
 {
   "version": 1,
   "domain": "surface",
-  "nextId": 25,
+  "nextId": 27,
   "parameters": [
     { "name": "coolColour", "type": "colour", "default": [0.05406575, 0.3546076, 0.7352941] },
     { "name": "hotColour", "type": "colour", "default": [0.5695349, 0.8088235, 0.3568339] },
-    { "name": "flow", "type": "vec2", "default": [1.15, 3.12], "min": -1.0, "max": 1.0 },
+    { "name": "flow", "type": "vec2", "default": [0.1, 0.5], "min": -1.0, "max": 1.0 },
     { "name": "scale", "type": "float", "default": 6.07, "min": 0.5, "max": 32.0 },
     { "name": "glow", "type": "float", "default": 3.0, "min": 0.0, "max": 16.0 },
     { "name": "rim", "type": "float", "default": 1.5, "min": 0.0, "max": 8.0 },

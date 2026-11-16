@@ -261,6 +261,14 @@ namespace Crucible {
 		const MaterialShaderParams& list = renderer.GetMaterialShaderParams(data.shader);
 		if (list.Empty()) { return changed; }
 
+		// A divider carrying the shader's name: what follows is that shader's own, set apart
+		// from the built-in controls above it.
+		std::string title = renderer.GetMaterialShaderName(data.shader);
+		for (const ShaderGraphFile& graph : ShaderGraphs()) {
+			if (graph.shaderName == title) { title = graph.label.substr(0, graph.label.rfind('.')); }   // a graph: its file's name, not its GUID
+		}
+		ImGui::SeparatorText((title + " parameters").c_str());
+
 		ImGui::PushID("ShaderParams");
 
 		// Values are kept by slot. A material that has fewer than the list (it was saved before a

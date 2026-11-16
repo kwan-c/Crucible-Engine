@@ -82,10 +82,38 @@ namespace Crucible::ShaderGraph {
 			std::vector<ValueType> outputs;                      ///< per output pin, in the node table's order
 		};
 		std::vector<NodeResult> nodes;   ///< one per node of a known kind; filled whether `ok` or not
+
+		/// A node's constant that Options::liveConstants turned into a hidden parameter.
+		struct LiveConstant {
+			uint32_t             node = 0;
+			std::string          pin;      ///< the input pin the constant is on
+			std::string          name;     ///< its name in the parameter list: LiveConstantName(node, pin)
+			size_t               slot = 0; ///< its place in the list's "params"
+			ValueType            type = ValueType::Float;
+			std::array<float, 4> value{};  ///< what it was when the shader was generated (the list's default)
+		};
+		std::vector<LiveConstant> liveConstants;   ///< empty unless Options::liveConstants
+	};
+
+	struct Options {
+		/// For a live preview. Every constant typed into a node (an input with nothing linked)
+		/// is read from a HIDDEN PARAMETER instead of being a number in the code, so changing
+		/// one changes a material's value and needs no recompile. The hidden parameters come
+		/// after the graph's own in the parameter list (so those keep their slots) and are
+		/// named LiveConstantName(node, pin). The shader looks the same; only use it for a
+		/// preview material - a real material would show and save the hidden parameters.
+		bool liveConstants = false;
 	};
 
 	/// Checks `graph` and writes its shader. See the file comment.
-	Generated Generate(const Graph& graph);
+	Generated Generate(const Graph& graph, const Options& options = {});
+
+	/// "_n7_b": the hidden parameter for node 7's constant on pin "b". Starts with '_', which a
+	/// graph's own parameter can too - so tell them apart with ParseLiveConstantName.
+	std::string LiveConstantName(uint32_t node, std::string_view pin);
+
+	/// The node and pin a hidden parameter's name stands for. False if `name` is not one.
+	bool ParseLiveConstantName(std::string_view name, uint32_t& node, std::string& pin);
 
 	/// "node 7 (Lerp), pin t: a float3 cannot go into ..." - a problem as one line for a log.
 	std::string Describe(const Graph& graph, const Problem& problem);

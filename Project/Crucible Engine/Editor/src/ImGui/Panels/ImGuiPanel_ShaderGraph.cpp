@@ -26,8 +26,11 @@
 
 #include "misc/cpp/imgui_stdlib.h"   // ImGui::InputText(std::string*)
 
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <string_view>
 
 namespace Crucible {
@@ -39,6 +42,14 @@ namespace Crucible {
 		constexpr ImVec4 kErrorText{ 1.0f, 0.55f, 0.43f, 1.0f };     // the State Graph window's
 		constexpr ImVec4 kFineText{ 0.6f, 0.85f, 0.6f, 1.0f };
 		constexpr ImVec4 kWarningText{ 0.95f, 0.75f, 0.4f, 1.0f };
+
+		// The preview's own shader: never on disk, always the graph that is open.
+		constexpr const char* kPreviewShader = "ShaderGraphPreview";
+		// Where the preview mesh is parked: straight up, far past any camera's far plane, so no
+		// other view ever shows it and nothing of the scene is near it.
+		constexpr glm::vec3 kPreviewPlace{ 0.0f, 5000.0f, 0.0f };
+		constexpr double kLiveDelay = 0.3;   // seconds after the last change before the graph is compiled again
+		constexpr std::array<const char*, 3> kPreviewMeshes{ "Sphere", "Cube", "Plane" };   // the renderer's primitive meshes
 
 		struct TypeChoice { ParameterType type; const char* label; };
 		constexpr std::array<TypeChoice, 6> kParameterTypes{ {
@@ -103,6 +114,8 @@ namespace Crucible {
 
 	}   // anonymous namespace
 
+	ShaderGraphPanel::ShaderGraphPanel(Core& core) : m_core(core), m_preview(core.GetRenderer()) {}
+
 	void ShaderGraphPanel::Init() {
 		m_panelName     = "Shader Graph";
 		m_windowPadding = { 8.0f, 8.0f };
@@ -111,6 +124,8 @@ namespace Crucible {
 	}
 
 	void ShaderGraphPanel::Update(float) {
+		// The preview is only rendered while there is something to look at it.
+		m_preview.SetActive(m_visible && m_hasDocument);
 		if (!m_visible) { return; }
 
 		ImGui::SetNextWindowSize({ 1280.0f, 720.0f }, ImGuiCond_FirstUseEver);
@@ -165,11 +180,14 @@ namespace Crucible {
 				// One undo step per finished gesture, as in the other graph windows.
 				if (m_pendingCommit) {
 					m_document.Touch();
+					m_liveDue = true;                            // and the live shaders are out of date:
+					m_liveAt = ImGui::GetTime() + kLiveDelay;    // sent again once the changes stop coming
 					if (!ImGui::IsAnyItemActive() && !m_view.IsBusy()) {
 						m_document.Commit();
 						m_pendingCommit = false;
 					}
 				}
+				UpdateLive();
 			} else {
 				ImGui::TextWrapped("Click New to start a shader graph, Open to pick one, or double-click a .shadergraph in the Asset Browser.");
 			}
@@ -366,6 +384,9 @@ namespace Crucible {
 		const std::vector<Problem> problems = ShownProblems();
 		bool changed = false;
 
+		DrawPreview();
+		ImGui::Separator();
+
 		Node* node = m_view.SelectedNode() != 0 ? graph.FindNode(m_view.SelectedNode()) : nullptr;
 		if (!node) {
 			// Nothing (or several things) selected: the graph as a whole.
@@ -480,18 +501,167 @@ namespace Crucible {
 	std::vector<Problem> ShaderGraphPanel::ShownProblems() {
 		std::vector<Problem> problems = m_document.Check().problems;
 
-		// The compiler's errors with the shader as it was last saved, on the node whose line it is.
-		const std::string name = ShaderName();
-		if (const ShaderHotReload* hotReload = ShaderHotReload::Active(); hotReload && !name.empty()) {
-			for (const ShaderCompiler::Diagnostic& error : hotReload->ErrorsOf(name)) {
+		// The compiler's errors with the graph as it was last sent to the preview, on the node
+		// whose line it is. (The generator's rows are tested to compile, so this is for a row
+		// added with a mistake in it - and later for custom code nodes.)
+		if (const ShaderHotReload* hotReload = ShaderHotReload::Active()) {
+			for (const ShaderCompiler::Diagnostic& error : hotReload->ErrorsOf(kPreviewShader)) {
 				Problem problem;
-				const size_t line = error.line > 0 ? static_cast<size_t>(error.line) - 1 : m_savedLines.size();
-				if (error.file == name && line < m_savedLines.size() && m_document.GetGraph().FindNode(m_savedLines[line])) { problem.node = m_savedLines[line]; }
+				const size_t line = error.line > 0 ? static_cast<size_t>(error.line) - 1 : m_previewLines.size();
+				if (error.file == kPreviewShader && line < m_previewLines.size() && m_document.GetGraph().FindNode(m_previewLines[line])) { problem.node = m_previewLines[line]; }
 				problem.message = "the shader compiler says: " + error.message;
 				problems.push_back(std::move(problem));
 			}
 		}
 		return problems;
+	}
+
+	void ShaderGraphPanel::DrawPreview() {
+		Renderer& renderer = m_core.GetRenderer();
+		const float side = std::floor((std::min)(ImGui::GetContentRegionAvail().x, 300.0f));
+		if (side < 32.0f) { return; }
+		m_preview.Resize(static_cast<uint32_t>(side), static_cast<uint32_t>(side));
+
+		// The mesh, parked far above the scene, and the preview's camera turning round it.
+		MeshHandle mesh;
+		for (const MeshHandle primitive : renderer.GetPrimitiveMeshes()) {
+			if (renderer.GetMeshName(primitive) == kPreviewMeshes[static_cast<size_t>(m_previewMesh)]) { mesh = primitive; }
+		}
+		if (m_preview.IsValid() && mesh.IsValid() && m_previewMaterial.IsValid()) {
+			glm::vec3 low(-0.5f), high(0.5f);
+			renderer.GetMeshBounds(mesh, low, high);
+			const glm::vec3 centre = (low + high) * 0.5f;
+			const float radius = (std::max)(glm::length(high - low) * 0.5f, 0.01f);
+			renderer.Submit(mesh, m_previewMaterial, glm::translate(glm::mat4(1.0f), kPreviewPlace - centre));
+
+			Camera& camera = m_preview.GetCamera();
+			camera.fovY  = 35.0f;
+			camera.nearZ = 0.05f;
+			camera.farZ  = 200.0f;
+			camera.yaw   = m_orbitYaw;
+			camera.pitch = m_orbitPitch;
+			const float distance = radius / std::sin(glm::radians(camera.fovY * 0.5f)) * 1.1f * m_orbitZoom;
+			camera.position = kPreviewPlace - camera.Forward() * distance;
+		}
+
+		// The image, with an invisible button over it for the mouse.
+		const ImVec2 corner = ImGui::GetCursorScreenPos();
+		m_preview.DrawImage({ side, side });
+		ImGui::SetCursorScreenPos(corner);
+		ImGui::InvisibleButton("##preview", { side, side });
+		if (ImGui::IsItemActive() && ImGui::IsMouseDragging(ImGuiMouseButton_Left, 0.0f)) {
+			m_orbitYaw += ImGui::GetIO().MouseDelta.x * 0.5f;
+			m_orbitPitch = std::clamp(m_orbitPitch - ImGui::GetIO().MouseDelta.y * 0.5f, -85.0f, 85.0f);
+		}
+		if (ImGui::IsItemHovered()) {
+			ImGui::SetItemKeyOwner(ImGuiKey_MouseWheelY);   // the wheel zooms here; it does not scroll the list below
+			if (ImGui::GetIO().MouseWheel != 0.0f) { m_orbitZoom = std::clamp(m_orbitZoom * std::pow(0.9f, ImGui::GetIO().MouseWheel), 0.4f, 4.0f); }
+		}
+
+		ImGui::SetNextItemWidth(110.0f);
+		ImGui::Combo("##mesh", &m_previewMesh, kPreviewMeshes.data(), static_cast<int>(kPreviewMeshes.size()));
+		ImGui::SetItemTooltip("What the preview shows the graph on. Drag the picture to turn it, the wheel zooms.");
+
+		// What the preview is showing, when it is not simply the graph as it is.
+		const ShaderHotReload* hotReload = ShaderHotReload::Active();
+		ImGui::SameLine();
+		if (!hotReload) {
+			ImGui::TextColored(kWarningText, "no shader compiler");
+			ImGui::SetItemTooltip("slangc was not found on this machine (the Vulkan SDK), so nothing can be previewed.");
+		} else if (!m_document.Check().ok) {
+			ImGui::TextColored(kErrorText, "the last graph that worked");
+			ImGui::SetItemTooltip("The graph has a problem that stops its shader. The preview keeps the last version that worked.");
+		} else if (hotReload->HasErrors(kPreviewShader)) {
+			ImGui::TextColored(kErrorText, "compiler errors");
+		} else if (m_liveDue || hotReload->IsCompiling(kPreviewShader)) {
+			ImGui::TextColored(kWarningText, "updating...");
+		} else {
+			ImGui::TextDisabled("live");
+			ImGui::SetItemTooltip("Parameters show their defaults here, and textures the default each one names.");
+		}
+	}
+
+	void ShaderGraphPanel::UpdateLive() {
+		ShaderHotReload* hotReload = ShaderHotReload::Active();
+		if (!hotReload) { return; }   // no compiler on this machine: nothing can be live
+		Renderer& renderer = m_core.GetRenderer();
+
+		// The preview's shader and its one material, made the first time they are needed. The
+		// shader has no file: the hot reload layer starts watching it a frame later, and from
+		// then on it takes the source given below.
+		if (!m_previewShader.IsValid()) { m_previewShader = renderer.LoadMaterialShader(kPreviewShader, true); }
+		if (!m_previewMaterial.IsValid() && m_previewShader.IsValid()) {
+			MaterialData data;
+			data.shader = m_previewShader;
+			m_previewMaterial = renderer.CreateMaterial(data);
+		}
+		SyncPreviewValues();
+
+		// The graph again, once the changes have stopped coming and the gesture has ended.
+		if (!m_liveDue || m_pendingCommit || ImGui::GetTime() < m_liveAt) { return; }
+		const Generated& check = m_document.Check();
+		if (!check.ok) {
+			m_liveDue = false;   // nothing to send: what worked last keeps drawing
+			return;
+		}
+
+		// The preview: constants as hidden parameters, so dragging one needs no compile.
+		const Generated preview = Generate(m_document.GetGraph(), Options{ true });
+		if (!preview.ok || !hotReload->SetLive(kPreviewShader, preview.source, preview.paramsJson)) { return; }   // not watched yet: next frame
+		m_previewLines = preview.lineNodes;
+
+		// The scene's materials on this graph: the graph as it is while it differs from its
+		// file, the file's own again once it does not (saved, or undone back to it).
+		const std::string name = ShaderName();
+		if (!name.empty()) {
+			if (m_document.Dirty()) {
+				if (hotReload->SetLive(name, check.source, check.paramsJson)) { m_liveName = name; }
+			} else {
+				StopLive();
+			}
+		}
+		m_liveDue = false;
+	}
+
+	void ShaderGraphPanel::StopLive() {
+		if (m_liveName.empty()) { return; }
+		if (ShaderHotReload* hotReload = ShaderHotReload::Active()) { hotReload->ClearLive(m_liveName); }
+		m_liveName.clear();
+	}
+
+	void ShaderGraphPanel::SyncPreviewValues() {
+		if (!m_previewMaterial.IsValid()) { return; }
+		Renderer& renderer = m_core.GetRenderer();
+		const Graph& graph = m_document.GetGraph();
+
+		// By NAME, against the list the preview shader has right now (a new list arrives with
+		// its code, a little after the graph changes): each of the graph's parameters at its
+		// default, each hidden one at its node's constant as it is this frame.
+		const MaterialShaderParams& list = renderer.GetMaterialShaderParams(m_previewShader);
+		MaterialData data = renderer.GetMaterialData(m_previewMaterial);
+		bool changed = data.params.size() != list.params.size();
+		data.params.resize(list.params.size());
+		for (size_t i = 0; i < list.params.size(); ++i) {
+			glm::vec4 value = list.params[i].defaultValue;
+			uint32_t nodeId = 0;
+			std::string pin;
+			if (ParseLiveConstantName(list.params[i].name, nodeId, pin)) {
+				const Node* node = graph.FindNode(nodeId);
+				const NodeType* type = node ? FindNodeType(node->type) : nullptr;
+				if (const int index = type ? type->FindInput(pin) : -1; index >= 0) {
+					const auto constant = node->inputs.find(pin);
+					const std::array<float, 4>& values = constant != node->inputs.end() ? constant->second : type->inputs[static_cast<size_t>(index)].defaultValue;
+					value = glm::vec4(values[0], values[1], values[2], values[3]);
+				}
+			} else if (const Parameter* parameter = graph.FindParameter(list.params[i].name)) {
+				value = glm::vec4(parameter->defaultValue[0], parameter->defaultValue[1], parameter->defaultValue[2], parameter->defaultValue[3]);
+			}
+			if (data.params[i] != value) {
+				data.params[i] = value;
+				changed = true;
+			}
+		}
+		if (changed) { renderer.UpdateMaterial(m_previewMaterial, data); }
 	}
 
 	void ShaderGraphPanel::DrawDialogs() {
@@ -559,17 +729,19 @@ namespace Crucible {
 
 	void ShaderGraphPanel::AfterRebuild() {
 		m_pendingCommit = false;
+		m_liveDue = true;               // another graph than a moment ago: show it
+		m_liveAt = ImGui::GetTime();
 		m_view.KeepSelectionIn(m_document.GetGraph());
 		m_nameShown.clear();
 		m_nameEditing = false;
 	}
 
 	void ShaderGraphPanel::NewGraph() {
+		StopLive();   // the graph that was open: its materials go back to its file
 		m_document.New();
 		m_asset       = 0;
 		m_hasDocument = true;
 		m_parameter   = -1;
-		m_savedLines.clear();
 		m_view.ClearSelection();
 		AfterRebuild();
 		m_view.FrameAll(m_document.GetGraph());
@@ -586,11 +758,11 @@ namespace Crucible {
 
 		std::string error;
 		if (!m_document.Load(text, error)) { SetMessage(entry->virtualPath + ": " + error, true); return false; }
+		StopLive();   // the graph that was open: its materials go back to its file
 
 		m_asset       = asset;
 		m_hasDocument = true;
 		m_parameter   = -1;
-		m_savedLines  = m_document.Check().lineNodes;
 		m_view.ClearSelection();
 		AfterRebuild();
 		m_view.FrameAll(m_document.GetGraph());
@@ -612,8 +784,8 @@ namespace Crucible {
 		if (!m_core.GetResources().SaveTextAsset(path, m_document.Text(), false, &error)) { SetMessage(error, true); return false; }
 
 		m_document.MarkSaved();
+		StopLive();   // the file now says what was live: from here the shader is the file's, and is kept beside the built ones
 		const Generated& check = m_document.Check();
-		m_savedLines = check.lineNodes;
 		if (check.ok) {
 			SetMessage("Saved " + path + " - materials using it update in a moment.", false);
 		} else {
@@ -635,9 +807,9 @@ namespace Crucible {
 		const AssetId id = m_core.GetResources().SaveTextAsset(path, m_document.Text(), true, &error);
 		if (!id) { SetMessage(error, true); return false; }
 
+		StopLive();   // if this was a saved graph being saved under a new name: the old one goes back to its file
 		m_asset = id;
 		m_document.MarkSaved();
-		m_savedLines = m_document.Check().lineNodes;
 		SetMessage("Saved " + path + ". Pick it as a material's Shader in the Inspector to use it.", false);
 		if (auto browser = EditorManager::GetInstance().GetPanel<AssetBrowser>(ImguiPanels::ASSETBROWSER)) { browser->Refresh(); }
 		return true;

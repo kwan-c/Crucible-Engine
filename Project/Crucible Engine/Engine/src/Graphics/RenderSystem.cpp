@@ -863,7 +863,7 @@ namespace Crucible {
     MaterialHandle Renderer::CreateMaterial(const MaterialData& data) { return m_resources.CreateMaterial(data); }
     void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) { m_resources.UpdateMaterial(handle, data); }
     
-    MaterialShaderHandle Renderer::LoadMaterialShader(const std::string& name) {
+    MaterialShaderHandle Renderer::LoadMaterialShader(const std::string& name, bool quiet) {
 
         if (name.empty()) { return {}; }   // the built-in shader
         if (const MaterialShaderHandle loaded = m_materialShaders.Find(name); loaded.IsValid()) { return loaded; }
@@ -887,8 +887,10 @@ namespace Crucible {
         try {
             spirv = LoadShaderWords(name + ".spv");
         } catch (const std::exception& e) {
-            CRU_USER_WARN("[Renderer] Shader '{}' has no compiled code yet - its materials draw with the default shader "
-                          "until it does. ({})", name, e.what());
+            if (!quiet) {
+                CRU_USER_WARN("[Renderer] Shader '{}' has no compiled code yet - its materials draw with the default shader "
+                              "until it does. ({})", name, e.what());
+            }
         }
         const MaterialShaderHandle shader = m_materialShaders.Add(name, std::move(spirv));
 

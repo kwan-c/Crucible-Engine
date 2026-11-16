@@ -631,11 +631,18 @@ namespace {
 			CHECK(Load(Save(graph), loaded, error));
 			CHECK(Generate(loaded).source == result.source);
 
+			// The live-preview form (constants as hidden parameters) of the same graph.
+			const Generated live = Generate(graph, Options{ true });
+			CHECK(live.ok && !live.liveConstants.empty() && live.source != result.source);
+
 			if (writeTo) {
-				const std::filesystem::path file = std::filesystem::path(writeTo) / ("AllNodes_" + std::string(ValueTypeName(NumericType(components))) + ".slang");
-				std::ofstream out(file, std::ios::binary | std::ios::trunc);
-				out << result.source;
-				std::printf("    wrote %s\n", file.string().c_str());
+				const std::string type = ValueTypeName(NumericType(components));
+				for (const bool isLive : { false, true }) {
+					const std::filesystem::path file = std::filesystem::path(writeTo) / ((isLive ? "AllNodesLive_" : "AllNodes_") + type + ".slang");
+					std::ofstream out(file, std::ios::binary | std::ios::trunc);
+					out << (isLive ? live.source : result.source);
+					std::printf("    wrote %s\n", file.string().c_str());
+				}
 			}
 		}
 	}
@@ -774,6 +781,63 @@ namespace {
 		CHECK(document.Dirty() && document.GetGraph().nodes.size() == 1 && !document.CanUndo());
 	}
 
+	// ---- Constants as hidden parameters, for a live preview ----------------------------------------------
+
+	void TestLiveConstants() {
+		std::printf("live constants\n");
+		// Output(1) <- Remap(2) <- Time(3); the Remap's other four pins and six of the Output's are constants.
+		Graph graph = NewGraph();
+		const uint32_t output = OutputNodeOf(graph);
+		graph.parameters.push_back(Parameter{ "glow", ParameterType::Float, { 1.5f } });
+		const uint32_t remap = AddNode(graph, "Remap", 0.0f, 0.0f);
+		const uint32_t time = AddNode(graph, "Time", 0.0f, 0.0f);
+		std::string why;
+		CHECK(Connect(graph, time, "out", remap, "in", why) && Connect(graph, remap, "out", output, "roughness", why));
+		graph.FindNode(remap)->inputs["outMax"] = { 0.25f };
+
+		const Generated baked = Generate(graph);
+		const Generated live = Generate(graph, Options{ true });
+		CHECK(baked.ok && live.ok && baked.liveConstants.empty());
+		CHECK(!Contains(baked.source, "MaterialParam(1)") && Contains(baked.source, "0.25"));
+
+		// One hidden parameter per constant, after the graph's own (slot 0); a pin a row's code
+		// names twice is still one parameter.
+		CHECK(live.liveConstants.size() == 10);
+		CHECK(Contains(live.source, "float n2_out = MaterialParam(1).x + (n3_out - MaterialParam(2).x) * (MaterialParam(3).x - MaterialParam(1).x) / (MaterialParam(4).x - MaterialParam(2).x);"));
+		CHECK(Contains(live.source, "o.albedo = MaterialParam(5).xyz;") && Contains(live.source, "o.metallic = MaterialParam(7).x;"));
+		CHECK(Contains(live.source, "o.roughness = n2_out;") && Contains(live.source, "P.glow = MaterialParam(0).x;"));
+		CHECK(!Contains(live.source, "0.25"));
+		for (const Generated::LiveConstant& constant : live.liveConstants) {
+			if (constant.node == remap && constant.pin == "outMax") { CHECK(constant.slot == 3 && constant.value[0] == 0.25f && constant.name == "_n2_outMax"); }
+		}
+
+		// The list: the graph's own first, then the hidden ones with the constants as defaults.
+		CHECK(live.paramsJson.find("\"glow\"") < live.paramsJson.find("\"_n2_outMin\""));
+		CHECK(Contains(live.paramsJson, "{ \"name\": \"_n2_outMax\", \"type\": \"float\", \"default\": 0.25 }"));
+		CHECK(Contains(live.paramsJson, "{ \"name\": \"_n1_albedo\", \"type\": \"vec3\", \"default\": [0.8, 0.8, 0.8] }"));
+		CHECK(!Contains(baked.paramsJson, "_n"));
+
+		// A constant on an "any" pin of a node working in a vector is one number, repeated.
+		Trial trial = MakeTrial("Multiply", "out", "albedo", "WorldNormal", "out", "a");
+		CHECK(Contains(Generate(trial.graph, Options{ true }).source, "float3 n2_out = n3_out * float3(MaterialParam(0).x);"));
+
+		// Names: made and read back.
+		uint32_t node = 0;
+		std::string pin;
+		CHECK(LiveConstantName(7, "b") == "_n7_b");
+		CHECK(ParseLiveConstantName("_n2_outMax", node, pin) && node == 2 && pin == "outMax");
+		CHECK(ParseLiveConstantName("_n4000000000_x", node, pin) && node == 4000000000u);
+		CHECK(!ParseLiveConstantName("glow", node, pin) && !ParseLiveConstantName("_fine", node, pin) && !ParseLiveConstantName("_n_x", node, pin));
+		CHECK(!ParseLiveConstantName("_n0_x", node, pin) && !ParseLiveConstantName("_n12", node, pin) && !ParseLiveConstantName("_n12_", node, pin));
+		CHECK(!ParseLiveConstantName("_n99999999999_x", node, pin));
+
+		// When the list is full, the constants that do not fit stay numbers in the code.
+		Graph full = NewGraph();
+		for (size_t i = 0; i < kMaxNumberParameters - 2; ++i) { full.parameters.push_back(Parameter{ "p" + std::to_string(i) }); }
+		const Generated squeezed = Generate(full, Options{ true });
+		CHECK(squeezed.ok && squeezed.liveConstants.size() == 2 && Contains(squeezed.source, "o.metallic = 0.0;"));
+	}
+
 }   // anonymous namespace
 
 int main(int argc, char** argv) {
@@ -790,6 +854,7 @@ int main(int argc, char** argv) {
 	TestAllNodes(writeTo);
 	TestEdits();
 	TestDocument();
+	TestLiveConstants();
 
 	if (g_failed != 0) {
 		std::printf("\n%d of %d checks FAILED\n", g_failed, g_checks);

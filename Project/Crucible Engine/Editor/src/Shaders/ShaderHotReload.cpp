@@ -156,6 +156,38 @@ namespace Crucible {
 		return watched ? watched->diagnostics : none;
 	}
 
+	bool ShaderHotReload::SetLive(std::string_view name, std::string source, std::string paramsJson) {
+		for (Watched& watched : m_watched) {
+			if (watched.shader.name != name) { continue; }
+			if (watched.live && watched.liveSource == source && watched.liveParams == paramsJson) { return true; }
+			watched.live = true;
+			watched.liveSource = std::move(source);
+			watched.liveParams = std::move(paramsJson);
+			m_dirty = true;   // looked at on the next Tick
+			return true;
+		}
+		return false;
+	}
+
+	void ShaderHotReload::ClearLive(std::string_view name) {
+		for (Watched& watched : m_watched) {
+			if (watched.shader.name != name || !watched.live) { continue; }
+			watched.live = false;
+			watched.liveSource.clear();
+			watched.liveParams.clear();
+			// What the file says, from the start: generated and compiled again (the compile
+			// normally comes straight from the cache).
+			watched.generated = false;
+			watched.sourceHash = 0;
+			m_dirty = true;
+		}
+	}
+
+	bool ShaderHotReload::IsLive(std::string_view name) const {
+		const Watched* watched = Find(name);
+		return watched && watched->live;
+	}
+
 	void ShaderHotReload::Configure(ShaderCompiler::Settings settings, fs::path builtDir) {
 		m_builtDir = std::move(builtDir);
 		m_watched.clear();
@@ -254,7 +286,11 @@ namespace Crucible {
 				ShaderCompiler::Request request;
 				request.name = watched.shader.name;
 				request.entryPoints = watched.shader.entryPoints;
-				if (watched.shader.generate) {
+				if (watched.live) {
+					// A live source (the unsaved graph in the Shader Graph window) stands in for
+					// the file. Its parameter list is handed over when its code is swapped in.
+					request.source = watched.liveSource;
+				} else if (watched.shader.generate) {
 					// A generated shader (a shader graph): its source and its parameter list are
 					// made here, when the file it comes from has changed.
 					if (!Regenerate(watched)) { continue; }   // nothing usable: the renderer keeps what it has
@@ -266,7 +302,14 @@ namespace Crucible {
 				// Only what this shader really includes counts: saving Water.slang does not
 				// recompile the mesh shader.
 				const uint64_t hash = m_compiler->SourceHash(request);
-				if (hash == watched.sourceHash) { continue; }
+				if (hash == watched.sourceHash) {
+					// The code that is already compiled: of a live source, only the parameter list
+					// can have changed (a default, a range) - that needs no compile.
+					if (watched.live && watched.ticket == 0 && watched.errors == 0 && watched.shader.applyParams) {
+						HandOverParams(watched, watched.liveParams, Label(watched.shader) + "'s parameter list");
+					}
+					continue;
+				}
 				watched.sourceHash = hash;
 				watched.ticket = m_compiler->Submit(std::move(request));
 			}
@@ -376,8 +419,24 @@ namespace Crucible {
 
 		// Same SPIR-V as the renderer already has (the usual case at start; also a change to a
 		// comment): nothing to swap.
+		// A live source's parameter list goes with its code: handed over now, not when it was
+		// set, so the shader that is drawing never reads a list that was made for other code.
+		if (watched.live && watched.shader.applyParams) { HandOverParams(watched, watched.liveParams, name + "'s parameter list"); }
+
+		// A generated shader is kept where the build keeps the shaders it compiles: the next start,
+		// and the Game run from the build folder, load it like any other. Not a live one - that
+		// is not saved yet.
+		const auto keepBuilt = [&] {
+			if (!watched.shader.generate || watched.live) { return; }
+			const fs::path built = m_builtDir / (watched.shader.name + ".spv");
+			if (!WriteIfDifferent(built, result.spirv.data(), result.spirv.size() * sizeof(uint32_t))) {
+				CRU_WARN("[Editor | Shaders] Could not write {}", ToUtf8(built));
+			}
+		};
+
 		const uint64_t compiledHash = HashSpirv(result.spirv);
 		if (compiledHash == watched.runningHash) {
+			keepBuilt();
 			CRU_INFO("[Editor | Shaders] {} is up to date.", name);
 			return;
 		}
@@ -390,15 +449,11 @@ namespace Crucible {
 			return;
 		}
 		watched.runningHash = compiledHash;
-		if (watched.shader.generate) {
-			// Kept where the build keeps the shaders it compiles: the next start, and the Game run
-			// from the build folder, load it like any other.
-			const fs::path built = m_builtDir / (watched.shader.name + ".spv");
-			if (!WriteIfDifferent(built, result.spirv.data(), result.spirv.size() * sizeof(uint32_t))) {
-				CRU_WARN("[Editor | Shaders] Could not write {}", ToUtf8(built));
-			}
-		}
-		if (result.fromCache) {
+		keepBuilt();
+		if (watched.live) {
+			// Every edit in the Shader Graph window ends up here: the log, not the Console.
+			CRU_INFO("[Editor | Shaders] {} (not saved yet) compiled in {:.1f}s and swapped in.", name, result.seconds);
+		} else if (result.fromCache) {
 			CRU_USER_INFO("Shader {} reloaded.", name);
 		} else {
 			CRU_USER_INFO("Shader {} compiled in {:.1f}s and reloaded.", name, result.seconds);

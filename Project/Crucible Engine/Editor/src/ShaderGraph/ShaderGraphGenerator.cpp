@@ -91,7 +91,7 @@ namespace Crucible::ShaderGraph {
 
 		class Builder {
 		public:
-			Builder(const Graph& graph, Generated& result) : m_graph(graph), m_result(result) {}
+			Builder(const Graph& graph, Generated& result, const Options& options) : m_graph(graph), m_result(result), m_options(options) {}
 
 			void Run() {
 				CheckParameters();
@@ -454,7 +454,7 @@ namespace Crucible::ShaderGraph {
 
 			// The Slang expression for what goes into an input pin: the link's value, the pin's
 			// own expression ("s.uv"), or a constant.
-			std::string InputText(const NodeInfo& info, size_t pinIndex) const {
+			std::string InputText(const NodeInfo& info, size_t pinIndex) {
 				const InputPin& pin = info.type->inputs[pinIndex];
 				const ValueType wanted = pin.type == ValueType::Any ? info.working : pin.type;
 
@@ -469,6 +469,13 @@ namespace Crucible::ShaderGraph {
 
 				const auto constant = info.node->inputs.find(pin.name);
 				const std::array<float, 4>& values = constant != info.node->inputs.end() ? constant->second : pin.defaultValue;
+				if (m_options.liveConstants) {
+					// For a live preview: read from a hidden parameter, not written as a number.
+					const ValueType own = pin.type == ValueType::Any ? ValueType::Float : pin.type;
+					if (const std::string live = LiveConstantText(info, pin, own, values); !live.empty()) {
+						return own == wanted ? live : Widened(live, wanted);
+					}
+				}
 				if (pin.type == ValueType::Any) {
 					// One number, whatever the node works in.
 					const std::string number = ConstantText(ValueType::Float, values);
@@ -477,8 +484,23 @@ namespace Crucible::ShaderGraph {
 				return ConstantText(wanted, values);
 			}
 
+			// The expression that reads a constant from its hidden parameter, which is made the
+			// first time the constant is asked for (a row's code can name a pin twice). Empty if
+			// the parameter list is full: that constant stays a number in the code.
+			std::string LiveConstantText(const NodeInfo& info, const InputPin& pin, ValueType type, const std::array<float, 4>& values) {
+				constexpr std::array<const char*, 5> kParts{ "", ".x", ".xy", ".xyz", "" };
+				const auto read = [&](size_t slot) { return "MaterialParam(" + std::to_string(slot) + ")" + kParts[ComponentCount(type)]; };
+				for (const Generated::LiveConstant& known : m_result.liveConstants) {
+					if (known.node == info.node->id && known.pin == pin.name) { return read(known.slot); }
+				}
+				const size_t slot = m_numberCount + m_result.liveConstants.size();
+				if (slot >= kMaxNumberParameters) { return {}; }
+				m_result.liveConstants.push_back({ info.node->id, pin.name, LiveConstantName(info.node->id, pin.name), slot, type, values });
+				return read(slot);
+			}
+
 			// An output's code with its {placeholders} filled in.
-			std::string Expand(const NodeInfo& info, std::string_view code) const {
+			std::string Expand(const NodeInfo& info, std::string_view code) {
 				std::string text;
 				size_t at = 0;
 				while (at < code.size()) {
@@ -544,6 +566,7 @@ namespace Crucible::ShaderGraph {
 					members += std::string("    ") + ValueTypeName(type) + " " + parameter.name + ";\n";
 					loads += "    P." + parameter.name + " = MaterialParam(" + std::to_string(numberSlot++) + ")" + kParts[ComponentCount(type)] + ";\n";
 				}
+				m_numberCount = numberSlot;   // hidden parameters (Options::liveConstants) follow the graph's own
 				if (textureSlot != 0) { Emit("\n"); }
 				if (numberSlot != 0) {
 					Emit("// The graph's parameters: this material's own values for them.\n"
@@ -601,6 +624,16 @@ namespace Crucible::ShaderGraph {
 					}
 					numbers += " }";
 				}
+				// The hidden parameters of a live preview, after the graph's own: each a constant's
+				// value, as the default.
+				for (const Generated::LiveConstant& live : m_result.liveConstants) {
+					constexpr std::array<const char*, 5> kTypes{ "float", "float", "vec2", "vec3", "vec4" };
+					const uint32_t count = ComponentCount(live.type);
+					std::string value = count <= 1 ? NumberText(live.value[0]) : std::string();
+					for (uint32_t i = 0; count > 1 && i < count; ++i) { value += (i == 0 ? "[" : ", ") + NumberText(live.value[i]) + (i + 1 == count ? "]" : ""); }
+					numbers += std::string(numbers.empty() ? "" : ",\n") + "    { \"name\": \"" + live.name + "\", \"type\": \"" + kTypes[count] +
+					           "\", \"default\": " + value + " }";
+				}
 				m_result.paramsJson = "{\n  \"version\": 1,\n  \"params\": [" + (numbers.empty() ? std::string() : "\n" + numbers + "\n  ") +
 				                      "],\n  \"textures\": [" + (textures.empty() ? std::string() : "\n" + textures + "\n  ") + "]\n}\n";
 			}
@@ -609,6 +642,8 @@ namespace Crucible::ShaderGraph {
 
 			const Graph&                         m_graph;
 			Generated&                           m_result;
+			const Options                        m_options;
+			size_t                               m_numberCount = 0;   // the graph's own number and colour parameters
 			std::vector<Stops>                   m_stops;     // one per problem
 			std::vector<NodeInfo>                m_nodes;     // one per Graph::nodes entry, same order
 			std::unordered_map<uint32_t, size_t> m_byId;      // node id -> index in m_nodes
@@ -620,15 +655,31 @@ namespace Crucible::ShaderGraph {
 
 	}   // anonymous namespace
 
-	Generated Generate(const Graph& graph) {
+	Generated Generate(const Graph& graph, const Options& options) {
 		Generated result;
-		Builder(graph, result).Run();
+		Builder(graph, result, options).Run();
 		if (!result.ok) {
 			result.source.clear();
 			result.paramsJson.clear();
 			result.lineNodes.clear();
+			result.liveConstants.clear();
 		}
 		return result;
+	}
+
+	std::string LiveConstantName(uint32_t node, std::string_view pin) {
+		return "_n" + std::to_string(node) + "_" + std::string(pin);
+	}
+
+	bool ParseLiveConstantName(std::string_view name, uint32_t& node, std::string& pin) {
+		if (name.size() < 5 || name.substr(0, 2) != "_n") { return false; }
+		size_t at = 2;
+		uint64_t id = 0;
+		while (at < name.size() && name[at] >= '0' && name[at] <= '9' && id <= 0xFFFFFFFFull) { id = id * 10 + static_cast<uint64_t>(name[at++] - '0'); }
+		if (at == 2 || id == 0 || id > 0xFFFFFFFFull || at + 1 >= name.size() || name[at] != '_') { return false; }
+		node = static_cast<uint32_t>(id);
+		pin = std::string(name.substr(at + 1));
+		return true;
 	}
 
 	std::string Describe(const Graph& graph, const Problem& problem) {
