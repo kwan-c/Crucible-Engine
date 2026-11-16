@@ -1720,6 +1720,43 @@ namespace Crucible {
 
     }   // ResourceManager::LoadModel()
 
+    namespace {
+
+        // The value a .mat file has for one parameter of its shader ("params", by name), put over
+        // what `value` holds: a number is a float, a list fills as many components as it has.
+        // False if the file has none for it.
+        bool ReadShaderParam(const rapidjson::Value& doc, const std::string& name, glm::vec4& value) {
+            const auto params = doc.FindMember("params");
+            if (params == doc.MemberEnd() || !params->value.IsObject()) { return false; }
+            const auto it = params->value.FindMember(name.c_str());
+            if (it == params->value.MemberEnd()) { return false; }
+            if (it->value.IsNumber()) {
+                value.x = it->value.GetFloat();
+                return true;
+            }
+            if (!it->value.IsArray()) { return false; }
+            for (rapidjson::SizeType c = 0; c < it->value.Size() && c < 4; ++c) {
+                if (it->value[c].IsNumber()) { value[static_cast<glm::length_t>(c)] = it->value[c].GetFloat(); }
+            }
+            return true;
+        }
+
+        // One texture reference of a .mat file: a texture asset's GUID, or a model's GUID and the
+        // index of a texture embedded in it.
+        TextureHandle ReadTextureRef(ResourceManager& resources, const rapidjson::Value& value, bool isSRGB) {
+            if (value.IsString()) { return resources.GetTexture(FromHex(value.GetString()), isSRGB); }
+            if (value.IsObject()) {
+                const auto parent = value.FindMember("model");
+                const auto index = value.FindMember("texture");
+                if (parent != value.MemberEnd() && parent->value.IsString() &&
+                    index != value.MemberEnd() && index->value.IsUint())
+                    return resources.GetModelTexture(FromHex(parent->value.GetString()), index->value.GetUint(), isSRGB);
+            }
+            return {};
+        }
+
+    }   // anonymous namespace
+
     MaterialHandle ResourceManager::LoadMaterialFile(AssetId id) {
 
         const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
@@ -1774,35 +1811,13 @@ namespace Crucible {
             const MaterialShaderParams& shaderList = m_renderer.GetMaterialShaderParams(data.shader);
             if (!shaderList.params.empty()) {
                 data.params.resize(shaderList.params.size());
-                for (size_t i = 0; i < shaderList.params.size(); ++i) { data.params[i] = shaderList.params[i].defaultValue; }
-                if (auto params = doc.FindMember("params"); params != doc.MemberEnd() && params->value.IsObject()) {
-                    for (size_t i = 0; i < shaderList.params.size(); ++i) {
-                        const auto it = params->value.FindMember(shaderList.params[i].name.c_str());
-                        if (it == params->value.MemberEnd()) continue;
-                        if (it->value.IsNumber()) {
-                            data.params[i].x = it->value.GetFloat();   // a float
-                        } else if (it->value.IsArray()) {
-                            for (rapidjson::SizeType c = 0; c < it->value.Size() && c < 4; ++c) {
-                                if (it->value[c].IsNumber()) { data.params[i][static_cast<glm::length_t>(c)] = it->value[c].GetFloat(); }
-                            }
-                        }
-                    }
+                for (size_t i = 0; i < shaderList.params.size(); ++i) {
+                    data.params[i] = shaderList.params[i].defaultValue;
+                    ReadShaderParam(doc, shaderList.params[i].name, data.params[i]);
                 }
             }
 
-            // One texture reference: a texture asset's GUID, or a model's GUID and the index of a
-            // texture embedded in it.
-            const auto readTexture = [&](const rapidjson::Value& value, bool isSRGB) -> TextureHandle {
-                if (value.IsString()) { return GetTexture(FromHex(value.GetString()), isSRGB); }
-                if (value.IsObject()) {
-                    const auto parent = value.FindMember("model");
-                    const auto index = value.FindMember("texture");
-                    if (parent != value.MemberEnd() && parent->value.IsString() &&
-                        index != value.MemberEnd() && index->value.IsUint())
-                        return GetModelTexture(FromHex(parent->value.GetString()), index->value.GetUint(), isSRGB);
-                }
-                return {};
-            };
+            const auto readTexture = [&](const rapidjson::Value& value, bool isSRGB) { return ReadTextureRef(*this, value, isSRGB); };
             if (auto textures = doc.FindMember("textures"); textures != doc.MemberEnd() && textures->value.IsObject()) {
                 for (const SlotDesc& slot : kSlots) {
                     auto it = textures->value.FindMember(slot.key);
@@ -1827,6 +1842,66 @@ namespace Crucible {
         }
 
     }   // ResourceManager::LoadMaterialFile()
+
+    std::size_t ResourceManager::LoadNewShaderValues(MaterialShaderHandle shader, const MaterialShaderParams& before) {
+
+        // What the list has now and did not have before.
+        const MaterialShaderParams& now = m_renderer.GetMaterialShaderParams(shader);
+        std::vector<size_t> newParams, newTextures;
+        for (size_t i = 0; i < now.params.size(); ++i) {
+            if (before.FindParam(now.params[i].name) < 0) { newParams.push_back(i); }
+        }
+        for (size_t i = 0; i < now.textures.size(); ++i) {
+            if (before.FindTexture(now.textures[i].name) < 0) { newTextures.push_back(i); }
+        }
+        if (newParams.empty() && newTextures.empty()) { return 0; }
+
+        // The .mat materials on this shader. Listed first: reading a texture below can load a
+        // model, which adds to m_materials.
+        std::vector<std::pair<AssetId, MaterialHandle>> materials;
+        for (const auto& [id, handle] : m_materials) {
+            if (handle.IsValid() && IsMaterialFile(id) && m_renderer.IsMaterialAlive(handle) &&
+                m_renderer.GetMaterialData(handle).shader == shader) {
+                materials.emplace_back(id, handle);
+            }
+        }
+
+        const std::string shaderName = m_renderer.GetMaterialShaderName(shader);
+        std::size_t updated = 0;
+        for (const auto& [id, handle] : materials) {
+            const AssetEntry* entry = m_assets.FindByGuid(ToGuid(id));
+            std::string text;
+            if (!entry || !m_assets.ReadText(entry->virtualPath, text)) { continue; }
+            rapidjson::Document doc;
+            doc.Parse(text.c_str(), text.size());
+            if (doc.HasParseError() || !doc.IsObject()) { continue; }
+
+            // Only a file that is about this shader: a material that was switched to it in the
+            // Inspector and not saved since still has another shader's values in its file.
+            const auto named = doc.FindMember("shader");
+            if (named == doc.MemberEnd() || !named->value.IsString() || shaderName != named->value.GetString()) { continue; }
+
+            MaterialData data = m_renderer.GetMaterialData(handle);
+            bool changed = false;
+            for (const size_t i : newParams) {
+                if (i < data.params.size() && ReadShaderParam(doc, now.params[i].name, data.params[i])) { changed = true; }
+            }
+            if (const auto textures = doc.FindMember("textures"); textures != doc.MemberEnd() && textures->value.IsObject()) {
+                for (const size_t i : newTextures) {
+                    const auto it = textures->value.FindMember(now.textures[i].name.c_str());
+                    if (it == textures->value.MemberEnd() || i >= data.shaderTextures.size()) { continue; }
+                    data.shaderTextures[i] = ReadTextureRef(*this, it->value, now.textures[i].srgb);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                m_renderer.UpdateMaterial(handle, data);
+                ++updated;
+            }
+        }
+        return updated;
+
+    }   // ResourceManager::LoadNewShaderValues()
 
     std::string ResourceManager::SerializeMaterial(const MaterialData& data) const {
 

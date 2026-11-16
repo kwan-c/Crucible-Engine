@@ -40,6 +40,7 @@ add_subdirectory(ManagedScripts)
 add_subdirectory(Editor)
 add_subdirectory(Game)
 add_subdirectory(Tools/Cook)   # after Engine: the Cook target waits for its Shaders target
+add_subdirectory(Tools/ShaderGraphTests)   # tests for Editor/src/ShaderGraph; needs only rapidjson
 
 # ------------------------------------------------------------
 # Packaging (CPack): the PACKAGE target zips the game folder

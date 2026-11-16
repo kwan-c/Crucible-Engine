@@ -21,6 +21,13 @@
 * shader's `applyParams` function. No compile is needed for that; the shader's source usually
 * changes with it and is recompiled as above.
 *
+* A shader can also be GENERATED instead of written - a shader graph. It has no .slang in
+* Assets/Shaders: its `generate` function makes the source and the parameter list from the file
+* it comes from (`generatedFrom`, watched like a .slang file). What comes out is compiled and
+* swapped in the same way, and is also kept in Resources/Shaders (<name>.spv, <name>.params.json),
+* where the build keeps the shaders it compiles - so the next start, and the Game run from the
+* build folder, load it like any other shader.
+*
 * At start, each watched shader is compiled once (normally straight from the compiler's cache)
 * and compared with the .spv the build produced, which is what the renderer loaded. Identical:
 * nothing happens. Different - a shader was edited while the Editor was closed and the project
@@ -55,12 +62,21 @@ namespace Crucible {
 		/// Gives the renderer a shader's parameter list: the text of its .params.json ("{}" when the
 		/// file has gone). Returns false, and why, if it is not a usable list.
 		using ApplyParams = std::function<bool(std::string_view json, std::string& error)>;
+		/// For a generated shader (a shader graph): makes its Slang source and its parameter list (the
+		/// text of a .params.json). Returns false, and why in a few words, if it cannot - the details
+		/// it reports itself.
+		using Generate = std::function<bool(std::string& source, std::string& paramsJson, std::string& error)>;
 
 		struct Shader {
 			std::string              name;          // "DefaultShader": Assets/Shaders/DefaultShader.slang, built to DefaultShader.spv
 			std::vector<std::string> entryPoints;   // as in Engine/CompileShaders.cmake
 			Apply                    apply;         // called on the thread that calls Tick()
 			ApplyParams              applyParams;   // optional: for a shader that can have a <name>.params.json
+
+			// A generated shader has these as well, and no <name>.slang:
+			std::string                            label;           // what messages call it: "Ember.shadergraph". Empty = name
+			std::function<std::filesystem::path()> generatedFrom;   // the file it is made from, wherever that is now
+			Generate                               generate;
 		};
 
 		enum class Status {
@@ -101,10 +117,18 @@ namespace Crucible {
 			uint64_t    runningHash = 0;   // hash of the SPIR-V the renderer has now
 			int         errors = 0;        // from the last compile (0 = it was fine)
 			uint64_t    paramsHash = 0;    // hash of the .params.json text last handed over (0 = none)
+
+			// A generated shader:
+			std::string source;                // what `generate` last made (kept: recompiled when an include changes)
+			uint64_t    generatedStamp = 0;    // FileStamp of generatedFrom when it was made
+			bool        generated = false;     // `generate` has been tried at least once
+			int         generateErrors = 0;    // 1 = the last try failed
 		};
 
 		void OnCompiled(Watched& watched, const ShaderCompiler::Result& result);
 		void CheckParams(Watched& watched);
+		bool HandOverParams(Watched& watched, const std::string& text, const std::string& what);
+		bool Regenerate(Watched& watched);
 		uint64_t FolderSignature() const;
 
 		std::unique_ptr<ShaderCompiler> m_compiler;

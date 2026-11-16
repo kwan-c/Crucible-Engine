@@ -12,6 +12,8 @@
 
 #include "Shaders/MaterialShaderUI.h"
 
+#include "ShaderGraph/ShaderGraphAsset.h"
+
 #include "ImGui/EditorWidgets.h"   // kAssetPayload: what the Asset Browser drags
 #include "ImGui/ImGuiManager.h"    // EditorManager::GetResources
 #include "AssetPipe/AssetPaths.h"
@@ -19,6 +21,7 @@
 #include "Graphics/MaterialShaderParams.h"
 #include "Graphics/RenderSystem.h"
 #include "Resources/ResourceManager.h"
+#include <Core.h>
 
 #include <imgui.h>
 
@@ -63,6 +66,24 @@ namespace Crucible {
 			return names;
 		}
 
+		// The shader graphs in Assets (any folder), looked up again every couple of seconds like
+		// the list above.
+		const std::vector<ShaderGraphFile>& ShaderGraphs() {
+			static std::vector<ShaderGraphFile> graphs;
+			static double nextScan = 0.0;
+			if (ImGui::GetTime() < nextScan) { return graphs; }
+			nextScan = ImGui::GetTime() + kRescanEvery;
+
+			const Core* core = EditorManager::GetInstance().GetCore();
+			graphs = core ? ListShaderGraphs(core->GetAssets()) : std::vector<ShaderGraphFile>();
+			return graphs;
+		}
+
+		// "Ember.shadergraph" -> "Ember (graph)": how the picker shows a shader graph.
+		std::string GraphLabel(const ShaderGraphFile& graph) {
+			return graph.label.substr(0, graph.label.rfind('.')) + " (graph)";
+		}
+
 		// "swirlSpeed" / "swirl_speed" -> "Swirl Speed": a parameter's name as a label.
 		std::string Label(const std::string& name) {
 			std::string label;
@@ -96,6 +117,13 @@ namespace Crucible {
 			const std::string current = renderer.GetMaterialShaderName(data.shader);
 			const bool builtIn = current.empty() || current == kBuiltInName;
 
+			// A shader graph goes by its GUID: show its file's name instead.
+			const std::vector<ShaderGraphFile>& graphs = ShaderGraphs();
+			std::string shown = current;
+			for (const ShaderGraphFile& graph : graphs) {
+				if (graph.shaderName == current) { shown = GraphLabel(graph); }
+			}
+
 			bool changed = false;
 			const auto choose = [&](MaterialShaderHandle shader) {
 				if (shader == data.shader) { return; }
@@ -106,17 +134,23 @@ namespace Crucible {
 				changed = true;
 			};
 
-			if (ImGui::BeginCombo("Shader", builtIn ? kBuiltInLabel : current.c_str())) {
+			if (ImGui::BeginCombo("Shader", builtIn ? kBuiltInLabel : shown.c_str())) {
 				if (ImGui::Selectable(kBuiltInLabel, builtIn) && !builtIn) { choose(MaterialShaderHandle{}); }
 				for (const std::string& name : MeshShaderNames()) {
 					if (ImGui::Selectable(name.c_str(), name == current) && name != current) {
 						choose(renderer.LoadMaterialShader(name));
 					}
 				}
+				for (const ShaderGraphFile& graph : graphs) {
+					const std::string label = GraphLabel(graph) + "##" + graph.shaderName;   // two graphs can share a file name
+					if (ImGui::Selectable(label.c_str(), graph.shaderName == current) && graph.shaderName != current) {
+						choose(renderer.LoadMaterialShader(graph.shaderName));
+					}
+				}
 				ImGui::EndCombo();
 			}
 			ImGui::SetItemTooltip("What draws this material: the built-in shader (the factors and five textures here),\n"
-			                      "or a mesh shader from Assets/Shaders, which adds parameters of its own below.");
+			                      "or a mesh shader from Assets/Shaders or a shader graph, which add parameters of their own below.");
 			return changed;
 		}
 

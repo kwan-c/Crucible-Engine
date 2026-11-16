@@ -174,9 +174,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 6.030394077301025,
+                        "x": 5.944511413574219,
                         "y": 0.9342334270477295,
-                        "z": -1.5029271841049194
+                        "z": -1.673969030380249
                     },
                     "rotation": {
                         "x": 0.0,
@@ -1233,7 +1233,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 6726452403956826127
+                    "materialAsset": 9506651181580271619
                 },
                 "CharacterController": {
                     "height": 2.6500000953674316,
@@ -2481,6 +2481,49 @@
                 },
                 "EntityName": {
                     "name": "Entity 14"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "A3EE68E199C58005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 3.8673107624053955,
+                        "y": 1.3543248176574707,
+                        "z": -3.1163716316223145
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 3049588827540701185
+                },
+                "EntityName": {
+                    "name": "Sphere"
                 },
                 "EntityTag": {
                     "tag": "Untagged"

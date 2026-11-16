@@ -63,6 +63,39 @@ namespace Crucible {
 			return HashBytes(bytes.data(), bytes.size());
 		}
 
+		// Size and time of a file as one number; 0 if it is not there.
+		uint64_t FileStamp(const fs::path& file) {
+			std::error_code ec;
+			if (file.empty() || !fs::is_regular_file(file, ec)) { return 0; }
+			const uint64_t facts[2] = {
+				static_cast<uint64_t>(fs::file_size(file, ec)),
+				static_cast<uint64_t>(fs::last_write_time(file, ec).time_since_epoch().count())
+			};
+			return HashBytes(facts, sizeof(facts));
+		}
+
+		// Writes a file, unless it already holds exactly these bytes. Through a temporary file, so
+		// nothing ever reads half of it. False if it could not be written.
+		bool WriteIfDifferent(const fs::path& file, const void* data, size_t size) {
+			if (size != 0 && HashFile(file) == HashBytes(data, size)) { return true; }
+			std::error_code ec;
+			fs::create_directories(file.parent_path(), ec);
+			fs::path temporary = file;
+			temporary += ".tmp";
+			{
+				std::ofstream out(temporary, std::ios::binary | std::ios::trunc);
+				out.write(static_cast<const char*>(data), static_cast<std::streamsize>(size));
+				if (!out) { return false; }
+			}
+			fs::rename(temporary, file, ec);
+			return !ec;
+		}
+
+		// What messages call a shader: a generated one by its file, the others by name.
+		const std::string& Label(const ShaderHotReload::Shader& shader) {
+			return shader.label.empty() ? shader.name : shader.label;
+		}
+
 		const char* SeverityWord(ShaderCompiler::Severity severity) {
 			switch (severity) {
 			case ShaderCompiler::Severity::Error:   return "error";
@@ -127,7 +160,7 @@ namespace Crucible {
 
 	int ShaderHotReload::ErrorCount() const {
 		int errors = 0;
-		for (const Watched& watched : m_watched) { errors += watched.errors; }
+		for (const Watched& watched : m_watched) { errors += watched.errors + watched.generateErrors; }
 		return errors;
 	}
 
@@ -145,6 +178,13 @@ namespace Crucible {
 				static_cast<uint64_t>(entry.last_write_time(ec).time_since_epoch().count())
 			};
 			signature += HashBytes(facts, sizeof(facts), HashBytes(name.data(), name.size()));
+		}
+		// ... and the file each generated shader is made from (a shader graph), wherever it is.
+		for (const Watched& watched : m_watched) {
+			if (!watched.shader.generatedFrom) { continue; }
+			const fs::path file = watched.shader.generatedFrom();
+			const std::string name = ToUtf8(file);
+			signature += HashBytes(name.data(), name.size(), FileStamp(file) + 1);
 		}
 		return signature;
 	}
@@ -179,11 +219,17 @@ namespace Crucible {
 		if (m_dirty && autoReload && now - m_seenAt >= kSettleTime) {
 			m_dirty = false;
 			for (Watched& watched : m_watched) {
-				CheckParams(watched);   // its parameter list first: the materials are ready when the new code arrives
-
 				ShaderCompiler::Request request;
 				request.name = watched.shader.name;
 				request.entryPoints = watched.shader.entryPoints;
+				if (watched.shader.generate) {
+					// A generated shader (a shader graph): its source and its parameter list are
+					// made here, when the file it comes from has changed.
+					if (!Regenerate(watched)) { continue; }   // nothing usable: the renderer keeps what it has
+					request.source = watched.source;
+				} else {
+					CheckParams(watched);   // its parameter list first: the materials are ready when the new code arrives
+				}
 
 				// Only what this shader really includes counts: saving Water.slang does not
 				// recompile the mesh shader.
@@ -209,28 +255,70 @@ namespace Crucible {
 		if (std::ifstream in(file, std::ios::binary); in) {
 			text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
 		}
+		HandOverParams(watched, text, watched.shader.name + std::string(kParamsSuffix));
+	}
+
+	// Hands a parameter list's text ("" = the shader has none) to the shader, unless it is what was
+	// handed over last. False only if the renderer would not take it.
+	bool ShaderHotReload::HandOverParams(Watched& watched, const std::string& text, const std::string& what) {
 		const uint64_t hash = text.empty() ? 0 : HashBytes(text.data(), text.size());
-		if (hash == watched.paramsHash) { return; }
+		if (hash == watched.paramsHash) { return true; }
 		watched.paramsHash = hash;   // a list with a mistake in it is not handed over again until it changes
 
 		std::string error;
 		if (watched.shader.applyParams(text.empty() ? std::string_view("{}") : std::string_view(text), error)) {
-			CRU_INFO("[Editor | Shaders] {}{} applied.", watched.shader.name, kParamsSuffix);
-		} else {
-			CRU_USER_ERROR("{}{}: {} - still using the previous parameter list.", watched.shader.name, kParamsSuffix,
-			               error.empty() ? "the renderer could not use it" : error);
+			CRU_INFO("[Editor | Shaders] {} applied.", what);
+			return true;
 		}
+		CRU_USER_ERROR("{}: {} - still using the previous parameter list.", what,
+		               error.empty() ? "the renderer could not use it" : error);
+		return false;
+	}
+
+	// Makes a generated shader's source again if the file it comes from has changed since the last
+	// time. False when there is no source worth compiling: the file has a mistake in it.
+	bool ShaderHotReload::Regenerate(Watched& watched) {
+		const uint64_t stamp = watched.shader.generatedFrom ? FileStamp(watched.shader.generatedFrom()) : 0;
+		if (watched.generated && stamp == watched.generatedStamp) {
+			return watched.generateErrors == 0 && !watched.source.empty();
+		}
+		watched.generated = true;
+		watched.generatedStamp = stamp;   // a file with a mistake in it is reported once, until it changes
+
+		const std::string& label = Label(watched.shader);
+		std::string source, paramsJson, error;
+		if (!watched.shader.generate(source, paramsJson, error)) {
+			watched.generateErrors = 1;
+			const std::string text = label + ": " + (error.empty() ? "it could not be turned into a shader" : error);
+			if (m_firstError.empty()) { m_firstError = text; }
+			CRU_USER_ERROR("{} - still using the last version that worked.", text);
+			return false;
+		}
+		watched.generateErrors = 0;
+		watched.source = std::move(source);
+
+		// Its parameter list first: the materials are ready when the new code arrives. Kept where
+		// the build keeps a written shader's list, so the next start finds it there.
+		if (watched.shader.applyParams && HandOverParams(watched, paramsJson, label + "'s parameter list")) {
+			const fs::path built = m_builtDir / (watched.shader.name + std::string(kParamsSuffix));
+			if (!WriteIfDifferent(built, paramsJson.data(), paramsJson.size())) {
+				CRU_WARN("[Editor | Shaders] Could not write {}", ToUtf8(built));
+			}
+		}
+		return true;
 	}
 
 	void ShaderHotReload::OnCompiled(Watched& watched, const ShaderCompiler::Result& result) {
-		const std::string& name = watched.shader.name;
+		const std::string& name = Label(watched.shader);
 
 		// The compiler's messages: errors always, warnings too when it was really run.
 		size_t reported = 0;
 		std::string firstError;
 		for (const ShaderCompiler::Diagnostic& d : result.diagnostics) {
 			if (d.severity == ShaderCompiler::Severity::Note) { continue; }
-			const std::string text = Describe(d);
+			ShaderCompiler::Diagnostic shown = d;
+			if (shown.file == watched.shader.name) { shown.file = name; }   // a generated shader: its file, not its GUID
+			const std::string text = Describe(shown);
 			if (d.severity == ShaderCompiler::Severity::Error) {
 				if (firstError.empty()) { firstError = text; }
 				if (reported++ < kMaxReported) { CRU_USER_ERROR("{}", text); }
@@ -268,6 +356,14 @@ namespace Crucible {
 			return;
 		}
 		watched.runningHash = compiledHash;
+		if (watched.shader.generate) {
+			// Kept where the build keeps the shaders it compiles: the next start, and the Game run
+			// from the build folder, load it like any other.
+			const fs::path built = m_builtDir / (watched.shader.name + ".spv");
+			if (!WriteIfDifferent(built, result.spirv.data(), result.spirv.size() * sizeof(uint32_t))) {
+				CRU_WARN("[Editor | Shaders] Could not write {}", ToUtf8(built));
+			}
+		}
 		if (result.fromCache) {
 			CRU_USER_INFO("Shader {} reloaded.", name);
 		} else {

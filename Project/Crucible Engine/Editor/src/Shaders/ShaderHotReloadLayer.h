@@ -18,6 +18,10 @@
 * A mesh shader with a source file but no .spv yet (written while the Editor runs, not built
 * since) is compiled here the first time a material uses it, so it works without a rebuild.
 *
+* A material can also name a SHADER GRAPH (by the graph asset's GUID - ShaderGraph/ShaderGraphAsset.h).
+* Such a shader has no .slang: its source and parameter list are generated here from the
+* .shadergraph file, and again whenever that file is saved.
+*
 * Header-only, so it is only compiled where it is included.
 *
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
@@ -26,9 +30,11 @@
 #pragma once
 
 #include "Shaders/ShaderHotReload.h"
+#include "ShaderGraph/ShaderGraphAsset.h"
 
 #include "AssetPipe/AssetPaths.h"
 #include "Graphics/MaterialShaderParams.h"
+#include "Resources/ResourceManager.h"
 #include "Systems/ExecutablePath.h"
 #include "Systems/Layer.h"
 #include <Graphics/RenderSystem.h>
@@ -56,20 +62,40 @@ namespace Crucible {
 			Renderer& renderer = m_core.GetRenderer();
 			for (const uint32_t count = renderer.GetMaterialShaderCount(); m_watched < count; ++m_watched) {
 				const MaterialShaderHandle shader{ m_watched };
-				// Its parameter list too (<Name>.params.json) - not for the built-in shader, which has none.
-				ShaderHotReload::ApplyParams applyParams;
+				ShaderHotReload::Shader watch;
+				watch.name = renderer.GetMaterialShaderName(shader);
+				watch.entryPoints = { "vertMain", "fragMain" };
+				watch.apply = [this, shader](std::span<const uint32_t> spirv, std::string& error) {
+					return m_core.GetRenderer().ReloadMaterialShader(shader, spirv, error);
+				};
+				// Its parameter list too - not for the built-in shader, which has none.
 				if (shader.id != 0) {
-					applyParams = [this, shader](std::string_view json, std::string& error) {
+					watch.applyParams = [this, shader](std::string_view json, std::string& error) {
 						MaterialShaderParams list;
 						if (!MaterialShaderParams::Parse(json, list, error)) { return false; }
-						return m_core.GetRenderer().SetMaterialShaderParams(shader, list);
+						Renderer& target = m_core.GetRenderer();
+						const MaterialShaderParams before = target.GetMaterialShaderParams(shader);
+						if (!target.SetMaterialShaderParams(shader, list)) { return false; }
+						// What the list has gained, the materials' own files may have values for:
+						// a graph's list arrives after the scene's materials have loaded.
+						m_core.GetResources().LoadNewShaderValues(shader, before);
+						return true;
 					};
 				}
-				m_hotReload.Watch({ renderer.GetMaterialShaderName(shader), { "vertMain", "fragMain" },
-					[this, shader](std::span<const uint32_t> spirv, std::string& error) {
-						return m_core.GetRenderer().ReloadMaterialShader(shader, spirv, error);
-					},
-					std::move(applyParams) });
+				// A name that is a shader graph's GUID: generated from that graph, not read from
+				// Assets/Shaders.
+				if (ShaderGraphFile graph; FindShaderGraph(m_core.GetAssets(), watch.name, graph)) {
+					const std::string name = watch.name;
+					watch.label = graph.label;
+					watch.generatedFrom = [this, name]() {
+						ShaderGraphFile now;   // looked up each time: the file may have been moved
+						return FindShaderGraph(m_core.GetAssets(), name, now) ? now.file : std::filesystem::path();
+					};
+					watch.generate = [this, name](std::string& source, std::string& paramsJson, std::string& error) {
+						return GenerateShaderGraph(m_core.GetAssets(), name, source, paramsJson, error);
+					};
+				}
+				m_hotReload.Watch(std::move(watch));
 			}
 			m_hotReload.Tick();
 		}
