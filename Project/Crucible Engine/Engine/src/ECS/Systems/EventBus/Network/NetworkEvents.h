@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 September 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                Session-level events on the network bus
 *                (Core::Events().network): a session started or ended, a
@@ -33,6 +33,7 @@
 *    -v1.4       GameplayEventReceived: generic gameplay events
 *    -v1.5       PeerJoined, PeerReady and PeerLeft are posted on clients
 *                too (from the host's roster); CommandReceived
+*    -v1.6       GameplayEventReceived::target
 *
 **************************************************************************/
 #pragma once
@@ -122,6 +123,7 @@ namespace Crucible::NetworkEvents
 		std::uint16_t          kind = 0;      // non-zero; defined by the game
 		std::vector<std::byte> payload;       // the game's own format, at most kMaxGameplayEventPayload bytes
 		bool                   local = false; // posted on the machine that sent it (host, or offline)
+		Net::NetworkId         target = Net::kInvalidNetworkId;   // the object it is about, or none
 	};
 
 	/// Host (or offline): a gameplay request arrived (NetworkSession::SendCommand) - from a

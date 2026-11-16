@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         INTERNAL: the network events waiting for the C# scripts
 *                (EntityScript.OnNetworkStarted, OnPeerJoined,
 *                OnNetworkCommand, ...).
@@ -26,6 +26,7 @@
 * \history
 *    -v1.0       session and player events (Networking C# Phase 1), commands
 *                (Networking C# Phase 2)
+*    -v1.1       Event: the host's gameplay events (Networking C# Phase 5A)
 *
 **************************************************************************/
 #pragma once
@@ -52,13 +53,14 @@ namespace Crucible::ScriptBindings::NetworkContext
 			PeerReady = 3,   // peer = the other player, now in the game
 			PeerLeft = 4,    // peer = the other player
 			Command = 5,     // peer = the sender, code = the command's kind, serial names its payload
+			Event = 6,       // code = the event's kind, serial names its payload
 		};
 
 		Kind    kind = Kind::Started;
 		int32_t peer = 0;
 		int32_t code = 0;
-		int32_t serial = 0;       // Command: Network.cs asks for the payload by this number
-		bool    targeted = false; // Command: only the scripts on `target` hear it
+		int32_t serial = 0;       // Command, Event: Network.cs asks for the payload by this number
+		bool    targeted = false; // Command, Event: only the scripts on `target` hear it
 		Entity  target{};
 		std::string text;
 		std::vector<std::byte> payload;

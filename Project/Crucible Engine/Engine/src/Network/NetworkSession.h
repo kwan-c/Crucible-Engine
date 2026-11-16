@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.12
+* \version       1.13
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -199,6 +199,9 @@
 *                sent by the host and applied by clients (Networking C#
 *                Phase 1); commands: SendCommand and the host's handler
 *                (Networking C# Phase 2)
+*    -v1.13      gameplay events may name a target object (Networking C#
+*                Phase 5A); BeginSpawn: a spawn performed at once by the
+*                caller (Networking C# Phase 3)
 *
 **************************************************************************/
 #pragma once
@@ -323,6 +326,7 @@ namespace Crucible
 		Net::PeerId            to = Net::kInvalidPeer;   // a client, or NetworkSession::kEveryone
 		std::uint16_t          kind = 0;
 		std::vector<std::byte> payload;
+		Net::NetworkId         target = Net::kInvalidNetworkId;   // the object it is about, or none
 	};
 
 	/// Client: where it is in the host's lifecycle stream.
@@ -510,6 +514,13 @@ namespace Crucible
 		Net::NetworkId RequestSpawn(Net::NetPrefabId prefab, Net::PeerId owner, const Math::vec3& position,
 			const Math::quat& rotation = Math::quat(1.f, 0.f, 0.f, 0.f));
 
+		/// Server, while Running: allocates an id for a spawn the CALLER performs right now (code
+		/// that may change the World's structure: NetReceiveSystem::PerformSpawn does all of it).
+		/// Same checks and the same never-reused ids as RequestSpawn, but nothing is queued: the
+		/// caller instantiates, adds the NetworkIdentity and then calls NotifySpawned (or
+		/// NotifySpawnFailed), so the send system announces it this same frame.
+		Net::NetworkId BeginSpawn(Net::NetPrefabId prefab, Net::PeerId owner);
+
 		std::span<const PendingSpawn> PendingSpawns() const noexcept { return m_pendingSpawns; }
 		void TakePendingSpawns(std::vector<PendingSpawn>& out);
 
@@ -608,13 +619,18 @@ namespace Crucible
 		/// not one RequestSpawn'ed this frame (that spawn is performed and announced next frame:
 		/// send such an event a frame later). False (logged, counted) on a client, while
 		/// stopping, for kind 0, an oversized payload, an unknown target, or a full queue.
-		bool SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to = kEveryone);
+		/// about: the network object the event concerns, or kInvalidNetworkId. On a host it must
+		/// be one the session has now (else refused); a client that no longer has it when the
+		/// event arrives drops the event (counted).
+		bool SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to = kEveryone,
+			Net::NetworkId about = Net::kInvalidNetworkId);
 
 		/// The send system: this frame's events for clients (moved into `out`, in send order).
 		void TakeGameplayEvents(std::vector<QueuedGameplayEvent>& out);
 
 		/// Client, NetReceiveSystem: a GameplayEvent arrived and was validated; posts it.
-		void DeliverGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload);
+		void DeliverGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload,
+			Net::NetworkId about = Net::kInvalidNetworkId);
 
 		// ---- commands (client to host) -------------------------------------------------------
 

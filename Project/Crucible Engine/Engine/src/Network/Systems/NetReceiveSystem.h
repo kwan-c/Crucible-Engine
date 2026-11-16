@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.8
+* \version       1.9
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -111,6 +111,8 @@
 *                on clients, scene identity checked (Networking Phase 14.5)
 *    -v1.7       placed players become spawn points (Networking Phase 14.6)
 *    -v1.8       registers scene profiles (Networking Phase 14.7)
+*    -v1.9       PerformSpawn: one spawn, shared with the script bindings
+*                (Networking C# Phase 3)
 *
 **************************************************************************/
 #pragma once
@@ -162,6 +164,15 @@ namespace Crucible
 		/// them. Components an entity does not have are skipped.
 		static void SetComponentsEnabled(World& world, Entity root, std::span<const ComponentId> ids, bool on,
 			std::vector<Entity>& scratch);
+
+		/// Host: performs one spawn now - instantiates the network prefab at the spawn's position
+		/// and rotation, switches off what only its owner runs, and adds the NetworkIdentity LAST
+		/// (its hook maps the id), then tells the session (NotifySpawned). Returns the root. On
+		/// any failure the whole subtree is destroyed, the session is told (NotifySpawnFailed)
+		/// and kNullEntity is returned. `spawn.id` comes from RequestSpawn or BeginSpawn. Only
+		/// from code that may change the World's structure (an Exclusive system).
+		static Entity PerformSpawn(World& world, NetworkSession& session, const NetContent& content, SceneManager& scenes,
+			const PendingSpawn& spawn, std::vector<Entity>& scratch);
 
 	private:
 		// Host

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.10
+* \version       1.11
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -30,6 +30,8 @@
 *    -v1.8       placed players removed as spawn points (Networking Phase 14.6)
 *    -v1.9       registers scene profiles (Networking Phase 14.7)
 *    -v1.10      PeerRoster applied through the session (Networking C# Phase 1)
+*    -v1.11      PerformSpawn (shared with the script bindings); a
+*                GameplayEvent's target is passed on
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -136,37 +138,42 @@ namespace Crucible
 	void NetReceiveSystem::PerformPendingSpawns(World& world)
 	{
 		m_session.TakePendingSpawns(m_spawns);
-		for (const PendingSpawn& spawn : m_spawns)
-		{
-			Entity root = kNullEntity;
-			try
-			{
-				const NetPrefabDesc* desc = m_content.Prefabs().Desc(spawn.prefab);
-				const Prefab* prefab = m_content.Prefabs().PrefabOf(spawn.prefab);
-				if (desc == nullptr || prefab == nullptr) throw std::runtime_error("the prefab is not registered or not loaded");
-
-				root = prefab->Instantiate(world, kNullEntity,
-					[this](Entity entity) { return m_scenes.EnsureId(entity).m_Value; });   // all or nothing (Prefab.cpp)
-				if (!world.IsAlive(root)) throw std::runtime_error("the prefab did not instantiate");
-				if (Transform* t = world.Write<Transform>(root))
-				{
-					t->positions = spawn.position;
-					t->rotation = spawn.rotation;
-				}
-				// The host simulates everything, but a player's camera rig belongs to whoever plays it.
-				if (spawn.owner != m_session.LocalPeer()) SetComponentsEnabled(world, root, desc->ownerLocalOnly, false, m_scratch);
-
-				world.AddComponent(root, NetworkIdentity{ .id = spawn.id, .prefab = spawn.prefab, .owner = spawn.owner });
-				if (!(m_session.Entities().Find(spawn.id) == root)) throw std::runtime_error("its NetworkIdentity was rejected");
-				m_session.NotifySpawned(spawn.id);
-			}
-			catch (const std::exception& e)
-			{
-				if (world.IsAlive(root)) world.DestroyEntity(root);   // removes the whole subtree
-				m_session.NotifySpawnFailed(spawn.id, spawn.prefab, e.what());
-			}
-		}
+		for (const PendingSpawn& spawn : m_spawns) PerformSpawn(world, m_session, m_content, m_scenes, spawn, m_scratch);
 		m_spawns.clear();
+	}
+
+	Entity NetReceiveSystem::PerformSpawn(World& world, NetworkSession& session, const NetContent& content, SceneManager& scenes,
+		const PendingSpawn& spawn, std::vector<Entity>& scratch)
+	{
+		Entity root = kNullEntity;
+		try
+		{
+			const NetPrefabDesc* desc = content.Prefabs().Desc(spawn.prefab);
+			const Prefab* prefab = content.Prefabs().PrefabOf(spawn.prefab);
+			if (desc == nullptr || prefab == nullptr) throw std::runtime_error("the prefab is not registered or not loaded");
+
+			root = prefab->Instantiate(world, kNullEntity,
+				[&scenes](Entity entity) { return scenes.EnsureId(entity).m_Value; });   // all or nothing (Prefab.cpp)
+			if (!world.IsAlive(root)) throw std::runtime_error("the prefab did not instantiate");
+			if (Transform* t = world.Write<Transform>(root))
+			{
+				t->positions = spawn.position;
+				t->rotation = spawn.rotation;
+			}
+			// The host simulates everything, but a player's camera rig belongs to whoever plays it.
+			if (spawn.owner != session.LocalPeer()) SetComponentsEnabled(world, root, desc->ownerLocalOnly, false, scratch);
+
+			world.AddComponent(root, NetworkIdentity{ .id = spawn.id, .prefab = spawn.prefab, .owner = spawn.owner });
+			if (!(session.Entities().Find(spawn.id) == root)) throw std::runtime_error("its NetworkIdentity was rejected");
+			session.NotifySpawned(spawn.id);
+			return root;
+		}
+		catch (const std::exception& e)
+		{
+			if (world.IsAlive(root)) world.DestroyEntity(root);   // removes the whole subtree
+			session.NotifySpawnFailed(spawn.id, spawn.prefab, e.what());
+			return kNullEntity;
+		}
 	}
 
 	// ---- client ------------------------------------------------------------------------------
@@ -254,7 +261,7 @@ namespace Crucible
 			if (!Decode(reader, event)) { Leave(CloseReason::Malformed, "malformed GameplayEvent"); return false; }
 			if (!CheckSequence(event.lifecycleSeq, "GameplayEvent")) return false;
 			if (state != ClientWorld::Ready) { Leave(CloseReason::Malformed, "GameplayEvent inside the world stream"); return false; }
-			m_session.DeliverGameplayEvent(event.kind, event.payload);   // the payload is the game's to check
+			m_session.DeliverGameplayEvent(event.kind, event.payload, event.target);   // the payload is the game's to check
 			m_session.MarkLifecycleApplied(event.lifecycleSeq);
 			return true;
 		}

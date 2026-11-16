@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         The multiplayer session for scripts: who am I, who else is
 *                here, and how a client asks the host to do something.
 *                Part of Crucible.ScriptCore.dll.
@@ -41,9 +41,37 @@
 *    Offline is "a session of one": IsAuthority is true, LocalPeerId is 0,
 *    and Peers is just { 0 }.
 *
+*    The other direction is an event: the authority tells EVERY machine that
+*    something happened, so each one can show it.
+*
+*        const ushort DoorOpened = 1;
+*        // authority, after it decided:
+*        Network.SendEvent(DoorOpened, null, door);
+*        // in a script on the door, on every machine (the host too):
+*        public override void OnNetworkEvent(ushort kind, NetReader data)
+*        {
+*            if (kind == DoorOpened) PlayCreak();
+*        }
+*
+*    Use an event for a moment (a sound, an effect, a message). Lasting state
+*    still has to be something the engine keeps in step (Transform, Sync
+*    on/off): a player who joins later never hears an old event.
+*
+*    Spawning: only the authority creates and destroys network objects.
+*
+*        if (Network.IsAuthority)
+*        {
+*            Entity bolt = Network.Spawn(boltPrefab, muzzle, aim);   // appears on every machine
+*            ...
+*            Network.Despawn(bolt);                                  // gone on every machine
+*        }
+*
+*    The prefab must be a network prefab (a Network Object component on its
+*    root). Prefab.Instantiate still makes a local-only copy.
+*
 *    Callbacks (override them in an EntityScript; see EntityScript.cs):
 *    OnNetworkStarted, OnNetworkStopped, OnPeerJoined, OnPeerReady,
-*    OnPeerLeft, OnNetworkCommand.
+*    OnPeerLeft, OnNetworkCommand, OnNetworkEvent.
 *
 *    Starting a session: in the Editor, the Network panel (Host / Client)
 *    before pressing Play. Starting one from a script comes with the lobby.
@@ -53,6 +81,8 @@
 * \history
 *    -v1.0       role, peers, FindEntity (Networking C# Phase 1);
 *                SendCommand (Networking C# Phase 2)
+*    -v1.1       SendEvent (Networking C# Phase 5A); Spawn and Despawn
+*                (Networking C# Phase 3)
 *
 **************************************************************************/
 using System.Runtime.CompilerServices;
@@ -68,10 +98,15 @@ namespace Crucible
         public const int MaxPlayers = 4;
         /// <summary>The largest payload SendCommand accepts, in bytes.</summary>
         public const int MaxCommandBytes = 1024;
+        /// <summary>The largest payload SendEvent accepts, in bytes.</summary>
+        public const int MaxEventBytes = NetWriter.MaxBytes;
+        /// <summary>SendEvent's toPeer for "every machine".</summary>
+        public const int Everyone = -1;
 
         // Must match NetworkBindings.cpp.
         private const int RoleOffline = 0, RoleHost = 1, RoleClient = 2;
-        private const int SendOk = 0, SendRefused = 1, SendBadArgument = 2, SendBadTarget = 3;
+        private const int SendOk = 0, SendRefused = 1, SendBadArgument = 2, SendBadTarget = 3, SendNotAuthority = 4;
+        private const int SpawnOk = 0, SpawnNotAuthority = 1, SpawnNotNetworkPrefab = 2, SpawnBadOwner = 3;
 
         // --- who am I ---------------------------------------------------------------- //
 
@@ -238,6 +273,130 @@ namespace Crucible
             }
         }
 
+        // --- events -------------------------------------------------------------------- //
+
+        /// <summary>
+        /// The authority tells every machine that something happened; each one gets
+        /// OnNetworkEvent at the start of its next frame (this machine too). In a
+        /// single-player game it is simply delivered here.
+        /// </summary>
+        /// <param name="kind">Your own number for this event, 1 to 65535.</param>
+        /// <param name="data">What it needs to know (at most MaxEventBytes), or null.</param>
+        /// <param name="target">
+        /// The network object it is about, or null. With a target only the scripts ON that
+        /// entity get OnNetworkEvent; without one every script does. An object spawned with
+        /// Network.Spawn in this same frame is fine.
+        /// </param>
+        /// <param name="toPeer">Everyone (the default), or one player's PeerId.</param>
+        /// <returns>
+        /// False if it was not sent: called on a client, kind 0, too much data, or a target
+        /// that is destroyed or (in a session) not a network object. The reason is logged.
+        /// </returns>
+        public static bool SendEvent(ushort kind, NetWriter data = null, Entity target = null, int toPeer = Everyone)
+        {
+            if (kind == 0)
+            {
+                Log.Error("Network.SendEvent: kind 0 is reserved - number your events from 1");
+                return false;
+            }
+            if (data != null && data.Overflowed)
+            {
+                Log.Error("Network.SendEvent(" + kind + "): the data is over the NetWriter limit of " + NetWriter.MaxBytes + " bytes");
+                return false;
+            }
+            bool hasTarget = !ReferenceEquals(target, null);
+            int result = SendEventInternal(kind, data != null ? data.Buffer : null, data != null ? data.Length : 0, toPeer,
+                                           hasTarget ? 1 : 0, hasTarget ? (int)target.Index : 0,
+                                           hasTarget ? (int)target.Generation : 0);
+            switch (result)
+            {
+                case SendOk:
+                    return true;
+                case SendNotAuthority:
+                    Log.Error("Network.SendEvent(" + kind + "): only the authority sends events - a client asks with SendCommand");
+                    return false;
+                case SendBadTarget:
+                    Log.Error("Network.SendEvent(" + kind + "): the target is destroyed or is not a network object");
+                    return false;
+                case SendBadArgument:
+                    Log.Error("Network.SendEvent(" + kind + "): refused - bad kind, data size or toPeer");
+                    return false;
+                default:
+                    Log.Warning("Network.SendEvent(" + kind + "): not sent (see the log)");
+                    return false;
+            }
+        }
+
+        // --- spawning ------------------------------------------------------------------ //
+
+        /// <summary>
+        /// The authority creates a network object: a copy of a network prefab that appears on
+        /// every machine, now and for players who join later. It exists here at once (its
+        /// scripts get OnCreate next frame, like Prefab.Instantiate). In a single-player game
+        /// it is an ordinary Instantiate.
+        /// </summary>
+        /// <param name="prefab">A prefab with a Network Object component on its root.</param>
+        /// <param name="owner">
+        /// The PeerId it belongs to (Entity.Owner / IsMine on every machine): the host by
+        /// default; a player's id for that player's character or belongings.
+        /// </param>
+        /// <returns>
+        /// The new root entity, or null: called on a client, not a network prefab, no such
+        /// player, or the spawn failed. The reason is logged.
+        /// </returns>
+        public static Entity Spawn(Prefab prefab, Vector3 position, Quaternion rotation, int owner = HostPeerId)
+        {
+            if (prefab == null)
+            {
+                Log.Error("Network.Spawn: the prefab is null (is the field assigned in the Inspector?)");
+                return null;
+            }
+            int index, generation;
+            int result = SpawnInternal(prefab.IdLow, prefab.IdHigh, ref position, ref rotation, owner, out index, out generation);
+            switch (result)
+            {
+                case SpawnOk:
+                    return new Entity(unchecked((uint)index), unchecked((uint)generation));
+                case SpawnNotAuthority:
+                    Log.Error("Network.Spawn(" + prefab.Name + "): only the authority spawns - a client asks with SendCommand");
+                    return null;
+                case SpawnNotNetworkPrefab:
+                    Log.Error("Network.Spawn(" + prefab.Name + "): not a network prefab - add a Network Object component to its root and save it");
+                    return null;
+                case SpawnBadOwner:
+                    Log.Error("Network.Spawn(" + prefab.Name + "): no player has PeerId " + owner);
+                    return null;
+                default:
+                    Log.Error("Network.Spawn(" + prefab.Name + "): failed (see the log)");
+                    return null;
+            }
+        }
+
+        /// <summary>Spawns at the origin, unrotated.</summary>
+        public static Entity Spawn(Prefab prefab, int owner = HostPeerId)
+        {
+            return Spawn(prefab, Vector3.Zero, Quaternion.Identity, owner);
+        }
+
+        /// <summary>
+        /// The authority removes an entity at the end of the frame (or after
+        /// <paramref name="delay"/> seconds); a network object disappears on every machine.
+        /// The same as Entity.Destroy, plus the check that a client never does it: a client
+        /// that destroys its copy of a network object only breaks its own picture of the game.
+        /// </summary>
+        public static bool Despawn(Entity entity, float delay = 0f)
+        {
+            if (ReferenceEquals(entity, null) || !entity.IsAlive)
+                return false;
+            if (!IsAuthority && entity.IsNetworked)
+            {
+                Log.Error("Network.Despawn(" + entity + "): only the authority removes network objects - a client asks with SendCommand");
+                return false;
+            }
+            Entity.Destroy(entity, delay);
+            return true;
+        }
+
         // --- engine side ---------------------------------------------------------------- //
 
         // One byte[] per command, shared by every script that hears it (each gets its own
@@ -285,5 +444,11 @@ namespace Crucible
                                                       int targetGeneration);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern byte[] GetEventPayloadInternal(int serial);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SendEventInternal(int kind, byte[] data, int length, int toPeer, int hasTarget,
+                                                    int targetIndex, int targetGeneration);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SpawnInternal(int idLow, int idHigh, ref Vector3 position, ref Quaternion rotation, int owner,
+                                                out int index, out int generation);
     }
 }

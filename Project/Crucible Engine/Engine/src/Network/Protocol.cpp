@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                Encoders and decoders for every protocol message (see
 *                Protocol.h for the wire layouts and the rules).
@@ -11,6 +11,7 @@
 * \history
 *    -v1.0       protocol version 3 codecs
 *    -v1.1       PeerRoster and Command codecs (protocol version 5)
+*    -v1.2       GameplayEvent's target (protocol version 6)
 *
 **************************************************************************/
 #include "Network/Protocol.h"
@@ -371,11 +372,12 @@ namespace Crucible
 
 	bool Encode(ByteWriter& w, const GameplayEventView& m) noexcept
 	{
-		if (m.lifecycleSeq == 0 || m.kind == 0) return false;
+		if (m.lifecycleSeq == 0 || m.kind == 0 || m.payload.size() > kMaxGameplayEventPayload) return false;
 		const std::size_t start = w.Size();
 		WriteType(w, MessageType::GameplayEvent);
 		w.U32(m.lifecycleSeq);
 		w.U16(m.kind);
+		w.VarU32(m.target);
 		w.Bytes(m.payload);
 		return Finished(w, start, MessageType::GameplayEvent);
 	}
@@ -384,7 +386,8 @@ namespace Crucible
 	{
 		m.lifecycleSeq = r.U32();
 		m.kind = r.U16();
-		if (!r.Ok() || m.lifecycleSeq == 0 || m.kind == 0) return false;
+		m.target = r.VarU32();
+		if (!r.Ok() || m.lifecycleSeq == 0 || m.kind == 0 || r.Remaining() > kMaxGameplayEventPayload) return false;
 		m.payload = r.Sub(r.Remaining());   // the payload's own format is checked by its handler
 		return r.Ok() && r.AtEnd();
 	}

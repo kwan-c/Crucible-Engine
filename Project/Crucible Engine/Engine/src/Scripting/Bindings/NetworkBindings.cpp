@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Internal calls behind the C# Network class
 *                (ManagedScripts/Runtime/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
@@ -29,6 +29,15 @@
 *      PeerJoined/Ready/Left   -> the same, on every machine
 *      CommandReceived         -> Command, to the target's scripts only when
 *                                 it names a network object
+*      GameplayEventReceived   -> Event, the same way
+*
+*    Events from C# (Network.SendEvent): the authority only, through
+*    NetworkSession::SendGameplayEvent - to every machine, itself included.
+*
+*    Spawning from C# (Network.Spawn): the host performs the spawn at once
+*    (NetworkSession::BeginSpawn + NetReceiveSystem::PerformSpawn - scripts
+*    run inside an Exclusive system, so the World may change), and the send
+*    system announces it the same frame. Offline it is a plain instantiate.
 *
 *    Commands from C# (Network.SendCommand): a client's goes through
 *    NetworkSession::SendCommand to the host. The authority's own (host or
@@ -43,6 +52,8 @@
 *    -v1.0       session state, roster, entity identity and the session and
 *                player callbacks (Networking C# Phase 1); SendCommand and
 *                OnNetworkCommand (Networking C# Phase 2)
+*    -v1.1       SendEvent and OnNetworkEvent (Networking C# Phase 5A);
+*                Spawn (Networking C# Phase 3)
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -52,13 +63,18 @@
 #include "Core.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/World.h"
+#include "ECS/Components/Components.h"   // Transform
 #include "ECS/Systems/EventBus/EventBuses.h"
 #include "ECS/Systems/EventBus/Network/NetworkEvents.h"
 #include "Network/NetComponents.h"
+#include "Network/NetContent.h"
 #include "Network/NetworkSession.h"
 #include "Network/Protocol.h"
+#include "Network/Systems/NetReceiveSystem.h"   // PerformSpawn
+#include "Scene/SceneManager.h"
 #if CRUCIBLE_WITH_MONO
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <span>
 #include <string>
@@ -84,6 +100,14 @@ namespace Crucible::ScriptBindings
 		constexpr int32_t kSendRefused = 1;     // not in the game yet, stopping, or the send buffer is full
 		constexpr int32_t kSendBadArgument = 2; // kind outside 1..65535, or a payload over the limit
 		constexpr int32_t kSendBadTarget = 3;   // a destroyed entity, or (on a client) one that is not a network object
+		constexpr int32_t kSendNotAuthority = 4; // SendEvent on a client
+
+		// Results of SpawnInternal. Must match Network.cs.
+		constexpr int32_t kSpawnOk = 0;
+		constexpr int32_t kSpawnNotAuthority = 1;   // a client
+		constexpr int32_t kSpawnNotNetworkPrefab = 2;
+		constexpr int32_t kSpawnBadOwner = 3;       // no player with that PeerId
+		constexpr int32_t kSpawnFailed = 4;         // see the log
 
 		// Commands wait here while the game is paused; a client that keeps sending cannot grow
 		// this without limit. Session and player events are few and always kept.
@@ -96,7 +120,7 @@ namespace Crucible::ScriptBindings
 		bool overflowLogged = false;
 		// The listeners; a Subscription only holds a weak link to its bus, so releasing these
 		// after the bus is gone is safe.
-		Subscription onStarted, onWorldReady, onEnded, onJoined, onReady, onLeft, onCommand;
+		Subscription onStarted, onWorldReady, onEnded, onJoined, onReady, onLeft, onCommand, onEvent;
 
 		NetworkSession* Session()
 		{
@@ -105,10 +129,11 @@ namespace Crucible::ScriptBindings
 
 		void Queue(ScriptNetEvent&& event)
 		{
-			if (event.kind == ScriptNetEvent::Kind::Command && waiting.size() >= kMaxWaitingEvents)
+			const bool message = event.kind == ScriptNetEvent::Kind::Command || event.kind == ScriptNetEvent::Kind::Event;
+			if (message && waiting.size() >= kMaxWaitingEvents)
 			{
 				if (!overflowLogged)
-					CRU_WARN("[Net] more than {} network commands are waiting for the scripts (is the game paused?) - "
+					CRU_WARN("[Net] more than {} network commands and events are waiting for the scripts (is the game paused?) - "
 					         "new ones are dropped until they run",
 					         kMaxWaitingEvents);
 				overflowLogged = true;
@@ -117,10 +142,11 @@ namespace Crucible::ScriptBindings
 			waiting.push_back(std::move(event));
 		}
 
-		void QueueCommand(int32_t sender, int32_t kind, bool targeted, Entity target, std::span<const std::byte> payload)
+		void QueueMessage(ScriptNetEvent::Kind what, int32_t sender, int32_t kind, bool targeted, Entity target,
+		                  std::span<const std::byte> payload)
 		{
 			ScriptNetEvent event;
-			event.kind = ScriptNetEvent::Kind::Command;
+			event.kind = what;
 			event.peer = sender;
 			event.code = kind;
 			event.serial = nextSerial;
@@ -361,7 +387,7 @@ namespace Crucible::ScriptBindings
 						// The authority's own command about a local entity: no id can name it, and
 						// it never leaves this machine anyway.
 						++session->MutableStats().commandsLocal;
-						QueueCommand(Net::kServerPeer, kind, true, target, payload);
+						QueueMessage(ScriptNetEvent::Kind::Command, Net::kServerPeer, kind, true, target, payload);
 						return kSendOk;
 					}
 				}
@@ -383,7 +409,7 @@ namespace Crucible::ScriptBindings
 			try
 			{
 				const auto found = std::ranges::find_if(batch, [serial](const ScriptNetEvent& e) {
-					return e.kind == ScriptNetEvent::Kind::Command && e.serial == serial;
+					return (e.kind == ScriptNetEvent::Kind::Command || e.kind == ScriptNetEvent::Kind::Event) && e.serial == serial;
 				});
 				if (found == batch.end())
 					return nullptr;
@@ -395,6 +421,154 @@ namespace Crucible::ScriptBindings
 			catch (...)
 			{
 				return nullptr;
+			}
+		}
+
+		// Copies `length` bytes out of a C# byte[] (null allowed when length is 0). False if the
+		// array is shorter than that.
+		bool CopyBytes(MonoArray* data, int32_t length, std::vector<std::byte>& out)
+		{
+			out.clear();
+			if (length <= 0)
+				return length == 0;
+			GcRoot root(reinterpret_cast<MonoObject*>(data));
+			auto* bytes = reinterpret_cast<MonoArray*>(root.Get());
+			if (!bytes || mono_array_length(bytes) < static_cast<uintptr_t>(length))
+				return false;
+			out.resize(static_cast<std::size_t>(length));
+			std::memcpy(out.data(), mono_array_addr(bytes, uint8_t, 0), out.size());
+			return true;
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.SendEvent: the authority tells every machine (or
+		         one player, toPeer >= 0) that something happened. Returns one
+		         of the kSend* codes.
+		 *********************************************************************/
+		int32_t ManagedNetworkSendEvent(int32_t kind, MonoArray* data, int32_t length, int32_t toPeer, int32_t hasTarget,
+		                                int32_t targetIndex, int32_t targetGeneration) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				const World* world = EntityContext::GetWorld();
+				if (!session || !world || !EntityContext::InPlaySession())
+					return kSendRefused;
+				if (session->IsClient())
+					return kSendNotAuthority;
+				if (kind < 1 || kind > 0xFFFF || length < 0 || static_cast<std::size_t>(length) > kMaxGameplayEventPayload ||
+				    toPeer < -1 || toPeer > static_cast<int32_t>(Net::kMaxClients))
+					return kSendBadArgument;
+				std::vector<std::byte> payload;
+				if (!CopyBytes(data, length, payload))
+					return kSendBadArgument;
+
+				const Net::PeerId to = toPeer < 0 ? NetworkSession::kEveryone : static_cast<Net::PeerId>(toPeer);
+				Net::NetworkId about = Net::kInvalidNetworkId;
+				if (hasTarget != 0)
+				{
+					Entity target;
+					if (!EntityContext::ResolveEntity(targetIndex, targetGeneration, target))
+						return kSendBadTarget;
+					if (const NetworkIdentity* identity = IdentityOf(*session, *world, target))
+						about = identity->id;
+					else if (session->IsServer())
+						return kSendBadTarget;   // the clients could not tell which entity is meant
+					else
+					{
+						// Offline: no ids exist and this machine is the only listener.
+						if (to == NetworkSession::kEveryone || to == Net::kServerPeer)
+							QueueMessage(ScriptNetEvent::Kind::Event, Net::kServerPeer, kind, true, target, payload);
+						return kSendOk;
+					}
+				}
+				return session->SendGameplayEvent(static_cast<std::uint16_t>(kind), payload, to, about) ? kSendOk : kSendRefused;
+			}
+			catch (...)
+			{
+				return kSendRefused;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.Spawn: the authority spawns a network prefab (by
+		         asset guid) at a position and rotation, owned by `owner`, and
+		         gets its root at once. Offline: an ordinary instantiate.
+		         Returns one of the kSpawn* codes.
+		 *********************************************************************/
+		int32_t ManagedNetworkSpawn(int32_t idLow, int32_t idHigh, const ScriptVec3* position, const ScriptQuat* rotation,
+		                            int32_t owner, int32_t* outIndex, int32_t* outGeneration) noexcept
+		{
+			try
+			{
+				if (!position || !rotation || !outIndex || !outGeneration)
+					return kSpawnFailed;
+				*outIndex = 0;
+				*outGeneration = 0;
+				NetworkSession* session = Session();
+				World* world = EntityContext::GetWorld();
+				SceneManager* scenes = EntityContext::GetScenes();
+				if (!session || !world || !scenes || !EntityContext::InPlaySession())
+					return kSpawnFailed;
+				if (session->IsClient())
+					return kSpawnNotAuthority;
+				if (!std::isfinite(position->x) || !std::isfinite(position->y) || !std::isfinite(position->z) ||
+				    !std::isfinite(rotation->x) || !std::isfinite(rotation->y) || !std::isfinite(rotation->z) ||
+				    !std::isfinite(rotation->w))
+					return kSpawnFailed;
+				const uint64_t assetId = (static_cast<uint64_t>(static_cast<uint32_t>(idHigh)) << 32) | static_cast<uint32_t>(idLow);
+				const Math::vec3 where(position->x, position->y, position->z);
+				const Math::quat facing(rotation->w, rotation->x, rotation->y, rotation->z);   // glm: w first
+
+				Entity root = kNullEntity;
+				if (!session->IsActive())
+				{
+					// Offline: nothing to tell anyone. The same call still works.
+					if (owner != Net::kServerPeer)
+						return kSpawnBadOwner;
+					root = EntityContext::SpawnPrefab(assetId);
+					if (!root.IsValid() || !world->IsAlive(root))
+						return kSpawnFailed;
+					if (Transform* t = world->Write<Transform>(root))
+					{
+						t->positions = where;
+						t->rotation = facing;
+					}
+				}
+				else
+				{
+					const NetContent& content = core->GetNetContent();
+					const Net::NetPrefabId prefab = content.Prefabs().FindByGuid(assetId);
+					if (prefab == Net::kInvalidNetPrefab)
+						return kSpawnNotNetworkPrefab;
+					if (owner < 0 || owner >= static_cast<int32_t>(Net::kMaxPlayers) ||
+					    !session->FindPlayer(static_cast<Net::PeerId>(owner)))
+						return kSpawnBadOwner;
+					PendingSpawn spawn;
+					spawn.id = session->BeginSpawn(prefab, static_cast<Net::PeerId>(owner));
+					if (spawn.id == Net::kInvalidNetworkId)
+						return kSpawnFailed;
+					spawn.prefab = prefab;
+					spawn.owner = static_cast<Net::PeerId>(owner);
+					spawn.position = where;
+					spawn.rotation = facing;
+					std::vector<Entity> scratch;
+					root = NetReceiveSystem::PerformSpawn(*world, *session, content, *scenes, spawn, scratch);
+					if (!root.IsValid())
+						return kSpawnFailed;   // NotifySpawnFailed logged why
+				}
+				*outIndex = static_cast<int32_t>(root.index);
+				*outGeneration = static_cast<int32_t>(root.generation);
+				return kSpawnOk;
+			}
+			catch (const std::exception& error)
+			{
+				CRU_USER_ERROR("[Script] Network.Spawn failed: {}", error.what());
+				return kSpawnFailed;
+			}
+			catch (...)
+			{
+				return kSpawnFailed;
 			}
 		}
 
@@ -415,6 +589,7 @@ namespace Crucible::ScriptBindings
 		onReady = {};
 		onLeft = {};
 		onCommand = {};
+		onEvent = {};
 		waiting.clear();
 		batch.clear();
 		overflowLogged = false;
@@ -466,7 +641,26 @@ namespace Crucible::ScriptBindings
 					    return;
 				    }
 			    }
-			    QueueCommand(e.sender, e.kind, e.target != Net::kInvalidNetworkId, target, e.payload);
+			    QueueMessage(ScriptNetEvent::Kind::Command, e.sender, e.kind, e.target != Net::kInvalidNetworkId, target, e.payload);
+		    });
+		onEvent = events->network.Subscribe<NetworkEvents::GameplayEventReceived>(
+		    [](const NetworkEvents::GameplayEventReceived& e)
+		    {
+			    // The same rule as commands: about one object -> that object's scripts only.
+			    Entity target;
+			    if (e.target != Net::kInvalidNetworkId)
+			    {
+				    NetworkSession* session = Session();
+				    const World* world = EntityContext::GetWorld();
+				    target = session ? session->Entities().Find(e.target) : Entity{};
+				    if (!session || !world || !target.IsValid() || !world->IsAlive(target))
+				    {
+					    if (session)
+						    ++session->MutableStats().gameplayEventsNoTarget;
+					    return;
+				    }
+			    }
+			    QueueMessage(ScriptNetEvent::Kind::Event, Net::kServerPeer, e.kind, e.target != Net::kInvalidNetworkId, target, e.payload);
 		    });
 	}
 
@@ -509,6 +703,8 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Network::FindEntityInternal", &ManagedNetworkFindEntity);
 		Add("Crucible.Network::SendCommandInternal", &ManagedNetworkSendCommand);
 		Add("Crucible.Network::GetEventPayloadInternal", &ManagedNetworkGetEventPayload);
+		Add("Crucible.Network::SendEventInternal", &ManagedNetworkSendEvent);
+		Add("Crucible.Network::SpawnInternal", &ManagedNetworkSpawn);
 	}
 }
 #endif

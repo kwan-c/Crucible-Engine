@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.12
+* \version       1.13
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -31,6 +31,7 @@
 *    -v1.11      sceneProfiles (Networking Phase 14.7)
 *    -v1.12      kMessageTypes 14: PeerRoster and Command; roster and command
 *                counters
+*    -v1.13      gameplayEventsNoTarget, spawnsImmediate
 *
 **************************************************************************/
 #pragma once
@@ -122,6 +123,8 @@ namespace Crucible
 		std::uint32_t gameplayEventsRefused = 0;    // SendGameplayEvent said no (see its rules)
 		std::uint32_t gameplayEventsSkipped = 0;    // server: not sent to a client receiving the world that frame
 		std::uint64_t gameplayEventsReceived = 0;   // client
+		std::uint32_t gameplayEventsNoTarget = 0;   // client: about an object it no longer has (not delivered)
+		std::uint32_t spawnsImmediate = 0;          // server: spawns performed at once (BeginSpawn), of spawnsPerformed
 
 		// Interpolation and responsiveness (client)
 		std::uint64_t interpolationSamples = 0;     // snapshot states buffered instead of written

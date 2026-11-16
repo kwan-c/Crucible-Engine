@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                The wire protocol between the host and its clients:
 *                message types, their fields, and an Encode/Decode pair
@@ -62,6 +62,7 @@
 *                                 u8 buttons }, u16 ackedSnapshot, u32 ackBits,
 *                                 u32 appliedLifecycle  (12 / 25 / 38 / 51 bytes)
 *                  GameplayEvent  u32 lifecycleSeq, u16 kind (non-zero),
+*                                 varint target (a NetworkId, 0 = none),
 *                                 payload = the rest of the message
 *                  PeerRoster     u32 lifecycleSeq, u8 count (1..4),
 *                                 count x { u8 peer, u8 flags, u8 nameLength
@@ -111,6 +112,8 @@
 *                scene identity (Networking Phase 14.4)
 *    -v1.3       protocol version 5: PeerRoster (who is in the session, for
 *                clients) and Command (client to host gameplay requests)
+*    -v1.4       protocol version 6: GameplayEvent carries a target, like
+*                Command (Networking C# Phase 5A)
 *
 **************************************************************************/
 #pragma once
@@ -128,14 +131,14 @@
 
 namespace Crucible
 {
-	// Bump on ANY change to the bytes of any message. (5 = PeerRoster and Command; 4 = scene
-	// objects and the scene identity in WorldBegin; 3 = lifecycle sequence; versions 1 and 2
-	// were earlier development versions.)
-	inline constexpr std::uint32_t kProtocolVersion = 5;
+	// Bump on ANY change to the bytes of any message. (6 = GameplayEvent's target; 5 = PeerRoster
+	// and Command; 4 = scene objects and the scene identity in WorldBegin; 3 = lifecycle
+	// sequence; versions 1 and 2 were earlier development versions.)
+	inline constexpr std::uint32_t kProtocolVersion = 6;
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message
 	inline constexpr std::size_t   kMaxReliableBytes      = 16 * 1024;   // spawn / despawn / event messages
-	inline constexpr std::size_t   kMaxGameplayEventPayload = kMaxReliableBytes - 7;   // after u8 type, u32 seq, u16 kind
+	inline constexpr std::size_t   kMaxGameplayEventPayload = kMaxReliableBytes - 12;  // after u8 type, u32 seq, u16 kind, varint target (<= 5)
 	inline constexpr std::size_t   kMaxCommandPayload     = 1024;        // a client's request: small on purpose
 	inline constexpr std::uint16_t kMaxEntitiesPerMessage = 512;
 	inline constexpr std::size_t   kMaxRecordBytes        = 255;         // a record's length is one byte
@@ -343,6 +346,7 @@ namespace Crucible
 	{
 		std::uint32_t              lifecycleSeq = 0;
 		std::uint16_t              kind = 0;   // non-zero; meaning defined by gameplay
+		Net::NetworkId             target = Net::kInvalidNetworkId;   // the object it is about, or none
 		std::span<const std::byte> payload;    // the rest of the message
 	};
 

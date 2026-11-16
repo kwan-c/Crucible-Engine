@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                NetReplicationSendSystem: the host's lifecycle stream
 *                (world on join, spawns, despawns) and snapshots.
@@ -17,6 +17,7 @@
 *                change detection, adaptive allowance, counters
 *    -v1.4       SceneObjectBatches in the world stream; the scene identity
 *                in WorldBegin (Networking Phase 14.5)
+*    -v1.5       a gameplay event's target goes on the wire (protocol 6)
 *
 **************************************************************************/
 #include "Network/Systems/NetReplicationSendSystem.h"
@@ -214,7 +215,7 @@ namespace Crucible
 				if (seq == 0) continue;   // closed by a failed send earlier this frame
 				m_eventBuffer.resize(kMaxReliableBytes);
 				ByteWriter writer(m_eventBuffer);
-				const GameplayEventView view{ .lifecycleSeq = seq, .kind = event.kind, .payload = event.payload };
+				const GameplayEventView view{ .lifecycleSeq = seq, .kind = event.kind, .target = event.target, .payload = event.payload };
 				if (!Encode(writer, view))
 				{
 					// SendGameplayEvent checked the kind and the size, so this cannot happen.

@@ -367,7 +367,8 @@ namespace Crucible
 		         OnNetworkStarted, 1 OnNetworkStopped (text = why), 2
 		         OnPeerJoined, 3 OnPeerReady, 4 OnPeerLeft (peer = that
 		         player), 5 OnNetworkCommand (peer = the sender, code = the
-		         command's kind, serial = names its payload). Same rules as
+		         command's kind, serial = names its payload), 6 OnNetworkEvent
+		         (code = the event's kind, serial). Same rules as
 		         DispatchUIEvent (skipped if not overridden / not running; a
 		         throwing callback faults the script and returns false).
 		 *********************************************************************/

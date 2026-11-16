@@ -204,10 +204,19 @@ namespace Crucible
         /// check that this player may ask for this before acting. See NetReader.cs.
         /// </summary>
         public virtual void OnNetworkCommand(int sender, ushort kind, NetReader data) {}
+        /// <summary>
+        /// Every machine: the authority announced that something happened, with
+        /// Network.SendEvent - the place for what each player should see or hear (an effect,
+        /// a sound, a HUD message). An event sent with a target reaches only the scripts on
+        /// that entity; one without reaches every script, so check <paramref name="kind"/>.
+        /// It comes from the host, so it can be trusted more than a command - still check
+        /// data.Ok before using what you read.
+        /// </summary>
+        public virtual void OnNetworkEvent(ushort kind, NetReader data) {}
 
         /// <summary>
         /// Called by the engine (ScriptRuntime::DispatchNetworkEvent) with plain values.
-        /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command
+        /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command, 6 event
         /// (ScriptNetEvent::Kind in Bindings/NetworkContext.h - keep the two in step).
         /// </summary>
         internal void DispatchNetworkEvent(int kind, int peer, int code, int serial, string text)
@@ -224,6 +233,12 @@ namespace Crucible
                     // Every script gets its own reader over the same bytes.
                     byte[] payload = Network.PayloadOf(serial);
                     OnNetworkCommand(peer, unchecked((ushort)code), new NetReader(payload, payload.Length));
+                    break;
+                }
+                case 6:
+                {
+                    byte[] payload = Network.PayloadOf(serial);
+                    OnNetworkEvent(unchecked((ushort)code), new NetReader(payload, payload.Length));
                     break;
                 }
             }

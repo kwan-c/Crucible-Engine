@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.14
+* \version       1.15
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -40,6 +40,7 @@
 *                PeerLinkStatus, HostLinkStatus (Networking Phase 0)
 *    -v1.14      the roster (RefreshRoster, BroadcastRoster,
 *                ApplyPeerRoster) and commands (SendCommand, HandleCommand)
+*    -v1.15      gameplay events with a target; BeginSpawn
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -393,6 +394,24 @@ namespace Crucible
 		m_pendingSpawns.push_back(spawn);   // before the id is used up: a throw here allocates nothing
 		++m_nextId;
 		return spawn.id;
+	}
+
+	Net::NetworkId NetworkSession::BeginSpawn(Net::NetPrefabId prefab, Net::PeerId owner)
+	{
+		if (m_role != Net::NetRole::Server || m_state != SessionState::Running || m_stopRequested) return Net::kInvalidNetworkId;
+		if (!m_isNetworkPrefab || !m_isNetworkPrefab(prefab))
+		{
+			CRU_ERROR("[Net] BeginSpawn: prefab {} is not a registered network prefab", prefab);
+			return Net::kInvalidNetworkId;
+		}
+		if (owner > Net::kMaxClients)
+		{
+			CRU_ERROR("[Net] BeginSpawn: owner {} is not a peer (0 = host, 1..{} = clients)", owner, Net::kMaxClients);
+			return Net::kInvalidNetworkId;
+		}
+		if (m_nextId == Net::kInvalidNetworkId) return Net::kInvalidNetworkId;
+		++m_stats.spawnsImmediate;
+		return m_nextId++;
 	}
 
 	void NetworkSession::TakePendingSpawns(std::vector<PendingSpawn>& out)
@@ -973,7 +992,7 @@ namespace Crucible
 
 	// ---- gameplay events ------------------------------------------------------------------------
 
-	bool NetworkSession::SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to)
+	bool NetworkSession::SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to, Net::NetworkId about)
 	{
 		const char* refusal = nullptr;
 		if (kind == 0) refusal = "kind 0 is reserved";
@@ -981,6 +1000,7 @@ namespace Crucible
 		else if (IsClient()) refusal = "only the host sends gameplay events";
 		else if (IsServer() && m_state != SessionState::Running) refusal = "the session is stopping";
 		else if (to != kEveryone && to > Net::kMaxClients) refusal = "the target is not a peer";
+		else if (about != Net::kInvalidNetworkId && !m_entities.Contains(about)) refusal = "it is about a network object that does not exist";
 		else if (IsServer() && m_gameplayEvents.size() >= kMaxQueuedGameplayEvents) refusal = "too many events this frame";
 		if (refusal != nullptr)
 		{
@@ -991,10 +1011,10 @@ namespace Crucible
 
 		// The host, and an offline game, hear their own events: one listener serves every role.
 		if (to == kEveryone || to == Net::kServerPeer || !IsServer())
-			Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = true });
+			Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = true, .target = about });
 		if (IsServer() && to != Net::kServerPeer)
 		{
-			m_gameplayEvents.push_back(QueuedGameplayEvent{ .to = to, .kind = kind, .payload = { payload.begin(), payload.end() } });
+			m_gameplayEvents.push_back(QueuedGameplayEvent{ .to = to, .kind = kind, .payload = { payload.begin(), payload.end() }, .target = about });
 			++m_stats.gameplayEventsQueued;
 		}
 		return true;
@@ -1006,10 +1026,13 @@ namespace Crucible
 		out.swap(m_gameplayEvents);
 	}
 
-	void NetworkSession::DeliverGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload)
+	void NetworkSession::DeliverGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::NetworkId about)
 	{
+		// About an object this client no longer has (its despawn was applied first, or a later
+		// world never had it): nothing here can use the event.
+		if (about != Net::kInvalidNetworkId && !m_entities.Contains(about)) { ++m_stats.gameplayEventsNoTarget; return; }
 		++m_stats.gameplayEventsReceived;
-		Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = false });
+		Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = false, .target = about });
 	}
 
 	// ---- players ---------------------------------------------------------------------------------
