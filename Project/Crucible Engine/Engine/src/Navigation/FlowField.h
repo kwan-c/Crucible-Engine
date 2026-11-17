@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          1 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                FlowField: one shared map of "which way to the player" for
 *                every cell of a NavGrid. The pathing layer of enemy
@@ -30,8 +30,15 @@
 *                Only reads the NavGrid, never writes it, and knows nothing
 *                about enemies or the ECS.
 *
+*                When dynamic obstacles change some cells (build step 4),
+*                UpdateCosts fixes only those cells and their neighbours, and
+*                TouchesFlow says whether the arrows could have changed.
+*
 * \history
 *    -v1.0       first version
+*    -v1.1       UpdateCosts and TouchesFlow (local updates for moving
+*                obstacles); the cost rule moved into CostAt, shared with
+*                BuildCostField, which gives the same costs as before
 *
 **************************************************************************/
 #pragma once
@@ -86,6 +93,29 @@ namespace Crucible {
         */
         bool Rebuild(const std::vector<Math::vec3>& goals, float floodRadius);
 
+        /*!
+            \brief
+            Fixes the cost field after some cells changed between open and
+            blocked (NavGrid::AddDynamic / RemoveDynamic report them): each
+            changed cell and its 4 straight neighbours, whose "next to a
+            wall" extra may have changed too. Leaves the flow alone - see
+            TouchesFlow.
+
+            \param changed
+            Cell indices (NavGrid::Index). Duplicates are fine.
+        */
+        void UpdateCosts(const std::vector<int>& changed);
+
+        /*!
+            \brief
+            Could these changed cells alter the current arrows? True if any
+            of them, or a straight neighbour (whose cost changed with it),
+            lies in the area the last flood covered. False with no flow.
+            Outside that area nothing was reached, so a rebuild can wait for
+            the player to come near.
+        */
+        bool TouchesFlow(const std::vector<int>& changed) const;
+
         // Forget the flow but keep the cost field (Stop, or a new bake coming).
         void ClearFlow();
 
@@ -120,8 +150,11 @@ namespace Crucible {
 
         };  // HEAPENTRY STRUCT
 
-        bool IsOpen(int col, int row) const;
-        void ResetArea();
+        bool  IsOpen(int col, int row) const;
+        void  ResetArea();
+        float CostAt(int col, int row) const;   // the cost rule: infinity / 1 + wallAdjacencyCost / 1
+
+        float                     m_wallAdjacencyCost = 0.0f;   // from the bake, for UpdateCosts
 
         const NavGrid*            m_grid = nullptr;
 

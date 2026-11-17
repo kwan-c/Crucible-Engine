@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          1 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                FlowField's cost field, Dijkstra flood and direction pass.
 *
@@ -18,6 +18,7 @@
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       CostAt (the cost rule, shared); UpdateCosts and TouchesFlow
 *
 **************************************************************************/
 #include "FlowField.h"
@@ -58,9 +59,24 @@ namespace Crucible {
 
     }   // FlowField::IsOpen()
 
+    float FlowField::CostAt(int col, int row) const {
+
+        const NavGrid& grid = *m_grid;
+        if (grid.IsBlocked({ col, row })) return kInfinity;    // never entered
+
+        // Touching a blocked cell straight on (not diagonally) costs
+        // extra. IsBlocked counts off-grid as blocked, so the map's
+        // edge pushes routes inwards too.
+        const bool nearWall = grid.IsBlocked({ col + 1, row }) || grid.IsBlocked({ col - 1, row })
+                           || grid.IsBlocked({ col, row + 1 }) || grid.IsBlocked({ col, row - 1 });
+        return nearWall ? 1.0f + m_wallAdjacencyCost : 1.0f;
+
+    }   // FlowField::CostAt()
+
     void FlowField::BuildCostField(const NavGrid& grid, float wallAdjacencyCost) {
 
-        m_grid = &grid;
+        m_grid              = &grid;
+        m_wallAdjacencyCost = wallAdjacencyCost;
 
         const std::size_t count = static_cast<std::size_t>(grid.Cols()) * static_cast<std::size_t>(grid.Rows());
         m_cost.assign(count, 1.0f);
@@ -73,24 +89,54 @@ namespace Crucible {
 
         for (int row = 0; row < grid.Rows(); ++row) {
             for (int col = 0; col < grid.Cols(); ++col) {
-
-                const std::size_t index = static_cast<std::size_t>(grid.Index({ col, row }));
-                if (grid.IsBlocked({ col, row })) {
-                    m_cost[index] = kInfinity;    // never entered
-                    continue;
-                }
-
-                // Touching a blocked cell straight on (not diagonally) costs
-                // extra. IsBlocked counts off-grid as blocked, so the map's
-                // edge pushes routes inwards too.
-                const bool nearWall = grid.IsBlocked({ col + 1, row }) || grid.IsBlocked({ col - 1, row })
-                                   || grid.IsBlocked({ col, row + 1 }) || grid.IsBlocked({ col, row - 1 });
-                if (nearWall) m_cost[index] = 1.0f + wallAdjacencyCost;
-
+                m_cost[static_cast<std::size_t>(grid.Index({ col, row }))] = CostAt(col, row);
             }
         }
-        
+
     }   // FlowField::BuildCostField()
+
+    void FlowField::UpdateCosts(const std::vector<int>& changed) {
+
+        if (!m_grid || m_cost.empty()) return;
+        const NavGrid& grid = *m_grid;
+
+        for (const int index : changed) {
+
+            if (index < 0 || static_cast<std::size_t>(index) >= m_cost.size()) continue;   // from an older bake
+            const int col = index % grid.Cols();
+            const int row = index / grid.Cols();
+
+            // The cell itself, then its straight neighbours: their "next to
+            // a wall" extra depends on this cell.
+            constexpr int kAroundCol[5] = { 0, 1, -1, 0,  0 };
+            constexpr int kAroundRow[5] = { 0, 0,  0, 1, -1 };
+            for (int k = 0; k < 5; ++k) {
+                const NavCell cell{ col + kAroundCol[k], row + kAroundRow[k] };
+                if (!grid.Contains(cell)) continue;
+                m_cost[static_cast<std::size_t>(grid.Index(cell))] = CostAt(cell.col, cell.row);
+            }
+
+        }
+
+    }   // FlowField::UpdateCosts()
+
+    bool FlowField::TouchesFlow(const std::vector<int>& changed) const {
+
+        if (!m_hasFlow || !m_grid) return false;
+        const int cols = m_grid->Cols();
+
+        // One cell wider than the flooded square: a change just outside it
+        // still alters the cost of the cell next to it, inside.
+        for (const int index : changed) {
+            if (index < 0) continue;
+            const int col = index % cols;
+            const int row = index / cols;
+            if (col >= m_areaMin.col - 1 && col <= m_areaMax.col + 1 &&
+                row >= m_areaMin.row - 1 && row <= m_areaMax.row + 1) return true;
+        }
+        return false;
+
+    }   // FlowField::TouchesFlow()
 
     void FlowField::ResetArea() {
 
