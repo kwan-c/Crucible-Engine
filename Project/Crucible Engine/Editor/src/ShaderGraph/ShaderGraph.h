@@ -39,8 +39,13 @@
 *         { "id": 1, "type": "Output", "x": 400.0, "y": 0.0, "inputs": { "roughness": 0.4 } },
 *         { "id": 2, "type": "Parameter", "x": 0.0, "y": 0.0, "settings": { "parameter": "tint" } }
 *       ],
-*       "links": [ { "from": [2, "out"], "to": [1, "albedo"] } ]
+*       "links": [ { "from": [2, "out"], "to": [1, "albedo"] } ],
+*       "comments": [ { "id": 3, "x": -20.0, "y": -40.0, "w": 480.0, "h": 200.0, "text": "Tint", "colour": [0.3, 0.4, 0.6] } ]
 *     }
+*
+* "comments" are the boxes drawn behind groups of nodes on the canvas, with a title. They are
+* only for the people reading the graph: the shader does not change with them. Written only when
+* a graph has some, so a graph without any is the same file as before they existed.
 *
 * Every key but "version" is optional, and unknown keys are ignored, so files written by an
 * older Editor keep loading. A file with a higher version than this code knows is refused.
@@ -100,12 +105,26 @@ namespace Crucible::ShaderGraph {
 		std::string toPin;
 	};
 
+	/// The smallest a comment box can be, either way (canvas units).
+	inline constexpr float kMinCommentSize = 60.0f;
+
+	/// A box drawn behind nodes on the canvas, with a title: notes for whoever reads the graph.
+	/// Changes nothing in the shader.
+	struct Comment {
+		uint32_t             id = 0;                  ///< unique among the graph's nodes AND comments, never 0
+		float                x = 0.0f, y = 0.0f;      ///< top-left corner, canvas units
+		float                width = 300.0f, height = 200.0f;
+		std::string          text = "Comment";
+		std::array<float, 3> colour{ 0.30f, 0.40f, 0.60f };   ///< 0..1
+	};
+
 	struct Graph {
 		std::string            domain = kSurfaceDomain;
-		uint32_t               nextId = 1;   ///< the id the next new node gets
+		uint32_t               nextId = 1;   ///< the id the next new node or comment gets
 		std::vector<Parameter> parameters;   ///< in the order a material's Inspector shows them
 		std::vector<Node>      nodes;
 		std::vector<Link>      links;
+		std::vector<Comment>   comments;     ///< in drawing order: later ones on top
 
 		/// Adds a node of `type` and returns its id (a new one, never one a deleted node had).
 		uint32_t AddNode(std::string type, float x = 0.0f, float y = 0.0f);
@@ -119,6 +138,13 @@ namespace Crucible::ShaderGraph {
 
 		/// The link into this input pin, or null. (A valid graph has at most one.)
 		const Link* FindLinkInto(uint32_t node, std::string_view pin) const;
+
+		/// Adds a comment box and returns its id (from the same counter as nodes).
+		uint32_t AddComment(float x, float y, float width, float height, std::string text);
+
+		/// The comment with this id, or null.
+		Comment*       FindComment(uint32_t id);
+		const Comment* FindComment(uint32_t id) const;
 	};
 
 	/*********************************************************************

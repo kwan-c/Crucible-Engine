@@ -1,7 +1,7 @@
 {
   "version": 1,
   "domain": "surface",
-  "nextId": 16,
+  "nextId": 17,
   "parameters": [
     { "name": "vector", "type": "vec2", "default": [0.0, 0.0], "min": 0.0, "max": 1.0 },
     { "name": "texture", "type": "texture", "colour": true, "default": "white" },
@@ -28,5 +28,8 @@
     { "from": [13, "out"], "to": [15, "b"] },
     { "from": [10, "out"], "to": [15, "a"] },
     { "from": [15, "out"], "to": [1, "vertexOffset"] }
+  ],
+  "comments": [
+    { "id": 16, "x": -442.14804, "y": 161.84528, "w": 456.242, "h": 218.0, "text": "eggsdee", "colour": [0.3, 0.4, 0.6] }
   ]
 }

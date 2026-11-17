@@ -55,6 +55,21 @@ namespace Crucible::ShaderGraph {
 	bool DeleteLinkInto(Graph& graph, uint32_t toNode, std::string_view toPin);
 
 	/*********************************************************************
+	 \brief  Puts a Reroute node at (x, y) on the link into this input pin:
+	         the link then runs from its output into the Reroute, and from
+	         the Reroute into the pin.
+	 \param  why  If refused: the reason, as one sentence for the user.
+	 \return The Reroute's id; 0, and the graph untouched, if there is no
+	         such link or a Reroute cannot carry it (a texture).
+	 *********************************************************************/
+	uint32_t InsertReroute(Graph& graph, uint32_t toNode, std::string_view toPin, float x, float y, std::string& why);
+
+	// ---- Comment boxes -------------------------------------------------------------------------
+
+	/// Removes these comment boxes (never the nodes in them). Returns how many went.
+	size_t DeleteComments(Graph& graph, const std::vector<uint32_t>& ids);
+
+	/*********************************************************************
 	 \brief  Links an output pin to an input pin, replacing whatever was
 	         linked into that input.
 	 \param  why  If refused: the reason, as one sentence for the user.

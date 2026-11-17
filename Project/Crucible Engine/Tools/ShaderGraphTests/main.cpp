@@ -87,7 +87,7 @@ namespace {
 		CHECK(FindNodeType("NoSuchNode") == nullptr);
 		CHECK(FindNodeType("Split")->FindOutput("xyz") == 5);
 		CHECK(FindNodeType("Split")->FindInput("xyz") == -1);
-		CHECK(NodeTypes().size() == 77);
+		CHECK(NodeTypes().size() == 78);
 		CHECK(IsMaterialFactorNode("MaterialTint") && IsMaterialFactorNode("MaterialEmissive") && !IsMaterialFactorNode("Parameter") && !IsMaterialFactorNode("Material"));
 		for (const NodeType& type : NodeTypes()) { CHECK(IsMaterialFactorNode(type.name) == (std::string_view(type.name).substr(0, 8) == "Material")); }
 	}
@@ -1042,6 +1042,90 @@ namespace {
 		CHECK(squeezed.ok && squeezed.liveConstants.size() == 2 && Contains(squeezed.source, "o.metallic = 0.0;"));
 	}
 
+	// ---- Step 10a: reroute points and comment boxes --------------------------------------------------
+
+	void TestReroutesAndComments() {
+		std::printf("reroutes and comments\n");
+
+		// A reroute on a link: the link then runs through it, and the shader is the same value.
+		Graph graph = NewGraph();
+		const uint32_t output = OutputNodeOf(graph);
+		const uint32_t position = AddNode(graph, "WorldPosition", 0.0f, 0.0f);
+		std::string why;
+		CHECK(Crucible::ShaderGraph::Connect(graph, position, "out", output, "albedo", why));
+		const Generated before = Generate(graph);
+		CHECK(before.ok);
+		CHECK(InsertReroute(graph, output, "roughness", 0.0f, 0.0f, why) == 0 && !why.empty());   // no link there
+		const uint32_t reroute = InsertReroute(graph, output, "albedo", 100.0f, 20.0f, why);
+		CHECK(reroute != 0 && graph.FindNode(reroute) && graph.FindNode(reroute)->type == kRerouteNode);
+		const Link* into = graph.FindLinkInto(output, "albedo");
+		CHECK(into && into->fromNode == reroute && into->fromPin == "out");
+		const Link* through = graph.FindLinkInto(reroute, "in");
+		CHECK(through && through->fromNode == position && through->fromPin == "out");
+		const Generated after = Generate(graph);
+		CHECK(after.ok && after.problems.empty() && Contains(after.source, ": Reroute\n") && Contains(after.source, "float3 n" + std::to_string(reroute) + "_out"));
+		// Two in a row carry it too; a reroute is a node like any other (undo, delete).
+		const uint32_t second = InsertReroute(graph, output, "albedo", 150.0f, 20.0f, why);
+		CHECK(second != 0 && Generate(graph).ok);
+		CHECK(DeleteNodes(graph, { second }) == 1 && graph.FindLinkInto(output, "albedo") == nullptr);
+
+		// Not on a texture link: refused, the graph untouched.
+		Graph textured = NewGraph();
+		textured.parameters.push_back({ "pattern", ParameterType::Texture, {}, 0.0f, 1.0f, true, "white" });
+		const uint32_t pattern = AddNode(textured, kParameterNode, 0.0f, 0.0f, "pattern");
+		const uint32_t sample = AddNode(textured, "SampleTexture", 100.0f, 0.0f);
+		CHECK(Crucible::ShaderGraph::Connect(textured, pattern, "out", sample, "texture", why));
+		const std::string unchanged = Save(textured);
+		why.clear();
+		CHECK(InsertReroute(textured, sample, "texture", 50.0f, 0.0f, why) == 0 && !why.empty());
+		CHECK(Save(textured) == unchanged);
+
+		// Comments: ids from the nodes' counter, saved only when there are some, round trip.
+		Graph noted = NewGraph();
+		const std::string plain = Save(noted);
+		CHECK(!Contains(plain, "\"comments\""));
+		const uint32_t first = noted.AddComment(-10.0f, -20.0f, 400.0f, 250.0f, "Albedo \"tint\"\nline two");
+		const uint32_t node = AddNode(noted, "UV", 0.0f, 0.0f);
+		CHECK(first != 0 && node != first && noted.FindComment(first) && !noted.FindComment(node) && !noted.FindNode(first));
+		noted.FindComment(first)->colour = { 0.9f, 0.1f, 0.2f };
+		const std::string text = Save(noted);
+		CHECK(Contains(text, "\"comments\": [") && Contains(text, "\"w\": 400.0") && Contains(text, "\"colour\": [0.9, 0.1, 0.2]"));
+		Graph loaded;
+		std::string error;
+		CHECK(Load(text, loaded, error) && Save(loaded) == text);
+		CHECK(loaded.comments.size() == 1 && loaded.comments[0].text == "Albedo \"tint\"\nline two" && loaded.comments[0].id == first);
+		CHECK(Generate(loaded).source == Generate(noted).source);   // the shader never sees them
+		Graph without = noted;
+		without.comments.clear();
+		CHECK(Generate(without).source == Generate(noted).source);
+		CHECK(DeleteComments(noted, { first, 999 }) == 1 && noted.comments.empty() && noted.FindNode(node));
+
+		// Odd comments: skipped or mended, never refusing the graph.
+		const char* odd = R"({ "version": 1,
+			"nodes": [ { "id": 1, "type": "Output" }, { "id": 2, "type": "UV" } ],
+			"comments": [ 5, { "id": 2, "w": 1.0, "h": 2.0, "colour": [3.0, -1.0, 0.5] }, { "id": 9, "text": "fine" }, { "text": "no id" } ] })";
+		Graph mended;
+		CHECK(Load(odd, mended, error));
+		CHECK(mended.comments.size() == 3);
+		if (mended.comments.size() == 3) {
+			const Comment& clash = mended.comments[0];
+			CHECK(clash.id != 2 && clash.id != 1 && clash.id != 9 && clash.width == kMinCommentSize && clash.height == kMinCommentSize);
+			CHECK(clash.colour[0] == 1.0f && clash.colour[1] == 0.0f && clash.colour[2] == 0.5f);
+			CHECK(mended.comments[1].id == 9 && mended.comments[1].text == "fine");
+			CHECK(mended.comments[2].id != 0 && mended.comments[2].id != clash.id && mended.comments[2].id != 9);
+			CHECK(mended.nextId > (std::max)({ clash.id, mended.comments[2].id, 9u }));
+		}
+
+		// Undo and redo bring comments back like anything else.
+		Document document;
+		document.New();
+		document.GetGraph().AddComment(0.0f, 0.0f, 300.0f, 200.0f, "Notes");
+		document.Commit();
+		CHECK(document.GetGraph().comments.size() == 1);
+		CHECK(document.Undo() && document.GetGraph().comments.empty());
+		CHECK(document.Redo() && document.GetGraph().comments.size() == 1 && document.GetGraph().comments[0].text == "Notes");
+	}
+
 }   // anonymous namespace
 
 int main(int argc, char** argv) {
@@ -1061,6 +1145,7 @@ int main(int argc, char** argv) {
 	TestLiveConstants();
 	TestNewNodes();
 	TestVertexOffset();
+	TestReroutesAndComments();
 
 	if (g_failed != 0) {
 		std::printf("\n%d of %d checks FAILED\n", g_failed, g_checks);

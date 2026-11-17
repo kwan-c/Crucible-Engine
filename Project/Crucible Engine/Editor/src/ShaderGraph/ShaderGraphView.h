@@ -20,6 +20,13 @@
 *     select everything in a box. Dragging a selected node moves them all.
 *   - Right-click the canvas for the add menu (type to search), a node or link for its menu.
 *   - Delete, Ctrl+C, Ctrl+V, Ctrl+D (duplicate), Ctrl+A.
+*   - Reroute points: double-click a link (or its menu's "Add reroute point") to put a dot on
+*     it, then drag the dot to route the link. A Reroute is a node (ShaderGraphNodes.h), drawn
+*     small; it carries numbers and vectors, not textures.
+*   - Comment boxes: "Comment" in the add menu, or select nodes and press C. Drag a box by its
+*     title strip (the nodes inside move with it), resize it by its bottom-right corner,
+*     double-click the title to rename it or change its colour. Its inside is empty canvas.
+*     Deleting one keeps its nodes. Comments are not copied with Ctrl+C.
 *
 * A pin's colour is the type it carries (as worked out by the generator: ShaderGraph::
 * Generated::nodes). A node with a problem has a red outline (amber if the Output does not use
@@ -68,13 +75,14 @@ namespace Crucible {
 		uint32_t SelectedNode() const { return m_selected.size() == 1 ? m_selected.front() : 0; }   ///< the one selected node, or 0
 		void Select(uint32_t node);
 		void ClearSelection();
-		void KeepSelectionIn(const ShaderGraph::Graph& graph);   ///< after undo or redo: forget what is no longer there
+		void KeepSelectionIn(const ShaderGraph::Graph& graph);   // after undo or redo: forget what is no longer there
+		uint32_t SelectedComment() const { return m_comment; }  ///< the selected comment box's id, or 0
 
 		/// Pans and zooms so the whole graph is in view (from the next frame).
 		void FrameAll(const ShaderGraph::Graph& graph);
 
 		/// Mid-gesture (moving nodes, dragging a link, a selection box): wait before an undo step.
-		bool IsBusy() const { return m_dragging || m_linking || m_boxSelecting; }
+		bool IsBusy() const { return m_dragging || m_linking || m_boxSelecting || m_commentDragging || m_commentResizing; }
 
 		/// The middle of what the canvas showed last frame, in graph space: where a node added
 		/// from outside the canvas should go.
@@ -85,6 +93,8 @@ namespace Crucible {
 		bool DrawMenus(ShaderGraph::Graph& graph, Result& result);   // true if the graph changed
 		bool LinkNewNode(ShaderGraph::Graph& graph, uint32_t node);  // the pending link, onto a node's first pin that fits
 		void Duplicate(ShaderGraph::Graph& graph);
+		void EditComment(const ShaderGraph::Graph& graph, uint32_t comment);   // opens its title and colour editor
+		bool CommentAroundSelection(ShaderGraph::Graph& graph);               // a new comment box around the selected nodes
 
 		GraphCanvas           m_canvas;
 		Math::vec2            m_viewCentre{ 0.0f };
@@ -111,6 +121,15 @@ namespace Crucible {
 		char                  m_filter[64] = {};
 
 		ShaderGraph::Clipboard m_clipboard;
+
+		// Comment boxes. A selected comment means no node or link is selected.
+		uint32_t              m_comment = 0;             // the selected one
+		bool                  m_commentDragging = false; // moving it by its title strip...
+		bool                  m_commentResizing = false; // ...or resizing it by its corner
+		std::vector<uint32_t> m_commentNodes;            // the nodes that were inside it when the move began
+		uint32_t              m_editComment = 0;         // the one in the title and colour editor
+		bool                  m_openCommentEditor = false;
+		char                  m_commentText[256] = {};
 	};
 
 }

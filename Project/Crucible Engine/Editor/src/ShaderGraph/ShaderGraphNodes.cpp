@@ -267,6 +267,12 @@ namespace Crucible::ShaderGraph {
 				{ "Pulse", "Effect", "Swings smoothly between 0 and 1 over time, Speed times a second.",
 				  { { "speed", Float, { 1.0f } }, { "time", Float, {}, "s.time" } },
 				  { { "out", Float, "0.5 + 0.5 * sin({time} * {speed} * 6.2831853)" } } },
+
+				// ---- Utility ----
+				// A point a link passes through, to route it tidily: what goes in comes out. Drawn as a
+				// dot (ShaderGraphView). Numbers and vectors only - not a texture.
+				{ kRerouteNode, "Utility", "A point to route a link through. What goes in comes out (numbers and vectors).",
+				  { { "in", Any, { 0.0f } } }, { { "out", Any, "{in}" } } },
 			};
 		}
 

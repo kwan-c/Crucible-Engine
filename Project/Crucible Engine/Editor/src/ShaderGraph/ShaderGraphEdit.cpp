@@ -74,6 +74,29 @@ namespace Crucible::ShaderGraph {
 		return std::erase_if(graph.links, [&](const Link& link) { return link.toNode == toNode && link.toPin == toPin; }) != 0;
 	}
 
+	uint32_t InsertReroute(Graph& graph, uint32_t toNode, std::string_view toPin, float x, float y, std::string& why) {
+		const Link* link = graph.FindLinkInto(toNode, toPin);
+		if (!link) {
+			why = "There is no link there.";
+			return 0;
+		}
+		// On a copy: if either half is refused, the graph is as it was.
+		Graph trial = graph;
+		const Link original = *link;
+		const uint32_t reroute = AddNode(trial, kRerouteNode, x, y);
+		if (reroute == 0 || !Connect(trial, original.fromNode, original.fromPin, reroute, "in", why) ||
+		    !Connect(trial, reroute, "out", original.toNode, original.toPin, why)) {
+			why = "A reroute point carries numbers and vectors only - not this link. (" + why + ")";
+			return 0;
+		}
+		graph = std::move(trial);
+		return reroute;
+	}
+
+	size_t DeleteComments(Graph& graph, const std::vector<uint32_t>& ids) {
+		return std::erase_if(graph.comments, [&](const Comment& comment) { return Contains(ids, comment.id); });
+	}
+
 	bool Connect(Graph& graph, uint32_t fromNode, std::string_view fromPin, uint32_t toNode, std::string_view toPin, std::string& why) {
 		const Node* from = graph.FindNode(fromNode);
 		const Node* to = graph.FindNode(toNode);
