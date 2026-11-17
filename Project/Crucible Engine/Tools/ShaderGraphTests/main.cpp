@@ -30,6 +30,7 @@
 #include "ShaderGraph/ShaderGraphGenerator.h"
 #include "ShaderGraph/ShaderGraphNodes.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
@@ -547,7 +548,9 @@ namespace {
 	// A graph that uses every node type and every output pin that exists when the "any" inputs
 	// are given `components` numbers (1 = nothing linked: the nodes' own constants). Everything
 	// is turned into a float and added up into the Output's roughness, so all of it is written.
-	Graph AllNodesGraph(uint32_t components) {
+	// `moved`: the total also goes into the Output's vertex offset, so every node is written in
+	// both functions - except the nodes that cannot feed it, which are left out.
+	Graph AllNodesGraph(uint32_t components, bool moved = false) {
 		Graph graph;
 		graph.parameters.push_back({ "number", ParameterType::Float, { 0.5f } });
 		graph.parameters.push_back({ "pair", ParameterType::Vec2 });
@@ -586,6 +589,7 @@ namespace {
 			const std::string_view name = type.name;
 			if (name == kOutputNode) { continue; }
 			if (type.minComponents > components) { continue; }   // would be (rightly) refused
+			if (moved && IsMaterialFactorNode(name)) { continue; }   // not for the vertex offset
 
 			const uint32_t node = graph.AddNode(type.name);
 			if (name == kParameterNode) {
@@ -611,6 +615,7 @@ namespace {
 			}
 		}
 		Connect(graph, sum, "out", output, "roughness");
+		if (moved) { Connect(graph, sum, "out", output, kVertexOffsetPin); }
 		return graph;
 	}
 
@@ -644,6 +649,35 @@ namespace {
 					const std::filesystem::path file = std::filesystem::path(writeTo) / ((isLive ? "AllNodesLive_" : "AllNodes_") + type + ".slang");
 					std::ofstream out(file, std::ios::binary | std::ios::trunc);
 					out << (isLive ? live.source : result.source);
+					std::printf("    wrote %s\n", file.string().c_str());
+				}
+			}
+
+			// The same with everything feeding the vertex offset as well: every row is written a
+			// second time, in the vertex function, where a texture is read at a named mip level.
+			const Graph movedGraph = AllNodesGraph(components, true);
+			const Generated moved = Generate(movedGraph), movedLive = Generate(movedGraph, Options{ true });
+			if (!moved.ok || !moved.problems.empty()) { PrintProblems(movedGraph, moved); }
+			CHECK(moved.ok && moved.problems.empty() && moved.movesVertices && movedLive.ok && movedLive.movesVertices);
+			const size_t vertexAt = moved.source.find("float3 EvaluateVertexOffset(SurfaceInput s) {");
+			CHECK(vertexAt != std::string::npos);
+			if (vertexAt != std::string::npos) {
+				const std::string surface = moved.source.substr(0, vertexAt), vertex = moved.source.substr(vertexAt);
+				for (const NodeType& type : NodeTypes()) {
+					const std::string_view name = type.name;
+					if (name == kParameterNode || name == kOutputNode || type.minComponents > components || IsMaterialFactorNode(name)) { continue; }
+					CHECK(Contains(surface, std::string(": ") + type.name + "\n") && Contains(vertex, std::string(": ") + type.name + "\n"));
+				}
+				CHECK(Contains(surface, ".Sample(") && !Contains(vertex, ".Sample(") && Contains(vertex, ".SampleLevel(") && !Contains(vertex, "GraphTriplanar("));
+				CHECK(!Contains(vertex, "pc."));
+			}
+			CHECK(moved.lineNodes.size() == static_cast<size_t>(std::count(moved.source.begin(), moved.source.end(), '\n')));
+			if (writeTo) {
+				const std::string type = ValueTypeName(NumericType(components));
+				for (const bool isLive : { false, true }) {
+					const std::filesystem::path file = std::filesystem::path(writeTo) / ((isLive ? "AllNodesMovedLive_" : "AllNodesMoved_") + type + ".slang");
+					std::ofstream out(file, std::ios::binary | std::ios::trunc);
+					out << (isLive ? movedLive.source : moved.source);
 					std::printf("    wrote %s\n", file.string().c_str());
 				}
 			}
@@ -821,7 +855,137 @@ namespace {
 		CHECK(Contains(Generate(trial.graph).source, "float3 n2_out = reflect(float3(0.0, -1.0, 0.0), s.normalWS);"));
 	}
 
-	// ---- Constants as hidden parameters, for a live preview	// ---- Constants as hidden parameters, for a live preview ----------------------------------------------
+	// ---- Constants as hidden parameters, for a live preview	// ---- The Output's vertex offset: a second function -------------------------------------------------
+
+	void TestVertexOffset() {
+		std::printf("vertex offset\n");
+		const std::string kFunction = "float3 EvaluateVertexOffset(SurfaceInput s) {";
+
+		// Output(1). Multiply(4) = WorldNormal(2) * Sine(3) of Time(5); Fresnel(6) into emissive.
+		Graph graph = NewGraph();
+		const uint32_t output = OutputNodeOf(graph);
+		const uint32_t normal = AddNode(graph, "WorldNormal", 0.0f, 0.0f);
+		const uint32_t sine = AddNode(graph, "Sine", 0.0f, 0.0f);
+		const uint32_t multiply = AddNode(graph, "Multiply", 0.0f, 0.0f);
+		const uint32_t time = AddNode(graph, "Time", 0.0f, 0.0f);
+		const uint32_t fresnel = AddNode(graph, "Fresnel", 0.0f, 0.0f);
+		const uint32_t uv = AddNode(graph, "UV", 0.0f, 0.0f);
+		std::string why;
+		CHECK(Connect(graph, time, "out", sine, "in", why) && Connect(graph, normal, "out", multiply, "a", why) && Connect(graph, sine, "out", multiply, "b", why));
+		CHECK(Connect(graph, fresnel, "out", output, "emissive", why));
+
+		// The pin is in the table: a float3 with no constant to type.
+		const NodeType* outputType = FindNodeType(kOutputNode);
+		const int pin = outputType->FindInput(kVertexOffsetPin);
+		CHECK(pin >= 0 && outputType->inputs[static_cast<size_t>(pin)].type == ValueType::Float3 && outputType->inputs[static_cast<size_t>(pin)].defaultCode != nullptr);
+
+		// Nothing plugged into it: a shader like any other.
+		const Generated still = Generate(graph);
+		CHECK(still.ok && !still.movesVertices);
+		CHECK(!Contains(still.source, "SURFACE_MOVES_VERTICES") && !Contains(still.source, "EvaluateVertexOffset") && !Contains(still.source, "vertexOffset"));
+		CHECK(!Contains(still.source, "n4_out"));   // the Multiply feeds nothing yet
+		CHECK(Generate(graph, Options{ true }).liveConstants.size() == 7);   // the Output's six and the Fresnel's power: none for the new pin
+
+		// Plugged in: a second function, after the surface and before the engine's part.
+		CHECK(Connect(graph, multiply, "out", output, kVertexOffsetPin, why));
+		const Generated moved = Generate(graph);
+		if (!moved.ok) { PrintProblems(graph, moved); }
+		CHECK(moved.ok && moved.movesVertices && moved.problems.empty());
+		const size_t define = moved.source.find("\n#define SURFACE_MOVES_VERTICES\n");
+		const size_t function = moved.source.find(kFunction);
+		const size_t include = moved.source.find("#include \"SurfaceTemplate.slang\"");
+		CHECK(define != std::string::npos && function != std::string::npos && include != std::string::npos);
+		CHECK(moved.source.find("return o;") < define && define < function && function < include);
+		CHECK(moved.lineNodes.size() == static_cast<size_t>(std::count(moved.source.begin(), moved.source.end(), '\n')));
+		CHECK(!Contains(moved.source, "SURFACE_CUTOUT_TEXTURE"));   // the graph has no texture
+		if (function != std::string::npos && define != std::string::npos) {
+			// Each function has the nodes it reads, and no others.
+			const std::string surface = moved.source.substr(0, moved.source.find("// The graph moves the mesh's vertices")), vertex = moved.source.substr(function);
+			CHECK(Contains(vertex, "float n5_out = s.time;") && Contains(vertex, "float3 n4_out = n2_out * float3(n3_out);") && Contains(vertex, "    return n4_out;\n}"));
+			CHECK(!Contains(surface, "n4_out") && !Contains(surface, "n5_out") && Contains(surface, "o.emissive = float3(n6_out);"));
+			CHECK(!Contains(vertex, "n6_out") && !Contains(vertex, "SurfaceData") && !Contains(moved.source, "o.vertexOffset"));
+			// The surface function is what it was without the link.
+			CHECK(still.source.substr(0, still.source.find("#include \"SurfaceTemplate.slang\"")) == surface);
+		}
+		for (const Generated::NodeResult& node : moved.nodes) { CHECK(node.used == (node.node != uv)); }
+
+		// Saved and loaded, the link is still there.
+		Graph loaded;
+		std::string error;
+		CHECK(Load(Save(graph), loaded, error) && Generate(loaded).source == moved.source);
+
+		// A node both functions read is written in both.
+		CHECK(Connect(graph, multiply, "out", output, "albedo", why));
+		const Generated both = Generate(graph);
+		const size_t bothAt = both.source.find(kFunction);
+		CHECK(both.ok && bothAt != std::string::npos);
+		if (bothAt != std::string::npos) {
+			CHECK(Contains(both.source.substr(0, bothAt), "float3 n4_out = n2_out * float3(n3_out);") && Contains(both.source.substr(0, bothAt), "o.albedo = n4_out;"));
+			CHECK(Contains(both.source.substr(bothAt), "float3 n4_out = n2_out * float3(n3_out);"));
+		}
+		// ... and a constant both read is one hidden parameter in a live preview.
+		DeleteLinkInto(graph, multiply, "b");
+		const Generated bothLive = Generate(graph, Options{ true });
+		size_t constants = 0;
+		for (const Generated::LiveConstant& constant : bothLive.liveConstants) { if (constant.node == multiply) { ++constants; } }
+		CHECK(bothLive.ok && bothLive.movesVertices && constants == 1);
+		CHECK(Connect(graph, sine, "out", multiply, "b", why));
+
+		// Types: a float is repeated into the three directions; a float2 does not fit.
+		CHECK(Connect(graph, sine, "out", output, kVertexOffsetPin, why));
+		CHECK(Contains(Generate(graph).source, "    return float3(n3_out);\n}"));
+		CHECK(!Connect(graph, uv, "out", output, kVertexOffsetPin, why));
+		CHECK(Generate(graph).movesVertices);   // the refused link changed nothing
+
+		// The material's built-in controls cannot feed it (the depth passes do not have them) -
+		// though the same node can still feed the surface.
+		const uint32_t tint = AddNode(graph, "MaterialTint", 0.0f, 0.0f);
+		CHECK(Connect(graph, tint, "rgb", output, "albedo", why) && Generate(graph).ok);
+		Graph refused = graph;
+		DeleteLinkInto(refused, output, kVertexOffsetPin);
+		Connect(refused, tint, "rgb", output, kVertexOffsetPin);   // the test's own Connect: no questions asked
+		const Generated bad = Generate(refused);
+		CHECK(!bad.ok && bad.source.empty() && !bad.movesVertices);
+		bool reported = false;
+		for (const Problem& problem : bad.problems) { reported = reported || (problem.node == tint && problem.stops && Contains(problem.message, "vertex offset")); }
+		CHECK(reported);
+		CHECK(!Connect(graph, tint, "rgb", output, kVertexOffsetPin, why) && Contains(why, "vertex offset"));   // and the editor refuses the link
+
+		// A texture: read at a named mip level in the vertex function, the usual way in the
+		// surface; and the graph's first texture is the cut-out's in the depth passes.
+		Trial trial = MakeTrial("SampleTexture", "rgb", kVertexOffsetPin, "Parameter", "out", "texture");
+		trial.graph.parameters.push_back(Parameter{ "wind", ParameterType::Texture });
+		trial.graph.FindNode(trial.feed)->settings["parameter"] = "wind";
+		Connect(trial.graph, trial.node, "rgb", trial.output, "albedo");
+		const Generated textured = Generate(trial.graph);
+		if (!textured.ok) { PrintProblems(trial.graph, textured); }
+		const size_t texturedAt = textured.source.find(kFunction);
+		CHECK(textured.ok && textured.movesVertices && texturedAt != std::string::npos);
+		if (texturedAt != std::string::npos) {
+			CHECK(Contains(textured.source.substr(0, texturedAt), "float4 n2_rgba = gTex_wind.Sample(s.uv);"));
+			CHECK(Contains(textured.source.substr(texturedAt), "float4 n2_rgba = gTex_wind.SampleLevel(s.uv, 0.0);") && Contains(textured.source.substr(texturedAt), "return n2_rgb;"));
+			CHECK(Contains(textured.source, "#define SURFACE_MOVES_VERTICES\n#define SURFACE_CUTOUT_TEXTURE gTex_wind\n"));
+		}
+		trial = MakeTrial("TriplanarTexture", "rgb", kVertexOffsetPin, "Parameter", "out", "texture");
+		trial.graph.parameters.push_back(Parameter{ "rock", ParameterType::Texture });
+		trial.graph.FindNode(trial.feed)->settings["parameter"] = "rock";
+		CHECK(Contains(Generate(trial.graph).source, "float4 n2_rgba = GraphTriplanarVertex(gTex_rock, s.worldPos, s.normalWS, 1.0, 4.0);"));
+
+		// A graph's parameters are read in the vertex function too.
+		trial = MakeTrial("Multiply", "out", kVertexOffsetPin, "WorldNormal", "out", "a");
+		trial.graph.parameters.push_back(Parameter{ "sway", ParameterType::Float, { 0.1f } });
+		const uint32_t sway = trial.graph.AddNode("Parameter");
+		trial.graph.FindNode(sway)->settings["parameter"] = "sway";
+		Connect(trial.graph, sway, "out", trial.node, "b");
+		const Generated swaying = Generate(trial.graph);
+		const size_t swayingAt = swaying.source.find(kFunction);
+		CHECK(swaying.ok && swayingAt != std::string::npos);
+		if (swayingAt != std::string::npos) {
+			CHECK(Contains(swaying.source.substr(swayingAt), "    GraphParams P = LoadGraphParams();\n") && Contains(swaying.source.substr(swayingAt), "float3 n2_out = n3_out * float3(P.sway);"));
+		}
+	}
+
+	// ---- Constants as hidden parameters, for a live preview ----------------------------------------------
 
 	void TestLiveConstants() {
 		std::printf("live constants\n");
@@ -896,6 +1060,7 @@ int main(int argc, char** argv) {
 	TestDocument();
 	TestLiveConstants();
 	TestNewNodes();
+	TestVertexOffset();
 
 	if (g_failed != 0) {
 		std::printf("\n%d of %d checks FAILED\n", g_failed, g_checks);

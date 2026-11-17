@@ -12,6 +12,14 @@
 //
 // DefaultShader.slang is DefaultSurface.slang + this file. A shader graph's shader is its
 // generated surface + this file, so a change here reaches every material.
+//
+// A surface that defines SURFACE_MOVES_VERTICES also has
+//
+//     float3 EvaluateVertexOffset(SurfaceInput s)     (see Surface.slang)
+//
+// which vertMain adds to each vertex - and so do the depth-only entry points at the end of this
+// file, which stand in for Shadow.slang, DepthNormal.slang and OutlineMask.slang when such a
+// material is drawn in those passes.
 
 struct VSInput {
     float3 inPosition;
@@ -64,12 +72,39 @@ struct VSOutput {
     float3 linePos;                          // where the outline breakup pattern is read (see vertMain)
 };
 
+#ifdef SURFACE_MOVES_VERTICES
+// Where a vertex ends up in the world: where the mesh and its object put it (`worldPos`), plus
+// the surface's offset. Every pass calls this with the same inputs, so every pass agrees. The
+// caller has set gMaterialParamOffset.
+float3 MovedWorldPosition(VSInput input, uint instanceID, float4x4 model, float3 worldPos) {
+    float3x3 modelUpper = (float3x3)model;
+    float3   toCamera   = frame.cameraPosWS.xyz - worldPos;
+
+    SurfaceInput vertexIn;
+    vertexIn.uv           = input.inUV;
+    vertexIn.worldPos     = worldPos;
+    vertexIn.normalWS     = ModelNormal(modelUpper, input.inNormal);
+    vertexIn.tangentWS    = ModelTangent(modelUpper, vertexIn.normalWS, input.inTangent.xyz);
+    vertexIn.bitangentWS  = cross(vertexIn.normalWS, vertexIn.tangentWS)
+                          * (input.inTangent.w * (determinant(ModelDirectionTransform(modelUpper)) < 0.0 ? -1.0 : 1.0));
+    vertexIn.vertexColour = input.inColor;
+    vertexIn.viewDir      = ModelUnit(toCamera, float3(0.0, 0.0, 1.0));
+    vertexIn.time         = frame.time.x;
+    vertexIn.custom       = instances[instanceID].params.yzw;
+    return worldPos + EvaluateVertexOffset(vertexIn);
+}
+#endif
+
 [shader("vertex")]
 VSOutput vertMain(VSInput input, uint instanceID : SV_VulkanInstanceID) {
     VSOutput output;
 
     float4x4 model = ModelVertexTransform(instanceID, input.inJoints, input.inWeights);
     float4 worldPos4 = mul(model, float4(input.inPosition, 1.0));
+#ifdef SURFACE_MOVES_VERTICES
+    gMaterialParamOffset = pc.paramOffset;
+    worldPos4.xyz = MovedWorldPosition(input, instanceID, model, worldPos4.xyz);
+#endif
     output.worldPos = worldPos4.xyz;
     output.pos = mul(frame.proj, mul(frame.view, worldPos4));
     output.color = input.inColor;
@@ -319,6 +354,8 @@ struct SceneOutput {
 [shader("fragment")]
 SceneOutput fragMain(VSOutput inVert, bool frontFacing : SV_IsFrontFace) {
 
+    gMaterialParamOffset = pc.paramOffset;   // for MaterialParam (Surface.slang)
+
     // A double-sided material's back side is lit as a front of its own. (Single-sided materials
     // never get here with a back face: they are culled.)
     float3 N = normalize(inVert.normalWS) * (frontFacing ? 1.0 : -1.0);
@@ -465,3 +502,123 @@ SceneOutput fragMain(VSOutput inVert, bool frontFacing : SV_IsFrontFace) {
     output.lines  = LineData(inVert, N, toon, fog.a);   // the geometric direction: normal maps add no lines
     return output;
 }
+
+// ---- A surface that moves its vertices: the depth-only passes ---------------------------------
+// The sun's shadow (Shadow.slang), the ambient-occlusion pre-pass (DepthNormal.slang) and the
+// editor's selection mask (OutlineMask.slang) draw every other mesh with one shared shader each,
+// which knows nothing of the surface. A surface that moves its vertices brings its own versions
+// instead - the same entry points under the same names, with the offset added - so its shadow,
+// its occlusion and its outline are where the scene pass draws it. The passes build pipelines
+// from them with their own layouts (ShadowPass, AmbientOcclusionPass and OutlinePass's
+// BuildPipelines), so each pair below must match what its pass pushes.
+#ifdef SURFACE_MOVES_VERTICES
+
+// ShadowPass's push constant (ShadowPush in ShadowPass.cpp: the cascade, then Crucible::CutoutPush).
+struct SurfaceShadowPush {
+    uint  cascade;       // which shadowViewProj to use
+    float alphaCutoff;   // cut-out pipeline only
+    float alphaTint;     // the material's albedoTint.a
+    uint  paramOffset;   // where the material's own parameters start
+};
+// The other two passes' push constant (Crucible::CutoutPush).
+struct SurfaceDepthPush {
+    float alphaCutoff;
+    float alphaTint;
+    uint  paramOffset;
+};
+[[vk::push_constant]] ConstantBuffer<SurfaceShadowPush> shadowPc;
+[[vk::push_constant]] ConstantBuffer<SurfaceDepthPush>  depthPc;
+
+struct DepthVSOutput {
+    float4 pos : SV_Position;
+    float3 normalVS;
+    float2 uv;
+};
+
+// A cut-out material's shape in these passes, as for every material: the alpha of its first
+// texture slot (the built-in surface's albedo; a shader graph's first texture parameter) times
+// the alpha of its Albedo Tint. A surface that has declared slot 0 itself says under what name
+// (#define SURFACE_CUTOUT_TEXTURE myTex), as one slot cannot be declared twice.
+#ifndef SURFACE_CUTOUT_TEXTURE
+[[vk::binding(0, 1)]] Sampler2D surfaceCutoutTex;
+#define SURFACE_CUTOUT_TEXTURE surfaceCutoutTex
+#endif
+bool SurfaceCutOut(float2 uv, float alphaTint, float alphaCutoff) {
+    return SURFACE_CUTOUT_TEXTURE.Sample(uv).a * alphaTint < alphaCutoff;
+}
+
+float4 MovedWorld(VSInput input, uint instanceID, uint paramOffset, out float3 normalWS) {
+    gMaterialParamOffset = paramOffset;
+    float4x4 model = ModelVertexTransform(instanceID, input.inJoints, input.inWeights);
+    float3   world = mul(model, float4(input.inPosition, 1.0)).xyz;
+    normalWS = ModelNormal((float3x3)model, input.inNormal);
+    return float4(MovedWorldPosition(input, instanceID, model, world), 1.0);
+}
+
+// ---- Shadow.slang's ----
+[shader("vertex")]
+float4 shadowVert(VSInput input, uint instanceID : SV_VulkanInstanceID) : SV_Position {
+    float3 normalWS;
+    return mul(frame.shadowViewProj[shadowPc.cascade], MovedWorld(input, instanceID, shadowPc.paramOffset, normalWS));
+}
+
+[shader("vertex")]
+DepthVSOutput shadowCutoutVert(VSInput input, uint instanceID : SV_VulkanInstanceID) {
+    DepthVSOutput output;
+    float3 normalWS;
+    output.pos      = mul(frame.shadowViewProj[shadowPc.cascade], MovedWorld(input, instanceID, shadowPc.paramOffset, normalWS));
+    output.normalVS = float3(0.0, 0.0, 1.0);
+    output.uv       = input.inUV;
+    return output;
+}
+
+[shader("fragment")]
+void shadowCutoutFrag(DepthVSOutput input) {
+    if (SurfaceCutOut(input.uv, shadowPc.alphaTint, shadowPc.alphaCutoff)) { discard; }
+}
+
+// ---- DepthNormal.slang's and OutlineMask.slang's: the camera's view ----
+DepthVSOutput CameraDepthVertex(VSInput input, uint instanceID) {
+    DepthVSOutput output;
+    float3 normalWS;
+    output.pos      = mul(frame.proj, mul(frame.view, MovedWorld(input, instanceID, depthPc.paramOffset, normalWS)));
+    output.normalVS = mul((float3x3)frame.view, normalWS);   // the mesh's own normal: the offset does not turn it
+    output.uv       = input.inUV;
+    return output;
+}
+
+[shader("vertex")]
+DepthVSOutput depthNormalVert(VSInput input, uint instanceID : SV_VulkanInstanceID) { return CameraDepthVertex(input, instanceID); }
+
+[shader("fragment")]
+float4 depthNormalFrag(DepthVSOutput input, bool frontFacing : SV_IsFrontFace) : SV_Target {
+    return float4(normalize(input.normalVS) * (frontFacing ? 0.5 : -0.5) + 0.5, 1.0);
+}
+
+[shader("vertex")]
+DepthVSOutput depthNormalCutoutVert(VSInput input, uint instanceID : SV_VulkanInstanceID) { return CameraDepthVertex(input, instanceID); }
+
+[shader("fragment")]
+float4 depthNormalCutoutFrag(DepthVSOutput input, bool frontFacing : SV_IsFrontFace) : SV_Target {
+    if (SurfaceCutOut(input.uv, depthPc.alphaTint, depthPc.alphaCutoff)) { discard; }
+    return float4(normalize(input.normalVS) * (frontFacing ? 0.5 : -0.5) + 0.5, 1.0);
+}
+
+[shader("vertex")]
+DepthVSOutput maskVert(VSInput input, uint instanceID : SV_VulkanInstanceID) { return CameraDepthVertex(input, instanceID); }
+
+[shader("fragment")]
+float4 maskFrag() : SV_Target {
+    return float4(1.0, 0.0, 0.0, 0.0);
+}
+
+[shader("vertex")]
+DepthVSOutput maskCutoutVert(VSInput input, uint instanceID : SV_VulkanInstanceID) { return CameraDepthVertex(input, instanceID); }
+
+[shader("fragment")]
+float4 maskCutoutFrag(DepthVSOutput input) : SV_Target {
+    if (SurfaceCutOut(input.uv, depthPc.alphaTint, depthPc.alphaCutoff)) { discard; }
+    return float4(1.0, 0.0, 0.0, 0.0);
+}
+
+#endif // SURFACE_MOVES_VERTICES

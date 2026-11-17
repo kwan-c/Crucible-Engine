@@ -52,14 +52,18 @@ namespace Crucible::ShaderGraph {
 		std::vector<NodeType> MakeTable() {
 			return {
 				// ---- Output --------------------------------------------------------------------
-				{ kOutputNode, "Output", "The surface: what the mesh looks like at this pixel. Lighting, shadows and fog are added by the engine.",
+				{ kOutputNode, "Output", "The surface: what the mesh looks like at this pixel. Lighting, shadows and fog are added by the engine. "
+				  "The last pin, vertexOffset, is different: it moves the mesh's vertices (metres, in the world), and its shadow with them.",
 				  { { "albedo",    Float3, { 0.8f, 0.8f, 0.8f }, nullptr, true },
 				    { "normal",    Float3, { 0.0f, 0.0f, 1.0f } },   // tangent space; (0, 0, 1) = the mesh's own normal
 				    { "metallic",  Float,  { 0.0f } },
 				    { "roughness", Float,  { 0.5f } },
 				    { "emissive",  Float3, { 0.0f, 0.0f, 0.0f }, nullptr, true },
 				    { "occlusion", Float,  { 1.0f } },
-				    { "alpha",     Float,  { 1.0f } } },
+				    { "alpha",     Float,  { 1.0f } },
+				    // Not part of the surface, and no constant to type: it only does something
+				    // when a node is plugged in (ShaderGraphGenerator.h, Generated::movesVertices).
+				    { kVertexOffsetPin, Float3, { 0.0f, 0.0f, 0.0f }, "float3(0.0, 0.0, 0.0)" } },
 				  {} },
 
 				// ---- Input: what the engine knows about the pixel ------------------------------
@@ -208,7 +212,7 @@ namespace Crucible::ShaderGraph {
 				// ---- Texture -------------------------------------------------------------------
 				{ "SampleTexture", "Texture", "Reads a texture parameter at UV.",
 				  { { "texture", Texture }, { "uv", Float2, {}, "s.uv" } },
-				  { { "rgba", Float4, "{texture}.Sample({uv})" },
+				  { { "rgba", Float4, "{texture}.Sample({uv})", 0, "{texture}.SampleLevel({uv}, 0.0)" },
 				    { "rgb",  Float3, "{rgba}.rgb" },
 				    { "r",    Float,  "{rgba}.r" },
 				    { "g",    Float,  "{rgba}.g" },
@@ -216,10 +220,12 @@ namespace Crucible::ShaderGraph {
 				    { "a",    Float,  "{rgba}.a" } } },
 				{ "NormalMap", "Texture", "Reads a normal map (a texture parameter that is not a colour) for the Output's normal.",
 				  { { "texture", Texture }, { "uv", Float2, {}, "s.uv" }, { "strength", Float, { 1.0f } } },
-				  { { "out", Float3, "GraphUnpackNormal({texture}.Sample({uv}).xy, {strength})" } } },
+				  { { "out", Float3, "GraphUnpackNormal({texture}.Sample({uv}).xy, {strength})", 0,
+				      "GraphUnpackNormal({texture}.SampleLevel({uv}, 0.0).xy, {strength})" } } },
 				{ "TriplanarTexture", "Texture", "Reads a texture by world position from three sides, blended by the normal: needs no UVs and does not stretch.",
 				  { { "texture", Texture }, { "scale", Float, { 1.0f } }, { "sharpness", Float, { 4.0f } } },
-				  { { "rgba", Float4, "GraphTriplanar({texture}, s.worldPos, s.normalWS, {scale}, {sharpness})" },
+				  { { "rgba", Float4, "GraphTriplanar({texture}, s.worldPos, s.normalWS, {scale}, {sharpness})", 0,
+				      "GraphTriplanarVertex({texture}, s.worldPos, s.normalWS, {scale}, {sharpness})" },
 				    { "rgb",  Float3, "{rgba}.rgb" },
 				    { "a",    Float,  "{rgba}.a" } } },
 
@@ -359,6 +365,19 @@ namespace Crucible::ShaderGraph {
 				if ((pin.type == ValueType::Any || pin.needs != 0) && !anyInput) {
 					error = name + "." + pin.name + ": its type depends on \"any\" inputs, and the row has none";
 					return false;
+				}
+
+				// The code for the vertex offset names nothing its usual code does not: what a
+				// node reads is worked out from the usual code.
+				if (pin.vertexCode) {
+					const std::string_view usual = pin.code, other = pin.vertexCode;
+					for (size_t open = other.find('{'); open != std::string_view::npos; open = other.find('{', open + 1)) {
+						const size_t close = other.find('}', open);
+						if (close == std::string_view::npos || usual.find(other.substr(open, close - open + 1)) == std::string_view::npos) {
+							error = name + "." + pin.name + ": its vertex code uses a {placeholder} its code does not";
+							return false;
+						}
+					}
 				}
 
 				// Every {placeholder} is an input, an earlier output, or T.

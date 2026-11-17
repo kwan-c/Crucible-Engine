@@ -216,8 +216,8 @@ namespace Crucible {
     uint64_t RenderScene::DepthKey(MeshHandle mesh, MaterialHandle material) const {
 
         // The depth-only passes (shadows, ambient occlusion, selection mask) only care about a
-        // material that is cut-out or double-sided; for those the key carries it (as id + 1, so 0
-        // can mean "none").
+        // material that is cut-out or double-sided, or whose shader moves vertices; for those
+        // the key carries it (as id + 1, so 0 can mean "none").
         const uint64_t high = m_resources.NeedsMaterialInDepthPasses(material) ? uint64_t{ material.id } + 1 : 0;
         return high << 32 | mesh.id;
 
@@ -363,7 +363,8 @@ namespace Crucible {
         // Copy the instances, in equal chunks across the threads (the main pass usually has most).
         const uint32_t total      = next - firstOfView;
         const uint32_t copyChunks = (total + kCopyChunk - 1) / kCopyChunk;
-        const glm::vec4 noParams{ 1.0f, 0.0f, 0.0f, 0.0f };   // depth-only passes don't read them
+        // Every pass gets the object's own parameters: a shader that moves vertices can read them
+        // (the Object Custom node) and has to move the shadow exactly as it moves the mesh.
         RunTasks(parallel, copyChunks, [&](uint32_t task) {
             uint32_t index = firstOfView + task * kCopyChunk;
             const uint32_t end = std::min(next, index + kCopyChunk);
@@ -374,10 +375,10 @@ namespace Crucible {
                 const SortItem& item = m_pass[pass].grouped[index - m_pass[pass].firstInstance];
                 if (item.ref & kImmediateRef) {
                     const RenderItem& r = m_renderQueue[item.ref & ~kImmediateRef];
-                    m_instanceScratch[index] = InstanceData{ r.model, pass == 0 ? r.params : noParams, r.skin };
+                    m_instanceScratch[index] = InstanceData{ r.model, r.params, r.skin };
                 } else {
                     const RenderProxy& p = m_proxies[item.ref];
-                    m_instanceScratch[index] = InstanceData{ p.model, pass == 0 ? p.params : noParams, p.skin };
+                    m_instanceScratch[index] = InstanceData{ p.model, p.params, p.skin };
                 }
             }
         });

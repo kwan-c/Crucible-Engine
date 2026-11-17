@@ -22,6 +22,24 @@
 // MATERIAL_TEXTURE(slot, name). Which slot is what is listed in <ShaderName>.params.json beside
 // the shader - see the end of this file.
 //
+// A surface can also MOVE the mesh's vertices - grass that sways, a flag, a wobbling blob - by
+// defining SURFACE_MOVES_VERTICES and a second function before it includes the template:
+//
+//     #define SURFACE_MOVES_VERTICES
+//     float3 EvaluateVertexOffset(SurfaceInput s)     // metres, in the world; added to the vertex
+//
+// It is given the vertex the way EvaluateSurface is given a pixel (uv, worldPos, normalWS ...),
+// and the template runs it in EVERY pass that draws the mesh - the scene, the sun's shadow, the
+// ambient-occlusion pre-pass and the editor's selection outline - so all of them move together.
+// Such a shader has eleven more entry points (the end of SurfaceTemplate.slang); the engine
+// sees them in the compiled module and builds the extra pipelines (MaterialShaders). What the
+// function may not do, because those passes do not have it: read `pc` (the material's factors),
+// or sample a texture with Sample() - use SampleLevel(uv, 0.0) in a vertex stage.
+// A hand-written shader that does this needs those entry points on its line in
+// CompileShaders.cmake as well. The engine still decides what is in view by the mesh's own
+// box, so an offset that is large against the object can make it vanish at the screen's edge.
+// Lighting uses the mesh's own normals: the offset moves the surface, it does not turn it.
+//
 // (Any .slang that CompileShaders.cmake doesn't list is a shared include: editing it rebuilds
 // every shader.)
 
@@ -82,10 +100,15 @@ ConstantBuffer<PushConstants> pc;
 // The built-in surface has none: its settings are the factors in the push constant above.
 [[vk::binding(11, 0)]] StructuredBuffer<float4> materialParams;
 
+// Where the material being drawn has its parameters in materialParams. Every entry point of the
+// template sets this first, from its own pass's push constant (the scene's is pc.paramOffset;
+// the depth-only passes have one of their own), so MaterialParam reads the same in every pass.
+static uint gMaterialParamOffset = 0;
+
 // This material's value for parameter `slot` - its position in the shader's parameter list
 // (<ShaderName>.params.json, first = 0). A float is in .x, a float2 in .xy, a colour in .rgb.
 float4 MaterialParam(uint slot) {
-    return materialParams[pc.paramOffset + slot];
+    return materialParams[gMaterialParamOffset + slot];
 }
 
 // Declares this shader's texture `slot` (0-7: its position in the list's "textures") under the

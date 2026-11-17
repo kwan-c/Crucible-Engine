@@ -96,6 +96,15 @@ namespace Crucible {
             [this](vk::ShaderModule shader, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) {
                 m_scenePass.BuildMeshPipelines(m_context, shader, level, solid, cutout);
             },
+            // A shader that moves vertices: its own pipelines for the depth-only passes, built
+            // by each pass. Only called from the first Update() on, when those passes exist.
+            [this](vk::ShaderModule shader, DepthPass pass, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) {
+                switch (pass) {
+                case DepthPass::Shadow:      m_shadowPass.BuildPipelines(m_context, shader, true, solid, cutout); break;
+                case DepthPass::DepthNormal: m_aoPass.BuildPrepassPipelines(m_context, shader, true, solid, cutout); break;
+                default:                     m_outlinePass.BuildMaskPipelines(m_context, shader, true, solid, cutout); break;
+                }
+            },
             "DefaultShader", LoadShaderWords("DefaultShader.spv"));
         m_outlinePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format);
         m_aoPass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), *m_layouts.GetTonemapDescriptorSetLayout());

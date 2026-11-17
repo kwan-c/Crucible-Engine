@@ -69,6 +69,11 @@ namespace Crucible::ShaderGraph {
 		/// For a node with "any" inputs: how many components its type must have for this pin
 		/// to exist - Split's "z" needs 3.
 		uint8_t     needs = 0;
+		/// If set: the expression to use instead of `code` where the node feeds the Output's
+		/// vertex offset. That runs once per vertex, where a texture cannot be read the way a
+		/// pixel reads it (there are no neighbouring pixels to pick its mip level by). It may
+		/// only use placeholders that `code` uses.
+		const char* vertexCode = nullptr;
 	};
 
 	struct NodeType {
@@ -87,6 +92,10 @@ namespace Crucible::ShaderGraph {
 
 	/// The node every surface graph ends in: its input pins are the surface (albedo, normal ...).
 	inline constexpr const char* kOutputNode = "Output";
+	/// The Output's pin that is not part of the surface: how far to move each of the mesh's
+	/// vertices (metres, in the world). With something plugged into it the graph's shader moves
+	/// vertices - in the scene and in the shadow, depth and selection-outline passes alike.
+	inline constexpr const char* kVertexOffsetPin = "vertexOffset";
 	/// A node that reads one of the graph's parameters, named by its "parameter" setting. Its
 	/// output has the parameter's type; a texture parameter gives a texture.
 	inline constexpr const char* kParameterNode = "Parameter";

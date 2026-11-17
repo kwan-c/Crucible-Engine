@@ -133,6 +133,9 @@ namespace Crucible {
         bool                 dynamicCull = false;   ///< both pipelines take the cull mode as dynamic state
         vk::CullModeFlags    cull = vk::CullModeFlagBits::eBack;   ///< for single-sided materials (when dynamicCull)
         bool                 dynamicFrontFace = false; ///< both pipelines take front-face winding as dynamic state
+        /// Which pass this is. A material whose shader moves vertices is drawn with that shader's
+        /// own pipelines for it (MaterialShaders::MovedPipeline), which share `layout`.
+        DepthPass            pass = DepthPass::Shadow;
     };
 
     class RenderResources {
@@ -315,18 +318,17 @@ namespace Crucible {
                  CutoutPush; with dynamicCull, double-sided materials
                  without culling. The caller has begun rendering, set the
                  viewport and bound set 0 (and its own push constants).
+                 A material whose shader moves vertices is drawn with that
+                 shader's pipelines for this pass, its set 1 and CutoutPush.
          \details A batch with an Invalid material is solid and single-
                   sided (RenderScene only keeps the material in depth
-                  batches when it is cut-out or double-sided).
+                  batches when NeedsMaterialInDepthPasses).
          *********************************************************************/
         void DrawDepthBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches, const DepthPassPipelines& pipelines) const;
 
-        /// Whether the depth-only passes need to know this material (cut-out or double-sided).
-        bool NeedsMaterialInDepthPasses(MaterialHandle handle) const {
-            if (!IsMaterialUsable(handle)) { return false; }
-            const MaterialData& d = m_materials[handle.id].data;
-            return d.alphaCutoff > 0.0f || d.doubleSided;
-        }
+        /// Whether the depth-only passes need to know this material: it is cut-out or
+        /// double-sided, or its shader moves vertices. (Called from the culling threads.)
+        bool NeedsMaterialInDepthPasses(MaterialHandle handle) const;
 
         /// The mesh shader a material is drawn with (MaterialData::shader); Invalid = the built-in one.
         MaterialShaderHandle MaterialShaderOf(MaterialHandle handle) const {

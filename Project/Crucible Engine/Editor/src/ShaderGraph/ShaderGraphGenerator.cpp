@@ -39,7 +39,9 @@ namespace Crucible::ShaderGraph {
 			const NodeType*  type = nullptr;        // null: a type this Editor does not know
 			std::vector<int> incoming;              // per input pin: the link into it (index in Graph::links), or -1
 			bool             sorted = false;        // it has a place in the order: nothing it needs is in a loop
-			bool             used = false;          // the Output uses it
+			bool             used = false;          // the Output uses it: in the surface, the vertex offset, or both
+			bool             surface = false;       // the surface function reads it (every Output pin but one)
+			bool             vertex = false;        // the vertex function reads it (the Output's vertex offset)
 			bool             valid = false;         // its inputs are fine: its outputs have types
 			ValueType        working = ValueType::Float;   // the type an "any" node works in
 			std::vector<ValueType> outTypes;        // per output pin
@@ -100,6 +102,7 @@ namespace Crucible::ShaderGraph {
 				FindOutput();
 				Sort();
 				MarkUsed();
+				CheckVertexNodes();
 				ResolveTypes();
 
 				// Which problems are in the way of the Output.
@@ -318,20 +321,51 @@ namespace Crucible::ShaderGraph {
 
 			// ---- 4. What the Output uses -------------------------------------------------------------
 
+			// Two functions are written from one graph: the surface, from every pin of the Output
+			// but one, and the vertex offset, from that one. A node can be in both.
 			void MarkUsed() {
 				if (m_output == kNone) { return; }
-				std::vector<size_t> open{ m_output };
-				m_nodes[m_output].used = true;
+				NodeInfo& output = m_nodes[m_output];
+				output.used = output.surface = true;
+				m_vertexPin = output.type->FindInput(kVertexOffsetPin);
+				for (size_t pin = 0; pin < output.incoming.size(); ++pin) {
+					if (output.incoming[pin] < 0) { continue; }
+					const bool vertex = static_cast<int>(pin) == m_vertexPin;
+					if (vertex) { m_moves = output.vertex = true; }   // the Output is in both functions then
+					Reach(SourceOf(output.incoming[pin]), vertex);
+				}
+			}
+
+			// Marks a node, and everything it reads, as used by one of the two functions.
+			void Reach(size_t from, bool vertex) {
+				const auto mark = [&](size_t index) {
+					NodeInfo& info = m_nodes[index];
+					bool& flag = vertex ? info.vertex : info.surface;
+					if (flag) { return false; }
+					flag = info.used = true;
+					return true;
+				};
+				if (!mark(from)) { return; }
+				std::vector<size_t> open{ from };
 				while (!open.empty()) {
 					const size_t node = open.back();
 					open.pop_back();
 					for (const int link : m_nodes[node].incoming) {
 						if (link < 0) { continue; }
 						const size_t source = SourceOf(link);
-						if (!m_nodes[source].used) {
-							m_nodes[source].used = true;
-							open.push_back(source);
-						}
+						if (mark(source)) { open.push_back(source); }
+					}
+				}
+			}
+
+			// What cannot feed the vertex offset. The shadow, depth and selection-outline passes
+			// move the vertices as well, and they are not given the material's built-in controls.
+			void CheckVertexNodes() {
+				for (const NodeInfo& info : m_nodes) {
+					if (info.vertex && info.type && IsMaterialFactorNode(info.type->name)) {
+						Report(Stops::Always, info.node->id, {},
+						       "this cannot be used for the Output's vertex offset: the shadow and depth passes move the vertices too, "
+						       "and they do not have the material's built-in controls. Use a parameter of the graph instead");
 					}
 				}
 			}
@@ -524,19 +558,23 @@ namespace Crucible::ShaderGraph {
 				return text;
 			}
 
-			void Write() {
-				// Which output pins are read: by a link into a node that is written, or by a later
-				// output of the same node (SampleTexture's "rgb" reads its "rgba").
-				for (const NodeInfo& info : m_nodes) {
-					if (!info.used) { continue; }
-					for (const int linkIndex : info.incoming) {
-						if (linkIndex < 0) { continue; }
+			// Which output pins one of the two functions reads: by a link into a node it writes, or
+			// by a later output of the same node (SampleTexture's "rgb" reads its "rgba").
+			void MarkOutputsRead(bool vertex) {
+				for (NodeInfo& info : m_nodes) { std::fill(info.outUsed.begin(), info.outUsed.end(), char{ 0 }); }
+				for (size_t index = 0; index < m_nodes.size(); ++index) {
+					const NodeInfo& info = m_nodes[index];
+					if (!(vertex ? info.vertex : info.surface)) { continue; }
+					for (size_t pin = 0; pin < info.incoming.size(); ++pin) {
+						const int linkIndex = info.incoming[pin];
+						// Of the Output's own pins, each function reads only its own.
+						if (linkIndex < 0 || (index == m_output && (static_cast<int>(pin) == m_vertexPin) != vertex)) { continue; }
 						NodeInfo& source = m_nodes[SourceOf(linkIndex)];
 						source.outUsed[static_cast<size_t>(source.type->FindOutput(m_graph.links[static_cast<size_t>(linkIndex)].fromPin))] = 1;
 					}
 				}
 				for (NodeInfo& info : m_nodes) {
-					if (!info.used || info.parameter) { continue; }
+					if (!(vertex ? info.vertex : info.surface) || info.parameter) { continue; }
 					for (size_t o = info.type->outputs.size(); o-- > 0;) {
 						if (!info.outUsed[o]) { continue; }
 						const std::string_view code = info.type->outputs[o].code;
@@ -545,7 +583,26 @@ namespace Crucible::ShaderGraph {
 						}
 					}
 				}
+			}
 
+			// One function's locals: every node it uses but the Output, sources first.
+			void WriteNodes(bool vertex) {
+				MarkOutputsRead(vertex);
+				for (const size_t index : m_order) {
+					const NodeInfo& info = m_nodes[index];
+					if (!(vertex ? info.vertex : info.surface) || info.parameter || index == m_output) { continue; }
+					const uint32_t id = info.node->id;
+					Emit("\n    // node " + std::to_string(id) + ": " + info.type->name + "\n", id);
+					for (size_t o = 0; o < info.type->outputs.size(); ++o) {
+						if (!info.outUsed[o]) { continue; }
+						const OutputPin& pin = info.type->outputs[o];
+						Emit(std::string("    ") + ValueTypeName(info.outTypes[o]) + " " + OutputText(info, o) + " = " +
+						     Expand(info, vertex && pin.vertexCode ? pin.vertexCode : pin.code) + ";\n", id);
+					}
+				}
+			}
+
+			void Write() {
 				Emit("// Written by the Crucible Editor from a shader graph. Do not edit: it is written again\n"
 				     "// whenever the graph changes. The graph makes the surface function; the engine's mesh\n"
 				     "// shader (SurfaceTemplate.slang) does the rest.\n"
@@ -578,27 +635,41 @@ namespace Crucible::ShaderGraph {
 				if (numberSlot != 0) { Emit("    GraphParams P = LoadGraphParams();\n"); }
 				Emit("    SurfaceData o;\n");
 
-				for (const size_t index : m_order) {
-					const NodeInfo& info = m_nodes[index];
-					if (!info.used || info.parameter) { continue; }
-					const uint32_t id = info.node->id;
-					Emit("\n    // node " + std::to_string(id) + ": " + info.type->name + "\n", id);
-
-					if (index == m_output) {
-						for (size_t p = 0; p < info.type->inputs.size(); ++p) {
-							const std::string_view pin = info.type->inputs[p].name;
-							Emit("    o." + std::string(pin == "normal" ? "normalTS" : pin) + " = " + InputText(info, p) + ";\n", id);
-						}
-						continue;
-					}
-					for (size_t o = 0; o < info.type->outputs.size(); ++o) {
-						if (!info.outUsed[o]) { continue; }
-						Emit(std::string("    ") + ValueTypeName(info.outTypes[o]) + " " + OutputText(info, o) + " = " +
-						     Expand(info, info.type->outputs[o].code) + ";\n", id);
-					}
+				// The surface: every pin of the Output but its vertex offset.
+				const NodeInfo& output = m_nodes[m_output];
+				const uint32_t  outputId = output.node->id;
+				WriteNodes(false);
+				Emit("\n    // node " + std::to_string(outputId) + ": " + output.type->name + "\n", outputId);
+				for (size_t p = 0; p < output.type->inputs.size(); ++p) {
+					if (static_cast<int>(p) == m_vertexPin) { continue; }
+					const std::string_view pin = output.type->inputs[p].name;
+					Emit("    o." + std::string(pin == "normal" ? "normalTS" : pin) + " = " + InputText(output, p) + ";\n", outputId);
 				}
+				Emit("\n    return o;\n}\n\n");
 
-				Emit("\n    return o;\n}\n\n#include \"SurfaceTemplate.slang\"\n");
+				// The vertex offset, when something is plugged into it: a second function, which
+				// the engine's mesh shader runs for every vertex in every pass that draws the mesh.
+				if (m_moves) {
+					Emit("// The graph moves the mesh's vertices: the Output's vertex offset, in metres, in the world.\n"
+					     "// Run for every vertex - in the scene and in the shadow, depth and selection-outline\n"
+					     "// passes alike, so all of them move together (Surface.slang, SurfaceTemplate.slang).\n"
+					     "#define SURFACE_MOVES_VERTICES\n");
+					for (const Parameter& parameter : m_graph.parameters) {
+						if (parameter.type != ParameterType::Texture) { continue; }
+						// Texture slot 0 is the graph's: a cut-out material's shape in those passes.
+						Emit("#define SURFACE_CUTOUT_TEXTURE gTex_" + parameter.name + "\n");
+						break;
+					}
+					Emit("float3 EvaluateVertexOffset(SurfaceInput s) {\n");
+					if (numberSlot != 0) { Emit("    GraphParams P = LoadGraphParams();\n"); }
+					WriteNodes(true);
+					Emit("\n    // node " + std::to_string(outputId) + ": " + output.type->name + "\n", outputId);
+					Emit("    return " + InputText(output, static_cast<size_t>(m_vertexPin)) + ";\n", outputId);
+					Emit("}\n\n");
+				}
+				m_result.movesVertices = m_moves;
+
+				Emit("#include \"SurfaceTemplate.slang\"\n");
 			}
 
 			void WriteParameterList() {
@@ -651,6 +722,8 @@ namespace Crucible::ShaderGraph {
 			std::set<std::pair<uint32_t, std::string>> m_missingOutputs;   // (node, output pin) already reported as not there
 			std::vector<size_t>                  m_order;     // every node that is not in (or after) a loop, sources first
 			size_t                               m_output = kNone;
+			int                                  m_vertexPin = -1;    // the Output's vertex offset pin (its place in the row's inputs)
+			bool                                 m_moves = false;     // something is plugged into it
 		};
 
 	}   // anonymous namespace
@@ -663,6 +736,7 @@ namespace Crucible::ShaderGraph {
 			result.paramsJson.clear();
 			result.lineNodes.clear();
 			result.liveConstants.clear();
+			result.movesVertices = false;
 		}
 		return result;
 	}

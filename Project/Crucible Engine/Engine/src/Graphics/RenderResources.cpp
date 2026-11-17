@@ -579,8 +579,8 @@ namespace Crucible {
 
     void RenderResources::DrawDepthBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches, const DepthPassPipelines& p) const {
 
-        bool              cutoutBound = false;
-        vk::CullModeFlags cullBound   = p.cull;
+        vk::Pipeline      pipelineBound = p.solid;
+        vk::CullModeFlags cullBound     = p.cull;
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, p.solid);
         if (p.dynamicCull) { cmd.setCullMode(cullBound); }
         bool mirroredBound = false;
@@ -597,16 +597,24 @@ namespace Crucible {
             }
 
             if (!(batch.material == boundMaterial)) {
-                const MaterialData* data = IsMaterialUsable(batch.material)   // destroyed: plain solid depth
-                                         ? &m_materials[batch.material.id].data : nullptr;
-                const bool cutout = data && data->alphaCutoff > 0.0f;
-                if (cutout != cutoutBound) {
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, cutout ? p.cutout : p.solid);   // same layout: sets stay bound
-                    cutoutBound = cutout;
+                const GpuMaterial*  material = IsMaterialUsable(batch.material)   // destroyed: plain solid depth
+                                             ? &m_materials[batch.material.id] : nullptr;
+                const MaterialData* data   = material ? &material->data : nullptr;
+                const bool          cutout = data && data->alphaCutoff > 0.0f;
+                // A shader that moves vertices brings its own pipelines for this pass, so the
+                // depth it writes here is where the scene pass draws it. Null while they are not
+                // built: the scene pass is then drawing the material with the built-in shader.
+                const vk::Pipeline moved = data && m_shaders ? m_shaders->MovedPipeline(data->shader, p.pass, cutout) : vk::Pipeline{};
+                const vk::Pipeline pipeline = moved ? moved : cutout ? p.cutout : p.solid;
+                if (pipeline != pipelineBound) {
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);   // same layout: sets stay bound
+                    pipelineBound = pipeline;
                 }
-                if (cutout) {
-                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, p.layout, 1, *m_materials[batch.material.id].descriptorSet, nullptr);
-                    const CutoutPush push{ std::clamp(data->alphaCutoff, 0.0f, 1.0f), data->factors.albedoTint.a };
+                if (cutout || moved) {
+                    // Set 1 and the push constant: the cut-out's alpha - and what a moved
+                    // shader's vertex stage reads, its textures and where its parameters are.
+                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, p.layout, 1, *material->descriptorSet, nullptr);
+                    const CutoutPush push{ std::clamp(data->alphaCutoff, 0.0f, 1.0f), data->factors.albedoTint.a, material->push.paramOffset };
                     cmd.pushConstants(p.layout, p.cutoutPushStages, p.cutoutPushOffset, sizeof(CutoutPush), &push);
                 }
                 const vk::CullModeFlags cull = data && data->doubleSided ? vk::CullModeFlags(vk::CullModeFlagBits::eNone) : p.cull;
@@ -622,6 +630,16 @@ namespace Crucible {
         }
 
     }   // RenderResources::DrawDepthBatches()
+
+    bool RenderResources::NeedsMaterialInDepthPasses(MaterialHandle handle) const {
+
+        if (!IsMaterialUsable(handle)) { return false; }
+        const MaterialData& d = m_materials[handle.id].data;
+        // Cut-out and double-sided change how the depth-only passes draw a mesh; a shader that
+        // moves vertices is drawn there with its own pipelines (DrawDepthBatches).
+        return d.alphaCutoff > 0.0f || d.doubleSided || (m_shaders && m_shaders->MovesVertices(d.shader));
+
+    }   // RenderResources::NeedsMaterialInDepthPasses()
 
     MaterialHandle RenderResources::CreateMaterial(const MaterialData& data) {
 

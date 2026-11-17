@@ -25,6 +25,11 @@ endmacro()
 crucible_shader(DefaultShader    vertMain fragMain)
 # More mesh shaders: a surface function followed by SurfaceTemplate.slang (see Surface.slang), with
 # the same two entry points. A material picks one by name ("shader" in its .mat).
+# One that moves vertices (SURFACE_MOVES_VERTICES in Surface.slang) also needs, on its line here,
+# the eleven entry points at the end of SurfaceTemplate.slang: shadowVert shadowCutoutVert
+# shadowCutoutFrag depthNormalVert depthNormalFrag depthNormalCutoutVert depthNormalCutoutFrag
+# maskVert maskFrag maskCutoutVert maskCutoutFrag. (A shader graph's shader is compiled by the
+# Editor, which adds them itself.)
 crucible_shader(MagicOrb         vertMain fragMain)
 crucible_shader(Skybox           skyVert skyFrag)
 crucible_shader(DebugLine        lineVert sphereOutlineVert lineFrag)

@@ -1,22 +1,32 @@
 {
   "version": 1,
   "domain": "surface",
-  "nextId": 10,
+  "nextId": 16,
   "parameters": [
     { "name": "vector", "type": "vec2", "default": [0.0, 0.0], "min": 0.0, "max": 1.0 },
-    { "name": "texture", "type": "texture", "colour": true, "default": "white" }
+    { "name": "texture", "type": "texture", "colour": true, "default": "white" },
+    { "name": "value", "type": "float", "default": 1.0, "min": 0.0, "max": 1.0 }
   ],
   "nodes": [
-    { "id": 1, "type": "Output", "x": 59.4627, "y": 220.43575 },
+    { "id": 1, "type": "Output", "x": 578.11017, "y": 321.47253 },
     { "id": 4, "type": "Parameter", "x": -422.14804, "y": 259.98727, "settings": { "parameter": "texture" } },
     { "id": 5, "type": "SampleTexture", "x": -195.90602, "y": 207.84528 },
-    { "id": 6, "type": "Sine", "x": -197.18973, "y": 403.7283 },
-    { "id": 7, "type": "Time", "x": -422.47513, "y": 418.75745 }
+    { "id": 6, "type": "Sine", "x": -288.78036, "y": 643.4776 },
+    { "id": 7, "type": "Time", "x": -490.0714, "y": 611.88873 },
+    { "id": 10, "type": "Multiply", "x": 5.8343134, "y": 634.2894 },
+    { "id": 11, "type": "WorldNormal", "x": -332.3468, "y": 535.36487 },
+    { "id": 13, "type": "Parameter", "x": 159.94568, "y": 724.0897, "settings": { "parameter": "value" } },
+    { "id": 15, "type": "Multiply", "x": 382.75296, "y": 652.1055 }
   ],
   "links": [
     { "from": [4, "out"], "to": [5, "texture"] },
     { "from": [5, "rgb"], "to": [1, "albedo"] },
+    { "from": [7, "out"], "to": [6, "in"] },
+    { "from": [6, "out"], "to": [10, "b"] },
+    { "from": [11, "out"], "to": [10, "a"] },
     { "from": [6, "out"], "to": [1, "metallic"] },
-    { "from": [7, "out"], "to": [6, "in"] }
+    { "from": [13, "out"], "to": [15, "b"] },
+    { "from": [10, "out"], "to": [15, "a"] },
+    { "from": [15, "out"], "to": [1, "vertexOffset"] }
   ]
 }

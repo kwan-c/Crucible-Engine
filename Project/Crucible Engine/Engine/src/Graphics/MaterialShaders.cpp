@@ -47,7 +47,7 @@ namespace Crucible {
     //  CHECKING CODE
     // ------------------------------------------------------------------------------------------------------------- //
 
-    bool MaterialShaders::CheckCode(std::span<const uint32_t> spirv, std::string& error) {
+    bool MaterialShaders::CheckCode(std::span<const uint32_t> spirv, std::string& error, bool* movesVertices) {
 
         if (spirv.size() < kSpirvHeaderWords || spirv.front() != kSpirvMagic) {
             error = "not a SPIR-V module (" + std::to_string(spirv.size()) + " words)";
@@ -57,6 +57,7 @@ namespace Crucible {
         // Walk the instructions (word count in the high half of the first word, opcode in the
         // low half) as far as the first function, noting the entry points on the way.
         bool hasVertex = false, hasFragment = false;
+        uint32_t movedFound = 0;   // bit i: it has kMovedEntries[i]
         for (size_t i = kSpirvHeaderWords; i < spirv.size();) {
             const uint32_t wordCount = spirv[i] >> 16;
             const uint32_t opcode    = spirv[i] & 0xFFFFu;
@@ -70,6 +71,9 @@ namespace Crucible {
                 const std::string name  = LiteralString(spirv.subspan(i + 3, wordCount - 3));
                 if (model == kModelVertex   && name == kVertexEntry)   { hasVertex = true; }
                 if (model == kModelFragment && name == kFragmentEntry) { hasFragment = true; }
+                for (size_t m = 0; m < kMovedEntries.size(); ++m) {
+                    if (name == kMovedEntries[m]) { movedFound |= 1u << m; }
+                }
             }
             i += wordCount;
         }
@@ -79,6 +83,17 @@ namespace Crucible {
                     " entry point - a mesh shader is a surface function followed by #include \"SurfaceTemplate.slang\"";
             return false;
         }
+
+        // A surface that moves vertices: every one of its extra entry points, or none of them.
+        const uint32_t movedAll = (1u << kMovedEntries.size()) - 1u;
+        if (movedFound != 0 && movedFound != movedAll) {
+            size_t missing = 0;
+            while ((movedFound & (1u << missing)) != 0) { ++missing; }
+            error = std::string("it moves vertices but has no ") + kMovedEntries[missing] +
+                    " entry point - a shader that defines SURFACE_MOVES_VERTICES is compiled with every entry point at the end of SurfaceTemplate.slang";
+            return false;
+        }
+        if (movesVertices) { *movesVertices = movedFound == movedAll; }
         return true;
 
     }   // MaterialShaders::CheckCode()
@@ -99,15 +114,28 @@ namespace Crucible {
 
     }   // MaterialShaders::~MaterialShaders()
 
-    void MaterialShaders::Build(std::span<const uint32_t> spirv, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const {
+    void MaterialShaders::Build(std::span<const uint32_t> spirv, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout,
+                                Moved& moved, bool& hasMoved) const {
 
         // The module is only needed while the pipelines are being made.
         const vk::raii::ShaderModule shaderModule = CreateShaderModule(*m_context, spirv);
         m_builder(*shaderModule, level, solid, cutout);
 
+        // A shader that moves vertices: its own pipelines for the depth-only passes as well, so
+        // its shadow, its occlusion and its selection outline are where the scene pass draws it.
+        hasMoved = false;
+        std::string unused;
+        bool        moves = false;
+        if (m_depthBuilder && CheckCode(spirv, unused, &moves) && moves) {
+            for (uint32_t pass = 0; pass < kDepthPassCount; ++pass) {
+                m_depthBuilder(*shaderModule, static_cast<DepthPass>(pass), moved[pass].solid, moved[pass].cutout);
+            }
+            hasMoved = true;
+        }
+
     }   // MaterialShaders::Build()
 
-    void MaterialShaders::Init(VulkanContext& context, Builder builder, std::string defaultName, std::vector<uint32_t> defaultSpirv) {
+    void MaterialShaders::Init(VulkanContext& context, Builder builder, DepthBuilder depthBuilder, std::string defaultName, std::vector<uint32_t> defaultSpirv) {
 
         m_context = &context;
         m_builder = std::move(builder);
@@ -124,11 +152,13 @@ namespace Crucible {
         entry.code    = std::make_shared<const std::vector<uint32_t>>(std::move(defaultSpirv));
         entry.version = 1;
         for (uint32_t level = 0; level < kLevels; ++level) {
-            Build(*entry.code, level, entry.levels[level].solid, entry.levels[level].cutout);
+            // m_depthBuilder is not set yet: the built-in shader does not move vertices.
+            Build(*entry.code, level, entry.levels[level].solid, entry.levels[level].cutout, entry.levels[level].moved, entry.levels[level].hasMoved);
             entry.levels[level].built = entry.levels[level].requested = entry.version;
         }
         m_entries.clear();
         m_entries.push_back(std::move(entry));
+        m_depthBuilder = std::move(depthBuilder);   // for every shader built from here on (Update)
 
     }   // MaterialShaders::Init()
 
@@ -147,7 +177,7 @@ namespace Crucible {
         entry.name = std::move(name);
         if (!spirv.empty()) {
             std::string error;
-            if (CheckCode(spirv, error)) {
+            if (CheckCode(spirv, error, &entry.movesVertices)) {
                 entry.code    = std::make_shared<const std::vector<uint32_t>>(std::move(spirv));
                 entry.version = 1;
             } else {
@@ -165,11 +195,13 @@ namespace Crucible {
             error = "that is not a loaded material shader";
             return false;
         }
-        if (!CheckCode(spirv, error)) { return false; }
+        bool moves = false;
+        if (!CheckCode(spirv, error, &moves)) { return false; }
 
         // The next Update() sees a version nothing has been built for and queues it. The
         // pipelines already there keep drawing until then.
         Entry& entry = m_entries[shader.id];
+        entry.movesVertices = moves;
         entry.code = std::make_shared<const std::vector<uint32_t>>(std::move(spirv));
         ++entry.version;
         return true;
@@ -202,6 +234,26 @@ namespace Crucible {
 
     }   // MaterialShaders::IsBuilt()
 
+    bool MaterialShaders::MovesVertices(MaterialShaderHandle shader) const {
+
+        if (shader.id >= Count()) { return false; }
+        const Entry& entry = m_entries[shader.id];
+        return entry.movesVertices || entry.levels[m_levelInUse].hasMoved;
+
+    }   // MaterialShaders::MovesVertices()
+
+    vk::Pipeline MaterialShaders::MovedPipeline(MaterialShaderHandle shader, DepthPass pass, bool cutout) const {
+
+        if (shader.id >= Count()) { return vk::Pipeline{}; }
+        // The level the scene is drawn at: these pipelines came with that level's scene pair, so
+        // the scene pass and the depth-only passes change over to new code in the same frame.
+        const Level& level = m_entries[shader.id].levels[m_levelInUse];
+        if (level.built == 0 || !level.hasMoved) { return vk::Pipeline{}; }
+        const MovedPair& pair = level.moved[static_cast<uint32_t>(pass) < kDepthPassCount ? static_cast<uint32_t>(pass) : 0];
+        return cutout ? *pair.cutout : *pair.solid;
+
+    }   // MaterialShaders::MovedPipeline()
+
     vk::Pipeline MaterialShaders::Pipeline(MaterialShaderHandle shader, uint32_t level, bool cutout) const {
 
         level = std::min(level, kLevels - 1);
@@ -216,6 +268,8 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------------------------- //
 
     void MaterialShaders::Update(uint32_t levelInUse, DeferredDestroyQueue& retired) {
+
+        if (levelInUse < kLevels) { m_levelInUse = levelInUse; }
 
         // 1. What the background thread finished since the last frame.
         std::vector<Built> finished;
@@ -241,10 +295,16 @@ namespace Crucible {
             if (level.built != 0) {
                 retired.Retire(std::move(level.solid));
                 retired.Retire(std::move(level.cutout));
+                for (MovedPair& pair : level.moved) {
+                    if (*pair.solid)  { retired.Retire(std::move(pair.solid)); }
+                    if (*pair.cutout) { retired.Retire(std::move(pair.cutout)); }
+                }
             }
-            level.solid  = std::move(built.solid);
-            level.cutout = std::move(built.cutout);
-            level.built  = built.version;
+            level.solid    = std::move(built.solid);
+            level.cutout   = std::move(built.cutout);
+            level.moved    = std::move(built.moved);   // null pipelines when the code does not move vertices
+            level.hasMoved = built.hasMoved;
+            level.built    = built.version;
             CRU_INFO("[Renderer | Shaders] {} is ready ({} sample{}).", entry.name, kSampleCounts[built.level], built.level == 0 ? "" : "s");
         }
 
@@ -286,10 +346,12 @@ namespace Crucible {
             built.version = job.version;
             built.level   = job.level;
             try {
-                Build(*job.code, job.level, built.solid, built.cutout);
+                Build(*job.code, job.level, built.solid, built.cutout, built.moved, built.hasMoved);
             } catch (const std::exception& e) {
-                built.solid  = nullptr;
-                built.cutout = nullptr;
+                built.solid    = nullptr;
+                built.cutout   = nullptr;
+                built.moved    = Moved{};
+                built.hasMoved = false;
                 built.error  = e.what();
                 if (built.error.empty()) { built.error = "unknown error"; }
             }

@@ -148,8 +148,9 @@ namespace Crucible {
 
     void RenderLayouts::CreateMaterialDescriptorSetLayout(VulkanContext& context) {
 
-        // Set 1, bindings 0-7 (kMaterialTextureSlots): eight texture slots, all fragment-stage-only
-        // combined image samplers. The built-in shader's are 0-4: albedo, normal,
+        // Set 1, bindings 0-7 (kMaterialTextureSlots): eight texture slots, all combined image
+        // samplers, read by the fragment stage - and by the vertex stage of a shader that moves
+        // vertices, which can read a texture there. The built-in shader's are 0-4: albedo, normal,
         // metallicRoughness, emissive, occlusion; a shader with a texture list of its own uses the
         // slots in its list's order. Eight for every material, so that every mesh shader shares
         // one pipeline layout. One of these sets is allocated per
@@ -162,7 +163,7 @@ namespace Crucible {
                 .binding         = i,
                 .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
                 .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eFragment
+                .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             };
         }
         vk::DescriptorSetLayoutCreateInfo layoutInfo{

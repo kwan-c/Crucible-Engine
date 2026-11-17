@@ -93,6 +93,11 @@ namespace Crucible::ShaderGraph {
 			std::array<float, 4> value{};  ///< what it was when the shader was generated (the list's default)
 		};
 		std::vector<LiveConstant> liveConstants;   ///< empty unless Options::liveConstants
+
+		/// Something is plugged into the Output's vertex offset: `source` also has the function
+		/// EvaluateVertexOffset and defines SURFACE_MOVES_VERTICES (Surface.slang), so it has
+		/// to be compiled with the extra entry points of a shader that moves vertices.
+		bool movesVertices = false;
 	};
 
 	struct Options {

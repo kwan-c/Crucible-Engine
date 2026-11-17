@@ -127,6 +127,15 @@ float4 GraphTriplanar(Sampler2D tex, float3 worldPos, float3 normal, float scale
     return tex.Sample(p.zy) * weight.x + tex.Sample(p.xz) * weight.y + tex.Sample(p.xy) * weight.z;
 }
 
+// The same for a graph's Vertex Offset. A vertex has no neighbouring pixels to choose a smaller
+// copy of the texture by (its mip level), so it reads the full-size image.
+float4 GraphTriplanarVertex(Sampler2D tex, float3 worldPos, float3 normal, float scale, float sharpness) {
+    float3 weight = pow(abs(normal), float3(max(sharpness, 0.0001)));
+    weight /= max(weight.x + weight.y + weight.z, 0.0001);
+    float3 p = worldPos * scale;
+    return tex.SampleLevel(p.zy, 0.0) * weight.x + tex.SampleLevel(p.xz, 0.0) * weight.y + tex.SampleLevel(p.xy, 0.0) * weight.z;
+}
+
 // Luminance node (and Saturation): how bright a linear colour looks.
 float GraphLuminance(float3 colour) {
     return dot(colour, float3(0.2126, 0.7152, 0.0722));

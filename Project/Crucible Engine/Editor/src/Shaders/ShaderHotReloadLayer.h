@@ -58,13 +58,15 @@ namespace Crucible {
 		void OnUpdate(float) override {
 			// Watch each mesh shader as it appears: the built-in one (handle 0) from the first
 			// frame, the others when a material first names them. Every mesh shader has the same
-			// two entry points (SurfaceTemplate.slang; Engine/CompileShaders.cmake lists them too).
+			// two entry points (SurfaceTemplate.slang; Engine/CompileShaders.cmake lists them too);
+			// one that moves vertices has its own versions of the depth-only passes' shaders too.
 			Renderer& renderer = m_core.GetRenderer();
 			for (const uint32_t count = renderer.GetMaterialShaderCount(); m_watched < count; ++m_watched) {
 				const MaterialShaderHandle shader{ m_watched };
 				ShaderHotReload::Shader watch;
 				watch.name = renderer.GetMaterialShaderName(shader);
 				watch.entryPoints = { "vertMain", "fragMain" };
+				watch.movedEntryPoints.assign(MaterialShaders::kMovedEntries.begin(), MaterialShaders::kMovedEntries.end());
 				watch.apply = [this, shader](std::span<const uint32_t> spirv, std::string& error) {
 					return m_core.GetRenderer().ReloadMaterialShader(shader, spirv, error);
 				};

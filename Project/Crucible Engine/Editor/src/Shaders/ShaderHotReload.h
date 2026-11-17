@@ -75,6 +75,10 @@ namespace Crucible {
 		struct Shader {
 			std::string              name;          // "DefaultShader": Assets/Shaders/DefaultShader.slang, built to DefaultShader.spv
 			std::vector<std::string> entryPoints;   // as in Engine/CompileShaders.cmake
+			// More entry points, for when the source defines SURFACE_MOVES_VERTICES: a surface
+			// that moves vertices has its own versions of the depth-only passes' shaders
+			// (MaterialShaders::kMovedEntries). Empty for a shader that is not a mesh shader.
+			std::vector<std::string> movedEntryPoints;
 			Apply                    apply;         // called on the thread that calls Tick()
 			ApplyParams              applyParams;   // optional: for a shader that can have a <name>.params.json
 

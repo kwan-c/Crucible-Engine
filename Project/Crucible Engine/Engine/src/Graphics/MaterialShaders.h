@@ -31,12 +31,22 @@
     All shaders share ScenePass's pipeline layout, so switching shader
     between two draws is one pipeline bind; set 0 stays bound.
 
+    A shader that MOVES VERTICES (SURFACE_MOVES_VERTICES in Surface.slang)
+    has eleven more entry points: its own versions of the shadow, depth-
+    normal and selection-mask shaders, with its offset added. For such a
+    shader six more pipelines are built with each scene pair - a solid and a
+    cut-out one per depth-only pass, each by that pass (DepthBuilder) - and
+    swapped in with it, so the scene and the shadow always come from the
+    same code. RenderResources::DrawDepthBatches draws its materials with
+    them (MovedPipeline).
+
     Everything except the background thread's own work is frame-thread only.
 *************************************************************************/
 #pragma once
 
 #include "MaterialShaderHandle.h"
 #include "MaterialShaderParams.h"
+#include "RenderTypes.h"   // DepthPass
 #include "Vulkan/VulkanContext.h"
 
 #include <array>
@@ -65,6 +75,14 @@ namespace Crucible {
         static constexpr const char* kVertexEntry   = "vertMain";
         static constexpr const char* kFragmentEntry = "fragMain";
 
+        /// The entry points a shader that moves vertices has as well (the end of
+        /// SurfaceTemplate.slang), under the names the shared depth shaders use. A shader has
+        /// all of them or none.
+        static constexpr std::array<const char*, 11> kMovedEntries{
+            "shadowVert", "shadowCutoutVert", "shadowCutoutFrag",
+            "depthNormalVert", "depthNormalFrag", "depthNormalCutoutVert", "depthNormalCutoutFrag",
+            "maskVert", "maskFrag", "maskCutoutVert", "maskCutoutFrag" };
+
         /*********************************************************************
          \brief  Builds one MSAA level's two scene pipelines from a shader
                  module: ScenePass::BuildMeshPipelines. Called on the
@@ -72,6 +90,15 @@ namespace Crucible {
                  only read state that no longer changes.
          *********************************************************************/
         using Builder = std::function<void(vk::ShaderModule shader, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout)>;
+
+        /*********************************************************************
+         \brief  Builds one depth-only pass's two pipelines from the module of
+                 a shader that moves vertices: ShadowPass::BuildPipelines,
+                 AmbientOcclusionPass::BuildPrepassPipelines or
+                 OutlinePass::BuildMaskPipelines. Called on the background
+                 thread, like Builder.
+         *********************************************************************/
+        using DepthBuilder = std::function<void(vk::ShaderModule shader, DepthPass pass, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout)>;
 
         MaterialShaders() = default;
         ~MaterialShaders();   // stops the background thread (waits for a build that is running)
@@ -84,11 +111,14 @@ namespace Crucible {
                  pass that owns `builder` has its layout.
          \param[in] context       The VulkanContext to create modules through.
          \param[in] builder       See Builder.
+         \param[in] depthBuilder  See DepthBuilder. Not called here: the built-in
+                                  shader does not move vertices, and the depth
+                                  passes need not exist yet.
          \param[in] defaultName   The built-in shader's name ("DefaultShader").
          \param[in] defaultSpirv  Its compiled code.
          \throws If the built-in shader cannot be built: nothing could be drawn.
          *********************************************************************/
-        void Init(VulkanContext& context, Builder builder, std::string defaultName, std::vector<uint32_t> defaultSpirv);
+        void Init(VulkanContext& context, Builder builder, DepthBuilder depthBuilder, std::string defaultName, std::vector<uint32_t> defaultSpirv);
 
         /// The built-in shader's handle (what an Invalid handle is drawn with).
         static MaterialShaderHandle Default() { return MaterialShaderHandle{ 0 }; }
@@ -138,6 +168,24 @@ namespace Crucible {
          *********************************************************************/
         vk::Pipeline Pipeline(MaterialShaderHandle shader, uint32_t level, bool cutout) const;
 
+        /*********************************************************************
+         \brief  Whether a shader moves vertices: its newest code does, or the
+                 pipelines being drawn with still do. The depth-only passes
+                 then need to know which material a mesh has.
+         *********************************************************************/
+        bool MovesVertices(MaterialShaderHandle shader) const;
+
+        /*********************************************************************
+         \brief  The pipeline a depth-only pass draws a material with when its
+                 shader moves vertices - or a null handle: the shader does not,
+                 or its pipelines are not built yet (the scene pass then draws
+                 it with the built-in shader too), and the pass uses its own.
+         \param[in] shader  MaterialData::shader (Invalid = built-in).
+         \param[in] pass    Which depth-only pass is asking.
+         \param[in] cutout  true for cut-out materials (alphaCutoff > 0).
+         *********************************************************************/
+        vk::Pipeline MovedPipeline(MaterialShaderHandle shader, DepthPass pass, bool cutout) const;
+
         /// How many shaders there are; their handles are 0 .. Count() - 1.
         uint32_t Count() const { return static_cast<uint32_t>(m_entries.size()); }
 
@@ -160,15 +208,27 @@ namespace Crucible {
                  points. A pipeline made from a module without them is
                  undefined behaviour, not an error, so this is checked first.
          \param[out] error  What is wrong, when something is.
+         \param[out] movesVertices  If given: whether it also has every entry
+                                    point of kMovedEntries. Having only some of
+                                    them is an error.
          *********************************************************************/
-        static bool CheckCode(std::span<const uint32_t> spirv, std::string& error);
+        static bool CheckCode(std::span<const uint32_t> spirv, std::string& error, bool* movesVertices = nullptr);
 
     private:
         using Code = std::shared_ptr<const std::vector<uint32_t>>;
 
+        // A shader that moves vertices: its pipelines for one depth-only pass.
+        struct MovedPair {
+            vk::raii::Pipeline solid  = nullptr;
+            vk::raii::Pipeline cutout = nullptr;
+        };
+        using Moved = std::array<MovedPair, kDepthPassCount>;   // by DepthPass
+
         struct Level {
             vk::raii::Pipeline solid  = nullptr;
             vk::raii::Pipeline cutout = nullptr;   // the same with kCutout on
+            Moved    moved;                        // built with them, when the code moves vertices
+            bool     hasMoved  = false;
             uint32_t built     = 0;                // version of the code these were built from (0 = none)
             uint32_t requested = 0;                // newest version a build was queued for
         };
@@ -177,6 +237,7 @@ namespace Crucible {
             Code        code;                      // null = no compiled code yet
             uint32_t    version = 0;               // +1 each time the code changes; 0 = no code
             uint32_t    failed  = 0;               // newest version whose build failed (not retried)
+            bool        movesVertices = false;     // the code has kMovedEntries
             MaterialShaderParams params;           // its own parameters and textures (empty = none)
             std::array<Level, kLevels> levels;
         };
@@ -188,14 +249,19 @@ namespace Crucible {
             uint32_t shader = 0, version = 0, level = 0;
             vk::raii::Pipeline solid  = nullptr;
             vk::raii::Pipeline cutout = nullptr;
+            Moved              moved;
+            bool               hasMoved = false;
             std::string        error;              // empty = built
         };
 
-        void Build(std::span<const uint32_t> spirv, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const;
+        void Build(std::span<const uint32_t> spirv, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout,
+                   Moved& moved, bool& hasMoved) const;
         void WorkerMain();
 
         VulkanContext*     m_context = nullptr;
         Builder            m_builder;
+        DepthBuilder       m_depthBuilder;
+        uint32_t           m_levelInUse = 0;       // Update()'s: the level the depth-only passes' pipelines are taken from
         std::deque<Entry>  m_entries;              // by handle id; 0 = the built-in shader. Frame thread only.
 
         std::mutex              m_mutex;           // guards the fields below

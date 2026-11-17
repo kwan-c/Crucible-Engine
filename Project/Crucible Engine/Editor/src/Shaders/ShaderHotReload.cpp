@@ -15,6 +15,7 @@
 #include "Diagnostics/Logger.h"
 
 #include <algorithm>
+#include <cctype>
 #include <fstream>
 #include <iterator>
 #include <string_view>
@@ -45,6 +46,24 @@ namespace Crucible {
 				hash *= 1099511628211ull;
 			}
 			return hash != 0 ? hash : 1;
+		}
+
+		// Whether a mesh shader's source says it moves vertices (Surface.slang): a line that is
+		// "#define SURFACE_MOVES_VERTICES". Looked for in the shader's own text only - that is
+		// where a surface says so.
+		bool DefinesMovedVertices(std::string_view source) {
+			constexpr std::string_view kDefine = "#define", kName = "SURFACE_MOVES_VERTICES";
+			for (size_t at = source.find(kName); at != std::string_view::npos; at = source.find(kName, at + kName.size())) {
+				const size_t newline = source.rfind('\n', at);
+				std::string_view before = source.substr(newline == std::string_view::npos ? 0 : newline + 1);
+				before = before.substr(0, at - (newline == std::string_view::npos ? 0 : newline + 1));
+				while (!before.empty() && (before.front() == ' ' || before.front() == '\t')) { before.remove_prefix(1); }
+				while (!before.empty() && (before.back() == ' ' || before.back() == '\t')) { before.remove_suffix(1); }
+				const size_t end = at + kName.size();
+				const bool wholeWord = end >= source.size() || !(std::isalnum(static_cast<unsigned char>(source[end])) || source[end] == '_');
+				if (before == kDefine && wholeWord) { return true; }
+			}
+			return false;
 		}
 
 		uint64_t HashSpirv(std::span<const uint32_t> spirv) {
@@ -297,6 +316,21 @@ namespace Crucible {
 					request.source = watched.source;
 				} else {
 					CheckParams(watched);   // its parameter list first: the materials are ready when the new code arrives
+				}
+
+				// A surface that moves vertices is compiled with more entry points: its versions
+				// of the depth-only passes' shaders, which the renderer then builds pipelines from.
+				if (!watched.shader.movedEntryPoints.empty()) {
+					std::string text = request.source;
+					if (text.empty()) {
+						const fs::path file = m_compiler->GetSettings().shaderDir / (watched.shader.name + ".slang");
+						if (std::ifstream in(file, std::ios::binary); in) {
+							text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+						}
+					}
+					if (DefinesMovedVertices(text)) {
+						request.entryPoints.insert(request.entryPoints.end(), watched.shader.movedEntryPoints.begin(), watched.shader.movedEntryPoints.end());
+					}
 				}
 
 				// Only what this shader really includes counts: saving Water.slang does not

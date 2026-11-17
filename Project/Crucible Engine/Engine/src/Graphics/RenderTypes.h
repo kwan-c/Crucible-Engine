@@ -909,13 +909,23 @@ namespace Crucible {
                   && offsetof(PushConstants, paramOffset) == 96 && sizeof(PushConstants) == 100,
         "PushConstants must match Surface.slang's (checked against the compiled SPIR-V).");
 
-    /// Push constant of the depth-only passes' cut-out pipelines (shadow, ambient occlusion,
-    /// selection mask): what decides which pixels of a cut-out material are drawn.
+    /// Push constant of the depth-only passes (shadow, ambient occlusion, selection mask) for a
+    /// material they need to know: what decides which pixels of a cut-out material are drawn,
+    /// and - for a shader that moves vertices, which reads its parameters in the vertex stage -
+    /// where the material's parameters are. The shared depth shaders (Shadow.slang,
+    /// DepthNormal.slang, OutlineMask.slang) declare only the first two fields.
     struct CutoutPush {
-        float alphaCutoff = 0.0f;
-        float alphaTint = 1.0f;   // MaterialFactors::albedoTint.a
+        float    alphaCutoff = 0.0f;
+        float    alphaTint = 1.0f;   // MaterialFactors::albedoTint.a
+        uint32_t paramOffset = 0;    // PushConstants::paramOffset
     };
-    static_assert(sizeof(CutoutPush) == 8, "CutoutPush must match the depth shaders' cutout fields.");
+    static_assert(sizeof(CutoutPush) == 12 && offsetof(CutoutPush, paramOffset) == 8,
+        "CutoutPush must match the depth shaders' cutout fields, and SurfaceDepthPush in SurfaceTemplate.slang.");
+
+    /// The depth-only passes a mesh is drawn in besides the scene pass. A shader that moves
+    /// vertices has pipelines of its own for each of them (MaterialShaders).
+    enum class DepthPass : uint32_t { Shadow, DepthNormal, OutlineMask };
+    inline constexpr uint32_t kDepthPassCount = 3;
     static_assert(sizeof(PushConstants) <= 128,
         "PushConstants must fit in the 128-byte push-constant range every Vulkan implementation "
         "is required to support (VkPhysicalDeviceLimits::maxPushConstantsSize's guaranteed floor).");
