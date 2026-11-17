@@ -1353,6 +1353,114 @@ namespace {
 		ClearSubgraphs();
 	}
 
+	// ---- Step 10b-2: editing a sub-graph in the window -----------------------------------------------
+
+	void TestSubgraphEditing(const char* writeTo) {
+		std::printf("editing sub-graphs\n");
+		ClearSubgraphs();
+		std::string why, error;
+
+		// A new one: one vec3 output and its node, nothing wrong with it, and it saves and loads.
+		Graph fresh = NewSubgraph();
+		CHECK(fresh.domain == kSubgraphDomain && fresh.outputs.size() == 1 && fresh.nodes.size() == 1 && fresh.nodes[0].type == kSubgraphOutputNode);
+		const Generated freshCheck = Generate(fresh);
+		if (!freshCheck.ok) { PrintProblems(fresh, freshCheck); }
+		CHECK(freshCheck.ok && freshCheck.problems.empty());
+		Graph reloaded;
+		CHECK(Load(Save(fresh), reloaded, error) && Save(reloaded) == Save(fresh));
+		Document document;
+		document.New(true);
+		CHECK(document.GetGraph().domain == kSubgraphDomain && document.Check().ok);
+
+		// What can be added where.
+		CHECK(AddNode(fresh, kOutputNode, 0.0f, 0.0f) == 0 && AddNode(fresh, kParameterNode, 0.0f, 0.0f, "x") == 0);
+		CHECK(AddNode(fresh, kSubgraphInputNode, 0.0f, 0.0f, "nope") == 0);
+		Graph surface = NewGraph();
+		CHECK(AddNode(surface, kSubgraphOutputNode, 0.0f, 0.0f, "out") == 0);
+
+		// Its inputs and outputs, edited like parameters - and the nodes that name them follow.
+		const size_t colour = AddListEntry(fresh, ListKind::Inputs, ParameterType::Colour);
+		const size_t tex = AddListEntry(fresh, ListKind::Inputs, ParameterType::Texture);
+		CHECK(fresh.inputs.size() == 2 && fresh.inputs[colour].name == "colour" && fresh.inputs[tex].type == ParameterType::Texture);
+		const size_t second = AddListEntry(fresh, ListKind::Outputs, ParameterType::Texture);   // no texture outputs: a vec3
+		CHECK(fresh.outputs.size() == 2 && fresh.outputs[second].type == ParameterType::Vec3 && fresh.outputs[second].name == "vector");
+		const uint32_t reads = AddNode(fresh, kSubgraphInputNode, 0.0f, 0.0f, "colour");
+		CHECK(reads != 0 && fresh.FindNode(reads)->settings.at(kSubgraphInputSetting) == "colour");
+		CHECK(RenameListEntry(fresh, ListKind::Inputs, colour, "tint", why) && fresh.FindNode(reads)->settings.at(kSubgraphInputSetting) == "tint");
+		CHECK(!RenameListEntry(fresh, ListKind::Inputs, colour, "texture", why) && !RenameListEntry(fresh, ListKind::Inputs, colour, "2x", why));
+		CHECK(MoveListEntry(fresh, ListKind::Inputs, tex, -1) && fresh.inputs[0].type == ParameterType::Texture);
+		CHECK(!MoveListEntry(fresh, ListKind::Inputs, 0, -1));
+		const uint32_t outputNode = fresh.nodes[0].id;
+		CHECK(Crucible::ShaderGraph::Connect(fresh, reads, "out", outputNode, "in", why));
+		CHECK(Generate(fresh).ok);
+		DeleteListEntry(fresh, ListKind::Inputs, 1);   // "tint", and the node reading it
+		CHECK(fresh.inputs.size() == 1 && !fresh.FindNode(reads) && fresh.links.empty());
+		// The parameter functions are the same functions, on the parameters.
+		Graph withParameters = NewGraph();
+		CHECK(AddParameter(withParameters, ParameterType::Float) == 0 && withParameters.parameters[0].name == "value" && withParameters.inputs.empty());
+
+		// The sub-graph from the earlier test, checked on its own: no problems; each output previewed.
+		const Graph glow = GlowSubgraph();
+		const Generated asFirst = Generate(glow);
+		if (!asFirst.ok) { PrintProblems(glow, asFirst); }
+		CHECK(asFirst.ok && asFirst.problems.empty() && Contains(asFirst.source, "GraphFresnel(") && Contains(asFirst.source, "MATERIAL_TEXTURE(0, gTex__in_tex)"));
+		Options second4;
+		second4.previewOutput = 1;   // "sampled", a float4: its xyz is shown
+		const Generated asSecond = Generate(glow, second4);
+		CHECK(asSecond.ok && Contains(asSecond.source, ".xyz") && asSecond.source != asFirst.source);
+		Options live;
+		live.liveConstants = true;
+		CHECK(Generate(glow, live).ok);
+		// The generator's node results are about the sub-graph's own nodes.
+		for (const Node& node : glow.nodes) {
+			const bool found = std::any_of(asFirst.nodes.begin(), asFirst.nodes.end(), [&](const Generated::NodeResult& r) { return r.node == node.id && r.valid; });
+			CHECK(found);
+		}
+
+		// A problem is on the sub-graph's own node - also on the way to an output the preview does not show.
+		Graph wrong = glow;
+		const uint32_t uv = AddNode(wrong, "UV", 0.0f, 0.0f);
+		uint32_t glowOut = 0, sampledOut = 0;
+		for (const Node& node : wrong.nodes) {
+			if (node.type == kSubgraphOutputNode) { (node.settings.at(kSubgraphOutputSetting) == "glow" ? glowOut : sampledOut) = node.id; }
+		}
+		DeleteLinkInto(wrong, sampledOut, "in");
+		wrong.links.push_back({ uv, "out", sampledOut, "in" });   // a float2 given to a float4 output
+		const Generated wrongCheck = Generate(wrong);
+		CHECK(!wrongCheck.ok && FindProblem(wrongCheck, sampledOut, "in", "float2"));
+		CHECK(!Crucible::ShaderGraph::Connect(wrong, uv, "out", glowOut, "in", why));
+
+		// Two nodes giving one output: not a usable sub-graph, said as a problem of the whole.
+		Graph twice = glow;
+		const uint32_t again = twice.AddNode(kSubgraphOutputNode);
+		twice.FindNode(again)->settings[kSubgraphOutputSetting] = "glow";
+		const Generated twiceCheck = Generate(twice);
+		CHECK(!twiceCheck.ok && FindProblem(twiceCheck, 0, "", "two nodes give output"));
+		RegisterSubgraph("00000000000000F6", "Twice.shadersubgraph", twice);
+		CHECK(FindSubgraph("00000000000000F6") && Contains(FindSubgraph("00000000000000F6")->error, "two nodes"));
+
+		// An output with nothing linked gives the constant typed on its node - where it is used, too.
+		Graph constant = NewSubgraph();
+		constant.nodes[0].inputs["in"] = { 0.25f, 0.5f, 0.75f, 0.0f };
+		CHECK(Contains(Generate(constant).source, "0.25"));
+		RegisterSubgraph("00000000000000F7", "Constant.shadersubgraph", constant);
+		Graph uses = NewGraph();
+		const uint32_t node = AddNode(uses, kSubgraphNode, 0.0f, 0.0f, "00000000000000F7");
+		CHECK(Crucible::ShaderGraph::Connect(uses, node, "out", OutputNodeOf(uses), "albedo", why));
+		const Generated usesShader = Generate(uses);
+		CHECK(usesShader.ok && Contains(usesShader.source, "float3(0.25, 0.5, 0.75)"));
+
+		if (writeTo) {
+			for (const auto& [name, shader] : { std::pair{ "SubgraphPreview_Glow", &asFirst }, std::pair{ "SubgraphPreview_Sampled", &asSecond } }) {
+				const std::filesystem::path file = std::filesystem::path(writeTo) / (std::string(name) + ".slang");
+				std::ofstream out(file, std::ios::binary | std::ios::trunc);
+				out << shader->source;
+				std::printf("    wrote %s\n", file.string().c_str());
+			}
+		}
+		ClearSubgraphs();
+	}
+
 }   // anonymous namespace
 
 int main(int argc, char** argv) {
@@ -1374,6 +1482,7 @@ int main(int argc, char** argv) {
 	TestVertexOffset();
 	TestReroutesAndComments();
 	TestSubgraphs(writeTo);
+	TestSubgraphEditing(writeTo);
 
 	if (g_failed != 0) {
 		std::printf("\n%d of %d checks FAILED\n", g_failed, g_checks);

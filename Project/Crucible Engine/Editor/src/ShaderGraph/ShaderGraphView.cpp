@@ -683,8 +683,14 @@ namespace Crucible {
 				const auto setting = node.settings.find(kParameterSetting);
 				title = setting != node.settings.end() && !setting->second.empty() ? setting->second : "(choose a parameter)";
 			}
-			const bool isSubgraph = node.type == kSubgraphNode;
-			if (isSubgraph) {
+			if (node.type == kSubgraphInputNode || node.type == kSubgraphOutputNode) {
+				// In a sub-graph: "in: colour", "out: glow".
+				const bool input = node.type == kSubgraphInputNode;
+				const auto setting = node.settings.find(input ? kSubgraphInputSetting : kSubgraphOutputSetting);
+				title = std::string(input ? "in: " : "out: ") + (setting != node.settings.end() ? setting->second : "?");
+			}
+			const bool isSubgraph = node.type == kSubgraphNode || node.type == kSubgraphInputNode || node.type == kSubgraphOutputNode;
+			if (node.type == kSubgraphNode) {
 				const auto setting = node.settings.find(kSubgraphSetting);
 				const SubgraphEntry* entry = setting != node.settings.end() ? FindSubgraph(setting->second) : nullptr;
 				title = entry ? SubgraphTitle(*entry) : "(missing sub-graph)";
@@ -869,6 +875,7 @@ namespace Crucible {
 			const bool entered = ImGui::IsItemDeactivated() && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false));
 			const std::string filter = Lower(m_filter);
 			const bool hasOutput = OutputNodeOf(graph) != 0;
+			const bool subgraph = graph.domain == kSubgraphDomain;   // inputs and outputs, not parameters and the Output
 
 			uint32_t added = 0;
 			const auto add = [&](std::string_view type, std::string_view parameter) {
@@ -878,7 +885,7 @@ namespace Crucible {
 			// offered per parameter instead.
 			const auto offered = [&](const NodeType& type) {
 				const std::string_view name = type.name;
-				return name != kParameterNode && !(name == kOutputNode && hasOutput);
+				return name != kParameterNode && !(name == kOutputNode && (hasOutput || subgraph));
 			};
 
 			if (filter.empty()) {
@@ -897,7 +904,18 @@ namespace Crucible {
 					changed = true;
 					ImGui::CloseCurrentPopup();
 				}
-				if (ImGui::BeginMenu("Parameter")) {
+				if (subgraph) {
+					// A sub-graph: a node per input it reads, a node per output it gives.
+					for (const bool input : { true, false }) {
+						if (!ImGui::BeginMenu(input ? "Input" : "Output")) { continue; }
+						const std::vector<Parameter>& list = input ? graph.inputs : graph.outputs;
+						for (const Parameter& entry : list) {
+							if (ImGui::MenuItem(entry.name.c_str(), ParameterTypeName(entry.type))) { add(input ? kSubgraphInputNode : kSubgraphOutputNode, entry.name); }
+						}
+						if (list.empty()) { ImGui::TextDisabled("None yet - add one in the list on the left."); }
+						ImGui::EndMenu();
+					}
+				} else if (ImGui::BeginMenu("Parameter")) {
 					for (const Parameter& parameter : graph.parameters) {
 						if (ImGui::MenuItem(parameter.name.c_str(), ParameterTypeName(parameter.type))) { add(kParameterNode, parameter.name); }
 					}
@@ -945,6 +963,17 @@ namespace Crucible {
 					any = true;
 					if (ImGui::Selectable(("Sub-graph: " + SubgraphTitle(*entry)).c_str(), first) || (first && entered)) { add(kSubgraphNode, entry->guid); }
 					first = false;
+				}
+				for (const bool input : { true, false }) {
+					for (const Parameter& entry : subgraph ? (input ? graph.inputs : graph.outputs) : std::vector<Parameter>{}) {
+						const std::string word = input ? "input" : "output";
+						if (Lower(entry.name).find(filter) == std::string::npos && word.find(filter) == std::string::npos) { continue; }
+						any = true;
+						if (ImGui::Selectable(((input ? "Input: " : "Output: ") + entry.name).c_str(), first) || (first && entered)) {
+							add(input ? kSubgraphInputNode : kSubgraphOutputNode, entry.name);
+						}
+						first = false;
+					}
 				}
 				for (const Parameter& parameter : graph.parameters) {
 					if (Lower(parameter.name).find(filter) == std::string::npos && std::string_view("parameter").find(filter) == std::string_view::npos) { continue; }

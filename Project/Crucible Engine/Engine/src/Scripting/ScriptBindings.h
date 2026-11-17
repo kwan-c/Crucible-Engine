@@ -104,6 +104,10 @@ namespace Crucible
 		 *********************************************************************/
 		void SetRenderer(const Renderer* renderer);
 
+		/// The renderer SetRenderer was last given (nullptr if none): for other bindings that read it
+		/// (Bindings/GraphicsBindings.cpp). Defined in Bindings/CameraBindings.cpp.
+		const Renderer* CurrentRenderer();
+
 		/*********************************************************************
 		 \brief  Gives the C# Screen class the engine (window mode; editor or
 		         game). nullptr clears it. Non-owning; main thread only. Called
@@ -169,5 +173,6 @@ namespace Crucible
 		void RegisterTerrainBindings();        // Bindings/TerrainBindings.cpp        (C# Terrain: Build, GroundHeight)
 		void RegisterApplicationBindings();    // Bindings/ApplicationBindings.cpp    (C# Application: IsPlaying)
 		void RegisterTagBindings();            // Bindings/TagBindings.cpp            (C# Entity.Tag, CompareTag, FindWithTag)
+		void RegisterGraphicsBindings();       // Bindings/GraphicsBindings.cpp       (C# Graphics: shader builds still running)
 	}
 }

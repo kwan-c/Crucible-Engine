@@ -108,8 +108,12 @@ namespace Crucible::ShaderGraph {
 			for (const Parameter& output : graph.outputs) {
 				if (output.type == ParameterType::Texture) { return "output \"" + output.name + "\" is a texture; a sub-graph gives back numbers, vectors and colours"; }
 			}
+			std::set<std::string> given;   // outputs that have a node giving them
 			for (const Node& node : graph.nodes) {
 				const std::string at = "node " + std::to_string(node.id) + " (" + node.type + ")";
+				if (node.type == kSubgraphOutputNode && !given.insert(SettingOf(node, kSubgraphOutputSetting)).second) {
+					return "two nodes give output \"" + SettingOf(node, kSubgraphOutputSetting) + "\": an output is given by one node";
+				}
 				if (node.type == kOutputNode) { return at + ": a sub-graph has SubgraphOutput nodes, not an Output node"; }
 				if (node.type == kParameterNode) { return at + ": a sub-graph reads no parameters; give it an input instead"; }
 				if (node.type == kSubgraphInputNode && !FindIn(graph.inputs, SettingOf(node, kSubgraphInputSetting))) {
@@ -371,6 +375,10 @@ namespace Crucible::ShaderGraph {
 				Node pass;
 				pass.type = kPassNode;
 				pass.settings["type"] = ParameterTypeName(output.type);
+				// With nothing linked into it, an output gives the constant typed on its node.
+				for (const Node& given : sub.nodes) {
+					if (given.type == kSubgraphOutputNode && SettingOf(given, kSubgraphOutputSetting) == output.name) { pass.inputs = given.inputs; }
+				}
 				const uint32_t passId = make(std::move(pass));
 				out.pinOf[passId] = output.name;
 				if (const auto given = outputs.find(output.name); given != outputs.end()) {
@@ -391,6 +399,69 @@ namespace Crucible::ShaderGraph {
 
 		graph.nextId = next;
 		return out;
+	}
+
+	std::string SubgraphProblem(const Graph& subgraph) {
+		return Check(subgraph);
+	}
+
+	Graph SubgraphAsSurface(const Graph& subgraph, size_t previewOutput) {
+		Graph surface = subgraph;
+		surface.domain = kSurfaceDomain;
+		surface.inputs.clear();
+		surface.outputs.clear();
+		uint32_t next = (std::max)(surface.nextId, 1u);
+		for (const Node& node : surface.nodes) { next = (std::max)(next, node.id + 1); }
+		for (const Comment& comment : surface.comments) { next = (std::max)(next, comment.id + 1); }
+
+		uint32_t previewed = 0;   // the node the previewed output became
+		for (Node& node : surface.nodes) {
+			if (node.type == kSubgraphInputNode) {
+				const Parameter* input = FindIn(subgraph.inputs, SettingOf(node, kSubgraphInputSetting));
+				if (!input) { continue; }   // left as it is: SubgraphProblem says why
+				if (input->type == ParameterType::Texture) {
+					// A texture parameter of its own, showing what its default names.
+					Parameter texture = *input;
+					texture.name = "_in_" + input->name;
+					if (!surface.FindParameter(texture.name)) { surface.parameters.push_back(texture); }
+					node.type = kParameterNode;
+					node.settings = { { kParameterSetting, texture.name } };
+				} else {
+					node.type = kPassNode;
+					node.settings = { { "type", ParameterTypeName(input->type) } };
+					node.inputs = { { "in", input->defaultValue } };
+				}
+			} else if (node.type == kSubgraphOutputNode) {
+				const std::string name = SettingOf(node, kSubgraphOutputSetting);
+				const Parameter* output = FindIn(subgraph.outputs, name);
+				if (!output) { continue; }
+				if (previewOutput < subgraph.outputs.size() && subgraph.outputs[previewOutput].name == name && previewed == 0) { previewed = node.id; }
+				node.type = kPassNode;
+				node.settings = { { "type", ParameterTypeName(output->type) }, { "subgraphOutput", "1" } };
+			}
+		}
+
+		// The Output, right of everything, with the previewed output as its albedo.
+		const uint32_t output = next++;
+		surface.nodes.push_back({ output, kOutputNode, 0.0f, 0.0f, {}, {} });
+		if (previewed != 0) {
+			const ParameterType type = subgraph.outputs[previewOutput].type;
+			if (type == ParameterType::Vec2) {
+				const uint32_t widen = next++;
+				surface.nodes.push_back({ widen, "AppendZ", 0.0f, 0.0f, {}, {} });
+				surface.links.push_back({ previewed, "out", widen, "xy" });
+				surface.links.push_back({ widen, "out", output, "albedo" });
+			} else if (type == ParameterType::Vec4) {
+				const uint32_t split = next++;
+				surface.nodes.push_back({ split, "Split", 0.0f, 0.0f, {}, {} });
+				surface.links.push_back({ previewed, "out", split, "in" });
+				surface.links.push_back({ split, "xyz", output, "albedo" });
+			} else {
+				surface.links.push_back({ previewed, "out", output, "albedo" });   // a float is widened
+			}
+		}
+		surface.nextId = next;
+		return surface;
 	}
 
 }

@@ -344,6 +344,10 @@ namespace Crucible::ShaderGraph {
 					if (vertex) { m_moves = output.vertex = true; }   // the Output is in both functions then
 					Reach(SourceOf(output.incoming[pin]), vertex);
 				}
+				// A sub-graph being checked (SubgraphAsSurface): every output counts, previewed or not.
+				for (size_t i = 0; i < m_nodes.size(); ++i) {
+					if (m_nodes[i].type && m_nodes[i].node->settings.count("subgraphOutput") != 0) { Reach(i, false); }
+				}
 			}
 
 			// Marks a node, and everything it reads, as used by one of the two functions.
@@ -806,6 +810,20 @@ namespace Crucible::ShaderGraph {
 	}   // anonymous namespace
 
 	Generated Generate(const Graph& graph, const Options& options) {
+		// A sub-graph: checked, and previewed, as a shader graph of its own (same node ids).
+		if (graph.domain == kSubgraphDomain) {
+			Generated result = Generate(SubgraphAsSurface(graph, options.previewOutput), options);
+			if (const std::string why = SubgraphProblem(graph); !why.empty()) {
+				result.problems.insert(result.problems.begin(), Problem{ 0, {}, why, true });
+				result.ok = false;
+				result.source.clear();
+				result.paramsJson.clear();
+				result.lineNodes.clear();
+				result.liveConstants.clear();
+				result.movesVertices = false;
+			}
+			return result;
+		}
 		Generated result;
 		const Flattened flat = Flatten(graph);
 		Builder(flat, result, options).Run();

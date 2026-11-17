@@ -204,7 +204,7 @@ namespace Crucible {
         if (e == ".behaviorgraph")
             return AssetType::BehaviorGraph;
 
-        if (e == ".shadergraph")
+        if (e == ".shadergraph" || e == ".shadersubgraph")   // a sub-graph opens in the same window (Editor/src/ShaderGraph)
             return AssetType::ShaderGraph;
 
         if (e == ".ttf" || e == ".otf" || e == ".cfont")   // .cfont = compiled by the editor (Text/FontData.h)

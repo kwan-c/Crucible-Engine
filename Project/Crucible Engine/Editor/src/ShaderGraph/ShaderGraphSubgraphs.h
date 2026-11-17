@@ -136,4 +136,22 @@ namespace Crucible::ShaderGraph {
 	/// Expands every Subgraph node of `graph`, sub-graphs inside sub-graphs too (see the file comment).
 	Flattened Flatten(const Graph& graph);
 
+	/// Why a sub-graph cannot be used ("" if it can): what SubgraphEntry::error says for it.
+	std::string SubgraphProblem(const Graph& subgraph);
+
+	/*********************************************************************
+	 \brief  A sub-graph as a shader graph of its own, to check it and to
+	         preview it while it is edited (ShaderGraphGenerator.h does this
+	         for a graph whose domain is "subgraph"). Node ids are kept, so
+	         what the generator says is about the sub-graph's own nodes:
+	           - a number input reads its default; a texture input, a
+	             texture parameter of its own ("_in_<name>": its default);
+	           - each output passes through a node of its declared type that
+	             counts as used (setting "subgraphOutput"), so a problem on
+	             the way to any output stops it;
+	           - output `previewOutput` goes into the Output's albedo (a vec2
+	             with z = 0, a vec4's xyz), if there is one.
+	 *********************************************************************/
+	Graph SubgraphAsSurface(const Graph& subgraph, size_t previewOutput);
+
 }
