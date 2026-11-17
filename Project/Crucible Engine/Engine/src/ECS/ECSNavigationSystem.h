@@ -4,12 +4,13 @@
 *                v1.2: re-bake on request;
 *                v1.3: tagged obstacles; v1.4: rays read only the terrain;
 *                v1.5: terrain read from the generator's grid;
-*                v1.6: baking and debug drawing split out),
+*                v1.6: baking and debug drawing split out;
+*                v1.7: goals and agent movement split out),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -73,6 +74,9 @@
 *    -v1.6       build step 3, part 1: the bake's work is NavBaker (which
 *                owns the ground), the overlay NavDebugDraw; no behaviour
 *                change
+*    -v1.7       build step 3, part 2: the goals and the field's rebuild rule
+*                are NavGoalTracker, the agents' movement NavAgentMover; no
+*                behaviour change
 *
 **************************************************************************/
 #pragma once
@@ -85,9 +89,10 @@
 // Crucible engine
 #include "EngineExport.h"
 #include "Math/Math.h"
-#include "Navigation/AgentSpatialHash.h"
 #include "Navigation/FlowField.h"
+#include "Navigation/NavAgentMover.h"
 #include "Navigation/NavBaker.h"
+#include "Navigation/NavGoalTracker.h"
 #include "Navigation/NavGrid.h"
 #include "Navigation/NavTerrain.h"
 #include "Systems/IECSSystems.h"
@@ -103,13 +108,8 @@ namespace Crucible {
     inline constexpr std::string_view kStaticObstacleTag  = "StaticObstacle";
     inline constexpr std::string_view kDynamicObstacleTag = "DynamicObstacle";
 
-    class ECSPhysicsSystem;
     class ECSSystemManager;
     class PlayMode;
-    struct EntityHit;
-    struct FlowFieldAgent;
-    struct FlowFieldSurface;
-    struct Transform;
 
     // Not exported as a whole class (like ECSPhysicsSystem): only the members
     // the editor calls are ENGINE_API. That keeps the std::vector and NavGrid
@@ -228,22 +228,12 @@ namespace Crucible {
     private:
 
         void CollectGoals(World& world);
-        Entity NearestGoalEntity(const Math::vec3& from) const;
-        void UpdateField(const FlowFieldSurface& surface);
-        void UpdateAgents(World& world);
-        void StandOnGround(Entity self, FlowFieldAgent& agent, Math::vec3& position, float dt) const;
-        bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
-        bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
-                   float distance, EntityHit& hit) const;
 
         static inline ECSNavigationSystem* s_active = nullptr;   // see Active()
 
         const PlayMode&          m_playMode;
-        ECSSystemManager&        m_systems;
-        ECSPhysicsSystem*        m_physics   = nullptr;           // found in m_systems on first use; null = no collision
         PlayState                m_lastState = PlayState::Edit;   // last frame's, to catch Edit -> Playing and back
         bool                     m_bakePending = false;           // Play started; bake once the surface's WorldTransform is worked out
-        float                    m_stepHeight = 0.3f;             // the surface's, from the last bake: where the probe's sweep starts
 
         NavGrid                  m_grid;
         FlowField                m_field;        // flows over m_grid, which it points at: declared after it
@@ -258,36 +248,8 @@ namespace Crucible {
         bool                     m_bakeNextFrame   = false;  // a bake was just asked for: wait a frame so WorldTransforms catch up
         std::uint32_t            m_bakeCount = 0;            // successful bakes so far (BakeCount)
 
-        std::vector<Math::vec3>  m_goals;         // this frame's player positions (reused every frame)
-        std::vector<Entity>      m_goalEntities;  // the same players, same order - for Arrive(nearest player)
-        std::vector<Math::vec3>  m_goalsAtBuild;  // where they were at the last rebuild; empty = rebuild as soon as there is a player
-        bool                     m_warnedParented = false;   // "agents must be roots" said once per session, not every frame
-
-        // One agent for this frame's two-pass update: where to write, plus where
-        // it was and how it moved at the START of the frame (what neighbours see).
-        struct AgentRef {
-
-            Entity          entity;                // so its own collider is ignored by its probes
-            FlowFieldAgent* agent     = nullptr;
-            Transform*      transform = nullptr;
-            Math::vec3      start{ 0.0f };
-            Math::vec3      velocity{ 0.0f };
-
-            // For the crowd: who gives way when two bodies overlap. Copied at the
-            // start of the frame, like start and velocity, so an agent pass 2 has
-            // already handled (and maybe marked arrived) can't change the answer
-            // for the ones after it.
-            float           radius   = 0.0f;
-            int             priority = 50;
-            bool            arrived  = false;
-            bool            dynamic  = false;      // has a dynamic RigidBody: physics moves it, the agent steers its velocity
-            Math::vec3      bodyVelocity{ 0.0f };  // dynamic: the body's own XZ velocity, as physics left it
-
-        };  // AGENTREF STRUCT
-
-        std::vector<AgentRef>    m_agents;        // refilled every frame (memory reused)
-        AgentSpatialHash         m_hash;          // the agents by 8 m square, refilled every frame
-        std::vector<int>         m_neighbours;    // one agent's neighbours, reused for every query
+        NavGoalTracker           m_goals;   // this frame's players, and when the field is rebuilt towards them
+        NavAgentMover            m_mover;   // moves the FlowFieldAgents (owns the probes' physics lookup)
 
     };  // ECSNAVIGATIONSYSTEM CLASS
 
