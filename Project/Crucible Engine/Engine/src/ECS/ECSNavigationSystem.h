@@ -3,12 +3,13 @@
 * \author:       Jean David Vidal Cruzado (main author; design and Unity original;
 *                v1.2: re-bake on request;
 *                v1.3: tagged obstacles; v1.4: rays read only the terrain;
-*                v1.5: terrain read from the generator's grid),
+*                v1.5: terrain read from the generator's grid;
+*                v1.6: baking and debug drawing split out),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -69,6 +70,9 @@
 *                (both stamped at bake until dynamic re-stamping exists).
 *                With a generated terrain the grid is fitted to the terrain's
 *                bounds (m_fittedToTerrain)
+*    -v1.6       build step 3, part 1: the bake's work is NavBaker (which
+*                owns the ground), the overlay NavDebugDraw; no behaviour
+*                change
 *
 **************************************************************************/
 #pragma once
@@ -83,7 +87,7 @@
 #include "Math/Math.h"
 #include "Navigation/AgentSpatialHash.h"
 #include "Navigation/FlowField.h"
-#include "Navigation/TerrainGridNavTerrain.h"
+#include "Navigation/NavBaker.h"
 #include "Navigation/NavGrid.h"
 #include "Navigation/NavTerrain.h"
 #include "Systems/IECSSystems.h"
@@ -231,8 +235,6 @@ namespace Crucible {
         bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
         bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
                    float distance, EntityHit& hit) const;
-        void DrawGrid() const;
-        void DrawArrows() const;
 
         static inline ECSNavigationSystem* s_active = nullptr;   // see Active()
 
@@ -246,21 +248,14 @@ namespace Crucible {
         NavGrid                  m_grid;
         FlowField                m_field;        // flows over m_grid, which it points at: declared after it
 
-        // The ground. m_terrain points at one of the two below, chosen by Bake:
-        // the generated terrain's grid when there is one, else the flat plane
-        // at the surface's height (hand-built scenes).
-        // A pointer so every user asks "the terrain" without caring which.
-        FlatNavTerrain           m_flatTerrain;
-        TerrainGridNavTerrain    m_gridTerrain;
-        const NavTerrain*        m_terrain = &m_flatTerrain;
+        // The bake's work and the ground (m_baker.Terrain(): the generated
+        // terrain's grid when there is one, else the flat plane at the
+        // surface's height). Every user asks it without caring which.
+        NavBaker                 m_baker;
 
-        std::vector<NavObstacle> m_obstacles;        // kept between bakes so a re-bake reuses its memory
+        std::vector<NavObstacle> m_obstacles;        // the tagged obstacles read for a bake; kept so a re-bake reuses its memory
         bool                     m_rebakeRequested = false;  // RequestBake() since the last Update: bake on the next one
         bool                     m_bakeNextFrame   = false;  // a bake was just asked for: wait a frame so WorldTransforms catch up
-        bool                     m_fittedToTerrain = false;  // the last bake covered a generated terrain's bounds, not the surface's scale
-        Math::vec3               m_fittedCentre    = Math::vec3(0.0f);   // that area, for the outline
-        float                    m_fittedWidth     = 0.0f;
-        float                    m_fittedDepth     = 0.0f;
         std::uint32_t            m_bakeCount = 0;            // successful bakes so far (BakeCount)
 
         std::vector<Math::vec3>  m_goals;         // this frame's player positions (reused every frame)

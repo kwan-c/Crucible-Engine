@@ -4,12 +4,13 @@
 *                v1.2: terrain, re-bake on request;
 *                v1.3: tagged obstacles;
 *                v1.4: rays read only the terrain;
-*                v1.5: terrain read from the generator's grid),
+*                v1.5: terrain read from the generator's grid;
+*                v1.6: baking and debug drawing split out),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -60,6 +61,10 @@
 *                generated terrain the grid covers the terrain exactly (its
 *                own bounds; the surface's scale is ignored), in Edit and
 *                Play, and the outline shows that area
+*    -v1.6       Build step 3, part 1 (no behaviour change): the bake's work
+*                moved to Navigation/NavBaker (which also owns the ground) and
+*                the overlay to Navigation/NavDebugDraw. This file still reads
+*                the scene and hands them plain data
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
@@ -75,6 +80,7 @@
 #include "Physics/EntityQueries.h"            // EntityHit, EntityFilter
 #include "Systems/ECSSystemManager.h"         // FindSystem
 #include "Graphics/DebugDraw.h"
+#include "Navigation/NavDebugDraw.h"         // the overlay
 #include "Navigation/NavigationComponents.h"  // FlowFieldSurface
 #include "Physics/PhysicsComponents.h"        // Collider
 #include "Systems/PlayMode.h"
@@ -84,9 +90,6 @@
 namespace Crucible {
 
     namespace {
-
-        // Lines are drawn this far above the ground so the floor doesn't hide them.
-        constexpr float kDrawLift = 0.05f;
 
         // Extra length on a sliding-collision probe (Jean David's skin), so an
         // agent stops just short of a wall instead of touching it - touching
@@ -137,15 +140,6 @@ namespace Crucible {
 
         }   // WorldBounds()
 
-        // The area a FlowFieldSurface covers, read off its entity's world matrix.
-        struct SurfaceArea {
-
-            Math::vec3 centre = Math::vec3(0.0f);
-            float      width  = 0.0f;   // metres along X
-            float      depth  = 0.0f;   // metres along Z
-
-        };  // SURFACEAREA STRUCT
-
         /*!
             \brief
             The position is the centre, and the scale along X and Z is the width
@@ -159,30 +153,12 @@ namespace Crucible {
             ignored: the grid always lines up with the world axes, which is what
             keeps "which cell am I in" a single floor() per axis.
         */
-        SurfaceArea AreaOf(const Math::mat4& world) {
+        NavArea AreaOf(const Math::mat4& world) {
 
             return { Math::vec3(world[3]), glm::length(Math::vec3(world[0])), glm::length(Math::vec3(world[2])) };
 
         }   // AreaOf()
 
-        // The surface's edge as a bright cyan rectangle at its own height, on top.
-        void DrawOutline(const SurfaceArea& area) {
-
-            const DebugStyle outline{ .color = { 0.4f, 0.95f, 1.0f, 1.0f }, .depthTest = false, .category = DebugCategory::NavGrid };
-
-            const float      y = area.centre.y + kDrawLift;
-            const float      w = area.width * 0.5f;
-            const float      d = area.depth * 0.5f;
-            const Math::vec3 a(area.centre.x - w, y, area.centre.z - d);
-            const Math::vec3 b(area.centre.x + w, y, area.centre.z - d);
-            const Math::vec3 c(area.centre.x + w, y, area.centre.z + d);
-            const Math::vec3 e(area.centre.x - w, y, area.centre.z + d);
-            DebugDraw::Line(a, b, outline);
-            DebugDraw::Line(b, c, outline);
-            DebugDraw::Line(c, e, outline);
-            DebugDraw::Line(e, a, outline);
-
-        }   // DrawOutline()
 
         // Unity's Vector3.ClampMagnitude: the same direction, but no longer than max.
         Math::vec3 ClampMagnitude(const Math::vec3& v, float max) {
@@ -311,7 +287,7 @@ namespace Crucible {
     bool ECSNavigationSystem::IsWalkable(const Math::vec3& position) const {
 
         // IsBlockedWorld already says "blocked" while unbaked, so no separate check.
-        return !m_grid.IsBlockedWorld(position) && !m_terrain->IsWall(position);
+        return !m_grid.IsBlockedWorld(position) && !m_baker.Terrain().IsWall(position);
 
     }   // ECSNavigationSystem::IsWalkable()
 
@@ -330,7 +306,7 @@ namespace Crucible {
         for (int i = 0; i <= steps; ++i) {
 
             const Math::vec3 sample = from + delta * (static_cast<float>(i) / static_cast<float>(steps));
-            if (m_terrain->IsWall(sample)) return false;
+            if (m_baker.Terrain().IsWall(sample)) return false;
             if (m_grid.IsBlockedWorld(sample)) {
                 if (!leavingBlockedStart) return false;
             } else {
@@ -463,8 +439,8 @@ namespace Crucible {
                 surface    = found;
                 // Fitted to a terrain, the grid covers the terrain, not the
                 // surface's scale: outline what was really baked.
-                if (m_fittedToTerrain && m_grid.IsBaked()) DrawOutline({ m_fittedCentre, m_fittedWidth, m_fittedDepth });
-                else                                       DrawOutline(AreaOf(transform.matrix));
+                if (m_baker.FittedToTerrain() && m_grid.IsBaked()) NavDebugDraw::Outline(m_baker.BakedArea());
+                else                                               NavDebugDraw::Outline(AreaOf(transform.matrix));
             });
 
         // No surface any more (removed, switched off, or a scene without one):
@@ -472,7 +448,7 @@ namespace Crucible {
         if (!hasSurface) {
             m_field.Clear();     // first: it points at the grid being reset
             m_grid = NavGrid{};
-            m_fittedToTerrain = false;
+            m_baker.Clear();
             m_goalsAtBuild.clear();
         }
 
@@ -487,8 +463,8 @@ namespace Crucible {
 
         // Skipped outright when nothing would show them (Gizmos off, or their
         // category off): on a 500 m map the loops visit 62,500 cells a frame.
-        if (m_grid.IsBaked()  && DebugDraw::ShouldDraw(DebugCategory::NavGrid))   DrawGrid();
-        if (m_field.HasFlow() && DebugDraw::ShouldDraw(DebugCategory::FlowField)) DrawArrows();
+        if (m_grid.IsBaked()  && NavDebugDraw::WantsGrid())   NavDebugDraw::Grid(m_grid, m_baker.Terrain());
+        if (m_field.HasFlow() && NavDebugDraw::WantsArrows()) NavDebugDraw::Arrows(m_grid, m_field, m_baker.Terrain());
 
     }   // ECSNavigationSystem::Update()
 
@@ -1150,23 +1126,27 @@ namespace Crucible {
 
         // Nothing under it: the flat plane, as before, or leave it be.
         agent.m_fallSpeed = 0.0f;
-        if (m_grid.IsBaked()) position.y = m_terrain->GroundHeight(position) + agent.m_baseOffset;
+        if (m_grid.IsBaked()) position.y = m_baker.Terrain().GroundHeight(position) + agent.m_baseOffset;
 
     }   // ECSNavigationSystem::StandOnGround()
 
     bool ECSNavigationSystem::Bake(World& world) {
 
+        // This reads the scene into plain data; NavBaker does the work.
+
         // 1. The surface: its settings, and its entity's position and scale as
-        // the area it covers.
-        FlowFieldSurface surface;
-        SurfaceArea      area;
-        int              surfaces = 0;
+        // the area it covers (used when there is no generated terrain).
+        NavBakeInput input;
+        int          surfaces = 0;
         world.CreateQuery<const FlowFieldSurface, const WorldTransform>()
             .ForEach([&](Entity, const FlowFieldSurface& found, const WorldTransform& transform) {
-                if (surfaces++ == 0) {
-                    surface = found;
-                    area    = AreaOf(transform.matrix);
-                }
+                if (surfaces++ != 0) return;
+                input.surfaceArea       = AreaOf(transform.matrix);
+                input.cellSize          = found.m_cellSize;
+                input.bodyRadiusPadding = found.m_bodyRadiusPadding;
+                input.stepHeight        = found.m_stepHeight;
+                input.shoulderHeight    = found.m_shoulderHeight;
+                input.wallAdjacencyCost = found.m_wallAdjacencyCost;
             });
 
         // Any bake, good or bad, makes the old flow meaningless: the next
@@ -1182,63 +1162,24 @@ namespace Crucible {
         if (surfaces > 1) {
             CRU_WARN("Navigation: {} FlowFieldSurfaces in the scene - only the first one is used", surfaces);
         }
+        m_stepHeight = input.stepHeight;   // the agents' probes sweep the same height band the bake uses
 
-        // The generated terrain, if there is one (step 3 reads its ground).
-        // Not generated yet: nothing to stand on, so it doesn't count.
-        std::shared_ptr<const TerrainGrid> terrainGrid;
-        Math::mat4 terrainMatrix(1.0f);
+        // 2. The generated terrain, if there is one. Not generated yet: nothing
+        // to stand on, so it doesn't count.
         int terrains = 0;
         world.CreateQuery<const Terrain, const WorldTransform>()
             .ForEach([&](Entity, const Terrain& terrain, const WorldTransform& transform) {
                 if (!terrain.m_grid || !terrain.m_grid->IsValid() || !transform.valid) return;
-                if (terrains++ == 0) { terrainGrid = terrain.m_grid; terrainMatrix = transform.matrix; }
+                if (terrains++ == 0) { input.terrainGrid = terrain.m_grid; input.terrainMatrix = transform.matrix; }
             });
         if (terrains > 1) CRU_WARN("Navigation: {} generated terrains in the scene - only the first one is used", terrains);
 
-        // With a terrain, the grid covers exactly the terrain: its own corners,
-        // in world space, whatever the map size - so the surface's scale can't
-        // be wrong, in Edit mode or Play. The surface still gives the settings.
-        m_fittedToTerrain = terrainGrid != nullptr;
-        if (m_fittedToTerrain) {
-            const HeightGrid& heights = terrainGrid->heights;
-            const float x0 = heights.MinX(), x1 = heights.MinX() + heights.Width();
-            const float z0 = heights.MinZ(), z1 = heights.MinZ() + heights.Depth();
-            Math::vec3 low(1e30f), high(-1e30f);
-            for (const Math::vec3& corner : { Math::vec3(x0, 0.0f, z0), Math::vec3(x1, 0.0f, z0),
-                                              Math::vec3(x0, 0.0f, z1), Math::vec3(x1, 0.0f, z1) }) {
-                const Math::vec3 point(terrainMatrix * Math::vec4(corner, 1.0f));
-                low  = glm::min(low, point);
-                high = glm::max(high, point);
-            }
-            area.centre = Math::vec3((low.x + high.x) * 0.5f, terrainMatrix[3].y, (low.z + high.z) * 0.5f);
-            area.width  = high.x - low.x;
-            area.depth  = high.z - low.z;
-            m_fittedCentre = area.centre;
-            m_fittedWidth  = area.width;
-            m_fittedDepth  = area.depth;
-        }
-
-        // A freshly added surface sits on an entity of scale 1: a 1 x 1 m grid.
-        // It still bakes (one cell is a valid grid), but say what to do about it.
-        if (!m_fittedToTerrain && (area.width < surface.m_cellSize * 2.0f || area.depth < surface.m_cellSize * 2.0f)) {
-            CRU_WARN("Navigation: the surface only covers {} x {} m - scale its entity so X and Z cover the level (scale = metres)",
-                     area.width, area.depth);
-        }
-
-        // The flat plane at the surface's own height is the fallback ground -
-        // so a designer sits the surface on the floor, the way Unity's
-        // NavMeshSurface sits in the level. World y = 0 would be wrong for any
-        // floor that isn't exactly there.
-        m_flatTerrain = FlatNavTerrain(area.centre.y);
-        m_terrain     = &m_flatTerrain;
-        m_stepHeight  = surface.m_stepHeight;   // the agents' probes sweep the same height band the bake uses
-
-        // 2. The obstacles: the colliders of entities tagged StaticObstacle or
+        // 3. The obstacles: the colliders of entities tagged StaticObstacle or
         // DynamicObstacle - the designer's call, as in Unity's NavGrid, not a
         // guess from the layer and RigidBody. Triggers block nothing in
         // physics, so not here either. Untagged colliders are invisible to
         // navigation (Unity's rule). The terrain (a HeightField collider) is
-        // ground, never an obstacle: step 3 reads it from its own grid.
+        // ground, never an obstacle.
         m_obstacles.clear();
         world.CreateQuery<const Collider, const WorldTransform>()
             .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
@@ -1247,138 +1188,12 @@ namespace Crucible {
                     m_obstacles.push_back(WorldBounds(collider, transform.matrix));
             });
 
-        NavGridSettings settings;
-        settings.origin            = area.centre;
-        settings.width             = area.width;
-        settings.depth             = area.depth;
-        settings.cellSize          = surface.m_cellSize;
-        settings.bodyRadiusPadding = surface.m_bodyRadiusPadding;
-        settings.stepHeight        = surface.m_stepHeight;
-        settings.shoulderHeight    = surface.m_shoulderHeight;
-
-        // 3. The ground: the generated terrain's own grid, the hand-off Unity's
-        // generator made through NavTerrain.Register (F2). Its heights are the
-        // exact triangles of the mesh and collider, and a nav cell is a wall
-        // when the generator cell under its centre is a Cliff - one definition
-        // of a cliff for the generator, its colours, the player and enemies.
-        // Read from the component, so it works in Edit mode as soon as the
-        // terrain is generated (found in step 1). No terrain: the flat plane set above.
-        if (m_gridTerrain.Reset(terrainGrid, terrainMatrix, area.centre.y)) m_terrain = &m_gridTerrain;
-        else                                                               m_gridTerrain.Clear();
-        CRU_INFO("Navigation: ground is {}; {:.0f} x {:.0f} m; {} tagged obstacle(s) baked",
-                 m_terrain == &m_gridTerrain ? "the generated terrain (grid fitted to it)" : "flat",
-                 area.width, area.depth, m_obstacles.size());
-
-        // 4. The bake itself. NavGrid logs the result, or why it failed. Then
-        // the flow field's cost field, which depends on nothing but the grid,
-        // so it is built once here rather than on every rebuild.
-        if (!m_grid.Bake(settings, m_obstacles, *m_terrain)) {
-            m_field.Clear();
-            return false;
-        }
-        m_field.BuildCostField(m_grid, surface.m_wallAdjacencyCost);
+        // 4. The bake: area (fitted to the terrain if there is one), ground,
+        // grid and the flow field's cost field.
+        if (!m_baker.Bake(input, m_obstacles, m_grid, m_field)) return false;
         ++m_bakeCount;
         return true;
 
     }   // ECSNavigationSystem::Bake()
-
-    /*!
-        \brief
-        The baked grid: its cell lines in blue (not grey, which the editor's
-        own world grid already uses), and each blocked cell as a red square,
-        just above the ground. The outline is drawn separately, live, by
-        Update.
-
-        \details
-        Drawn on top of everything (depthTest off), like Unity's NavMesh
-        overlay: a floor slightly higher than the surface, or the obstacles
-        themselves, would otherwise hide the very cells the designer wants to
-        check.
-    */
-    void ECSNavigationSystem::DrawGrid() const {
-
-        // Gizmos > Nav grid toggles all of this (and the outline).
-        const DebugStyle cells  { .color = { 0.15f, 0.4f, 0.95f, 1.0f }, .depthTest = false, .category = DebugCategory::NavGrid };
-        const DebugStyle blocked{ .color = { 1.0f, 0.25f, 0.2f, 1.0f },  .depthTest = false, .category = DebugCategory::NavGrid };
-
-        const float cellSize = m_grid.CellSize();
-        const float half     = cellSize * 0.5f;
-
-        // The grid's corners: from the first cell's outer corner to the last cell's.
-        const Math::vec3 first = m_grid.CellToWorldCenter({ 0, 0 });
-        const Math::vec3 last  = m_grid.CellToWorldCenter({ m_grid.Cols() - 1, m_grid.Rows() - 1 });
-        const float      y     = m_terrain->GroundHeight(first) + kDrawLift;
-        const float      minX  = first.x - half;
-        const float      maxX  = last.x + half;
-        const float      minZ  = first.z - half;
-        const float      maxZ  = last.z + half;
-
-        // Cell lines: one long line per column edge and per row edge, not four
-        // per cell - 250 x 250 cells is 502 lines this way instead of 250,000.
-        for (int col = 1; col < m_grid.Cols(); ++col) {
-            const float x = minX + static_cast<float>(col) * cellSize;
-            DebugDraw::Line({ x, y, minZ }, { x, y, maxZ }, cells);
-        }
-        for (int row = 1; row < m_grid.Rows(); ++row) {
-            const float z = minZ + static_cast<float>(row) * cellSize;
-            DebugDraw::Line({ minX, y, z }, { maxX, y, z }, cells);
-        }
-
-        // Blocked cells, drawn a little smaller than the cell (80%) so a row of
-        // them reads as separate tiles rather than one solid smear.
-        const float inset = cellSize * 0.4f;
-        for (int row = 0; row < m_grid.Rows(); ++row) {
-            for (int col = 0; col < m_grid.Cols(); ++col) {
-
-                if (!m_grid.IsBlocked({ col, row })) continue;
-
-                Math::vec3 centre = m_grid.CellToWorldCenter({ col, row });
-                centre.y = m_terrain->GroundHeight(centre) + kDrawLift;
-                const Math::vec3 p0(centre.x - inset, centre.y, centre.z - inset);
-                const Math::vec3 p1(centre.x + inset, centre.y, centre.z - inset);
-                const Math::vec3 p2(centre.x + inset, centre.y, centre.z + inset);
-                const Math::vec3 p3(centre.x - inset, centre.y, centre.z + inset);
-                DebugDraw::Line(p0, p1, blocked);
-                DebugDraw::Line(p1, p2, blocked);
-                DebugDraw::Line(p2, p3, blocked);
-                DebugDraw::Line(p3, p0, blocked);
-
-            }
-        }
-
-    }   // ECSNavigationSystem::DrawGrid()
-
-    /*!
-        \brief
-        One yellow arrow per cell that has a direction, centred on the cell
-        and pointing the way an enemy standing there would go.
-
-        \details
-        Only the flooded cells have one, so the arrows also show the flood
-        radius: a circle round the player, with nothing beyond it. Drawn a
-        little higher than the grid lines so they sit on top of them.
-    */
-    void ECSNavigationSystem::DrawArrows() const {
-
-        // Gizmos > Flow field arrows toggles these.
-        const DebugStyle arrow{ .color = { 1.0f, 0.85f, 0.2f, 1.0f }, .depthTest = false, .category = DebugCategory::FlowField };
-
-        // Each arrow spans 70% of a cell, so neighbouring arrows never touch.
-        const float halfLength = m_grid.CellSize() * 0.35f;
-
-        for (int row = 0; row < m_grid.Rows(); ++row) {
-            for (int col = 0; col < m_grid.Cols(); ++col) {
-
-                const Math::vec3 direction = m_field.DirectionAt({ col, row });
-                if (direction.x == 0.0f && direction.z == 0.0f) continue;
-
-                Math::vec3 centre = m_grid.CellToWorldCenter({ col, row });
-                centre.y = m_terrain->GroundHeight(centre) + kDrawLift * 2.0f;
-                DebugDraw::Arrow(centre - direction * halfLength, centre + direction * halfLength, arrow);
-
-            }
-        }
-
-    }   // ECSNavigationSystem::DrawArrows()
 
 }   // NAMESPACE CRUCIBLE
