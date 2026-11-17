@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         The multiplayer session for scripts: who am I, who else is
 *                here, and how a client asks the host to do something.
 *                Part of Crucible.ScriptCore.dll.
@@ -83,6 +83,7 @@
 *                SendCommand (Networking C# Phase 2)
 *    -v1.1       SendEvent (Networking C# Phase 5A); Spawn and Despawn
 *                (Networking C# Phase 3)
+*    -v1.2       SendEventExcept, SendEventUnreliable (Networking C# Phase 5B)
 *
 **************************************************************************/
 using System.Runtime.CompilerServices;
@@ -102,6 +103,8 @@ namespace Crucible
         public const int MaxEventBytes = NetWriter.MaxBytes;
         /// <summary>SendEvent's toPeer for "every machine".</summary>
         public const int Everyone = -1;
+        /// <summary>The largest payload SendEventUnreliable accepts, in bytes (one packet).</summary>
+        public const int MaxUnreliableEventBytes = 1000;
 
         // Must match NetworkBindings.cpp.
         private const int RoleOffline = 0, RoleHost = 1, RoleClient = 2;
@@ -294,6 +297,45 @@ namespace Crucible
         /// </returns>
         public static bool SendEvent(ushort kind, NetWriter data = null, Entity target = null, int toPeer = Everyone)
         {
+            return SendEventCore("SendEvent", kind, data, target, toPeer, -1, false);
+        }
+
+        /// <summary>
+        /// SendEvent to every machine except one player's - usually the player who caused it
+        /// and has already shown the effect itself. <paramref name="exceptPeer"/> may be 0:
+        /// then the host's own scripts are the ones left out.
+        /// </summary>
+        public static bool SendEventExcept(int exceptPeer, ushort kind, NetWriter data = null, Entity target = null)
+        {
+            if (exceptPeer < 0 || exceptPeer >= MaxPlayers)
+            {
+                Log.Error("Network.SendEventExcept(" + kind + "): " + exceptPeer + " is not a PeerId");
+                return false;
+            }
+            return SendEventCore("SendEventExcept", kind, data, target, Everyone, exceptPeer, false);
+        }
+
+        /// <summary>
+        /// SendEvent to every machine, but sent once with no guarantee: it may be lost, and it
+        /// may arrive before a reliable event or a spawn sent earlier. Cheaper and never
+        /// delays anything else - for frequent effects where a missed one does not matter
+        /// (footsteps, sparks). Never for anything the game depends on, and not about an
+        /// object spawned this frame. At most MaxUnreliableEventBytes of data.
+        /// </summary>
+        public static bool SendEventUnreliable(ushort kind, NetWriter data = null, Entity target = null)
+        {
+            if (data != null && data.Length > MaxUnreliableEventBytes)
+            {
+                Log.Error("Network.SendEventUnreliable(" + kind + "): " + data.Length + " bytes; an unreliable event carries at most " +
+                          MaxUnreliableEventBytes);
+                return false;
+            }
+            return SendEventCore("SendEventUnreliable", kind, data, target, Everyone, -1, true);
+        }
+
+        private static bool SendEventCore(string call, ushort kind, NetWriter data, Entity target, int toPeer, int exceptPeer,
+                                          bool unreliable)
+        {
             if (kind == 0)
             {
                 Log.Error("Network.SendEvent: kind 0 is reserved - number your events from 1");
@@ -306,8 +348,8 @@ namespace Crucible
             }
             bool hasTarget = !ReferenceEquals(target, null);
             int result = SendEventInternal(kind, data != null ? data.Buffer : null, data != null ? data.Length : 0, toPeer,
-                                           hasTarget ? 1 : 0, hasTarget ? (int)target.Index : 0,
-                                           hasTarget ? (int)target.Generation : 0);
+                                           exceptPeer, unreliable ? 1 : 0, hasTarget ? 1 : 0,
+                                           hasTarget ? (int)target.Index : 0, hasTarget ? (int)target.Generation : 0);
             switch (result)
             {
                 case SendOk:
@@ -445,8 +487,8 @@ namespace Crucible
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern byte[] GetEventPayloadInternal(int serial);
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int SendEventInternal(int kind, byte[] data, int length, int toPeer, int hasTarget,
-                                                    int targetIndex, int targetGeneration);
+        private static extern int SendEventInternal(int kind, byte[] data, int length, int toPeer, int exceptPeer,
+                                                    int unreliable, int hasTarget, int targetIndex, int targetGeneration);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SpawnInternal(int idLow, int idHigh, ref Vector3 position, ref Quaternion rotation, int owner,
                                                 out int index, out int generation);

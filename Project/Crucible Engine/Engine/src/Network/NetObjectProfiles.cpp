@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NetworkObjectAuthoring -> NetPrefabDesc, and network prefab
 *                discovery (see the header).
@@ -11,6 +11,8 @@
 * \history
 *    -v1.0       Networking Phase 14.2
 *    -v1.1       AuthoringOptions, CheckAuthoring (Networking Phase 14.3)
+*    -v1.2       NetVariables offered although the object has none in the editor
+*                (Networking C# Phase 4)
 *
 **************************************************************************/
 #include "Network/NetObjectProfiles.h"
@@ -153,7 +155,8 @@ namespace Crucible
 		bool IsNetworkRuntime(ComponentId id)
 		{
 			return id == ComponentTypeId<NetworkIdentity>() || id == ComponentTypeId<NetInterpolation>()
-				|| id == ComponentTypeId<PlayerInput>() || id == ComponentTypeId<NetworkObjectAuthoring>();
+				|| id == ComponentTypeId<PlayerInput>() || id == ComponentTypeId<NetworkObjectAuthoring>()
+				|| id == ComponentTypeId<NetVariables>();
 		}
 	}
 
@@ -183,6 +186,19 @@ namespace Crucible
 			if (option.serializers.empty() && !option.toggleable) continue;
 			out.push_back(std::move(option));
 		}
+		// Components the network layer adds itself while a session runs (NetVariables): the object
+		// never has one in the editor, but whether it replicates them is still its choice.
+		serializers.ForEach([&](const ReplicatedComponent& s) {
+			if (!s.addedAtRuntime || !components.IsRegistered(s.local)) return;
+			AuthoringComponentOption option;
+			option.name = std::string(components.Get(s.local).name);
+			option.onRoot = true;
+			option.toggleable = false;
+			option.serializers.push_back(s.name);
+			option.noPolicy = "the network adds this one itself on every machine";
+			option.noEnabledSync = option.noPolicy;
+			out.push_back(std::move(option));
+		});
 		return out;
 	}
 
@@ -207,7 +223,7 @@ namespace Crucible
 		for (const NetComponentId sid : desc.replicated)
 		{
 			const ReplicatedComponent* s = serializers.Find(sid);
-			if (s != nullptr && s->local != kInvalidComponentId && !Has(world, root, s->local))
+			if (s != nullptr && s->local != kInvalidComponentId && !s->addedAtRuntime && !Has(world, root, s->local))
 				problems.push_back(std::format("replicated: '{}' needs a {} on this entity", s->name, components.Get(s->local).name));
 		}
 		const auto check = [&](const std::vector<ComponentId>& ids, const char* field, bool rootOnly) {

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.13
+* \version       1.14
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -202,6 +202,8 @@
 *    -v1.13      gameplay events may name a target object (Networking C#
 *                Phase 5A); BeginSpawn: a spawn performed at once by the
 *                caller (Networking C# Phase 3)
+*    -v1.14      gameplay events: everyone except one peer; SendUnreliableEvent
+*                (Networking C# Phase 5B)
 *
 **************************************************************************/
 #pragma once
@@ -327,6 +329,7 @@ namespace Crucible
 		std::uint16_t          kind = 0;
 		std::vector<std::byte> payload;
 		Net::NetworkId         target = Net::kInvalidNetworkId;   // the object it is about, or none
+		Net::PeerId            except = Net::kInvalidPeer;        // with kEveryone: the one player left out
 	};
 
 	/// Client: where it is in the host's lifecycle stream.
@@ -622,8 +625,18 @@ namespace Crucible
 		/// about: the network object the event concerns, or kInvalidNetworkId. On a host it must
 		/// be one the session has now (else refused); a client that no longer has it when the
 		/// event arrives drops the event (counted).
+		/// except: one peer (0 = the host itself) who does not get it, or kInvalidPeer.
 		bool SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to = kEveryone,
-			Net::NetworkId about = Net::kInvalidNetworkId);
+			Net::NetworkId about = Net::kInvalidNetworkId, Net::PeerId except = Net::kInvalidPeer);
+
+		/// Host or offline: the same event, but sent to every client in the game ONCE, unreliably,
+		/// right now (lane 1, no lifecycle number): it may be lost, and it may overtake a reliable
+		/// message sent earlier - so it must not be about an object spawned this frame, and nothing
+		/// may depend on it arriving. For frequent effects (footsteps, hit sparks) where a lost one
+		/// does not matter. The host (and offline, the only receiver) gets it locally like any
+		/// other. payload: at most kMaxUnreliableEventPayload bytes. False as SendGameplayEvent.
+		bool SendUnreliableEvent(std::uint16_t kind, std::span<const std::byte> payload,
+			Net::NetworkId about = Net::kInvalidNetworkId, Net::PeerId except = Net::kInvalidPeer);
 
 		/// The send system: this frame's events for clients (moved into `out`, in send order).
 		void TakeGameplayEvents(std::vector<QueuedGameplayEvent>& out);

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.11
+* \version       1.12
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -32,6 +32,8 @@
 *    -v1.10      PeerRoster applied through the session (Networking C# Phase 1)
 *    -v1.11      PerformSpawn (shared with the script bindings); a
 *                GameplayEvent's target is passed on
+*    -v1.12      NetVariables ensured on spawned, adopted and bound objects (Networking C#
+*                Phase 4); UnreliableEvent delivered (Phase 5B)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -162,6 +164,7 @@ namespace Crucible
 			}
 			// The host simulates everything, but a player's camera rig belongs to whoever plays it.
 			if (spawn.owner != session.LocalPeer()) SetComponentsEnabled(world, root, desc->ownerLocalOnly, false, scratch);
+			content.Serializers().EnsureRuntimeComponents(world, root, ReplicationContext{ .desc = desc });   // NetVariables
 
 			world.AddComponent(root, NetworkIdentity{ .id = spawn.id, .prefab = spawn.prefab, .owner = spawn.owner });
 			if (!(session.Entities().Find(spawn.id) == root)) throw std::runtime_error("its NetworkIdentity was rejected");
@@ -276,6 +279,17 @@ namespace Crucible
 			m_session.MarkLifecycleApplied(roster.lifecycleSeq);
 			return true;
 		}
+		case MessageType::UnreliableEvent:
+		{
+			// Unreliable (lane 1), like a snapshot: a bad or early one is dropped, never fatal.
+			UnreliableEventView event;
+			if (state != ClientWorld::Ready) { ++m_session.MutableStats().unexpected; return true; }
+			if (!Decode(reader, event)) { ++m_session.MutableStats().malformed; return true; }
+			const std::uint64_t before = m_session.Stats().gameplayEventsReceived;
+			m_session.DeliverGameplayEvent(event.kind, event.payload, event.target);   // drops one about an unknown object
+			if (m_session.Stats().gameplayEventsReceived != before) ++m_session.MutableStats().unreliableEventsReceived;
+			return true;
+		}
 		case MessageType::Snapshot:
 			// Unreliable (lane 1): a bad one is dropped, never fatal. The host sends them only once
 			// ClientReady was accepted, so one before the world is complete is merely early.
@@ -356,6 +370,7 @@ namespace Crucible
 
 			std::string error;
 			const ReplicationContext context{ .desc = desc, .tick = tick };
+			m_content.Serializers().EnsureRuntimeComponents(world, root, context);   // NetVariables: the record fills it
 			if (!m_content.Serializers().ApplyRecord(world, root, spawn.mask, spawn.state, context, &error))
 				throw std::runtime_error("initial state: " + error);
 
@@ -437,6 +452,7 @@ namespace Crucible
 			if (m_session.IsServer())
 			{
 				const Net::NetworkId id = m_session.AdoptSceneObject(object.sceneId);
+				m_content.Serializers().EnsureRuntimeComponents(world, object.entity, ReplicationContext{ .desc = desc });   // NetVariables
 				world.AddComponent(object.entity, NetworkIdentity{ .id = id, .prefab = object.profile, .owner = Net::kServerPeer });
 				if (!(m_session.Entities().Find(id) == object.entity)) CRU_ERROR("[Net] scene object {:016X} could not be adopted", object.sceneId);
 			}
@@ -510,6 +526,7 @@ namespace Crucible
 			LocalSceneObject& local = m_localSceneObjects[o.sceneId];
 			const NetPrefabDesc* desc = m_content.Prefabs().Desc(o.profile);
 			std::string error;
+			m_content.Serializers().EnsureRuntimeComponents(world, local.entity, ReplicationContext{ .desc = desc });   // NetVariables
 			if (!m_content.Serializers().ApplyRecord(world, local.entity, o.mask, o.state, ReplicationContext{ .desc = desc, .tick = m_sceneBatch.serverTick }, &error))
 			{
 				Leave(CloseReason::SpawnFailed, std::format("scene object {:016X} (id {}): initial state: {}", o.sceneId, o.id, error));

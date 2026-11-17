@@ -213,10 +213,19 @@ namespace Crucible
         /// data.Ok before using what you read.
         /// </summary>
         public virtual void OnNetworkEvent(ushort kind, NetReader data) {}
+        /// <summary>
+        /// One of THIS entity's network variables (Entity.NetVars) has a new value: on a client
+        /// because the host changed it, on the authority because a script set it. Called once
+        /// per changed slot, the frame after the change - the place to update a health bar.
+        /// A script that starts later is not told about earlier changes: read the values in
+        /// OnCreate too.
+        /// </summary>
+        public virtual void OnNetVarChanged(int slot) {}
 
         /// <summary>
         /// Called by the engine (ScriptRuntime::DispatchNetworkEvent) with plain values.
-        /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command, 6 event
+        /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command, 6 event,
+        /// 7 variable changed
         /// (ScriptNetEvent::Kind in Bindings/NetworkContext.h - keep the two in step).
         /// </summary>
         internal void DispatchNetworkEvent(int kind, int peer, int code, int serial, string text)
@@ -241,6 +250,7 @@ namespace Crucible
                     OnNetworkEvent(unchecked((ushort)code), new NetReader(payload, payload.Length));
                     break;
                 }
+                case 7: OnNetVarChanged(code); break;
             }
         }
 

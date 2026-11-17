@@ -206,6 +206,7 @@ namespace Crucible
 			for (const PeerState& peer : m_session.Peers())
 			{
 				if (!peer.IsJoined() || (event.to != NetworkSession::kEveryone && event.to != peer.peer)) continue;
+				if (peer.peer == event.except) continue;
 				if (std::ranges::find(m_incremental, peer.peer) == m_incremental.end())
 				{
 					++m_session.MutableStats().gameplayEventsSkipped;

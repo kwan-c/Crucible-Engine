@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.15
+* \version       1.16
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -41,6 +41,7 @@
 *    -v1.14      the roster (RefreshRoster, BroadcastRoster,
 *                ApplyPeerRoster) and commands (SendCommand, HandleCommand)
 *    -v1.15      gameplay events with a target; BeginSpawn
+*    -v1.16      events to everyone except one peer; SendUnreliableEvent
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -992,7 +993,8 @@ namespace Crucible
 
 	// ---- gameplay events ------------------------------------------------------------------------
 
-	bool NetworkSession::SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to, Net::NetworkId about)
+	bool NetworkSession::SendGameplayEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::PeerId to, Net::NetworkId about,
+		Net::PeerId except)
 	{
 		const char* refusal = nullptr;
 		if (kind == 0) refusal = "kind 0 is reserved";
@@ -1000,6 +1002,7 @@ namespace Crucible
 		else if (IsClient()) refusal = "only the host sends gameplay events";
 		else if (IsServer() && m_state != SessionState::Running) refusal = "the session is stopping";
 		else if (to != kEveryone && to > Net::kMaxClients) refusal = "the target is not a peer";
+		else if (except != Net::kInvalidPeer && except > Net::kMaxClients) refusal = "the excepted peer is not a peer";
 		else if (about != Net::kInvalidNetworkId && !m_entities.Contains(about)) refusal = "it is about a network object that does not exist";
 		else if (IsServer() && m_gameplayEvents.size() >= kMaxQueuedGameplayEvents) refusal = "too many events this frame";
 		if (refusal != nullptr)
@@ -1010,11 +1013,11 @@ namespace Crucible
 		}
 
 		// The host, and an offline game, hear their own events: one listener serves every role.
-		if (to == kEveryone || to == Net::kServerPeer || !IsServer())
+		if (except != Net::kServerPeer && (to == kEveryone || to == Net::kServerPeer || !IsServer()))
 			Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = true, .target = about });
-		if (IsServer() && to != Net::kServerPeer)
+		if (IsServer() && to != Net::kServerPeer && (to == kEveryone || to != except))   // kEveryone and "no exception" are the same value
 		{
-			m_gameplayEvents.push_back(QueuedGameplayEvent{ .to = to, .kind = kind, .payload = { payload.begin(), payload.end() }, .target = about });
+			m_gameplayEvents.push_back(QueuedGameplayEvent{ .to = to, .kind = kind, .payload = { payload.begin(), payload.end() }, .target = about, .except = except });
 			++m_stats.gameplayEventsQueued;
 		}
 		return true;
@@ -1165,6 +1168,43 @@ namespace Crucible
 		++m_nextCommandSequence;
 		++m_stats.commandMessagesSent;
 		CountBytes(m_stats.bytesSentByType, writer.Written());
+		return true;
+	}
+
+	bool NetworkSession::SendUnreliableEvent(std::uint16_t kind, std::span<const std::byte> payload, Net::NetworkId about, Net::PeerId except)
+	{
+		const char* refusal = nullptr;
+		if (kind == 0) refusal = "kind 0 is reserved";
+		else if (payload.size() > kMaxUnreliableEventPayload) refusal = "the payload is too large for an unreliable event";
+		else if (IsClient()) refusal = "only the host sends gameplay events";
+		else if (IsServer() && m_state != SessionState::Running) refusal = "the session is stopping";
+		else if (except != Net::kInvalidPeer && except > Net::kMaxClients) refusal = "the excepted peer is not a peer";
+		else if (about != Net::kInvalidNetworkId && !m_entities.Contains(about)) refusal = "it is about a network object that does not exist";
+		if (refusal != nullptr)
+		{
+			++m_stats.gameplayEventsRefused;
+			CRU_ERROR("[Net] SendUnreliableEvent(kind {}, {} bytes): {}", kind, payload.size(), refusal);
+			return false;
+		}
+
+		if (except != Net::kServerPeer)
+			Post(NetworkEvents::GameplayEventReceived{ .kind = kind, .payload = { payload.begin(), payload.end() }, .local = true, .target = about });
+		if (!IsServer() || m_transport == nullptr) return true;
+
+		// Straight to GNS, now: nothing is queued and nothing is retried.
+		std::array<std::byte, kMaxSnapshotBytes> buffer;
+		ByteWriter writer(buffer);
+		if (!Encode(writer, UnreliableEventView{ .kind = kind, .target = about, .payload = payload })) return false;
+		for (const PeerState& peer : m_peers)
+		{
+			if (peer.phase != PeerState::Phase::InGame || peer.peer == except) continue;
+			if (m_transport->Send(peer.connection, writer.Written(), Delivery::Unreliable, Lane::Snapshot) == SendResult::Ok)
+			{
+				++m_stats.unreliableEventsSent;
+				CountBytes(m_stats.bytesSentByType, writer.Written());
+			}
+			else ++m_stats.unreliableEventsNotSent;
+		}
 		return true;
 	}
 

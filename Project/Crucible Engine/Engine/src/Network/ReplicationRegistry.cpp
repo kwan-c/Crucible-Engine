@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                ReplicationRegistry and the built-in serializers (see the
 *                header).
@@ -13,6 +13,7 @@
 *                fixes: maxBytes limited to one record, bounded Write;
 *                decode/commit, bounded readers, owned names; records
 *                applied as transactions with rollback
+*    -v1.1       the NetVariables serializer; EnsureRuntimeComponents
 *
 **************************************************************************/
 #include "Network/ReplicationRegistry.h"
@@ -23,6 +24,7 @@
 
 #include "Network/ByteStream.h"
 #include "Network/CanonicalHash.h"
+#include "Network/NetComponents.h"
 #include "Network/NetPrefabTable.h"
 #include "Network/Protocol.h"
 #include "Network/Quantize.h"
@@ -226,9 +228,75 @@ namespace Crucible
 		return true;
 	}
 
+	namespace
+	{
+		// NetVariables on the wire: a u16 mask of the slots that are not 0, then those slots, 4 bytes
+		// each, lowest first. A listed slot that is 0 is malformed: one state, one encoding.
+		struct NetVariablesState
+		{
+			std::array<std::uint32_t, NetVariables::kSlots> slots;
+		};
+
+		bool WriteNetVariables(const World& world, Entity entity, const ReplicationContext&, ByteWriter& out)
+		{
+			const NetVariables* variables = world.Read<NetVariables>(entity);
+			if (variables == nullptr) return false;
+			std::uint16_t mask = 0;
+			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
+				if (variables->slots[i] != 0) mask = static_cast<std::uint16_t>(mask | (1u << i));
+			out.U16(mask);
+			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
+				if (variables->slots[i] != 0) out.U32(variables->slots[i]);
+			return out.Ok();
+		}
+
+		bool DecodeNetVariables(ByteReader& in, const ReplicationContext&, NetVariablesState& out)
+		{
+			out.slots = {};
+			const std::uint16_t mask = in.U16();
+			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
+			{
+				if ((mask & (1u << i)) == 0) continue;
+				out.slots[i] = in.U32();
+				if (!in.Ok() || out.slots[i] == 0) return false;
+			}
+			return in.Ok();
+		}
+
+		// Notes which slots really changed, so scripts hear about those only.
+		bool CommitNetVariables(NetVariables& variables, const NetVariablesState& state, const ReplicationContext&)
+		{
+			for (std::uint32_t i = 0; i < NetVariables::kSlots; ++i)
+				if (variables.slots[i] != state.slots[i]) variables.changed = static_cast<std::uint16_t>(variables.changed | (1u << i));
+			variables.slots = state.slots;
+			return true;
+		}
+
+		ReplicatedComponent NetVariablesSerializer()
+		{
+			ReplicatedComponent serializer = MakeSerializer<NetVariables, NetVariablesState, &DecodeNetVariables, &CommitNetVariables>({
+				.id = NetComponentId::NetVariables, .name = "NetVariables", .schemaVersion = 1,
+				.maxBytes = 2 + 4 * NetVariables::kSlots, .write = &WriteNetVariables });
+			serializer.addedAtRuntime = true;
+			serializer.ensure = [](World& world, Entity entity) { world.AddComponent(entity, NetVariables{}); };
+			return serializer;
+		}
+	}
+
+	void ReplicationRegistry::EnsureRuntimeComponents(World& world, Entity entity, const ReplicationContext& ctx) const
+	{
+		if (ctx.desc == nullptr || !world.IsAlive(entity)) return;
+		for (const NetComponentId id : ctx.desc->replicated)
+		{
+			const ReplicatedComponent* c = Find(id);
+			if (c != nullptr && c->addedAtRuntime && c->ensure != nullptr && c->read(world, entity) == nullptr) c->ensure(world, entity);
+		}
+	}
+
 	bool ReplicationRegistry::RegisterBuiltIns(std::string& error)
 	{
-		return Register(MakeSerializer<Transform, TransformState, &DecodeTransformFull, &CommitTransform>({
+		return Register(NetVariablesSerializer(), error)
+			&& Register(MakeSerializer<Transform, TransformState, &DecodeTransformFull, &CommitTransform>({
 				.id = NetComponentId::TransformFull, .name = "Transform/Full", .schemaVersion = 1,
 				.maxBytes = 16, .write = &WriteTransformFull }), error)
 			&& Register(MakeSerializer<Transform, TransformState, &DecodeTransformYaw, &CommitTransform>({

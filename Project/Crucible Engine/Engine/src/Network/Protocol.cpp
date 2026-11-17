@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                Encoders and decoders for every protocol message (see
 *                Protocol.h for the wire layouts and the rules).
@@ -12,6 +12,7 @@
 *    -v1.0       protocol version 3 codecs
 *    -v1.1       PeerRoster and Command codecs (protocol version 5)
 *    -v1.2       GameplayEvent's target (protocol version 6)
+*    -v1.3       UnreliableEvent codec (protocol version 7)
 *
 **************************************************************************/
 #include "Network/Protocol.h"
@@ -84,7 +85,8 @@ namespace Crucible
 		case MessageType::Input:         return kInputMax;
 		case MessageType::PeerRoster:    return kPeerRosterMax;
 		case MessageType::Command:       return kCommandMax;
-		case MessageType::Snapshot:      return kMaxSnapshotBytes;
+		case MessageType::Snapshot:
+		case MessageType::UnreliableEvent: return kMaxSnapshotBytes;
 		case MessageType::SpawnBatch:
 		case MessageType::SceneObjectBatch:
 		case MessageType::DespawnBatch:
@@ -475,6 +477,26 @@ namespace Crucible
 		if (!r.Ok() || m.sequence == 0 || m.kind == 0) return false;
 		if (r.Remaining() > kMaxCommandPayload) return false;
 		m.payload = r.Sub(r.Remaining());   // the payload's own format is checked by its handler
+		return r.Ok() && r.AtEnd();
+	}
+
+	bool Encode(ByteWriter& w, const UnreliableEventView& m) noexcept
+	{
+		if (m.kind == 0 || m.payload.size() > kMaxUnreliableEventPayload) return false;
+		const std::size_t start = w.Size();
+		WriteType(w, MessageType::UnreliableEvent);
+		w.U16(m.kind);
+		w.VarU32(m.target);
+		w.Bytes(m.payload);
+		return Finished(w, start, MessageType::UnreliableEvent);
+	}
+
+	bool Decode(ByteReader& r, UnreliableEventView& m) noexcept
+	{
+		m.kind = r.U16();
+		m.target = r.VarU32();
+		if (!r.Ok() || m.kind == 0 || r.Remaining() > kMaxUnreliableEventPayload) return false;
+		m.payload = r.Sub(r.Remaining());
 		return r.Ok() && r.AtEnd();
 	}
 

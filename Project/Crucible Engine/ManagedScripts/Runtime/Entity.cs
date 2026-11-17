@@ -69,6 +69,7 @@ namespace Crucible
         private FlowFieldAgent flowFieldAgent;
         private FlowFieldSurface flowFieldSurface;
         private StateGraphAgent stateGraphAgent;
+        private NetVars netVars;
 
         internal Entity(uint index, uint generation)
         {
@@ -527,6 +528,12 @@ namespace Crucible
                 return !Network.GetIdentity(index, generation, out id, out owner) || owner == Network.LocalPeerId;
             }
         }
+
+        /// <summary>
+        /// This entity's network variables: 16 numbered values the host sets and every player
+        /// sees (health, ammo, a state). See NetVars.cs.
+        /// </summary>
+        public NetVars NetVars { get { return netVars ?? (netVars = new NetVars(Identity)); } }
 
         // --- equality --------------------------------------------------------------- //
 

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                ReplicationRegistry: how each replicated piece of state is
 *                written, decoded and committed, keyed by a stable protocol
@@ -69,6 +69,11 @@
 *                  TransformYawOnly  position + yaw (u16): 14 bytes
 *                  EnabledMask       on/off of the prefab's enabledReplicated
 *                                    components, bit i = entry i: 1 byte
+*                  NetVariables      the 16 script value slots: a u16 mask of
+*                                    the non-zero ones, then 4 bytes each:
+*                                    2 to 66 bytes. Its component is added by
+*                                    the network layer (addedAtRuntime), not
+*                                    saved with the object.
 *
 * \history
 *    -v1.0       replication registry and serializers; review
@@ -78,6 +83,8 @@
 *                copies, rolled back when any commit fails or throws
 *    -v1.1       FindByName and ForEach: authored settings name serializers
 *                (Networking Phase 14.2)
+*    -v1.2       NetVariables; addedAtRuntime serializers and EnsureRuntimeComponents
+*                (Networking C# Phase 4)
 *
 **************************************************************************/
 #pragma once
@@ -110,6 +117,7 @@ namespace Crucible
 		TransformFull    = 1,   // position + rotation (smallest three)
 		TransformYawOnly = 2,   // position + yaw: upright characters and enemies
 		EnabledMask      = 3,   // on/off state of the prefab's enabledReplicated components
+		NetVariables     = 4,   // the object's 16 replicated script value slots
 		FirstGameId      = 64,
 	};
 
@@ -148,6 +156,12 @@ namespace Crucible
 		bool        (*commit)(void* component, const void* state, const ReplicationContext& ctx) = nullptr;
 
 		bool enabledFlags = false;   // the built-in EnabledMask only: the registry commits on/off flags itself
+
+		/// Its component is never saved with the object: the network layer adds it on every machine
+		/// (EnsureRuntimeComponents calls `ensure`) before the object's first record is written or
+		/// applied. So prefab validation does not ask for the component in the file.
+		bool addedAtRuntime = false;
+		void (*ensure)(World& world, Entity entity) = nullptr;   // adds a default one (addedAtRuntime only)
 	};
 
 	/// Builds a serializer for one ECS component from typed functions:
@@ -216,8 +230,13 @@ namespace Crucible
 		/// enabledFlags on anything but the built-in EnabledMask.
 		bool Register(const ReplicatedComponent& component, std::string& error);
 
-		/// TransformFull, TransformYawOnly and EnabledMask.
+		/// TransformFull, TransformYawOnly, EnabledMask and NetVariables.
 		bool RegisterBuiltIns(std::string& error);
+
+		/// Adds the default component of every addedAtRuntime serializer in ctx.desc's replicated
+		/// list that `entity` does not have yet. Call it on an object's root before its first
+		/// record is written (host) or applied (client). Changes the World's structure.
+		void EnsureRuntimeComponents(World& world, Entity entity, const ReplicationContext& ctx) const;
 
 		const ReplicatedComponent* Find(NetComponentId id) const noexcept
 		{

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                The wire protocol between the host and its clients:
 *                message types, their fields, and an Encode/Decode pair
@@ -67,6 +67,8 @@
 *                  PeerRoster     u32 lifecycleSeq, u8 count (1..4),
 *                                 count x { u8 peer, u8 flags, u8 nameLength
 *                                           (<= 32), name bytes }
+*                  UnreliableEvent u16 kind (non-zero), varint target, payload
+*                                 = the rest (<= kMaxUnreliableEventPayload)
 *                  Command        u32 sequence (non-zero), u16 kind (non-zero),
 *                                 varint target (a NetworkId, 0 = none),
 *                                 payload = the rest (<= kMaxCommandPayload)
@@ -114,6 +116,7 @@
 *                clients) and Command (client to host gameplay requests)
 *    -v1.4       protocol version 6: GameplayEvent carries a target, like
 *                Command (Networking C# Phase 5A)
+*    -v1.5       protocol version 7: UnreliableEvent (Networking C# Phase 5B)
 *
 **************************************************************************/
 #pragma once
@@ -131,15 +134,17 @@
 
 namespace Crucible
 {
-	// Bump on ANY change to the bytes of any message. (6 = GameplayEvent's target; 5 = PeerRoster
+	// Bump on ANY change to the bytes of any message. (7 = UnreliableEvent, and the NetVariables
+	// serializer; 6 = GameplayEvent's target; 5 = PeerRoster
 	// and Command; 4 = scene objects and the scene identity in WorldBegin; 3 = lifecycle
 	// sequence; versions 1 and 2 were earlier development versions.)
-	inline constexpr std::uint32_t kProtocolVersion = 6;
+	inline constexpr std::uint32_t kProtocolVersion = 7;
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message
 	inline constexpr std::size_t   kMaxReliableBytes      = 16 * 1024;   // spawn / despawn / event messages
 	inline constexpr std::size_t   kMaxGameplayEventPayload = kMaxReliableBytes - 12;  // after u8 type, u32 seq, u16 kind, varint target (<= 5)
 	inline constexpr std::size_t   kMaxCommandPayload     = 1024;        // a client's request: small on purpose
+	inline constexpr std::size_t   kMaxUnreliableEventPayload = kMaxSnapshotBytes - 8;   // one packet: after u8 type, u16 kind, varint target (<= 5)
 	inline constexpr std::uint16_t kMaxEntitiesPerMessage = 512;
 	inline constexpr std::size_t   kMaxRecordBytes        = 255;         // a record's length is one byte
 	inline constexpr std::size_t   kMaxPlayerNameBytes    = 32;
@@ -161,6 +166,7 @@ namespace Crucible
 		SceneObjectBatch = 11,   // H->C reliable, lane 0, lifecycle: scene entities to bind (protocol 4)
 		PeerRoster    = 12,   // H->C reliable, lane 0, lifecycle: everyone in the session (protocol 5)
 		Command       = 13,   // C->H reliable, lane 0: a gameplay request (protocol 5)
+		UnreliableEvent = 14, // H->C unreliable, lane 1: a gameplay event that may be lost (protocol 7)
 		Count                 // not a message; append new types above it, never renumber
 	};
 
@@ -350,6 +356,16 @@ namespace Crucible
 		std::span<const std::byte> payload;    // the rest of the message
 	};
 
+	/// A gameplay event sent once, unreliably: no lifecycle number, so it may be lost, arrive
+	/// late, or arrive before a reliable message sent earlier. For frequent effects where the next
+	/// one makes a lost one irrelevant.
+	struct UnreliableEventView
+	{
+		std::uint16_t              kind = 0;   // non-zero
+		Net::NetworkId             target = Net::kInvalidNetworkId;
+		std::span<const std::byte> payload;    // at most kMaxUnreliableEventPayload
+	};
+
 	// ---- commands (client to host, reliable) -------------------------------------------------
 
 	/// A client's gameplay request. `payload` points into the message (decoding) or into the
@@ -425,4 +441,7 @@ namespace Crucible
 
 	ENGINE_API bool Encode(ByteWriter& w, const CommandView& m) noexcept;
 	ENGINE_API bool Decode(ByteReader& r, CommandView& m) noexcept;
+
+	ENGINE_API bool Encode(ByteWriter& w, const UnreliableEventView& m) noexcept;
+	ENGINE_API bool Decode(ByteReader& r, UnreliableEventView& m) noexcept;
 }

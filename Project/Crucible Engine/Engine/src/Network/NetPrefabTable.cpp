@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NetPrefabTable (see the header).
 *
@@ -13,6 +13,7 @@
 *    -v1.1       sendPriority checked
 *    -v1.2       a known prefabGuid is used instead of the path; Remove,
 *                FindByGuid, FindByName, HighestId (Networking Phase 14.2)
+*    -v1.3       a serializer whose component is added at runtime needs none in the file
 *
 **************************************************************************/
 #include "Network/NetPrefabTable.h"
@@ -181,7 +182,7 @@ namespace Crucible
 							where, serializer->name, static_cast<int>(netId), serializer->local);
 						return false;
 					}
-					if (!onRoot(serializer->local))
+					if (!serializer->addedAtRuntime && !onRoot(serializer->local))   // a runtime one is never in the file
 					{
 						error = std::format("{}: its root has no '{}' (needed by serializer '{}')", where, components.Get(serializer->local).name, serializer->name);
 						return false;

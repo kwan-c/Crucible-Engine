@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                The networking ECS components: NetworkIdentity,
 *                NetInterpolation and PlayerInput (ComponentKind 33-35),
@@ -32,6 +32,7 @@
 *    -v1.1       PlayerInput::hasYaw (the controller faces yawDegrees only
 *                when something set it)
 *    -v1.2       NetworkObjectAuthoring (Phase 14.1)
+*    -v1.3       NetVariables: replicated script values (Networking C# Phase 4)
 *
 **************************************************************************/
 #pragma once
@@ -151,7 +152,31 @@ namespace Crucible
 		bool operator==(const NetworkObjectAuthoring&) const = default;
 	};
 
+	/*************************************************************************
+	 \brief
+		A network object's replicated script values (Networking C# Phase 4):
+		16 numbered 32-bit slots the host writes and every client receives.
+	 \details
+		The engine gives the slots no meaning: gameplay (C# NetVars) decides
+		that slot 0 is health and stores an int, a float's bits, a bool or a
+		NetworkId in it. An object replicates them when its Network Object
+		settings list the "NetVariables" serializer; the network layer then
+		adds this component itself on every machine (never saved: all slots
+		start at 0, the host's script sets the first values).
+
+		`changed` is local bookkeeping, never sent: the slots whose value
+		changed since the scripts were last told (OnNetVarChanged).
+	 *************************************************************************/
+	struct NetVariables
+	{
+		static constexpr std::uint32_t kSlots = 16;
+
+		std::array<std::uint32_t, kSlots> slots{};
+		std::uint16_t changed = 0;   // bit i: slot i changed since the scripts last heard
+	};
+
 	// Bind each one to its ComponentKind (see ComponentKind.h).
+	CRUCIBLE_COMPONENT(NetVariables, NetVariables);
 	CRUCIBLE_COMPONENT(NetworkIdentity, NetworkIdentity);
 	CRUCIBLE_COMPONENT(NetInterpolation, NetInterpolation);
 	CRUCIBLE_COMPONENT(PlayerInput, PlayerInput);
@@ -161,10 +186,12 @@ namespace Crucible
 	template <> struct RuntimeOnly<NetworkIdentity>  : std::true_type {};
 	template <> struct RuntimeOnly<NetInterpolation> : std::true_type {};
 	template <> struct RuntimeOnly<PlayerInput>      : std::true_type {};
+	template <> struct RuntimeOnly<NetVariables>     : std::true_type {};
 
 	template <> struct NotToggleable<NetworkIdentity>  : std::true_type {};
 	template <> struct NotToggleable<NetInterpolation> : std::true_type {};
 	template <> struct NotToggleable<PlayerInput>      : std::true_type {};
+	template <> struct NotToggleable<NetVariables>     : std::true_type {};
 
 	// Authored settings: saved (not RuntimeOnly), but never switched off - "networking off for
 	// now" is not a state an object can be in; remove the component instead.
@@ -174,5 +201,6 @@ namespace Crucible
 	static_assert(std::is_trivially_copyable_v<NetworkIdentity>);
 	static_assert(std::is_trivially_copyable_v<NetInterpolation>);
 	static_assert(std::is_trivially_copyable_v<PlayerInput>);
+	static_assert(std::is_trivially_copyable_v<NetVariables>);
 	static_assert(sizeof(NetInterpolation::Sample) == 32, "Sample layout changed: update the size note above");
 }

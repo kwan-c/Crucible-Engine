@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         Internal calls behind the C# Network class
 *                (ManagedScripts/Runtime/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
@@ -54,6 +54,8 @@
 *                OnNetworkCommand (Networking C# Phase 2)
 *    -v1.1       SendEvent and OnNetworkEvent (Networking C# Phase 5A);
 *                Spawn (Networking C# Phase 3)
+*    -v1.2       NetVars Get/Set and OnNetVarChanged (Networking C# Phase 4);
+*                events: everyone except one peer, unreliable (Networking C# Phase 5B)
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -101,6 +103,12 @@ namespace Crucible::ScriptBindings
 		constexpr int32_t kSendBadArgument = 2; // kind outside 1..65535, or a payload over the limit
 		constexpr int32_t kSendBadTarget = 3;   // a destroyed entity, or (on a client) one that is not a network object
 		constexpr int32_t kSendNotAuthority = 4; // SendEvent on a client
+
+		// Results of SetVarInternal. Must match NetVars.cs.
+		constexpr int32_t kVarOk = 0;
+		constexpr int32_t kVarBadEntity = 1;      // destroyed, or a slot outside 0..15
+		constexpr int32_t kVarNotAuthority = 2;   // a client writing a network object's variable
+		constexpr int32_t kVarNotReplicated = 3;  // a network object whose settings do not replicate NetVariables
 
 		// Results of SpawnInternal. Must match Network.cs.
 		constexpr int32_t kSpawnOk = 0;
@@ -445,8 +453,9 @@ namespace Crucible::ScriptBindings
 		         one player, toPeer >= 0) that something happened. Returns one
 		         of the kSend* codes.
 		 *********************************************************************/
-		int32_t ManagedNetworkSendEvent(int32_t kind, MonoArray* data, int32_t length, int32_t toPeer, int32_t hasTarget,
-		                                int32_t targetIndex, int32_t targetGeneration) noexcept
+		int32_t ManagedNetworkSendEvent(int32_t kind, MonoArray* data, int32_t length, int32_t toPeer, int32_t exceptPeer,
+		                                int32_t unreliable, int32_t hasTarget, int32_t targetIndex,
+		                                int32_t targetGeneration) noexcept
 		{
 			try
 			{
@@ -456,14 +465,18 @@ namespace Crucible::ScriptBindings
 					return kSendRefused;
 				if (session->IsClient())
 					return kSendNotAuthority;
-				if (kind < 1 || kind > 0xFFFF || length < 0 || static_cast<std::size_t>(length) > kMaxGameplayEventPayload ||
-				    toPeer < -1 || toPeer > static_cast<int32_t>(Net::kMaxClients))
+				const std::size_t limit = unreliable != 0 ? kMaxUnreliableEventPayload : kMaxGameplayEventPayload;
+				if (kind < 1 || kind > 0xFFFF || length < 0 || static_cast<std::size_t>(length) > limit ||
+				    toPeer < -1 || toPeer > static_cast<int32_t>(Net::kMaxClients) ||
+				    exceptPeer < -1 || exceptPeer > static_cast<int32_t>(Net::kMaxClients) ||
+				    (unreliable != 0 && toPeer != -1))   // an unreliable event goes to everyone
 					return kSendBadArgument;
 				std::vector<std::byte> payload;
 				if (!CopyBytes(data, length, payload))
 					return kSendBadArgument;
 
 				const Net::PeerId to = toPeer < 0 ? NetworkSession::kEveryone : static_cast<Net::PeerId>(toPeer);
+				const Net::PeerId except = exceptPeer < 0 ? Net::kInvalidPeer : static_cast<Net::PeerId>(exceptPeer);
 				Net::NetworkId about = Net::kInvalidNetworkId;
 				if (hasTarget != 0)
 				{
@@ -477,12 +490,15 @@ namespace Crucible::ScriptBindings
 					else
 					{
 						// Offline: no ids exist and this machine is the only listener.
-						if (to == NetworkSession::kEveryone || to == Net::kServerPeer)
+						if (except != Net::kServerPeer && (to == NetworkSession::kEveryone || to == Net::kServerPeer))
 							QueueMessage(ScriptNetEvent::Kind::Event, Net::kServerPeer, kind, true, target, payload);
 						return kSendOk;
 					}
 				}
-				return session->SendGameplayEvent(static_cast<std::uint16_t>(kind), payload, to, about) ? kSendOk : kSendRefused;
+				const bool sent = unreliable != 0
+					? session->SendUnreliableEvent(static_cast<std::uint16_t>(kind), payload, about, except)
+					: session->SendGameplayEvent(static_cast<std::uint16_t>(kind), payload, to, about, except);
+				return sent ? kSendOk : kSendRefused;
 			}
 			catch (...)
 			{
@@ -569,6 +585,77 @@ namespace Crucible::ScriptBindings
 			catch (...)
 			{
 				return kSpawnFailed;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# NetVars.Get*: the raw 32 bits of one slot (0 if the entity
+		         has no variables yet). Returns 0 for a destroyed entity or a
+		         slot outside 0..15.
+		 *********************************************************************/
+		int32_t ManagedNetVarsGet(int32_t index, int32_t generation, int32_t slot, uint32_t* bits) noexcept
+		{
+			try
+			{
+				if (!bits)
+					return 0;
+				*bits = 0;
+				Entity entity;
+				const World* world = EntityContext::GetWorld();
+				if (!world || slot < 0 || slot >= static_cast<int32_t>(NetVariables::kSlots) ||
+				    !EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				if (const NetVariables* variables = world->Read<NetVariables>(entity))
+					*bits = variables->slots[static_cast<std::size_t>(slot)];
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# NetVars.Set*: writes one slot. On a network object only
+		         the authority may, and only if the object replicates
+		         NetVariables (it then has the component). Any other entity
+		         gets the component on first use: its values stay local.
+		         Returns one of the kVar* codes.
+		 *********************************************************************/
+		int32_t ManagedNetVarsSet(int32_t index, int32_t generation, int32_t slot, uint32_t bits) noexcept
+		{
+			try
+			{
+				Entity entity;
+				NetworkSession* session = Session();
+				World* world = EntityContext::GetWorld();
+				if (!session || !world || slot < 0 || slot >= static_cast<int32_t>(NetVariables::kSlots) ||
+				    !EntityContext::ResolveEntity(index, generation, entity))
+					return kVarBadEntity;
+				const bool networked = IdentityOf(*session, *world, entity) != nullptr;
+				if (networked && session->IsClient())
+					return kVarNotAuthority;
+				NetVariables* variables = world->Write<NetVariables>(entity);
+				if (!variables)
+				{
+					if (networked)
+						return kVarNotReplicated;
+					world->AddComponent(entity, NetVariables{});   // scripts run in an Exclusive system
+					variables = world->Write<NetVariables>(entity);
+					if (!variables)
+						return kVarBadEntity;
+				}
+				std::uint32_t& value = variables->slots[static_cast<std::size_t>(slot)];
+				if (value != bits)
+				{
+					value = bits;
+					variables->changed = static_cast<std::uint16_t>(variables->changed | (1u << slot));
+				}
+				return kVarOk;
+			}
+			catch (...)
+			{
+				return kVarBadEntity;
 			}
 		}
 
@@ -679,6 +766,32 @@ namespace Crucible::ScriptBindings
 			overflowLogged = false;
 		}
 
+		void GatherVariableChanges(World& world)
+		{
+			// Collected first: nothing is queued while the query walks the components.
+			std::vector<std::pair<Entity, std::uint16_t>> changes;
+			world.BuildQuery<const NetVariables>().Build().ForEach([&](Entity entity, const NetVariables& variables) {
+				if (variables.changed != 0)
+					changes.emplace_back(entity, variables.changed);
+			});
+			for (const auto& [entity, mask] : changes)
+			{
+				if (NetVariables* variables = world.Write<NetVariables>(entity))
+					variables->changed = 0;
+				for (std::uint32_t slot = 0; slot < NetVariables::kSlots; ++slot)
+				{
+					if ((mask & (1u << slot)) == 0)
+						continue;
+					ScriptNetEvent event;
+					event.kind = ScriptNetEvent::Kind::VarChanged;
+					event.code = static_cast<int32_t>(slot);
+					event.targeted = true;
+					event.target = entity;
+					waiting.push_back(std::move(event));
+				}
+			}
+		}
+
 		const std::vector<ScriptNetEvent>& BeginDispatch()
 		{
 			batch.clear();
@@ -705,6 +818,8 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Network::GetEventPayloadInternal", &ManagedNetworkGetEventPayload);
 		Add("Crucible.Network::SendEventInternal", &ManagedNetworkSendEvent);
 		Add("Crucible.Network::SpawnInternal", &ManagedNetworkSpawn);
+		Add("Crucible.NetVars::GetInternal", &ManagedNetVarsGet);
+		Add("Crucible.NetVars::SetInternal", &ManagedNetVarsSet);
 	}
 }
 #endif

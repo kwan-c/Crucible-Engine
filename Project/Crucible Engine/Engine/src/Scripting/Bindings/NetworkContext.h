@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         INTERNAL: the network events waiting for the C# scripts
 *                (EntityScript.OnNetworkStarted, OnPeerJoined,
 *                OnNetworkCommand, ...).
@@ -27,6 +27,7 @@
 *    -v1.0       session and player events (Networking C# Phase 1), commands
 *                (Networking C# Phase 2)
 *    -v1.1       Event: the host's gameplay events (Networking C# Phase 5A)
+*    -v1.2       VarChanged and GatherVariableChanges (Networking C# Phase 4)
 *
 **************************************************************************/
 #pragma once
@@ -35,6 +36,11 @@
 #include <string>
 #include <vector>
 #include "ECS/Core/ECSCore.h"   // Entity
+
+namespace Crucible
+{
+	class World;
+}
 
 namespace Crucible::ScriptBindings::NetworkContext
 {
@@ -54,6 +60,7 @@ namespace Crucible::ScriptBindings::NetworkContext
 			PeerLeft = 4,    // peer = the other player
 			Command = 5,     // peer = the sender, code = the command's kind, serial names its payload
 			Event = 6,       // code = the event's kind, serial names its payload
+			VarChanged = 7,  // code = the NetVars slot whose value changed; always targeted
 		};
 
 		Kind    kind = Kind::Started;
@@ -74,6 +81,14 @@ namespace Crucible::ScriptBindings::NetworkContext
 	         begins and on every frame without one.
 	 *********************************************************************/
 	void TrimEvents();
+
+	/*********************************************************************
+	 \brief  Queues a VarChanged for every NetVariables slot that changed
+	         since the last call (a snapshot on a client, a script's Set on
+	         the authority) and clears the marks. EntityScriptSystem calls
+	         it once per Playing frame, right before BeginDispatch.
+	 *********************************************************************/
+	void GatherVariableChanges(World& world);
 
 	/*********************************************************************
 	 \brief  Makes everything received since the last call the batch being

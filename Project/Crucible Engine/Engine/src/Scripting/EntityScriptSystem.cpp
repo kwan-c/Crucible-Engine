@@ -392,6 +392,7 @@ namespace Crucible
 					               record.definition.className, record.error);
 				}
 			};
+			ScriptBindings::NetworkContext::GatherVariableChanges(world); // NetVars -> OnNetVarChanged
 			for (const auto& event : ScriptBindings::NetworkContext::BeginDispatch())
 			{
 				if (event.targeted)
