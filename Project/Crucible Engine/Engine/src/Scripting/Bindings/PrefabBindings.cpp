@@ -54,7 +54,14 @@ namespace Crucible::ScriptBindings
 			std::unique_ptr<Prefab> prefab;
 			std::filesystem::file_time_type writeTime;
 		};
-		thread_local std::map<uint64_t, CachedPrefab> prefabCache; // asset guid -> prefab (main thread)
+		// Asset guid -> prefab (main thread). Function-local thread_local, created on first use: at
+		// namespace scope MSVC builds one for every thread in the process, and threads still
+		// running at exit leak theirs (see PendingDestroys() in EntityContext.cpp).
+		std::map<uint64_t, CachedPrefab>& PrefabCache()
+		{
+			thread_local std::map<uint64_t, CachedPrefab> cache;
+			return cache;
+		}
 
 		/*********************************************************************
 		 \brief  The two int halves from C# back into one 64-bit guid.
@@ -78,14 +85,14 @@ namespace Crucible::ScriptBindings
 				return nullptr;
 			std::error_code ec;
 			const auto writeTime = std::filesystem::last_write_time(entry->absolutePath, ec);
-			auto& cached = prefabCache[assetId];
+			auto& cached = PrefabCache()[assetId];
 			if (cached.prefab && !ec && cached.writeTime == writeTime)
 				return cached.prefab.get();
 			auto prefab = std::make_unique<Prefab>();
 			if (!prefab->Load(entry->absolutePath))
 			{
 				CRU_USER_ERROR("[Script] Prefab '{}' failed to load (see the log)", entry->virtualPath);
-				prefabCache.erase(assetId);
+				PrefabCache().erase(assetId);
 				return nullptr;
 			}
 			cached.prefab = std::move(prefab);

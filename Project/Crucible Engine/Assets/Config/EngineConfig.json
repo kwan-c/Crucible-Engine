@@ -31,9 +31,9 @@
             "fullScreen": true,
             "maximized": false
         },
-        "project": {
-            "startupScene": "Scenes/Fog_Lighting_Effects.scene"
-        }
+      "project": {
+        "startupScene": "Scenes/Game/Main Menu Scene.scene"
+      }
     },
     "scripting": {
         "enabled": true,

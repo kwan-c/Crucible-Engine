@@ -8,6 +8,7 @@
 #include "Diagnostics/Logger.h"
 #include "Diagnostics/FatalError.h"
 #include "AssetPipe/AssetPaths.h"
+#include "Diagnostics/LeakTracer.h"
 
 // Last, so its macros (ERROR, LoadImage, ...) cannot clash with engine names. Debug only:
 // it is just for writing the leak report to a file.
@@ -25,6 +26,10 @@ int main()
 {
     // Enable memory leak checking at program exit
     _CrtSetDbgFlag(_CRTDBG_ALLOC_MEM_DF | _CRTDBG_LEAK_CHECK_DF);
+
+    // Debug: records where the previous run's leaks were allocated -> LeakStacks.txt.
+    // Before the report file below is overwritten, and first so it is destroyed last.
+    LeakTracer::Session leakTracer{};
 #ifdef _DEBUG
     // The leak report is written at the very end of the process, after the console and the
     // log are gone, so normally it is only in Visual Studio's Output window. Also write it to
