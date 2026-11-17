@@ -96,6 +96,8 @@ namespace Crucible {
 					watch.generate = [this, name](std::string& source, std::string& paramsJson, std::string& error) {
 						return GenerateShaderGraph(m_core.GetAssets(), name, source, paramsJson, error);
 					};
+					// The graph deleted: its materials show the error material, as they would in the game.
+					watch.missing = [this, shader]() { m_core.GetRenderer().MarkMaterialShaderMissing(shader); };
 				}
 				m_hotReload.Watch(std::move(watch));
 			}

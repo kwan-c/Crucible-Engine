@@ -398,6 +398,21 @@ namespace Crucible {
 		std::string source, paramsJson, error;
 		if (!watched.shader.generate(source, paramsJson, error)) {
 			watched.generateErrors = 1;
+
+			// The file itself is gone: the renderer drops the version it has, and forgets it here too,
+			// so the same graph put back is compiled and handed over again.
+			const fs::path from = watched.shader.generatedFrom ? watched.shader.generatedFrom() : fs::path();
+			std::error_code gone;
+			if (watched.shader.missing && watched.shader.generatedFrom && (from.empty() || !fs::exists(from, gone))) {
+				watched.shader.missing();
+				watched.runningHash = 0;
+				watched.sourceHash  = 0;
+				watched.source.clear();
+				const std::string text = label + ": its file is no longer in Assets";
+				if (m_firstError.empty()) { m_firstError = text; }
+				CRU_USER_ERROR("{} - its materials draw with the error material until it is back.", text);
+				return false;
+			}
 			const std::string text = label + ": " + (error.empty() ? "it could not be turned into a shader" : error);
 			if (m_firstError.empty()) { m_firstError = text; }
 			CRU_USER_ERROR("{} - still using the last version that worked.", text);

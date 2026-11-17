@@ -86,6 +86,10 @@ namespace Crucible {
 			std::string                            label;           // what messages call it: "Ember.shadergraph". Empty = name
 			std::function<std::filesystem::path()> generatedFrom;   // the file it is made from, wherever that is now
 			Generate                               generate;
+			// Optional: called when `generatedFrom` finds no file any more (the graph was deleted), so
+			// the renderer stops drawing the last version and shows the error material. When the file
+			// comes back the shader is generated, compiled and handed over again as usual.
+			std::function<void()>                  missing;
 		};
 
 		enum class Status {

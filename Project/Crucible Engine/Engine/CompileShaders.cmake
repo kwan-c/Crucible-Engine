@@ -31,6 +31,8 @@ crucible_shader(DefaultShader    vertMain fragMain)
 # maskVert maskFrag maskCutoutVert maskCutoutFrag. (A shader graph's shader is compiled by the
 # Editor, which adds them itself.)
 crucible_shader(MagicOrb         vertMain fragMain)
+# What a material is drawn with when its shader cannot be (missing .spv, a broken or deleted graph).
+crucible_shader(ErrorShader      vertMain fragMain)
 crucible_shader(Skybox           skyVert skyFrag)
 crucible_shader(DebugLine        lineVert sphereOutlineVert lineFrag)
 crucible_shader(Shadow           shadowVert shadowCutoutVert shadowCutoutFrag)

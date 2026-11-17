@@ -10,6 +10,7 @@
 * All Rights Reserved
 */
 #include "Cook.h"
+#include "CookShaderGraphs.h"
 
 #include "AssetPipe/AssetManager.h"
 #include "AssetPipe/AssetRegistry.h"
@@ -134,7 +135,18 @@ namespace Crucible::Cook {
 		}
 	}
 
-	Report Run(fs::path const& assets, fs::path const& resources) {
+	Report RunShaderGraphs(fs::path const& assets, fs::path const& resources, ShaderOptions const& shaders) {
+		Report report;
+		std::error_code ec;
+		if (!fs::is_directory(assets, ec) || !fs::is_directory(resources, ec)) {
+			report.errors.push_back("Assets (" + Utf8(assets) + ") and Resources (" + Utf8(resources) + ") must both exist");
+			return report;
+		}
+		CookShaderGraphs(assets, resources, shaders, report);
+		return report;
+	}
+
+	Report Run(fs::path const& assets, fs::path const& resources, ShaderOptions const& shaders) {
 		Report report;
 		std::error_code ec;
 		if (!fs::is_directory(assets, ec) || !fs::is_directory(resources, ec)) {
@@ -219,6 +231,10 @@ namespace Crucible::Cook {
 				                         "compiled as a sky (rename it to " + name + "_skybox" + ext + "; its .meta keeps the GUID)");
 			}
 		}
+
+		// 4. Shader graphs into shaders, then every material's shader has compiled code (CookShaderGraphs.h).
+		CookShaderGraphs(assets, resources, shaders, report);
+		CheckMaterialShaders(assets, resources, report);
 
 		return report;
 	}

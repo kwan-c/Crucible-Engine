@@ -40,6 +40,15 @@
     same code. RenderResources::DrawDepthBatches draws its materials with
     them (MovedPipeline).
 
+    A shader that CANNOT be drawn - it has no code (its .spv is missing: a
+    shader graph that was deleted, never compiled or not cooked), its code
+    was refused, its only build failed, or the Editor said its graph is gone
+    (SetMissing) - is drawn with the ERROR SHADER (ErrorShader.slang:
+    magenta squares), built for every level at Init() next to the built-in
+    one. A shader that is only waiting for its first build still draws with
+    the built-in shader. Without ErrorShader.spv the built-in shader stands
+    in for the error shader too.
+
     Everything except the background thread's own work is frame-thread only.
 *************************************************************************/
 #pragma once
@@ -116,9 +125,13 @@ namespace Crucible {
                                   passes need not exist yet.
          \param[in] defaultName   The built-in shader's name ("DefaultShader").
          \param[in] defaultSpirv  Its compiled code.
+         \param[in] errorSpirv    The error shader's compiled code (ErrorShader.spv), built
+                                  for every level too. Empty, unusable or failing to build:
+                                  logged, and the built-in shader draws broken shaders instead.
          \throws If the built-in shader cannot be built: nothing could be drawn.
          *********************************************************************/
-        void Init(VulkanContext& context, Builder builder, DepthBuilder depthBuilder, std::string defaultName, std::vector<uint32_t> defaultSpirv);
+        void Init(VulkanContext& context, Builder builder, DepthBuilder depthBuilder, std::string defaultName, std::vector<uint32_t> defaultSpirv,
+                  std::vector<uint32_t> errorSpirv = {});
 
         /// The built-in shader's handle (what an Invalid handle is drawn with).
         static MaterialShaderHandle Default() { return MaterialShaderHandle{ 0 }; }
@@ -148,6 +161,24 @@ namespace Crucible {
                  the handle is not one of ours. Nothing changes then.
          *********************************************************************/
         bool SetCode(MaterialShaderHandle shader, std::vector<uint32_t> spirv, std::string& error);
+
+        /*********************************************************************
+         \brief  Takes a shader's code away: its materials draw with the error
+                 shader until SetCode() gives it code again. For a shader whose
+                 source is gone (the Editor, when a shader graph's file is
+                 deleted). Its old pipelines are kept until new ones replace
+                 them, but are not drawn with. Nothing happens for Default()
+                 or a handle that is not one of ours.
+         *********************************************************************/
+        void SetMissing(MaterialShaderHandle shader);
+
+        /// Whether a shader cannot be drawn and its materials show the error shader (see the file comment).
+        bool IsBroken(MaterialShaderHandle shader) const;
+
+        /// How many shaders with code are still waiting for their pipelines at the level in use (the
+        /// last Update()'s). 0 = every material draws with its own shader or, if broken, the error
+        /// shader. A loading screen can wait for this.
+        uint32_t PendingBuilds() const;
 
         /*********************************************************************
          \brief  Call once per frame, before recording: swaps in the
@@ -254,6 +285,8 @@ namespace Crucible {
             std::string        error;              // empty = built
         };
 
+        static bool Broken(const Entry& entry) { return !entry.code || entry.failed == entry.version; }
+
         void Build(std::span<const uint32_t> spirv, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout,
                    Moved& moved, bool& hasMoved) const;
         void WorkerMain();
@@ -263,6 +296,8 @@ namespace Crucible {
         DepthBuilder       m_depthBuilder;
         uint32_t           m_levelInUse = 0;       // Update()'s: the level the depth-only passes' pipelines are taken from
         std::deque<Entry>  m_entries;              // by handle id; 0 = the built-in shader. Frame thread only.
+        std::array<Level, kLevels> m_error;        // the error shader's pipelines, every level (Init)
+        bool               m_hasError = false;     // m_error is built
 
         std::mutex              m_mutex;           // guards the fields below
         std::condition_variable m_wake;            // background thread: a job, or stop

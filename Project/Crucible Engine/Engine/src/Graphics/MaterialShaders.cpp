@@ -135,7 +135,8 @@ namespace Crucible {
 
     }   // MaterialShaders::Build()
 
-    void MaterialShaders::Init(VulkanContext& context, Builder builder, DepthBuilder depthBuilder, std::string defaultName, std::vector<uint32_t> defaultSpirv) {
+    void MaterialShaders::Init(VulkanContext& context, Builder builder, DepthBuilder depthBuilder, std::string defaultName, std::vector<uint32_t> defaultSpirv,
+                               std::vector<uint32_t> errorSpirv) {
 
         m_context = &context;
         m_builder = std::move(builder);
@@ -158,6 +159,26 @@ namespace Crucible {
         }
         m_entries.clear();
         m_entries.push_back(std::move(entry));
+
+        // The error shader, every level too: what a shader that cannot be drawn is drawn with. Not
+        // having it is no reason to stop - the built-in shader stands in for it.
+        m_hasError = false;
+        if (errorSpirv.empty()) {
+            CRU_WARN("[Renderer | Shaders] No error shader (ErrorShader.spv) - a missing or broken shader draws with the default shader instead.");
+        } else if (!CheckCode(errorSpirv, error)) {
+            CRU_ERROR("[Renderer | Shaders] The error shader cannot be used: {} - a missing or broken shader draws with the default shader instead.", error);
+        } else {
+            try {
+                for (uint32_t level = 0; level < kLevels; ++level) {
+                    Build(errorSpirv, level, m_error[level].solid, m_error[level].cutout, m_error[level].moved, m_error[level].hasMoved);
+                    m_error[level].built = 1;
+                }
+                m_hasError = true;
+            } catch (const std::exception& e) {
+                m_error = {};
+                CRU_ERROR("[Renderer | Shaders] The error shader's pipelines could not be built: {} - a missing or broken shader draws with the default shader instead.", e.what());
+            }
+        }
         m_depthBuilder = std::move(depthBuilder);   // for every shader built from here on (Update)
 
     }   // MaterialShaders::Init()
@@ -208,6 +229,37 @@ namespace Crucible {
 
     }   // MaterialShaders::SetCode()
 
+    void MaterialShaders::SetMissing(MaterialShaderHandle shader) {
+
+        if (shader.id == 0 || shader.id >= Count()) { return; }
+        Entry& entry = m_entries[shader.id];
+        if (!entry.code) { return; }
+        // No code: Pipeline() draws it with the error shader, Update() builds nothing for it. The
+        // version stays, so the code SetCode() brings back is newer than any pipelines kept.
+        entry.code = nullptr;
+        entry.movesVertices = false;
+        CRU_INFO("[Renderer | Shaders] {} has no source any more - its materials draw with the error shader.", entry.name);
+
+    }   // MaterialShaders::SetMissing()
+
+    bool MaterialShaders::IsBroken(MaterialShaderHandle shader) const {
+
+        if (shader.id >= Count()) { return false; }   // drawn with the built-in shader, as an Invalid handle is
+        const Entry& entry = m_entries[shader.id];
+        return !entry.code || (Broken(entry) && entry.levels[m_levelInUse].built == 0);
+
+    }   // MaterialShaders::IsBroken()
+
+    uint32_t MaterialShaders::PendingBuilds() const {
+
+        uint32_t pending = 0;
+        for (const Entry& entry : m_entries) {
+            if (!Broken(entry) && entry.levels[m_levelInUse].built != entry.version) { ++pending; }
+        }
+        return pending;
+
+    }   // MaterialShaders::PendingBuilds()
+
     const std::string& MaterialShaders::Name(MaterialShaderHandle shader) const {
 
         static const std::string none;
@@ -238,13 +290,14 @@ namespace Crucible {
 
         if (shader.id >= Count()) { return false; }
         const Entry& entry = m_entries[shader.id];
+        if (!entry.code) { return false; }   // SetMissing: drawn with the error shader, which does not
         return entry.movesVertices || entry.levels[m_levelInUse].hasMoved;
 
     }   // MaterialShaders::MovesVertices()
 
     vk::Pipeline MaterialShaders::MovedPipeline(MaterialShaderHandle shader, DepthPass pass, bool cutout) const {
 
-        if (shader.id >= Count()) { return vk::Pipeline{}; }
+        if (shader.id >= Count() || !m_entries[shader.id].code) { return vk::Pipeline{}; }
         // The level the scene is drawn at: these pipelines came with that level's scene pair, so
         // the scene pass and the depth-only passes change over to new code in the same frame.
         const Level& level = m_entries[shader.id].levels[m_levelInUse];
@@ -257,8 +310,13 @@ namespace Crucible {
     vk::Pipeline MaterialShaders::Pipeline(MaterialShaderHandle shader, uint32_t level, bool cutout) const {
 
         level = std::min(level, kLevels - 1);
-        const Level& own = m_entries[shader.id < Count() ? shader.id : 0].levels[level];
-        const Level& use = own.built != 0 ? own : m_entries[0].levels[level];   // the built-in shader always is
+        const Entry& entry = m_entries[shader.id < Count() ? shader.id : 0];
+        const Level& own   = entry.levels[level];
+        // Its own pipelines while it has code; the error shader's when it cannot be drawn (no code,
+        // or its only build failed); the built-in shader's while its first build is on its way.
+        const Level& use = own.built != 0 && entry.code ? own
+                         : Broken(entry) && m_hasError    ? m_error[level]
+                         : m_entries[0].levels[level];   // the built-in shader always is built
         return cutout ? *use.cutout : *use.solid;
 
     }   // MaterialShaders::Pipeline()

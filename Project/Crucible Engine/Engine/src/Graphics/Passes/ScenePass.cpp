@@ -20,6 +20,11 @@ namespace Crucible {
     static_assert(RenderLayouts::kMsaaLevels == 3, "ScenePass keeps one pipeline per MSAA level");
     static_assert(MaterialShaders::kLevels == RenderLayouts::kMsaaLevels, "MaterialShaders builds one pair of mesh pipelines per MSAA level");
 
+    namespace {
+        // The stages the mesh push constant (PushConstants) is declared for and pushed to.
+        constexpr vk::ShaderStageFlags kMeshPushStages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+    }
+
     void ScenePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout,
                            vk::DescriptorSetLayout skySetLayout, vk::Format colourFormat, vk::Format depthFormat) {
 
@@ -32,10 +37,11 @@ namespace Crucible {
             // Pipeline layout object. Set 0 = per-view frame data (camera, lights, instances, shadow
             // map). Set 1 = the current draw's material (five texture bindings - see
             // CreateMaterialDescriptorSetLayout). The push constant carries the material's scalar
-            // factors (PushConstants, RenderTypes.h) - fragment only, since the per-object model
-            // matrix now comes from the instance buffer.
+            // factors (PushConstants, RenderTypes.h). Vertex as well as fragment: a surface that moves
+            // vertices reads its parameters in vertMain too, through pc.paramOffset (Surface.slang).
+            // Must match kMeshPushStages, which every push with this layout uses.
             vk::PushConstantRange pushConstantRange{
-                .stageFlags = vk::ShaderStageFlagBits::eFragment,
+                .stageFlags = kMeshPushStages,
                 .offset     = 0,
                 .size       = sizeof(PushConstants)
             };
@@ -542,7 +548,7 @@ namespace Crucible {
                 cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_meshLayout, 1, *mat.descriptorSet, nullptr);
                 // The material's settings (MakeMaterialPush), recorded into the command buffer (so
                 // an Inspector slider change needs no GPU synchronization). Constant across the batch.
-                cmd.pushConstants<PushConstants>(*m_meshLayout, vk::ShaderStageFlagBits::eFragment, 0, mat.push);
+                cmd.pushConstants<PushConstants>(*m_meshLayout, kMeshPushStages, 0, mat.push);
                 boundMaterial = batch.material;
             }
 
