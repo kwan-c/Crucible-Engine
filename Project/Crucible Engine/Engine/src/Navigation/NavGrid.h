@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NavGrid: a flat 2D grid over the map where every cell is
 *                open or blocked. The bottom layer of enemy navigation.
@@ -20,8 +20,21 @@
 *                collects the obstacle boxes first. That keeps it testable
 *                on its own and lets the procedural generator re-bake it.
 *
+*                Two layers per cell (build step 4): a static flag (terrain
+*                walls and StaticObstacles, stamped once at bake) and a
+*                dynamic count (how many DynamicObstacles cover it). A cell
+*                is blocked if either says so. A count, not a flag, so that
+*                when one of two overlapping obstacles moves away the cell
+*                stays blocked by the other. Dynamic obstacles are stamped
+*                and unstamped by their footprint: the list of cell indices
+*                they block (a list, not a rectangle, so the layered grid
+*                can later name one layer of a column and not another).
+*
 * \history
 *    -v1.0       first version
+*    -v1.1       static flag + dynamic count per cell (was one blocked
+*                byte); Footprint, AddDynamic, RemoveDynamic. The bake
+*                blocks the same cells as before
 *
 **************************************************************************/
 #pragma once
@@ -56,6 +69,7 @@ namespace Crucible {
 
         Math::vec3 min = Math::vec3(0.0f);
         Math::vec3 max = Math::vec3(0.0f);
+        bool       dynamic = false;   // DynamicObstacle: counted in the dynamic layer, so it can be unstamped later
 
     };  // NAVOBSTACLE STRUCT
 
@@ -87,8 +101,10 @@ namespace Crucible {
 
         /*!
             \brief
-            Rebuilds every cell from scratch: obstacles first, then terrain walls.
-            Call at startup, and again whenever the terrain is regenerated.
+            Rebuilds every cell from scratch: obstacles first (static ones
+            into the static flag, dynamic ones into the dynamic count), then
+            terrain walls (static) on the cells still open. Call at startup,
+            and again whenever the terrain is regenerated.
 
             \param settings
             Size, cell size, body padding and the step/shoulder height band.
@@ -126,15 +142,49 @@ namespace Crucible {
         // The middle of a cell, at the grid origin's height.
         Math::vec3 CellToWorldCenter(const NavCell& cell) const;
 
+        // --- Dynamic obstacles ---------------------------------------------- //
+
+        /*!
+            \brief
+            The cells an obstacle blocks: its box grown by bodyRadiusPadding,
+            if it reaches into the height band [ground + stepHeight,
+            ground + shoulderHeight] (ground under its centre).
+
+            \param cells
+            Cleared, then filled with the cell indices (Index()). Empty when it
+            is outside the band or off the grid.
+
+            \return
+            Whether it is inside the height band (even if off the grid).
+        */
+        bool Footprint(const NavObstacle& obstacle, const NavTerrain& terrain, std::vector<int>& cells) const;
+
+        /*!
+            \brief
+            Adds / removes one dynamic obstacle's footprint (+1 / -1 on each
+            cell's count). Always remove exactly what was added.
+
+            \param changed
+            If given, every cell that went from open to blocked (Add) or
+            blocked to open (Remove) is appended - what the cost field and
+            the flow must hear about. A static cell never changes.
+        */
+        void AddDynamic(const std::vector<int>& cells, std::vector<int>* changed = nullptr);
+        void RemoveDynamic(const std::vector<int>& cells, std::vector<int>* changed = nullptr);
+
     private:
+
+        bool IsBlockedIndex(std::size_t index) const { return m_static[index] != 0 || m_dynamic[index] != 0; }
 
         NavGridSettings           m_settings;
         int                       m_cols    = 0;
         int                       m_rows    = 0;
         float                     m_minX    = 0.0f;   // the grid's left edge (smallest X)
         float                     m_minZ    = 0.0f;   // the grid's back edge (smallest Z)
-        std::vector<std::uint8_t> m_blocked;           // 1 = blocked, one per cell; uint8_t, not vector<bool>, so reads are plain loads
-        bool                      m_baked   = false;
+        std::vector<std::uint8_t>  m_static;    // 1 = terrain wall or StaticObstacle; uint8_t, not vector<bool>, so reads are plain loads
+        std::vector<std::uint16_t> m_dynamic;   // how many DynamicObstacles cover the cell
+        std::vector<int>           m_footprint; // one obstacle's cells during a bake (memory reused)
+        bool                       m_baked   = false;
 
     };  // NAVGRID CLASS
 

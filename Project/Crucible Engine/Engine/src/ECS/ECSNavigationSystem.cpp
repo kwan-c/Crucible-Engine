@@ -11,7 +11,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -71,6 +71,8 @@
 *                and the agents' movement (steering, crowd, collision,
 *                facing, ground) with its helpers to Navigation/NavAgentMover.
 *                This file reads the scene and runs them in order
+*    -v1.8       Build step 4a: DynamicObstacle boxes are marked dynamic, so
+*                the grid counts them separately (still stamped at bake)
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
@@ -387,8 +389,12 @@ namespace Crucible {
         world.CreateQuery<const Collider, const WorldTransform>()
             .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
                 if (collider.m_isTrigger || !transform.valid || collider.m_type == ShapeType::HeightField) return;
-                if (world.CompareAnyTag(entity, { kStaticObstacleTag, kDynamicObstacleTag }))
-                    m_obstacles.push_back(WorldBounds(collider, transform.matrix));
+                const bool isStatic  = world.CompareTag(entity, kStaticObstacleTag);
+                const bool isDynamic = !isStatic && world.CompareTag(entity, kDynamicObstacleTag);
+                if (!isStatic && !isDynamic) return;
+                NavObstacle obstacle = WorldBounds(collider, transform.matrix);
+                obstacle.dynamic = isDynamic;   // stamped into the dynamic count, so it can be moved later (build step 4)
+                m_obstacles.push_back(obstacle);
             });
 
         // 4. The bake: area (fitted to the terrain if there is one), ground,
