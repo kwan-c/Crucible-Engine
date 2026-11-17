@@ -4,7 +4,8 @@
     "Untagged",
     "Player",
     "Enemy",
-    "Obstacle",
+    "StaticObstacle",
+    "DynamicObstacle",
     "Wall",
     "Pickup"
   ]

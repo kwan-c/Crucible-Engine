@@ -2,12 +2,13 @@
 * \file:         ECSNavigationSystem.h
 * \author:       Jean David Vidal Cruzado (main author; design and Unity original;
 *                v1.2: re-bake on request;
-*                v1.3: tagged obstacles; v1.4: rays read only the terrain),
+*                v1.3: tagged obstacles; v1.4: rays read only the terrain;
+*                v1.5: terrain read from the generator's grid),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -60,13 +61,21 @@
 *    -v1.4       SampleTerrain reads only the terrain (HeightField with a
 *                built Terrain); untagged colliders are invisible to
 *                navigation
+*    -v1.5       F2: the terrain's heights and cliffs come straight from the
+*                Terrain component's grid (TerrainGridNavTerrain), in Edit and
+*                Play - no ground rays, no ledge rule, no
+*                HeightfieldNavTerrain. Bakes no longer wait for physics.
+*                Tags StaticObstacle and DynamicObstacle replace Obstacle
+*                (both stamped at bake until dynamic re-stamping exists).
+*                With a generated terrain the grid is fitted to the terrain's
+*                bounds (m_fittedToTerrain)
 *
 **************************************************************************/
 #pragma once
 
 // STL
 #include <cstdint>   // BakeCount
-#include <string_view>   // kObstacleTag
+#include <string_view>   // kStaticObstacleTag, kDynamicObstacleTag
 #include <vector>
 
 // Crucible engine
@@ -74,7 +83,7 @@
 #include "Math/Math.h"
 #include "Navigation/AgentSpatialHash.h"
 #include "Navigation/FlowField.h"
-#include "Navigation/HeightfieldNavTerrain.h"
+#include "Navigation/TerrainGridNavTerrain.h"
 #include "Navigation/NavGrid.h"
 #include "Navigation/NavTerrain.h"
 #include "Systems/IECSSystems.h"
@@ -82,9 +91,13 @@
 
 namespace Crucible {
 
-    // The tag (Assets/Config/Tags.json) that makes a collider a navigation
-    // obstacle: the bake blocks its cells and the ground rays look through it.
-    inline constexpr std::string_view kObstacleTag = "Obstacle";
+    // The tags (Assets/Config/Tags.json) that make a collider a navigation
+    // obstacle: the bake blocks the cells under it (within the height band).
+    // Static ones are stamped once at bake; dynamic ones will be re-stamped
+    // on an interval (build step 4) - until then both are stamped at bake.
+    // Untagged colliders are invisible to navigation.
+    inline constexpr std::string_view kStaticObstacleTag  = "StaticObstacle";
+    inline constexpr std::string_view kDynamicObstacleTag = "DynamicObstacle";
 
     class ECSPhysicsSystem;
     class ECSSystemManager;
@@ -172,11 +185,13 @@ namespace Crucible {
             \brief
             Rebuilds the grid from the scene as it is now: the first
             FlowFieldSurface gives the size and settings, and every
-            non-trigger collider on an entity tagged "Obstacle"
-            (kObstacleTag) is an obstacle. Untagged colliders are ignored.
-            While Playing, a terrain's heights are sampled from physics, so
-            its slopes and cliffs count too; without a terrain the ground
-            is the flat plane at the surface's height.
+            non-trigger collider on an entity tagged StaticObstacle or
+            DynamicObstacle is an obstacle. Untagged colliders are ignored.
+            The ground is the generated terrain's grid (its heights and
+            cliffs, in Edit and Play) or, with no terrain, the flat plane
+            at the surface's height. With a terrain, the grid covers the
+            terrain's own bounds and the surface's scale is ignored.
+            Needs no physics.
 
             \param world
             The scene to bake.
@@ -191,11 +206,10 @@ namespace Crucible {
 
         /*!
             \brief
-            Bakes again while Playing, once physics has stepped with the
-            level as it is now. For a script that just built or changed
-            the ground (C# Navigation.Rebake): calling Bake straight away
-            would sample physics before it has made the new bodies, and
-            the new ground would bake as nothing.
+            Bakes again a frame later while Playing, once the transforms
+            scripts changed this frame are worked out. For a script that
+            just built or changed the ground (C# Navigation.Rebake); several
+            requests before the bake runs are one bake.
 
             \details
             Ignored outside Play (an Edit bake is the Inspector's Bake
@@ -217,8 +231,6 @@ namespace Crucible {
         bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
         bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
                    float distance, EntityHit& hit) const;
-        bool SampleTerrain(const NavGridSettings& settings, float stepHeight, float maxSlopeDegrees,
-                           float top, float bottom, const std::vector<Entity>& terrains);
         void DrawGrid() const;
         void DrawArrows() const;
 
@@ -235,16 +247,20 @@ namespace Crucible {
         FlowField                m_field;        // flows over m_grid, which it points at: declared after it
 
         // The ground. m_terrain points at one of the two below, chosen by Bake:
-        // the heightfield when physics could be sampled (Play), else the flat
-        // plane at the surface's height (the Edit preview, or no physics).
+        // the generated terrain's grid when there is one, else the flat plane
+        // at the surface's height (hand-built scenes).
         // A pointer so every user asks "the terrain" without caring which.
         FlatNavTerrain           m_flatTerrain;
-        HeightfieldNavTerrain    m_heightTerrain;
+        TerrainGridNavTerrain    m_gridTerrain;
         const NavTerrain*        m_terrain = &m_flatTerrain;
 
         std::vector<NavObstacle> m_obstacles;        // kept between bakes so a re-bake reuses its memory
-        bool                     m_physicsStepped = false;   // physics has stepped this Play, so its bodies exist to be sampled
-        bool                     m_rebakeRequested = false;  // RequestBake() since the last Update: bake after physics steps again
+        bool                     m_rebakeRequested = false;  // RequestBake() since the last Update: bake on the next one
+        bool                     m_bakeNextFrame   = false;  // a bake was just asked for: wait a frame so WorldTransforms catch up
+        bool                     m_fittedToTerrain = false;  // the last bake covered a generated terrain's bounds, not the surface's scale
+        Math::vec3               m_fittedCentre    = Math::vec3(0.0f);   // that area, for the outline
+        float                    m_fittedWidth     = 0.0f;
+        float                    m_fittedDepth     = 0.0f;
         std::uint32_t            m_bakeCount = 0;            // successful bakes so far (BakeCount)
 
         std::vector<Math::vec3>  m_goals;         // this frame's player positions (reused every frame)

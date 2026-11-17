@@ -3,12 +3,13 @@
 * \author:       Jean David Vidal Cruzado (main author; design and Unity original;
 *                v1.2: terrain, re-bake on request;
 *                v1.3: tagged obstacles;
-*                v1.4: rays read only the terrain),
+*                v1.4: rays read only the terrain;
+*                v1.5: terrain read from the generator's grid),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -48,12 +49,23 @@
 *                hit is ignored, and the ray range comes from the terrain's
 *                own heights. A scene with no terrain is not sampled: its
 *                ground is the flat plane at the surface's height
+*    -v1.5       F2, the generator hand-off (as Unity's NavTerrain.Register):
+*                the terrain's heights and cliffs are read from the Terrain
+*                component's grid (TerrainGridNavTerrain), so a nav cell is a
+*                wall when the generator cell under its centre is a Cliff.
+*                Works in Edit mode too. The ground rays, the ledge rule and
+*                the wait for a physics step before baking are gone: the bake
+*                needs no physics. Obstacles are tagged StaticObstacle or
+*                DynamicObstacle (both stamped at bake for now). With a
+*                generated terrain the grid covers the terrain exactly (its
+*                own bounds; the surface's scale is ignored), in Edit and
+*                Play, and the outline shows that area
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
 
 // STL
-#include <algorithm>    // std::clamp, std::max, std::min, std::minmax_element, std::any_of
+#include <algorithm>    // std::clamp, std::max, std::min
 #include <cmath>        // std::atan2, std::sqrt, std::ceil, std::tan, std::cos
 
 // Crucible engine
@@ -381,36 +393,41 @@ namespace Crucible {
         // last Bake click, or never clicked it, and the game must not run on a
         // stale grid. Only Edit -> Playing - Resume carries on with the same one.
         const PlayState state = m_playMode.State();
-        if (m_lastState == PlayState::Edit && state == PlayState::Playing) { m_bakePending = true; m_physicsStepped = false; }
+        if (m_lastState == PlayState::Edit && state == PlayState::Playing) { m_bakePending = true; m_bakeNextFrame = true; }
 
-        // A script changed the level mid-Play (RequestBake): bake again, and wait
-        // for a physics step AFTER this frame, because the step physics reported
-        // last frame came before the new bodies existed.
-        const bool rebakeNow = m_rebakeRequested && state == PlayState::Playing;
+        // A script changed the level mid-Play (RequestBake): bake again. The bake
+        // reads components only (the terrain's grid, obstacles' colliders), not
+        // physics, so it doesn't wait for physics to build the new bodies.
+        if (m_rebakeRequested && state == PlayState::Playing) { m_bakePending = true; m_bakeNextFrame = true; }
         m_rebakeRequested = false;
-        if (rebakeNow) { m_bakePending = true; m_physicsStepped = false; }
 
-        // And not before physics has stepped once: its bodies are created when
-        // Play starts (it runs after this system, in PostUpdate), and the bake
-        // samples the ground heights from them. Without the wait, the first
-        // bake's rays would find nothing and the level would bake flat. It is
-        // a frame or two; with no physics system at all there is nothing to wait for.
-        if (!m_physics) m_physics = m_systems.FindSystem<ECSPhysicsSystem>();
-        if (!rebakeNow && state == PlayState::Playing && (!m_physics || m_physics->GetStepsLastFrame() > 0)) m_physicsStepped = true;
+        // But it does wait one frame: scripts run in Update and change
+        // Transforms (the generator sizes the Nav Surface to the map, then asks
+        // for this bake), and WorldTransform only catches up in PreRender
+        // (HierarchyTransformSystem), after this system. Baking in the same
+        // frame read the surface's old size - a 120 m grid on a 500 m map.
+        const bool waitThisFrame = m_bakeNextFrame;
+        m_bakeNextFrame = false;
 
         // Not on the very frame Play starts, though, if the surface's world
         // matrix isn't worked out yet: the Game starts Playing on its first
         // frame, before HierarchyTransformSystem has run, and baking then read
         // an identity matrix - a 1 x 1 m grid at the origin, so no flow field.
         // (The Editor never hit this: its transforms exist long before Play.)
-        // No surface at all bakes at once, so Bake's warning still comes.
+        // No surface at all bakes at once, so Bake's warning still comes. The
+        // terrain's matrix must be worked out too, or the bake would place it
+        // at the origin.
         bool surfaceReady = true;
         world.CreateQuery<const FlowFieldSurface, const WorldTransform>()
             .ForEach([&](Entity, const FlowFieldSurface&, const WorldTransform& transform) {
                 if (!transform.valid) surfaceReady = false;
             });
+        world.CreateQuery<const Terrain, const WorldTransform>()
+            .ForEach([&](Entity, const Terrain&, const WorldTransform& transform) {
+                if (!transform.valid) surfaceReady = false;
+            });
 
-        if (m_bakePending && state == PlayState::Playing && surfaceReady && m_physicsStepped) {
+        if (m_bakePending && state == PlayState::Playing && surfaceReady && !waitThisFrame) {
 
             m_bakePending = false;
             Bake(world);
@@ -444,7 +461,10 @@ namespace Crucible {
                 if (hasSurface) return;     // only the first surface counts, as in Bake
                 hasSurface = true;
                 surface    = found;
-                DrawOutline(AreaOf(transform.matrix));
+                // Fitted to a terrain, the grid covers the terrain, not the
+                // surface's scale: outline what was really baked.
+                if (m_fittedToTerrain && m_grid.IsBaked()) DrawOutline({ m_fittedCentre, m_fittedWidth, m_fittedDepth });
+                else                                       DrawOutline(AreaOf(transform.matrix));
             });
 
         // No surface any more (removed, switched off, or a scene without one):
@@ -452,6 +472,7 @@ namespace Crucible {
         if (!hasSurface) {
             m_field.Clear();     // first: it points at the grid being reset
             m_grid = NavGrid{};
+            m_fittedToTerrain = false;
             m_goalsAtBuild.clear();
         }
 
@@ -464,8 +485,10 @@ namespace Crucible {
             UpdateAgents(world);
         }
 
-        if (m_grid.IsBaked())   DrawGrid();
-        if (m_field.HasFlow())  DrawArrows();
+        // Skipped outright when nothing would show them (Gizmos off, or their
+        // category off): on a 500 m map the loops visit 62,500 cells a frame.
+        if (m_grid.IsBaked()  && DebugDraw::ShouldDraw(DebugCategory::NavGrid))   DrawGrid();
+        if (m_field.HasFlow() && DebugDraw::ShouldDraw(DebugCategory::FlowField)) DrawArrows();
 
     }   // ECSNavigationSystem::Update()
 
@@ -1160,9 +1183,44 @@ namespace Crucible {
             CRU_WARN("Navigation: {} FlowFieldSurfaces in the scene - only the first one is used", surfaces);
         }
 
+        // The generated terrain, if there is one (step 3 reads its ground).
+        // Not generated yet: nothing to stand on, so it doesn't count.
+        std::shared_ptr<const TerrainGrid> terrainGrid;
+        Math::mat4 terrainMatrix(1.0f);
+        int terrains = 0;
+        world.CreateQuery<const Terrain, const WorldTransform>()
+            .ForEach([&](Entity, const Terrain& terrain, const WorldTransform& transform) {
+                if (!terrain.m_grid || !terrain.m_grid->IsValid() || !transform.valid) return;
+                if (terrains++ == 0) { terrainGrid = terrain.m_grid; terrainMatrix = transform.matrix; }
+            });
+        if (terrains > 1) CRU_WARN("Navigation: {} generated terrains in the scene - only the first one is used", terrains);
+
+        // With a terrain, the grid covers exactly the terrain: its own corners,
+        // in world space, whatever the map size - so the surface's scale can't
+        // be wrong, in Edit mode or Play. The surface still gives the settings.
+        m_fittedToTerrain = terrainGrid != nullptr;
+        if (m_fittedToTerrain) {
+            const HeightGrid& heights = terrainGrid->heights;
+            const float x0 = heights.MinX(), x1 = heights.MinX() + heights.Width();
+            const float z0 = heights.MinZ(), z1 = heights.MinZ() + heights.Depth();
+            Math::vec3 low(1e30f), high(-1e30f);
+            for (const Math::vec3& corner : { Math::vec3(x0, 0.0f, z0), Math::vec3(x1, 0.0f, z0),
+                                              Math::vec3(x0, 0.0f, z1), Math::vec3(x1, 0.0f, z1) }) {
+                const Math::vec3 point(terrainMatrix * Math::vec4(corner, 1.0f));
+                low  = glm::min(low, point);
+                high = glm::max(high, point);
+            }
+            area.centre = Math::vec3((low.x + high.x) * 0.5f, terrainMatrix[3].y, (low.z + high.z) * 0.5f);
+            area.width  = high.x - low.x;
+            area.depth  = high.z - low.z;
+            m_fittedCentre = area.centre;
+            m_fittedWidth  = area.width;
+            m_fittedDepth  = area.depth;
+        }
+
         // A freshly added surface sits on an entity of scale 1: a 1 x 1 m grid.
         // It still bakes (one cell is a valid grid), but say what to do about it.
-        if (area.width < surface.m_cellSize * 2.0f || area.depth < surface.m_cellSize * 2.0f) {
+        if (!m_fittedToTerrain && (area.width < surface.m_cellSize * 2.0f || area.depth < surface.m_cellSize * 2.0f)) {
             CRU_WARN("Navigation: the surface only covers {} x {} m - scale its entity so X and Z cover the level (scale = metres)",
                      area.width, area.depth);
         }
@@ -1175,33 +1233,18 @@ namespace Crucible {
         m_terrain     = &m_flatTerrain;
         m_stepHeight  = surface.m_stepHeight;   // the agents' probes sweep the same height band the bake uses
 
-        // 2. The obstacles: the colliders of entities tagged "Obstacle" - the
-        // designer's call, as in Unity's NavGrid, not a guess from the layer
-        // and RigidBody. Triggers block nothing in physics, so not here either.
-        // Untagged colliders are invisible to navigation (Unity's rule).
-        // The same pass finds the terrain: a HeightField collider whose
-        // Terrain has been built. It is always ground, never an obstacle, and
-        // its lowest and highest corners decide where the ground rays run.
+        // 2. The obstacles: the colliders of entities tagged StaticObstacle or
+        // DynamicObstacle - the designer's call, as in Unity's NavGrid, not a
+        // guess from the layer and RigidBody. Triggers block nothing in
+        // physics, so not here either. Untagged colliders are invisible to
+        // navigation (Unity's rule). The terrain (a HeightField collider) is
+        // ground, never an obstacle: step 3 reads it from its own grid.
         m_obstacles.clear();
-        std::vector<Entity> terrains;
-        float sampleTop    = -1e30f;
-        float sampleBottom =  1e30f;
         world.CreateQuery<const Collider, const WorldTransform>()
             .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
-                if (collider.m_isTrigger || !transform.valid) return;
-                if (collider.m_type == ShapeType::HeightField) {
-                    const Terrain* terrain = world.Read<Terrain>(entity);
-                    const auto     grid    = terrain ? terrain->Heights() : nullptr;
-                    if (!grid || grid->heights.empty()) return;   // not generated yet: nothing to stand on
-                    const auto [low, high] = std::minmax_element(grid->heights.begin(), grid->heights.end());
-                    const float y0 = (transform.matrix * Math::vec4(0.0f, *low,  0.0f, 1.0f)).y;
-                    const float y1 = (transform.matrix * Math::vec4(0.0f, *high, 0.0f, 1.0f)).y;
-                    sampleTop    = std::max(sampleTop,    std::max(y0, y1) + 1.0f);
-                    sampleBottom = std::min(sampleBottom, std::min(y0, y1) - 1.0f);
-                    terrains.push_back(entity);
-                    return;
-                }
-                if (world.CompareTag(entity, kObstacleTag)) m_obstacles.push_back(WorldBounds(collider, transform.matrix));
+                if (collider.m_isTrigger || !transform.valid || collider.m_type == ShapeType::HeightField) return;
+                if (world.CompareAnyTag(entity, { kStaticObstacleTag, kDynamicObstacleTag }))
+                    m_obstacles.push_back(WorldBounds(collider, transform.matrix));
             });
 
         NavGridSettings settings;
@@ -1213,16 +1256,18 @@ namespace Crucible {
         settings.stepHeight        = surface.m_stepHeight;
         settings.shoulderHeight    = surface.m_shoulderHeight;
 
-        // 3. The terrain's heights, sampled from physics - only while Playing,
-        // because physics only has bodies then (it is SimulationOnly), and
-        // only if there is a terrain. Otherwise the ground stays the flat
-        // plane at the surface's height (the Edit preview, hand-built scenes).
-        if (!m_physics) m_physics = m_systems.FindSystem<ECSPhysicsSystem>();
-        if (!terrains.empty() && m_playMode.State() == PlayState::Playing && m_physics && m_physics->IsInSession()
-            && SampleTerrain(settings, surface.m_stepHeight, surface.m_maxWalkableSlope, sampleTop, sampleBottom, terrains)) {
-            m_terrain = &m_heightTerrain;
-        }
-        CRU_INFO("Navigation: {} collider(s) tagged \"{}\" baked as obstacles", m_obstacles.size(), kObstacleTag);
+        // 3. The ground: the generated terrain's own grid, the hand-off Unity's
+        // generator made through NavTerrain.Register (F2). Its heights are the
+        // exact triangles of the mesh and collider, and a nav cell is a wall
+        // when the generator cell under its centre is a Cliff - one definition
+        // of a cliff for the generator, its colours, the player and enemies.
+        // Read from the component, so it works in Edit mode as soon as the
+        // terrain is generated (found in step 1). No terrain: the flat plane set above.
+        if (m_gridTerrain.Reset(terrainGrid, terrainMatrix, area.centre.y)) m_terrain = &m_gridTerrain;
+        else                                                               m_gridTerrain.Clear();
+        CRU_INFO("Navigation: ground is {}; {:.0f} x {:.0f} m; {} tagged obstacle(s) baked",
+                 m_terrain == &m_gridTerrain ? "the generated terrain (grid fitted to it)" : "flat",
+                 area.width, area.depth, m_obstacles.size());
 
         // 4. The bake itself. NavGrid logs the result, or why it failed. Then
         // the flow field's cost field, which depends on nothing but the grid,
@@ -1236,150 +1281,6 @@ namespace Crucible {
         return true;
 
     }   // ECSNavigationSystem::Bake()
-
-    /*!
-        \brief
-        Fills m_heightTerrain from physics: one ray straight down through
-        every cell's centre, and the point where it meets the terrain is
-        that cell's ground. Every other collider the ray passes - tagged or
-        untagged - is ignored: tagged obstacles are blocked by the grid bake
-        on its own, and untagged ones are invisible to navigation (Unity's
-        rule). Until the generator hands its grid over directly (F2), this
-        is how the terrain's heights and cliffs reach navigation.
-
-        \details
-        A cell is a wall when:
-          - nothing is under it (a hole, or past the edge of the floor);
-          - its surface is steeper than maxSlopeDegrees (the surface's
-            m_maxWalkableSlope, 35 by default; the level generator sets the
-            same limit on the player);
-          - it is a LEDGE: higher than a neighbour by more than the slope
-            between them explains, plus the step height - a sharp terrace
-            step the slope test alone misses. A ledge cell's height is then
-            set to the ground below it.
-
-        The terrain is a heightfield, so it has no overhangs: one height per
-        cell is exact. Overhangs and bridges come with the layered grid.
-
-        \return
-        False if nothing was hit at all (no colliders under the surface): the
-        caller then keeps the flat ground.
-
-        \param top, bottom
-        Where the rays start and end: above the terrain's highest corner and
-        below its lowest (Bake works them out).
-
-        \param terrains
-        The terrain entities; a hit on anything else is ignored.
-    */
-    bool ECSNavigationSystem::SampleTerrain(const NavGridSettings& settings, float stepHeight, float maxSlopeDegrees,
-                                            float top, float bottom, const std::vector<Entity>& terrains) {
-
-        const float slopeLimit = std::clamp(maxSlopeDegrees, 1.0f, 89.0f);   // a vertical limit would make every wall walkable
-        constexpr long long kMaxSamples  = 1000000;   // one ray each; past this, bigger cells are the fix (NavGrid says so too)
-
-        if (!m_physics || !(settings.cellSize > 0.0f)) return false;
-
-        const long long colsLong = static_cast<long long>(std::ceil(settings.width / settings.cellSize));
-        const long long rowsLong = static_cast<long long>(std::ceil(settings.depth / settings.cellSize));
-        if (colsLong <= 0 || rowsLong <= 0 || colsLong * rowsLong > kMaxSamples) return false;
-        const int   cols = static_cast<int>(colsLong);
-        const int   rows = static_cast<int>(rowsLong);
-        const float cell = settings.cellSize;
-        const float minX = settings.origin.x - settings.width * 0.5f;   // the same corner NavGrid uses, so cells match
-        const float minZ = settings.origin.z - settings.depth * 0.5f;
-
-        // 1. One ray per cell centre.
-        struct Sample { float height = 0.0f; float normalY = 1.0f; bool hit = false; };
-        std::vector<Sample> samples(static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows));
-
-        EntityFilter filter;
-        filter.layers = LayerMask(PhysicsLayer::NonMoving);   // the arena only: not crates, characters or enemies
-        const Math::vec3 down(0.0f, -1.0f, 0.0f);
-        const auto isTerrain = [&](const Entity& entity) {
-            return std::any_of(terrains.begin(), terrains.end(), [&](const Entity& terrain) {
-                return terrain.index == entity.index && terrain.generation == entity.generation;
-            });
-        };
-        std::vector<EntityHit> found;   // every hit down one column, reused for every cell
-        int hits = 0;
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                const Math::vec3 origin(minX + (static_cast<float>(col) + 0.5f) * cell, top,
-                                        minZ + (static_cast<float>(row) + 0.5f) * cell);
-                // Everything down the column, then the nearest hit on the
-                // terrain: whatever stands on it (tagged or not) is skipped.
-                m_physics->RaycastAll(origin, down, top - bottom, found, filter);
-                const EntityHit* ground = nullptr;
-                for (const EntityHit& hit : found) {
-                    if (isTerrain(hit.entity) && (!ground || hit.distance < ground->distance)) ground = &hit;
-                }
-                if (!ground) continue;
-                Sample& sample = samples[static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(col)];
-                sample = { ground->point.y, ground->normal.y, true };
-                ++hits;
-            }
-        }
-        if (hits == 0) return false;
-
-        // 2. Steep cells, then ledges between each pair of side-by-side cells
-        // (each pair once: the right and the forward neighbour).
-        const float maxSlopeTan = std::tan(glm::radians(slopeLimit));
-        const float minNormalY  = std::cos(glm::radians(slopeLimit));
-
-        // How steep a surface is, as rise per metre, from its normal; capped
-        // at the walkable limit so a wall's normal can't excuse a huge jump.
-        const auto riseRate = [&](const Sample& s) {
-            if (s.normalY <= minNormalY) return maxSlopeTan;
-            return std::min(std::sqrt(std::max(0.0f, 1.0f - s.normalY * s.normalY)) / s.normalY, maxSlopeTan);
-        };
-
-        std::vector<std::uint8_t> wall(samples.size(), 0);
-        std::vector<float>        height(samples.size(), settings.origin.y);
-        int steep = 0, ledges = 0, empty = 0;
-        for (std::size_t i = 0; i < samples.size(); ++i) {
-            if (!samples[i].hit)                     { wall[i] = 1; ++empty; continue; }
-            height[i] = samples[i].height;
-            if (samples[i].normalY < minNormalY)     { wall[i] = 1; ++steep; }
-        }
-
-        std::vector<float> lowered = height;   // ledge cells sink to the ground beside them (read the unlowered heights while comparing)
-        const auto compare = [&](std::size_t a, std::size_t b) {
-            if (!samples[a].hit || !samples[b].hit) return;
-            const float allowed = cell * std::max(riseRate(samples[a]), riseRate(samples[b])) + stepHeight;
-            const float rise    = height[b] - height[a];
-            if (std::abs(rise) <= allowed) return;
-            const std::size_t high = rise > 0.0f ? b : a;
-            const std::size_t low  = rise > 0.0f ? a : b;
-            if (wall[high] == 0) ++ledges;
-            wall[high]    = 1;
-            lowered[high] = std::min(lowered[high], height[low]);
-        };
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                const std::size_t i = static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(col);
-                if (col + 1 < cols) compare(i, i + 1);
-                if (row + 1 < rows) compare(i, i + static_cast<std::size_t>(cols));
-            }
-        }
-
-        // 3. Into the terrain.
-        m_heightTerrain.Reset(minX, minZ, cols, rows, cell, settings.origin.y);
-        float lowest = lowered[0], highest = lowered[0];
-        for (int row = 0; row < rows; ++row) {
-            for (int col = 0; col < cols; ++col) {
-                const std::size_t i = static_cast<std::size_t>(row) * static_cast<std::size_t>(cols) + static_cast<std::size_t>(col);
-                m_heightTerrain.SetCell(col, row, lowered[i], wall[i] != 0);
-                lowest  = std::min(lowest, lowered[i]);
-                highest = std::max(highest, lowered[i]);
-            }
-        }
-
-        CRU_INFO("Navigation: sampled {} x {} ground heights from {:.2f} to {:.2f} m - {} too steep, {} ledges, {} with nothing under them",
-                 cols, rows, lowest, highest, steep, ledges, empty);
-        return true;
-
-    }   // ECSNavigationSystem::SampleTerrain()
 
     /*!
         \brief

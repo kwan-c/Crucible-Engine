@@ -250,8 +250,13 @@ returns false when the entity has no AnimatedModel controller with that paramete
 - `FlowFieldSurface`: `FloodRadius`, `RebuildDistance`, and `MaxWalkableSlope` (degrees, read by the next
   bake: set it before `Navigation.Rebake()`, and give the player's `CharacterController.SlopeLimit` the same value).
 - `Navigation`: `IsWalkable(pos)`, `IsPathClear(from, to)`, `Rebake()` (after changing the ground
-  mid-Play; it bakes once physics has the new bodies), `IsBaked`, and `BakeCount` (read it before
+  mid-Play; it bakes on the next frame), `IsBaked`, and `BakeCount` (read it before
   `Rebake()`: when it changes, the new grid is in).
+- What blocks enemies: only colliders on entities tagged `StaticObstacle` or `DynamicObstacle`
+  (the tag on the entity that has the collider). Untagged colliders are ignored by navigation:
+  enemies still bump into them but don't path round them. The generated terrain's cliffs come
+  from the generator itself, in Edit and Play; scenes without terrain have a flat floor at the
+  Nav Surface's height.
 - `StateGraphAgent`: `CurrentState`, `Set/GetVariableValue<T>`. Behaviour-graph nodes live in
   `ManagedScripts/Runtime/AI`; templates are in `ManagedScripts/Templates`.
 
