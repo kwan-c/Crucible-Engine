@@ -5,7 +5,8 @@
         "windowHeight": 800,
         "fullScreen": false,
         "maximized": false,
-        "targetFPS": 60
+        "targetFPS": 60,
+        "backgroundFPS": 15
     },
     "network": {
         "mode": "offline",
@@ -30,6 +31,9 @@
             "windowTitle": "Mekanomachia",
             "fullScreen": true,
             "maximized": false
+        },
+        "project": {
+            "startupScene": "Scenes/Game/Main Menu Scene.scene"
         }
     },
     "scripting": {

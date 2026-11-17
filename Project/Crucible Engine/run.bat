@@ -27,6 +27,11 @@ set CMAKE_EXE=
 set VS_YEAR=
 set VS_INSTALL_DIR=
 set CACHED_GENERATOR=
+set CACHED_INSTANCE=
+set CACHED_HOME=
+set STALE_REASON=
+set INSTANCE_ARG=
+set SOLUTION_FILE=
 set "VSWHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe"
 
 REM ============================================
@@ -39,9 +44,21 @@ if not "%~1"=="" if not defined VS_YEAR goto :BAD_ARGUMENT
 
 REM 2) Otherwise keep the generator an existing Build folder was made with,
 REM    because CMake cannot switch generators inside one build folder
-if exist "%BUILD_DIR%\CMakeCache.txt" (
-    for /f "tokens=2 delims==" %%g in ('findstr /b /c:"CMAKE_GENERATOR:INTERNAL=" "%BUILD_DIR%\CMakeCache.txt"') do set "CACHED_GENERATOR=%%g"
-)
+if not exist "%BUILD_DIR%\CMakeCache.txt" goto :CACHE_CHECKED
+for /f "tokens=1* delims==" %%g in ('findstr /b /c:"CMAKE_GENERATOR:INTERNAL=" "%BUILD_DIR%\CMakeCache.txt"') do set "CACHED_GENERATOR=%%h"
+for /f "tokens=1* delims==" %%g in ('findstr /b /c:"CMAKE_GENERATOR_INSTANCE:INTERNAL=" "%BUILD_DIR%\CMakeCache.txt"') do set "CACHED_INSTANCE=%%h"
+for /f "tokens=1* delims==" %%g in ('findstr /b /c:"CMAKE_HOME_DIRECTORY:INTERNAL=" "%BUILD_DIR%\CMakeCache.txt"') do set "CACHED_HOME=%%h"
+
+REM    ...but only if that Build folder really belongs to this PC and this folder.
+REM    A Build folder synced from another PC (OneDrive) or left over from a
+REM    Visual Studio that is not installed here is deleted and made again.
+REM    CMake writes paths with / so turn them into \ before comparing
+if defined CACHED_INSTANCE set "CACHED_INSTANCE=%CACHED_INSTANCE:/=\%"
+if defined CACHED_HOME set "CACHED_HOME=%CACHED_HOME:/=\%"
+if defined CACHED_HOME if /i not "%CACHED_HOME%"=="%PROJECT_DIR:~0,-1%" set "STALE_REASON=it was generated in another folder or on another PC"
+if defined CACHED_INSTANCE if not exist "%CACHED_INSTANCE%\" set "STALE_REASON=the Visual Studio it was made for is not installed on this PC"
+if defined STALE_REASON goto :STALE_BUILD
+:CACHE_CHECKED
 if not defined VS_YEAR if "%CACHED_GENERATOR%"=="Visual Studio 17 2022" set VS_YEAR=2022
 if not defined VS_YEAR if "%CACHED_GENERATOR%"=="Visual Studio 18 2026" set VS_YEAR=2026
 if defined VS_YEAR if "%~1"=="" echo Keeping %CACHED_GENERATOR% from the existing Build folder. To switch, run clean.bat, then run.bat 2022 or run.bat 2026.
@@ -72,7 +89,7 @@ if "%VS_YEAR%"=="2026" (
     set "VS_RANGE=[18.0,19.0)"
     set MIN_CMAKE_TEXT=4.2
     set MIN_CMAKE_NUM=402
-    set CMAKE_VERSION=4.4.5
+    set CMAKE_VERSION=4.4.4
 ) else (
     set "GENERATOR=Visual Studio 17 2022"
     set "VS_RANGE=[17.0,18.0)"
@@ -85,6 +102,11 @@ if defined CACHED_GENERATOR if not "%CACHED_GENERATOR%"=="%GENERATOR%" goto :GEN
 
 REM Where that Visual Studio is installed (to find the CMake it ships with)
 call :FIND_VS "%VS_RANGE%"
+if exist "%VSWHERE%" if not defined VS_INSTALL_DIR echo WARNING: Visual Studio %VS_YEAR% with the C++ tools was not found on this PC. CMake will probably fail below.
+
+REM Tell CMake to use exactly that install on a fresh Build folder
+REM (an existing Build folder already remembers its own)
+if defined VS_INSTALL_DIR if not exist "%BUILD_DIR%\CMakeCache.txt" set INSTANCE_ARG=-DCMAKE_GENERATOR_INSTANCE:PATH="%VS_INSTALL_DIR:\=/%"
 
 REM ============================================
 REM Find a CMake that is new enough
@@ -141,7 +163,7 @@ REM #------------#
 REM Run CMake File
 REM #------------#
 echo Running CMake ..
-"%CMAKE_EXE%" -S . -B "%BUILD_DIR%" -G "%GENERATOR%" -A x64
+"%CMAKE_EXE%" -S . -B "%BUILD_DIR%" -G "%GENERATOR%" -A x64 %INSTANCE_ARG%
 if %errorlevel% neq 0 (
     echo ERROR: CMake configuration failed with code %errorlevel%.
     pause
@@ -150,6 +172,12 @@ if %errorlevel% neq 0 (
 REM uncommment these to debug (you cant see them normally anyways so no point
 REM echo Project generated successfully in %BUILD_DIR%.
 REM pause
+
+REM Say which solution to open (2026 writes Crucible.slnx, 2022 writes Crucible.sln)
+if exist "%BUILD_DIR%\Crucible.sln" set "SOLUTION_FILE=Crucible.sln"
+if exist "%BUILD_DIR%\Crucible.slnx" if "%VS_YEAR%"=="2026" set "SOLUTION_FILE=Crucible.slnx"
+if not defined SOLUTION_FILE if exist "%BUILD_DIR%\Crucible.slnx" set "SOLUTION_FILE=Crucible.slnx"
+if defined SOLUTION_FILE echo Done. Open Build\%SOLUTION_FILE% with Visual Studio %VS_YEAR%.
 exit /b 0
 
 
@@ -159,6 +187,19 @@ REM ============================================
 
 :BAD_ARGUMENT
 echo ERROR: Unknown option "%~1". Use run.bat, run.bat 2022 or run.bat 2026.
+pause
+exit /b 1
+
+:STALE_BUILD
+echo The Build folder cannot be reused: %STALE_REASON%.
+echo Deleting it to generate from scratch...
+rmdir /s /q "%BUILD_DIR%"
+if exist "%BUILD_DIR%" goto :WIPE_FAILED
+set CACHED_GENERATOR=
+goto :CACHE_CHECKED
+
+:WIPE_FAILED
+echo ERROR: Could not delete the Build folder. Close Visual Studio and the Editor, then run this again.
 pause
 exit /b 1
 

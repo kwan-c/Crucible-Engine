@@ -24,7 +24,8 @@
 *      <GUID>.params.json, removes those whose graph is gone, and checks every .mat's shader
 *      has compiled code (CookShaderGraphs.h). Needs slangc (the Vulkan SDK), as the build does.
 *
-* Never copies source-only files (.glb, .png/.jpg/.hdr, .ttf, .fontsettings, .slang, .cs, ...).
+* Never copies source-only files (.glb, .png/.jpg/.hdr, .ttf, .fontsettings, .slang, .cs, ...),
+* nor anything under Assets/Editor (editor-only files such as .crutones editor themes).
 * Used by the CrucibleCook tool (the "Cook" build target, for the installer) and by the
 * editor's File -> Cook Resources. Writes nothing to Assets.
 *

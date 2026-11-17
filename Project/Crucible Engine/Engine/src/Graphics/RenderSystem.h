@@ -665,6 +665,16 @@ namespace Crucible {
         ENGINE_API void           SetViewportActive(ViewportHandle handle, bool active);
 
         /*********************************************************************
+         \brief  Skips DrawFrame() while set: Update() still consumes the
+                 frame's submissions (so nothing piles up) but records and
+                 presents nothing. Core sets it while the window is
+                 minimized - nothing can be seen, and a 0x0 swapchain cannot
+                 be drawn into anyway.
+         *********************************************************************/
+        void                      SetDrawSuspended(bool suspended) { m_drawSuspended = suspended; }
+        bool                      IsDrawSuspended() const { return m_drawSuspended; }
+
+        /*********************************************************************
          \brief  The colour a viewport shows where no scene is drawn: always
                  for a UI viewport, and for a Game viewport while there is
                  no main camera. Default opaque black.
@@ -1144,6 +1154,7 @@ namespace Crucible {
         RenderFrameStats                            m_frameStats;
         GpuProfiler                                 m_profiler;
         double                                      m_lastFrameStart = 0.0;  // seconds, steady clock
+        bool                                        m_drawSuspended = false; // SetDrawSuspended
 
         // Load test (see StressSettings).
         StressSettings                              m_stressSettings;
