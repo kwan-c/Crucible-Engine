@@ -6,7 +6,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                FlowFieldSurface: where enemies can walk (Unity's
 *                NavMeshSurface). FlowFieldAgent: one enemy's legs (Unity's
@@ -31,6 +31,9 @@
 *    -v1.2       FlowFieldSurface::m_maxWalkableSlope replaces the bake's
 *                fixed 35 degrees, so a level generator can set the same
 *                limit for enemies as for the player
+*    -v1.3       m_maxWalkableSlope removed: since F2 the generated terrain's
+*                cliffs come from the generator itself (its own
+*                maxWalkableSlope), so navigation no longer judges slopes
 *
 **************************************************************************/
 #pragma once
@@ -76,7 +79,6 @@ namespace Crucible {
         float m_bodyRadiusPadding = 0.6f;     // the enemy's body radius: obstacles grow by this, so open cells fit a whole body
         float m_stepHeight        = 0.3f;     // obstacles entirely lower than this above the ground are stepped over
         float m_shoulderHeight    = 1.6f;     // obstacles entirely higher than this above the ground are walked under
-        float m_maxWalkableSlope  = 35.0f;    // degrees: steeper ground is a wall. Match the player's CharacterController slope limit
 
         // The flow field, rebuilt in Play as the player moves. These two apply
         // live; the wall cost needs a Bake (or Play) to take effect.

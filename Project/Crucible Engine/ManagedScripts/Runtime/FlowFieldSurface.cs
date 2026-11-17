@@ -53,23 +53,11 @@ namespace Crucible
             set { SetRebuildDistanceInternal(I, G, ref value); }
         }
 
-        /// <summary>
-        /// Degrees: steeper ground is a wall to enemies. Read by the next bake, so set it before
-        /// Navigation.Rebake(), and give the player's CharacterController.SlopeLimit the same value.
-        /// </summary>
-        public float MaxWalkableSlope
-        {
-            get { float v; return GetMaxWalkableSlopeInternal(I, G, out v) != 0 ? v : 0f; }
-            set { SetMaxWalkableSlopeInternal(I, G, ref value); }
-        }
-
         public override string ToString() { return "FlowFieldSurface on " + Entity; }
 
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetFloodRadiusInternal(int index, int generation, out float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetFloodRadiusInternal(int index, int generation, ref float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetRebuildDistanceInternal(int index, int generation, out float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetRebuildDistanceInternal(int index, int generation, ref float value);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetMaxWalkableSlopeInternal(int index, int generation, out float value);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetMaxWalkableSlopeInternal(int index, int generation, ref float value);
     }
 }

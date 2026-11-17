@@ -247,8 +247,8 @@ returns false when the entity has no AnimatedModel controller with that paramete
 - `FlowFieldAgent`: `MoveTo(point)`, `Arrive(entity)` (chase and stop at StoppingDistance),
   `FollowField()`, `Stop()`, `HasArrived`, `RemainingDistance`, `Velocity`, and every setting.
   The agent moves its own entity.
-- `FlowFieldSurface`: `FloodRadius`, `RebuildDistance`, and `MaxWalkableSlope` (degrees, read by the next
-  bake: set it before `Navigation.Rebake()`, and give the player's `CharacterController.SlopeLimit` the same value).
+- `FlowFieldSurface`: `FloodRadius`, `RebuildDistance`. What counts as too steep comes from the terrain
+  generator (`SubLevelGenerator.maxWalkableSlope`, which also sets the player's `SlopeLimit`).
 - `Navigation`: `IsWalkable(pos)`, `IsPathClear(from, to)`, `Rebake()` (after changing the ground
   mid-Play; it bakes on the next frame), `IsBaked`, and `BakeCount` (read it before
   `Rebake()`: when it changes, the new grid is in).

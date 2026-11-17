@@ -22,6 +22,9 @@
   \history
     - 1.0 (31 October 2026): First version.
     - 1.1 (10 November 2026, Jean David): maxWalkableSlope.
+    - 1.2 (17 November 2026, Jean David): maxWalkableSlope removed (cliffs come
+      from the terrain generator since F2). Scenes that still have the key load
+      fine: a key with no property is skipped.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -39,7 +42,6 @@ RTTR_REGISTRATION
         .property("bodyRadiusPadding", &FlowFieldSurface::m_bodyRadiusPadding)
         .property("stepHeight",        &FlowFieldSurface::m_stepHeight)
         .property("shoulderHeight",    &FlowFieldSurface::m_shoulderHeight)
-        .property("maxWalkableSlope",  &FlowFieldSurface::m_maxWalkableSlope)   // scenes saved before it load as 35
         .property("floodRadius",       &FlowFieldSurface::m_floodRadius)
         .property("rebuildDistance",   &FlowFieldSurface::m_rebuildDistance)
         .property("wallAdjacencyCost", &FlowFieldSurface::m_wallAdjacencyCost)

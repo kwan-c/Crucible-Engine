@@ -39,7 +39,9 @@
 *    -v1.0       terrain from a seed, shared with navigation and the player
 *    -v1.1       Generate as an [EditorButton] preview in Edit mode
 *    -v1.2       No longer sizes or moves the Nav Surface: navigation fits
-*                its grid to the terrain on its own (Edit and Play)
+*                its grid to the terrain on its own (Edit and Play), and
+*                takes its cliffs from here, so the surface's slope setting
+*                is gone (maxWalkableSlope here is the one slope limit)
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -116,7 +118,7 @@ namespace Crucible.@Scripts
 
             if (Application.IsPlaying)
             {
-                ShareWithNavigation();
+                CheckNavigation();
                 ApplyPlayerSlope();
                 Navigation.Rebake();
             }
@@ -138,17 +140,12 @@ namespace Crucible.@Scripts
             return s;
         }
 
-        // Navigation fits its grid to the terrain and reads its cliffs on its own; this only
-        // checks a Nav Surface exists and passes on the slope limit.
-        private void ShareWithNavigation()
+        // Navigation fits its grid to the terrain and reads its cliffs on its own (they come from
+        // maxWalkableSlope above); this only warns when there is no Nav Surface to do it.
+        private void CheckNavigation()
         {
-            FlowFieldSurface surface = navSurface != null ? navSurface.GetComponent<FlowFieldSurface>() : null;
-            if (surface == null)
-            {
+            if (navSurface == null || navSurface.GetComponent<FlowFieldSurface>() == null)
                 Log.Warning("SubLevelGenerator: no FlowFieldSurface - enemies won't path on the generated ground");
-                return;
-            }
-            surface.MaxWalkableSlope = maxWalkableSlope;
         }
 
         // Unity's ApplyPlayerSlope: the player climbs exactly what enemies can.
