@@ -16,7 +16,7 @@
         "maxClients": 3
     },
     "project": {
-        "startupScene": "Scenes/Fog_Lighting_Effects.scene",
+        "startupScene": "Scenes/Game/Main Menu Scene.scene",
         "aspectRatio": [
             16,
             9
@@ -30,6 +30,9 @@
             "windowTitle": "Mekanomachia",
             "fullScreen": true,
             "maximized": false
+        },
+        "project": {
+            "startupScene": "Scenes/Fog_Lighting_Effects.scene"
         }
     },
     "scripting": {

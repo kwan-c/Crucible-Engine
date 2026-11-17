@@ -3,6 +3,17 @@
 #include <iostream>
 #include <stdexcept>
 
+#ifdef _WIN32
+    #ifndef WIN32_LEAN_AND_MEAN
+    #define WIN32_LEAN_AND_MEAN
+    #endif
+    #ifndef NOMINMAX
+    #define NOMINMAX
+    #endif
+    #define GLFW_EXPOSE_NATIVE_WIN32
+    #include <GLFW/glfw3native.h>
+#endif
+
 namespace Crucible {
 
     WindowManager::WindowManager(int w, int h, const std::string& title, bool fullscreen, bool maximized) {
@@ -160,6 +171,7 @@ namespace Crucible {
             glfwSetWindowAttrib(m_pWindow, GLFW_DECORATED, GLFW_TRUE);   // borderless took the title bar away
             glfwSetWindowMonitor(m_pWindow, nullptr, m_windowedX, m_windowedY, m_windowedW, m_windowedH, 0);
             m_fullscreen = false;
+            UpdateBorderlessTopmost();   // back to a normal (not always-on-top) window
             if (restoreMaximized) { glfwMaximizeWindow(m_pWindow); }
             else if (IsAspectRatioLocked()) { glfwSetWindowAspectRatio(m_pWindow, m_aspectWidth, m_aspectHeight); }
             m_maximized = restoreMaximized;
@@ -250,6 +262,7 @@ namespace Crucible {
             glfwSetWindowMonitor(m_pWindow, nullptr, monitorX, monitorY, mode->width, mode->height, 0);
             glfwFocusWindow(m_pWindow);
         }
+        UpdateBorderlessTopmost();
         glfwGetWindowSize(m_pWindow, &m_width, &m_height);
         m_framebufferResized = true;
         return true;
@@ -353,8 +366,51 @@ namespace Crucible {
         glfwSetWindowAspectRatio(m_pWindow, GLFW_DONT_CARE, GLFW_DONT_CARE);
     }
 
+    void WindowManager::UpdateBorderlessTopmost() {
+
+#ifdef _WIN32
+        if (!m_pWindow) { return; }
+        HWND hwnd = glfwGetWin32Window(m_pWindow);
+        if (!hwnd) { return; }
+
+        // Windows only hides the taskbar for a window it decides is "fullscreen", and for a plain
+        // borderless window that check is unreliable: it is only re-evaluated when the window is
+        // activated, so a window that was made monitor-sized after it was shown (startup, F11),
+        // or that did not get the foreground at launch, can keep the taskbar on top of it.
+        // Making the borderless window topmost while it has focus puts it above the taskbar
+        // every time. It drops back to a normal window the moment it loses focus, so alt-tab
+        // still shows the other app (the reason borderless is not a GLFW monitor window).
+        // Exclusive fullscreen is left alone: GLFW makes monitor windows topmost itself.
+        const bool borderless = m_fullscreen && glfwGetWindowMonitor(m_pWindow) == nullptr;
+        const bool focused    = glfwGetWindowAttrib(m_pWindow, GLFW_FOCUSED)   == GLFW_TRUE;
+        const bool iconified  = glfwGetWindowAttrib(m_pWindow, GLFW_ICONIFIED) == GLFW_TRUE;
+        const bool want       = borderless && focused && !iconified;
+
+        // Read the real state rather than caching it: GLFW changes it too (monitor windows).
+        const bool isTopmost = (GetWindowLongPtrW(hwnd, GWL_EXSTYLE) & WS_EX_TOPMOST) != 0;
+        if (want == isTopmost) { return; }
+        if (glfwGetWindowMonitor(m_pWindow)) { return; }   // exclusive: GLFW's business
+
+        constexpr UINT flags = SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER;
+        if (want) {
+            SetWindowPos(hwnd, HWND_TOPMOST, 0, 0, 0, 0, flags);
+        }
+        else {
+            SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0, flags);
+            // HWND_NOTOPMOST puts it at the top of the normal windows - i.e. in front of the
+            // app the player just alt-tabbed to. Tuck it back behind that one.
+            HWND foreground = GetForegroundWindow();
+            if (foreground && foreground != hwnd) {
+                SetWindowPos(hwnd, foreground, 0, 0, 0, 0, flags);
+            }
+        }
+#endif
+    }
+
     void WindowManager::PollEvents() {
         glfwPollEvents();
+        // Focus changes (alt-tab, clicking another monitor) arrive with the events.
+        UpdateBorderlessTopmost();
         if (m_refitPending) { m_refitPending = false; ApplyPendingSize(); FitToAspectRatio(); }
     }
     bool WindowManager::ShouldClose() const { return glfwWindowShouldClose(m_pWindow); }
