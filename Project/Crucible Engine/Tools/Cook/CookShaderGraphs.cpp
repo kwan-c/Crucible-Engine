@@ -13,6 +13,7 @@
 
 #include "ShaderGraph/ShaderGraph.h"            // Editor/src: no engine, only rapidjson
 #include "ShaderGraph/ShaderGraphGenerator.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 #include "Shaders/ShaderCompiler.h"
 
 #include "AssetPipe/AssetManager.h"
@@ -136,12 +137,28 @@ namespace Crucible::Cook {
 
 		// Every graph with a GUID. One without a .meta has no name a material could use yet.
 		std::vector<GraphFile> graphs;
+		ShaderGraph::ClearSubgraphs();   // filled from Assets below: a deleted sub-graph must not linger (in the Editor too)
 		for (fs::recursive_directory_iterator it(assets, fs::directory_options::skip_permission_denied, ec), end;
 			!ec && it != end; it.increment(ec))
 		{
 			fs::path const relative = it->path().lexically_relative(assets);
 			if (IsHidden(relative)) { if (it->is_directory(ec)) it.disable_recursion_pending(); continue; }
-			if (!it->is_regular_file(ec) || AssetManager::ToLower(it->path().extension().string()) != kGraphExtension) continue;
+			if (!it->is_regular_file(ec)) continue;
+			const std::string extension = AssetManager::ToLower(it->path().extension().string());
+
+			// A sub-graph: into the library the generator finds them in, by GUID (ShaderGraphSubgraphs.h).
+			if (extension == ShaderGraph::kSubgraphExtension) {
+				AssetMeta meta;
+				if (!AssetRegistry::ReadMeta(AssetRegistry::MetaPathFor(it->path()), meta) || meta.guid.m_Value == 0) {
+					report.warnings.push_back(relative.generic_string() + " has no .meta (GUID) yet - open the editor once so it gets one; graphs cannot use it");
+					continue;
+				}
+				std::string text;
+				ReadFile(it->path(), text);
+				ShaderGraph::RegisterSubgraph(AssetRegistry::GuidToString(meta.guid), it->path().filename().string(), text);
+				continue;
+			}
+			if (extension != kGraphExtension) continue;
 
 			GraphFile graph{ it->path(), relative.generic_string(), {} };
 			AssetMeta meta;

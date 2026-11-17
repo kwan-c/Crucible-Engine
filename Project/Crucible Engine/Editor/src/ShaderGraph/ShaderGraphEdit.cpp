@@ -13,6 +13,7 @@
 
 #include "ShaderGraph/ShaderGraphGenerator.h"
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 
 #include <algorithm>
 #include <set>
@@ -52,6 +53,14 @@ namespace Crucible::ShaderGraph {
 	}
 
 	uint32_t AddNode(Graph& graph, std::string_view type, float x, float y, std::string_view parameter) {
+		if (type == kSubgraphNode) {
+			// A sub-graph, named by its GUID (passed as `parameter`): its pins come from its file.
+			if (parameter.empty()) { return 0; }
+			const uint32_t id = graph.AddNode(std::string(type), x, y);
+			graph.FindNode(id)->settings[kSubgraphSetting] = std::string(parameter);
+			if (const SubgraphEntry* entry = FindSubgraph(parameter)) { graph.FindNode(id)->settings[kSubgraphLabelSetting] = entry->label; }
+			return id;
+		}
 		if (!FindNodeType(type)) { return 0; }
 		if (type == kOutputNode && OutputNodeOf(graph) != 0) { return 0; }
 		const uint32_t id = graph.AddNode(std::string(type), x, y);
@@ -93,6 +102,22 @@ namespace Crucible::ShaderGraph {
 		return reroute;
 	}
 
+	bool SetSubgraph(Graph& graph, uint32_t node, std::string_view guid) {
+		Node* target = graph.FindNode(node);
+		const SubgraphEntry* entry = FindSubgraph(guid);
+		if (!target || target->type != kSubgraphNode || !entry) { return false; }
+		target->settings[kSubgraphSetting] = entry->guid;
+		target->settings[kSubgraphLabelSetting] = entry->label;
+		// Links on pins it has no longer go; a constant for an input it has no longer goes too.
+		if (entry->error.empty()) {
+			std::erase_if(graph.links, [&](const Link& link) {
+				return (link.toNode == node && entry->type.FindInput(link.toPin) < 0) || (link.fromNode == node && entry->type.FindOutput(link.fromPin) < 0);
+			});
+			std::erase_if(target->inputs, [&](const auto& constant) { return entry->type.FindInput(constant.first) < 0; });
+		}
+		return true;
+	}
+
 	size_t DeleteComments(Graph& graph, const std::vector<uint32_t>& ids) {
 		return std::erase_if(graph.comments, [&](const Comment& comment) { return Contains(ids, comment.id); });
 	}
@@ -100,8 +125,8 @@ namespace Crucible::ShaderGraph {
 	bool Connect(Graph& graph, uint32_t fromNode, std::string_view fromPin, uint32_t toNode, std::string_view toPin, std::string& why) {
 		const Node* from = graph.FindNode(fromNode);
 		const Node* to = graph.FindNode(toNode);
-		const NodeType* fromType = from ? FindNodeType(from->type) : nullptr;
-		const NodeType* toType = to ? FindNodeType(to->type) : nullptr;
+		const NodeType* fromType = from ? TypeOfNode(graph, *from) : nullptr;
+		const NodeType* toType = to ? TypeOfNode(graph, *to) : nullptr;
 		if (!fromType || !toType || fromType->FindOutput(fromPin) < 0 || toType->FindInput(toPin) < 0) {
 			why = "One of those pins is not there.";
 			return false;

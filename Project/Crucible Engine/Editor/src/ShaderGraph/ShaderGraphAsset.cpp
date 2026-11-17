@@ -14,12 +14,17 @@
 #include "ShaderGraph/ShaderGraph.h"
 #include "ShaderGraph/ShaderGraphGenerator.h"
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 
 #include "AssetPipe/Assetmanager.h"
 #include "AssetPipe/AssetRegistry.h"
 #include "Diagnostics/Logger.h"
 
 #include <algorithm>
+#include <chrono>
+#include <system_error>
+#include <unordered_map>
+#include <unordered_set>
 
 namespace Crucible {
 
@@ -60,7 +65,10 @@ namespace Crucible {
 		std::string text, error;
 		ShaderGraph::Graph loaded;
 		if (!assets.ReadText(graph.virtualPath, text) || !ShaderGraph::Load(text, loaded, error)) { return false; }
-		return std::any_of(loaded.nodes.begin(), loaded.nodes.end(), [](const ShaderGraph::Node& node) { return ShaderGraph::IsMaterialFactorNode(node.type); });
+		// Its sub-graphs' nodes count too: expanded, they are the graph's own.
+		SyncSubgraphs(assets);
+		const ShaderGraph::Flattened flat = ShaderGraph::Flatten(loaded);
+		return std::any_of(flat.graph.nodes.begin(), flat.graph.nodes.end(), [](const ShaderGraph::Node& node) { return ShaderGraph::IsMaterialFactorNode(node.type); });
 	}
 
 	std::vector<ShaderGraphFile> ListShaderGraphs(const AssetManager& assets) {
@@ -72,8 +80,44 @@ namespace Crucible {
 		return graphs;
 	}
 
+	void SyncSubgraphs(const AssetManager& assets, bool force) {
+		using Clock = std::chrono::steady_clock;
+		static Clock::time_point nextLook{};
+		static std::unordered_map<std::string, uint64_t> registered;   // GUID -> stamp of the file as it was read
+		const Clock::time_point now = Clock::now();
+		if (!force && now < nextLook) { return; }
+		nextLook = now + std::chrono::milliseconds(500);
+
+		std::unordered_set<std::string> present;
+		for (const AssetEntry& entry : assets.GetAll()) {
+			if (entry.compiled || entry.extension != ShaderGraph::kSubgraphExtension || entry.guid.m_Value == 0) { continue; }
+			const std::string guid = AssetRegistry::GuidToString(entry.guid);
+			present.insert(guid);
+
+			// Size, time and where it is (its label is its file name): read again when any changes.
+			std::error_code ec;
+			const std::filesystem::path file(entry.absolutePath);
+			uint64_t stamp = std::hash<std::string>{}(entry.virtualPath);
+			stamp ^= static_cast<uint64_t>(std::filesystem::file_size(file, ec)) * 1099511628211ull;
+			stamp ^= static_cast<uint64_t>(std::filesystem::last_write_time(file, ec).time_since_epoch().count()) * 0x9E3779B97F4A7C15ull;
+			if (const auto known = registered.find(guid); known != registered.end() && known->second == stamp && ShaderGraph::FindSubgraph(guid)) { continue; }
+
+			std::string text;
+			assets.ReadText(entry.virtualPath, text);   // unreadable: registered with the reason, so graphs using it say so
+			const size_t slash = entry.virtualPath.find_last_of('/');
+			ShaderGraph::RegisterSubgraph(guid, slash == std::string::npos ? entry.virtualPath : entry.virtualPath.substr(slash + 1), text);
+			registered[guid] = stamp;
+		}
+		for (auto it = registered.begin(); it != registered.end();) {
+			if (present.count(it->first) != 0) { ++it; continue; }
+			ShaderGraph::UnregisterSubgraph(it->first);
+			it = registered.erase(it);
+		}
+	}
+
 	bool GenerateShaderGraph(const AssetManager& assets, std::string_view shaderName,
 	                         std::string& source, std::string& paramsJson, std::string& error) {
+		SyncSubgraphs(assets, true);   // the sub-graphs it uses, as they are now
 		ShaderGraphFile file;
 		if (!FindShaderGraph(assets, shaderName, file)) {
 			error = "its .shadergraph file is no longer in Assets";

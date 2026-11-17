@@ -217,20 +217,26 @@ namespace Crucible::ShaderGraph {
 
 		Graph graph;
 		if (const auto domain = doc.FindMember("domain"); domain != doc.MemberEnd()) {
-			if (!domain->value.IsString() || Text(domain->value) != kSurfaceDomain) {
-				error = "its \"domain\" is not \"surface\", the only kind of graph there is";
+			const std::string text = domain->value.IsString() ? Text(domain->value) : std::string();
+			if (text != kSurfaceDomain && text != kSubgraphDomain) {
+				error = "its \"domain\" is \"" + text + "\": a graph is \"surface\" (a shader) or \"subgraph\" (a sub-graph)";
 				return false;
 			}
+			graph.domain = text;
 		}
 
-		if (const auto parameters = doc.FindMember("parameters"); parameters != doc.MemberEnd()) {
-			if (!parameters->value.IsArray()) {
-				error = "\"parameters\" is not a list";
+		// A list of named values, each like a parameter: the graph's "parameters", or a sub-graph's
+		// "inputs" and "outputs" (ShaderGraphSubgraphs.h).
+		const auto readList = [&](const char* key, const char* what, std::vector<Parameter>& into) -> bool {
+			const auto list = doc.FindMember(key);
+			if (list == doc.MemberEnd()) { return true; }
+			if (!list->value.IsArray()) {
+				error = std::string("\"") + key + "\" is not a list";
 				return false;
 			}
-			for (rapidjson::SizeType i = 0; i < parameters->value.Size(); ++i) {
-				const rapidjson::Value& entry = parameters->value[i];
-				const std::string where = "parameter " + std::to_string(i + 1);
+			for (rapidjson::SizeType i = 0; i < list->value.Size(); ++i) {
+				const rapidjson::Value& entry = list->value[i];
+				const std::string where = std::string(what) + " " + std::to_string(i + 1);
 				if (!entry.IsObject()) {
 					error = where + " is not an object";
 					return false;
@@ -248,7 +254,7 @@ namespace Crucible::ShaderGraph {
 					const auto known = std::find_if(kParameterTypes.begin(), kParameterTypes.end(),
 						[&](const TypeName& t) { return text == t.name; });
 					if (known == kParameterTypes.end()) {
-						error = "parameter \"" + parameter.name + "\": \"" + text + "\" is not a type (float, vec2, vec3, vec4, colour, texture)";
+						error = std::string(what) + " \"" + parameter.name + "\": \"" + text + "\" is not a type (float, vec2, vec3, vec4, colour, texture)";
 						return false;
 					}
 					parameter.type = known->type;
@@ -265,15 +271,18 @@ namespace Crucible::ShaderGraph {
 					// A colour that is not given a default is white; a number, 0.
 					if (parameter.type == ParameterType::Colour) { parameter.defaultValue = { 1.0f, 1.0f, 1.0f, 1.0f }; }
 					if (const auto value = entry.FindMember("default"); value != entry.MemberEnd() && !ReadNumbers(value->value, parameter.defaultValue)) {
-						error = "parameter \"" + parameter.name + "\": its default is not a number or a list of up to four";
+						error = std::string(what) + " \"" + parameter.name + "\": its default is not a number or a list of up to four";
 						return false;
 					}
 					if (const auto low = entry.FindMember("min"); low != entry.MemberEnd()) { ReadNumber(low->value, parameter.minValue); }
 					if (const auto high = entry.FindMember("max"); high != entry.MemberEnd()) { ReadNumber(high->value, parameter.maxValue); }
 				}
-				graph.parameters.push_back(std::move(parameter));
+				into.push_back(std::move(parameter));
 			}
-		}
+			return true;
+		};
+		if (!readList("parameters", "parameter", graph.parameters)) { return false; }
+		if (graph.domain == kSubgraphDomain && (!readList("inputs", "input", graph.inputs) || !readList("outputs", "output", graph.outputs))) { return false; }
 
 		uint32_t highestId = 0;
 		if (const auto nodes = doc.FindMember("nodes"); nodes != doc.MemberEnd()) {
@@ -411,9 +420,10 @@ namespace Crucible::ShaderGraph {
 	std::string Save(const Graph& graph) {
 		// Written by hand rather than with a JSON writer so that every parameter, node and link
 		// is one line: a graph in version control then shows what changed, line by line.
-		std::vector<std::string> parameters, nodes, links, comments;
+		std::vector<std::string> parameters, inputs, outputs, nodes, links, comments;
 
-		for (const Parameter& parameter : graph.parameters) {
+		// A parameter as one line; a sub-graph's inputs and outputs are written the same way.
+		const auto parameterLine = [](const Parameter& parameter) {
 			std::string line = "{ \"name\": " + Quoted(parameter.name) + ", \"type\": \"" + ParameterTypeName(parameter.type) + "\"";
 			if (parameter.type == ParameterType::Texture) {
 				line += std::string(", \"colour\": ") + (parameter.textureIsColour ? "true" : "false") + ", \"default\": " + Quoted(parameter.textureDefault);
@@ -424,8 +434,11 @@ namespace Crucible::ShaderGraph {
 					line += ", \"min\": " + NumberText(parameter.minValue) + ", \"max\": " + NumberText(parameter.maxValue);
 				}
 			}
-			parameters.push_back(line + " }");
-		}
+			return line + " }";
+		};
+		for (const Parameter& parameter : graph.parameters) { parameters.push_back(parameterLine(parameter)); }
+		for (const Parameter& input : graph.inputs) { inputs.push_back(parameterLine(input)); }
+		for (const Parameter& output : graph.outputs) { outputs.push_back(parameterLine(output)); }
 
 		for (const Node& node : graph.nodes) {
 			std::string line = "{ \"id\": " + std::to_string(node.id) + ", \"type\": " + Quoted(node.type) +
@@ -468,6 +481,8 @@ namespace Crucible::ShaderGraph {
 		// "comments" only when there are some: a graph without is the file it always was.
 		return "{\n  \"version\": " + std::to_string(kFormatVersion) + ",\n  \"domain\": " + Quoted(graph.domain) +
 		       ",\n  \"nextId\": " + std::to_string(graph.nextId) + ",\n  \"parameters\": " + ListText(parameters) +
+		       // A sub-graph's own pins: written for a sub-graph only, so a shader graph's file is as it always was.
+		       (graph.domain == kSubgraphDomain ? ",\n  \"inputs\": " + ListText(inputs) + ",\n  \"outputs\": " + ListText(outputs) : std::string()) +
 		       ",\n  \"nodes\": " + ListText(nodes) + ",\n  \"links\": " + ListText(links) +
 		       (comments.empty() ? std::string() : ",\n  \"comments\": " + ListText(comments)) + "\n}\n";
 	}

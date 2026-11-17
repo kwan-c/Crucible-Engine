@@ -9,6 +9,7 @@ add_executable(CrucibleCook
     ../../Editor/src/ShaderGraph/ShaderGraph.cpp
     ../../Editor/src/ShaderGraph/ShaderGraphNodes.cpp
     ../../Editor/src/ShaderGraph/ShaderGraphGenerator.cpp
+    ../../Editor/src/ShaderGraph/ShaderGraphSubgraphs.cpp
     ../../Editor/src/Shaders/ShaderCompiler.cpp
     ../../Engine/src/AssetPipe/Assetmanager.cpp
     ../../Engine/src/AssetPipe/AssetRegistry.cpp

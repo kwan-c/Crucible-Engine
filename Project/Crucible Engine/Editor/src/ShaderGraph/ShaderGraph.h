@@ -67,8 +67,12 @@ namespace Crucible::ShaderGraph {
 	/// The .shadergraph format this code writes (and the newest it reads).
 	inline constexpr int kFormatVersion = 1;
 
-	/// What a graph is for. Only "surface" exists: a mesh surface (see the file comment).
+	/// What a graph is for. "surface": a mesh surface, a shader (see the file comment).
 	inline constexpr const char* kSurfaceDomain = "surface";
+	/// "subgraph": a group of nodes saved as a file of its own (.shadersubgraph) and used in other
+	/// graphs as one node. It has "inputs" and "outputs" instead of parameters and an Output
+	/// node - see ShaderGraphSubgraphs.h.
+	inline constexpr const char* kSubgraphDomain = "subgraph";
 
 	/// What a parameter is. The first five are the "type" values of a .params.json file too.
 	enum class ParameterType : uint8_t { Float, Vec2, Vec3, Vec4, Colour, Texture };
@@ -122,6 +126,9 @@ namespace Crucible::ShaderGraph {
 		std::string            domain = kSurfaceDomain;
 		uint32_t               nextId = 1;   ///< the id the next new node or comment gets
 		std::vector<Parameter> parameters;   ///< in the order a material's Inspector shows them
+		/// A sub-graph's pins, as the node that uses it shows them (ShaderGraphSubgraphs.h). Written like
+		/// parameters: name, type, default. Empty, and not in the file, for a shader graph.
+		std::vector<Parameter> inputs, outputs;
 		std::vector<Node>      nodes;
 		std::vector<Link>      links;
 		std::vector<Comment>   comments;     ///< in drawing order: later ones on top

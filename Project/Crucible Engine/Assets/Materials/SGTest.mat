@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "shader": "D74EE0E1A217C001",
+  "shader": "72D1F8E1F09B0001",
   "albedoTint": [1.0, 1.0, 1.0, 1.0],
   "emissiveFactor": [0.0, 0.0, 0.0],
   "metallic": 1.0,
@@ -17,11 +17,7 @@
     "litColour": [1.0, 1.0, 1.0],
     "outline": 1.0
   },
-  "params": {
-    "vector": [0.15000000596046448, 0.10000000149011612],
-    "value": 0.2199999988079071
-  },
   "textures": {
-    "texture": "AE46D8D20AE68003"
+    "texture": ""
   }
 }

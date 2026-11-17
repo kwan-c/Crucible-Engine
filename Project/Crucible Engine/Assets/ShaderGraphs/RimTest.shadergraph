@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "domain": "surface",
+  "nextId": 4,
+  "parameters": [
+    { "name": "texture", "type": "texture", "colour": true, "default": "white" }
+  ],
+  "nodes": [
+    { "id": 1, "type": "Output", "x": 1072.0002, "y": 386.40002 },
+    { "id": 2, "type": "Subgraph", "x": 755.9999, "y": 387.19992, "inputs": { "power": 3.0 }, "settings": { "label": "RimGlow.shadersubgraph", "subgraph": "125B58E1F16F0003" } },
+    { "id": 3, "type": "Parameter", "x": 470.40002, "y": 387.9998, "settings": { "parameter": "texture" } }
+  ],
+  "links": [
+    { "from": [2, "glow"], "to": [1, "emissive"] },
+    { "from": [3, "out"], "to": [2, "mask"] }
+  ]
+}

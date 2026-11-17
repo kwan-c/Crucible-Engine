@@ -90,6 +90,9 @@ namespace Crucible {
 			// the renderer stops drawing the last version and shows the error material. When the file
 			// comes back the shader is generated, compiled and handed over again as usual.
 			std::function<void()>                  missing;
+			// Optional: a number that changes when anything else the shader is made from changes (the
+			// sub-graphs a shader graph uses): it is then generated again, and compiled if that changed it.
+			std::function<uint64_t()>              dependencies;
 		};
 
 		enum class Status {

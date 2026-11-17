@@ -117,6 +117,7 @@ namespace Crucible {
 		float                  m_orbitPitch = -20.0f;
 		float                  m_orbitZoom = 1.0f;      // 1 = the mesh fills the view
 		bool                   m_liveDue = false;       // the graph changed: it is to be sent again
+		std::uint64_t          m_subgraphsSeen = 0;     // ShaderGraph::SubgraphsVersion() when last looked at
 		double                 m_liveAt = 0.0;          // ... once ImGui's time reaches this
 		std::string            m_liveName;              // the scene shader this window has given a live source ("" = none)
 

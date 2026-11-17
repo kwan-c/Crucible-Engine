@@ -29,6 +29,7 @@
 #include "ShaderGraph/ShaderGraphEdit.h"
 #include "ShaderGraph/ShaderGraphGenerator.h"
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -1126,6 +1127,232 @@ namespace {
 		CHECK(document.Redo() && document.GetGraph().comments.size() == 1 && document.GetGraph().comments[0].text == "Notes");
 	}
 
+	// ---- Step 10b: sub-graphs ---------------------------------------------------------------------------
+
+	// A sub-graph with every kind of pin: a colour, a number and a texture in; a float3 and a float4 out.
+	Graph GlowSubgraph() {
+		Graph sub;
+		sub.domain = kSubgraphDomain;
+		sub.inputs.push_back({ "colour", ParameterType::Colour, { 1.0f, 0.5f, 0.2f, 0.0f }, 0.0f, 1.0f, true, "white" });
+		sub.inputs.push_back({ "power", ParameterType::Float, { 3.0f }, 0.0f, 10.0f, true, "white" });
+		sub.inputs.push_back({ "tex", ParameterType::Texture, {}, 0.0f, 1.0f, true, "white" });
+		sub.outputs.push_back({ "glow", ParameterType::Vec3, {}, 0.0f, 1.0f, true, "white" });
+		sub.outputs.push_back({ "sampled", ParameterType::Vec4, {}, 0.0f, 1.0f, true, "white" });
+		const auto pin = [&](const char* type, const char* setting, const char* name) {
+			const uint32_t id = sub.AddNode(type);
+			sub.FindNode(id)->settings[setting] = name;
+			return id;
+		};
+		const uint32_t colour = pin(kSubgraphInputNode, kSubgraphInputSetting, "colour");
+		const uint32_t power = pin(kSubgraphInputNode, kSubgraphInputSetting, "power");
+		const uint32_t tex = pin(kSubgraphInputNode, kSubgraphInputSetting, "tex");
+		const uint32_t glow = pin(kSubgraphOutputNode, kSubgraphOutputSetting, "glow");
+		const uint32_t sampled = pin(kSubgraphOutputNode, kSubgraphOutputSetting, "sampled");
+		const uint32_t fresnel = sub.AddNode("Fresnel");
+		const uint32_t multiply = sub.AddNode("Multiply");
+		const uint32_t sample = sub.AddNode("SampleTexture");
+		Connect(sub, power, "out", fresnel, "power");
+		Connect(sub, colour, "out", multiply, "a");
+		Connect(sub, fresnel, "out", multiply, "b");
+		Connect(sub, multiply, "out", glow, "in");
+		Connect(sub, tex, "out", sample, "texture");
+		Connect(sub, sample, "rgba", sampled, "in");
+		return sub;
+	}
+
+	void TestSubgraphs(const char* writeTo) {
+		std::printf("sub-graphs\n");
+		ClearSubgraphs();
+		std::string error, why;
+
+		// The file: "subgraph" domain, inputs and outputs; a shader graph's file has neither.
+		const Graph glow = GlowSubgraph();
+		const std::string glowText = Save(glow);
+		CHECK(Contains(glowText, "\"domain\": \"subgraph\"") && Contains(glowText, "\"inputs\": [") && Contains(glowText, "\"outputs\": ["));
+		Graph glowLoaded;
+		CHECK(Load(glowText, glowLoaded, error) && Save(glowLoaded) == glowText && glowLoaded.inputs.size() == 3 && glowLoaded.outputs.size() == 2);
+		CHECK(!Contains(Save(NewGraph()), "\"inputs\"") && !Contains(Save(NewGraph()), "\"outputs\""));
+		Graph other;
+		CHECK(!Load(R"({ "version": 1, "domain": "particles" })", other, error) && Contains(error, "domain"));
+
+		// In the library: its node's pins are its inputs and outputs; found by GUID in any case.
+		const std::string glowGuid = "00000000000000A1";
+		RegisterSubgraph(glowGuid, "Glow.shadersubgraph", glowText);
+		const SubgraphEntry* entry = FindSubgraph("00000000000000a1");
+		CHECK(entry && entry->error.empty() && entry->type.inputs.size() == 3 && entry->type.outputs.size() == 2);
+		CHECK(entry && entry->type.inputs[2].type == ValueType::Texture && entry->type.outputs[1].type == ValueType::Float4 && entry->type.inputs[0].colour);
+		CHECK(ListSubgraphs().size() == 1);
+		// Inside it, an input or output node has the pin of its declared type.
+		for (const Node& node : glow.nodes) {
+			if (node.type == kSubgraphInputNode && node.settings.at(kSubgraphInputSetting) == "colour") { CHECK(TypeOfNode(glow, node)->outputs[0].type == ValueType::Float3); }
+			if (node.type == kSubgraphOutputNode && node.settings.at(kSubgraphOutputSetting) == "sampled") { CHECK(TypeOfNode(glow, node)->inputs[0].type == ValueType::Float4); }
+		}
+		const uint64_t version = SubgraphsVersion();
+
+		// Used in a graph: a texture parameter in, its glow to the Output.
+		Graph graph = NewGraph();
+		const uint32_t output = OutputNodeOf(graph);
+		graph.parameters.push_back({ "pattern", ParameterType::Texture, {}, 0.0f, 1.0f, true, "white" });
+		const uint32_t pattern = AddNode(graph, kParameterNode, 0.0f, 0.0f, "pattern");
+		const uint32_t sub = AddNode(graph, kSubgraphNode, 200.0f, 0.0f, glowGuid);
+		CHECK(sub != 0 && AddNode(graph, kSubgraphNode, 0.0f, 0.0f, "") == 0);
+		CHECK(Crucible::ShaderGraph::Connect(graph, pattern, "out", sub, "tex", why));
+		CHECK(!Crucible::ShaderGraph::Connect(graph, sub, "sampled", output, "albedo", why) && !why.empty());   // a float4 into a float3
+		CHECK(Crucible::ShaderGraph::Connect(graph, sub, "glow", output, "emissive", why));
+		Generated result = Generate(graph);
+		if (!result.ok || !result.problems.empty()) { PrintProblems(graph, result); }
+		CHECK(result.ok && result.problems.empty() && Contains(result.source, "GraphFresnel(") && Contains(result.source, ": _Pass\n"));
+		const auto summary = std::find_if(result.nodes.begin(), result.nodes.end(), [&](const Generated::NodeResult& n) { return n.node == sub; });
+		CHECK(summary != result.nodes.end() && summary->valid && summary->used && summary->outputs.size() == 2);
+		if (summary != result.nodes.end() && summary->outputs.size() == 2) { CHECK(summary->outputs[0] == ValueType::Float3 && summary->outputs[1] == ValueType::Float4); }
+		bool linesAreTheGraphs = true;
+		for (const uint32_t node : result.lineNodes) { linesAreTheGraphs = linesAreTheGraphs && (node == 0 || graph.FindNode(node) != nullptr); }
+		CHECK(linesAreTheGraphs);
+		CHECK(Generate(graph).source == result.source);   // the same every time
+
+		// A constant typed on the node goes in; in the live form it is that node's own hidden parameter.
+		graph.FindNode(sub)->inputs["power"] = { 7.25f, 0.0f, 0.0f, 0.0f };
+		CHECK(Contains(Generate(graph).source, "7.25"));
+		const Generated live = Generate(graph, Options{ true });
+		CHECK(live.ok && std::any_of(live.liveConstants.begin(), live.liveConstants.end(), [&](const Generated::LiveConstant& c) {
+			return c.node == sub && c.pin == "power" && c.name == LiveConstantName(sub, "power") && c.value[0] == 7.25f;
+		}));
+
+		// Its texture output used and its texture input unlinked: a problem on the node that stops the shader.
+		const uint32_t split = AddNode(graph, "Split", 400.0f, 100.0f);
+		CHECK(Crucible::ShaderGraph::Connect(graph, sub, "sampled", split, "in", why) && Crucible::ShaderGraph::Connect(graph, split, "w", output, "alpha", why));
+		CHECK(Generate(graph).ok);
+		DeleteLinkInto(graph, sub, "tex");
+		result = Generate(graph);
+		CHECK(!result.ok && FindProblem(result, sub, "", "inside Glow.shadersubgraph") && FindProblem(result, sub, "", "texture"));
+		CHECK(Crucible::ShaderGraph::Connect(graph, pattern, "out", sub, "tex", why) && Generate(graph).ok);
+
+		// What goes into an input is checked against its type; a loop through the node is refused.
+		const uint32_t uv = AddNode(graph, "UV", 0.0f, 200.0f);
+		CHECK(!Crucible::ShaderGraph::Connect(graph, uv, "out", sub, "colour", why));
+		Graph forced = graph;
+		forced.links.push_back({ uv, "out", sub, "colour" });
+		result = Generate(forced);
+		CHECK(!result.ok && FindProblem(result, sub, "colour", "float2"));
+		const uint32_t multiply = AddNode(graph, "Multiply", 400.0f, 300.0f);
+		CHECK(Crucible::ShaderGraph::Connect(graph, sub, "glow", multiply, "a", why));
+		CHECK(!Crucible::ShaderGraph::Connect(graph, multiply, "out", sub, "colour", why) && Contains(why, "loop"));
+
+		// A link into a pin the sub-graph does not have (any more): said, not guessed at.
+		Graph stale = graph;
+		stale.links.push_back({ uv, "out", sub, "nothere" });
+		result = Generate(stale);
+		CHECK(!result.ok && FindProblem(result, sub, "", "no such input"));
+
+		// Gone from the library: said on the node; back again, fine.
+		UnregisterSubgraph(glowGuid);
+		CHECK(SubgraphsVersion() != version);
+		result = Generate(graph);
+		CHECK(!result.ok && FindProblem(result, sub, "", "not in Assets"));
+		RegisterSubgraph(glowGuid, "Glow.shadersubgraph", glowText);
+		const Generated glowShader = Generate(graph);
+		CHECK(glowShader.ok);
+
+		// A sub-graph inside a sub-graph.
+		const std::string outerGuid = "00000000000000B2";
+		Graph outer;
+		outer.domain = kSubgraphDomain;
+		outer.inputs.push_back({ "c", ParameterType::Colour, { 1.0f, 1.0f, 1.0f, 0.0f }, 0.0f, 1.0f, true, "white" });
+		outer.outputs.push_back({ "o", ParameterType::Vec3, {}, 0.0f, 1.0f, true, "white" });
+		const uint32_t outerIn = outer.AddNode(kSubgraphInputNode);
+		outer.FindNode(outerIn)->settings[kSubgraphInputSetting] = "c";
+		const uint32_t outerGlow = outer.AddNode(kSubgraphNode);
+		outer.FindNode(outerGlow)->settings[kSubgraphSetting] = glowGuid;
+		const uint32_t outerOut = outer.AddNode(kSubgraphOutputNode);
+		outer.FindNode(outerOut)->settings[kSubgraphOutputSetting] = "o";
+		Connect(outer, outerIn, "out", outerGlow, "colour");
+		Connect(outer, outerGlow, "glow", outerOut, "in");
+		RegisterSubgraph(outerGuid, "Outer.shadersubgraph", outer);
+		CHECK(FindSubgraph(outerGuid) && FindSubgraph(outerGuid)->error.empty());
+		Graph nested = NewGraph();
+		const uint32_t nestedNode = AddNode(nested, kSubgraphNode, 0.0f, 0.0f, outerGuid);
+		CHECK(Crucible::ShaderGraph::Connect(nested, nestedNode, "o", OutputNodeOf(nested), "albedo", why));
+		const Generated nestedShader = Generate(nested);
+		if (!nestedShader.ok) { PrintProblems(nested, nestedShader); }
+		CHECK(nestedShader.ok && Contains(nestedShader.source, "GraphFresnel("));
+
+		// One that uses itself.
+		const std::string loopGuid = "00000000000000C3";
+		Graph loop;
+		loop.domain = kSubgraphDomain;
+		loop.outputs.push_back({ "r", ParameterType::Float, {}, 0.0f, 1.0f, true, "white" });
+		const uint32_t loopSelf = loop.AddNode(kSubgraphNode);
+		loop.FindNode(loopSelf)->settings[kSubgraphSetting] = loopGuid;
+		const uint32_t loopOut = loop.AddNode(kSubgraphOutputNode);
+		loop.FindNode(loopOut)->settings[kSubgraphOutputSetting] = "r";
+		Connect(loop, loopSelf, "r", loopOut, "in");
+		RegisterSubgraph(loopGuid, "Loop.shadersubgraph", loop);
+		Graph uses = NewGraph();
+		const uint32_t usesLoop = AddNode(uses, kSubgraphNode, 0.0f, 0.0f, loopGuid);
+		Connect(uses, usesLoop, "r", OutputNodeOf(uses), "metallic");
+		result = Generate(uses);
+		CHECK(!result.ok && FindProblem(result, usesLoop, "", "uses itself"));
+
+		// What cannot be a sub-graph - and a graph using one says why.
+		const std::string badGuid = "00000000000000D4";
+		const auto errorOf = [&](Graph bad) {
+			RegisterSubgraph(badGuid, "Bad.shadersubgraph", std::move(bad));
+			const SubgraphEntry* found = FindSubgraph(badGuid);
+			return found ? found->error : std::string("?");
+		};
+		{ Graph bad = glow; bad.parameters.push_back({ "p", ParameterType::Float, {}, 0.0f, 1.0f, true, "white" }); CHECK(Contains(errorOf(bad), "parameters")); }
+		{ Graph bad = glow; bad.AddNode(kParameterNode); CHECK(Contains(errorOf(bad), "reads no parameters")); }
+		{ Graph bad = glow; bad.AddNode(kOutputNode); CHECK(Contains(errorOf(bad), "not an Output node")); }
+		{ Graph bad = glow; bad.outputs.push_back({ "t", ParameterType::Texture, {}, 0.0f, 1.0f, true, "white" }); CHECK(Contains(errorOf(bad), "texture")); }
+		{ Graph bad = glow; bad.outputs.clear(); CHECK(Contains(errorOf(bad), "no outputs")); }
+		{ Graph bad = glow; bad.inputs.push_back(bad.inputs[0]); CHECK(Contains(errorOf(bad), "two inputs")); }
+		{ Graph bad = glow; bad.inputs[0].name = "2nd"; CHECK(Contains(errorOf(bad), "another name")); }
+		{ Graph bad = glow; const uint32_t id = bad.AddNode(kSubgraphInputNode); bad.FindNode(id)->settings[kSubgraphInputSetting] = "nope"; CHECK(Contains(errorOf(bad), "does not have")); }
+		{ Graph bad = NewGraph(); CHECK(Contains(errorOf(bad), "not a sub-graph")); }
+		RegisterSubgraph(badGuid, "Bad.shadersubgraph", std::string_view("{ not json"));
+		CHECK(FindSubgraph(badGuid) && Contains(FindSubgraph(badGuid)->error, "does not load"));
+		Graph usesBad = NewGraph();
+		const uint32_t badNode = AddNode(usesBad, kSubgraphNode, 0.0f, 0.0f, badGuid);
+		CHECK(TypeOfNode(usesBad, *usesBad.FindNode(badNode)) == nullptr);
+		Connect(usesBad, badNode, "glow", OutputNodeOf(usesBad), "albedo");
+		result = Generate(usesBad);
+		CHECK(!result.ok && FindProblem(result, badNode, "", "cannot be used"));
+
+		// The file moved without its .meta: back under another GUID. The node says so (it remembers
+		// the file's name), and Use sub-graph points it there, keeping the links that still fit.
+		{
+			Graph moved = NewGraph();
+			const uint32_t node = AddNode(moved, kSubgraphNode, 0.0f, 0.0f, glowGuid);
+			CHECK(moved.FindNode(node)->settings.at(kSubgraphLabelSetting) == "Glow.shadersubgraph");
+			CHECK(Crucible::ShaderGraph::Connect(moved, node, "glow", OutputNodeOf(moved), "emissive", why));
+			moved.FindNode(node)->inputs["power"] = { 2.0f, 0.0f, 0.0f, 0.0f };
+			UnregisterSubgraph(glowGuid);
+			const std::string newGuid = "00000000000000E5";
+			RegisterSubgraph(newGuid, "Glow.shadersubgraph", glowText);
+			result = Generate(moved);
+			CHECK(!result.ok && FindProblem(result, node, "", "Use sub-graph"));
+			CHECK(!SetSubgraph(moved, node, "FFFFFFFFFFFFFFFF") && !SetSubgraph(moved, OutputNodeOf(moved), newGuid));
+			CHECK(SetSubgraph(moved, node, newGuid) && moved.FindNode(node)->settings.at(kSubgraphSetting) == newGuid);
+			CHECK(moved.FindLinkInto(OutputNodeOf(moved), "emissive") != nullptr && moved.FindNode(node)->inputs.count("power") == 1);
+			// Pointed at one with other pins: what does not fit goes.
+			CHECK(SetSubgraph(moved, node, outerGuid) && moved.FindLinkInto(OutputNodeOf(moved), "emissive") == nullptr && moved.FindNode(node)->inputs.empty());
+			CHECK(moved.FindNode(node)->settings.at(kSubgraphLabelSetting) == "Outer.shadersubgraph");
+			UnregisterSubgraph(newGuid);
+		}
+		RegisterSubgraph(glowGuid, "Glow.shadersubgraph", glowText);
+
+		// Graphs without sub-graphs are untouched by all this (the other tests check their text).
+		if (writeTo) {
+			for (const auto& [name, shader] : { std::pair{ "Subgraph_Glow", &glowShader }, std::pair{ "Subgraph_Nested", &nestedShader } }) {
+				const std::filesystem::path file = std::filesystem::path(writeTo) / (std::string(name) + ".slang");
+				std::ofstream out(file, std::ios::binary | std::ios::trunc);
+				out << shader->source;
+				std::printf("    wrote %s\n", file.string().c_str());
+			}
+		}
+		ClearSubgraphs();
+	}
+
 }   // anonymous namespace
 
 int main(int argc, char** argv) {
@@ -1146,6 +1373,7 @@ int main(int argc, char** argv) {
 	TestNewNodes();
 	TestVertexOffset();
 	TestReroutesAndComments();
+	TestSubgraphs(writeTo);
 
 	if (g_failed != 0) {
 		std::printf("\n%d of %d checks FAILED\n", g_failed, g_checks);

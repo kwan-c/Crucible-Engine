@@ -16,6 +16,7 @@
 #include "ShaderGraph/ShaderGraphAsset.h"
 #include "ShaderGraph/ShaderGraphEdit.h"
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 #include "Shaders/ShaderHotReload.h"
 
 #include "AssetPipe/AssetRegistry.h"
@@ -30,6 +31,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdarg>
 #include <cmath>
 #include <string_view>
 
@@ -42,6 +44,29 @@ namespace Crucible {
 		constexpr ImVec4 kErrorText{ 1.0f, 0.55f, 0.43f, 1.0f };     // the State Graph window's
 		constexpr ImVec4 kFineText{ 0.6f, 0.85f, 0.6f, 1.0f };
 		constexpr ImVec4 kWarningText{ 0.95f, 0.75f, 0.4f, 1.0f };
+
+		// Text in a colour, wrapped at the edge of the panel it is in. (ImGui::TextColored and
+		// TextDisabled never wrap: a long message ran off the side of a narrow panel.)
+		void WrappedColored(const ImVec4& colour, const char* format, ...) IM_FMTARGS(2);
+		void WrappedColored(const ImVec4& colour, const char* format, ...) {
+			va_list args;
+			va_start(args, format);
+			ImGui::PushStyleColor(ImGuiCol_Text, colour);
+			ImGui::TextWrappedV(format, args);
+			ImGui::PopStyleColor();
+			va_end(args);
+		}
+
+		// The same in the dimmed colour of hints.
+		void WrappedDisabled(const char* format, ...) IM_FMTARGS(1);
+		void WrappedDisabled(const char* format, ...) {
+			va_list args;
+			va_start(args, format);
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+			ImGui::TextWrappedV(format, args);
+			ImGui::PopStyleColor();
+			va_end(args);
+		}
 
 		// The preview's own shader: never on disk, always the graph that is open.
 		constexpr const char* kPreviewShader = "ShaderGraphPreview";
@@ -147,9 +172,17 @@ namespace Crucible {
 			}
 
 			DrawToolbar(readOnly);
-			if (!m_message.empty()) { ImGui::TextColored(m_messageIsError ? kErrorText : kFineText, "%s", m_message.c_str()); }
+			if (!m_message.empty()) { WrappedColored(m_messageIsError ? kErrorText : kFineText, "%s", m_message.c_str()); }
 
 			if (m_hasDocument) {
+				// A sub-graph changed on disk (or one came or went): what the generator said about this
+				// graph is stale, and so are the preview and the live shader.
+				if (const uint64_t version = SubgraphsVersion(); version != m_subgraphsSeen) {
+					m_subgraphsSeen = version;
+					m_document.Touch();
+					m_liveDue = true;
+					m_liveAt = ImGui::GetTime();
+				}
 				const float width = ImGui::GetContentRegionAvail().x;
 				const float left  = 240.0f;
 				const float right = 300.0f;
@@ -162,7 +195,7 @@ namespace Crucible {
 				ImGui::SameLine();
 				ImGui::BeginChild("Canvas", { (std::max)(100.0f, width - left - right - gap * 2.0f), 0.0f }, ImGuiChildFlags_Borders,
 				                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-				ImGui::TextDisabled("Right-click to add a node. Drag from pin to pin to link. Drag on empty canvas to select; middle-drag pans, the wheel zooms.");
+				WrappedDisabled("Right-click to add a node. Drag from pin to pin to link. Drag on empty canvas to select; middle-drag pans, the wheel zooms.");
 				{
 					const std::vector<Problem> problems = ShownProblems();
 					const ShaderGraphView::Result result = m_view.Draw(m_document.GetGraph(), m_document.Check(), problems, readOnly);
@@ -240,7 +273,7 @@ namespace Crucible {
 					ImGui::TextColored(kWarningText, "- compiling...");
 				} else if (hotReload->HasErrors(name)) {
 					ImGui::SameLine();
-					ImGui::TextColored(kErrorText, "- the saved shader has errors; its last good version is drawing");
+					WrappedColored(kErrorText, "- the saved shader has errors; its last good version is drawing");
 				}
 			}
 		}
@@ -265,7 +298,7 @@ namespace Crucible {
 			}
 			ImGui::EndPopup();
 		}
-		ImGui::TextDisabled("What each material sets for itself.");
+		WrappedDisabled("What each material sets for itself.");
 		ImGui::Separator();
 
 		for (int i = 0; i < static_cast<int>(graph.parameters.size()); ++i) {
@@ -392,7 +425,7 @@ namespace Crucible {
 			// Nothing (or several things) selected: the graph as a whole.
 			if (m_view.SelectedNodes().size() > 1) {
 				ImGui::Text("%zu nodes selected.", m_view.SelectedNodes().size());
-				ImGui::TextDisabled("Drag one to move them all. Delete, Ctrl+C and Ctrl+D work on all of them.");
+				WrappedDisabled("Drag one to move them all. Delete, Ctrl+C and Ctrl+D work on all of them.");
 				ImGui::Separator();
 			}
 			size_t stopping = 0;
@@ -402,9 +435,9 @@ namespace Crucible {
 				ImGui::TextWrapped("Save to update the materials that use this graph.");
 			} else {
 				if (stopping != 0) {
-					ImGui::TextColored(kErrorText, "%zu problem%s to fix:", stopping, stopping == 1 ? "" : "s");
+					WrappedColored(kErrorText, "%zu problem%s to fix:", stopping, stopping == 1 ? "" : "s");
 				} else {
-					ImGui::TextColored(kWarningText, "Nothing stops the shader, but:");
+					WrappedColored(kWarningText, "Nothing stops the shader, but:");
 				}
 				for (size_t i = 0; i < problems.size(); ++i) {
 					const Problem& problem = problems[i];
@@ -417,15 +450,23 @@ namespace Crucible {
 			}
 			if (m_view.SelectedNodes().empty()) {
 				ImGui::Separator();
-				ImGui::TextDisabled("Select a node to set its values.");
+				WrappedDisabled("Select a node to set its values.");
 			}
 			return false;
 		}
 
-		const NodeType* type = FindNodeType(node->type);
+		const NodeType* type = TypeOfNode(graph, *node);
 		ImGui::TextUnformatted(Title(node->type).c_str());
 		if (!type) {
-			ImGui::TextColored(kErrorText, "This Editor has no such node.");
+			if (node->type == kSubgraphNode) {
+				// A sub-graph it cannot find, or cannot use: say why, and how to point it at one.
+				for (const Problem& problem : problems) {
+					if (problem.node == node->id) { WrappedColored(kErrorText, "%s", problem.message.c_str()); }
+				}
+				WrappedDisabled("Right-click the node and choose Use sub-graph to point it at one.");
+			} else {
+				WrappedColored(kErrorText, "This Editor has no such node.");
+			}
 			return false;
 		}
 		ImGui::SameLine();
@@ -451,7 +492,7 @@ namespace Crucible {
 						changed = true;
 					}
 				}
-				if (graph.parameters.empty()) { ImGui::TextDisabled("Add one in the list on the left."); }
+				if (graph.parameters.empty()) { WrappedDisabled("Add one in the list on the left."); }
 				ImGui::EndCombo();
 			}
 		}
@@ -566,13 +607,13 @@ namespace Crucible {
 		const ShaderHotReload* hotReload = ShaderHotReload::Active();
 		ImGui::SameLine();
 		if (!hotReload) {
-			ImGui::TextColored(kWarningText, "no shader compiler");
+			WrappedColored(kWarningText, "no shader compiler");
 			ImGui::SetItemTooltip("slangc was not found on this machine (the Vulkan SDK), so nothing can be previewed.");
 		} else if (!m_document.Check().ok) {
-			ImGui::TextColored(kErrorText, "the last graph that worked");
+			WrappedColored(kErrorText, "the last graph that worked");
 			ImGui::SetItemTooltip("The graph has a problem that stops its shader. The preview keeps the last version that worked.");
 		} else if (hotReload->HasErrors(kPreviewShader)) {
-			ImGui::TextColored(kErrorText, "compiler errors");
+			WrappedColored(kErrorText, "compiler errors");
 		} else if (m_liveDue || hotReload->IsCompiling(kPreviewShader)) {
 			ImGui::TextColored(kWarningText, "updating...");
 		} else {
@@ -647,7 +688,7 @@ namespace Crucible {
 			std::string pin;
 			if (ParseLiveConstantName(list.params[i].name, nodeId, pin)) {
 				const Node* node = graph.FindNode(nodeId);
-				const NodeType* type = node ? FindNodeType(node->type) : nullptr;
+				const NodeType* type = node ? TypeOfNode(graph, *node) : nullptr;
 				if (const int index = type ? type->FindInput(pin) : -1; index >= 0) {
 					const auto constant = node->inputs.find(pin);
 					const std::array<float, 4>& values = constant != node->inputs.end() ? constant->second : type->inputs[static_cast<size_t>(index)].defaultValue;
@@ -675,7 +716,7 @@ namespace Crucible {
 					ImGui::CloseCurrentPopup();
 				}
 			}
-			if (graphs.empty()) { ImGui::TextDisabled("No .shadergraph files in Assets yet."); }
+			if (graphs.empty()) { WrappedDisabled("No .shadergraph files in Assets yet."); }
 			ImGui::EndPopup();
 		}
 

@@ -16,6 +16,7 @@
 #include "ShaderGraph/ShaderGraphView.h"
 
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -76,6 +77,7 @@ namespace Crucible {
 			if (category == "Texture")  { return IM_COL32(170, 105, 50, 255); }
 			if (category == "UV")       { return IM_COL32(30, 130, 140, 255); }
 			if (category == "Effect")   { return IM_COL32(160, 80, 130, 255); }
+			if (category == "Sub-graph") { return IM_COL32(45, 115, 175, 255); }
 			return IM_COL32(95, 100, 112, 255);
 		}
 
@@ -88,6 +90,12 @@ namespace Crucible {
 				title += name[i];
 			}
 			return title;
+		}
+
+		// "Glow.shadersubgraph" -> "Glow": a sub-graph's name as a title.
+		std::string SubgraphTitle(const SubgraphEntry& entry) {
+			const size_t dot = entry.label.rfind('.');
+			return dot == std::string::npos ? entry.label : entry.label.substr(0, dot);
 		}
 
 		std::string Lower(std::string_view text) {
@@ -204,7 +212,7 @@ namespace Crucible {
 		for (const uint32_t id : m_selected) {
 			const Node* node = graph.FindNode(id);
 			if (!node) { continue; }
-			const NodeType* type = FindNodeType(node->type);
+			const NodeType* type = TypeOfNode(graph, *node);
 			const Math::vec2 a(node->x, node->y), b(node->x + NodeWidth(type), node->y + NodeHeight(type));
 			low = any ? glm::min(low, a) : a;
 			high = any ? glm::max(high, b) : b;
@@ -235,7 +243,7 @@ namespace Crucible {
 		if (graph.nodes.empty()) { return; }
 		Math::vec2 low(graph.nodes.front().x, graph.nodes.front().y), high = low;
 		for (const Node& node : graph.nodes) {
-			const NodeType* type = FindNodeType(node.type);
+			const NodeType* type = TypeOfNode(graph, node);
 			low = glm::min(low, Math::vec2(node.x, node.y));
 			high = glm::max(high, Math::vec2(node.x + NodeWidth(type), node.y + NodeHeight(type)));
 		}
@@ -248,7 +256,7 @@ namespace Crucible {
 
 	bool ShaderGraphView::LinkNewNode(Graph& graph, uint32_t node) {
 		const Node* target = graph.FindNode(node);
-		const NodeType* type = target ? FindNodeType(target->type) : nullptr;
+		const NodeType* type = target ? TypeOfNode(graph, *target) : nullptr;
 		if (!type) { return false; }
 		std::string why;
 		if (m_linkFromOutput) {
@@ -300,7 +308,7 @@ namespace Crucible {
 			for (const Node& node : graph.nodes) {
 				Box box;
 				box.node = &node;
-				box.type = FindNodeType(node.type);
+				box.type = TypeOfNode(graph, node);
 				if (const auto found = results.find(node.id); found != results.end()) { box.result = found->second; }
 				box.min = m_canvas.ToScreen({ node.x, node.y });
 				box.max = { box.min.x + NodeWidth(box.type) * zoom, box.min.y + NodeHeight(box.type) * zoom };
@@ -441,7 +449,7 @@ namespace Crucible {
 					m_commentNodes.clear();
 					if (const Comment* comment = graph.FindComment(m_comment)) {
 						for (const Node& node : graph.nodes) {
-							const NodeType* type = FindNodeType(node.type);
+							const NodeType* type = TypeOfNode(graph, node);
 							if (node.x >= comment->x && node.y >= comment->y && node.x + NodeWidth(type) <= comment->x + comment->width &&
 							    node.y + NodeHeight(type) <= comment->y + comment->height) {
 								m_commentNodes.push_back(node.id);
@@ -519,7 +527,7 @@ namespace Crucible {
 				const Math::vec2 low = glm::min(m_boxStart, end), high = glm::max(m_boxStart, end);
 				if (high.x - low.x > 2.0f || high.y - low.y > 2.0f) {   // a click is not a box
 					for (const Node& node : graph.nodes) {
-						const NodeType* type = FindNodeType(node.type);
+						const NodeType* type = TypeOfNode(graph, node);
 						const float bottom = node.y + NodeHeight(type);
 						if (node.x <= high.x && node.x + NodeWidth(type) >= low.x && node.y <= high.y && bottom >= low.y && !IsSelected(node.id)) {
 							m_selected.push_back(node.id);
@@ -675,8 +683,14 @@ namespace Crucible {
 				const auto setting = node.settings.find(kParameterSetting);
 				title = setting != node.settings.end() && !setting->second.empty() ? setting->second : "(choose a parameter)";
 			}
+			const bool isSubgraph = node.type == kSubgraphNode;
+			if (isSubgraph) {
+				const auto setting = node.settings.find(kSubgraphSetting);
+				const SubgraphEntry* entry = setting != node.settings.end() ? FindSubgraph(setting->second) : nullptr;
+				title = entry ? SubgraphTitle(*entry) : "(missing sub-graph)";
+			}
 			const ImVec2 size{ box.max.x - box.min.x, box.max.y - box.min.y };
-			m_canvas.DrawNode(box.min, size, CategoryColour(box.type ? box.type->category : ""), title.c_str(), nullptr, selected, !used);
+			m_canvas.DrawNode(box.min, size, CategoryColour(isSubgraph ? "Sub-graph" : box.type ? box.type->category : ""), title.c_str(), nullptr, selected, !used);
 
 			// Its problems: an outline, and the text when the mouse is over it.
 			bool stops = false, any = false;
@@ -813,6 +827,20 @@ namespace Crucible {
 				ClearSelection();
 			}
 			if (ImGui::MenuItem("Comment around them", "C") && CommentAroundSelection(graph)) { changed = true; }
+			// A sub-graph node: point it at another sub-graph (or find its own again, after its GUID changed).
+			if (const Node* only = m_selected.size() == 1 ? graph.FindNode(m_selected.front()) : nullptr; only && only->type == kSubgraphNode) {
+				const uint32_t id = only->id;
+				const auto current = only->settings.find(kSubgraphSetting);
+				if (ImGui::BeginMenu("Use sub-graph")) {
+					const std::vector<const SubgraphEntry*> subgraphs = ListSubgraphs();
+					for (const SubgraphEntry* entry : subgraphs) {
+						const bool chosen = current != only->settings.end() && FindSubgraph(current->second) == entry;
+						if (ImGui::MenuItem(SubgraphTitle(*entry).c_str(), nullptr, chosen, entry->error.empty()) && !chosen && SetSubgraph(graph, id, entry->guid)) { changed = true; }
+					}
+					if (subgraphs.empty()) { ImGui::TextDisabled("No sub-graphs in Assets."); }
+					ImGui::EndMenu();
+				}
+			}
 			if (onlyOutput) { ImGui::TextDisabled("A graph always has its Output node."); }
 			ImGui::EndPopup();
 		}
@@ -876,6 +904,16 @@ namespace Crucible {
 					if (graph.parameters.empty()) { ImGui::TextDisabled("No parameters yet - add one in the list on the left."); }
 					ImGui::EndMenu();
 				}
+				// Every sub-graph in Assets (.shadersubgraph): one node each, its pins its inputs and outputs.
+				if (ImGui::BeginMenu("Sub-graph")) {
+					const std::vector<const SubgraphEntry*> subgraphs = ListSubgraphs();
+					for (const SubgraphEntry* entry : subgraphs) {
+						if (ImGui::MenuItem(SubgraphTitle(*entry).c_str(), nullptr, false, entry->error.empty())) { add(kSubgraphNode, entry->guid); }
+						if (!entry->error.empty()) { ImGui::SetItemTooltip("Cannot be used: %s", entry->error.c_str()); }
+					}
+					if (subgraphs.empty()) { ImGui::TextDisabled("No sub-graphs yet - a .shadersubgraph file in Assets."); }
+					ImGui::EndMenu();
+				}
 				// One submenu per category, in the table's order.
 				std::vector<std::string_view> categories;
 				for (const NodeType& type : NodeTypes()) {
@@ -900,6 +938,12 @@ namespace Crucible {
 					any = true;
 					if (ImGui::Selectable(Title(type.name).c_str(), first) || (first && entered)) { add(type.name, {}); }
 					ImGui::SetItemTooltip("%s", type.summary);
+					first = false;
+				}
+				for (const SubgraphEntry* entry : ListSubgraphs()) {
+					if (!entry->error.empty() || (Lower(entry->label).find(filter) == std::string::npos && std::string_view("sub-graph").find(filter) == std::string_view::npos)) { continue; }
+					any = true;
+					if (ImGui::Selectable(("Sub-graph: " + SubgraphTitle(*entry)).c_str(), first) || (first && entered)) { add(kSubgraphNode, entry->guid); }
 					first = false;
 				}
 				for (const Parameter& parameter : graph.parameters) {

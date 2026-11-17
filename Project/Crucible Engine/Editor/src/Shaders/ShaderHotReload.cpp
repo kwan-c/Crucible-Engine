@@ -268,6 +268,7 @@ namespace Crucible {
 			const fs::path file = watched.shader.generatedFrom();
 			const std::string name = ToUtf8(file);
 			signature += HashBytes(name.data(), name.size(), FileStamp(file) + 1);
+			if (watched.shader.dependencies) { signature += watched.shader.dependencies() * 0x9E3779B97F4A7C15ull; }
 		}
 		return signature;
 	}
@@ -387,7 +388,8 @@ namespace Crucible {
 	// Makes a generated shader's source again if the file it comes from has changed since the last
 	// time. False when there is no source worth compiling: the file has a mistake in it.
 	bool ShaderHotReload::Regenerate(Watched& watched) {
-		const uint64_t stamp = watched.shader.generatedFrom ? FileStamp(watched.shader.generatedFrom()) : 0;
+		uint64_t stamp = watched.shader.generatedFrom ? FileStamp(watched.shader.generatedFrom()) : 0;
+		if (watched.shader.dependencies) { stamp += watched.shader.dependencies() * 0x9E3779B97F4A7C15ull; }   // a sub-graph it uses changed
 		if (watched.generated && stamp == watched.generatedStamp) {
 			return watched.generateErrors == 0 && !watched.source.empty();
 		}

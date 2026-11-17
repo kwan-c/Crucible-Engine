@@ -42,7 +42,8 @@ namespace Crucible::ShaderGraph {
 
 	/*********************************************************************
 	 \brief  Adds a node of `type` at (x, y).
-	 \param  parameter  For a Parameter node: the parameter it reads.
+	 \param  parameter  For a Parameter node: the parameter it reads. For a Subgraph node: its
+	                    sub-graph's GUID (ShaderGraphSubgraphs.h).
 	 \return Its id; 0 if `type` is not in the node table, or is a second
 	         Output.
 	 *********************************************************************/
@@ -63,6 +64,15 @@ namespace Crucible::ShaderGraph {
 	         such link or a Reroute cannot carry it (a texture).
 	 *********************************************************************/
 	uint32_t InsertReroute(Graph& graph, uint32_t toNode, std::string_view toPin, float x, float y, std::string& why);
+
+	/*********************************************************************
+	 \brief  Points a Subgraph node at another sub-graph (by GUID): to swap
+	         one for another, or to find one again whose GUID changed. Links
+	         and constants on pins the new one does not have are dropped.
+	 \return false if `node` is not a Subgraph node or the GUID is not in
+	         the sub-graph library.
+	 *********************************************************************/
+	bool SetSubgraph(Graph& graph, uint32_t node, std::string_view guid);
 
 	// ---- Comment boxes -------------------------------------------------------------------------
 
