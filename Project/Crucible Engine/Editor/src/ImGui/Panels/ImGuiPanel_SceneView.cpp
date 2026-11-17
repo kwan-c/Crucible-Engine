@@ -76,6 +76,9 @@ void Crucible::SceneView::Update(float dt) {
 	bool const visible = ImGui::Begin(m_panelName.c_str(), nullptr, m_flags | (gizmoHot ? ImGuiWindowFlags_NoMove : 0));
 	ImGui::PopStyleVar();
 
+	// Hidden tab or collapsed window: stop rendering into it (it keeps its last image).
+	// SetActive is cheap to call every frame.
+	m_viewport.SetActive(visible);
 	if (!visible) {
 		// Tab hidden behind another tab, or window collapsed: nothing to render this frame.
 		m_hovered = m_focused = false;

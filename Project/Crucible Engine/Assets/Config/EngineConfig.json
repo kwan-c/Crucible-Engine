@@ -5,7 +5,8 @@
         "windowHeight": 800,
         "fullScreen": false,
         "maximized": false,
-        "targetFPS": 60
+        "targetFPS": 60,
+        "backgroundFPS": 15
     },
     "network": {
         "mode": "offline",
@@ -16,7 +17,7 @@
         "maxClients": 3
     },
     "project": {
-        "startupScene": "Scenes/Game/Main Menu Scene.scene",
+        "startupScene": "Scenes/Fog_Lighting_Effects.scene",
         "aspectRatio": [
             16,
             9
@@ -31,9 +32,9 @@
             "fullScreen": true,
             "maximized": false
         },
-      "project": {
-        "startupScene": "Scenes/Game/Main Menu Scene.scene"
-      }
+        "project": {
+            "startupScene": "Scenes/Game/Main Menu Scene.scene"
+        }
     },
     "scripting": {
         "enabled": true,

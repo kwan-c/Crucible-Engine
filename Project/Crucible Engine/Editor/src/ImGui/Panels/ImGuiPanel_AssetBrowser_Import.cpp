@@ -81,6 +81,7 @@ namespace {
 		case AssetType::StateGraph:         return { "StateGraphs" };
 		case AssetType::BehaviorGraph:      return { "StateGraphs" };
 		case AssetType::ShaderGraph:        return { "ShaderGraphs" };
+		case AssetType::EditorTheme:        return { "Editor/Themes" };
 		default:                            return {};
 		}
 	}

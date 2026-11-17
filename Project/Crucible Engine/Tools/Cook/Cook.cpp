@@ -117,6 +117,9 @@ namespace Crucible::Cook {
 	}
 
 	bool ShouldCopy(std::string const& virtualPath) {
+		// Assets/Editor holds editor-only files (editor themes, ...): never shipped, whatever
+		// their type. Also makes step 2 remove any copy an older Cook left in Resources.
+		if (Lower(virtualPath).rfind("editor/", 0) == 0) return false;
 		std::string const extension = Lower(fs::path(virtualPath).extension().string());
 		if (AssetManager::IsCompiledExtension(extension)) return false;   // written by the compilers, never copied (or cleaned up)
 		switch (AssetManager::ClassifyExtension(extension)) {

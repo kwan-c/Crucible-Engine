@@ -97,6 +97,11 @@ namespace Crucible {
         void ToggleMaximize() { if (IsMaximized()) Restore(); else Maximize(); }
         bool IsMaximized() const { return m_maximized; }
 
+        // Minimized to the taskbar (or a 0x0 framebuffer): nothing can be seen, so Core skips
+        // drawing. Unfocused: another app has the keyboard; Core drops to backgroundFPS.
+        bool IsMinimized() const;
+        bool IsFocused() const;
+
         // The window's size when it is neither fullscreen nor maximized - what to save as
         // "windowWidth" / "windowHeight".
         int GetWindowedWidth() const { return m_windowedW; }

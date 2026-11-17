@@ -236,6 +236,11 @@ namespace Crucible {
 
         if (!m_pWindow || !monitor) { return false; }
 
+        // A fullscreen window has the monitor's shape, whatever the aspect lock says: drop GLFW's
+        // ratio so nothing resizes the borderless window to it (Windows applies it to any
+        // non-monitor window). SetFullscreen(false) / FitToAspectRatio put it back.
+        glfwSetWindowAspectRatio(m_pWindow, GLFW_DONT_CARE, GLFW_DONT_CARE);
+
         if (IsExclusiveFullscreen()) {
             // A monitor window at the chosen video mode. It minimizes on alt-tab, so the desktop
             // gets its own resolution back (and the always-on-top monitor window gets out of the way).
@@ -339,8 +344,12 @@ namespace Crucible {
         if (width <= 0 || height <= 0) { return; }
         m_aspectWidth  = width;
         m_aspectHeight = height;
-        // GLFW keeps the ratio for a fullscreen window and applies it once it is windowed again.
-        glfwSetWindowAspectRatio(m_pWindow, width, height);
+        // Only handed to GLFW for a normal window (FitToAspectRatio does it). On Windows,
+        // glfwSetWindowAspectRatio resizes a non-monitor window on the spot - and borderless
+        // fullscreen is one - so locking 16:9 while borderless on a 16:10 screen cut the window
+        // short and left a strip of desktop below it. A maximized window would be squashed the
+        // same way. Leaving fullscreen / un-maximizing applies the lock (SetFullscreen,
+        // FitToAspectRatio).
         FitToAspectRatio();
     }
 
@@ -349,6 +358,10 @@ namespace Crucible {
         // Resizing a fullscreen window would change the monitor's video mode, and resizing a
         // maximized one would leave it "maximized" at the wrong size: only fit a normal window.
         if (!IsAspectRatioLocked() || m_fullscreen || m_maximized) { return; }
+
+        // (Re)arm GLFW's enforcement, which keeps the shape while the user drags the edges.
+        // ApplyFullscreen clears it, so this also restores it after leaving fullscreen.
+        glfwSetWindowAspectRatio(m_pWindow, m_aspectWidth, m_aspectHeight);
 
         // GLFW only enforces the ratio on the next resize, so fit the window to it now.
         int currentWidth = 0, currentHeight = 0;
@@ -405,6 +418,17 @@ namespace Crucible {
             }
         }
 #endif
+    }
+
+    bool WindowManager::IsMinimized() const {
+        if (glfwGetWindowAttrib(m_pWindow, GLFW_ICONIFIED) == GLFW_TRUE) { return true; }
+        int width = 0, height = 0;
+        glfwGetFramebufferSize(m_pWindow, &width, &height);
+        return width == 0 || height == 0;
+    }
+
+    bool WindowManager::IsFocused() const {
+        return glfwGetWindowAttrib(m_pWindow, GLFW_FOCUSED) == GLFW_TRUE;
     }
 
     void WindowManager::PollEvents() {

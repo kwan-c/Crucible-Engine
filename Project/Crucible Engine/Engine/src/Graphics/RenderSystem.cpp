@@ -191,7 +191,9 @@ namespace Crucible {
         // CULL, SORT & DRAW
         //   Per view (PrepareView -> RenderScene::BuildViewBatches, on the worker threads): each camera
         //   gets its own visible list, so the Scene and Game views never cull with each other's camera.
-        DrawFrame();
+        //   Not while suspended (window minimized): the frame time stats restart when drawing resumes.
+        if (m_drawSuspended) { m_lastFrameStart = 0.0; }
+        else                 { DrawFrame(); }
 
         // Everything submitted for this frame is consumed; lights and environment are per-frame
         // state exactly like the render queue (see SubmitLight/SetEnvironment).

@@ -21,7 +21,8 @@
 *   4. Checks every image a scene or prefab uses as a skybox is named "*_skybox", so it is
 *      compiled as a sky (otherwise the game would show the default sky there).
 *
-* Never copies source-only files (.glb, .png/.jpg/.hdr, .ttf, .fontsettings, .slang, .cs, ...).
+* Never copies source-only files (.glb, .png/.jpg/.hdr, .ttf, .fontsettings, .slang, .cs, ...),
+* nor anything under Assets/Editor (editor-only files such as .crutones editor themes).
 * Used by the CrucibleCook tool (the "Cook" build target, for the installer) and by the
 * editor's File -> Cook Resources. Writes nothing to Assets.
 *

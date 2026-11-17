@@ -192,9 +192,11 @@ namespace Crucible {
         assert(std::ranges::any_of(modes, [](auto presentMode) {
             return presentMode == vk::PresentModeKHR::eFifo; }));
 
-        // Return eMailbox if available, else default to eFifo.
-        return std::ranges::any_of(modes, [](const vk::PresentModeKHR value) {
-            return vk::PresentModeKHR::eMailbox == value; }) ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
+        return vk::PresentModeKHR::eFifo;
+
+        //// Return eMailbox if available, else default to eFifo.
+        //return std::ranges::any_of(modes, [](const vk::PresentModeKHR value) {
+        //    return vk::PresentModeKHR::eMailbox == value; }) ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
 
     }   // VulkanSwapchain::ChoosePresentMode()
 
