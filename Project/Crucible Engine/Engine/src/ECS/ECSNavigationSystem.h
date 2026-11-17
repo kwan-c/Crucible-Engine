@@ -2,12 +2,12 @@
 * \file:         ECSNavigationSystem.h
 * \author:       Jean David Vidal Cruzado (main author; design and Unity original;
 *                v1.2: re-bake on request;
-*                v1.3: tagged obstacles),
+*                v1.3: tagged obstacles; v1.4: rays read only the terrain),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -57,6 +57,9 @@
 *    -v1.3       obstacles are the entities tagged "Obstacle"
 *                (kObstacleTag); the ground rays pass through them, and the
 *                ground-entity list that un-blocked floors is gone
+*    -v1.4       SampleTerrain reads only the terrain (HeightField with a
+*                built Terrain); untagged colliders are invisible to
+*                navigation
 *
 **************************************************************************/
 #pragma once
@@ -170,9 +173,10 @@ namespace Crucible {
             Rebuilds the grid from the scene as it is now: the first
             FlowFieldSurface gives the size and settings, and every
             non-trigger collider on an entity tagged "Obstacle"
-            (kObstacleTag) is an obstacle. While Playing, the ground is
-            sampled from physics too, so slopes, ledges and untagged walls
-            count as well.
+            (kObstacleTag) is an obstacle. Untagged colliders are ignored.
+            While Playing, a terrain's heights are sampled from physics, so
+            its slopes and cliffs count too; without a terrain the ground
+            is the flat plane at the surface's height.
 
             \param world
             The scene to bake.
@@ -213,8 +217,8 @@ namespace Crucible {
         bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
         bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
                    float distance, EntityHit& hit) const;
-        bool SampleTerrain(const World& world, const NavGridSettings& settings, float stepHeight,
-                           float maxSlopeDegrees, float top, float bottom);
+        bool SampleTerrain(const NavGridSettings& settings, float stepHeight, float maxSlopeDegrees,
+                           float top, float bottom, const std::vector<Entity>& terrains);
         void DrawGrid() const;
         void DrawArrows() const;
 
