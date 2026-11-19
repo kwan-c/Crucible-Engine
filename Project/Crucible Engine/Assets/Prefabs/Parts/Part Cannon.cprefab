@@ -1,0 +1,375 @@
+{
+  "version": 3,
+  "name": "Part Cannon",
+  "entities": [
+    {
+      "id": "5052544300010003",
+      "parent": -1,
+      "components": {
+        "Transform": {
+          "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
+          "rotation": {
+            "x": -0.5000000000000001,
+            "y": 0.5000000000000001,
+            "z": 0.5000000000000001,
+            "w": 0.5000000000000001
+          },
+          "scale": {
+            "x": 0.55,
+            "y": 0.55,
+            "z": 0.55
+          }
+        },
+        "Collider": {
+          "type": "Sphere",
+          "size": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          },
+          "radius": 4.0,
+          "height": 2.0,
+          "center": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "friction": 0.2,
+          "bounciness": 0.0,
+          "layer": "NonMoving",
+          "isTrigger": true
+        },
+        "AudioSource": {
+          "clip": 5612796659169525761,
+          "loadType": "DecompressOnLoad",
+          "output": "SFX",
+          "playOnAwake": false,
+          "loop": false,
+          "volume": 1.0,
+          "pitch": 1.0,
+          "spatialBlend": 0.35,
+          "minDistance": 4.0,
+          "maxDistance": 40.0,
+          "rolloffMode": "Linear"
+        },
+        "ScriptComponent": {
+          "enabled": true,
+          "assembly": "Managed/Crucible.Scripts.dll",
+          "namespace": "Crucible.Scripts",
+          "class": "MechPart",
+          "fields": [
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "settleOnSpawn",
+              "type": "Boolean",
+              "boolean": true,
+              "integer": 0,
+              "single": 0.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "partId",
+              "type": "String",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.0,
+              "real": 0.0,
+              "text": "cannon",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "groundScale",
+              "type": "Single",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.55,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "mountedScale",
+              "type": "Single",
+              "boolean": false,
+              "integer": 0,
+              "single": 1.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "groundLift",
+              "type": "Single",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.15,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "mountFrame",
+              "type": "Boolean",
+              "boolean": true,
+              "integer": 0,
+              "single": 0.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "projectile",
+              "type": "Prefab",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 514308568908831173
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "firingShake",
+              "type": "Single",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.075,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "firingShakeDuration",
+              "type": "Single",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.26,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 0
+            },
+            {
+              "declaringType": "Crucible.Scripts.MechPart",
+              "name": "attackSound",
+              "type": "AudioClip",
+              "boolean": false,
+              "integer": 0,
+              "single": 0.0,
+              "real": 0.0,
+              "text": "",
+              "stringIsNull": false,
+              "entityId": 0,
+              "assetId": 5612796659169525761
+            }
+          ]
+        },
+        "EntityName": {
+          "name": "Part Cannon"
+        }
+      }
+    },
+    {
+      "id": "5052544300010005",
+      "parent": 0,
+      "components": {
+        "Transform": {
+          "positions": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+          },
+          "scale": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          }
+        },
+        "MeshRenderer": {
+          "visible": true,
+          "modelAsset": 2654220400306328953,
+          "modelRoot": 9,
+          "materialOverrides": [],
+          "colour": {
+            "x": 0.5,
+            "y": 0.5,
+            "z": 0.5,
+            "w": 0.5
+          },
+          "meshAsset": 0,
+          "materialAsset": 0
+        },
+        "AnimatedModel": {
+          "controllerAsset": 7054762963741619783,
+          "clip": 0,
+          "speed": 1.0,
+          "loop": true,
+          "previewInEditor": false,
+          "playOnStart": true
+        },
+        "EntityName": {
+          "name": "Model"
+        }
+      }
+    },
+    {
+      "id": "5052544300010007",
+      "parent": 1,
+      "components": {
+        "Transform": {
+          "positions": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0
+          },
+          "rotation": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+          },
+          "scale": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0
+          }
+        },
+        "SocketAttachment": {
+          "enabled": true,
+          "socketName": "Muzzle",
+          "modelAsset": 2654220400306328953,
+          "node": 3
+        },
+        "EntityName": {
+          "name": "Muzzle"
+        }
+      }
+    },
+    {
+      "id": "5052544300010009",
+      "parent": 0,
+      "components": {
+        "Transform": {
+          "positions": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 3.5
+          },
+          "rotation": {
+            "x": 0.7071067811865476,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 0.7071067811865476
+          },
+          "scale": {
+            "x": 1.8181818181818181,
+            "y": 1.8181818181818181,
+            "z": 1.8181818181818181
+          }
+        },
+        "WorldText": {
+          "text": "",
+          "colour": {
+            "x": 1.0,
+            "y": 1.0,
+            "z": 1.0,
+            "w": 1.0
+          },
+          "fontAsset": 0,
+          "fontSize": 0.32,
+          "size": {
+            "x": 4.0,
+            "y": 1.2
+          },
+          "pivot": {
+            "x": 0.5,
+            "y": 0.5
+          },
+          "billboard": "Upright",
+          "alwaysOnTop": false,
+          "doubleSided": true,
+          "intensity": 1.0,
+          "fade": false,
+          "fadeStart": 20.0,
+          "fadeEnd": 30.0,
+          "horizontalAlign": "Center",
+          "verticalAlign": "Middle",
+          "wrap": true,
+          "overflow": "Overflow",
+          "lineSpacing": 1.0,
+          "characterSpacing": 0.0,
+          "richText": true,
+          "bold": false,
+          "underline": false,
+          "bestFit": false,
+          "minFontSize": 0.1,
+          "maxFontSize": 1.0,
+          "outline": false,
+          "outlineColour": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 1.0
+          },
+          "outlineWidth": 0.02,
+          "glow": false,
+          "glowColour": {
+            "x": 1.0,
+            "y": 0.85,
+            "z": 0.4,
+            "w": 0.8
+          },
+          "glowWidth": 0.03,
+          "glowSoftness": 0.5,
+          "shadow": false,
+          "shadowColour": {
+            "x": 0.0,
+            "y": 0.0,
+            "z": 0.0,
+            "w": 0.6
+          },
+          "shadowOffset": {
+            "x": 0.02,
+            "y": 0.02
+          },
+          "shadowSoftness": 0.0
+        },
+        "EntityName": {
+          "name": "Label"
+        }
+      }
+    }
+  ]
+}

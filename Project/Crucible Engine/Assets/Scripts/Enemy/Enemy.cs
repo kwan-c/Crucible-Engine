@@ -8,8 +8,9 @@ namespace Crucible.Scripts
     // (Unity) spreads over several MonoBehaviours is one class here, split over files like
     // Unity's were (it is a partial class):
     //
-    //   Enemy.cs                    health, hit flash, health bar, part drop
-    //                               (CombatHealth, EnemyCombatFeedback, HealthBarDisplay, EnemyPartDrop)
+    //   Enemy.cs                    health, hit flash, health bar, part drop, melee push, hit stop
+    //                               (CombatHealth, EnemyCombatFeedback, HealthBarDisplay, EnemyPartDrop,
+    //                               EnemyAgent.ApplyMeleePush and its CombatHitStop checks)
     //   EnemyController.cs          what the graph nodes ask for: sensing, approaching,
     //                               moving, recovering (EnemyGraphController + EnemyAgent's intents)
     //   EnemyWeapon.cs              the attack: wind-up, hit or bolt, cooldown, and the
@@ -102,11 +103,13 @@ namespace Crucible.Scripts
         {
             if (pushOverPending) PushOver();  // the death topple's kick, a frame after unlocking
             Twist(deltaTime);
+            UpdatePush(deltaTime);            // a melee push's slide, or standing still in a hit stop (below)
+            UpdateLegs();                     // the agent is off while either of those moves or holds it
 
 
             // The attack's clock runs whatever the graph is doing, as Unity's EnemyAttack
-            // ticked in its own LateUpdate.
-            UpdateWeapon(deltaTime);          // EnemyWeapon.cs
+            // ticked in its own LateUpdate - except in a hit stop, which pauses the wind-up too.
+            if (!IsFrozen) UpdateWeapon(deltaTime);   // EnemyWeapon.cs
             UpdateAnimation();                // EnemyAnimation.cs: Speed and Strafe for the body's Animator
 
             // Hit flash: tinted for a few frames, then back to the material's own colour.
@@ -163,7 +166,8 @@ namespace Crucible.Scripts
         protected override void OnDied()
         {
             MechCombatTargets.Unregister(Entity);   // a toppling golem can't be locked on to or hit
-            CancelAttack();                   // a half-done swing must not land from a dead golem
+            ClearPush();                      // a corpse is not slid; the topple owns its motion now
+            CancelAttack();                  // a half-done swing must not land from a dead golem
             HideTelegraph();
             if (toppleOnDeath) Topple();
 
@@ -236,6 +240,96 @@ namespace Crucible.Scripts
             if (twistLeft <= 0f || !HasComponent<RigidBody>()) return;
             RigidBody.AddTorque(twistAxis * toppleTorque);
             twistLeft -= deltaTime;
+        }
+
+        // A hit from the mech's melee (Unity's CombatBlast melee branch). push and killLaunch
+        // are velocities in m/s, worked out by the mech (MechPlayer.MeleeHit). A killing hit
+        // hands its launch to the topple as the knockback, so the topple throws the body
+        // (PushOver applies it next frame). Any other hit slides the golem with push.
+        public bool ApplyMeleeHit(float amount, Vector3 push, Vector3 killLaunch, float pushSeconds)
+        {
+            // Asked BEFORE the damage: once ApplyDamage returns, OnDied has already used the
+            // knockback, so the kill has to be known in advance (Unity's BeginMeleeLaunch).
+            bool kills = !IsDead && amount >= CurrentHealth;
+            if (kills)
+            {
+                // An impulse is mass x change in speed, so this gives exactly killLaunch m/s.
+                float mass = HasComponent<RigidBody>() ? RigidBody.Mass : 0f;
+                return ApplyDamage(amount, killLaunch * mass);
+            }
+            if (!ApplyDamage(amount)) return false;   // dead already, or a broken amount
+            StartPush(push, pushSeconds);
+            return true;
+        }
+
+        // Melee push (Unity's EnemyAgent.ApplyMeleePush). The golem slides along the swing,
+        // upright, slowing evenly to a stop over pushSeconds: about 3 m with Unity's numbers.
+        // Its FlowFieldAgent is off meanwhile (UpdateLegs), otherwise it would steer back at once
+        // and brake the slide at its 15 m/s2 acceleration (about 1.3 m). The brain keeps running,
+        // as in Unity; it just can't walk until the push ends.
+        Vector3 pushVelocity;
+        float pushLeft, pushDeceleration;
+
+        void StartPush(Vector3 velocity, float seconds)
+        {
+            velocity = new Vector3(velocity.X, 0f, velocity.Z);   // upright: a living golem isn't lifted
+            // Only a dynamic body: its speed is what the slide sets.
+            if (velocity.Length < 0.01f || !(seconds > 0f) || !HasComponent<RigidBody>() || RigidBody.IsKinematic) return;
+
+            // A second hit adds to the slide and restarts the clock, capped at 22 m/s (Unity's cap).
+            pushVelocity = pushVelocity + velocity;
+            if (pushVelocity.Length > 22f) pushVelocity = pushVelocity.Normalized * 22f;
+            pushLeft = Math.Min(seconds, 3f);
+            pushDeceleration = pushVelocity.Length / pushLeft;   // reaches 0 exactly when the time is up
+        }
+
+        void UpdatePush(float deltaTime)
+        {
+            if (IsDead || !HasComponent<RigidBody>() || RigidBody.IsKinematic) return;   // the topple owns a corpse
+            if (IsFrozen)
+            {
+                // Hit stop (Unity's EnemyAgent skips its update): stand still where it is. A push
+                // waits with the time it had left and carries on when the stop ends.
+                Vector3 v = RigidBody.Velocity;
+                RigidBody.Velocity = new Vector3(0f, v.Y, 0f);
+                return;
+            }
+            if (pushLeft <= 0f) return;
+            float step = Math.Min(deltaTime, pushLeft);
+            pushLeft -= step;
+
+            // Slower by the same amount every second (Unity's linear slow-down).
+            float speed = pushVelocity.Length;
+            float slower = Math.Max(0f, speed - pushDeceleration * step);
+            pushVelocity = speed > 1e-4f ? pushVelocity * (slower / speed) : Vector3.Zero;
+
+            // Set every frame, so friction can't eat the slide early. Only the flat part:
+            // gravity keeps the vertical one. Physics still stops it at a wall.
+            RigidBody.Velocity = new Vector3(pushVelocity.X, RigidBody.Velocity.Y, pushVelocity.Z);
+            if (pushLeft <= 0f) ClearPush();
+        }
+
+        void ClearPush()
+        {
+            pushLeft = 0f;
+            pushVelocity = Vector3.Zero;
+        }
+
+        // Is this golem in a hit stop (MechHitStop)? Its AI, attack clock and legs wait.
+        public bool IsFrozen { get { return MechHitStop.IsFrozen(Entity); } }
+
+        // The legs (FlowFieldAgent) are off while something else moves the golem or holds it: a
+        // melee push or a hit stop. Back on as soon as neither applies. Only switched when that
+        // changes, and never once dead: the topple has switched them off for good.
+        bool legsPaused;
+
+        void UpdateLegs()
+        {
+            if (agent == null || IsDead) return;
+            bool pause = pushLeft > 0f || IsFrozen;
+            if (pause == legsPaused) return;
+            legsPaused = pause;
+            Entity.SetEnabled<FlowFieldAgent>(!pause);
         }
     }
 }

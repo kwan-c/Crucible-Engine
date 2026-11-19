@@ -2,13 +2,15 @@
 * \file:         MechProjectile.cs
 * \author:       Tok Duan Jie Nelson
 * \par:          Email: t.duanjienelson@digipen.edu
+* \author:       Hugo Low Ren Hao (M3: no falloff, Damage Amp, hit stop)
+* \par:          Email: low.h@digipen.edu
 * \date          8 November 2026
-* \version       1.0
+* \version       1.2
 * \brief         A straight shot from a ranged weapon. Port of Unity's
 *                MechProjectile + RangedAttack: the direction is captured at
 *                launch and never tracks a target; it flies at the part's
-*                Projectile Speed, stops on the first solid thing, and the
-*                damage falls off with the distance it travelled.
+*                Projectile Speed, stops on the first solid thing, and does
+*                full damage; at the weapon's Range it disappears.
 *
 * \details
 *    Prefab setup (Assets/Prefabs/Player/Projectile *.cprefab, written by
@@ -41,23 +43,27 @@ namespace Crucible.Scripts
         Entity owner;
         Vector3 direction;
         float speed, radius, remaining, travelled;
+        float damageScale = 1f;   // the shooter's Damage Amp at the moment it fired
         bool live;
         Transform visual;
 
         // A spawned prefab's script is created later in the frame ("OnCreate deferred"), so right after
         // Prefab.Instantiate GetComponent<MechProjectile>() is still null. Fire() queues the launch here
         // and the projectile picks it up in its own OnCreate.
-        sealed class PendingLaunch { public MechWeapon Weapon; public Entity Owner; public Vector3 Direction; }
+        sealed class PendingLaunch { public MechWeapon Weapon; public Entity Owner; public Vector3 Direction; public float DamageScale; }
         static readonly Dictionary<ulong, PendingLaunch> pending = new Dictionary<ulong, PendingLaunch>();
         static ulong Key(Entity e) { return ((ulong)e.Generation << 32) | e.Index; }
 
-        /// <summary>Launches the spawned shot now if its script exists, else as soon as it is created.</summary>
-        public static void Fire(Entity shot, MechWeapon source, Entity shooter, Vector3 shotDirection)
+        /// <summary>
+        /// Launches the spawned shot now if its script exists, else as soon as it is created.
+        /// damageScale multiplies its damage and splash (Damage Amp; 1 = normal).
+        /// </summary>
+        public static void Fire(Entity shot, MechWeapon source, Entity shooter, Vector3 shotDirection, float damageScale)
         {
             if (shot == null) return;
             MechProjectile ready = shot.GetComponent<MechProjectile>();
-            if (ready != null) { ready.Launch(source, shooter, shotDirection); return; }
-            pending[Key(shot)] = new PendingLaunch { Weapon = source, Owner = shooter, Direction = shotDirection };
+            if (ready != null) { ready.Launch(source, shooter, shotDirection, damageScale); return; }
+            pending[Key(shot)] = new PendingLaunch { Weapon = source, Owner = shooter, Direction = shotDirection, DamageScale = damageScale };
         }
 
         public override void OnCreate()
@@ -65,7 +71,7 @@ namespace Crucible.Scripts
             PendingLaunch launch;
             if (!pending.TryGetValue(Key(Entity), out launch)) return;
             pending.Remove(Key(Entity));
-            Launch(launch.Weapon, launch.Owner, launch.Direction);
+            Launch(launch.Weapon, launch.Owner, launch.Direction, launch.DamageScale);
         }
 
         public override void OnDestroy()
@@ -74,14 +80,15 @@ namespace Crucible.Scripts
         }
 
         /// <summary>Starts the flight. The weapon supplies damage, range, speed and splash.</summary>
-        public void Launch(MechWeapon source, Entity shooter, Vector3 shotDirection)
+        public void Launch(MechWeapon source, Entity shooter, Vector3 shotDirection, float shotDamageScale)
         {
             weapon = source;
             owner = shooter;
+            damageScale = Math.Max(0f, shotDamageScale);
             direction = shotDirection.Normalized;
             speed = Math.Max(0.01f, source.Def.ProjectileSpeed);
             radius = Math.Max(0.01f, source.Def.ProjectileSize);
-            remaining = source.Def.MaximumRange;
+            remaining = source.Def.Range;
             travelled = 0f;
             live = MechMath.SqrLength(direction) > 0f;
             if (live) Transform.WorldRotation = Quaternion.LookRotation(direction, Vector3.Up);
@@ -147,21 +154,26 @@ namespace Crucible.Scripts
             if (!live) return;
             live = false;
             Vector3 from = owner != null && owner.IsAlive ? owner.Transform.WorldPosition : point - direction;
-            float damage = weapon.DamageAt(travelled);
-            if (damage > 0f) MechCombatTargets.TryDamage(hitEntity, damage, from);
+            // The shooter hears about every hit that lands (hit stop: Unity's OnConfirmedHit).
+            MechPlayer shooter = owner != null && owner.IsAlive ? owner.GetComponent<MechPlayer>() : null;
+            // Full damage wherever it lands: the flight already ends at Range (Unity: impactDamage = damage).
+            float damage = weapon.Def.Damage * damageScale;
+            if (damage > 0f && MechCombatTargets.TryDamage(hitEntity, damage, from) && shooter != null)
+                shooter.ConfirmHit(MechCombatTargets.Owning(hitEntity)?.Entity, MechHitKind.Projectile);
 
-            // Splash: everything inside the radius, the direct target included, takes the splash damage
-            // (scaled by the same range falloff).
+            // Splash: everything inside the radius, the direct target included, takes the splash damage.
             if (weapon.Def.Attack == MechAttackType.Splash && weapon.Def.SplashRadius > 0f)
             {
-                float falloff = weapon.Def.Damage > 0f ? damage / weapon.Def.Damage : 0f;
                 var targets = new List<MechCombatTargets.Target>(MechCombatTargets.All);
                 foreach (var t in targets)
                 {
                     if (!t.Entity.IsAlive || MechCombatTargets.Same(t.Entity, owner)) continue;
                     Vector3 centre = t.AimPosition;
                     if ((centre - point).Length <= weapon.Def.SplashRadius + targetRadius)
-                        t.OnDamage(weapon.Def.SplashDamage * falloff, from);
+                    {
+                        t.OnDamage(weapon.Def.SplashDamage * damageScale, from);
+                        if (shooter != null) shooter.ConfirmHit(t.Entity, MechHitKind.Blast);
+                    }
                 }
             }
             Finish();   // hit markers / impact VFX would hook in here (Unity: CombatVisualEvents)

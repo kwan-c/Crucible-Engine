@@ -2,8 +2,10 @@
 * \file:         MechPlayer.cs
 * \author:       Tok Duan Jie Nelson
 * \par:          Email: t.duanjienelson@digipen.edu
+* \author:       Hugo Low Ren Hao (M3: sync with Unity main)
+* \par:          Email: low.h@digipen.edu
 * \date          8 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         The player mech. Port of the Unity player behaviour:
 *                MechPlayerInput (devices -> actions), MechMovementController
 *                (camera-relative walking, automatic running, Quick Boost
@@ -36,25 +38,38 @@
 *    Controls (Unity's Combat/ControlScheme.md):
 *        WASD / left stick   camera-relative move (the player's keybinds)
 *        Shift               Quick Boost dodge (cooldown, no energy)
-*        Space               jump
+*        Space               legs ability (Fast Legs: jump; other legs: nothing)
 *        LMB / RMB (hold)    left arm / right arm attack
 *        Q / E               left / right shoulder weapon
 *        R                   reload partly empty magazines
-*        Tab / Ctrl          head / torso ability request
+*        Tab / Ctrl          head ability (Heal) / torso ability (Damage Amp)
 *        V                   cycle the highlighted nearby part
 *        1, 2                swap it into the left (or only) / right socket
 *    Showcase-only debug keys: K take 25 damage, H full heal / revive.
 *
 *    Hits: ranged weapons hit what is under the screen centre (Unity's free
-*    aim ray), up to their maximum range, with distance falloff and splash;
+*    aim ray), at full damage up to their Range, where the shot ends, with splash;
 *    melee hits targets in a 100 degree arc in front within reach. Targets
 *    are scripts registered in MechCombatTargets. There are no projectile
 *    visuals yet, and no lock-on / auto-aim.
 *
 *    Not ported: targeting / lock-on, projectile visuals, hit stop,
-*    knockback, locomotion modules (hover/tank), weapon animations.
+*    locomotion modules (hover/tank), weapon animations.
 *
 *    v1.1  parts and swapping, stats from parts, weapon hits, legs animation.
+*    v1.2  Unity main values: run after 3 s at 2x walk, dash in the air,
+*          dash FOV pulse +5 (0.05 s up, 0.25 s down), full damage to Range.
+*          Abilities: Heal, Damage Amp, Fast Legs jump; Space = legs ability.
+*          Melee push: a hit slides a golem about 3 m along the swing, a
+*          killing hit throws it (18 m/s forward, 7 m/s up).
+*          Dash distance from Unity's curve integral: 8.08 m with no
+*          stick input at any frame rate (was 7.3-8.0 m).
+*          Camera obstacles (MechCameraObstacles): walls pull the camera
+*          in at once, it eases back out over 0.25 s.
+*          Melee reach assist (the box slides up to 1 m to the target over
+*          0.12 s); camera shake on dash start, grounded dash stop, damage.
+*          Hit stop (MechHitStop): the mech and its victim freeze briefly
+*          when its hits land; the mech and a melee attacker when hurt.
 *
 **************************************************************************/
 using System;
@@ -71,15 +86,17 @@ namespace Crucible.Scripts
     {
         // --- Ground locomotion (MechMovementController defaults) ------------------- //
         public float moveSpeed = 10f;           // m/s when the legs have no Speed stat (FullPlayer_mech_specialist: 10)
-        public float sprintSpeed = 12f;         // automatic running, scaled like walking
-        public float autoRunDelay = 5f;         // seconds of uninterrupted walking
+        // Unity main (8 Nov, FullPlayer_mech_specialist): run after 3 s at twice the walk speed.
+        // A multiplier, not a speed, so heavy parts slow running exactly as much as walking.
+        public float autoRunSpeedMultiplier = 2f;
+        public float autoRunDelay = 3f;         // seconds of uninterrupted walking
         public float acceleration = 20f;
         public float deceleration = 32f;
         public float boostAcceleration = 28f;   // acceleration while running
         public float rotationSharpness = 12f;
         public bool faceCameraDirection = true; // moving: face the camera's way (strafe), else face the move
         public bool applyPartSpeedModifiers = true;
-        public float jumpHeight = 1.5f;
+        // No jumpHeight: jumping is the Fast Legs ability now (MechPartDef.AbilityPower golem lengths).
 
         // --- Quick Boost (dodge) --------------------------------------------------- //
         public float quickBoostPeakSpeed = 50f;
@@ -87,7 +104,11 @@ namespace Crucible.Scripts
         public float quickBoostRecovery = 0.4f;
         public float quickBoostExitBlendStart = 0.8f;   // normal movement returns over the last 20%
         public float boostStopDeceleration = 64f;       // braking back to walking after a boost
-        public float quickBoostFovKick = 7f;            // degrees (CameraControlThirdPerson's pulse)
+        // Dash FOV pulse (Unity's Main Camera prefab, CameraControlThirdPerson): +5 degrees,
+        // eased up over 0.05 s from the dash press, then eased back down over 0.25 s.
+        public float quickBoostFovKick = 5f;            // degrees
+        public float quickBoostFovRiseTime = 0.05f;     // seconds
+        public float quickBoostFovRecoveryTime = 0.25f; // seconds
 
         // --- Starting loadout (Unity: EquipManager.startingLoadout) ------------------ //
         // Used for a socket with no mount entity, or a mount with no MechPart under it. Part ids
@@ -109,6 +130,17 @@ namespace Crucible.Scripts
         public float meleeSizeX = 5f;           // MechCombat.meleeSize (5, 3.5, 5.5)
         public float meleeSizeY = 3.5f;
         public float meleeSizeZ = 5.5f;
+        // MechCombat "Melee push on enemies": speeds in m/s, NOT scaled by unityScale (they move
+        // the golems, which are Unity-sized). Only Enemy scripts are pushed.
+        public bool meleePush = true;
+        public float meleeImpulseSpeed = 6.666667f;  // a living golem's slide starts this fast...
+        public float meleePushSeconds = 0.9f;        // ...and slows evenly to 0 over this long (about 3 m)
+        public float meleeKillImpulseSpeed = 18f;    // a killing hit throws it this fast along the swing...
+        public float meleeKillLiftSpeed = 7f;        // ...and this fast upwards
+        // MechCombat reach assist (see StartMelee): Unity metres are x unityScale, like the box.
+        public float maximumMeleeApproach = 1f;      // the box slides at most this far forward...
+        public float maximumMeleeAssistAngle = 30f;  // ...for a target this many degrees off the facing (none at the edge)
+        public float meleeApproachDuration = 0.12f;  // seconds the slide takes; the hit lands at its end
         public float muzzleOffsetX = 0.65f;     // MechCombat.muzzleOffset (0.65, 0.5, 0.65): parts without a muzzle
         public float muzzleOffsetY = 0.5f;
         public float muzzleOffsetZ = 0.65f;
@@ -141,7 +173,7 @@ namespace Crucible.Scripts
         public bool IsAutoRunning { get; private set; }
         public float AutoRunProgress { get { return autoRunDelay > 0f ? MechMath.Clamp01(uninterruptedMoveTime / autoRunDelay) : IsAutoRunning ? 1f : 0f; } }
         public float WalkSpeed { get { return baseSpeed * speedMultiplier; } }
-        public float RunSpeed { get { return sprintSpeed * (moveSpeed > 0f ? baseSpeed / moveSpeed : 1f) * speedMultiplier; } }
+        public float RunSpeed { get { return WalkSpeed * Math.Max(1f, autoRunSpeedMultiplier); } }
         public bool GameplayInputActive { get; private set; }
 
         public event Action<MechWeapon> WeaponFired;
@@ -207,6 +239,9 @@ namespace Crucible.Scripts
             Health = new MechHealth(250f);
             Targeting = new MechTargetLock(Entity);
             Health.Damaged += amount => NotifyCombatAction();
+            Health.Damaged += amount => StartShake(damageShake, damageShakeDuration);   // CombatFeedback.OnDamaged
+            Health.Damaged += amount => { if (hitStop) MechHitStop.Request(Entity, damageHitStop); };   // refused if it killed
+            MechHitStop.Reset();   // Unity resets its statics on play start: last session's stops and clock are gone
             Health.Died += () => Log.Info("MechPlayer: destroyed. Press H to revive (showcase debug key).");
             State = MechMovementState.Airborne;
         }
@@ -232,40 +267,70 @@ namespace Crucible.Scripts
 
             if (debugKeys) UpdateDebugKeys();
 
+            // Hit stop: ends finished stops (their animations play on), then asks whether this mech
+            // may start new actions (refused from a stop's second frame).
+            MechHitStop.Update();
+            bool blocked = MechHitStop.BlocksNewActions(Entity);
+
             if (Health.IsDead)
             {
                 attacksArmed = false;
+                meleeWeapon = null;   // a swing still sliding in dies with the mech
                 planarVelocity = Vector3.Zero;
                 quickBoostTimer = 0f;
                 uninterruptedMoveTime = 0f; IsAutoRunning = false;
                 body.SimpleMove(Vector3.Zero);
                 Velocity = body.Velocity;
                 UpdateLegsAnimation();
+                PlaceCamera(deltaTime);   // the camera still orbits the wreck, so it still avoids walls
                 UpdateFov(deltaTime);
                 return;
             }
 
-            UpdatePickups(gameplay);
+            UpdatePickups(gameplay && !blocked);   // no swaps during a hit stop
 
             // Actions first: a successful attack cancels running before this frame's movement.
-            if (gameplay)
+            // A hit stop refuses them (Unity's MechPlayerInput: reload, abilities, jump; not buffered).
+            if (gameplay && !blocked)
             {
                 if (Input.IsPressed(KeyCode.R)) foreach (var weapon in Weapons) if (weapon != null) weapon.TryReload(now);
                 if (Input.IsPressed(KeyCode.Tab)) RequestAbility(MechSocket.Head, now);
                 if (Input.IsPressed(KeyCode.LeftControl)) RequestAbility(MechSocket.Torso, now);
+                // Unity main: Space never jumps by itself, it asks the legs for their ability (Fast Legs
+                // jump; other legs do nothing). Still the rebindable jump key and pad button.
+                if (Input.IsPressed(InputSettings.JumpKey) || Input.IsPressed(InputSettings.JumpButton))
+                    RequestAbility(MechSocket.Legs, now);
             }
+            UpdateAbilities(deltaTime, now);
             if (gameplay && Input.IsPressed(KeyCode.F)) Targeting.ToggleHardLock(gameplayCamera);   // Unity: F toggles camera lock
             UpdateAttacks(gameplay, now);
 
             Vector2 move = gameplay ? ReadMove() : Vector2.Zero;
-            bool jump = gameplay && (Input.IsPressed(InputSettings.JumpKey) || Input.IsPressed(InputSettings.JumpButton));
             bool quickBoost = gameplay && (Input.IsPressed(KeyCode.LeftShift) || Input.IsPressed(KeyCode.GamepadB));
-            Tick(move, jump, quickBoost, deltaTime);
-            UpdateLegsAnimation();
+            if (!gameplay) hitStopDash = false;   // a menu opened: forget the kept dash (Unity: ClearHitStopInputBuffer)
+            // Asked here, not earlier: a hit this frame's attack just landed already holds the movement.
+            if (MechHitStop.IsFrozen(Entity))
+            {
+                // Unity's MechMovementController during a hit stop: no movement at all, and a dash pressed
+                // now is kept for the first frame after it. The engine's controller keeps walking at the
+                // last speed it was given, so it is told to stand still. The dash timer, the assisted
+                // swing and the legs animation all wait (Tick, UpdateMelee, MechLegAnimator).
+                hitStopDash |= quickBoost;
+                body.SimpleMove(Vector3.Zero);
+                Velocity = body.Velocity;
+            }
+            else
+            {
+                quickBoost |= hitStopDash;
+                hitStopDash = false;
+                Tick(move, quickBoost, deltaTime);
+                UpdateMelee(deltaTime);   // after movement: a dash or a jump this frame cancels an assisted swing
+                UpdateLegsAnimation();
+            }
             Targeting.Update(gameplayCamera, gameplay ? Input.MouseDelta : Vector2.Zero, deltaTime);
             UpdateLockCamera(deltaTime);
             UpdateWeaponIdle(deltaTime, now);
-            UpdateShake(deltaTime);
+            PlaceCamera(deltaTime);
             UpdateFov(deltaTime);
         }
 
@@ -344,8 +409,11 @@ namespace Crucible.Scripts
             {
                 MechSocket socket = MechLoadout.AbilitySockets[i];
                 MechPartDef def = equipped[(int)socket];
-                if (Abilities[i] == null || Abilities[i].Def != def)
-                    Abilities[i] = def != null ? new MechAbility(def, socket) : null;
+                // A part with no ability gets no MechAbility, so the HUD hides its pod. A new part type
+                // gets a fresh one, which also ends the old part's running effect (Unity: the effect
+                // ends when its part is taken off).
+                if (def == null || def.Ability == MechAbilityKind.None) Abilities[i] = null;
+                else if (Abilities[i] == null || Abilities[i].Def != def) Abilities[i] = new MechAbility(def, socket);
             }
 
             // MechStats: health is the sum of the parts; speed is the legs' (or moveSpeed) times every
@@ -492,8 +560,9 @@ namespace Crucible.Scripts
         // Movement: MechMovementController.Tick
         // ---------------------------------------------------------------------------- //
 
-        void Tick(Vector2 input, bool jump, bool quickBoostPressed, float deltaTime)
+        void Tick(Vector2 input, bool quickBoostPressed, float deltaTime)
         {
+            bool wasGrounded = IsGrounded;   // last frame's, for the dash-stop shake below
             IsGrounded = body.IsGrounded;
             input = MechMath.ClampLength(input, 1f);
 
@@ -515,23 +584,33 @@ namespace Crucible.Scripts
             bool sprint = IsAutoRunning;
 
             quickBoostRecoveryTimer = Math.Max(0f, quickBoostRecoveryTimer - deltaTime);
-            bool canQuickBoost = IsGrounded && !IsQuickBoosting && quickBoostRecoveryTimer <= 0f;
+            if (quickBoostRecoveryTimer < 0.000001f) quickBoostRecoveryTimer = 0f;   // float crumbs: no extra frame of wait
+            // No IsGrounded check: biped legs may dash in the air (Unity: BipedLocomotionModule.
+            // CanQuickBoost returns true). Gravity keeps acting, so an air dash still falls.
+            bool canQuickBoost = !IsQuickBoosting && quickBoostRecoveryTimer <= 0f;
             bool boostStarted = quickBoostPressed && canQuickBoost;
             if (boostStarted)
             {
+                quickBoostFovAge = 0f;   // restarts the FOV pulse (Unity: OnQuickBoost)
                 quickBoostDirection = hasMove ? moveDirection.Normalized : cameraForward;
+                RebuildBoostIntegral();  // per press, as Unity does: picks up Inspector changes to the blend
                 quickBoostTimer = ActiveBoostDuration;
                 quickBoostRecoveryTimer = quickBoostTimer + Math.Max(0f, quickBoostRecovery);
+                // Unity counts the press frame towards the recovery too, as the dash timer does below,
+                // so the next dash is allowed exactly duration + recovery after this press.
+                quickBoostRecoveryTimer = Math.Max(0f, quickBoostRecoveryTimer - deltaTime);
                 uninterruptedMoveTime = 0f; IsAutoRunning = false;
             }
 
-            bool boostEnded = StepPlanarVelocity(sprint, moveDirection, deltaTime);
+            bool boostEnded;
+            Vector3 planarStep = StepPlanarMotion(sprint, moveDirection, deltaTime, out boostEnded);
             UpdateFacing(moveDirection, hasMove, cameraForward, deltaTime);
 
-            // Gravity and the ground belong to the engine's CharacterController; Jump only
-            // takes effect if it is grounded at the next physics step (Unity's grounded check).
-            if (jump && jumpHeight > 0f && IsGrounded) body.Jump(jumpHeight);
-            body.SimpleMove(planarVelocity);
+            // Gravity, the ground and jumping (the legs ability, RequestAbility) belong to the
+            // engine's CharacterController; this only sets the planar speed. SimpleMove takes a
+            // speed, not a distance (Unity's Move took the distance), so this frame's movement goes
+            // in as its average speed. The physics step (60 Hz) then moves that speed x 1/60 s.
+            body.SimpleMove(planarStep * (1f / deltaTime));
             Velocity = body.Velocity;
 
             State = IsQuickBoosting ? MechMovementState.QuickBoost
@@ -541,27 +620,92 @@ namespace Crucible.Scripts
 
             if (boostStarted && QuickBoostStarted != null) QuickBoostStarted();
             if (boostEnded && QuickBoostEnded != null) QuickBoostEnded();
+
+            // Unity's QuickDashFeedback: a kick on every dash, and a small dip when one ends on the
+            // ground. Not when the mech is landing this very frame: that is a landing, not a stop.
+            if (boostStarted) StartShake(dashStartShake, dashStartShakeDuration);
+            if (boostEnded && IsGrounded && wasGrounded) StartShake(dashStopShake, dashStopShakeDuration);
         }
 
-        // Returns true on the frame the Quick Boost finishes.
-        bool StepPlanarVelocity(bool sprint, Vector3 requested, float deltaTime)
+        /// <summary>
+        /// Unity's StepPlanarMotion: this frame's flat movement in metres. Walking is speed x time.
+        /// The dash is the exact area under its speed curve between where it was at the start of
+        /// the frame and where it is at the end, so its length doesn't depend on the frame rate
+        /// (sampling the curve once per frame came up 0.4-0.8 m short at 30-60 fps).
+        /// ended is true on the frame the Quick Boost finishes.
+        /// </summary>
+        Vector3 StepPlanarMotion(bool sprint, Vector3 requested, float deltaTime, out bool ended)
         {
+            ended = false;
             if (!IsQuickBoosting)
             {
                 UpdatePlanarVelocity(sprint, requested, deltaTime);
-                return false;
+                return planarVelocity * deltaTime;
             }
+            // Only the part of the frame the dash is still running for (the last frame may be longer).
+            float duration = ActiveBoostDuration;
+            float active = Math.Min(deltaTime, quickBoostTimer);
+            float start = MechMath.Clamp01(1f - quickBoostTimer / duration);
+            float finish = MechMath.Clamp01(start + active / duration);
+
             // The dash keeps its captured direction; walking blends back in over its final fraction.
-            float finish = MechMath.Clamp01(1f - (quickBoostTimer - deltaTime) / ActiveBoostDuration);
-            float blend = ExitBlend(finish);
+            // The tables hold the area as a fraction of the whole dash, so x speed x duration = metres.
             Vector3 exit = requested * WalkSpeed;
+            Vector3 step = quickBoostDirection * (quickBoostPeakSpeed * duration * (IntegralAt(boostIntegral, finish) - IntegralAt(boostIntegral, start)))
+                         + exit * (duration * (IntegralAt(exitIntegral, finish) - IntegralAt(exitIntegral, start)));
+
+            // The speed at the end of the frame: what the next frame, the animation and the walk
+            // that follows carry on from.
+            float blend = ExitBlend(finish);
             planarVelocity = quickBoostDirection * (quickBoostPeakSpeed * BoostCurve(finish) * (1f - blend)) + exit * blend;
-            quickBoostTimer = Math.Max(0f, quickBoostTimer - deltaTime);
-            if (quickBoostTimer > 0.000001f) return false;
+            quickBoostTimer = Math.Max(0f, quickBoostTimer - active);
+            if (quickBoostTimer > 0.000001f) return step;
+
             quickBoostTimer = 0f;
+            ended = true;
             brakingAfterBoost = true;
             planarVelocity = exit;
-            return true;
+            // The dash finished part-way through this frame: the rest of the frame is walking.
+            float remainder = deltaTime - active;
+            if (remainder > 0f)
+            {
+                UpdatePlanarVelocity(sprint, requested, remainder);
+                step = step + planarVelocity * remainder;
+            }
+            return step;
+        }
+
+        // Unity's boostIntegral / exitIntegral: running areas under the dash's speed curve (with the
+        // exit blend taken out) and under the exit blend, from progress 0 to 1 in 128 slices. Built
+        // once per press, so each frame's share is two lookups instead of a fresh integral.
+        const int BoostIntegrationSteps = 128;
+        readonly float[] boostIntegral = new float[BoostIntegrationSteps + 1];
+        readonly float[] exitIntegral = new float[BoostIntegrationSteps + 1];
+
+        void RebuildBoostIntegral()
+        {
+            boostIntegral[0] = exitIntegral[0] = 0f;
+            float previousBlend = ExitBlend(0f);
+            float previous = BoostCurve(0f) * (1f - previousBlend);
+            for (int i = 1; i <= BoostIntegrationSteps; i++)
+            {
+                float progress = i / (float)BoostIntegrationSteps;
+                float blend = ExitBlend(progress);
+                float speed = BoostCurve(progress) * (1f - blend);
+                // Trapezoid rule: each slice's area is its width times the average of its two edges.
+                boostIntegral[i] = boostIntegral[i - 1] + (previous + speed) * (0.5f / BoostIntegrationSteps);
+                exitIntegral[i] = exitIntegral[i - 1] + (previousBlend + blend) * (0.5f / BoostIntegrationSteps);
+                previous = speed;
+                previousBlend = blend;
+            }
+        }
+
+        // The running area at any progress: straight-line between the two nearest slices.
+        static float IntegralAt(float[] samples, float progress)
+        {
+            float position = MechMath.Clamp01(progress) * BoostIntegrationSteps;
+            int index = Math.Min(BoostIntegrationSteps - 1, (int)Math.Floor(position));
+            return samples[index] + (samples[index + 1] - samples[index]) * (position - index);
         }
 
         void UpdatePlanarVelocity(bool sprint, Vector3 direction, float deltaTime)
@@ -629,11 +773,26 @@ namespace Crucible.Scripts
             right = Vector3.Cross(forward, Vector3.Up).Normalized;
         }
 
+        // Seconds since the last dash started; infinity = no pulse running. Infinity plus a
+        // frame time stays infinity, so nothing has to switch the pulse off.
+        float quickBoostFovAge = float.PositiveInfinity;
+
+        // Unity's UpdateMovementFeedback. Its pulse curve has keys (0, 0) (0.2, 1) (1, 0) with flat
+        // tangents, which is a smoothstep up and a smoothstep down, so SmoothStep01 is that curve
+        // exactly. The pulse is timed from the press, not from the dash's own progress, and the FOV
+        // is set directly (no damping), as Unity sets lens.FieldOfView.
         void UpdateFov(float deltaTime)
         {
             if (gameplayCamera == null || baseFov <= 0f) return;
-            float pulse = IsQuickBoosting ? quickBoostFovKick * (1f - QuickBoostProgress * QuickBoostProgress) : 0f;
-            float fov = MechMath.Lerp(gameplayCamera.FieldOfView, baseFov + pulse, MechMath.Damp(18f, deltaTime));
+            quickBoostFovAge += deltaTime;
+            float rise = Math.Max(0.01f, quickBoostFovRiseTime);
+            float recovery = Math.Max(0.01f, quickBoostFovRecoveryTime);
+            float pulse = 0f;
+            if (quickBoostFovAge < rise)
+                pulse = MechMath.SmoothStep01(quickBoostFovAge / rise);
+            else if (quickBoostFovAge < rise + recovery)
+                pulse = 1f - MechMath.SmoothStep01((quickBoostFovAge - rise) / recovery);
+            float fov = baseFov + pulse * quickBoostFovKick;
             if (Math.Abs(fov - gameplayCamera.FieldOfView) > 0.001f) gameplayCamera.FieldOfView = fov;
         }
 
@@ -722,11 +881,15 @@ namespace Crucible.Scripts
             if (!gameplay || Input.IsPointerOverUI) { attacksArmed = false; return; }
             // The click that captures the mouse must not also attack: arm once everything is released.
             if (!attacksArmed) { attacksArmed = !left && !right && !q && !e; return; }
+            if (MechHitStop.BlocksNewActions(Entity)) return;   // Unity's MechCombat.TryAttack during a hit stop
             foreach (var weapon in Weapons)
             {
                 if (weapon == null) continue;
                 KeyCode key = KeyFor(weapon.Socket);
                 bool requested = weapon.RepeatWhileHeld ? Input.IsDown(key) : Input.IsPressed(key);
+                // One melee swing at a time (Unity's MeleeAttack.TryStart refuses while Pending): the
+                // other arm can't swing while an assisted swing is still sliding in.
+                if (weapon.IsMelee && meleeWeapon != null) continue;
                 if (!requested || !weapon.TryAttack(now)) continue;
                 NotifyCombatAction();
                 ResolveHit(weapon);
@@ -754,13 +917,13 @@ namespace Crucible.Scripts
         void ResolveHit(MechWeapon weapon)
         {
             Vector3 origin = Transform.WorldPosition;
-            if (weapon.IsMelee) { MeleeHit(weapon, origin); return; }
+            if (weapon.IsMelee) { StartMelee(weapon, origin); return; }
 
             // Free aim (Unity's AimSolver): the point under the screen centre, or the ray's end at range.
             Ray ray;
             if (gameplayCamera == null || !gameplayCamera.ViewportPointToRay(new Vector2(0.5f, 0.5f), out ray)) return;
             float cameraToMech = (origin - ray.Origin).Length;
-            float reach = weapon.Def.MaximumRange + cameraToMech;
+            float reach = weapon.Def.Range + cameraToMech;
             RaycastHit hit;
             bool aimed = Physics.Raycast(ray, out hit, reach, Entity);
             Vector3 aimPoint = aimed ? hit.Point : ray.Origin + ray.Direction.Normalized * reach;
@@ -779,25 +942,32 @@ namespace Crucible.Scripts
                 Vector3 direction = (aimPoint - muzzle).Normalized;
                 if (MechMath.SqrLength(direction) < 0.0001f) direction = MechMath.Flat(Transform.Forward).Normalized;
                 Entity shot = part.projectile.Instantiate(muzzle, Quaternion.LookRotation(direction, Vector3.Up));
-                if (shot != null) { MechProjectile.Fire(shot, weapon, Entity, direction); return; }
+                // The Damage Amp is captured now, at the press, as Unity's RangedAttack.Fire does: a shot
+                // fired during the amp still hits harder if the amp ends while it flies.
+                if (shot != null) { MechProjectile.Fire(shot, weapon, Entity, direction, DamageMultiplier); return; }
                 Log.Warning("MechPlayer: could not spawn " + weapon.Name + "'s projectile; using an instant hit.");
             }
 
-            // No projectile prefab: an instant hit on what is under the screen centre.
+            // No projectile prefab: an instant hit on what is under the screen centre. Same rule as a
+            // projectile: full damage up to Range, nothing past it (the ray reaches from the camera,
+            // so it can find something slightly beyond Range from the mech).
             if (!aimed) return;
-            float distance = (hit.Point - origin).Length;
-            float falloff = weapon.Def.Damage > 0f ? weapon.DamageAt(distance) / weapon.Def.Damage : 0f;
-            if (falloff <= 0f) return;
-            bool direct = MechCombatTargets.TryDamage(hit.Entity, weapon.Def.Damage * falloff, origin);
+            if ((hit.Point - origin).Length > weapon.Def.Range) return;
+            float amp = DamageMultiplier;
+            bool direct = MechCombatTargets.TryDamage(hit.Entity, weapon.Def.Damage * amp, origin);
+            if (direct) ConfirmHit(MechCombatTargets.Owning(hit.Entity)?.Entity, MechHitKind.Projectile);
 
-            // Splash: everyone else inside the radius takes the splash damage (same range falloff).
+            // Splash: everyone else inside the radius takes the splash damage.
             if (weapon.Def.Attack != MechAttackType.Splash || weapon.Def.SplashRadius <= 0f) return;
             var targets = new List<MechCombatTargets.Target>(MechCombatTargets.All);
             foreach (var target in targets)
             {
                 if (!target.Entity.IsAlive || (direct && IsHitEntity(target.Entity, hit.Entity))) continue;
                 if ((target.Entity.Transform.WorldPosition - hit.Point).Length <= weapon.Def.SplashRadius + 0.5f)
-                    target.OnDamage(weapon.Def.SplashDamage * falloff, origin);
+                {
+                    target.OnDamage(weapon.Def.SplashDamage * amp, origin);
+                    ConfirmHit(target.Entity, MechHitKind.Blast);
+                }
             }
         }
 
@@ -808,13 +978,96 @@ namespace Crucible.Scripts
             return false;
         }
 
-        // Unity's MeleeAttack box: MechCombat.meleeCenter / meleeSize in the mech's own frame (oriented
-        // with its facing), each enemy damaged once per swing. Targets count by their centre (feet + 1 m).
-        void MeleeHit(MechWeapon weapon, Vector3 origin)
+        // --- melee swing with reach assist (Unity's MeleeAttack) ------------------------------------ //
+        // A swing at the current target that is just out of reach doesn't hit at once: the hit box
+        // slides forward to it over meleeApproachDuration, then hits. Only the box moves, never the
+        // mech, and the target and direction are fixed when the swing starts.
+        MechWeapon meleeWeapon;                 // the swing waiting for its box to arrive, or null
+        MechCombatTargets.Target meleeTarget;
+        Vector3 meleeForward;
+        float meleeDamage, meleeExtension, meleeApproachTime;
+
+        void StartMelee(MechWeapon weapon, Vector3 origin)
         {
-            Vector3 forward = MechMath.Flat(Transform.Forward).Normalized;
+            // Fixed at the swing's start, as Unity's strikeDamage / StrikeRotation: a Damage Amp running
+            // out, or the mech turning, during the approach changes nothing.
+            meleeDamage = weapon.Def.Damage * DamageMultiplier;   // Unity's MeleeAttack: x DamageModifiers.Total
+            meleeForward = MechMath.Flat(Transform.Forward).Normalized;
+            meleeExtension = FindMeleeApproach(origin, meleeForward, out meleeTarget);
+            if (meleeExtension > 0.01f) { meleeWeapon = weapon; meleeApproachTime = 0f; return; }
+            MeleeHit(meleeDamage, origin, meleeForward, 0f);
+        }
+
+        // Each frame after movement (Unity's MeleeAttack.Tick). The swing is lost, hitting nothing,
+        // if the target dies, the weapon is swapped off, or the mech dashes or leaves the ground.
+        void UpdateMelee(float deltaTime)
+        {
+            if (meleeWeapon == null) return;
+            bool targetGone = meleeTarget == null || !meleeTarget.Entity.IsAlive || !MechCombatTargets.All.Contains(meleeTarget);
+            if (targetGone || socketWeapons[(int)meleeWeapon.Socket] != meleeWeapon || IsQuickBoosting || !IsGrounded)
+            {
+                meleeWeapon = null;
+                return;
+            }
+            meleeApproachTime += deltaTime;
+            if (meleeApproachTime < meleeApproachDuration) return;
+            meleeWeapon = null;
+            // From where the mech is now (it may have walked a little), along the swing's own direction.
+            MeleeHit(meleeDamage, Transform.WorldPosition, meleeForward, meleeExtension);
+        }
+
+        // Unity's FindApproach: how far the box must slide forward to reach the current target, or 0
+        // for no assist. Uses the same target point as MeleeHit (its centre), so an assisted swing
+        // can't miss on a technicality.
+        float FindMeleeApproach(Vector3 origin, Vector3 forward, out MechCombatTargets.Target target)
+        {
+            target = null;
+            float k = unityScale;
+            // No assist without a selected target, or while dashing or in the air (Unity's rules).
+            if (maximumMeleeApproach <= 0f || maximumMeleeAssistAngle <= 0f || Targeting == null || Targeting.IsFreeAim
+                || IsQuickBoosting || !IsGrounded) return 0f;
+            MechCombatTargets.Target candidate = Targeting.CurrentTarget;
+            if (candidate == null || !candidate.Entity.IsAlive) return 0f;
+
+            Vector3 point = candidate.Entity.Transform.WorldPosition + Vector3.Up * 1f;
+            Vector3 offset = point - origin;
+            Vector3 flat = MechMath.Flat(offset);
+            if (flat.Length < 1e-3f) return 0f;
+            // The further off to the side, the less reach: the full metre straight ahead, none at 30 degrees.
+            float angle = (float)(Math.Acos(MechMath.Clamp(Vector3.Dot(forward, flat.Normalized), -1f, 1f)) * 180.0 / Math.PI);
+            if (angle >= maximumMeleeAssistAngle) return 0f;
+            float budget = maximumMeleeApproach * k * (1f - angle / maximumMeleeAssistAngle);
+
+            // Sliding the box forward only helps a target beside or above it if it is already
+            // inside the box's width and height; then the gap is how far beyond its front face it is.
+            Vector3 right = Vector3.Cross(forward, Vector3.Up).Normalized;
+            if (Math.Abs(Vector3.Dot(offset, right)) > meleeSizeX * 0.5f * k || Math.Abs(offset.Y) > meleeSizeY * 0.5f * k) return 0f;
+            float gap = Vector3.Dot(offset, forward) - (meleeCenterZ + meleeSizeZ * 0.5f) * k;
+            if (gap <= 0f || gap + 0.03f > budget) return 0f;     // already in reach, or too far for the assist
+
+            // Never through a wall (Unity's LineBlocked / LimitApproach): a level collider between
+            // the mech's chest (MechCombat.MeleeWallOrigin) and the target cancels the assist.
+            Vector3 chest = origin + Vector3.Up * (muzzleOffsetY * k);
+            Vector3 toTarget = point - chest;
+            RaycastHit wall;
+            if (Physics.Raycast(chest, toTarget.Normalized, out wall, toTarget.Length,
+                                LayerMask.GetMask(PhysicsLayer.NonMoving), Entity)) return 0f;
+
+            target = candidate;
+            return gap + 0.03f;   // 3 cm past the face, so the centre is inside, not on the edge
+        }
+
+        // Unity's MeleeAttack box: MechCombat.meleeCenter / meleeSize in the mech's own frame (oriented
+        // along forward), slid forward by extension (reach assist), each enemy damaged once per
+        // swing. Targets count by their centre (feet + 1 m).
+        void MeleeHit(float damage, Vector3 origin, Vector3 forward, float extension)
+        {
             Vector3 right = Vector3.Cross(forward, Vector3.Up).Normalized;
             float k = unityScale;
+            // Unity's TryMeleePush: along the swing (the mech's facing), not from the mech to each
+            // golem, so everything in the box is shoved the same way.
+            Vector3 push = forward * Math.Max(0f, meleeImpulseSpeed);
+            Vector3 killLaunch = forward * Math.Max(0f, meleeKillImpulseSpeed) + Vector3.Up * Math.Max(0f, meleeKillLiftSpeed);
             var targets = new List<MechCombatTargets.Target>(MechCombatTargets.All);
             foreach (var target in targets)
             {
@@ -822,8 +1075,14 @@ namespace Crucible.Scripts
                 Vector3 offset = target.Entity.Transform.WorldPosition + Vector3.Up * 1f - origin;
                 float side = Vector3.Dot(offset, right), up = offset.Y, ahead = Vector3.Dot(offset, forward);
                 if (Math.Abs(side) > meleeSizeX * 0.5f * k || Math.Abs(up) > meleeSizeY * 0.5f * k) continue;
-                if (Math.Abs(ahead - meleeCenterZ * k) > meleeSizeZ * 0.5f * k) continue;
-                target.OnDamage(weapon.Def.Damage, origin);
+                if (Math.Abs(ahead - (meleeCenterZ * k + extension)) > meleeSizeZ * 0.5f * k) continue;
+                // Only golems are pushed (Unity: only victims with an EnemyAgent); anything else
+                // (a Zoo dummy) just takes the damage through its registered callback.
+                Enemy enemy = meleePush ? target.Entity.GetComponent<Enemy>() : null;
+                bool landed = true;
+                if (enemy != null) landed = enemy.ApplyMeleeHit(damage, push, killLaunch, meleePushSeconds);
+                else target.OnDamage(damage, origin);
+                if (landed) ConfirmHit(target.Entity, MechHitKind.Melee);
             }
         }
 
@@ -909,41 +1168,151 @@ namespace Crucible.Scripts
             idleWeapon = null;
         }
 
-        // --- firing shake (WeaponVisualSettings.firingShake / firingShakeDuration) ------------------- //
+        // --- camera obstacles (CameraControlThirdPerson "Obstacle Avoidance", MechCameraObstacles) --- //
+        public bool avoidObstacles = true;
+        public float cameraRadius = 0.35f;          // minimum clearance from walls (grows to protect the near plane)
+        public float obstacleReturnDamping = 0.25f; // seconds to ease back out once the wall is out of the way
+        readonly MechCameraObstacles cameraObstacles = new MechCameraObstacles();
+
+        // --- camera shake: firing (WeaponVisualSettings.firingShake / firingShakeDuration) ---------- //
+        // Unity's QuickDashFeedback and CombatFeedback impulses, played as the same fading wobble as
+        // the firing shake: strength in Unity metres (x unityScale), then seconds.
+        public float dashStartShake = 0.035f;       // every accepted dash
+        public float dashStartShakeDuration = 0.07f;
+        public float dashStopShake = 0.018f;        // a dash that ends on the ground (not one landing as it ends)
+        public float dashStopShakeDuration = 0.06f;
+        public float damageShake = 0.16f;           // the mech takes damage
+        public float damageShakeDuration = 0.24f;
+
+        // --- hit stop (CombatFeedback "Confirmed hits and actor hitstop"; MechHitStop) ---------------- //
+        public bool hitStop = true;
+        public float meleeHitStop = 0.07f;          // seconds: one of the mech's melee swings lands
+        public float projectileHitStop = 0.035f;    // a shot hits a target directly
+        public float blastHitStop = 0.085f;         // a splash catches a target
+        public float damageHitStop = 0.08f;         // the mech takes damage
+        bool hitStopDash;                           // a dash pressed during a stop, done the frame it ends
+
+        /// <summary>
+        /// One of the mech's attacks landed on victim (Unity's CombatFeedback.OnConfirmedHit): the mech
+        /// stops for that kind's hit stop. MechProjectile calls it too, for shots and splashes.
+        /// </summary>
+        public void ConfirmHit(Entity victim, MechHitKind kind)
+        {
+            if (!hitStop) return;
+            float seconds = kind == MechHitKind.Melee ? meleeHitStop
+                          : kind == MechHitKind.Blast ? blastHitStop : projectileHitStop;
+            MechHitStop.Request(Entity, seconds);
+            MechHitStop.Request(victim, seconds);   // and the victim (refused if the hit killed it)
+        }
+
+        /// <summary>
+        /// An enemy's melee hit landed on the mech (Unity's CombatFeedback: not a projectile): the
+        /// attacker stops for damageHitStop too. The mech's own stop comes from Health.Damaged.
+        /// </summary>
+        public void ConfirmHurtBy(Entity attacker)
+        {
+            if (hitStop) MechHitStop.Request(attacker, damageHitStop);
+        }
         float shakeAmplitude, shakeDuration, shakeTime;
         Vector3 cameraRest;
         bool cameraRestKnown;
 
         void StartShake(MechPart part)
         {
-            if (part == null || part.firingShake <= 0f) return;
-            if (part.firingShake * unityScale >= shakeAmplitude * (shakeDuration > 0f ? shakeTime / shakeDuration : 0f))
-            {
-                shakeAmplitude = part.firingShake * unityScale;
-                shakeDuration = shakeTime = Math.Max(0.01f, part.firingShakeDuration);
-            }
+            if (part != null) StartShake(part.firingShake, part.firingShakeDuration);
         }
 
-        void UpdateShake(float deltaTime)
+        // Every shake goes through here: strength in Unity metres, then seconds. A new shake takes
+        // over only if it is at least as strong as what is left of the running one (which fades),
+        // so a small dash dip never cuts a big damage shake short.
+        void StartShake(float strength, float duration)
+        {
+            if (strength <= 0f) return;
+            float amplitude = strength * unityScale;
+            float left = shakeAmplitude * (shakeDuration > 0f ? shakeTime / shakeDuration : 0f);
+            if (amplitude < left) return;
+            shakeAmplitude = amplitude;
+            shakeDuration = shakeTime = Math.Max(0.01f, duration);
+        }
+
+        // The camera's local position each frame: its authored spot, pulled in front of any wall,
+        // plus the firing shake. One function writes it, because both move the same transform and
+        // the shake must wobble around the corrected spot, not the one inside the wall. After
+        // UpdateLockCamera, which raises the pivot the casts start from.
+        void PlaceCamera(float deltaTime)
         {
             if (gameplayCamera == null) return;
             Transform view = gameplayCamera.Entity.Transform;
             if (!cameraRestKnown) { cameraRest = view.Position; cameraRestKnown = true; }
-            if (shakeTime <= 0f) { if (shakeAmplitude > 0f) { view.Position = cameraRest; shakeAmplitude = 0f; } return; }
-            shakeTime = Math.Max(0f, shakeTime - deltaTime);
-            float a = shakeAmplitude * (shakeTime / shakeDuration);
-            view.Position = cameraRest + new Vector3((float)(idleRandom.NextDouble() * 2 - 1) * a,
-                                                     (float)(idleRandom.NextDouble() * 2 - 1) * a, 0f);
+
+            // Only for the third-person rig: a Camera under a CameraOrbit pivot.
+            Vector3 rest = cameraRest;
+            Entity rig = view.Parent;
+            if (avoidObstacles && rig != null && rig.HasComponent<CameraOrbit>())
+            {
+                cameraObstacles.CameraRadius = cameraRadius;          // Inspector changes apply live
+                cameraObstacles.ReturnDamping = obstacleReturnDamping;
+                rest = cameraObstacles.Resolve(rig.Transform, cameraRest, gameplayCamera, Entity, deltaTime);
+            }
+
+            Vector3 shake = Vector3.Zero;
+            if (shakeTime > 0f)
+            {
+                shakeTime = Math.Max(0f, shakeTime - deltaTime);
+                float a = shakeAmplitude * (shakeTime / shakeDuration);
+                shake = new Vector3((float)(idleRandom.NextDouble() * 2 - 1) * a,
+                                    (float)(idleRandom.NextDouble() * 2 - 1) * a, 0f);
+            }
+            else shakeAmplitude = 0f;
+            view.Position = rest + shake;
         }
 
-        // Unity only raises the request (effects are not implemented there either). The showcase
-        // treats it as accepted so the ability HUD's cooldown can be seen.
+        // --- abilities (Unity main's MechAbilities) ---------------------------------------- //
+        // One switch on MechAbilityKind instead of Unity's effect classes: three abilities, and
+        // the effects need MechPlayer's own body and health anyway.
+
+        // Unity's MechAbilities.Request. Refused, without spending the cooldown, when the socket has
+        // no ability, it is still running or cooling down (ConfirmActivation), or it cannot start
+        // here: Jump needs the ground. body.IsGrounded is read directly because this runs before
+        // Tick refreshes IsGrounded this frame.
         void RequestAbility(MechSocket socket, float now)
         {
             foreach (var ability in Abilities)
             {
-                if (ability == null || ability.Socket != socket || !ability.ConfirmActivation(now)) continue;
+                if (ability == null || ability.Socket != socket) continue;
+                if (ability.Kind == MechAbilityKind.Jump && !body.IsGrounded) return;
+                if (!ability.ConfirmActivation(now)) return;
+                // Jump is instant: the engine's own jump, Power golem lengths high. Heal and Damage
+                // Amp just run for their duration (UpdateAbilities, DamageMultiplier).
+                if (ability.Kind == MechAbilityKind.Jump)
+                    body.Jump(ability.Power * MechPartDef.MetresPerGolem);
                 if (AbilityActivated != null) AbilityActivated(ability);
+                return;
+            }
+        }
+
+        // Unity's ITickingAbilityEffect: Heal restores Power % of maximum health per second while
+        // it runs. The other kinds need nothing per frame.
+        void UpdateAbilities(float deltaTime, float now)
+        {
+            foreach (var ability in Abilities)
+                if (ability != null && ability.Kind == MechAbilityKind.Heal && ability.IsActive(now))
+                    Health.Heal(Health.Maximum * ability.Power / 100f * deltaTime);
+        }
+
+        /// <summary>
+        /// Weapon damage scale right now: x (1 + Power %) for each running Damage Amp, multiplied
+        /// together (Unity: DamageModifiers.Total). 1 when none is running.
+        /// </summary>
+        public float DamageMultiplier
+        {
+            get
+            {
+                float now = Time.ElapsedTime, total = 1f;
+                foreach (var ability in Abilities)
+                    if (ability != null && ability.Kind == MechAbilityKind.DamageAmp && ability.IsActive(now))
+                        total *= 1f + ability.Power / 100f;
+                return total;
             }
         }
 
