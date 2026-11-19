@@ -7,12 +7,13 @@
 *                v1.5: terrain read from the generator's grid;
 *                v1.6: baking and debug drawing split out;
 *                v1.7: goals and agent movement split out;
-*                v1.9: moving DynamicObstacles re-stamped),
+*                v1.9: moving DynamicObstacles re-stamped;
+*                v1.10: obstacle tag suggestions, bake warning),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.9
+* \version       1.10
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -81,6 +82,10 @@
 *                cells and the flow is rebuilt this frame if the change
 *                touches it. After Stop the restored positions are
 *                re-stamped, so the Edit view matches the scene
+*    -v1.10      Build step 4d: SuggestObstacleTags for the Inspector's
+*                Auto-tag obstacles button; the bake warns once about
+*                StaticObstacles that have a RigidBody (their cells would
+*                not follow them)
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
@@ -88,6 +93,7 @@
 // STL
 #include <algorithm>    // std::max
 #include <cmath>        // std::ceil
+#include <string>       // std::to_string
 
 // Crucible engine
 #include "Components/Components.h"            // WorldTransform
@@ -161,6 +167,27 @@ namespace Crucible {
             return { Math::vec3(world[3]), glm::length(Math::vec3(world[0])), glm::length(Math::vec3(world[2])) };
 
         }   // AreaOf()
+
+        // An entity's name for the log: its EntityName, or "Entity <index>".
+        std::string NameOf(const World& world, Entity entity) {
+
+            const EntityName* name = world.Read<EntityName>(entity);
+            if (name && !name->name.empty()) return name->name;
+            return "Entity " + std::to_string(entity.index);
+
+        }   // NameOf()
+
+        // An enemy, a player, or something parented under one (a weapon, a
+        // part): never an obstacle to itself or the horde.
+        bool IsAgentOrPlayer(const World& world, Entity entity) {
+
+            for (Entity at = entity; !(at == kNullEntity); at = world.GetParent(at)) {
+                if (world.HasComponent<FlowFieldAgent>(at) || world.HasComponent<PlayerController>(at)
+                    || world.HasComponent<CharacterController>(at)) return true;
+            }
+            return false;
+
+        }   // IsAgentOrPlayer()
 
     }   // ANONYMOUS NAMESPACE
 
@@ -373,17 +400,31 @@ namespace Crucible {
 
         if (!dynamicOnly) m_obstacles.clear();
         m_dynamicNow.clear();
+        std::vector<Entity> staticWithBody;   // a bake's warning: StaticObstacles something can move
         world.CreateQuery<const Collider, const WorldTransform>()
             .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
                 if (collider.m_isTrigger || !transform.valid || collider.m_type == ShapeType::HeightField) return;
                 const bool isStatic  = !dynamicOnly && world.CompareTag(entity, kStaticObstacleTag);
                 const bool isDynamic = !isStatic && world.CompareTag(entity, kDynamicObstacleTag);
                 if (!isStatic && !isDynamic) return;
+                if (isStatic && world.HasComponent<RigidBody>(entity)) staticWithBody.push_back(entity);
                 NavObstacle obstacle = WorldBounds(collider, transform.matrix);
                 obstacle.dynamic = isDynamic;   // stamped into the dynamic count, so it can be moved later
                 if (!dynamicOnly) m_obstacles.push_back(obstacle);
                 if (isDynamic)    m_dynamicNow.push_back({ entity, obstacle });
             });
+
+        // A StaticObstacle is stamped once, so if physics or a script moves
+        // it, enemies keep routing round where it was. Say so once per bake,
+        // naming a few. (A DynamicObstacle with no RigidBody is fine: a
+        // script may move its Transform.)
+        if (!staticWithBody.empty()) {
+            std::string names;
+            for (std::size_t i = 0; i < staticWithBody.size() && i < 5; ++i) names += (i ? ", " : "") + NameOf(world, staticWithBody[i]);
+            if (staticWithBody.size() > 5) names += ", ...";
+            CRU_WARN("Navigation: {} StaticObstacle(s) have a RigidBody ({}) - their blocked cells won't follow them. "
+                     "Tag them DynamicObstacle (Nav Surface > Auto-tag obstacles does it)", staticWithBody.size(), names);
+        }
 
     }   // ECSNavigationSystem::ReadObstacles()
 
@@ -415,6 +456,53 @@ namespace Crucible {
         if (!m_field.HasFlow() || m_field.TouchesFlow(m_changedCells)) m_goals.ForgetLastBuild();
 
     }   // ECSNavigationSystem::RestampDynamicObstacles()
+
+    std::vector<NavTagSuggestion> ECSNavigationSystem::SuggestObstacleTags(World& world) {
+
+        std::vector<NavTagSuggestion> suggestions;
+
+        // Tags changed while Playing are thrown away at Stop with the rest of
+        // the session, so this is an Edit-mode tool only.
+        if (m_playMode.State() != PlayState::Edit) {
+            CRU_WARN("Navigation: Auto-tag obstacles works in Edit mode only - press Stop first");
+            return suggestions;
+        }
+
+        // The height band is measured from the ground, which the bake works
+        // out (flat or the generated terrain). It also refreshes the preview.
+        if (!Bake(world)) return suggestions;
+
+        std::vector<int> cells;
+        world.CreateQuery<const Collider, const WorldTransform>()
+            .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
+
+                if (collider.m_isTrigger || !transform.valid || collider.m_type == ShapeType::HeightField) return;
+
+                // Only untagged ones, and StaticObstacles to check. A
+                // DynamicObstacle is already right; any other tag is someone's choice.
+                const bool untagged = world.CompareTag(entity, kUntaggedTag);
+                const bool isStatic = world.CompareTag(entity, kStaticObstacleTag);
+                if (!untagged && !isStatic) return;
+
+                const bool hasBody = world.HasComponent<RigidBody>(entity);   // dynamic or kinematic: something moves it
+                if (isStatic && !hasBody) return;                             // already right
+                if (world.HasComponent<FlowFieldSurface>(entity) || IsAgentOrPlayer(world, entity)) return;
+
+                // Untagged: only if it would actually block - reaches into the
+                // height band (floors and ceilings don't) and lies on the grid.
+                if (untagged && (!m_grid.Footprint(WorldBounds(collider, transform.matrix), m_baker.Terrain(), cells) || cells.empty())) return;
+
+                const std::string_view tag = hasBody ? kDynamicObstacleTag : kStaticObstacleTag;
+                std::string reason = isStatic ? "StaticObstacle with a RigidBody"
+                                   : hasBody  ? "untagged, in the height band, has a RigidBody"
+                                              : "untagged, in the height band";
+                suggestions.push_back({ entity, tag, NameOf(world, entity) + ": " + reason });
+
+            });
+
+        return suggestions;
+
+    }   // ECSNavigationSystem::SuggestObstacleTags()
 
     bool ECSNavigationSystem::Bake(World& world) {
 

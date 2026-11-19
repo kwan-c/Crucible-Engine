@@ -6,12 +6,13 @@
 *                v1.5: terrain read from the generator's grid;
 *                v1.6: baking and debug drawing split out;
 *                v1.7: goals and agent movement split out;
-*                v1.9: moving DynamicObstacles re-stamped),
+*                v1.9: moving DynamicObstacles re-stamped;
+*                v1.10: obstacle tag suggestions, bake warning),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.9
+* \version       1.10
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -83,12 +84,16 @@
 *                cells it covers change (NavDynamicObstacles); costs are
 *                fixed locally and the flow rebuilt only if it is touched.
 *                (v1.8, 4a, was a .cpp-only change.)
+*    -v1.10      build step 4d: SuggestObstacleTags (the Inspector's
+*                Auto-tag obstacles button); the bake warns about
+*                StaticObstacles that have a RigidBody
 *
 **************************************************************************/
 #pragma once
 
 // STL
 #include <cstdint>   // BakeCount
+#include <string>
 #include <string_view>   // kStaticObstacleTag, kDynamicObstacleTag
 #include <vector>
 
@@ -114,6 +119,16 @@ namespace Crucible {
     // Untagged colliders are invisible to navigation.
     inline constexpr std::string_view kStaticObstacleTag  = "StaticObstacle";
     inline constexpr std::string_view kDynamicObstacleTag = "DynamicObstacle";
+
+    // One tag the Inspector's "Auto-tag obstacles" button would give
+    // (ECSNavigationSystem::SuggestObstacleTags).
+    struct NavTagSuggestion {
+
+        Entity           entity;
+        std::string_view tag;      // kStaticObstacleTag or kDynamicObstacleTag
+        std::string      reason;   // for the log: why this tag
+
+    };  // NAVTAGSUGGESTION STRUCT
 
     class ECSSystemManager;
     class PlayMode;
@@ -215,6 +230,26 @@ namespace Crucible {
         ENGINE_API bool Bake(World& world);
 
         ENGINE_API bool IsBaked() const { return m_grid.IsBaked(); }
+
+        /*!
+            \brief
+            What the Inspector's "Auto-tag obstacles" button would tag. Only
+            suggests: the editor applies them (as one undo step). Bakes first,
+            because the height band needs the ground.
+              - Untagged collider reaching into the height band, on the grid:
+                StaticObstacle, or DynamicObstacle if it has a RigidBody
+                (dynamic or kinematic - physics or a script moves it).
+              - StaticObstacle with a RigidBody: DynamicObstacle.
+            Never touches: triggers, the terrain, the Nav Surface's own
+            collider, enemies (FlowFieldAgent) and players (PlayerController,
+            CharacterController) and anything parented under them, or
+            entities with any other tag.
+
+            \return
+            Empty outside Edit (tags changed in Play are lost at Stop), or if
+            there is no surface to bake.
+        */
+        ENGINE_API std::vector<NavTagSuggestion> SuggestObstacleTags(World& world);
 
         /*!
             \brief

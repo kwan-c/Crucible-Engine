@@ -779,13 +779,39 @@ void Crucible::Inspector::Update(float) {
 			}
 			// Unity's NavMeshSurface Bake button: a preview of the blocked cells (Play bakes again on its own).
 			if (m_world.HasComponent<FlowFieldSurface>(m_selected)) {
-				if (ImGui::Button("Bake", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f))) {
-					Crucible::Core* core = EditorManager::GetInstance().GetCore();
-					if (ECSNavigationSystem* navigation = core ? core->Systems().FindSystem<ECSNavigationSystem>() : nullptr) navigation->Bake(m_world);
+				Crucible::Core* core = EditorManager::GetInstance().GetCore();
+				ECSNavigationSystem* navigation = core ? core->Systems().FindSystem<ECSNavigationSystem>() : nullptr;
+				if (ImGui::Button("Bake", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)) && navigation) navigation->Bake(m_world);
+				ImGui::SetItemTooltip("Builds the navigation grid from this surface and every collider tagged\n"
+				                      "StaticObstacle or DynamicObstacle, and draws the blocked cells in red\n"
+				                      "(Gizmos > Nav grid). Pressing Play bakes again on its own, so this is\n"
+				                      "only a preview.");
+				// Navigation decides what to tag (ECSNavigationSystem::SuggestObstacleTags); the
+				// editor applies it as ONE undo step and bakes again to show the result.
+				if (ImGui::Button("Auto-tag obstacles", ImVec2(ImGui::GetContentRegionAvail().x, 0.0f)) && navigation) {
+					CommitPendingEdit();
+					UndoHistory& history = EditorManager::GetInstance().GetHistory();
+					std::vector<std::unique_ptr<EditorCommand>> parts;
+					for (const NavTagSuggestion& suggestion : navigation->SuggestObstacleTags(m_world)) {
+						const std::string before = EntityState::Capture(m_world, suggestion.entity);
+						if (m_world.TrySetEntityTag(suggestion.entity, suggestion.tag) != TagResult::Ok) continue;
+						parts.push_back(std::make_unique<EntityStateCommand>(history.KeyOf(suggestion.entity), before,
+							EntityState::Capture(m_world, suggestion.entity), "Auto-tag obstacles"));
+						CRU_USER_INFO("[Navigation] Tagged {} -> {}", suggestion.reason, suggestion.tag);
+					}
+					CRU_USER_INFO("[Navigation] Auto-tag obstacles: {} tag(s) changed{}", parts.size(), parts.empty() ? "" : " (one Ctrl+Z undoes them all)");
+					if (auto command = GroupCommand::Make(std::move(parts), "Auto-tag obstacles")) {
+						history.Push(std::move(command));
+						m_scenes.MarkDirty();
+						navigation->Bake(m_world);   // show the new red cells
+					}
 				}
-				ImGui::SetItemTooltip("Builds the navigation grid from this surface and every static collider,\n"
-				                      "and draws the blocked cells in red (Gizmos > Nav grid).\n"
-				                      "Pressing Play bakes again on its own, so this is only a preview.");
+				ImGui::SetItemTooltip("Tags this scene's obstacles for navigation (Edit mode only):\n"
+				                      "  untagged colliders that reach into the height band -> StaticObstacle,\n"
+				                      "  or DynamicObstacle if they have a RigidBody;\n"
+				                      "  StaticObstacles that have a RigidBody -> DynamicObstacle.\n"
+				                      "Skips enemies, players, triggers, the terrain and other tags.\n"
+				                      "Lists every change in the Console; one Ctrl+Z undoes them all.");
 			}
 			DrawAddComponentButton(m_selected);
 
