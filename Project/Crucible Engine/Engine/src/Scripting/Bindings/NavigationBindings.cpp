@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          5 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         Internal calls behind the C# FlowFieldAgent,
 *                FlowFieldSurface and Navigation classes
 *                (ManagedScripts/Runtime/).
@@ -17,10 +17,11 @@
 *    state graph's nodes do; ECSNavigationSystem carries them out in its
 *    Update (the same stage as scripts, so this frame or the next).
 *
-*    FlowFieldSurface: only the two settings read on every field rebuild
-*    (flood radius, rebuild distance). The rest - cell size, heights,
-*    padding, wall cost - are read when the grid is baked at Play, so
-*    changing them from a script would do nothing until the next Play.
+*    FlowFieldSurface: only the settings that apply live: flood radius and
+*    rebuild distance (read on every field rebuild) and the dynamic update
+*    interval (v1.2). The rest - cell size, heights, padding, wall cost -
+*    are read when the grid is baked at Play, so changing them from a
+*    script would do nothing until the next Play.
 *
 *    Navigation: IsWalkable and IsPathClear on the baked grid, through
 *    ECSNavigationSystem::Active(); Rebake (RequestBake) for a script that
@@ -407,11 +408,13 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.FlowFieldAgent::GetRemainingDistanceInternal", &GetFloat<FlowFieldAgent, &FlowFieldAgent::m_remainingDistance>);
 		Add("Crucible.FlowFieldAgent::GetVelocityInternal", &ManagedAgentGetVelocity);
 
-		// FlowFieldSurface: the settings read on every field rebuild
+		// FlowFieldSurface: the settings that apply live
 		Add("Crucible.FlowFieldSurface::GetFloodRadiusInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_floodRadius>);
 		Add("Crucible.FlowFieldSurface::SetFloodRadiusInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_floodRadius>);
 		Add("Crucible.FlowFieldSurface::GetRebuildDistanceInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_rebuildDistance>);
 		Add("Crucible.FlowFieldSurface::SetRebuildDistanceInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_rebuildDistance>);
+		Add("Crucible.FlowFieldSurface::GetDynamicUpdateIntervalInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_dynamicUpdateInterval>);
+		Add("Crucible.FlowFieldSurface::SetDynamicUpdateIntervalInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_dynamicUpdateInterval>);
 
 		// Navigation: grid queries
 		Add("Crucible.Navigation::IsWalkableInternal", &ManagedNavigationIsWalkable);

@@ -5,12 +5,13 @@
 *                v1.3: tagged obstacles; v1.4: rays read only the terrain;
 *                v1.5: terrain read from the generator's grid;
 *                v1.6: baking and debug drawing split out;
-*                v1.7: goals and agent movement split out),
+*                v1.7: goals and agent movement split out;
+*                v1.9: moving DynamicObstacles re-stamped),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.7
+* \version       1.9
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -77,6 +78,11 @@
 *    -v1.7       build step 3, part 2: the goals and the field's rebuild rule
 *                are NavGoalTracker, the agents' movement NavAgentMover; no
 *                behaviour change
+*    -v1.9       build step 4c: while Playing, every DynamicObstacle is
+*                checked every dynamicUpdateInterval and re-stamped when the
+*                cells it covers change (NavDynamicObstacles); costs are
+*                fixed locally and the flow rebuilt only if it is touched.
+*                (v1.8, 4a, was a .cpp-only change.)
 *
 **************************************************************************/
 #pragma once
@@ -92,6 +98,7 @@
 #include "Navigation/FlowField.h"
 #include "Navigation/NavAgentMover.h"
 #include "Navigation/NavBaker.h"
+#include "Navigation/NavDynamicObstacles.h"
 #include "Navigation/NavGoalTracker.h"
 #include "Navigation/NavGrid.h"
 #include "Navigation/NavTerrain.h"
@@ -102,14 +109,15 @@ namespace Crucible {
 
     // The tags (Assets/Config/Tags.json) that make a collider a navigation
     // obstacle: the bake blocks the cells under it (within the height band).
-    // Static ones are stamped once at bake; dynamic ones will be re-stamped
-    // on an interval (build step 4) - until then both are stamped at bake.
+    // Static ones are stamped once at bake; dynamic ones are stamped at bake
+    // and then re-checked every dynamicUpdateInterval while Playing.
     // Untagged colliders are invisible to navigation.
     inline constexpr std::string_view kStaticObstacleTag  = "StaticObstacle";
     inline constexpr std::string_view kDynamicObstacleTag = "DynamicObstacle";
 
     class ECSSystemManager;
     class PlayMode;
+    struct FlowFieldSurface;
 
     // Not exported as a whole class (like ECSPhysicsSystem): only the members
     // the editor calls are ENGINE_API. That keeps the std::vector and NavGrid
@@ -228,6 +236,9 @@ namespace Crucible {
     private:
 
         void CollectGoals(World& world);
+        void ReadObstacles(World& world, bool dynamicOnly);
+        void UpdateDynamicObstacles(World& world, const FlowFieldSurface& surface);
+        void RestampDynamicObstacles(World& world);
 
         static inline ECSNavigationSystem* s_active = nullptr;   // see Active()
 
@@ -247,6 +258,14 @@ namespace Crucible {
         bool                     m_rebakeRequested = false;  // RequestBake() since the last Update: bake on the next one
         bool                     m_bakeNextFrame   = false;  // a bake was just asked for: wait a frame so WorldTransforms catch up
         std::uint32_t            m_bakeCount = 0;            // successful bakes so far (BakeCount)
+
+        // The DynamicObstacles as last stamped, re-checked every
+        // dynamicUpdateInterval while Playing (build step 4c).
+        NavDynamicObstacles             m_dynamicObstacles;
+        std::vector<NavDynamicObstacle> m_dynamicNow;          // this check's DynamicObstacle boxes (memory reused)
+        std::vector<int>                m_changedCells;        // cells that went open <-> blocked in this check
+        float                           m_dynamicTimer   = 0.0f;   // seconds since the last check
+        int                             m_dynamicRefresh = 0;      // after Stop: frames until the restored positions are re-stamped
 
         NavGoalTracker           m_goals;   // this frame's players, and when the field is rebuilt towards them
         NavAgentMover            m_mover;   // moves the FlowFieldAgents (owns the probes' physics lookup)

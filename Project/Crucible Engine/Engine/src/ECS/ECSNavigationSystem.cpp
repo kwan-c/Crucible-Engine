@@ -6,12 +6,13 @@
 *                v1.4: rays read only the terrain;
 *                v1.5: terrain read from the generator's grid;
 *                v1.6: baking and debug drawing split out;
-*                v1.7: goals and agent movement split out),
+*                v1.7: goals and agent movement split out;
+*                v1.9: moving DynamicObstacles re-stamped),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.8
+* \version       1.9
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -73,6 +74,13 @@
 *                This file reads the scene and runs them in order
 *    -v1.8       Build step 4a: DynamicObstacle boxes are marked dynamic, so
 *                the grid counts them separately (still stamped at bake)
+*    -v1.9       Build step 4c: while Playing, every dynamicUpdateInterval
+*                the DynamicObstacles are read again and NavDynamicObstacles
+*                re-stamps those whose cells changed (and stamps new ones,
+*                unstamps gone ones); FlowField::UpdateCosts fixes those
+*                cells and the flow is rebuilt this frame if the change
+*                touches it. After Stop the restored positions are
+*                re-stamped, so the Edit view matches the scene
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
@@ -272,8 +280,16 @@ namespace Crucible {
             m_goals.ForgetLastBuild();
             m_bakePending = false;
             m_mover.ResetWarnings();
+            m_dynamicRefresh = 2;   // the grid still has the obstacles where Play left them
         }
         m_lastState = state;
+
+        // Stop put the DynamicObstacles back where they were, but their
+        // WorldTransforms only catch up in PreRender: re-stamp them one
+        // frame later, so the red cells in Edit match the scene again.
+        if (state == PlayState::Edit && m_dynamicRefresh > 0 && --m_dynamicRefresh == 0 && m_grid.IsBaked()) {
+            RestampDynamicObstacles(world);
+        }
 
         // The surface's outline comes straight from its Transform every frame,
         // baked or not, so it follows the scale gizmo live while the designer
@@ -299,12 +315,16 @@ namespace Crucible {
             m_grid = NavGrid{};
             m_baker.Clear();
             m_goals.ForgetLastBuild();
+            m_dynamicObstacles.Clear();
         }
 
         // Only while Playing: Paused freezes the field and the agents along
         // with everything else, and in Edit there is no session to serve.
         // Field first, then agents, so every agent reads this frame's field.
+        // Moving obstacles first, so the field below is built on this
+        // frame's grid.
         if (state == PlayState::Playing) {
+            if (m_grid.IsBaked()) UpdateDynamicObstacles(world, surface);
             CollectGoals(world);
             if (m_grid.IsBaked()) m_goals.UpdateField(m_field, surface.m_rebuildDistance, surface.m_floodRadius);
             m_mover.Move(world, m_field, m_goals, m_grid, m_baker.Terrain());
@@ -335,6 +355,67 @@ namespace Crucible {
 
     }   // ECSNavigationSystem::CollectGoals()
 
+    /*!
+        \brief
+        Reads the obstacles off the scene: the colliders of entities tagged
+        StaticObstacle or DynamicObstacle - the designer's call, as in
+        Unity's NavGrid, not a guess from the layer and RigidBody. Triggers
+        block nothing in physics, so not here either. Untagged colliders are
+        invisible to navigation (Unity's rule). The terrain (a HeightField
+        collider) is ground, never an obstacle.
+
+        \param dynamicOnly
+        False (a bake): every obstacle into m_obstacles, and the dynamic ones
+        also into m_dynamicNow with their entities. True (a re-check): only
+        m_dynamicNow.
+    */
+    void ECSNavigationSystem::ReadObstacles(World& world, bool dynamicOnly) {
+
+        if (!dynamicOnly) m_obstacles.clear();
+        m_dynamicNow.clear();
+        world.CreateQuery<const Collider, const WorldTransform>()
+            .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
+                if (collider.m_isTrigger || !transform.valid || collider.m_type == ShapeType::HeightField) return;
+                const bool isStatic  = !dynamicOnly && world.CompareTag(entity, kStaticObstacleTag);
+                const bool isDynamic = !isStatic && world.CompareTag(entity, kDynamicObstacleTag);
+                if (!isStatic && !isDynamic) return;
+                NavObstacle obstacle = WorldBounds(collider, transform.matrix);
+                obstacle.dynamic = isDynamic;   // stamped into the dynamic count, so it can be moved later
+                if (!dynamicOnly) m_obstacles.push_back(obstacle);
+                if (isDynamic)    m_dynamicNow.push_back({ entity, obstacle });
+            });
+
+    }   // ECSNavigationSystem::ReadObstacles()
+
+    // Every dynamicUpdateInterval while Playing (0 or less: every frame).
+    void ECSNavigationSystem::UpdateDynamicObstacles(World& world, const FlowFieldSurface& surface) {
+
+        m_dynamicTimer += world.DeltaTime();
+        if (m_dynamicTimer < surface.m_dynamicUpdateInterval) return;
+        m_dynamicTimer = 0.0f;
+        RestampDynamicObstacles(world);
+
+    }   // ECSNavigationSystem::UpdateDynamicObstacles()
+
+    /*!
+        \brief
+        Reads the DynamicObstacles as they are now and re-stamps the ones
+        whose cells changed (NavDynamicObstacles). If any cell changed, its
+        cost and its neighbours' are fixed, and the flow is rebuilt this
+        frame if the change is in the area it covers - or if there is no
+        flow (a player sealed in may just have been let out).
+    */
+    void ECSNavigationSystem::RestampDynamicObstacles(World& world) {
+
+        ReadObstacles(world, true);
+        m_dynamicObstacles.Update(m_dynamicNow, m_grid, m_baker.Terrain(), m_changedCells);
+        if (m_changedCells.empty()) return;
+
+        m_field.UpdateCosts(m_changedCells);
+        if (!m_field.HasFlow() || m_field.TouchesFlow(m_changedCells)) m_goals.ForgetLastBuild();
+
+    }   // ECSNavigationSystem::RestampDynamicObstacles()
+
     bool ECSNavigationSystem::Bake(World& world) {
 
         // This reads the scene into plain data; NavBaker does the work.
@@ -362,6 +443,7 @@ namespace Crucible {
             CRU_WARN("Navigation: nothing to bake - add a FlowFieldSurface to an entity first");
             m_field.Clear();
             m_grid = NavGrid{};
+            m_dynamicObstacles.Clear();
             return false;
         }
         if (surfaces > 1) {
@@ -379,27 +461,21 @@ namespace Crucible {
             });
         if (terrains > 1) CRU_WARN("Navigation: {} generated terrains in the scene - only the first one is used", terrains);
 
-        // 3. The obstacles: the colliders of entities tagged StaticObstacle or
-        // DynamicObstacle - the designer's call, as in Unity's NavGrid, not a
-        // guess from the layer and RigidBody. Triggers block nothing in
-        // physics, so not here either. Untagged colliders are invisible to
-        // navigation (Unity's rule). The terrain (a HeightField collider) is
-        // ground, never an obstacle.
-        m_obstacles.clear();
-        world.CreateQuery<const Collider, const WorldTransform>()
-            .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
-                if (collider.m_isTrigger || !transform.valid || collider.m_type == ShapeType::HeightField) return;
-                const bool isStatic  = world.CompareTag(entity, kStaticObstacleTag);
-                const bool isDynamic = !isStatic && world.CompareTag(entity, kDynamicObstacleTag);
-                if (!isStatic && !isDynamic) return;
-                NavObstacle obstacle = WorldBounds(collider, transform.matrix);
-                obstacle.dynamic = isDynamic;   // stamped into the dynamic count, so it can be moved later (build step 4)
-                m_obstacles.push_back(obstacle);
-            });
+        // 3. The obstacles (ReadObstacles): tagged StaticObstacle or
+        // DynamicObstacle; the dynamic ones are also kept with their entities.
+        ReadObstacles(world, false);
 
         // 4. The bake: area (fitted to the terrain if there is one), ground,
         // grid and the flow field's cost field.
-        if (!m_baker.Bake(input, m_obstacles, m_grid, m_field)) return false;
+        if (!m_baker.Bake(input, m_obstacles, m_grid, m_field)) {
+            m_dynamicObstacles.Clear();
+            return false;
+        }
+
+        // 5. The bake stamped the dynamic obstacles too: remember their
+        // cells, so the re-checks in Play compare against them.
+        m_dynamicObstacles.Adopt(m_dynamicNow, m_grid, m_baker.Terrain());
+        m_dynamicTimer = 0.0f;
         ++m_bakeCount;
         return true;
 

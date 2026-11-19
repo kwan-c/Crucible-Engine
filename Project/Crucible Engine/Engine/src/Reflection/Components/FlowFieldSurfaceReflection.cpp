@@ -25,6 +25,8 @@
     - 1.2 (17 November 2026, Jean David): maxWalkableSlope removed (cliffs come
       from the terrain generator since F2). Scenes that still have the key load
       fine: a key with no property is skipped.
+    - 1.3 (19 November 2026, Jean David): dynamicUpdateInterval. Scenes saved
+      before it load with the default (0.25 s).
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -45,5 +47,6 @@ RTTR_REGISTRATION
         .property("floodRadius",       &FlowFieldSurface::m_floodRadius)
         .property("rebuildDistance",   &FlowFieldSurface::m_rebuildDistance)
         .property("wallAdjacencyCost", &FlowFieldSurface::m_wallAdjacencyCost)
+        .property("dynamicUpdateInterval", &FlowFieldSurface::m_dynamicUpdateInterval)
     ;
 }

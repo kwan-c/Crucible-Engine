@@ -1,12 +1,12 @@
 /*************************************************************************
 * \file:         NavigationComponents.h
 * \author:       Jean David Vidal Cruzado (main author; design and Unity original;
-*                v1.2: max walkable slope),
+*                v1.2: max walkable slope; v1.4: dynamic update interval),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                FlowFieldSurface: where enemies can walk (Unity's
 *                NavMeshSurface). FlowFieldAgent: one enemy's legs (Unity's
@@ -34,6 +34,8 @@
 *    -v1.3       m_maxWalkableSlope removed: since F2 the generated terrain's
 *                cliffs come from the generator itself (its own
 *                maxWalkableSlope), so navigation no longer judges slopes
+*    -v1.4       FlowFieldSurface::m_dynamicUpdateInterval: how often moving
+*                DynamicObstacles are re-checked while Playing
 *
 **************************************************************************/
 #pragma once
@@ -68,10 +70,12 @@ namespace Crucible {
         only ever be out of date: Play always bakes again from the scene as it
         is.
 
-        What blocks: every static Collider (no RigidBody) on the NonMoving
-        layer that is not a trigger and reaches into the band between
-        m_stepHeight and m_shoulderHeight above the ground. Floors are under
-        the band, so they never block.
+        What blocks: the colliders (not triggers) of entities tagged
+        StaticObstacle or DynamicObstacle that reach into the band between
+        m_stepHeight and m_shoulderHeight above the ground; untagged colliders
+        are ignored. StaticObstacles are stamped once at bake; DynamicObstacles
+        are re-checked every m_dynamicUpdateInterval while Playing and follow
+        the obstacle when it covers different cells.
     */
     struct FlowFieldSurface {
 
@@ -85,6 +89,9 @@ namespace Crucible {
         float m_floodRadius       = 100.0f;   // metres round the player that get arrows; 0 = the whole surface. Beyond it enemies head straight in
         float m_rebuildDistance   = 3.0f;     // metres the player must move before the field is rebuilt
         float m_wallAdjacencyCost = 4.0f;     // extra cost of a cell touching a wall, so routes keep clear of walls instead of hugging them
+
+        // Moving obstacles (applies live).
+        float m_dynamicUpdateInterval = 0.25f;   // seconds between checks of the DynamicObstacles while Playing; 0 = every frame
 
     };  // FLOWFIELDSURFACE STRUCT
 

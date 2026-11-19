@@ -254,7 +254,9 @@ returns false when the entity has no AnimatedModel controller with that paramete
   `Rebake()`: when it changes, the new grid is in).
 - What blocks enemies: only colliders on entities tagged `StaticObstacle` or `DynamicObstacle`
   (the tag on the entity that has the collider). Untagged colliders are ignored by navigation:
-  enemies still bump into them but don't path round them. The generated terrain's cliffs come
+  enemies still bump into them but don't path round them. `StaticObstacle` is stamped once at
+  bake (moving one needs a rebake); `DynamicObstacle` is re-checked every
+  `dynamicUpdateInterval` (Nav Surface, 0.25 s) while Playing, and its blocked cells follow it. The generated terrain's cliffs come
   from the generator itself, in Edit and Play; scenes without terrain have a flat floor at the
   Nav Surface's height.
 - `StateGraphAgent`: `CurrentState`, `Set/GetVariableValue<T>`. Behaviour-graph nodes live in
