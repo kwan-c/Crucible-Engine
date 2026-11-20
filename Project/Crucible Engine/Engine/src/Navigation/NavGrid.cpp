@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NavGrid's bake and its cell maths.
 *
@@ -19,6 +19,7 @@
 *    -v1.1       static flag + dynamic count per cell; the obstacle maths
 *                moved into Footprint(), shared by the bake and (later)
 *                re-stamping
+*    -v1.2       shoulderHeight renamed agentHeight
 *
 **************************************************************************/
 #include "NavGrid.h"
@@ -148,8 +149,8 @@ namespace Crucible {
         const float      ground = terrain.GroundHeight(centre);
 
         // Entirely below the step (a kerb, the floor itself): walk over it.
-        // Entirely above the shoulder (a branch, a bridge): walk under it.
-        if (obstacle.max.y < ground + m_settings.stepHeight || obstacle.min.y > ground + m_settings.shoulderHeight) {
+        // Entirely above the enemies' heads (a branch, a bridge): walk under it.
+        if (obstacle.max.y < ground + m_settings.stepHeight || obstacle.min.y > ground + m_settings.agentHeight) {
             return false;
         }
 

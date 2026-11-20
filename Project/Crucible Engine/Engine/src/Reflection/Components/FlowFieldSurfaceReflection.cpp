@@ -27,6 +27,9 @@
       fine: a key with no property is skipped.
     - 1.3 (19 November 2026, Jean David): dynamicUpdateInterval. Scenes saved
       before it load with the default (0.25 s).
+    - 1.4 (20 November 2026, Jean David): shoulderHeight renamed agentHeight.
+      An old "shoulderHeight" key is skipped like any unknown key, so the
+      value loads as the default (1.6 m) - what every scene had.
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -43,7 +46,7 @@ RTTR_REGISTRATION
         .property("cellSize",          &FlowFieldSurface::m_cellSize)
         .property("bodyRadiusPadding", &FlowFieldSurface::m_bodyRadiusPadding)
         .property("stepHeight",        &FlowFieldSurface::m_stepHeight)
-        .property("shoulderHeight",    &FlowFieldSurface::m_shoulderHeight)
+        .property("agentHeight",       &FlowFieldSurface::m_agentHeight)
         .property("floodRadius",       &FlowFieldSurface::m_floodRadius)
         .property("rebuildDistance",   &FlowFieldSurface::m_rebuildDistance)
         .property("wallAdjacencyCost", &FlowFieldSurface::m_wallAdjacencyCost)

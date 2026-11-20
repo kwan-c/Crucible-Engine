@@ -382,7 +382,7 @@ Component blocks (copy them as they are; every key shown is expected):
                  "volume": 1.0, "pitch": 1.0, "spatialBlend": 0.0, "minDistance": 1.0, "maxDistance": 30.0, "rolloffMode": "Linear" },
 "AnimatedModel": { "controllerAsset": <guid or 0>, "clip": 0, "speed": 1.0, "loop": true, "previewInEditor": false, "playOnStart": true },
 "SocketAttachment": { "enabled": true, "socketName": "ArmL", "modelAsset": <parent's model guid>, "node": 9 },
-"FlowFieldSurface": { "cellSize": 2.0, "bodyRadiusPadding": 0.6, "stepHeight": 0.3, "shoulderHeight": 1.6,
+"FlowFieldSurface": { "cellSize": 2.0, "bodyRadiusPadding": 0.6, "stepHeight": 0.3, "agentHeight": 1.6,
                       "floodRadius": 100.0, "rebuildDistance": 3.0, "wallAdjacencyCost": 4.0 },
 "FlowFieldAgent": { "speed": 6.0, "acceleration": 30.0, "angularSpeed": 240.0, "baseOffset": 0.0, "startWith": "Nothing",
                     "stoppingDistance": 2.0, "slowingDistance": 5.0, "neighbourRadius": 10.0, "separationRadius": 1.5,

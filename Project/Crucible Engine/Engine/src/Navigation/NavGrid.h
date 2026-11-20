@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NavGrid: a flat 2D grid over the map where every cell is
 *                open or blocked. The bottom layer of enemy navigation.
@@ -35,6 +35,7 @@
 *    -v1.1       static flag + dynamic count per cell (was one blocked
 *                byte); Footprint, AddDynamic, RemoveDynamic. The bake
 *                blocks the same cells as before
+*    -v1.2       shoulderHeight renamed agentHeight
 *
 **************************************************************************/
 #pragma once
@@ -83,7 +84,7 @@ namespace Crucible {
         float      cellSize          = 2.0f;              // 500 m at 2 m = 62,500 cells
         float      bodyRadiusPadding = 0.6f;              // the enemy's body radius: a cell is open only if a body fits
         float      stepHeight        = 0.3f;              // obstacles entirely below ground + this are stepped over
-        float      shoulderHeight    = 1.6f;              // obstacles entirely above ground + this are walked under
+        float      agentHeight       = 1.6f;              // the enemies' height: obstacles entirely above ground + this are walked under
 
     };  // NAVGRIDSETTINGS STRUCT
 
@@ -107,7 +108,7 @@ namespace Crucible {
             and again whenever the terrain is regenerated.
 
             \param settings
-            Size, cell size, body padding and the step/shoulder height band.
+            Size, cell size, body padding and the step / agent-height band.
 
             \param obstacles
             World AABBs of everything that might block. The height band decides
@@ -148,7 +149,7 @@ namespace Crucible {
             \brief
             The cells an obstacle blocks: its box grown by bodyRadiusPadding,
             if it reaches into the height band [ground + stepHeight,
-            ground + shoulderHeight] (ground under its centre).
+            ground + agentHeight] (ground under its centre).
 
             \param cells
             Cleared, then filled with the cell indices (Index()). Empty when it

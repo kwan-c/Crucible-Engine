@@ -519,7 +519,7 @@ namespace Crucible {
                 input.cellSize          = found.m_cellSize;
                 input.bodyRadiusPadding = found.m_bodyRadiusPadding;
                 input.stepHeight        = found.m_stepHeight;
-                input.shoulderHeight    = found.m_shoulderHeight;
+                input.agentHeight       = found.m_agentHeight;
                 input.wallAdjacencyCost = found.m_wallAdjacencyCost;
             });
 

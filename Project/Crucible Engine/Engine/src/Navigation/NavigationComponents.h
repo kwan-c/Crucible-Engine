@@ -1,12 +1,13 @@
 /*************************************************************************
 * \file:         NavigationComponents.h
 * \author:       Jean David Vidal Cruzado (main author; design and Unity original;
-*                v1.2: max walkable slope; v1.4: dynamic update interval),
+*                v1.2: max walkable slope; v1.4: dynamic update interval;
+*                v1.5: agent height),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                FlowFieldSurface: where enemies can walk (Unity's
 *                NavMeshSurface). FlowFieldAgent: one enemy's legs (Unity's
@@ -36,6 +37,10 @@
 *                maxWalkableSlope), so navigation no longer judges slopes
 *    -v1.4       FlowFieldSurface::m_dynamicUpdateInterval: how often moving
 *                DynamicObstacles are re-checked while Playing
+*    -v1.5       m_shoulderHeight renamed m_agentHeight (scene key
+*                "agentHeight"; an old "shoulderHeight" key is skipped and
+*                loads as the default 1.6): it is the enemies' height, which
+*                the layered grid will also use as the headroom a surface needs
 *
 **************************************************************************/
 #pragma once
@@ -63,7 +68,7 @@ namespace Crucible {
         than 500 m wide, and the bake warns until it is scaled up.
 
         Sit it on the floor: until a terrain system exists, the entity's height
-        IS the ground height, and the step/shoulder band is measured from it.
+        IS the ground height, and the step / agent-height band is measured from it.
 
         Unlike Unity, the bake is not saved to a file. Ours takes milliseconds
         and the terrain is generated fresh every run, so a saved bake would
@@ -72,7 +77,7 @@ namespace Crucible {
 
         What blocks: the colliders (not triggers) of entities tagged
         StaticObstacle or DynamicObstacle that reach into the band between
-        m_stepHeight and m_shoulderHeight above the ground; untagged colliders
+        m_stepHeight and m_agentHeight above the ground; untagged colliders
         are ignored. StaticObstacles are stamped once at bake; DynamicObstacles
         are re-checked every m_dynamicUpdateInterval while Playing and follow
         the obstacle when it covers different cells.
@@ -82,7 +87,7 @@ namespace Crucible {
         float m_cellSize          = 2.0f;     // metres. Smaller is finer but slower: halving it makes 4x the cells
         float m_bodyRadiusPadding = 0.6f;     // the enemy's body radius: obstacles grow by this, so open cells fit a whole body
         float m_stepHeight        = 0.3f;     // obstacles entirely lower than this above the ground are stepped over
-        float m_shoulderHeight    = 1.6f;     // obstacles entirely higher than this above the ground are walked under
+        float m_agentHeight       = 1.6f;     // the enemies' height (set it to the tallest): obstacles entirely higher than this above the ground are walked under
 
         // The flow field, rebuilt in Play as the player moves. These two apply
         // live; the wall cost needs a Bake (or Play) to take effect.

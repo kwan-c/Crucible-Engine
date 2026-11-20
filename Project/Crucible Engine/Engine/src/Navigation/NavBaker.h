@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NavBaker: turns what the scene says (the Nav Surface's
 *                settings and area, the obstacles, the generated terrain)
@@ -29,6 +29,7 @@
 * \history
 *    -v1.0       first version (moved out of ECSNavigationSystem::Bake, no
 *                behaviour change)
+*    -v1.1       shoulderHeight renamed agentHeight
 *
 **************************************************************************/
 #pragma once
@@ -62,7 +63,7 @@ namespace Crucible {
         float    cellSize          = 2.0f;    // the surface's settings
         float    bodyRadiusPadding = 0.6f;
         float    stepHeight        = 0.3f;
-        float    shoulderHeight    = 1.6f;
+        float    agentHeight       = 1.6f;
         float    wallAdjacencyCost = 4.0f;
 
         std::shared_ptr<const TerrainGrid> terrainGrid;                 // the generated terrain, or null
