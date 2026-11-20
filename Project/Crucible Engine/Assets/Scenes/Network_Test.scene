@@ -70,6 +70,9 @@
                     "critical": false,
                     "allowScenePlacement": true,
                     "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -113,6 +116,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -156,6 +162,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -198,6 +207,63 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "7D0494DBA1D07671",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Cursor Lock"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "CursorLock",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CursorLock",
+                                    "name": "locked",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -281,6 +347,9 @@
                     "critical": true,
                     "allowScenePlacement": true,
                     "spawnPerPlayer": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -323,6 +392,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -396,6 +468,9 @@
                     "critical": false,
                     "allowScenePlacement": true,
                     "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -467,6 +542,9 @@
                     "critical": false,
                     "allowScenePlacement": true,
                     "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -550,6 +628,9 @@
                     "critical": true,
                     "allowScenePlacement": true,
                     "spawnPerPlayer": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -630,9 +711,21 @@
                 "EntityName": {
                     "name": "Sphere"
                 },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "TEMP_NetworkTest",
+                            "fields": []
+                        }
+                    ]
+                },
                 "NetworkObjectAuthoring": {
                     "replicated": [
-                        "Transform/Full"
+                        "Transform/Full",
+                        "NetVariables"
                     ],
                     "serverOnly": [
                         "Collider",
@@ -644,6 +737,9 @@
                     "critical": false,
                     "allowScenePlacement": true,
                     "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -686,6 +782,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -726,6 +825,9 @@
                 },
                 "EntityName": {
                     "name": "Directional Light"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -785,6 +887,9 @@
                 },
                 "EntityName": {
                     "name": "Ground"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -856,6 +961,9 @@
                     "critical": false,
                     "allowScenePlacement": true,
                     "spawnPerPlayer": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -899,6 +1007,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -982,53 +1093,9 @@
                     "critical": true,
                     "allowScenePlacement": true,
                     "spawnPerPlayer": true
-                }
-            }
-        },
-        {
-            "id": "7D0494DBA1D07671",
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
                 },
-                "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "CursorLock",
-                    "fields": [
-                        {
-                            "declaringType": "Crucible.Scripts.CursorLock",
-                            "name": "locked",
-                            "type": "Boolean",
-                            "boolean": true,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        }
-                    ]
-                },
-                "EntityName": {
-                    "name": "Cursor Lock"
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         }

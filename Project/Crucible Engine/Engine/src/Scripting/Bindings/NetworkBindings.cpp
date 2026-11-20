@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         Internal calls behind the C# Network class
 *                (ManagedScripts/Runtime/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
@@ -56,6 +56,7 @@
 *                Spawn (Networking C# Phase 3)
 *    -v1.2       NetVars Get/Set and OnNetVarChanged (Networking C# Phase 4);
 *                events: everyone except one peer, unreliable (Networking C# Phase 5B)
+*    -v1.3       GetPlayerEntity: a peer's character (found missing in Networking C# Phase 6)
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -659,6 +660,52 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		/*********************************************************************
+		 \brief  C# Network.GetPlayerEntity: the character the session spawned
+		         for `peer` - the network object made from the player prefab
+		         (spawnPerPlayer) that this peer owns. 0 if there is none (no
+		         session, no player prefab, or that player is not in the game).
+		 *********************************************************************/
+		int32_t ManagedNetworkGetPlayerEntity(int32_t peer, int32_t* outIndex, int32_t* outGeneration) noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				const World* world = EntityContext::GetWorld();
+				if (!outIndex || !outGeneration || !session || !world || !session->IsActive() || peer < 0 ||
+				    peer >= static_cast<int32_t>(Net::kMaxPlayers))
+					return 0;
+				const Net::NetPrefabId playerPrefab = core->GetNetContent().PlayerPrefab();
+				if (playerPrefab == Net::kInvalidNetPrefab)
+					return 0;
+				// A few dozen network objects at most; the lowest id wins, so the answer is stable.
+				Entity found;
+				Net::NetworkId foundId = Net::kInvalidNetworkId;
+				for (const auto& [id, entity] : session->Entities())
+				{
+					const NetworkIdentity* identity = world->Read<NetworkIdentity>(entity);
+					if (!identity || identity->prefab != playerPrefab || identity->owner != static_cast<Net::PeerId>(peer))
+						continue;
+					if (foundId == Net::kInvalidNetworkId || id < foundId)
+					{
+						found = entity;
+						foundId = id;
+					}
+				}
+				Entity checked;
+				if (foundId == Net::kInvalidNetworkId ||
+				    !EntityContext::ResolveEntity(static_cast<int32_t>(found.index), static_cast<int32_t>(found.generation), checked))
+					return 0;
+				*outIndex = static_cast<int32_t>(found.index);
+				*outGeneration = static_cast<int32_t>(found.generation);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		template <typename Fn>
 		void Add(const char* name, Fn* function)
 		{
@@ -818,6 +865,7 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Network::GetEventPayloadInternal", &ManagedNetworkGetEventPayload);
 		Add("Crucible.Network::SendEventInternal", &ManagedNetworkSendEvent);
 		Add("Crucible.Network::SpawnInternal", &ManagedNetworkSpawn);
+		Add("Crucible.Network::GetPlayerEntityInternal", &ManagedNetworkGetPlayerEntity);
 		Add("Crucible.NetVars::GetInternal", &ManagedNetVarsGet);
 		Add("Crucible.NetVars::SetInternal", &ManagedNetVarsSet);
 	}

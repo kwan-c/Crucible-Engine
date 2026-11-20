@@ -380,12 +380,12 @@ Read this before designing gameplay for multiplayer.
 
 | # | Limitation | What it means for you |
 |---|---|---|
-| 1 | **Only movement, turning and jump are sent from Clients.** | Fire, interact, reload and other actions from a Client never reach the Host. A Host-only C# script using `Input.IsPressed` reads the **Host's own keyboard**, not the Client's. |
-| 2 | **C# has no networking API.** | Scripts can't check whether they run on the Host or a Client, can't send network events, and can't tell which player owns an object. |
-| 3 | **Objects spawned by scripts aren't networked.** | `Prefab.Instantiate` in C# creates the object only on the machine that runs the script. Only players are spawned by the network. Enemy waves, projectiles and pickups spawned at runtime won't appear on Clients. |
-| 4 | **Only the Transform and component on/off state are synced.** | Health, ammo, score, script variables and other component values are **not** sent. A Client's HUD can't show the real health. |
+| 1 | **Other Client actions must be sent as commands.** | Movement, turning and jump are sent automatically. Fire, interact, reload and the rest reach the Host only if your script sends them with `Network.SendCommand` (section 8). A Host-only C# script using `Input.IsPressed` still reads the **Host's own keyboard**, not the Client's. |
+| 2 | **Script events are moments, not state.** | The Host tells every machine "this happened" with `Network.SendEvent` (section 8.4). A player who joins later never hears an old event, so lasting state must still be something that is synced. |
+| 3 | **`Prefab.Instantiate` is still local.** | It creates the object only on the machine that runs the script. Use `Network.Spawn` on the Host for objects every player should see (section 8.5); the prefab must be a network prefab. |
+| 4 | **Script values are synced only through network variables.** | The Transform, component on/off state and an object's 16 network variables are sent (section 8.6). Ordinary script fields and other component values are **not**: put health, ammo or score in a network variable. |
 | 5 | **Animation isn't synced.** | If a Host-only script sets Animator parameters, remote characters slide around without animating on Clients. |
-| 6 | **Gameplay audio, particles and UI only happen on the Host.** | Hit effects, death sounds and a "Game Over" screen triggered by Host-only gameplay aren't seen on Clients. |
+| 6 | **Gameplay audio, particles and UI need a script event.** | Effects triggered by Host-only gameplay happen only on the Host unless the Host sends an event and a script that runs **Everywhere** plays them (section 8.4). |
 | 7 | **Clients can't use physics.** | Colliders are Host only, so a Client-side raycast or trigger doesn't hit anything networked. |
 | 8 | **Changing scenes ends the session.** | Loading another scene (e.g. main menu → game) disconnects everyone. Start the session from the scene you'll actually play in. |
 | 9 | **A Client's own player responds with a small delay.** | About 110–150 ms on a LAN, because the Client waits for the Host instead of predicting its own movement. The Host's player has no delay. |
@@ -397,7 +397,207 @@ Read this before designing gameplay for multiplayer.
 
 - **Works today:** gameplay only the Host controls: AI chasing players, physics props,
   moving platforms, doors switched on and off with **Sync on/off**.
-- **Needs more networking work first:** Client actions beyond moving, runtime spawns from
-  scripts, synced values (health, score), synced animation, and effects triggered by
-  gameplay. The planned fix is C# networking bindings (events, spawning, ownership,
-  Host/Client checks) and more replicated component types.
+- **Works with scripts (section 8):** Host/Client checks, the player list, object
+  ownership, Client actions sent to the Host as commands, Host events to every machine,
+  and spawning network objects from the Host.
+- **Needs more networking work first:** synced animation.
+
+## 8. Networking from C# scripts
+
+Everything is in the `Network` class and a few `EntityScript` callbacks. The full
+comments are in `ManagedScripts/Runtime/Network.cs`, `NetWriter.cs`, `NetReader.cs` and
+`EntityScript.cs`.
+
+### 8.1 Who am I, who else is here
+
+| Call | Meaning |
+|---|---|
+| `Network.IsAuthority` | This machine decides the game: the Host, or a single-player game. Guard every change to shared game state with it. |
+| `Network.IsHost` / `IsClient` / `IsOffline` | The role. |
+| `Network.IsReady` | This machine is in the game. On a Client: joined and the Host's world has arrived. |
+| `Network.LocalPeerId` | This player's number: Host 0, Clients 1 to 3. |
+| `Network.Peers`, `PlayerCount`, `GetPeerName(peer)`, `IsPeerReady(peer)` | Everyone in the session. The same on every machine. |
+| `entity.IsNetworked`, `entity.NetworkId`, `entity.Owner`, `entity.IsMine` | Is it a network object, its number, whose it is, and whether it belongs to the player on this machine. |
+| `Network.FindEntity(networkId)` | The local entity of a network object. |
+
+Offline counts as a session of one: `IsAuthority` is true, `LocalPeerId` is 0.
+
+### 8.2 Callbacks (override in an `EntityScript`)
+
+| Callback | When |
+|---|---|
+| `OnNetworkStarted()` | Host: the session is up. Client: joined and the world has arrived. Not called offline. |
+| `OnNetworkStopped(reason)` | The session ended, or a join failed. |
+| `OnPeerJoined(peer)` / `OnPeerReady(peer)` / `OnPeerLeft(peer)` | Another player joined, finished loading, or left. On every machine, never for yourself. |
+| `OnNetworkCommand(sender, kind, data)` | Authority only: somebody sent a command. |
+| `OnNetworkEvent(kind, data)` | Every machine: the Host sent an event. |
+| `OnNetVarChanged(slot)` | Every machine: one of this entity's network variables changed. |
+
+They are called before `OnUpdate`, in the frame the event happened. A script that is
+switched off (for example a **Host only** script on a Client) hears nothing.
+
+### 8.3 Commands: a Client asks, the Host decides
+
+```csharp
+public sealed class Door : EntityScript
+{
+    const ushort Open = 1;                 // your own numbers, from 1
+
+    public override void OnUpdate(float dt)
+    {
+        // any machine: the player on THIS machine pressed the key
+        if (Input.IsPressed(KeyCode.E))
+            Network.SendCommand(Open, new NetWriter().WriteBool(true), Entity);
+    }
+
+    public override void OnNetworkCommand(int sender, ushort kind, NetReader data)
+    {
+        // runs on the Host (and in a single-player game) only
+        bool open = data.ReadBool();
+        if (kind != Open || !data.Ok) return;
+        // never trust a command: may this player do this? is it close enough?
+        SetOpen(open);
+    }
+}
+```
+
+- The script that answers must run on the Host, so it must be a network object's script
+  that is not switched off there. The door must be a network object for a Client to name it.
+- A command with a target reaches only that entity's scripts; without a target, every
+  script gets it.
+- The Host's own `SendCommand`, and one in a single-player game, is delivered on the
+  same machine next frame, so the same script works in every role.
+- `sender` cannot be faked. Everything in `data` can: read it, check `data.Ok`, then check
+  the values.
+- At most 1024 bytes of data. Commands arrive in the order they were sent.
+- What the Host decides reaches Clients through what is synced (Transform, **Sync
+  on/off**) or through an event (8.4).
+
+### 8.4 Events: the Host tells everyone
+
+```csharp
+const ushort Opened = 1;
+
+void SetOpen(bool open)                    // on the Host, after it decided
+{
+    Network.SendEvent(Opened, new NetWriter().WriteBool(open), Entity);
+}
+
+public override void OnNetworkEvent(ushort kind, NetReader data)
+{
+    // runs on EVERY machine, the Host included (and in a single-player game)
+    bool open = data.ReadBool();
+    if (kind != Opened || !data.Ok) return;
+    AudioSource.Play();                    // each player hears it
+}
+```
+
+- Only the Host (or a single-player game) may send; a Client is refused and should send a
+  command instead.
+- The script that hears it must run on Clients too: its **Runs on** must be **Everywhere**.
+- With a target, only that entity's scripts get it; the target must be a network object.
+  Without a target, every script gets it.
+- `Network.SendEvent(kind, data, target, toPeer)` sends to one player instead of everyone.
+- `Network.SendEventExcept(peer, kind, data, target)` sends to everyone but one player,
+  usually the one who caused it and already showed the effect.
+- `Network.SendEventUnreliable(kind, data, target)` sends once with no guarantee: it may be
+  lost or arrive early. Use it only for frequent effects where a missed one does not matter
+  (footsteps, sparks), never for an object spawned in the same frame. At most 1000 bytes.
+- Events arrive in order, after that frame's spawns and despawns.
+- A player who joins later does not get earlier events.
+
+### 8.5 Spawning: only the Host creates network objects
+
+```csharp
+public Prefab bolt;                        // a NETWORK prefab, assigned in the Inspector
+
+void Fire(Vector3 from, Quaternion aim)
+{
+    if (!Network.IsAuthority) return;      // a Client asks with a command instead
+    Entity made = Network.Spawn(bolt, from, aim);        // appears on every machine
+    // Network.Spawn(prefab, position, rotation, owner) gives it to a player
+}
+```
+
+- The prefab needs a **Network Object** component on its root (section 1), like the
+  player prefab. Otherwise `Network.Spawn` logs why and returns null.
+- The entity exists on the Host at once; Clients get it the same frame's send, and
+  players who join later get it with the world.
+- `Network.Despawn(entity)` (or `Entity.Destroy` on the Host) removes it everywhere.
+  A Client must never destroy a network object itself.
+- In a single-player game `Network.Spawn` is an ordinary `Instantiate`.
+- `owner` sets `entity.Owner` / `IsMine` on every machine. It cannot be changed later.
+
+### 8.6 Network variables: values every player sees
+
+Every entity has 16 numbered slots (`Entity.NetVars`). The Host writes them; every
+machine reads them and is told when one changes.
+
+```csharp
+const int Health = 0;                      // your own slot numbers, 0 to 15
+
+public override void OnCreate()
+{
+    if (Network.IsAuthority) Entity.NetVars.SetInt(Health, 100);
+}
+
+public void TakeDamage(int amount)         // Host only
+{
+    if (!Network.IsAuthority) return;
+    Entity.NetVars.SetInt(Health, Entity.NetVars.GetInt(Health) - amount);
+}
+
+public override void OnNetVarChanged(int slot)     // every machine
+{
+    if (slot == Health) healthBar.Value = Entity.NetVars.GetInt(Health);
+}
+```
+
+- **Turn it on per object:** in the object's **Network Object** table, set the
+  **NetVariables** row to **Replicated**. The row is always listed; the engine adds the
+  component itself while a session runs, so there is nothing to add in the Inspector.
+  Without it, a `Set` on a network object is refused and logs why.
+- Types: `SetInt` / `SetFloat` / `SetBool` / `SetEntity` use one slot; `SetVector3` uses
+  three in a row. Read a slot the way it was written.
+- Every slot starts at 0. The Host sets the first values, in `OnCreate`.
+- A player who joins later gets the current values with the object, and a lost packet is
+  made up for by the next one. That is the difference from an event.
+- A Client's `Set` on a network object is refused. On an entity that is not a network
+  object, variables work but stay on that machine.
+- The script that reads them on Clients must run **Everywhere**.
+- Use them for values that change now and then. The whole object is resent whenever
+  anything on it changes.
+
+### 8.7 A complete example: the arena shooter (`network_gamplay.scene`)
+
+A small player-versus-player shooter for 2 to 4 players, written only in C# on top of the
+API above. Nothing in it is native code.
+
+| File | Role |
+|---|---|
+| `Assets/Scripts/network_tests/ArenaRules.cs` | **The rules, decided by the Host.** Fire requests (**commands**) are checked: alive, cooldown, the shot starts at the shooter. Bolts are **spawned** owned by the shooter. Health, kills, deaths and alive/dead live in **network variables**. Hits, deaths and respawns are **reliable events**; "somebody fired" is **unreliable**. |
+| `Assets/Scripts/network_tests/ArenaView.cs` | **What every machine shows**, read from those variables and events: nameplates with health bars, hiding dead bodies, the HUD, hit and kill messages, a kill feed. It never changes the game. |
+| `Assets/Scripts/network_tests/NetBolt.cs` | The projectile. Runs on the Host only: flies, raycasts against the players' capsules, reports hits to `ArenaRules`, despawns itself. |
+| `Assets/Prefabs/network_tests/NetBolt.cprefab` | Network prefab: Transform replicated, script **Host only**, **critical** (fast, so in every snapshot). |
+| `Assets/Prefabs/network_tests/NetNameplate.cprefab`, `NetHud.cprefab` | Local prefabs (not networked): each machine makes its own. |
+
+**Settings** are on the **Arena Rules** entity's scripts in the Inspector: max health (100),
+fire cooldown, respawn delay (3 s), self damage, and the bolt's speed, damage (25) and
+lifetime on the NetBolt prefab. Respawn points are the entities named **Arena Respawn 1**
+to **4**: move them, or add **Arena Respawn 5** and so on.
+
+**Death:** the Host switches off the dead player's CharacterController and PlayerController
+(no movement, no capsule to hit, fire refused), and every machine hides the body. After the
+delay the Host moves it to the respawn point farthest from everyone, switches them back on
+and restores full health.
+
+**Controls:** move as usual; **left mouse** or **F** fires where your camera looks.
+
+**Play it:** open `network_gamplay.scene` in 2 to 4 Editors; one **Host**, the others
+**Client** (Network tab), then Play in each. Offline nothing happens: there is no spawned
+player.
+
+### 8.8 In the Network tab
+
+A Client now lists every player in the session under its status. **Statistics > Counters**
+shows rosters and commands sent, received and refused.

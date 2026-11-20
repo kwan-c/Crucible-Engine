@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         The multiplayer session for scripts: who am I, who else is
 *                here, and how a client asks the host to do something.
 *                Part of Crucible.ScriptCore.dll.
@@ -84,6 +84,7 @@
 *    -v1.1       SendEvent (Networking C# Phase 5A); Spawn and Despawn
 *                (Networking C# Phase 3)
 *    -v1.2       SendEventExcept, SendEventUnreliable (Networking C# Phase 5B)
+*    -v1.3       GetPlayerEntity, LocalPlayerEntity (Networking C# Phase 6)
 *
 **************************************************************************/
 using System.Runtime.CompilerServices;
@@ -223,6 +224,26 @@ namespace Crucible
             return networkId != 0 && FindEntityInternal(networkId, out index, out generation) != 0
                 ? new Entity(unchecked((uint)index), unchecked((uint)generation))
                 : null;
+        }
+
+        /// <summary>
+        /// The character the session spawned for a player (the player prefab: the one with
+        /// "Spawn per player" in its Network Object), or null: that player is not in the game
+        /// yet, the project has no player prefab, or no session is running. It appears a frame
+        /// or two after OnPeerReady, so look it up when you need it instead of keeping it.
+        /// </summary>
+        public static Entity GetPlayerEntity(int peer)
+        {
+            int index, generation;
+            return GetPlayerEntityInternal(peer, out index, out generation) != 0
+                ? new Entity(unchecked((uint)index), unchecked((uint)generation))
+                : null;
+        }
+
+        /// <summary>This machine's own character: GetPlayerEntity(LocalPeerId).</summary>
+        public static Entity LocalPlayerEntity
+        {
+            get { int peer = LocalPeerId; return peer < 0 ? null : GetPlayerEntity(peer); }
         }
 
         // --- commands ------------------------------------------------------------------ //
@@ -486,6 +507,8 @@ namespace Crucible
                                                       int targetGeneration);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern byte[] GetEventPayloadInternal(int serial);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetPlayerEntityInternal(int peer, out int index, out int generation);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SendEventInternal(int kind, byte[] data, int length, int toPeer, int exceptPeer,
                                                     int unreliable, int hasTarget, int targetIndex, int targetGeneration);
