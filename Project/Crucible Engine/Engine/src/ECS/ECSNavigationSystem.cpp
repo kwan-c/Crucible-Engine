@@ -540,6 +540,7 @@ namespace Crucible {
                 input.stepHeight        = found.m_stepHeight;
                 input.agentHeight       = found.m_agentHeight;
                 input.maxLayersPerCell  = found.m_maxLayersPerCell;
+                input.maxDropHeight     = found.m_maxDropHeight;
                 input.wallAdjacencyCost = found.m_wallAdjacencyCost;
             });
 

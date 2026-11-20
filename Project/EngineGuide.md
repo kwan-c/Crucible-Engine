@@ -262,8 +262,10 @@ returns false when the entity has no AnimatedModel controller with that paramete
 - Layers (bridges, ramps, platforms): tag a **Box** collider `Walkable` and its top face becomes a
   walkable surface above the ground, if an enemy fits on it (`agentHeight` of headroom); up to
   `maxLayersPerCell` (Nav Surface, 4) per cell. Gizmos > Nav grid draws them as green tiles. Tag
-  ramps `Walkable` before using Auto-tag, or it may tag them as obstacles. (Enemies start using
-  layers in build step 6d.) The generated terrain's cliffs come
+  ramps `Walkable` before using Auto-tag, or it may tag them as obstacles. Layers link to their
+  neighbours: along the same surface always, up or down within `stepHeight` (two-way), and down a
+  drop of up to `maxDropHeight` (Nav Surface, 3 m; one-way). Gizmos draws climbs between surfaces
+  as white lines and drops as magenta arrows. (Enemies start using layers in build step 6d.) The generated terrain's cliffs come
   from the generator itself, in Edit and Play; scenes without terrain have a flat floor at the
   Nav Surface's height.
 - `StateGraphAgent`: `CurrentState`, `Set/GetVariableValue<T>`. Behaviour-graph nodes live in

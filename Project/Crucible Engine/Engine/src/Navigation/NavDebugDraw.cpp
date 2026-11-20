@@ -3,13 +3,15 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         See NavDebugDraw.h.
 *
 * \history
 *    -v1.0       first version
 *    -v1.1       raised layers (Walkable tops) drawn as green tiles at their
 *                own height; blocked ground drawn at its node's height
+*    -v1.2       links between different surfaces: climbs as white lines,
+*                drops as magenta arrows (down)
 *
 **************************************************************************/
 #include "NavDebugDraw.h"
@@ -66,6 +68,8 @@ namespace Crucible::NavDebugDraw {
         const DebugStyle cells  { .color = { 0.15f, 0.4f, 0.95f, 1.0f }, .depthTest = false, .category = DebugCategory::NavGrid };
         const DebugStyle blocked{ .color = { 1.0f, 0.25f, 0.2f, 1.0f },  .depthTest = false, .category = DebugCategory::NavGrid };
         const DebugStyle raised { .color = { 0.3f, 0.95f, 0.45f, 1.0f }, .depthTest = false, .category = DebugCategory::NavGrid };
+        const DebugStyle climb  { .color = { 0.95f, 0.95f, 0.95f, 1.0f }, .depthTest = false, .category = DebugCategory::NavGrid };
+        const DebugStyle drop   { .color = { 1.0f, 0.3f, 0.9f, 1.0f },   .depthTest = false, .category = DebugCategory::NavGrid };
 
         const float cellSize = grid.CellSize();
         const float half     = cellSize * 0.5f;
@@ -117,6 +121,25 @@ namespace Crucible::NavDebugDraw {
                     Math::vec3 centre = grid.CellToWorldCenter(cell);
                     centre.y = grid.NodeHeight(node) + kDrawLift;
                     Square(centre, inset, grid.IsNodeBlocked(node) ? blocked : raised);
+                }
+
+                // Links between different surfaces (along one surface they are
+                // everywhere, so not drawn): a climb, both ways, as a white
+                // line between the two layers (drawn once); a drop, one way,
+                // as a magenta arrow down to where it lands.
+                for (int layer = 0; layer < grid.LayerCount(cell); ++layer) {
+                    const int node = grid.NodeIndex(cell, layer);
+                    for (int dir = 0; dir < kNavDirections; ++dir) {
+                        const int other = grid.LinkedNode(node, dir);
+                        if (other < 0 || grid.IsSameSurface(node, other)) continue;
+                        Math::vec3 from = grid.CellToWorldCenter(cell);
+                        Math::vec3 to   = grid.CellToWorldCenter(grid.NodeCell(other));
+                        from.y = grid.NodeHeight(node)  + kDrawLift * 2.0f;
+                        to.y   = grid.NodeHeight(other) + kDrawLift * 2.0f;
+                        const bool twoWay = grid.LinkedNode(other, kNavOpposite[dir]) == node;
+                        if (!twoWay)           DebugDraw::Arrow(from, to, drop);
+                        else if (node < other) DebugDraw::Line(from, to, climb);
+                    }
                 }
 
             }

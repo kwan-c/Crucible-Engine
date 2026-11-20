@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NavBaker: turns what the scene says (the Nav Surface's
 *                settings and area, the obstacles, the generated terrain)
@@ -31,6 +31,7 @@
 *                behaviour change)
 *    -v1.1       shoulderHeight renamed agentHeight
 *    -v1.2       Walkable boxes and maxLayersPerCell passed to the grid
+*    -v1.3       maxDropHeight passed to the grid
 *
 **************************************************************************/
 #pragma once
@@ -67,6 +68,7 @@ namespace Crucible {
         float    agentHeight       = 1.6f;
         float    wallAdjacencyCost = 4.0f;
         int      maxLayersPerCell  = 4;
+        float    maxDropHeight     = 3.0f;
 
         std::vector<NavWalkable> walkables;   // box colliders tagged Walkable: their tops are layers
 

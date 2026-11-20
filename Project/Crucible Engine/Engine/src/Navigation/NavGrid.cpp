@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                NavGrid's bake and its cell maths.
 *
@@ -25,6 +25,9 @@
 *    -v1.4       layers from Walkable boxes (BuildLayers): top faces with
 *                agentHeight of headroom, up to maxLayersPerCell; obstacles,
 *                terrain walls and IsBlocked use each cell's ground node
+*    -v1.5       BuildLinks: per node and direction, the neighbour layer it
+*                connects to (same surface; within a step where the cells
+*                meet; or a one-way drop up to maxDropHeight)
 *
 **************************************************************************/
 #include "NavGrid.h"
@@ -60,6 +63,13 @@ namespace Crucible {
         // Heights closer than this are the same surface (two deck boxes
         // overlapping, a box resting on the ground).
         constexpr float kSameHeight = 0.01f;
+
+        // A link entry meaning "no link in this direction".
+        constexpr std::uint8_t kNoLink = 0xFF;
+
+        // Points along the line between two cells' centres where a climb is
+        // looked for: every quarter metre on 2 m cells.
+        constexpr int kClimbSamples = 8;
 
         // Where a vertical line through (x, z) passes through a Walkable box:
         // from `bottom` to `top`, in world height. False if it misses. The
@@ -126,8 +136,10 @@ namespace Crucible {
         m_rows     = static_cast<int>(rows);
         m_minX     = settings.origin.x - settings.width * 0.5f;
         m_minZ     = settings.origin.z - settings.depth * 0.5f;
-        // 0. The layers: the ground and the Walkable boxes' tops, per cell.
+        // 0. The layers: the ground and the Walkable boxes' tops, per cell,
+        // and the links between neighbouring cells' layers.
         BuildLayers(terrain, walkables);
+        BuildLinks(terrain, walkables);
         m_static.assign(m_nodeCell.size(), 0);    // all open; obstacles and walls close nodes below
         m_dynamic.assign(m_nodeCell.size(), 0);
 
@@ -188,6 +200,20 @@ namespace Crucible {
             }
             CRU_INFO("NavGrid layers: {} Walkable box(es) give {} raised layer(s) over {} cells; {} cells have no ground layer (a box sits on it)",
                      walkables.size(), upper, layered, noGround);
+
+            // Links between different surfaces: a link with one back is a
+            // climb (counted once), one without is a drop.
+            int climbs = 0, drops = 0;
+            for (int node = 0; node < NodeCount(); ++node) {
+                for (int dir = 0; dir < kNavDirections; ++dir) {
+                    const int other = LinkedNode(node, dir);
+                    if (other < 0 || m_nodeSource[static_cast<std::size_t>(other)] == m_nodeSource[static_cast<std::size_t>(node)]) continue;
+                    if (LinkedNode(other, kNavOpposite[dir]) != node) ++drops;
+                    else if (node < other)                             ++climbs;
+                }
+            }
+            CRU_INFO("NavGrid links between surfaces: {} climb(s) (two-way, within {} m), {} drop(s) (one-way, up to {} m)",
+                     climbs, m_settings.stepHeight, drops, m_settings.maxDropHeight);
         }
         return true;
 
@@ -241,10 +267,12 @@ namespace Crucible {
         const int         maxLayers = std::clamp(m_settings.maxLayersPerCell, 1, 255);
 
         // 1. Every (cell, solid stretch) pair, from each box's own cells only.
-        struct Stretch { int cell; float bottom; float top; };
+        struct Stretch { int cell; float bottom; float top; int box; };
         std::vector<Stretch> stretches;
         const float cellSize = m_settings.cellSize;
-        for (const NavWalkable& box : walkables) {
+        for (std::size_t boxIndex = 0; boxIndex < walkables.size(); ++boxIndex) {
+
+            const NavWalkable& box = walkables[boxIndex];
 
             // The box's world AABB, to know which cell centres can be inside it.
             Math::vec3 low(1e30f), high(-1e30f);
@@ -266,7 +294,7 @@ namespace Crucible {
                 for (int col = colFirst; col <= colLast; ++col) {
                     const Math::vec3 centre = CellToWorldCenter({ col, row });
                     float bottom = 0.0f, top = 0.0f;
-                    if (ThroughBox(box, toLocal, centre.x, centre.z, bottom, top)) stretches.push_back({ Index({ col, row }), bottom, top });
+                    if (ThroughBox(box, toLocal, centre.x, centre.z, bottom, top)) stretches.push_back({ Index({ col, row }), bottom, top, static_cast<int>(boxIndex) });
                 }
             }
 
@@ -280,11 +308,13 @@ namespace Crucible {
         m_nodeCell.clear();
         m_nodeHeight.clear();
         m_nodeHeadroom.clear();
+        m_nodeSource.clear();
+        m_nodeSource.reserve(cellCount);
         m_nodeCell.reserve(cellCount);
         m_nodeHeight.reserve(cellCount);
         m_nodeHeadroom.reserve(cellCount);
 
-        struct Surface { float height; float headroom; bool ground; };
+        struct Surface { float height; float headroom; int source; };   // source: -1 the ground, else the box
         std::vector<Surface> surfaces;
         int         overCap      = 0;          // cells that had more surfaces than maxLayersPerCell
         Math::vec3  firstOverCap(0.0f);
@@ -313,9 +343,9 @@ namespace Crucible {
             };
 
             surfaces.clear();
-            surfaces.push_back({ ground, headroomAt(ground), true });
+            surfaces.push_back({ ground, headroomAt(ground), -1 });
             for (std::size_t i = first; i < next; ++i) {
-                if (stretches[i].top > ground + kSameHeight) surfaces.push_back({ stretches[i].top, headroomAt(stretches[i].top), false });
+                if (stretches[i].top > ground + kSameHeight) surfaces.push_back({ stretches[i].top, headroomAt(stretches[i].top), stretches[i].box });
             }
             std::sort(surfaces.begin(), surfaces.end(), [](const Surface& a, const Surface& b) { return a.height < b.height; });
 
@@ -329,10 +359,11 @@ namespace Crucible {
                     if (overCap++ == 0) firstOverCap = centre;
                     break;
                 }
-                if (surface.ground) m_groundNode[cell] = static_cast<int>(m_nodeCell.size());
+                if (surface.source < 0) m_groundNode[cell] = static_cast<int>(m_nodeCell.size());
                 m_nodeCell.push_back(static_cast<int>(cell));
                 m_nodeHeight.push_back(surface.height);
                 m_nodeHeadroom.push_back(surface.headroom);
+                m_nodeSource.push_back(surface.source);
                 lastHeight = surface.height;
                 ++kept;
             }
@@ -347,6 +378,144 @@ namespace Crucible {
         }
 
     }   // NavGrid::BuildLayers()
+
+    /*!
+        \brief
+        For every node and each of the 8 directions, the neighbour cell's
+        layer it connects to, or none.
+
+        \details
+        The rules, per neighbour layer:
+          - the same surface (both the ground, or the same Walkable box):
+            always - the ground's own walls come from the generator, and a
+            Walkable surface is walkable along its whole top (the tag);
+          - a climb, two-way: somewhere on the line between the two cells'
+            centres, both surfaces are there and within stepHeight of each
+            other. Anywhere, not only at the centres or the shared edge: a
+            ramp's tip lands on the ground part-way across a cell, already
+            higher than a step by the time it reaches the edge;
+          - a drop, one way (only from the higher layer): where the two
+            cells meet (the middle of the shared edge, or the shared corner),
+            lower by more than a step but at most maxDropHeight. A box that
+            doesn't reach that point is measured at the furthest point it
+            does reach on the way (its edge), found by halving;
+          - otherwise: no link.
+        Of several that qualify the same surface wins, then the closest in
+        height. One link per direction (Recast's model).
+    */
+    void NavGrid::BuildLinks(const NavTerrain& terrain, const std::vector<NavWalkable>& walkables) {
+
+        m_links.assign(m_nodeCell.size() * kNavDirections, kNoLink);
+
+        std::vector<Math::mat4> toLocal;
+        toLocal.reserve(walkables.size());
+        for (const NavWalkable& box : walkables) toLocal.push_back(glm::inverse(box.world));
+
+        // A node's surface height at (x, z), or NaN where its box isn't (the
+        // ground is everywhere).
+        const auto surfaceIfThere = [&](int node, float x, float z) {
+            const int source = m_nodeSource[static_cast<std::size_t>(node)];
+            if (source < 0) return terrain.GroundHeight({ x, 0.0f, z });
+            float bottom = 0.0f, top = 0.0f;
+            if (ThroughBox(walkables[static_cast<std::size_t>(source)], toLocal[static_cast<std::size_t>(source)], x, z, bottom, top)) return top;
+            return std::numeric_limits<float>::quiet_NaN();
+        };
+
+        // A node's surface height at (x, z), or at the furthest point towards
+        // it that its box still covers. Its own cell's centre is always covered.
+        const auto surfaceAt = [&](int node, const Math::vec3& centre, float x, float z) {
+            const int source = m_nodeSource[static_cast<std::size_t>(node)];
+            if (source < 0) return terrain.GroundHeight({ x, 0.0f, z });
+            const NavWalkable& box   = walkables[static_cast<std::size_t>(source)];
+            const Math::mat4&  local = toLocal[static_cast<std::size_t>(source)];
+            float bottom = 0.0f, top = 0.0f;
+            if (ThroughBox(box, local, x, z, bottom, top)) return top;
+            float covered = 0.0f, missed = 1.0f, height = m_nodeHeight[static_cast<std::size_t>(node)];
+            for (int i = 0; i < 10; ++i) {
+                const float t = (covered + missed) * 0.5f;
+                if (ThroughBox(box, local, centre.x + (x - centre.x) * t, centre.z + (z - centre.z) * t, bottom, top)) { covered = t; height = top; }
+                else                                                                                                   { missed  = t; }
+            }
+            return height;
+        };
+
+        const float step = m_settings.stepHeight;
+        const float drop = std::max(m_settings.maxDropHeight, step);
+
+        for (int node = 0; node < static_cast<int>(m_nodeCell.size()); ++node) {
+
+            const int        cellIndex = m_nodeCell[static_cast<std::size_t>(node)];
+            const NavCell    cell{ cellIndex % m_cols, cellIndex / m_cols };
+            const Math::vec3 centre = CellToWorldCenter(cell);
+            const int        source = m_nodeSource[static_cast<std::size_t>(node)];
+
+            for (int dir = 0; dir < kNavDirections; ++dir) {
+
+                const NavCell next{ cell.col + kNavDirCol[dir], cell.row + kNavDirRow[dir] };
+                const int     layers = Contains(next) ? m_layerCount[static_cast<std::size_t>(Index(next))] : 0;
+                if (layers == 0) continue;
+
+                // Where the two cells meet: half a cell along the direction.
+                const float meetX = centre.x + static_cast<float>(kNavDirCol[dir]) * m_settings.cellSize * 0.5f;
+                const float meetZ = centre.z + static_cast<float>(kNavDirRow[dir]) * m_settings.cellSize * 0.5f;
+                const Math::vec3 nextCentre = CellToWorldCenter(next);
+                float here = std::numeric_limits<float>::quiet_NaN();   // this node's height there, worked out once if needed
+
+                int   best      = -1;
+                float bestDelta = 0.0f;
+                for (int layer = 0; layer < layers; ++layer) {
+
+                    const int other = m_layerStart[static_cast<std::size_t>(Index(next))] + layer;
+                    const int otherSource = m_nodeSource[static_cast<std::size_t>(other)];
+
+                    if (otherSource == source) { best = layer; break; }   // the same surface: always, and best
+
+                    // A climb: the closest the two surfaces come along the
+                    // line between the centres (9 points), where both are there.
+                    float closest = std::numeric_limits<float>::infinity();
+                    for (int k = 0; k <= kClimbSamples; ++k) {
+                        const float t = static_cast<float>(k) / static_cast<float>(kClimbSamples);
+                        const float x = centre.x + (nextCentre.x - centre.x) * t;
+                        const float z = centre.z + (nextCentre.z - centre.z) * t;
+                        const float a = surfaceIfThere(node, x, z);
+                        const float b = surfaceIfThere(other, x, z);
+                        if (!std::isnan(a) && !std::isnan(b)) closest = std::min(closest, std::abs(b - a));
+                    }
+                    const bool climb = closest <= step;
+
+                    // A drop: lower by more than a step, measured where the cells meet.
+                    bool  falls = false;
+                    float delta = 0.0f;
+                    if (!climb) {
+                        if (std::isnan(here)) here = surfaceAt(node, centre, meetX, meetZ);
+                        delta = surfaceAt(other, nextCentre, meetX, meetZ) - here;   // + up, - down
+                        falls = delta < -step && delta >= -drop;
+                    }
+                    if (!climb && !falls) continue;
+
+                    // Climbs before drops, then the closest in height.
+                    const float score = climb ? closest : 1000.0f + std::abs(delta);
+                    if (best < 0 || score < bestDelta) { best = layer; bestDelta = score; }
+
+                }
+                if (best >= 0) m_links[static_cast<std::size_t>(node) * kNavDirections + static_cast<std::size_t>(dir)] = static_cast<std::uint8_t>(best);
+
+            }
+
+        }
+
+    }   // NavGrid::BuildLinks()
+
+    int NavGrid::LinkedNode(int node, int dir) const {
+
+        if (node < 0 || static_cast<std::size_t>(node) >= m_nodeCell.size() || dir < 0 || dir >= kNavDirections) return -1;
+        const std::uint8_t layer = m_links[static_cast<std::size_t>(node) * kNavDirections + static_cast<std::size_t>(dir)];
+        if (layer == kNoLink) return -1;
+        const int     cellIndex = m_nodeCell[static_cast<std::size_t>(node)];
+        const NavCell next{ cellIndex % m_cols + kNavDirCol[dir], cellIndex / m_cols + kNavDirRow[dir] };
+        return NodeIndex(next, layer);
+
+    }   // NavGrid::LinkedNode()
 
     int NavGrid::LayerCount(const NavCell& cell) const {
 

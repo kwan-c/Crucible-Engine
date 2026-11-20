@@ -2,12 +2,13 @@
 * \file:         NavigationComponents.h
 * \author:       Jean David Vidal Cruzado (main author; design and Unity original;
 *                v1.2: max walkable slope; v1.4: dynamic update interval;
-*                v1.5: agent height; v1.6: layers per cell),
+*                v1.5: agent height; v1.6: layers per cell;
+*                v1.7: max drop height),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                FlowFieldSurface: where enemies can walk (Unity's
 *                NavMeshSurface). FlowFieldAgent: one enemy's legs (Unity's
@@ -43,6 +44,8 @@
 *                the layered grid will also use as the headroom a surface needs
 *    -v1.6       m_maxLayersPerCell: how many walkable surfaces (the ground
 *                and the tops of Walkable boxes) a cell keeps
+*    -v1.7       m_maxDropHeight: the furthest enemies drop (one-way) from a
+*                surface to a lower one
 *
 **************************************************************************/
 #pragma once
@@ -96,6 +99,7 @@ namespace Crucible {
         float m_stepHeight        = 0.3f;     // obstacles entirely lower than this above the ground are stepped over
         float m_agentHeight       = 1.6f;     // the enemies' height (set it to the tallest): obstacles entirely higher than this above the ground are walked under; also the headroom a layer needs
         int   m_maxLayersPerCell  = 4;        // walkable surfaces kept per cell, the ground included (the lowest ones; the rest are dropped with a warning)
+        float m_maxDropHeight     = 3.0f;     // the furthest enemies drop (one-way) to a lower surface; higher edges are walls. Steps up are m_stepHeight
 
         // The flow field, rebuilt in Play as the player moves. These two apply
         // live; the wall cost needs a Bake (or Play) to take effect.

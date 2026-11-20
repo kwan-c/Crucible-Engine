@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.4
+* \version       1.5
 * \brief
 *                NavGrid: a flat 2D grid over the map where every cell is
 *                open or blocked. The bottom layer of enemy navigation.
@@ -46,6 +46,15 @@
 *                platform resting on it is not a layer, and neither is a
 *                tunnel floor too low to stand in.
 *
+*                Links (how an enemy gets from one layer to the next cell's):
+*                per node, one link per direction (8), naming one layer of
+*                that neighbour or none - Recast's model. Along the same
+*                surface (the ground, one ramp, one deck) always; between
+*                different surfaces when the height difference where the two
+*                cells meet is within stepHeight (both ways), or a drop of up
+*                to maxDropHeight (one way, down only). Anything bigger is no
+*                link: a wall between them.
+*
 *                Until the layered flow field (6d), the cell-level questions
 *                (IsBlocked, the flow field, obstacles, terrain walls) are
 *                about each cell's GROUND layer; a cell whose ground was
@@ -69,6 +78,9 @@
 *                maxLayersPerCell per cell; the ground layer is dropped where
 *                a Walkable box sits on it. GroundNode(); the cell-level
 *                questions read the ground layer
+*    -v1.5       build step 6c: links. Each node stores, per neighbour
+*                direction, which layer it connects to there (climb, walk
+*                along, or a one-way drop of up to maxDropHeight); LinkedNode
 *
 **************************************************************************/
 #pragma once
@@ -129,6 +141,7 @@ namespace Crucible {
         float      stepHeight        = 0.3f;              // obstacles entirely below ground + this are stepped over
         float      agentHeight       = 1.6f;              // the enemies' height: obstacles entirely above ground + this are walked under; also the headroom a layer needs
         int        maxLayersPerCell  = 4;                 // walkable surfaces kept per cell (the lowest ones), ground included
+        float      maxDropHeight     = 3.0f;              // the furthest an enemy drops to a lower surface (one-way); more is a wall
 
     };  // NAVGRIDSETTINGS STRUCT
 
@@ -139,6 +152,14 @@ namespace Crucible {
         int row = 0;
 
     };  // NAVCELL STRUCT
+
+    // The 8 neighbour directions, in Jean David's order: right, left, up, down,
+    // then the four diagonals (indices 4-7). Links are stored in this order,
+    // the same one FlowField floods in.
+    inline constexpr int kNavDirections        = 8;
+    inline constexpr int kNavDirCol[kNavDirections] = { 1, -1, 0,  0, 1, -1,  1, -1 };
+    inline constexpr int kNavDirRow[kNavDirections] = { 0,  0, 1, -1, 1,  1, -1, -1 };
+    inline constexpr int kNavOpposite[kNavDirections] = { 1, 0, 3, 2, 7, 6, 5, 4 };   // the direction back
 
     class NavGrid {
 
@@ -212,6 +233,16 @@ namespace Crucible {
         float   NodeHeadroom(int node)     const { return m_nodeHeadroom[static_cast<std::size_t>(node)]; }   // free height above it; infinity when nothing is above
         bool    IsNodeBlocked(int node)    const { return IsBlockedIndex(static_cast<std::size_t>(node)); }
 
+        // The node this one links to in direction `dir` (kNavDirCol/Row), or
+        // -1: no layer there an enemy can step, walk or drop to.
+        int     LinkedNode(int node, int dir) const;
+
+        // Whether the node is the ground (terrain or flat floor), not a Walkable top.
+        bool    IsGroundNode(int node)     const { return m_nodeSource[static_cast<std::size_t>(node)] < 0; }
+
+        // Whether two nodes are on the same surface: both the ground, or the same Walkable box.
+        bool    IsSameSurface(int a, int b) const { return m_nodeSource[static_cast<std::size_t>(a)] == m_nodeSource[static_cast<std::size_t>(b)]; }
+
         // --- Dynamic obstacles ---------------------------------------------- //
 
         /*!
@@ -247,6 +278,7 @@ namespace Crucible {
 
         bool IsBlockedIndex(std::size_t index) const { return m_static[index] != 0 || m_dynamic[index] != 0; }
         void BuildLayers(const NavTerrain& terrain, const std::vector<NavWalkable>& walkables);
+        void BuildLinks(const NavTerrain& terrain, const std::vector<NavWalkable>& walkables);
 
         NavGridSettings           m_settings;
         int                       m_cols    = 0;
@@ -262,6 +294,8 @@ namespace Crucible {
         std::vector<int>           m_nodeCell;      // the cell it is in (Index())
         std::vector<float>         m_nodeHeight;    // the surface's height at the cell's centre
         std::vector<float>         m_nodeHeadroom;  // free height above it; infinity when nothing is above
+        std::vector<int>           m_nodeSource;    // where the surface comes from: -1 the ground, else the Walkable box's index
+        std::vector<std::uint8_t>  m_links;         // per node, 8 entries: the linked layer in that neighbour, or kNoLink
         std::vector<std::uint8_t>  m_static;        // 1 = terrain wall or StaticObstacle; uint8_t, not vector<bool>, so reads are plain loads
         std::vector<std::uint16_t> m_dynamic;       // how many DynamicObstacles cover the node
 
