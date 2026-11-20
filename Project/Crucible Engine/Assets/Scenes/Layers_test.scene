@@ -1,0 +1,351 @@
+{
+    "version": 1,
+    "name": "Layers_test",
+    "entities": [
+        {
+            "id": "08F808E2EBD08007",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 4.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 10.0,
+                        "y": 0.5,
+                        "z": 4.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Bridge"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
+                }
+            }
+        },
+        {
+            "id": "30F808E2EBD0800D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -8.95361328125,
+                        "y": 1.5,
+                        "z": -1.0151212215423584
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Low Deck"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
+                }
+            }
+        },
+        {
+            "id": "58F808E2EB594003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 100.0,
+                        "y": 100.0,
+                        "z": 100.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": -0.0,
+                        "z": -0.0,
+                        "w": 0.9063077569007874
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 1.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Directional Light"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "68F808E2EBD08009",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.7992446422576904,
+                        "z": 8.171194076538086
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 6.0,
+                        "y": 3.0,
+                        "z": 6.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Low Platform"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
+                }
+            }
+        },
+        {
+            "id": "B0F808E2EB594001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 40.0,
+                        "y": 0.5,
+                        "z": 40.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Ground"
+                },
+                "FlowFieldSurface": {
+                    "cellSize": 2.0,
+                    "bodyRadiusPadding": 0.6000000238418579,
+                    "stepHeight": 0.30000001192092896,
+                    "agentHeight": 1.600000023841858,
+                    "maxLayersPerCell": 4,
+                    "floodRadius": 100.0,
+                    "rebuildDistance": 3.0,
+                    "wallAdjacencyCost": 4.0,
+                    "dynamicUpdateInterval": 0.25
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "F0F808E2EBD0800B",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 2.358170509338379,
+                        "z": -10.350850105285645
+                    },
+                    "rotation": {
+                        "x": 0.3826834559440613,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9238795042037964
+                    },
+                    "scale": {
+                        "x": 4.0,
+                        "y": 0.30000001192092896,
+                        "z": 10.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Ramp"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
+                }
+            }
+        }
+    ]
+}
