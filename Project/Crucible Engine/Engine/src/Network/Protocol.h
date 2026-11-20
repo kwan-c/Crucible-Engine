@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                The wire protocol between the host and its clients:
 *                message types, their fields, and an Encode/Decode pair
@@ -72,12 +72,23 @@
 *                  Command        u32 sequence (non-zero), u16 kind (non-zero),
 *                                 varint target (a NetworkId, 0 = none),
 *                                 payload = the rest (<= kMaxCommandPayload)
+*                  SceneChange    u32 lifecycleSeq, u32 transition (non-zero),
+*                                 u64 sceneAsset (non-zero)
+*                  SceneLoaded    u32 transition (non-zero)
 *
 *                Lifecycle sequence: every reliable lane-0 message the
 *                host sends a client (JoinAccepted, WorldBegin, SpawnBatch,
 *                SceneObjectBatch, DespawnBatch, WorldEnd, GameplayEvent,
-*                PeerRoster) carries a per-client counter starting at 1. 0
-*                never appears on the wire.
+*                PeerRoster, SceneChange) carries a per-client counter
+*                starting at 1. 0 never appears on the wire.
+*
+*                Scene changes (protocol 8): the host loads another scene
+*                and the session goes on. It tells every joined client
+*                (SceneChange: the scene's asset GUID and a transition
+*                number); each loads that scene from its own project,
+*                answers SceneLoaded with the same number, and is then sent
+*                the new scene's world exactly as when it joined (WorldBegin
+*                ... WorldEnd, ClientReady).
 *
 *                The roster (protocol 5): who is in the session. The host
 *                sends every joined client the whole list - itself (peer 0)
@@ -117,6 +128,7 @@
 *    -v1.4       protocol version 6: GameplayEvent carries a target, like
 *                Command (Networking C# Phase 5A)
 *    -v1.5       protocol version 7: UnreliableEvent (Networking C# Phase 5B)
+*    -v1.6       protocol version 8: SceneChange and SceneLoaded (Networking C# Phase 9)
 *
 **************************************************************************/
 #pragma once
@@ -134,11 +146,11 @@
 
 namespace Crucible
 {
-	// Bump on ANY change to the bytes of any message. (7 = UnreliableEvent, and the NetVariables
-	// serializer; 6 = GameplayEvent's target; 5 = PeerRoster
+	// Bump on ANY change to the bytes of any message. (8 = SceneChange and SceneLoaded; 7 =
+	// UnreliableEvent, and the NetVariables serializer; 6 = GameplayEvent's target; 5 = PeerRoster
 	// and Command; 4 = scene objects and the scene identity in WorldBegin; 3 = lifecycle
 	// sequence; versions 1 and 2 were earlier development versions.)
-	inline constexpr std::uint32_t kProtocolVersion = 7;
+	inline constexpr std::uint32_t kProtocolVersion = 8;
 
 	inline constexpr std::size_t   kMaxSnapshotBytes      = 1100;        // one MTU-sized unreliable message
 	inline constexpr std::size_t   kMaxReliableBytes      = 16 * 1024;   // spawn / despawn / event messages
@@ -167,6 +179,8 @@ namespace Crucible
 		PeerRoster    = 12,   // H->C reliable, lane 0, lifecycle: everyone in the session (protocol 5)
 		Command       = 13,   // C->H reliable, lane 0: a gameplay request (protocol 5)
 		UnreliableEvent = 14, // H->C unreliable, lane 1: a gameplay event that may be lost (protocol 7)
+		SceneChange   = 15,   // H->C reliable, lane 0, lifecycle: load this scene (protocol 8)
+		SceneLoaded   = 16,   // C->H reliable, lane 0: that scene is loaded (protocol 8)
 		Count                 // not a message; append new types above it, never renumber
 	};
 
@@ -236,6 +250,16 @@ namespace Crucible
 	};
 	struct WorldEnd    { std::uint32_t lifecycleSeq = 0; };
 	struct ClientReady { std::uint32_t worldEndSeq = 0; };   // must equal the WorldEnd's lifecycleSeq
+
+	/// The host loads another scene; the client loads the same one (by its asset GUID), then
+	/// answers SceneLoaded with the same transition number.
+	struct SceneChange
+	{
+		std::uint32_t lifecycleSeq = 0;
+		std::uint32_t transition = 0;   // non-zero; one per scene change in a session
+		std::uint64_t sceneAsset = 0;   // non-zero
+	};
+	struct SceneLoaded { std::uint32_t transition = 0; };   // must equal the SceneChange's
 
 	// ---- the roster (host to client, reliable) ---------------------------------------------
 
@@ -444,4 +468,10 @@ namespace Crucible
 
 	ENGINE_API bool Encode(ByteWriter& w, const UnreliableEventView& m) noexcept;
 	ENGINE_API bool Decode(ByteReader& r, UnreliableEventView& m) noexcept;
+
+	ENGINE_API bool Encode(ByteWriter& w, const SceneChange& m) noexcept;
+	ENGINE_API bool Decode(ByteReader& r, SceneChange& m) noexcept;
+
+	ENGINE_API bool Encode(ByteWriter& w, const SceneLoaded& m) noexcept;
+	ENGINE_API bool Decode(ByteReader& r, SceneLoaded& m) noexcept;
 }

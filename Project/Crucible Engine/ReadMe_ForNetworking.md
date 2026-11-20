@@ -387,9 +387,9 @@ Read this before designing gameplay for multiplayer.
 | 5 | **Animation isn't synced.** | If a Host-only script sets Animator parameters, remote characters slide around without animating on Clients. |
 | 6 | **Gameplay audio, particles and UI need a script event.** | Effects triggered by Host-only gameplay happen only on the Host unless the Host sends an event and a script that runs **Everywhere** plays them (section 8.4). |
 | 7 | **Clients can't use physics.** | Colliders are Host only, so a Client-side raycast or trigger doesn't hit anything networked. |
-| 8 | **Changing scenes ends the session.** | Loading another scene (e.g. main menu → game) disconnects everyone. Start the session from the scene you'll actually play in. |
+| 8 | **Only the Host's `Network.LoadScene` keeps the session across scenes.** | It moves everyone to the new scene (section 8.8). `Scene.Load`, or opening a scene in the Editor, during a session still ends it. Network objects marked DontDestroyOnLoad do not stay networked in the next scene. |
 | 9 | **A Client's own player responds with a small delay.** | About 110–150 ms on a LAN, because the Client waits for the Host instead of predicting its own movement. The Host's player has no delay. |
-| 10 | **LAN only, at most 4 players.** | The Host plus 3 Clients, connecting by IP address. There's no internet play, lobby or server list. |
+| 10 | **LAN only, at most 4 players.** | The Host plus 3 Clients, connecting by IP address. A lobby can be built in C# (section 8.9 has one), but there is no internet play or server list: players type the Host's IP address. |
 | 11 | **The Host leaving ends the game for everyone.** | There's no handing over to another player. A Client that leaves has its player removed. |
 | 12 | **Both machines need exactly the same content.** | Any difference in a network prefab or scene object (or in the scene) means the Client is refused when joining. |
 
@@ -597,7 +597,96 @@ and restores full health.
 **Client** (Network tab), then Play in each. Offline nothing happens: there is no spawned
 player.
 
-### 8.8 In the Network tab
+### 8.8 Changing scenes without ending the session
+
+```csharp
+if (Network.IsHost) Network.LoadScene("Scenes/network_gamplay.scene");
+```
+
+- **Only the Host** can do this. Every machine loads the same scene from its own project,
+  so every machine must have it.
+- **What happens:**
+  1. The old scene, with every network object in it, goes on every machine.
+  2. The new scene's network objects are set up as when a session starts.
+  3. Every player's character is spawned again, at the new scene's spawn points.
+- **Clients** get the new scene's world as if they had just joined, so `OnNetworkStarted`
+  runs again on them.
+- **The Host** gets `OnAllPeersReady()` once every client has loaded the scene and has its
+  world: the moment to start a round.
+- `OnNetworkSceneLoading()` reaches only scripts that survive the load (DontDestroyOnLoad).
+- A client that cannot load the scene leaves. A client that takes more than 30 s is dropped.
+- Offline, `Network.LoadScene` is an ordinary `Scene.Load`.
+
+### 8.9 Starting a session from a script, and the lobby example
+
+```csharp
+Network.StartHost();                 // port and player name from the Network tab / EngineConfig.json
+Network.Join("192.168.1.20");        // the Host's IP address
+Network.Leave();                     // the Host leaving ends the session for everyone
+```
+
+- **The start happens next frame.** The result arrives as `OnNetworkStarted`, or as
+  `OnNetworkStopped(reason)` if it failed: port in use, refused, version mismatch.
+- **A session can't be started twice.** `StartHost` and `Join` return false (with the reason
+  logged) while one runs.
+- **The Network tab:**
+  - **Offline** means "the game's own menu decides".
+  - **Host** and **Client** remain the quick test that starts at Play.
+  - **Player name** is used when a script gives none.
+
+**Finding sessions on the network (no IP address to type):**
+
+```csharp
+Network.StartBrowsing();                       // while a lobby list is shown
+foreach (LobbyInfo lobby in Network.Lobbies)   // HostName, Players / MaxPlayers, Availability
+    ...
+Network.Join(chosenLobby);                     // refused if it closed, filled or stopped answering
+Network.StopBrowsing();
+```
+
+- A host answers on the **discovery port** (UDP 27019, separate from the game port), and
+  every browser lists the hosts that answered. It works on one PC and across a LAN.
+  Windows may ask the host to allow the game through its firewall.
+- **What a list shows:** each entry has the host's name, the player count, a status, and
+  whether it can be joined: **Open**, **Full**, **In progress** (the host closed it with
+  `Network.SetLobby(false, "In match")`), **Different version** or **Not responding**.
+- **When a host goes away,** its entry disappears within about 3 seconds.
+- **The host has the last word:** a full or closed session refuses a join itself, even one
+  made with a typed IP address.
+
+**Why a session ended:** read `Network.LastEndCode` (an `EndCode`) in `OnNetworkStopped`, or
+let `Network.DescribeEnd(wasJoined)` give the sentence:
+
+| Code | Message |
+|---|---|
+| `SessionEnded` | "The host left. The session has ended." |
+| `ServerFull` | "That lobby is full." |
+| `LobbyClosed` | "That game has already started." |
+| Lost connection or timeout | "Could not reach that lobby" or "Lost the connection to the host" |
+
+A session never outlives its host. When the host leaves, closes the game or stops
+answering, every client's session ends.
+
+**The lobby example: `network_lobby.scene`** (`NetLobby.cs`, `NetLobbyUi.cprefab`). Leave
+the Network tab on **Offline** and press Play in every Editor. Each Editor's **Player name**
+is shown in the lists; if it is left as "Player", the Windows user name is used.
+
+| Screen | What it does |
+|---|---|
+| **Menu** | **Create Lobby** (you host) or **Find Lobbies**. |
+| **Find Lobbies** | Sessions on your network, refreshed live. Pick one and **Join Lobby** (you are a client), or **Back**. |
+| **Waiting** | "Creating your lobby..." / "Joining X's lobby...", with **Cancel**. |
+| **Lobby** | Everyone and who is ready. **Ready** / **Not Ready**; the host's **Start Match** works once everyone is ready and there are at least 2 players; **Leave Lobby**. |
+
+**Starting the match** closes the lobby to new players and takes everyone to the arena.
+In the arena, **Backspace** (host) brings everyone back to the lobby, and the lobby opens
+again. **L** leaves.
+
+**Feedback:** whenever a session ends, every machine goes back to the lobby menu with a
+sentence saying why: the host left, the connection was lost, the lobby was full, the game
+had already started, or the join was cancelled. After a failed join it goes back to the list.
+
+### 8.10 In the Network tab
 
 A Client now lists every player in the session under its status. **Statistics > Counters**
 shows rosters and commands sent, received and refused.

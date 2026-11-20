@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.16
+* \version       1.19
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -42,6 +42,12 @@
 *                ApplyPeerRoster) and commands (SendCommand, HandleCommand)
 *    -v1.15      gameplay events with a target; BeginSpawn
 *    -v1.16      events to everyone except one peer; SendUnreliableEvent
+*    -v1.17      scene changes: BeginSceneTransition, HandleSceneLoaded, BeginClientSceneLoad,
+*                AcceptSceneChange, CheckSceneLoad, ConfirmSceneLoaded, AllPeersReady (Phase 9);
+*                RequestStart, ApplyStartRequest (Phase 10)
+*    -v1.18      the LAN lobby list (PumpDiscovery, SetLobby, StartBrowsing); closed lobbies
+*                refuse joins; LastEndCode (Networking C# lobby browser)
+*    -v1.19      a session a script starts no longer becomes the settings of the next Play
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -55,6 +61,7 @@
 
 #include <algorithm>
 #include <format>
+#include <random>
 
 namespace Crucible
 {
@@ -171,6 +178,12 @@ namespace Crucible
 		m_roster = {};
 		m_rosterChanged = false;
 		m_nextCommandSequence = 1;
+		ResetSceneChange();
+		m_lobbyOpen = true;
+		m_lobbyStatus.clear();
+		m_lobbyInstance = (static_cast<std::uint64_t>(std::random_device{}()) << 32) ^ std::random_device{}() ^ 1u;
+		m_advertiseFailed = false;
+		m_endCode = 0;
 		m_stopRequested = false;
 		m_stopReason.clear();
 		m_state = SessionState::Running;
@@ -211,6 +224,8 @@ namespace Crucible
 
 	void NetworkSession::Stop(std::string_view reason) noexcept
 	{
+		m_startRequested = false;   // a start asked for this frame belongs to what is ending
+		m_discovery.StopAdvertising();
 		m_stopRequested = false;
 		if (m_state == SessionState::Offline && m_transport == nullptr) return;
 		m_state = SessionState::Stopping;
@@ -235,6 +250,7 @@ namespace Crucible
 			m_transport.reset();
 			CRU_INFO("[Net] {} session ended: {}", RoleName(m_role), text);
 			m_lastEndReason = text;
+			m_lastEndCode = std::exchange(m_endCode, 0);
 			Post(NetworkEvents::SessionEnded{ .reason = text });
 		}
 		catch (...)
@@ -262,6 +278,7 @@ namespace Crucible
 		m_roster = {};
 		m_rosterChanged = false;
 		m_nextCommandSequence = 1;
+		ResetSceneChange();
 		++m_generation;
 		m_state = SessionState::Offline;
 	}
@@ -468,7 +485,7 @@ namespace Crucible
 		const std::uint32_t seq = reader.U32();
 		const bool lifecycle = type == MessageType::WorldBegin || type == MessageType::SpawnBatch || type == MessageType::DespawnBatch
 			|| type == MessageType::WorldEnd || type == MessageType::GameplayEvent || type == MessageType::SceneObjectBatch
-			|| type == MessageType::PeerRoster;
+			|| type == MessageType::PeerRoster || type == MessageType::SceneChange;
 		if (!known || !reader.Ok() || !lifecycle)
 		{
 			CRU_ERROR("[Net] SendLifecycle for peer {}: not a lifecycle message - not sent", peerId);
@@ -545,6 +562,7 @@ namespace Crucible
 
 	void NetworkSession::Update()
 	{
+		PumpDiscovery();   // the lobby list: hosting or browsing, also while Offline
 		if (m_stopRequested)
 		{
 			const std::string reason = std::move(m_stopReason);
@@ -581,6 +599,14 @@ namespace Crucible
 			{
 				m_rosterChanged = false;
 				BroadcastRoster();   // a failed send closes that peer and marks it again for next frame
+			}
+			// A scene change is complete once no client is still loading it or receiving its world.
+			if (m_waitingForPeers && !m_sceneChangeExpected
+				&& std::ranges::none_of(m_peers, [](const PeerState& p) { return p.phase == PeerState::Phase::Loading || p.phase == PeerState::Phase::Synchronizing; }))
+			{
+				m_waitingForPeers = false;
+				CRU_INFO("[Net] every player has loaded scene change {}", m_transition);
+				Post(NetworkEvents::AllPeersReady{ .transition = m_transition });
 			}
 		}
 		else if (m_clientPhase == ClientPhase::Joining && start >= m_joinDeadline)
@@ -709,6 +735,13 @@ namespace Crucible
 		{
 		case ConnectionEvent::Kind::Incoming:
 		{
+			if (!m_lobbyOpen)
+			{
+				m_transport->Close(event.connection, CloseReason::LobbyClosed, "the game has already started", false);
+				++m_stats.refusedFull;
+				CRU_INFO("[Net] refused {}: the lobby is closed", event.remoteAddress);
+				return;
+			}
 			if (OccupiedSlots() >= m_active.maxClients)
 			{
 				m_transport->Close(event.connection, CloseReason::ServerFull, "server full", false);
@@ -789,6 +822,9 @@ namespace Crucible
 		case MessageType::Command:
 			HandleCommand(*peer, reader);
 			return;
+		case MessageType::SceneLoaded:
+			HandleSceneLoaded(*peer, reader);
+			return;
 		default:
 			Malformed(*peer, "a host-to-client message type");
 			return;
@@ -851,6 +887,7 @@ namespace Crucible
 		ClientReady ready;
 		if (!Decode(reader, ready)) { Malformed(peer, "an unreadable ClientReady"); return; }
 		if (peer.phase == PeerState::Phase::InGame) { ++m_stats.unexpected; return; }   // a duplicate
+		if (peer.phase == PeerState::Phase::Loading) { ++m_stats.staleSceneMessages; return; }   // the old scene's world
 		if (peer.phase != PeerState::Phase::Synchronizing) { Malformed(peer, "a ClientReady before joining"); return; }
 		if (peer.worldEndSeq == 0 || ready.worldEndSeq != peer.worldEndSeq)
 		{
@@ -873,6 +910,14 @@ namespace Crucible
 	{
 		CommandView command;
 		if (!Decode(reader, command)) { Malformed(peer, "an unreadable Command"); return; }
+		if (peer.phase == PeerState::Phase::Loading || (peer.phase == PeerState::Phase::Synchronizing && m_transition != 0))
+		{
+			// Sent in the old scene, before this client heard of the change: it is about a world
+			// that is gone. The number still counts, so the next one is in order.
+			peer.lastCommandSequence = std::max(peer.lastCommandSequence, command.sequence);
+			++m_stats.staleSceneMessages;
+			return;
+		}
 		if (peer.phase != PeerState::Phase::InGame) { Malformed(peer, "a Command before it is in the game"); return; }
 		if (command.sequence <= peer.lastCommandSequence) { Malformed(peer, "a Command that is not newer than the last one"); return; }
 		m_stats.commandsMissed += command.sequence - peer.lastCommandSequence - 1;
@@ -1208,6 +1253,208 @@ namespace Crucible
 		return true;
 	}
 
+	// ---- the LAN lobby list ------------------------------------------------------------------------
+
+	void NetworkSession::SetLobby(bool open, std::string status)
+	{
+		m_lobbyOpen = open;
+		m_lobbyStatus = std::move(status);
+	}
+
+	bool NetworkSession::StartBrowsing(std::string& error)
+	{
+		return m_discovery.StartBrowsing(m_settings.discoveryPort, error);
+	}
+
+	// A running host keeps its answer up to date every frame (players come and go); anything else
+	// answers nobody. Browsing is independent of the session.
+	void NetworkSession::PumpDiscovery()
+	{
+		if (IsServer() && m_state == SessionState::Running && m_active.discoveryPort != 0 && !m_advertiseFailed)
+		{
+			LobbyAdvert advert;
+			advert.instance = m_lobbyInstance;
+			advert.protocolVersion = kProtocolVersion;
+			advert.gamePort = m_active.hostPort;
+			advert.players = static_cast<std::uint8_t>(PlayerCount());
+			advert.maxPlayers = static_cast<std::uint8_t>(m_active.maxClients + 1);
+			advert.open = m_lobbyOpen;
+			advert.name = m_active.playerName;
+			advert.status = m_lobbyStatus;
+			std::string error;
+			if (!m_discovery.Advertise(m_active.discoveryPort, advert, error))
+			{
+				m_advertiseFailed = true;   // the session itself is fine: it just is not listed
+				CRU_WARN("[Net] this session will not appear in lobby lists: {}", error);
+			}
+		}
+		else if (m_discovery.IsAdvertising())
+		{
+			m_discovery.StopAdvertising();
+		}
+		m_discovery.Pump(SteadyClock::now());
+	}
+
+	// ---- scene changes (Networking C# Phase 9) ----------------------------------------------------
+
+	void NetworkSession::ResetSceneChange() noexcept
+	{
+		m_sceneEpoch = 0;
+		m_transition = 0;
+		m_requestedScene = 0;
+		m_sceneChangeExpected = false;
+		m_sceneLoadIssued = false;
+		m_waitingForPeers = false;
+		m_confirmPending = false;
+	}
+
+	bool NetworkSession::RequestSceneChange(std::uint64_t sceneAsset)
+	{
+		if (!IsServer() || m_state != SessionState::Running || m_stopRequested || sceneAsset == 0)
+		{
+			CRU_ERROR("[Net] RequestSceneChange({:016X}): only a running host changes the session's scene", sceneAsset);
+			return false;
+		}
+		m_requestedScene = sceneAsset;
+		return true;
+	}
+
+	bool NetworkSession::TakeSceneChangeRequest(std::uint64_t& sceneAsset) noexcept
+	{
+		sceneAsset = std::exchange(m_requestedScene, std::uint64_t{ 0 });
+		return sceneAsset != 0 && IsServer() && m_state == SessionState::Running;
+	}
+
+	// The old scene's entities are about to be destroyed by the load. With the map emptied first,
+	// none of those destructions is mapped, so none is announced as a despawn: clients drop their
+	// copies with their own scene. Ids keep counting from where they were (never reused).
+	void NetworkSession::BeginSceneTransition(std::uint64_t sceneAsset)
+	{
+		if (!IsServer() || m_state != SessionState::Running) return;
+		const Net::NetworkId nextId = m_nextId;
+		ClearEntityState();
+		m_nextId = nextId;
+		++m_transition;
+		m_sceneChangeExpected = true;
+		m_waitingForPeers = true;
+		++m_stats.sceneChanges;
+		CRU_INFO("[Net] scene change {}: loading scene {:016X}", m_transition, sceneAsset);
+
+		const SteadyClock::time_point deadline = SteadyClock::now() + kSceneLoadTimeout;
+		for (std::size_t i = 0; i < m_peers.size(); ++i)   // by index: a failed send resets the slot
+		{
+			PeerState& peer = m_peers[i];
+			if (!peer.IsJoined()) continue;
+			std::array<std::byte, 32> buffer;
+			ByteWriter writer(buffer);
+			const SceneChange change{ .lifecycleSeq = peer.nextLifecycleSeq, .transition = m_transition, .sceneAsset = sceneAsset };
+			const Net::PeerId id = peer.peer;
+			if (!Encode(writer, change) || !SendLifecycle(id, writer.Written())) continue;   // closed on failure
+			peer.phase = PeerState::Phase::Loading;
+			peer.loadDeadline = deadline;
+			peer.needsWorld = false;
+			peer.worldEndSeq = 0;
+			// No snapshot of the old scene is worth acknowledging any more.
+			peer.snapshotSent = false;
+			peer.hasAck = false;
+			peer.ackBits = 0;
+			peer.hasCommand = false;
+			peer.jumpLatched = false;
+		}
+		RefreshRoster();   // everyone is loading: not in the game
+		Post(NetworkEvents::SceneChangeStarted{ .sceneAsset = sceneAsset, .transition = m_transition });
+	}
+
+	void NetworkSession::HandleSceneLoaded(PeerState& peer, ByteReader& reader)
+	{
+		SceneLoaded loaded;
+		if (!Decode(reader, loaded)) { Malformed(peer, "an unreadable SceneLoaded"); return; }
+		if (peer.phase != PeerState::Phase::Loading || loaded.transition != m_transition)
+		{
+			// For a change that was overtaken by a newer one: the newer SceneLoaded follows.
+			if (loaded.transition < m_transition) { ++m_stats.staleSceneMessages; return; }
+			Malformed(peer, "a SceneLoaded for a scene change that did not happen");
+			return;
+		}
+		peer.phase = PeerState::Phase::Synchronizing;
+		peer.needsWorld = true;   // the send system streams the new world this frame
+		peer.syncDeadline = SteadyClock::now() + kSynchronizeTimeout;
+		CRU_INFO("[Net] peer {} '{}' loaded scene change {}", peer.peer, peer.name, m_transition);
+	}
+
+	void NetworkSession::BeginClientSceneLoad(const SceneChange& change)
+	{
+		if (!IsClient()) return;
+		ClearEntityState();   // AwaitingWorld; the proxies go with the scene
+		m_snapshotAcks.Reset();
+		m_latency = {};
+		m_transition = change.transition;
+		m_sceneChangeExpected = true;
+		m_confirmPending = true;
+		++m_stats.sceneChanges;
+		CRU_INFO("[Net] the host changes scene ({}): loading scene {:016X}", change.transition, change.sceneAsset);
+		Post(NetworkEvents::SceneChangeStarted{ .sceneAsset = change.sceneAsset, .transition = change.transition });
+	}
+
+	bool NetworkSession::AcceptSceneChange() noexcept
+	{
+		if (!m_sceneChangeExpected) return false;
+		m_sceneChangeExpected = false;
+		m_sceneLoadIssued = false;
+		++m_sceneEpoch;
+		return true;
+	}
+
+	void NetworkSession::CheckSceneLoad()
+	{
+		if (!m_sceneLoadIssued || !IsActive()) return;
+		m_sceneLoadIssued = false;
+		m_sceneChangeExpected = false;
+		const std::string why = "the scene of the session's scene change could not be loaded";
+		if (IsServer()) Stop(why);
+		else CloseAndStop(CloseReason::SceneMismatch, why);
+	}
+
+	void NetworkSession::ConfirmSceneLoaded()
+	{
+		if (!IsClient() || !m_confirmPending || m_transport == nullptr || m_serverConnection == kInvalidConnection) return;
+		m_confirmPending = false;
+		if (SendReliable(m_serverConnection, SceneLoaded{ .transition = m_transition }) != SendResult::Ok)
+			CloseAndStop(CloseReason::SendFailed, "could not send SceneLoaded");
+	}
+
+	// ---- starting from gameplay (Networking C# Phase 10) --------------------------------------------
+
+	bool NetworkSession::RequestStart(const NetworkSettings& settings, std::string& error)
+	{
+		if (m_state != SessionState::Offline || m_transport != nullptr) { error = "a session is already running; leave it first"; return false; }
+		if (m_startRequested) { error = "a session start is already waiting for the next frame"; return false; }
+		if (settings.mode == NetMode::Offline) { error = "choose Host or Client"; return false; }
+		if (!Validate(settings, error)) return false;
+		m_startSettings = settings;
+		m_startRequested = true;
+		return true;
+	}
+
+	void NetworkSession::ApplyStartRequest()
+	{
+		if (!m_startRequested) return;
+		m_startRequested = false;
+		if (m_prepareContent) m_prepareContent();   // may set the content error Start refuses with
+		// Start(settings) makes its settings the ones the NEXT Play uses (Settings()). A session a
+		// script asked for must not: the Editor's Network panel (Offline) would then host or join
+		// at every later Play. The running session keeps its own copy (ActiveSettings()).
+		const NetworkSettings playSettings = m_settings;
+		std::string error;
+		const bool started = Start(m_startSettings, error);
+		m_settings = playSettings;
+		if (started) return;
+		CRU_ERROR("[Net] could not start the {} session: {}", ToString(m_startSettings.mode), error);
+		// Gameplay asked: it hears the outcome like any other end of a session.
+		m_lastEndCode = 0;
+		Post(NetworkEvents::SessionEnded{ .reason = (m_startSettings.mode == NetMode::Host ? "could not host: " : "could not join: ") + error });
+	}
+
 	// ---- client time and responsiveness --------------------------------------------------------
 
 	// The one instrument: key down to the first rendered frame in which the
@@ -1303,6 +1550,11 @@ namespace Crucible
 				++m_stats.joinTimeouts;
 				ClosePeer(peer, CloseReason::Timeout, std::format("no JoinRequest within {} ms", m_active.joinTimeoutMs));
 			}
+			else if (peer.phase == PeerState::Phase::Loading && now >= peer.loadDeadline)
+			{
+				++m_stats.sceneLoadTimeouts;
+				ClosePeer(peer, CloseReason::Timeout, std::format("did not load the scene within {} ms", kSceneLoadTimeout.count()));
+			}
 			else if (peer.phase == PeerState::Phase::Synchronizing && now >= peer.syncDeadline)
 			{
 				++m_stats.syncTimeouts;
@@ -1332,6 +1584,7 @@ namespace Crucible
 		case ConnectionEvent::Kind::Closed:
 		{
 			const std::string why = std::format("{} ({})", event.debug, event.endReason);
+			m_endCode = event.endReason;
 			if (m_clientPhase != ClientPhase::Joined)
 			{
 				CRU_WARN("[Net] join refused or failed: {}", why);
@@ -1378,6 +1631,7 @@ namespace Crucible
 		case MessageType::Input:
 		case MessageType::ClientReady:
 		case MessageType::Command:
+		case MessageType::SceneLoaded:
 			++m_stats.malformed;   // client-to-host types never come from the host
 			return;
 		default:
@@ -1395,6 +1649,7 @@ namespace Crucible
 	{
 		if (!IsClient()) return;
 		CRU_WARN("[Net] leaving the session: {}", debug);
+		m_endCode = static_cast<int>(reason);
 		if (m_serverConnection != kInvalidConnection && m_transport != nullptr) m_transport->Close(m_serverConnection, reason, debug.c_str(), true);
 		m_serverConnection = kInvalidConnection;
 		RequestStop(debug);

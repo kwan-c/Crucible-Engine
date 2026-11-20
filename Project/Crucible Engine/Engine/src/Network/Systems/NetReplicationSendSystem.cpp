@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                NetReplicationSendSystem: the host's lifecycle stream
 *                (world on join, spawns, despawns) and snapshots.
@@ -18,6 +18,7 @@
 *    -v1.4       SceneObjectBatches in the world stream; the scene identity
 *                in WorldBegin (Networking Phase 14.5)
 *    -v1.5       a gameplay event's target goes on the wire (protocol 6)
+*    -v1.6       views start over after a scene change; Loading peers get nothing (Networking C# Phase 9)
 *
 **************************************************************************/
 #include "Network/Systems/NetReplicationSendSystem.h"
@@ -135,11 +136,12 @@ namespace Crucible
 	{
 		NetStats& stats = m_session.MutableStats();
 		const ScopedMicros timer{ stats.sendMicros, &stats.maxSendMicros };
-		// A different session: nothing any view says is true any more.
-		if (m_session.Generation() != m_generation)
+		// A different session, or another scene: nothing any view says is true any more.
+		if (m_session.Generation() != m_generation || m_session.SceneEpoch() != m_sceneEpoch)
 		{
 			for (ClientView& view : m_views) view.Reset();
 			m_generation = m_session.Generation();
+			m_sceneEpoch = m_session.SceneEpoch();
 		}
 
 		// The tick counts the fixed steps physics really ran (none while paused), so a snapshot's
@@ -173,7 +175,8 @@ namespace Crucible
 		m_incremental.clear();
 		for (const PeerState& peer : m_session.Peers())
 		{
-			if (!peer.IsJoined()) continue;
+			// Loading another scene (Phase 9): nothing of this one until it asks for the new world.
+			if (!peer.IsJoined() || peer.phase == PeerState::Phase::Loading) continue;
 			if (peer.needsWorld) m_joining.push_back(peer.peer);
 			else m_incremental.push_back(peer.peer);
 		}

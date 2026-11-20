@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         INTERNAL: the network events waiting for the C# scripts
 *                (EntityScript.OnNetworkStarted, OnPeerJoined,
 *                OnNetworkCommand, ...).
@@ -28,6 +28,7 @@
 *                (Networking C# Phase 2)
 *    -v1.1       Event: the host's gameplay events (Networking C# Phase 5A)
 *    -v1.2       VarChanged and GatherVariableChanges (Networking C# Phase 4)
+*    -v1.3       SceneLoading, AllPeersReady (Networking C# Phase 9)
 *
 **************************************************************************/
 #pragma once
@@ -61,6 +62,8 @@ namespace Crucible::ScriptBindings::NetworkContext
 			Command = 5,     // peer = the sender, code = the command's kind, serial names its payload
 			Event = 6,       // code = the event's kind, serial names its payload
 			VarChanged = 7,  // code = the NetVars slot whose value changed; always targeted
+			SceneLoading = 8,   // the session is moving to another scene (Phase 9)
+			AllPeersReady = 9,  // host: every client has the new scene's world (Phase 9)
 		};
 
 		Kind    kind = Kind::Started;

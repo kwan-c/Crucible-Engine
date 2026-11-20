@@ -69,6 +69,7 @@ namespace Crucible
 		NetworkSettings      m_edit;               // what the fields show; pushed to the session on every change
 		std::array<char, 64> m_listenAddress{};
 		std::array<char, 64> m_connectAddress{};
+		std::array<char, 64> m_playerName{};
 		int                  m_hostPort = 0;
 		int                  m_connectPort = 0;
 		std::string          m_validationError;    // empty = these settings can start a session

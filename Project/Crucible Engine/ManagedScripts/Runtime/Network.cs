@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.3
+* \version       1.5
 * \brief         The multiplayer session for scripts: who am I, who else is
 *                here, and how a client asks the host to do something.
 *                Part of Crucible.ScriptCore.dll.
@@ -85,8 +85,13 @@
 *                (Networking C# Phase 3)
 *    -v1.2       SendEventExcept, SendEventUnreliable (Networking C# Phase 5B)
 *    -v1.3       GetPlayerEntity, LocalPlayerEntity (Networking C# Phase 6)
+*    -v1.4       LoadScene (Networking C# Phase 9); StartHost, Join, Leave
+*                (Networking C# Phase 10)
+*    -v1.5       the LAN lobby list (StartBrowsing, Lobbies, Join(LobbyInfo),
+*                SetLobby); LastEndCode, LastEndReason, DescribeEnd
 *
 **************************************************************************/
+using System.Collections.Generic;
 using System.Runtime.CompilerServices;
 
 namespace Crucible
@@ -94,6 +99,188 @@ namespace Crucible
     /// <summary>The multiplayer session: role, players and commands.</summary>
     public static class Network
     {
+        // --- starting and leaving (a menu or lobby script) ------------------------------ //
+
+        /// <summary>
+        /// Hosts a session from this machine, starting at the next frame. Port 0 (and a null
+        /// name) = this instance's settings (EngineConfig.json, or the Editor's Network panel).
+        /// The result arrives as a callback: OnNetworkStarted, or OnNetworkStopped with the
+        /// reason (the port is in use...). False, with the reason logged, if it cannot even be
+        /// asked: a session already runs, or the settings are invalid.
+        /// </summary>
+        public static bool StartHost(int port = 0, string playerName = null)
+        {
+            return Start(1, null, port, playerName);
+        }
+
+        /// <summary>
+        /// Joins the host at <paramref name="address"/> (an IP address, e.g. "192.168.1.20" or
+        /// "127.0.0.1"), starting at the next frame. Null address / port 0 / null name = this
+        /// instance's settings. OnNetworkStarted follows once joined and the world has arrived;
+        /// OnNetworkStopped with the reason if the join fails (refused, wrong version, timeout).
+        /// </summary>
+        public static bool Join(string address, int port = 0, string playerName = null)
+        {
+            return Start(2, address, port, playerName);
+        }
+
+        /// <summary>
+        /// Leaves the session at the next update. On the host it ends the session for everyone.
+        /// OnNetworkStopped follows. False if no session runs.
+        /// </summary>
+        public static bool Leave(string reason = null)
+        {
+            return LeaveInternal(reason) != 0;
+        }
+
+        // --- the LAN lobby list ----------------------------------------------------------- //
+
+        /// <summary>
+        /// Starts listing the sessions hosted on the local network (Lobbies). Keep it on while a
+        /// lobby browser is shown; StopBrowsing when it closes. False (reason logged) if the
+        /// network cannot be listened to.
+        /// </summary>
+        public static bool StartBrowsing()
+        {
+            string error = BrowseInternal(1);
+            if (error == null)
+                return true;
+            Log.Error("Network.StartBrowsing: " + error);
+            return false;
+        }
+
+        /// <summary>Stops listing sessions (Lobbies becomes empty).</summary>
+        public static void StopBrowsing()
+        {
+            BrowseInternal(0);
+        }
+
+        /// <summary>
+        /// The sessions on the local network that answered recently, in the order they were
+        /// found. A session that closes drops off within a few seconds. A new array each call.
+        /// </summary>
+        public static LobbyInfo[] Lobbies
+        {
+            get
+            {
+                int count = LobbyCountInternal();
+                var lobbies = new List<LobbyInfo>(count);
+                for (int i = 0; i < count; ++i)
+                {
+                    int port, players, maxPlayers, flags;
+                    float age;
+                    if (GetLobbyInternal(i, out port, out players, out maxPlayers, out flags, out age) == 0)
+                        continue;
+                    lobbies.Add(new LobbyInfo(GetLobbyTextInternal(i, 3) ?? "", GetLobbyTextInternal(i, 0) ?? "", port,
+                                              GetLobbyTextInternal(i, 1) ?? "", GetLobbyTextInternal(i, 2) ?? "", players,
+                                              maxPlayers, (flags & 1) != 0, (flags & 2) != 0, age));
+                }
+                return lobbies.ToArray();
+            }
+        }
+
+        /// <summary>
+        /// Joins a listed session. False (reason logged) if it is not joinable right now: full,
+        /// closed, another version, or not heard from recently (it may have closed).
+        /// </summary>
+        public static bool Join(LobbyInfo lobby, string playerName = null)
+        {
+            if (lobby == null)
+                return false;
+            if (!lobby.IsJoinable)
+            {
+                Log.Warning("Network.Join: " + lobby.HostName + "'s session cannot be joined (" + lobby.Availability + ")");
+                return false;
+            }
+            return Join(lobby.Address, lobby.Port, playerName);
+        }
+
+        /// <summary>
+        /// Host: whether new players may join (a closed session refuses them, and lobby lists
+        /// show it as not joinable) and the status lists show ("In lobby", "In match").
+        /// A new session starts open. False unless this machine hosts.
+        /// </summary>
+        public static bool SetLobby(bool open, string status = null)
+        {
+            return SetLobbyInternal(open ? 1 : 0, status) != 0;
+        }
+
+        // --- why a session ended -------------------------------------------------------- //
+
+        /// <summary>
+        /// Why the latest session ended, as a number (EndCode): on a client, mostly what the host
+        /// said - EndCode.SessionEnded when the host left, EndCode.ServerFull, EndCode.LobbyClosed -
+        /// or EndCode.ConnectionLost* when the host stopped answering; 0 when this machine ended it.
+        /// Read it in OnNetworkStopped.
+        /// </summary>
+        public static int LastEndCode { get { return LastEndCodeInternal(); } }
+
+        /// <summary>The engine's own text for the latest end (technical; for logs).</summary>
+        public static string LastEndReason { get { return LastEndReasonInternal() ?? string.Empty; } }
+
+        /// <summary>
+        /// A sentence for players about the latest end. <paramref name="wasJoined"/>: the session
+        /// had started for this machine (OnNetworkStarted ran) - a failed join reads differently
+        /// from a lost game.
+        /// </summary>
+        public static string DescribeEnd(bool wasJoined)
+        {
+            switch (LastEndCode)
+            {
+                case EndCode.ServerFull:
+                    return "That lobby is full.";
+                case EndCode.LobbyClosed:
+                    return "That game has already started.";
+                case EndCode.ProtocolMismatch:
+                    return "That host runs a different version of the game.";
+                case EndCode.SceneMismatch:
+                    return "Your game files do not match the host's.";
+                case EndCode.SessionEnded:
+                case EndCode.Generic:
+                    return wasJoined ? "The host left. The session has ended." : "The host closed that lobby.";
+                case EndCode.Timeout:
+                case EndCode.ConnectionLostRemote:
+                case EndCode.ConnectionLostMisc:
+                    return wasJoined ? "Lost the connection to the host. The session has ended."
+                                     : "Could not reach that lobby. It may have closed.";
+                case 0:
+                    return wasJoined ? "You left the session." : "Could not start: " + LastEndReason;
+                default:
+                    return (wasJoined ? "The session ended" : "Could not join") + " (" + LastEndReason + ").";
+            }
+        }
+
+        private static bool Start(int mode, string address, int port, string playerName)
+        {
+            string error = StartInternal(mode, address, port, playerName);
+            if (error == null)
+                return true;
+            Log.Error("Network." + (mode == 1 ? "StartHost" : "Join") + ": " + error);
+            return false;
+        }
+
+        /// <summary>
+        /// Moves the whole session to another scene (a path inside Assets, e.g.
+        /// "Scenes/Arena.scene"). Host: everyone loads it, the session goes on, the players are
+        /// spawned again, and OnAllPeersReady says when every client is in. Offline: an ordinary
+        /// Scene.Load. A client cannot: false. Every machine must have the scene.
+        /// (Scene.Load during a session still ends it.)
+        /// </summary>
+        public static bool LoadScene(string path)
+        {
+            switch (LoadSceneInternal(path))
+            {
+                case 0:
+                    return true;
+                case 2:
+                    Log.Error("Network.LoadScene: '" + path + "' is not a scene in the project");
+                    return false;
+                default:
+                    Log.Error("Network.LoadScene('" + path + "'): only the host changes the session's scene");
+                    return false;
+            }
+        }
+
         /// <summary>The host's PeerId. Clients are 1 to MaxPlayers - 1.</summary>
         public const int HostPeerId = 0;
         /// <summary>The most players a session can have, the host included.</summary>
@@ -509,6 +696,27 @@ namespace Crucible
         private static extern byte[] GetEventPayloadInternal(int serial);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int GetPlayerEntityInternal(int peer, out int index, out int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string StartInternal(int mode, string address, int port, string playerName);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int LeaveInternal(string reason);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int LoadSceneInternal(string path);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string BrowseInternal(int on);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int LobbyCountInternal();
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetLobbyInternal(int index, out int port, out int players, out int maxPlayers, out int flags,
+                                                   out float age);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string GetLobbyTextInternal(int index, int which);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetLobbyInternal(int open, string status);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int LastEndCodeInternal();
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string LastEndReasonInternal();
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SendEventInternal(int kind, byte[] data, int length, int toPeer, int exceptPeer,
                                                     int unreliable, int hasTarget, int targetIndex, int targetGeneration);

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.14
+* \version       1.17
 * \brief
 *                One multiplayer session: hosting or joining, who is
 *                connected, the join handshake, refusals, receive limits
@@ -204,6 +204,12 @@
 *                caller (Networking C# Phase 3)
 *    -v1.14      gameplay events: everyone except one peer; SendUnreliableEvent
 *                (Networking C# Phase 5B)
+*    -v1.15      scene changes that keep the session: Loading phase, SceneEpoch,
+*                RequestSceneChange and the transition steps (Networking C# Phase 9);
+*                RequestStart, ApplyStartRequest, SetContentPreparer (Phase 10)
+*    -v1.16      LastEndCode; the LAN lobby list: SetLobby, StartBrowsing, Lobbies; closed
+*                lobbies refuse joins (Networking C# lobby browser)
+*    -v1.17      ApplyStartRequest leaves Settings() unchanged
 *
 **************************************************************************/
 #pragma once
@@ -224,6 +230,7 @@
 #include "EngineExport.h"
 #include "ECS/Core/ECSCore.h"
 #include "Network/GnsTransport.h"
+#include "Network/LanDiscovery.h"
 #include "Network/NetClock.h"
 #include "Network/NetComponents.h"
 #include "Network/NetEntityMap.h"
@@ -246,7 +253,9 @@ namespace Crucible
 	/// One client slot on the host. Slot i holds PeerId i + 1 (0 is the host itself).
 	struct PeerState
 	{
-		enum class Phase : std::uint8_t { Free, Connecting, AwaitingJoin, Synchronizing, InGame };
+		/// Loading (Networking C# Phase 9): the host changed scenes; this client was told and is
+		/// loading it. SceneLoaded moves it back to Synchronizing (the new scene's world follows).
+		enum class Phase : std::uint8_t { Free, Connecting, AwaitingJoin, Synchronizing, InGame, Loading };
 
 		Phase         phase = Phase::Free;
 		NetConnection connection = kInvalidConnection;
@@ -262,6 +271,7 @@ namespace Crucible
 		bool          needsWorld = false;   // Synchronizing: the world stream has not been sent yet
 		std::uint32_t worldEndSeq = 0;      // the WorldEnd's lifecycleSeq; ClientReady must echo it
 		std::chrono::steady_clock::time_point syncDeadline{};   // Synchronizing: ClientReady due by then
+		std::chrono::steady_clock::time_point loadDeadline{};   // Loading: SceneLoaded due by then
 
 		// Snapshots (sequence 0 is never used: an ack of 0 means "none received yet")
 		bool          snapshotSent = false;        // lastSentSnapshot is meaningful
@@ -281,7 +291,7 @@ namespace Crucible
 		// Commands (InGame only)
 		std::uint32_t lastCommandSequence = 0;     // newest Command accepted; one that is not newer is malformed
 
-		bool IsJoined() const noexcept { return phase == Phase::Synchronizing || phase == Phase::InGame; }
+		bool IsJoined() const noexcept { return phase == Phase::Synchronizing || phase == Phase::InGame || phase == Phase::Loading; }
 	};
 
 	/// One player of the session as this machine knows it (NetworkSession::Roster).
@@ -417,6 +427,11 @@ namespace Crucible
 		/// Bumped by every Start and every Stop: lets later code notice "a different session".
 		std::uint32_t Generation() const noexcept   { return m_generation; }
 
+		/// Bumped by every scene this session loads after it started (Networking C# Phase 9).
+		/// Generation() + SceneEpoch() name "this session in this scene": per-scene state (scene
+		/// objects, spawned players, per-client views) starts over when either changes.
+		std::uint32_t SceneEpoch() const noexcept   { return m_sceneEpoch; }
+
 		Net::PeerId   LocalPeer() const noexcept    { return m_localPeer; }   // host 0; client after joining
 		ClientPhase   ClientState() const noexcept  { return m_clientPhase; }
 		bool          IsJoined() const noexcept     { return m_clientPhase == ClientPhase::Joined; }
@@ -470,6 +485,30 @@ namespace Crucible
 
 		/// Why the latest session ended (kept until the next one ends): for the editor's panel.
 		const std::string& LastEndReason() const noexcept { return m_lastEndReason; }
+
+		/// Why the latest session ended, as a number: on a client, the host's close reason
+		/// (CloseReason, e.g. SessionEnded when the host left, ServerFull, LobbyClosed) or a GNS
+		/// code (4001 / 5003: the host stopped answering); CloseReason when this client left
+		/// over a problem; 0 when this machine ended it (Stop, Leave) or a start failed.
+		int LastEndCode() const noexcept { return m_lastEndCode; }
+
+		// ---- the LAN lobby list (Networking C# lobby browser) -----------------------------------
+		//
+		// A running host answers lobby queries on ActiveSettings().discoveryPort with its name,
+		// players and whether it is open; a browser lists those that answered (LanDiscovery.h).
+		// Both are pumped by Update, so they work in every play state.
+
+		/// Host: whether new players may join (refused with CloseReason::LobbyClosed if not) and a
+		/// status shown in lobby lists ("In lobby", "In match"). Every Start resets it to open, "".
+		void SetLobby(bool open, std::string status);
+		bool LobbyOpen() const noexcept { return m_lobbyOpen; }
+
+		/// Lists hosts on the local network (on Settings().discoveryPort) until StopBrowsing, or
+		/// until Stop. False with a reason if the socket cannot be opened.
+		bool StartBrowsing(std::string& error);
+		void StopBrowsing() noexcept { m_discovery.StopBrowsing(); }
+		bool IsBrowsing() const noexcept { return m_discovery.IsBrowsing(); }
+		std::span<const LobbyInfo> Lobbies() const noexcept { return m_discovery.Lobbies(); }
 
 		// ---- networked entities -------------------------------------------------------------
 
@@ -556,6 +595,9 @@ namespace Crucible
 
 		/// How long a peer may stay Synchronizing before it is closed with Timeout.
 		static constexpr std::chrono::milliseconds kSynchronizeTimeout{ 10000 };
+
+		/// How long a peer may stay Loading after a scene change before it is closed with Timeout.
+		static constexpr std::chrono::milliseconds kSceneLoadTimeout{ 30000 };
 
 		// ---- snapshots and acknowledgements -----------------------------------------------------
 
@@ -659,6 +701,76 @@ namespace Crucible
 		/// full: nothing was sent, try again later).
 		bool SendCommand(std::uint16_t kind, std::span<const std::byte> payload, Net::NetworkId target = Net::kInvalidNetworkId);
 
+		// ---- scene changes (Networking C# Phase 9) --------------------------------------------
+		//
+		// Host: RequestSceneChange(asset). At the next frame's safe point Core takes it
+		// (TakeSceneChangeRequest), asks SceneManager for the load and calls BeginSceneTransition:
+		// the id map is emptied first - so tearing down the old scene announces nothing - every
+		// joined client is told (SceneChange) and set Loading. The load happens; Core's scene-
+		// changed listener calls AcceptSceneChange (else it would end the session) and the epoch
+		// moves on. NetReceiveSystem adopts the new scene's objects, NetInputSystem spawns the
+		// players again. Each client loads the scene too and answers SceneLoaded; it is then sent
+		// the new world exactly as when it joined.
+		//
+		// Client: NetReceiveSystem applies SceneChange through BeginClientSceneLoad and asks
+		// SceneManager for the load (next frame). After it, AcceptSceneChange, the scene scan, then
+		// ConfirmSceneLoaded sends SceneLoaded.
+		//
+		// A scene change nobody asked for this way (the Editor opening a file, a script's
+		// Scene.Load) still ends the session.
+
+		/// Host: load the scene with this asset GUID for the whole session, at the next frame's
+		/// safe point. False (logged) unless a running host; a second request in one frame wins.
+		bool RequestSceneChange(std::uint64_t sceneAsset);
+
+		/// Core, at the safe point: the requested scene, once. False if none.
+		bool TakeSceneChangeRequest(std::uint64_t& sceneAsset) noexcept;
+
+		/// Core, host, after SceneManager accepted the load request and before it is applied: see
+		/// above. NetworkIds are never reused, so nothing late from the old scene can touch the new.
+		void BeginSceneTransition(std::uint64_t sceneAsset);
+
+		/// Client, NetReceiveSystem: a SceneChange arrived. Forgets the old scene's network objects
+		/// (silently: they go with the scene) and waits for its new world. The caller requests the load.
+		void BeginClientSceneLoad(const SceneChange& change);
+
+		/// The caller asked SceneManager for the scene of the current change (Core checks after the
+		/// next load that it happened: CheckSceneLoad).
+		void NoteSceneLoadIssued() noexcept { m_sceneLoadIssued = true; }
+
+		/// Core's scene-changed listener: true if this scene change is the session's own (the epoch
+		/// moves on); false if it is not, and the session must end.
+		bool AcceptSceneChange() noexcept;
+
+		/// Core, right after SceneManager::ApplyPending: a load this session issued did not happen
+		/// (the file could not be read): the host stops, a client leaves.
+		void CheckSceneLoad();
+
+		/// Client, NetReceiveSystem, after scanning the new scene: sends SceneLoaded (once).
+		void ConfirmSceneLoaded();
+
+		/// The current scene change: its number (0: none yet) and whether it is still running.
+		std::uint32_t SceneTransition() const noexcept { return m_transition; }
+		bool          IsChangingScene() const noexcept { return m_sceneChangeExpected || m_waitingForPeers || m_confirmPending; }
+
+		// ---- starting from gameplay (Networking C# Phase 10) ----------------------------------
+
+		/// A script asks for a session (C# Network.StartHost / Join). Checked now (Validate, and
+		/// that none is running or asked for); started at the next frame's safe point by Core
+		/// (ApplyStartRequest), where the network content is prepared as for Play. False with a
+		/// reason otherwise. The outcome reaches gameplay as usual: SessionStarted / JoinRefused /
+		/// SessionEnded (a start that fails there is posted as SessionEnded with the reason).
+		bool RequestStart(const NetworkSettings& settings, std::string& error);
+		bool HasStartRequest() const noexcept { return m_startRequested; }
+
+		/// How Core prepares the network content before a Host or Client start (NetContent::Prepare
+		/// and the content hash). Unset: nothing is prepared.
+		void SetContentPreparer(std::function<void()> prepare) { m_prepareContent = std::move(prepare); }
+
+		/// Core, at the safe point: starts the requested session, if any. Settings() is left as it
+		/// was: what Play starts (the Editor's Network panel, EngineConfig.json) does not change.
+		void ApplyStartRequest();
+
 		// ---- client time and responsiveness ------------------------------------------------
 
 		/// Client: the host's clock as this client estimates it (reset by every Start and Stop).
@@ -717,6 +829,8 @@ namespace Crucible
 		void HandleClientReady(PeerState& peer, ByteReader& reader);
 		void HandleInput(PeerState& peer, ByteReader& reader);
 		void HandleCommand(PeerState& peer, ByteReader& reader);
+		void HandleSceneLoaded(PeerState& peer, ByteReader& reader);
+		void ResetSceneChange() noexcept;
 		void RefreshRoster();     // host: Roster() from the slots; marks it for BroadcastRoster
 		void BroadcastRoster();   // host: the whole roster to every joined client
 		void CollectFrameMessages();
@@ -752,6 +866,16 @@ namespace Crucible
 		std::string                    m_lastStartError;
 		std::string                    m_lastEndReason;
 		bool                           m_simulationApplied = false;   // GNS's global fake lag/loss set by Start
+		int                            m_endCode = 0;       // why the running session is ending (see LastEndCode)
+		int                            m_lastEndCode = 0;
+
+		// The LAN lobby list
+		LanDiscovery                   m_discovery;
+		bool                           m_lobbyOpen = true;
+		std::string                    m_lobbyStatus;
+		std::uint64_t                  m_lobbyInstance = 0;   // random per hosted session
+		bool                           m_advertiseFailed = false;   // logged once per session
+		void                           PumpDiscovery();
 
 		// Client
 		ClientPhase                    m_clientPhase = ClientPhase::None;
@@ -776,6 +900,20 @@ namespace Crucible
 		// Players (every role)
 		std::array<NetPeerInfo, Net::kMaxPlayers> m_roster{};   // index = PeerId
 		bool                           m_rosterChanged = false;   // host: send it at the end of this Update
+
+		// Scene changes (Phase 9)
+		std::uint32_t                  m_sceneEpoch = 0;          // scenes loaded since Start
+		std::uint32_t                  m_transition = 0;          // host: the latest change's number; client: the one being loaded
+		std::uint64_t                  m_requestedScene = 0;      // host: RequestSceneChange, for the next safe point
+		bool                           m_sceneChangeExpected = false;   // the next scene change is the session's own
+		bool                           m_sceneLoadIssued = false;       // a load for it was requested and not seen yet
+		bool                           m_waitingForPeers = false;       // host: AllPeersReady not posted yet
+		bool                           m_confirmPending = false;        // client: SceneLoaded not sent yet
+
+		// Starting from gameplay (Phase 10)
+		bool                           m_startRequested = false;
+		NetworkSettings                m_startSettings;
+		std::function<void()>          m_prepareContent;
 
 		// Host
 		std::array<PeerState, Net::kMaxClients> m_peers{};

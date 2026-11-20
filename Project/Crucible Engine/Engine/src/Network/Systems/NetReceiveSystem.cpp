@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.12
+* \version       1.14
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -34,6 +34,10 @@
 *                GameplayEvent's target is passed on
 *    -v1.12      NetVariables ensured on spawned, adopted and bound objects (Networking C#
 *                Phase 4); UnreliableEvent delivered (Phase 5B)
+*    -v1.13      SceneChange: forget, load, rescan, SceneLoaded; stale identities of
+*                DontDestroyOnLoad entities removed (Networking C# Phase 9)
+*    -v1.14      EndSessionObjects: spawned objects removed and scene objects made local again
+*                when a session ends, so the next one in the same Play starts clean
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -110,17 +114,23 @@ namespace Crucible
 			ctx.commands.DestroyEntity(e);
 		}
 
-		// Scene objects: once per session, in its first frame, before anything has run on them.
-		if (m_session.Generation() != m_sceneGeneration)
+		// Scene objects: once per session and scene - in the session's first frame, and in the
+		// frame after each scene change it made (Phase 9) - before anything has run on them.
+		if (m_session.Generation() != m_sceneGeneration || m_session.SceneEpoch() != m_sceneEpoch)
 		{
+			// The session ended or a new one began: what the old one made networked ends with it.
+			if (m_session.Generation() != m_sceneGeneration) EndSessionObjects(world);
 			m_sceneGeneration = m_session.Generation();
+			m_sceneEpoch = m_session.SceneEpoch();
 			m_sceneStarted = false;
 			m_localSceneObjects.clear();
 		}
 		if (!m_sceneStarted && m_session.State() == SessionState::Running && m_session.IsActive())
 		{
 			m_sceneStarted = true;
+			if (m_session.SceneEpoch() > 0) ForgetPersistentIdentities(world);
 			StartSceneObjects(world);
+			if (m_session.IsClient()) m_session.ConfirmSceneLoaded();   // after a scene change: SceneLoaded
 		}
 
 		if (m_session.IsServer()) PerformPendingSpawns(world);
@@ -279,6 +289,27 @@ namespace Crucible
 			m_session.MarkLifecycleApplied(roster.lifecycleSeq);
 			return true;
 		}
+		case MessageType::SceneChange:
+		{
+			// The host moved to another scene (Phase 9). Allowed in any world state: it may even
+			// overtake a world this client is still receiving. This scene's network objects are
+			// forgotten now (they go with the scene), the load happens at the next frame's safe
+			// point, and the new world follows SceneLoaded.
+			SceneChange change;
+			if (!Decode(reader, change)) { Leave(CloseReason::Malformed, "malformed SceneChange"); return false; }
+			if (!CheckSequence(change.lifecycleSeq, "SceneChange")) return false;
+			m_session.MarkLifecycleApplied(change.lifecycleSeq);
+			m_session.BeginClientSceneLoad(change);
+			m_localSceneObjects.clear();
+			if (!m_scenes.RequestLoadAsset(change.sceneAsset, true))   // past any loading screen: the host is waiting
+			{
+				++m_session.MutableStats().sceneMismatches;
+				Leave(CloseReason::SceneMismatch, std::format("the host moved to scene {:016X}, which this project does not have", change.sceneAsset));
+				return false;
+			}
+			m_session.NoteSceneLoadIssued();
+			return true;
+		}
 		case MessageType::UnreliableEvent:
 		{
 			// Unreliable (lane 1), like a snapshot: a bad or early one is dropped, never fatal.
@@ -420,6 +451,54 @@ namespace Crucible
 	// host adopts its scene objects; a client makes its own inert until they are bound - server-only
 	// and owner-local components off (the host owns scene objects), before scripts, AI or physics
 	// ever see them (they run later this frame, in Update and PostUpdate).
+	// A session that ended (or the one before a new one) leaves its marks in the World: entities it
+	// spawned - players, projectiles, a client's copies of the host's objects - and the scene's own
+	// entities it made network objects. Without this, the next session in the same Play would find
+	// those still carrying a NetworkIdentity: a scene object would not be adopted again (so host and
+	// client disagree about the scene), and a client that left would keep seeing old players.
+	// Spawned ones are destroyed; the scene's own become plain scene entities again, as loaded.
+	void NetReceiveSystem::EndSessionObjects(World& world)
+	{
+		std::vector<Entity> spawned;
+		world.CreateQuery<const NetworkIdentity>().ForEach([&](Entity e, const NetworkIdentity&) {
+			const bool sceneObject = std::ranges::any_of(m_sessionSceneObjects, [&](const SessionSceneObject& o) { return o.entity == e; });
+			if (!sceneObject) spawned.push_back(e);
+		});
+		for (const SessionSceneObject& object : m_sessionSceneObjects)
+		{
+			if (!world.IsAlive(object.entity)) continue;
+			if (world.HasComponent<NetworkIdentity>(object.entity)) world.RemoveComponent<NetworkIdentity>(object.entity);
+			if (world.HasComponent<NetInterpolation>(object.entity)) world.RemoveComponent<NetInterpolation>(object.entity);
+			if (world.HasComponent<NetVariables>(object.entity)) world.RemoveComponent<NetVariables>(object.entity);   // the next session starts at 0
+			SetComponentsEnabled(world, object.entity, object.switchedOff, true, m_scratch);   // what the client switched off
+		}
+		for (const Entity e : spawned)
+			if (world.IsAlive(e)) world.DestroyEntity(e);   // with its children; unmapped already, so nothing is announced
+		if (!spawned.empty() || !m_sessionSceneObjects.empty())
+			CRU_INFO("[Net] the session's objects were cleared: {} spawned removed, {} scene objects made local again",
+				spawned.size(), m_sessionSceneObjects.size());
+		m_sessionSceneObjects.clear();
+	}
+
+	// A DontDestroyOnLoad entity that was a network object kept its NetworkIdentity through the
+	// load, but the session forgot every id of the old scene: it is a local entity now. Its stale
+	// identity goes, so it can never be taken for a network object again.
+	void NetReceiveSystem::ForgetPersistentIdentities(World& world)
+	{
+		m_scratch.clear();
+		world.CreateQuery<const NetworkIdentity>().ForEach([&](Entity e, const NetworkIdentity& identity) {
+			if (!(m_session.Entities().Find(identity.id) == e)) m_scratch.push_back(e);
+		});
+		for (const Entity e : m_scratch)
+		{
+			CRU_WARN("[Net] entity {}:{} kept through a scene change is no longer a network object (DontDestroyOnLoad does not carry network objects across scenes)",
+				e.index, e.generation);
+			world.RemoveComponent<NetworkIdentity>(e);
+			if (world.HasComponent<NetInterpolation>(e)) world.RemoveComponent<NetInterpolation>(e);
+		}
+		m_scratch.clear();
+	}
+
 	void NetReceiveSystem::StartSceneObjects(World& world)
 	{
 		NetStats& stats = m_session.MutableStats();
@@ -455,12 +534,16 @@ namespace Crucible
 				m_content.Serializers().EnsureRuntimeComponents(world, object.entity, ReplicationContext{ .desc = desc });   // NetVariables
 				world.AddComponent(object.entity, NetworkIdentity{ .id = id, .prefab = object.profile, .owner = Net::kServerPeer });
 				if (!(m_session.Entities().Find(id) == object.entity)) CRU_ERROR("[Net] scene object {:016X} could not be adopted", object.sceneId);
+				m_sessionSceneObjects.push_back(SessionSceneObject{ .entity = object.entity });
 			}
 			else
 			{
 				SetComponentsEnabled(world, object.entity, desc->serverOnly, false, m_scratch);
 				SetComponentsEnabled(world, object.entity, desc->ownerLocalOnly, false, m_scratch);
 				m_localSceneObjects[object.sceneId] = LocalSceneObject{ .entity = object.entity, .profile = object.profile };
+				SessionSceneObject kept{ .entity = object.entity, .switchedOff = desc->serverOnly };
+				kept.switchedOff.insert(kept.switchedOff.end(), desc->ownerLocalOnly.begin(), desc->ownerLocalOnly.end());
+				m_sessionSceneObjects.push_back(std::move(kept));
 			}
 		}
 		// Placed players: each peer gets a spawned one, so these only say where (world space).

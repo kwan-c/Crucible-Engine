@@ -221,11 +221,23 @@ namespace Crucible
         /// OnCreate too.
         /// </summary>
         public virtual void OnNetVarChanged(int slot) {}
+        /// <summary>
+        /// The session is moving to another scene (the host called Network.LoadScene). Only
+        /// scripts that survive the load hear it - DontDestroyOnLoad ones: every other script
+        /// of this scene is destroyed with it. On a client, OnNetworkStarted follows once the
+        /// new scene's world has arrived.
+        /// </summary>
+        public virtual void OnNetworkSceneLoading() {}
+        /// <summary>
+        /// Host only: after Network.LoadScene, every client has loaded the new scene and has its
+        /// world. The moment to start a round. (Scripts of the new scene hear it.)
+        /// </summary>
+        public virtual void OnAllPeersReady() {}
 
         /// <summary>
         /// Called by the engine (ScriptRuntime::DispatchNetworkEvent) with plain values.
         /// kind: 0 started, 1 stopped, 2 peer joined, 3 peer ready, 4 peer left, 5 command, 6 event,
-        /// 7 variable changed
+        /// 7 variable changed, 8 scene loading, 9 all peers ready
         /// (ScriptNetEvent::Kind in Bindings/NetworkContext.h - keep the two in step).
         /// </summary>
         internal void DispatchNetworkEvent(int kind, int peer, int code, int serial, string text)
@@ -251,6 +263,8 @@ namespace Crucible
                     break;
                 }
                 case 7: OnNetVarChanged(code); break;
+                case 8: OnNetworkSceneLoading(); break;
+                case 9: OnAllPeersReady(); break;
             }
         }
 

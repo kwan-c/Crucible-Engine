@@ -2329,7 +2329,7 @@ namespace Crucible
 		    FindListener(data.networkListeners, object->second.type, "DispatchNetworkEvent", 5,
 		                 {{"OnNetworkStarted", 0}, {"OnNetworkStopped", 1}, {"OnPeerJoined", 1},
 		                  {"OnPeerReady", 1}, {"OnPeerLeft", 1}, {"OnNetworkCommand", 3}, {"OnNetworkEvent", 2},
-		                  {"OnNetVarChanged", 1}});
+		                  {"OnNetVarChanged", 1}, {"OnNetworkSceneLoading", 0}, {"OnAllPeersReady", 0}});
 		if (!dispatch)
 			return true; // nothing to call
 

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          26 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Session-level events on the network bus
 *                (Core::Events().network): a session started or ended, a
@@ -34,6 +34,7 @@
 *    -v1.5       PeerJoined, PeerReady and PeerLeft are posted on clients
 *                too (from the host's roster); CommandReceived
 *    -v1.6       GameplayEventReceived::target
+*    -v1.7       SceneChangeStarted, AllPeersReady (Networking C# Phase 9)
 *
 **************************************************************************/
 #pragma once
@@ -124,6 +125,23 @@ namespace Crucible::NetworkEvents
 		std::vector<std::byte> payload;       // the game's own format, at most kMaxGameplayEventPayload bytes
 		bool                   local = false; // posted on the machine that sent it (host, or offline)
 		Net::NetworkId         target = Net::kInvalidNetworkId;   // the object it is about, or none
+	};
+
+	/// Host and clients: the session moves to another scene (Networking C# Phase 9). Posted when
+	/// the change begins - on the host before its scene is replaced, on a client when the host's
+	/// SceneChange arrives (it loads the scene next frame). Entities of the old scene, networked
+	/// or not, are gone after the load; only DontDestroyOnLoad ones hear this and the rest.
+	struct SceneChangeStarted
+	{
+		std::uint64_t sceneAsset = 0;   // the scene being loaded
+		std::uint32_t transition = 0;   // its number in this session (1, 2, ...)
+	};
+
+	/// Host: every client in the session has loaded the scene of the latest change and has its
+	/// world (or none was connected). The moment to start a round.
+	struct AllPeersReady
+	{
+		std::uint32_t transition = 0;
 	};
 
 	/// Host (or offline): a gameplay request arrived (NetworkSession::SendCommand) - from a

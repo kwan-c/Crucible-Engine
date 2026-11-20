@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.3
+* \version       1.5
 * \brief         Internal calls behind the C# Network class
 *                (ManagedScripts/Runtime/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
@@ -57,6 +57,10 @@
 *    -v1.2       NetVars Get/Set and OnNetVarChanged (Networking C# Phase 4);
 *                events: everyone except one peer, unreliable (Networking C# Phase 5B)
 *    -v1.3       GetPlayerEntity: a peer's character (found missing in Networking C# Phase 6)
+*    -v1.4       LoadScene, OnNetworkSceneLoading, OnAllPeersReady (Networking C# Phase 9);
+*                StartHost, Join, Leave (Networking C# Phase 10)
+*    -v1.5       lobby list: Browse, LobbyCount, GetLobby, GetLobbyText, SetLobby;
+*                LastEndCode, LastEndReason (Networking C# lobby browser)
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -74,7 +78,10 @@
 #include "Network/NetworkSession.h"
 #include "Network/Protocol.h"
 #include "Network/Systems/NetReceiveSystem.h"   // PerformSpawn
+#include "Network/NetworkSettings.h"
+#include "AssetPipe/Assetmanager.h"
 #include "Scene/SceneManager.h"
+#include <filesystem>
 #if CRUCIBLE_WITH_MONO
 #include <algorithm>
 #include <cmath>
@@ -129,7 +136,8 @@ namespace Crucible::ScriptBindings
 		bool overflowLogged = false;
 		// The listeners; a Subscription only holds a weak link to its bus, so releasing these
 		// after the bus is gone is safe.
-		Subscription onStarted, onWorldReady, onEnded, onJoined, onReady, onLeft, onCommand, onEvent;
+		Subscription onStarted, onWorldReady, onEnded, onJoined, onReady, onLeft, onCommand, onEvent, onSceneLoading,
+		    onAllReady;
 
 		NetworkSession* Session()
 		{
@@ -706,6 +714,243 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		// A C# string as UTF-8; empty for null.
+		std::string ReadString(MonoString* value)
+		{
+			GcRoot root(reinterpret_cast<MonoObject*>(value));
+			std::string text;
+			if (root.Get())
+				FromManagedString(reinterpret_cast<MonoString*>(root.Get()), text);
+			return text;
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.StartHost (mode 1) / Join (mode 2): asks for a
+		         session, started at the next frame's safe point. Settings not
+		         given (port 0, null address or name) come from this
+		         instance's (EngineConfig.json, or the Editor's Network panel).
+		         Returns null when the request was accepted, else why not.
+		 *********************************************************************/
+		MonoString* ManagedNetworkStart(int32_t mode, MonoString* address, int32_t port, MonoString* playerName) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				if (!session || !EntityContext::InPlaySession())
+					return NewString("only while the game is playing");
+				NetworkSettings settings = session->Settings();
+				settings.mode = mode == 1 ? NetMode::Host : NetMode::Client;
+				if (port < 0 || port > 65535)
+					return NewString("the port must be 1 to 65535");
+				const std::string name = ReadString(playerName);
+				if (!name.empty())
+					settings.playerName = name;
+				if (settings.mode == NetMode::Host)
+				{
+					if (port > 0)
+						settings.hostPort = static_cast<std::uint16_t>(port);
+				}
+				else
+				{
+					const std::string host = ReadString(address);
+					if (!host.empty())
+						settings.connectAddress = host;
+					if (port > 0)
+						settings.connectPort = static_cast<std::uint16_t>(port);
+				}
+				std::string error;
+				return session->RequestStart(settings, error) ? nullptr : NewString(error);
+			}
+			catch (...)
+			{
+				return NewString("the request failed");
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.Leave: ends this machine's session at its next
+		         update (a host's ends it for everyone). 0 if none runs.
+		 *********************************************************************/
+		int32_t ManagedNetworkLeave(MonoString* reason) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				if (!session || !session->IsActive())
+					return 0;
+				const std::string why = ReadString(reason);
+				session->RequestStop(why.empty() ? "left the session" : why);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.LoadScene("Scenes/Arena.scene"): host - the whole
+		         session moves there; offline - an ordinary Scene.Load; client -
+		         refused (only the host decides). 0 ok, 1 refused, 2 not a scene.
+		 *********************************************************************/
+		int32_t ManagedNetworkLoadScene(MonoString* path) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				SceneManager* scenes = EntityContext::GetScenes();
+				AssetManager* assets = EntityContext::GetAssets();
+				const std::string virtualPath = ReadString(path);
+				if (!session || !scenes || !assets || !EntityContext::InPlaySession())
+					return 1;
+				if (virtualPath.empty() || std::filesystem::path(virtualPath).extension() != ".scene")
+					return 2;
+				if (session->IsClient())
+					return 1;
+				if (!session->IsActive())
+					return scenes->RequestLoad(assets->Resolve(virtualPath)) ? 0 : 2;
+				const std::uint64_t asset = assets->GetGuid(virtualPath).m_Value;
+				if (asset == 0)
+					return 2;
+				return session->RequestSceneChange(asset) ? 0 : 1;
+			}
+			catch (...)
+			{
+				return 1;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.StartBrowsing / StopBrowsing (on = 1 / 0). Null on
+		         success, else why not.
+		 *********************************************************************/
+		MonoString* ManagedNetworkBrowse(int32_t on) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				if (!session)
+					return NewString("no network session");
+				if (on == 0)
+				{
+					session->StopBrowsing();
+					return nullptr;
+				}
+				std::string error;
+				return session->StartBrowsing(error) ? nullptr : NewString(error);
+			}
+			catch (...)
+			{
+				return NewString("the request failed");
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.Lobbies: how many hosts are listed now.
+		 *********************************************************************/
+		int32_t ManagedNetworkLobbyCount() noexcept
+		{
+			const NetworkSession* session = Session();
+			return session ? static_cast<int32_t>(session->Lobbies().size()) : 0;
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.Lobbies: one host's numbers. flags: 1 open, 2 same
+		         protocol version (joinable by this build). 0 if no such index.
+		 *********************************************************************/
+		int32_t ManagedNetworkGetLobby(int32_t index, int32_t* port, int32_t* players, int32_t* maxPlayers, int32_t* flags,
+		                               float* age) noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				if (!session || !port || !players || !maxPlayers || !flags || !age || index < 0 ||
+				    static_cast<std::size_t>(index) >= session->Lobbies().size())
+					return 0;
+				const LobbyInfo& lobby = session->Lobbies()[static_cast<std::size_t>(index)];
+				*port = lobby.advert.gamePort;
+				*players = lobby.advert.players;
+				*maxPlayers = lobby.advert.maxPlayers;
+				*flags = (lobby.advert.open ? 1 : 0) | (lobby.advert.protocolVersion == kProtocolVersion ? 2 : 0);
+				*age = lobby.Age(std::chrono::steady_clock::now());
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.Lobbies: one host's texts. which: 0 address,
+		         1 name, 2 status, 3 instance id (hex). Null if no such index.
+		 *********************************************************************/
+		MonoString* ManagedNetworkGetLobbyText(int32_t index, int32_t which) noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				if (!session || index < 0 || static_cast<std::size_t>(index) >= session->Lobbies().size())
+					return nullptr;
+				const LobbyInfo& lobby = session->Lobbies()[static_cast<std::size_t>(index)];
+				switch (which)
+				{
+				case 0: return NewString(lobby.address);
+				case 1: return NewString(lobby.advert.name);
+				case 2: return NewString(lobby.advert.status);
+				case 3: return NewString(std::format("{:016X}", lobby.advert.instance));
+				default: return nullptr;
+				}
+			}
+			catch (...)
+			{
+				return nullptr;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.SetLobby: host - open or closed to new players,
+		         and the status lobby lists show. 0 unless hosting.
+		 *********************************************************************/
+		int32_t ManagedNetworkSetLobby(int32_t open, MonoString* status) noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				if (!session || !session->IsServer())
+					return 0;
+				session->SetLobby(open != 0, ReadString(status));
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.LastEndCode / LastEndReason: why the latest session
+		         ended (NetworkSession::LastEndCode).
+		 *********************************************************************/
+		int32_t ManagedNetworkLastEndCode() noexcept
+		{
+			const NetworkSession* session = Session();
+			return session ? session->LastEndCode() : 0;
+		}
+
+		MonoString* ManagedNetworkLastEndReason() noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				return session ? NewString(session->LastEndReason()) : nullptr;
+			}
+			catch (...)
+			{
+				return nullptr;
+			}
+		}
+
 		template <typename Fn>
 		void Add(const char* name, Fn* function)
 		{
@@ -724,6 +969,8 @@ namespace Crucible::ScriptBindings
 		onLeft = {};
 		onCommand = {};
 		onEvent = {};
+		onSceneLoading = {};
+		onAllReady = {};
 		waiting.clear();
 		batch.clear();
 		overflowLogged = false;
@@ -777,6 +1024,10 @@ namespace Crucible::ScriptBindings
 			    }
 			    QueueMessage(ScriptNetEvent::Kind::Command, e.sender, e.kind, e.target != Net::kInvalidNetworkId, target, e.payload);
 		    });
+		onSceneLoading = events->network.Subscribe<NetworkEvents::SceneChangeStarted>(
+		    [queue](const NetworkEvents::SceneChangeStarted&) { queue(ScriptNetEvent::Kind::SceneLoading); });
+		onAllReady = events->network.Subscribe<NetworkEvents::AllPeersReady>(
+		    [queue](const NetworkEvents::AllPeersReady&) { queue(ScriptNetEvent::Kind::AllPeersReady); });
 		onEvent = events->network.Subscribe<NetworkEvents::GameplayEventReceived>(
 		    [](const NetworkEvents::GameplayEventReceived& e)
 		    {
@@ -866,6 +1117,16 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Network::SendEventInternal", &ManagedNetworkSendEvent);
 		Add("Crucible.Network::SpawnInternal", &ManagedNetworkSpawn);
 		Add("Crucible.Network::GetPlayerEntityInternal", &ManagedNetworkGetPlayerEntity);
+		Add("Crucible.Network::StartInternal", &ManagedNetworkStart);
+		Add("Crucible.Network::LeaveInternal", &ManagedNetworkLeave);
+		Add("Crucible.Network::LoadSceneInternal", &ManagedNetworkLoadScene);
+		Add("Crucible.Network::BrowseInternal", &ManagedNetworkBrowse);
+		Add("Crucible.Network::LobbyCountInternal", &ManagedNetworkLobbyCount);
+		Add("Crucible.Network::GetLobbyInternal", &ManagedNetworkGetLobby);
+		Add("Crucible.Network::GetLobbyTextInternal", &ManagedNetworkGetLobbyText);
+		Add("Crucible.Network::SetLobbyInternal", &ManagedNetworkSetLobby);
+		Add("Crucible.Network::LastEndCodeInternal", &ManagedNetworkLastEndCode);
+		Add("Crucible.Network::LastEndReasonInternal", &ManagedNetworkLastEndReason);
 		Add("Crucible.NetVars::GetInternal", &ManagedNetVarsGet);
 		Add("Crucible.NetVars::SetInternal", &ManagedNetVarsSet);
 	}

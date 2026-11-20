@@ -39,6 +39,7 @@ namespace {
         case PeerState::Phase::AwaitingJoin:  return "joining";
         case PeerState::Phase::Synchronizing: return "loading world";
         case PeerState::Phase::InGame:        return "in game";
+        case PeerState::Phase::Loading:       return "loading scene";
         default:                              return "free";
         }
     }
@@ -84,6 +85,7 @@ void NetworkPanel::LoadFromSession()
     m_edit = m_core.GetNetwork().Settings();   // EngineConfig.json's defaults until this panel changes them
     CopyTo(m_listenAddress, m_edit.listenAddress);
     CopyTo(m_connectAddress, m_edit.connectAddress);
+    CopyTo(m_playerName, m_edit.playerName);
     m_hostPort = m_edit.hostPort;
     m_connectPort = m_edit.connectPort;
     m_validationError.clear();
@@ -94,6 +96,7 @@ void NetworkPanel::Apply()
 {
     m_edit.listenAddress = m_listenAddress.data();
     m_edit.connectAddress = m_connectAddress.data();
+    m_edit.playerName = m_playerName.data();
     m_edit.hostPort = ToPort(m_hostPort);
     m_edit.connectPort = ToPort(m_connectPort);
     m_validationError.clear();
@@ -138,8 +141,11 @@ void NetworkPanel::Update(float)
             changed |= ImGui::InputInt("Host port", &m_connectPort, 0, 0);
         }
         else {
-            ImGui::TextDisabled("Networking is off: Play runs single-player.");
+            ImGui::TextDisabled("Play starts no session. A menu or lobby script can still host or");
+            ImGui::TextDisabled("join (Network.StartHost / Join), with the settings below.");
         }
+        // Sent when joining; also what a script's StartHost / Join uses when it gives no name.
+        changed |= ImGui::InputTextWithHint("Player name", "Player", m_playerName.data(), m_playerName.size());
         if (m_edit.mode != NetMode::Offline) changed |= DrawSimulation();
 
         ImGui::EndDisabled();
@@ -369,6 +375,8 @@ void NetworkPanel::DrawStatus()
     if (network.IsServer()) {
         ImGui::TextColored(EditorTheme::GetPalette().success, "Hosting on port %u", static_cast<unsigned>(active.hostPort));
         ImGui::Text("Players joined: %zu of %u", network.JoinedPeers(), active.maxClients);
+        if (network.IsChangingScene())
+            ImGui::TextColored(EditorTheme::GetPalette().warning, "Changing scene (%u): waiting for the players to load it", network.SceneTransition());
         for (PeerState const& peer : network.Peers()) {
             if (peer.IsJoined()) ImGui::BulletText("Player %u: %s (%s)", static_cast<unsigned>(peer.peer), peer.name.c_str(), peer.remoteAddress.c_str());
         }
@@ -382,6 +390,8 @@ void NetworkPanel::DrawStatus()
             ImGui::Text("Joining %s:%u...", active.connectAddress.c_str(), static_cast<unsigned>(active.connectPort));
             break;
         default:
+            if (network.IsChangingScene())
+                ImGui::TextColored(EditorTheme::GetPalette().warning, "Loading the host's scene (change %u)...", network.SceneTransition());
             ImGui::TextColored(EditorTheme::GetPalette().success, "Joined %s:%u as player %u", active.connectAddress.c_str(),
                                static_cast<unsigned>(active.connectPort), static_cast<unsigned>(network.LocalPeer()));
             // Everyone in the session, as the host told this client (its roster).

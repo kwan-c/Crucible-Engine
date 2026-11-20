@@ -45,7 +45,11 @@
 *    Setup (network_gamplay.scene): this entity has a Network Object
 *    component with NetVariables Replicated; ArenaRules and ArenaView run
 *    Everywhere; Bolt Prefab = Prefabs/network_tests/NetBolt.
-*    Controls: left mouse button or F = fire where your camera looks.
+*    Controls: left mouse button or F = fire where your camera looks;
+*    Backspace (host) = everyone back to the lobby; L = leave the session.
+*    Reached from network_lobby.scene (NetLobby), the session carries on
+*    into this scene and back. When it ends here (left, or the host is
+*    gone), this machine goes back to lobbyScene on its own.
 *
 *    Needs a session: offline there is no spawned player.
 **************************************************************************/
@@ -88,6 +92,8 @@ namespace Crucible.@Scripts
         public float maxMuzzleOffset = 4f;
         /// <summary>Used when the scene has no respawn points: a random spot within this distance of the centre.</summary>
         public float arenaHalfSize = 10f;
+        /// <summary>The lobby (a path inside Assets): Backspace on the host takes everyone there; empty = none.</summary>
+        public string lobbyScene = "Scenes/network_lobby.scene";
 
         private readonly NetWriter writer = new NetWriter();
         private readonly double[] lastShot = new double[Network.MaxPlayers];   // host
@@ -140,6 +146,22 @@ namespace Crucible.@Scripts
             // The local player's input. It never changes the game: it asks.
             if (Network.IsReady && (Input.IsPressed(KeyCode.MouseLeft) || Input.IsPressed(KeyCode.F)))
                 AskToFire();
+            if (Network.IsHost && Input.IsPressed(KeyCode.Backspace) && !string.IsNullOrEmpty(lobbyScene))
+                Network.LoadScene(lobbyScene);   // the whole session goes back to the lobby
+            if (Network.IsOnline && Input.IsPressed(KeyCode.L))
+                Network.Leave();
+        }
+
+        /// <summary>
+        /// The session ended here - this player left, or the host left, closed the game or
+        /// stopped answering: back to the lobby's menu, offline, with a sentence saying why.
+        /// </summary>
+        public override void OnNetworkStopped(string reason)
+        {
+            if (string.IsNullOrEmpty(lobbyScene))
+                return;
+            NetLobby.ArrivalMessage = Network.DescribeEnd(true);
+            Scene.Load(lobbyScene);
         }
 
         private void AskToFire()

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Encoders and decoders for every protocol message (see
 *                Protocol.h for the wire layouts and the rules).
@@ -13,6 +13,7 @@
 *    -v1.1       PeerRoster and Command codecs (protocol version 5)
 *    -v1.2       GameplayEvent's target (protocol version 6)
 *    -v1.3       UnreliableEvent codec (protocol version 7)
+*    -v1.4       SceneChange and SceneLoaded codecs (protocol version 8)
 *
 **************************************************************************/
 #include "Network/Protocol.h"
@@ -32,6 +33,7 @@ namespace Crucible
 		constexpr std::size_t kInputMax = 1 + 1 + kMaxInputCommands * kInputCommandSize + 2 + 4 + 4;   // 51
 		constexpr std::size_t kPeerRosterMax = 1 + 4 + 1 + Net::kMaxPlayers * (1 + 1 + 1 + kMaxPlayerNameBytes);   // 146
 		constexpr std::size_t kCommandMax = 1 + 4 + 2 + 5 + kMaxCommandPayload;                    // 1036
+		constexpr std::size_t kSceneChangeMax = 1 + 4 + 4 + 8;                                    // 17
 
 		void WriteType(ByteWriter& w, MessageType type) noexcept { w.U8(static_cast<std::uint8_t>(type)); }
 
@@ -85,6 +87,8 @@ namespace Crucible
 		case MessageType::Input:         return kInputMax;
 		case MessageType::PeerRoster:    return kPeerRosterMax;
 		case MessageType::Command:       return kCommandMax;
+		case MessageType::SceneChange:   return kSceneChangeMax;
+		case MessageType::SceneLoaded:   return kSeqOnlyMax;
 		case MessageType::Snapshot:
 		case MessageType::UnreliableEvent: return kMaxSnapshotBytes;
 		case MessageType::SpawnBatch:
@@ -478,6 +482,35 @@ namespace Crucible
 		if (r.Remaining() > kMaxCommandPayload) return false;
 		m.payload = r.Sub(r.Remaining());   // the payload's own format is checked by its handler
 		return r.Ok() && r.AtEnd();
+	}
+
+	bool Encode(ByteWriter& w, const SceneChange& m) noexcept
+	{
+		if (m.lifecycleSeq == 0 || m.transition == 0 || m.sceneAsset == 0) return false;
+		const std::size_t start = w.Size();
+		WriteType(w, MessageType::SceneChange);
+		w.U32(m.lifecycleSeq);
+		w.U32(m.transition);
+		w.U64(m.sceneAsset);
+		return Finished(w, start, MessageType::SceneChange);
+	}
+
+	bool Decode(ByteReader& r, SceneChange& m) noexcept
+	{
+		m.lifecycleSeq = r.U32();
+		m.transition = r.U32();
+		m.sceneAsset = r.U64();
+		return r.Ok() && r.AtEnd() && m.lifecycleSeq != 0 && m.transition != 0 && m.sceneAsset != 0;
+	}
+
+	bool Encode(ByteWriter& w, const SceneLoaded& m) noexcept
+	{
+		return EncodeSeqOnly(w, MessageType::SceneLoaded, m.transition);
+	}
+
+	bool Decode(ByteReader& r, SceneLoaded& m) noexcept
+	{
+		return DecodeSeqOnly(r, m.transition);
 	}
 
 	bool Encode(ByteWriter& w, const UnreliableEventView& m) noexcept

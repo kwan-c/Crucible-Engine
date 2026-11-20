@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                Player input across the network: a client turns its own
 *                player's PlayerInput into commands; the host turns each
@@ -57,6 +57,7 @@
 *    -v1.2       the player prefab: the discovered spawnPerPlayer one, else
 *                the constructor's (Networking Phase 14.2)
 *    -v1.3       players spawn at the scene's placed players (Phase 14.6)
+*    -v1.4       players spawned again after each scene change (Networking C# Phase 9)
 *
 **************************************************************************/
 #pragma once
@@ -130,6 +131,7 @@ namespace Crucible
 		SpawnPointFn      m_spawnPoint;
 		bool              m_customSpawnPoint = false;   // given by the game: wins over placed players
 		std::uint32_t     m_generation = 0;   // the session's, when the state below was reset
+		std::uint32_t     m_sceneEpoch = 0;   // the session's SceneEpoch(), when the players were last spawned
 
 		// Client
 		std::uint32_t                              m_sequence = 0;         // last command's; 1 is the first

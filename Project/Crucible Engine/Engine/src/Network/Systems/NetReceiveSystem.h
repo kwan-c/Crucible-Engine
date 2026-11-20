@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.9
+* \version       1.11
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -113,6 +113,10 @@
 *    -v1.8       registers scene profiles (Networking Phase 14.7)
 *    -v1.9       PerformSpawn: one spawn, shared with the script bindings
 *                (Networking C# Phase 3)
+*    -v1.10      scene objects are scanned again after every scene change of the session;
+*                SceneChange applied on clients (Networking C# Phase 9)
+*    -v1.11      EndSessionObjects: a session's objects end with it (a new session in the same
+*                Play found its scene objects still marked as networked)
 *
 **************************************************************************/
 #pragma once
@@ -190,6 +194,8 @@ namespace Crucible
 
 		// Scene objects (both roles)
 		void StartSceneObjects(World& world);
+		void ForgetPersistentIdentities(World& world);
+		void EndSessionObjects(World& world);
 		bool ApplySceneObjectBatch(World& world, ByteReader& reader);
 		void RemoveUnboundSceneObjects(World& world);
 
@@ -209,9 +215,15 @@ namespace Crucible
 		struct LocalSceneObject { Entity entity = kNullEntity; Net::NetPrefabId profile = Net::kInvalidNetPrefab; bool bound = false; };
 		SceneAssetResolver        m_sceneAssetOf;
 		std::uint32_t             m_sceneGeneration = 0;   // the session's, when the scene was last scanned
+		std::uint32_t             m_sceneEpoch = 0;        // the session's SceneEpoch(), when it was last scanned
 		bool                      m_sceneStarted = false;
 		std::unordered_map<std::uint64_t, LocalSceneObject> m_localSceneObjects;   // client: scene id -> own entity
 		std::vector<Entity>       m_resolved;        // client: its records' entities (null: despawned since)
+
+		// The scene's own entities this session made network objects (both roles), with what the
+		// client switched off on them: given back as plain scene entities when the session ends.
+		struct SessionSceneObject { Entity entity = kNullEntity; std::vector<ComponentId> switchedOff; };
+		std::vector<SessionSceneObject> m_sessionSceneObjects;
 	};
 #ifdef _MSC_VER
 #pragma warning(pop)

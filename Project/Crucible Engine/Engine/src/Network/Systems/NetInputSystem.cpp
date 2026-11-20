@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NetInputSystem: client commands and heartbeat, the host's
 *                per-client intents, and the auto-spawned players.
@@ -14,6 +14,7 @@
 *    -v1.2       the player is the discovered spawnPerPlayer prefab when
 *                there is one (Networking Phase 14.2)
 *    -v1.3       players spawn at the scene's placed players (Phase 14.6)
+*    -v1.4       players spawned again after each scene change (Networking C# Phase 9)
 *
 **************************************************************************/
 #include "Network/Systems/NetInputSystem.h"
@@ -63,6 +64,17 @@ namespace Crucible
 	void NetInputSystem::Update(World& world, CommandBuffer& commands)
 	{
 		if (m_session.Generation() != m_generation) BeginSession();   // a new session (or none): forget the old one
+		if (m_session.SceneEpoch() != m_sceneEpoch)
+		{
+			// The session moved to another scene: the old players went with it. Every player is
+			// spawned again in the new one (the host now, each client once it has the new world).
+			// The command sequence carries on: the host still has the newest one it took.
+			m_sceneEpoch = m_session.SceneEpoch();
+			m_hostSpawned = false;
+			m_hostPlayer = Net::kInvalidNetworkId;
+			m_slots = {};
+			m_historyCount = 0;
+		}
 		if (m_session.State() != SessionState::Running) return;     // Offline, or stopping
 		if (m_session.IsClient()) UpdateClient(world);
 		else if (m_session.IsServer()) UpdateServer(world, commands);
@@ -71,6 +83,7 @@ namespace Crucible
 	void NetInputSystem::BeginSession()
 	{
 		m_generation = m_session.Generation();
+		m_sceneEpoch = m_session.SceneEpoch();
 		m_sequence = 0;
 		m_lastSentSerial = 0;
 		m_historyCount = 0;

@@ -174,7 +174,7 @@ namespace Crucible.@Scripts
             }
             if (hudScores != null)
             {
-                string scores = "Kills / Deaths";
+                string scores = (Network.IsHost ? "Backspace: lobby   " : "") + "L: leave\nKills / Deaths";
                 foreach (int peer in Network.Peers)
                     if (rules.StateOf(peer) != ArenaRules.StateNone)
                         scores += "\n" + Network.GetPeerName(peer) + (peer == self ? " (you)" : "") + "   " + rules.KillsOf(peer) + " / " + rules.DeathsOf(peer);

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.14
+* \version       1.15
 * \brief
 *                Counters the networking code measures itself, per session
 *                (reset by every Start).
@@ -33,6 +33,7 @@
 *                counters
 *    -v1.13      gameplayEventsNoTarget, spawnsImmediate
 *    -v1.14      kMessageTypes 15: UnreliableEvent, and its counters
+*    -v1.15      kMessageTypes 17: SceneChange, SceneLoaded; scene change counters
 *
 **************************************************************************/
 #pragma once
@@ -128,6 +129,11 @@ namespace Crucible
 		std::uint64_t unreliableEventsSent = 0;     // server: unreliable event messages GNS accepted, all clients
 		std::uint32_t unreliableEventsNotSent = 0;  // server: not accepted by GNS (lost, as any of them may be)
 		std::uint64_t unreliableEventsReceived = 0; // client: arrived and delivered
+
+		// Scene changes (Networking C# Phase 9)
+		std::uint32_t sceneChanges = 0;             // scene changes this machine went through in the session
+		std::uint32_t sceneLoadTimeouts = 0;        // host: peers closed for not loading in time
+		std::uint32_t staleSceneMessages = 0;       // host: SceneLoaded / ClientReady / commands from before a change
 		std::uint32_t spawnsImmediate = 0;          // server: spawns performed at once (BeginSpawn), of spawnsPerformed
 
 		// Interpolation and responsiveness (client)
@@ -162,7 +168,7 @@ namespace Crucible
 
 		// Bytes of our messages by MessageType (index = the type's value), both directions; GNS's
 		// own headers, encryption and acks are not included (GnsTransport::Status has those).
-		static constexpr std::size_t kMessageTypes = 15;   // MessageType::Count (checked in NetworkSession.cpp)
+		static constexpr std::size_t kMessageTypes = 17;   // MessageType::Count (checked in NetworkSession.cpp)
 		std::array<std::uint64_t, kMessageTypes> bytesSentByType{};
 		std::array<std::uint64_t, kMessageTypes> bytesReceivedByType{};
 

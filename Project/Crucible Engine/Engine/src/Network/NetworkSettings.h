@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       2.1
+* \version       2.2
 * \brief
 *                What one engine instance should do about networking when
 *                Play starts: stay Offline, Host a session, or join one as
@@ -34,6 +34,7 @@
 *                Validate checks IP addresses
 *    -v2.1       simulation: test latency and packet loss, set only from the
 *                editor's Network panel (Networking Phase 0)
+*    -v2.2       discoveryPort: the LAN lobby list (Networking C# lobby browser)
 *
 **************************************************************************/
 #pragma once
@@ -85,6 +86,10 @@ namespace Crucible
 		// (cleared when it stops). Never read from EngineConfig.json: only the editor's Network
 		// panel sets it, so a shipped game always plays on the real network.
 		NetworkSimulation  simulation;
+
+		// LAN lobby list (LanDiscovery.h): the UDP port a host answers "who is hosting?" on and a
+		// browser asks on. The same on every machine; 0 = not listed, no browsing.
+		std::uint16_t      discoveryPort = 27019;   // kDefaultDiscoveryPort
 	};
 
 	/// The shared defaults from EngineConfig.json. An unknown mode text becomes Offline and is
