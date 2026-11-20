@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NavGrid's bake and its cell maths.
 *
@@ -20,6 +20,8 @@
 *                moved into Footprint(), shared by the bake and (later)
 *                re-stamping
 *    -v1.2       shoulderHeight renamed agentHeight
+*    -v1.3       layer storage (nodes): one ground node per cell for now,
+*                with its height; the flags and counts live on nodes
 *
 **************************************************************************/
 #include "NavGrid.h"
@@ -27,6 +29,7 @@
 // STL
 #include <algorithm>    // std::clamp, std::max, std::min
 #include <cmath>        // std::ceil, std::floor
+#include <limits>       // infinity: nothing above a layer
 
 // Crucible engine
 #include "Diagnostics/Logger.h"
@@ -82,8 +85,27 @@ namespace Crucible {
         m_rows     = static_cast<int>(rows);
         m_minX     = settings.origin.x - settings.width * 0.5f;
         m_minZ     = settings.origin.z - settings.depth * 0.5f;
-        m_static.assign(static_cast<std::size_t>(cols * rows), 0);    // all open; obstacles and walls close cells below
-        m_dynamic.assign(static_cast<std::size_t>(cols * rows), 0);
+        // 0. The layers. For now every cell holds one: the ground, at the
+        // terrain's height under the cell's centre, with nothing above it.
+        // So node i is cell i (the cell-based callers rely on that until the
+        // layered flow field). Layers from Walkable objects come with 6b.
+        const std::size_t cellCount = static_cast<std::size_t>(cols * rows);
+        m_layerStart.resize(cellCount);
+        m_layerCount.assign(cellCount, 1);
+        m_nodeCell.resize(cellCount);
+        m_nodeHeight.resize(cellCount);
+        m_nodeHeadroom.assign(cellCount, std::numeric_limits<float>::infinity());
+        for (int row = 0; row < m_rows; ++row) {
+            for (int col = 0; col < m_cols; ++col) {
+                const int index = Index({ col, row });
+                m_layerStart[static_cast<std::size_t>(index)]  = index;
+                m_nodeCell[static_cast<std::size_t>(index)]    = index;
+                m_nodeHeight[static_cast<std::size_t>(index)]  = terrain.GroundHeight(CellToWorldCenter({ col, row }));
+            }
+        }
+
+        m_static.assign(cellCount, 0);    // all open; obstacles and walls close nodes below
+        m_dynamic.assign(cellCount, 0);
 
         const float cellSize = settings.cellSize;
 
@@ -102,14 +124,15 @@ namespace Crucible {
 
         // 2. Terrain walls: cliffs and off-map, tested at each cell's centre
         // only (so a cell that is part cliff can still read as open - Jean
-        // David's prototype does the same). Cells an obstacle already closed
-        // are skipped, so the wall count below is only the walls' own.
+        // David's prototype does the same). They close the cell's ground
+        // node. Nodes an obstacle already closed are skipped, so the wall
+        // count below is only the walls' own.
         int wallCells = 0;
         for (int row = 0; row < m_rows; ++row) {
             for (int col = 0; col < m_cols; ++col) {
 
                 const NavCell     cell{ col, row };
-                const std::size_t index = static_cast<std::size_t>(Index(cell));
+                const std::size_t index = static_cast<std::size_t>(NodeIndex(cell, 0));
                 if (!IsBlockedIndex(index) && terrain.IsWall(CellToWorldCenter(cell))) {
                     m_static[index] = 1;
                     ++wallCells;
@@ -121,8 +144,8 @@ namespace Crucible {
         m_baked = true;
 
         std::size_t blocked = 0;
-        for (std::size_t index = 0; index < m_static.size(); ++index) {
-            if (IsBlockedIndex(index)) ++blocked;
+        for (std::size_t node = 0; node < m_static.size(); ++node) {
+            if (IsBlockedIndex(node)) ++blocked;
         }
         CRU_INFO("NavGrid baked: {} x {} cells of {} m, {} blocked ({} of {} obstacles inside the height band, {} terrain wall cells)",
                  m_cols, m_rows, cellSize, blocked, counted, obstacles.size(), wallCells);
@@ -134,10 +157,32 @@ namespace Crucible {
 
         // Off the map is a wall: the flood never spreads outside the grid, and
         // an unbaked grid has no open cells to spread through.
+        // Until the layered flow field (6d) a cell is asked about as one
+        // thing: its ground layer, the lowest node. A cell with no layer at
+        // all is a wall.
         if (!m_baked || !Contains(cell)) return true;
-        return IsBlockedIndex(static_cast<std::size_t>(Index(cell)));
+        const int node = NodeIndex(cell, 0);
+        return node < 0 || IsBlockedIndex(static_cast<std::size_t>(node));
 
     }   // NavGrid::IsBlocked()
+
+    int NavGrid::LayerCount(const NavCell& cell) const {
+
+        if (!m_baked || !Contains(cell)) return 0;
+        return m_layerCount[static_cast<std::size_t>(Index(cell))];
+
+    }   // NavGrid::LayerCount()
+
+    int NavGrid::NodeIndex(const NavCell& cell, int layer) const {
+
+        // Not gated on m_baked like LayerCount: the bake itself looks nodes
+        // up before it is finished. Callers outside the bake check IsBaked.
+        if (!Contains(cell) || layer < 0) return -1;
+        const std::size_t index = static_cast<std::size_t>(Index(cell));
+        if (index >= m_layerCount.size() || layer >= m_layerCount[index]) return -1;
+        return m_layerStart[index] + layer;
+
+    }   // NavGrid::NodeIndex()
 
     bool NavGrid::Footprint(const NavObstacle& obstacle, const NavTerrain& terrain, std::vector<int>& cells) const {
 
@@ -177,10 +222,12 @@ namespace Crucible {
         const int rowLast  = std::min(m_rows - 1, ToCellNumber(std::ceil((z1 - m_minZ) / cellSize), m_rows) - 1);
 
         // A box entirely off the grid gives first > last, so these loops
-        // simply don't run.
+        // simply don't run. Each covered cell's ground layer for now; the
+        // layered grid (6d) picks the layers the box actually reaches.
         for (int row = rowFirst; row <= rowLast; ++row) {
             for (int col = colFirst; col <= colLast; ++col) {
-                cells.push_back(Index({ col, row }));
+                const int node = NodeIndex({ col, row }, 0);
+                if (node >= 0) cells.push_back(node);
             }
         }
         return true;
