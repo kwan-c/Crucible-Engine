@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         Generates a sub-level from a seed. Terrain only for now:
 *                chunks, roads and decor are later port steps.
 *
@@ -15,12 +15,13 @@
 *
 *        Sub Level Generator   this script: seed and settings
 *        |- Terrain            Terrain, MeshRenderer, Collider (HeightField)
-*        '- Nav Surface        FlowFieldSurface: sized to the map here
+*        '- Nav Surface        FlowFieldSurface: navigation's settings
 *
 *    Each run: TerrainGenerator builds the map (plain data), the Terrain
-*    child draws and collides with it, the Nav Surface is sized to it with
-*    the same slope limit, the player gets that limit too (so player and
-*    enemies agree on what is a wall), and navigation re-bakes. Nothing is
+*    child draws and collides with it, the player gets the slope limit (so
+*    player and enemies agree on what is a wall), and navigation re-bakes:
+*    it reads the terrain's heights and cliffs and fits its grid to the
+*    terrain itself, so nothing here sizes the Nav Surface. Nothing is
 *    saved: the same seed and settings always rebuild the same ground, and
 *    the log prints a height hash to prove it.
 *
@@ -28,14 +29,19 @@
 *    (LevelCatalogue/SubLevelGen_*.asset).
 *
 *    Generate is also an Inspector button ([EditorButton]): outside Play
-*    it builds only the terrain, as a preview. Sizing the Nav Surface,
-*    the player's slope and the re-bake need Play (and would otherwise be
+*    it builds only the terrain, as a preview (the Nav Surface's Bake
+*    button then previews navigation on it). The player's slope and the
+*    re-bake need Play (and would otherwise be
 *    saved into the scene with no undo). The preview is not saved: it is
 *    gone after Play stops or the scene reloads; click Generate again.
 *
 * \history
 *    -v1.0       terrain from a seed, shared with navigation and the player
 *    -v1.1       Generate as an [EditorButton] preview in Edit mode
+*    -v1.2       No longer sizes or moves the Nav Surface: navigation fits
+*                its grid to the terrain on its own (Edit and Play), and
+*                takes its cliffs from here, so the surface's slope setting
+*                is gone (maxWalkableSlope here is the one slope limit)
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -112,7 +118,7 @@ namespace Crucible.@Scripts
 
             if (Application.IsPlaying)
             {
-                ShareWithNavigation();
+                CheckNavigation();
                 ApplyPlayerSlope();
                 Navigation.Rebake();
             }
@@ -134,20 +140,12 @@ namespace Crucible.@Scripts
             return s;
         }
 
-        // The navigation grid covers exactly the map (its entity's scale is its area) and walls
-        // the same slopes the terrain generator called cliffs.
-        private void ShareWithNavigation()
+        // Navigation fits its grid to the terrain and reads its cliffs on its own (they come from
+        // maxWalkableSlope above); this only warns when there is no Nav Surface to do it.
+        private void CheckNavigation()
         {
-            FlowFieldSurface surface = navSurface != null ? navSurface.GetComponent<FlowFieldSurface>() : null;
-            if (surface == null)
-            {
+            if (navSurface == null || navSurface.GetComponent<FlowFieldSurface>() == null)
                 Log.Warning("SubLevelGenerator: no FlowFieldSurface - enemies won't path on the generated ground");
-                return;
-            }
-            float size = map.Cols * map.CellSize;
-            navSurface.Transform.WorldPosition = terrain.Transform.WorldPosition;
-            navSurface.Transform.Scale = new Vector3(size, 1f, size);
-            surface.MaxWalkableSlope = maxWalkableSlope;
         }
 
         // Unity's ApplyPlayerSlope: the player climbs exactly what enemies can.

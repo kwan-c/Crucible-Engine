@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          1 November 2026
-* \version       1.0
+* \version       1.2
 * \brief
 *                FlowField's cost field, Dijkstra flood and direction pass.
 *
@@ -14,10 +14,14 @@
 *                changes agreed for the port: the corner check (no diagonal
 *                step between two blocked cells), a goal inside a blocked
 *                cell moves to the nearest open one, and several goals can
-*                share one flood.
+*                share one flood. Since 6d-1 it runs on the grid's nodes and
+*                links (layers), so bridges, ramps and drops route.
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       CostAt (the cost rule, shared); UpdateCosts and TouchesFlow
+*    -v1.2       per node, along the grid's links (build step 6d-1); with
+*                only the ground, the same costs and arrows as before
 *
 **************************************************************************/
 #include "FlowField.h"
@@ -35,73 +39,122 @@ namespace Crucible {
         constexpr float kDiagonal = 1.41421356f;    // a diagonal step is sqrt(2) times as long as a straight one
         constexpr float kInvSqrt2 = 0.70710678f;    // makes a diagonal (1, 0, 1) unit length
 
-        // How far (in cells) to look for an open cell when a goal stands in a
+        // How far (in cells) to look for an open node when a goal stands in a
         // blocked one. A player brushing a wall is inside its padding by a cell
         // or two; 8 is plenty, and stops a goal deep in a sealed area from
         // searching the whole map.
         constexpr int kGoalSearchCells = 8;
 
-        // The 8 neighbours, in Jean David's order: right, left, up, down, then
-        // the four diagonals. On a tie the direction pass keeps the first in
-        // this order, so keeping his order keeps his arrows. Indices 4-7 are
-        // the diagonals.
-        constexpr int kStepCol[8] = { 1, -1, 0,  0, 1, -1,  1, -1 };
-        constexpr int kStepRow[8] = { 0,  0, 1, -1, 1,  1, -1, -1 };
+        // The straight direction (index into kNavDirCol/Row) along one axis:
+        // +col 0, -col 1, +row 2, -row 3.
+        int StraightAlongCol(int step) { return step > 0 ? 0 : 1; }
+        int StraightAlongRow(int step) { return step > 0 ? 2 : 3; }
 
     }   // ANONYMOUS NAMESPACE
 
-    bool FlowField::IsOpen(int col, int row) const {
+    bool FlowField::IsOpen(int node) const {
 
-        // Off the grid counts as blocked, the same as in NavGrid.
-        const NavCell cell{ col, row };
-        return m_grid->Contains(cell) && m_cost[static_cast<std::size_t>(m_grid->Index(cell))] != kInfinity;
+        return node >= 0 && m_cost[static_cast<std::size_t>(node)] != kInfinity;
 
     }   // FlowField::IsOpen()
 
+    // A diagonal step from `node` in direction `dir` squeezes past two cells
+    // touching at a corner: both straight steps beside it must be open, or no
+    // body would fit through. Straight steps always pass.
+    bool FlowField::CornerClear(int node, int dir) const {
+
+        if (dir < 4) return true;
+        return IsOpen(m_grid->LinkedNode(node, StraightAlongCol(kNavDirCol[dir])))
+            && IsOpen(m_grid->LinkedNode(node, StraightAlongRow(kNavDirRow[dir])));
+
+    }   // FlowField::CornerClear()
+
+    float FlowField::CostAt(int node) const {
+
+        const NavGrid& grid = *m_grid;
+        if (grid.IsNodeBlocked(node)) return kInfinity;    // never entered
+
+        // Next to a wall straight on (not diagonally) costs extra: no link that
+        // way (the map's edge, a ledge, a cliff face) or a link into a blocked
+        // node. On a grid with only the ground that is exactly "a straight
+        // neighbour cell is blocked or off the grid", as before layers.
+        for (int dir = 0; dir < 4; ++dir) {
+            const int next = grid.LinkedNode(node, dir);
+            if (next < 0 || grid.IsNodeBlocked(next)) return 1.0f + m_wallAdjacencyCost;
+        }
+        return 1.0f;
+
+    }   // FlowField::CostAt()
+
     void FlowField::BuildCostField(const NavGrid& grid, float wallAdjacencyCost) {
 
-        m_grid = &grid;
+        m_grid              = &grid;
+        m_wallAdjacencyCost = wallAdjacencyCost;
 
-        const std::size_t count = static_cast<std::size_t>(grid.Cols()) * static_cast<std::size_t>(grid.Rows());
+        const std::size_t count = static_cast<std::size_t>(grid.NodeCount());
         m_cost.assign(count, 1.0f);
         m_integration.assign(count, kInfinity);    // nothing reached yet
-        m_dirX.assign(count, 0);
-        m_dirZ.assign(count, 0);
+        m_direction.assign(count, -1);
         m_areaMin = { 0, 0 };
         m_areaMax = { -1, -1 };
         m_hasFlow = false;
 
-        for (int row = 0; row < grid.Rows(); ++row) {
-            for (int col = 0; col < grid.Cols(); ++col) {
+        for (int node = 0; node < grid.NodeCount(); ++node) m_cost[static_cast<std::size_t>(node)] = CostAt(node);
 
-                const std::size_t index = static_cast<std::size_t>(grid.Index({ col, row }));
-                if (grid.IsBlocked({ col, row })) {
-                    m_cost[index] = kInfinity;    // never entered
-                    continue;
-                }
-
-                // Touching a blocked cell straight on (not diagonally) costs
-                // extra. IsBlocked counts off-grid as blocked, so the map's
-                // edge pushes routes inwards too.
-                const bool nearWall = grid.IsBlocked({ col + 1, row }) || grid.IsBlocked({ col - 1, row })
-                                   || grid.IsBlocked({ col, row + 1 }) || grid.IsBlocked({ col, row - 1 });
-                if (nearWall) m_cost[index] = 1.0f + wallAdjacencyCost;
-
-            }
-        }
-        
     }   // FlowField::BuildCostField()
+
+    void FlowField::UpdateCosts(const std::vector<int>& changed) {
+
+        if (!m_grid || m_cost.empty()) return;
+        const NavGrid& grid = *m_grid;
+
+        for (const int node : changed) {
+
+            if (node < 0 || static_cast<std::size_t>(node) >= m_cost.size()) continue;   // from an older bake
+            m_cost[static_cast<std::size_t>(node)] = CostAt(node);
+
+            // The nodes of its straight neighbour cells: their "next to a
+            // wall" extra may depend on it (any of them may link to it).
+            const NavCell cell = grid.NodeCell(node);
+            for (int dir = 0; dir < 4; ++dir) {
+                const NavCell next{ cell.col + kNavDirCol[dir], cell.row + kNavDirRow[dir] };
+                for (int layer = 0; layer < grid.LayerCount(next); ++layer) {
+                    const int other = grid.NodeIndex(next, layer);
+                    m_cost[static_cast<std::size_t>(other)] = CostAt(other);
+                }
+            }
+
+        }
+
+    }   // FlowField::UpdateCosts()
+
+    bool FlowField::TouchesFlow(const std::vector<int>& changed) const {
+
+        if (!m_hasFlow || !m_grid) return false;
+
+        // One cell wider than the flooded square: a change just outside it
+        // still alters the cost of the node next to it, inside.
+        for (const int node : changed) {
+            if (node < 0 || node >= m_grid->NodeCount()) continue;
+            const NavCell cell = m_grid->NodeCell(node);
+            if (cell.col >= m_areaMin.col - 1 && cell.col <= m_areaMax.col + 1 &&
+                cell.row >= m_areaMin.row - 1 && cell.row <= m_areaMax.row + 1) return true;
+        }
+        return false;
+
+    }   // FlowField::TouchesFlow()
 
     void FlowField::ResetArea() {
 
-        // Only the last flood's square was ever written, so only it needs
-        // wiping. Everywhere else is still "not reached, no direction".
+        // Only the last flood's square was ever written, so only its nodes
+        // need wiping. Everywhere else is still "not reached, no direction".
         for (int row = m_areaMin.row; row <= m_areaMax.row; ++row) {
             for (int col = m_areaMin.col; col <= m_areaMax.col; ++col) {
-                const std::size_t index = static_cast<std::size_t>(m_grid->Index({ col, row }));
-                m_integration[index] = kInfinity;
-                m_dirX[index]        = 0;
-                m_dirZ[index]        = 0;
+                for (int layer = 0; layer < m_grid->LayerCount({ col, row }); ++layer) {
+                    const std::size_t node = static_cast<std::size_t>(m_grid->NodeIndex({ col, row }, layer));
+                    m_integration[node] = kInfinity;
+                    m_direction[node]   = -1;
+                }
             }
         }
         m_areaMax = { -1, -1 };    // max < min: no area, so a second reset does nothing
@@ -120,8 +173,7 @@ namespace Crucible {
         m_grid = nullptr;
         m_cost.clear();
         m_integration.clear();
-        m_dirX.clear();
-        m_dirZ.clear();
+        m_direction.clear();
         m_areaMin = { 0, 0 };
         m_areaMax = { -1, -1 };
         m_hasFlow = false;
@@ -134,37 +186,46 @@ namespace Crucible {
         if (!m_grid || m_cost.empty() || goals.empty()) return false;
         const NavGrid& grid = *m_grid;
 
-        // 1. The goal cells. Off the grid: pulled onto its edge, so enemies
-        // crowd the nearest edge instead of giving up. Inside a blocked cell
-        // (a player brushing a wall's padding): moved to the nearest open cell
-        // - without this the whole flood would stop and every arrow vanish.
-        std::vector<NavCell> goalCells;
-        goalCells.reserve(goals.size());
+        // 1. The goal nodes: the layer under each goal (on the bridge, the
+        // deck). Off the grid: pulled onto its edge, so enemies crowd the
+        // nearest edge instead of giving up. On a blocked node (a player
+        // brushing a wall's padding): moved to the nearest open node - without
+        // this the whole flood would stop and every arrow vanish.
+        std::vector<int> goalNodes;
+        goalNodes.reserve(goals.size());
         for (const Math::vec3& goal : goals) {
 
             const NavCell cell = grid.ClampToGrid(grid.WorldToCell(goal));
-            if (IsOpen(cell.col, cell.row)) { goalCells.push_back(cell); continue; }
+            const int     here = grid.NodeAt(cell, goal.y);
+            if (IsOpen(here)) { goalNodes.push_back(here); continue; }
 
             // Search squares of growing size around it; within one square take
-            // the open cell closest to the goal, so the pick doesn't depend on
-            // which corner the loop happens to start from.
+            // the open node closest to the goal (in cells, then in height), so
+            // the pick doesn't depend on which corner the loop starts from.
             for (int ring = 1; ring <= kGoalSearchCells; ++ring) {
 
-                NavCell best{};
-                int     bestDistance = -1;
+                int   best = -1;
+                int   bestDistance = -1;
+                float bestRise     = 0.0f;
                 for (int row = cell.row - ring; row <= cell.row + ring; ++row) {
                     for (int col = cell.col - ring; col <= cell.col + ring; ++col) {
-                        if (!IsOpen(col, row)) continue;
-                        const int distance = (col - cell.col) * (col - cell.col) + (row - cell.row) * (row - cell.row);
-                        if (bestDistance < 0 || distance < bestDistance) { best = { col, row }; bestDistance = distance; }
+                        for (int layer = 0; layer < grid.LayerCount({ col, row }); ++layer) {
+                            const int node = grid.NodeIndex({ col, row }, layer);
+                            if (!IsOpen(node)) continue;
+                            const int   distance = (col - cell.col) * (col - cell.col) + (row - cell.row) * (row - cell.row);
+                            const float rise     = std::abs(grid.NodeHeight(node) - goal.y);
+                            if (best < 0 || distance < bestDistance || (distance == bestDistance && rise < bestRise)) {
+                                best = node; bestDistance = distance; bestRise = rise;
+                            }
+                        }
                     }
                 }
-                if (bestDistance >= 0) { goalCells.push_back(best); break; }
+                if (best >= 0) { goalNodes.push_back(best); break; }
 
             }
 
         }
-        if (goalCells.empty()) return false;
+        if (goalNodes.empty()) return false;
 
         // 2. The area to flood: a square of +-radius cells round the goals,
         // clamped to the grid (several goals: the box round all their squares).
@@ -173,6 +234,10 @@ namespace Crucible {
         const bool wholeGrid   = !(floodRadius > 0.0f);
         const int  radiusCells = wholeGrid ? 0 : static_cast<int>(std::ceil(floodRadius / grid.CellSize()));
         const int  radiusSq    = radiusCells * radiusCells;
+
+        std::vector<NavCell> goalCells;
+        goalCells.reserve(goalNodes.size());
+        for (const int node : goalNodes) goalCells.push_back(grid.NodeCell(node));
 
         NavCell areaMin{ grid.Cols() - 1, grid.Rows() - 1 };
         NavCell areaMax{ 0, 0 };
@@ -198,21 +263,22 @@ namespace Crucible {
             return false;
         };
 
-        // 3. The integration field: Dijkstra outward from every goal at once.
+        // 3. The integration field: Dijkstra outward from every goal at once,
+        // backwards along the links - from a node, every neighbour node that
+        // links TO it (an enemy there can step, walk or drop here).
         //
         // std::push_heap / pop_heap keep m_heap as a binary heap. They build a
         // MAX-heap by default; comparing with > turns it into the MIN-heap
-        // Dijkstra needs (the nearest cell on top). A cell can be pushed more
+        // Dijkstra needs (the nearest node on top). A node can be pushed more
         // than once as cheaper routes to it turn up; the older, dearer copies
         // are skipped when popped ("lazy deletion") - cheaper than finding and
         // fixing an entry inside the heap.
         const auto further = [](const HeapEntry& a, const HeapEntry& b) { return a.distance > b.distance; };
 
         m_heap.clear();
-        for (const NavCell& goal : goalCells) {
-            const int index = grid.Index(goal);
-            m_integration[static_cast<std::size_t>(index)] = 0.0f;
-            m_heap.push_back({ 0.0f, index });
+        for (const int goal : goalNodes) {
+            m_integration[static_cast<std::size_t>(goal)] = 0.0f;
+            m_heap.push_back({ 0.0f, goal });
             std::push_heap(m_heap.begin(), m_heap.end(), further);
         }
 
@@ -223,67 +289,66 @@ namespace Crucible {
             m_heap.pop_back();
             if (top.distance > m_integration[static_cast<std::size_t>(top.index)]) continue;    // a stale copy
 
-            const int col = top.index % grid.Cols();
-            const int row = top.index / grid.Cols();
+            const NavCell cell = grid.NodeCell(top.index);
+            for (int k = 0; k < kNavDirections; ++k) {
 
-            for (int k = 0; k < 8; ++k) {
-
-                const int nc = col + kStepCol[k];
-                const int nr = row + kStepRow[k];
-
-                // Inside the area (which is inside the grid), open, and for a
-                // diagonal both cells beside it open too: the corner check, so
-                // the flood never squeezes between two blocks touching at a
-                // corner, where no body would fit.
+                const int nc = cell.col + kNavDirCol[k];
+                const int nr = cell.row + kNavDirRow[k];
                 if (nc < areaMin.col || nc > areaMax.col || nr < areaMin.row || nr > areaMax.row) continue;
-                if (!IsOpen(nc, nr)) continue;
-                const bool diagonal = k >= 4;
-                if (diagonal && (!IsOpen(nc, row) || !IsOpen(col, nr))) continue;
                 if (!insideRadius(nc, nr)) continue;
 
-                // The neighbour's own cost multiplies the step, so entering a
-                // cell next to a wall costs 5 (or 5 * sqrt 2 diagonally).
-                const std::size_t next     = static_cast<std::size_t>(grid.Index({ nc, nr }));
-                const float       distance = top.distance + (diagonal ? kDiagonal : 1.0f) * m_cost[next];
-                if (distance < m_integration[next]) {
-                    m_integration[next] = distance;
-                    m_heap.push_back({ distance, static_cast<int>(next) });
-                    std::push_heap(m_heap.begin(), m_heap.end(), further);
+                // Every layer of that cell whose link back this way lands here.
+                const int back = kNavOpposite[k];
+                for (int layer = 0; layer < grid.LayerCount({ nc, nr }); ++layer) {
+
+                    const int other = grid.NodeIndex({ nc, nr }, layer);
+                    if (!IsOpen(other) || grid.LinkedNode(other, back) != top.index) continue;
+
+                    // The corner check, for the step `other` would take: the
+                    // flood never squeezes between two blocks touching at a
+                    // corner, where no body would fit.
+                    if (!CornerClear(other, back)) continue;
+
+                    // The node's own cost multiplies the step, so entering one
+                    // next to a wall costs 5 (or 5 * sqrt 2 diagonally).
+                    const std::size_t next     = static_cast<std::size_t>(other);
+                    const float       distance = top.distance + (k >= 4 ? kDiagonal : 1.0f) * m_cost[next];
+                    if (distance < m_integration[next]) {
+                        m_integration[next] = distance;
+                        m_heap.push_back({ distance, other });
+                        std::push_heap(m_heap.begin(), m_heap.end(), further);
+                    }
+
                 }
 
             }
 
         }
 
-        // 4. The direction field: every reached cell points at its neighbour
-        // with the lowest integration value, if that is strictly lower than
-        // its own. Blocked and unreached neighbours are infinity, so they never
-        // win, and a goal's own cell has nothing lower, so it stays (0, 0).
+        // 4. The direction field: every reached node points along its link
+        // to the neighbour with the lowest integration value, if that is
+        // strictly lower than its own. Unreached ones are infinity, so they
+        // never win, and a goal has nothing lower, so it keeps no direction.
+        // Ties keep the first in Jean David's direction order.
         for (int row = areaMin.row; row <= areaMax.row; ++row) {
             for (int col = areaMin.col; col <= areaMax.col; ++col) {
+                for (int layer = 0; layer < grid.LayerCount({ col, row }); ++layer) {
 
-                const std::size_t index = static_cast<std::size_t>(grid.Index({ col, row }));
-                float best  = m_integration[index];
-                int   bestK = -1;
-                if (best == kInfinity) continue;
+                    const int         node  = grid.NodeIndex({ col, row }, layer);
+                    const std::size_t index = static_cast<std::size_t>(node);
+                    float best  = m_integration[index];
+                    int   bestK = -1;
+                    if (best == kInfinity) continue;
 
-                for (int k = 0; k < 8; ++k) {
-
-                    const int nc = col + kStepCol[k];
-                    const int nr = row + kStepRow[k];
-                    if (!grid.Contains({ nc, nr })) continue;
-                    if (k >= 4 && (!IsOpen(nc, row) || !IsOpen(col, nr))) continue;   // same corner check
-
-                    const float value = m_integration[static_cast<std::size_t>(grid.Index({ nc, nr }))];
-                    if (value < best) { best = value; bestK = k; }
+                    for (int k = 0; k < kNavDirections; ++k) {
+                        const int next = grid.LinkedNode(node, k);
+                        if (next < 0 || !CornerClear(node, k)) continue;
+                        const float value = m_integration[static_cast<std::size_t>(next)];
+                        if (value < best) { best = value; bestK = k; }
+                    }
+                    if (bestK >= 0) m_direction[index] = static_cast<std::int8_t>(bestK);
 
                 }
-
-                if (bestK >= 0) {
-                    m_dirX[index] = static_cast<std::int8_t>(kStepCol[bestK]);
-                    m_dirZ[index] = static_cast<std::int8_t>(kStepRow[bestK]);
-                }
-
             }
         }
 
@@ -297,23 +362,21 @@ namespace Crucible {
     Math::vec3 FlowField::SampleDirection(const Math::vec3& position) const {
 
         if (!m_hasFlow) return Math::vec3(0.0f);
-        return DirectionAt(m_grid->WorldToCell(position));
+        return DirectionAtNode(m_grid->NodeAt(position));
 
     }   // FlowField::SampleDirection()
 
-    Math::vec3 FlowField::DirectionAt(const NavCell& cell) const {
+    Math::vec3 FlowField::DirectionAtNode(int node) const {
 
-        if (!m_hasFlow || !m_grid->Contains(cell)) return Math::vec3(0.0f);
+        if (!m_hasFlow || node < 0 || static_cast<std::size_t>(node) >= m_direction.size()) return Math::vec3(0.0f);
 
-        const std::size_t index = static_cast<std::size_t>(m_grid->Index(cell));
-        const int         x     = m_dirX[index];
-        const int         z     = m_dirZ[index];
-        if (x == 0 && z == 0) return Math::vec3(0.0f);
+        const int k = m_direction[static_cast<std::size_t>(node)];
+        if (k < 0) return Math::vec3(0.0f);
 
         // Straight steps are already unit length; diagonals need scaling down.
-        const Math::vec3 direction(static_cast<float>(x), 0.0f, static_cast<float>(z));
-        return (x != 0 && z != 0) ? direction * kInvSqrt2 : direction;
+        const Math::vec3 direction(static_cast<float>(kNavDirCol[k]), 0.0f, static_cast<float>(kNavDirRow[k]));
+        return k >= 4 ? direction * kInvSqrt2 : direction;
 
-    }   // FlowField::DirectionAt()
+    }   // FlowField::DirectionAtNode()
 
 }   // NAMESPACE CRUCIBLE

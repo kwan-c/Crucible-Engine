@@ -247,11 +247,36 @@ returns false when the entity has no AnimatedModel controller with that paramete
 - `FlowFieldAgent`: `MoveTo(point)`, `Arrive(entity)` (chase and stop at StoppingDistance),
   `FollowField()`, `Stop()`, `HasArrived`, `RemainingDistance`, `Velocity`, and every setting.
   The agent moves its own entity.
-- `FlowFieldSurface`: `FloodRadius`, `RebuildDistance`, and `MaxWalkableSlope` (degrees, read by the next
-  bake: set it before `Navigation.Rebake()`, and give the player's `CharacterController.SlopeLimit` the same value).
+- `FlowFieldSurface`: `FloodRadius`, `RebuildDistance`. What counts as too steep comes from the terrain
+  generator (`SubLevelGenerator.maxWalkableSlope`, which also sets the player's `SlopeLimit`).
 - `Navigation`: `IsWalkable(pos)`, `IsPathClear(from, to)`, `Rebake()` (after changing the ground
-  mid-Play; it bakes once physics has the new bodies), `IsBaked`, and `BakeCount` (read it before
+  mid-Play; it bakes on the next frame), `IsBaked`, and `BakeCount` (read it before
   `Rebake()`: when it changes, the new grid is in).
+- What blocks enemies: only colliders on entities tagged `StaticObstacle` or `DynamicObstacle`
+  (the tag on the entity that has the collider). Untagged colliders are ignored by navigation:
+  enemies still bump into them but don't path round them. `StaticObstacle` is stamped once at
+  bake (moving one needs a rebake); `DynamicObstacle` is re-checked every
+  `dynamicUpdateInterval` (Nav Surface, 0.25 s) while Playing, and its blocked cells follow it.
+  Nav Surface > **Auto-tag obstacles** (Edit mode) tags untagged colliders in the height band
+  (Dynamic if they have a RigidBody) and fixes StaticObstacles with a RigidBody; one Ctrl+Z undoes it.
+- Layers (bridges, ramps, platforms): tag a **Box** collider `Walkable` and its top face becomes a
+  walkable surface above the ground, if an enemy fits on it (`agentHeight` of headroom); up to
+  `maxLayersPerCell` (Nav Surface, 4) per cell. Gizmos > Nav grid draws them as green tiles. Tag
+  ramps `Walkable` before using Auto-tag, or it may tag them as obstacles. Layers link to their
+  neighbours: along the same surface always, up or down within `stepHeight` (two-way), and down a
+  drop of up to `maxDropHeight` (Nav Surface, 3 m; one-way). Gizmos draws climbs between surfaces
+  as white lines and drops as magenta arrows. The flow field follows the links: its arrows run up
+  ramps, along decks and off drops, on each layer at its own height. Enemies read the arrow of the
+  layer at their feet, and only push/align with enemies on their own layer; `Navigation.IsWalkable`
+  and `IsPathClear` go by the layer under the position and follow the links (no path up a ledge;
+  a path must end on the target's layer). `Arrive` at a player walks straight only while that line
+  can be walked; otherwise it follows the flow field (up the ramp to a player on a bridge).
+  `MoveTo` is always a straight line (the field only leads to players). Keep `Walkable` ramps at
+  35 degrees or less (the generator's slope): physics-driven golems steer only sideways and rely on
+  physics to carry them up. A physics-driven enemy counts as on the ground when physics reports it
+  touching walkable ground below it (contacts, any body shape); off the ground it doesn't steer. The generated terrain's cliffs come
+  from the generator itself, in Edit and Play; scenes without terrain have a flat floor at the
+  Nav Surface's height.
 - `StateGraphAgent`: `CurrentState`, `Set/GetVariableValue<T>`. Behaviour-graph nodes live in
   `ManagedScripts/Runtime/AI`; templates are in `ManagedScripts/Templates`.
 
@@ -373,7 +398,7 @@ Component blocks (copy them as they are; every key shown is expected):
                  "volume": 1.0, "pitch": 1.0, "spatialBlend": 0.0, "minDistance": 1.0, "maxDistance": 30.0, "rolloffMode": "Linear" },
 "AnimatedModel": { "controllerAsset": <guid or 0>, "clip": 0, "speed": 1.0, "loop": true, "previewInEditor": false, "playOnStart": true },
 "SocketAttachment": { "enabled": true, "socketName": "ArmL", "modelAsset": <parent's model guid>, "node": 9 },
-"FlowFieldSurface": { "cellSize": 2.0, "bodyRadiusPadding": 0.6, "stepHeight": 0.3, "shoulderHeight": 1.6,
+"FlowFieldSurface": { "cellSize": 2.0, "bodyRadiusPadding": 0.6, "stepHeight": 0.3, "agentHeight": 1.6,
                       "floodRadius": 100.0, "rebuildDistance": 3.0, "wallAdjacencyCost": 4.0 },
 "FlowFieldAgent": { "speed": 6.0, "acceleration": 30.0, "angularSpeed": 240.0, "baseOffset": 0.0, "startWith": "Nothing",
                     "stoppingDistance": 2.0, "slowingDistance": 5.0, "neighbourRadius": 10.0, "separationRadius": 1.5,
