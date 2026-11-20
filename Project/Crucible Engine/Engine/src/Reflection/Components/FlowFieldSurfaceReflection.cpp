@@ -30,6 +30,7 @@
     - 1.4 (20 November 2026, Jean David): shoulderHeight renamed agentHeight.
       An old "shoulderHeight" key is skipped like any unknown key, so the
       value loads as the default (1.6 m) - what every scene had.
+    - 1.5 (20 November 2026, Jean David): maxLayersPerCell (default 4).
   \copyright
     Copyright (C) 2026 DigiPen Institute of Technology.
 *************************************************************************/
@@ -47,6 +48,7 @@ RTTR_REGISTRATION
         .property("bodyRadiusPadding", &FlowFieldSurface::m_bodyRadiusPadding)
         .property("stepHeight",        &FlowFieldSurface::m_stepHeight)
         .property("agentHeight",       &FlowFieldSurface::m_agentHeight)
+        .property("maxLayersPerCell",  &FlowFieldSurface::m_maxLayersPerCell)
         .property("floodRadius",       &FlowFieldSurface::m_floodRadius)
         .property("rebuildDistance",   &FlowFieldSurface::m_rebuildDistance)
         .property("wallAdjacencyCost", &FlowFieldSurface::m_wallAdjacencyCost)

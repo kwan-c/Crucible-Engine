@@ -3,8 +3,13 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         See NavDebugDraw.h.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       raised layers (Walkable tops) drawn as green tiles at their
+*                own height; blocked ground drawn at its node's height
 *
 **************************************************************************/
 #include "NavDebugDraw.h"
@@ -18,6 +23,20 @@ namespace Crucible::NavDebugDraw {
 
         // Lines are drawn this far above the ground so the floor doesn't hide them.
         constexpr float kDrawLift = 0.05f;
+
+        // A flat square tile, `inset` from the centre each way.
+        void Square(const Math::vec3& centre, float inset, const DebugStyle& style) {
+
+            const Math::vec3 p0(centre.x - inset, centre.y, centre.z - inset);
+            const Math::vec3 p1(centre.x + inset, centre.y, centre.z - inset);
+            const Math::vec3 p2(centre.x + inset, centre.y, centre.z + inset);
+            const Math::vec3 p3(centre.x - inset, centre.y, centre.z + inset);
+            DebugDraw::Line(p0, p1, style);
+            DebugDraw::Line(p1, p2, style);
+            DebugDraw::Line(p2, p3, style);
+            DebugDraw::Line(p3, p0, style);
+
+        }   // Square()
 
     }   // ANONYMOUS NAMESPACE
 
@@ -46,6 +65,7 @@ namespace Crucible::NavDebugDraw {
 
         const DebugStyle cells  { .color = { 0.15f, 0.4f, 0.95f, 1.0f }, .depthTest = false, .category = DebugCategory::NavGrid };
         const DebugStyle blocked{ .color = { 1.0f, 0.25f, 0.2f, 1.0f },  .depthTest = false, .category = DebugCategory::NavGrid };
+        const DebugStyle raised { .color = { 0.3f, 0.95f, 0.45f, 1.0f }, .depthTest = false, .category = DebugCategory::NavGrid };
 
         const float cellSize = grid.CellSize();
         const float half     = cellSize * 0.5f;
@@ -70,24 +90,34 @@ namespace Crucible::NavDebugDraw {
             DebugDraw::Line({ minX, y, z }, { maxX, y, z }, cells);
         }
 
-        // Blocked cells, drawn a little smaller than the cell (80%) so a row of
-        // them reads as separate tiles rather than one solid smear.
+        // Blocked cells and raised layers, drawn a little smaller than the
+        // cell (80%) so a row of them reads as separate tiles rather than one
+        // solid smear.
         const float inset = cellSize * 0.4f;
         for (int row = 0; row < grid.Rows(); ++row) {
             for (int col = 0; col < grid.Cols(); ++col) {
 
-                if (!grid.IsBlocked({ col, row })) continue;
+                const NavCell cell{ col, row };
+                const int     groundNode = grid.GroundNode(cell);
 
-                Math::vec3 centre = grid.CellToWorldCenter({ col, row });
-                centre.y = ground.GroundHeight(centre) + kDrawLift;
-                const Math::vec3 p0(centre.x - inset, centre.y, centre.z - inset);
-                const Math::vec3 p1(centre.x + inset, centre.y, centre.z - inset);
-                const Math::vec3 p2(centre.x + inset, centre.y, centre.z + inset);
-                const Math::vec3 p3(centre.x - inset, centre.y, centre.z + inset);
-                DebugDraw::Line(p0, p1, blocked);
-                DebugDraw::Line(p1, p2, blocked);
-                DebugDraw::Line(p2, p3, blocked);
-                DebugDraw::Line(p3, p0, blocked);
+                // The ground: red where it is blocked, or where it is not a
+                // layer at all (a Walkable box sits on it).
+                if (grid.IsBlocked(cell)) {
+                    Math::vec3 centre = grid.CellToWorldCenter(cell);
+                    centre.y = (groundNode >= 0 ? grid.NodeHeight(groundNode) : ground.GroundHeight(centre)) + kDrawLift;
+                    Square(centre, inset, blocked);
+                }
+
+                // Raised layers (Walkable tops): green where open, red where
+                // blocked, at their own height, so a bridge reads as a
+                // second floor of tiles over the grid.
+                for (int layer = 0; layer < grid.LayerCount(cell); ++layer) {
+                    const int node = grid.NodeIndex(cell, layer);
+                    if (node == groundNode) continue;
+                    Math::vec3 centre = grid.CellToWorldCenter(cell);
+                    centre.y = grid.NodeHeight(node) + kDrawLift;
+                    Square(centre, inset, grid.IsNodeBlocked(node) ? blocked : raised);
+                }
 
             }
         }

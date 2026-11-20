@@ -7,12 +7,13 @@
 *                v1.6: baking and debug drawing split out;
 *                v1.7: goals and agent movement split out;
 *                v1.9: moving DynamicObstacles re-stamped;
-*                v1.10: obstacle tag suggestions, bake warning),
+*                v1.10: obstacle tag suggestions, bake warning;
+*                v1.11: Walkable boxes read for layers),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.10
+* \version       1.11
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -87,6 +88,8 @@
 *    -v1.10      build step 4d: SuggestObstacleTags (the Inspector's
 *                Auto-tag obstacles button); the bake warns about
 *                StaticObstacles that have a RigidBody
+*    -v1.11      build step 6b: box colliders tagged Walkable are read at
+*                bake and handed to the grid as layers
 *
 **************************************************************************/
 #pragma once
@@ -119,6 +122,10 @@ namespace Crucible {
     // Untagged colliders are invisible to navigation.
     inline constexpr std::string_view kStaticObstacleTag  = "StaticObstacle";
     inline constexpr std::string_view kDynamicObstacleTag = "DynamicObstacle";
+
+    // The tag that makes a box collider's top face a walkable layer (a bridge
+    // deck, a ramp, a platform). Read at bake; it does not move afterwards.
+    inline constexpr std::string_view kWalkableTag = "Walkable";
 
     // One tag the Inspector's "Auto-tag obstacles" button would give
     // (ECSNavigationSystem::SuggestObstacleTags).
@@ -290,6 +297,7 @@ namespace Crucible {
         NavBaker                 m_baker;
 
         std::vector<NavObstacle> m_obstacles;        // the tagged obstacles read for a bake; kept so a re-bake reuses its memory
+        std::vector<NavWalkable> m_walkables;        // the Walkable boxes read for a bake
         bool                     m_rebakeRequested = false;  // RequestBake() since the last Update: bake on the next one
         bool                     m_bakeNextFrame   = false;  // a bake was just asked for: wait a frame so WorldTransforms catch up
         std::uint32_t            m_bakeCount = 0;            // successful bakes so far (BakeCount)

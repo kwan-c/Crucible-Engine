@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NavGrid: a flat 2D grid over the map where every cell is
 *                open or blocked. The bottom layer of enemy navigation.
@@ -35,10 +35,23 @@
 *                bridge deck. Each surface is a NODE; a cell's nodes are
 *                stored together, lowest first (Recast's compact heightfield:
 *                per cell a start index and a count). The static flag and the
-*                dynamic count belong to nodes, not cells. Until the layered
-*                bake (6b) every cell has one node, its ground, and node i is
-*                cell i - which is what the cell-based callers (the flow
-*                field, the debug view) rely on until 6d.
+*                dynamic count belong to nodes, not cells.
+*
+*                Where layers come from: the ground (the terrain, or the flat
+*                plane), plus the top face of every box collider tagged
+*                Walkable (a bridge deck, a ramp, a platform), sampled at
+*                each cell's centre - no physics. A surface is a layer only
+*                if an enemy fits on it: at least agentHeight of headroom
+*                below the next Walkable box above it. So the ground under a
+*                platform resting on it is not a layer, and neither is a
+*                tunnel floor too low to stand in.
+*
+*                Until the layered flow field (6d), the cell-level questions
+*                (IsBlocked, the flow field, obstacles, terrain walls) are
+*                about each cell's GROUND layer; a cell whose ground was
+*                dropped (a platform sits on it) counts as blocked there. The
+*                upper layers are baked and drawn, but nothing walks on them
+*                yet.
 *
 * \history
 *    -v1.0       first version
@@ -51,6 +64,11 @@
 *                height, headroom, static flag and dynamic count. Today every
 *                cell has exactly one layer (the ground), so node i is cell
 *                i's ground and everything blocks the same cells as before
+*    -v1.4       build step 6b: layers from Walkable boxes (their top faces),
+*                kept when they have agentHeight of headroom, at most
+*                maxLayersPerCell per cell; the ground layer is dropped where
+*                a Walkable box sits on it. GroundNode(); the cell-level
+*                questions read the ground layer
 *
 **************************************************************************/
 #pragma once
@@ -89,6 +107,16 @@ namespace Crucible {
 
     };  // NAVOBSTACLE STRUCT
 
+    // A box collider tagged Walkable: its top face is a walkable surface. The
+    // shape's local box (centre, half size), placed by the entity's world matrix.
+    struct NavWalkable {
+
+        Math::mat4 world  = Math::mat4(1.0f);
+        Math::vec3 centre = Math::vec3(0.0f);
+        Math::vec3 half   = Math::vec3(0.5f);
+
+    };  // NAVWALKABLE STRUCT
+
     // The bake's inputs. Defaults are Jean David's port baseline; later these
     // become FlowFieldSurface's Inspector fields.
     struct NavGridSettings {
@@ -99,7 +127,8 @@ namespace Crucible {
         float      cellSize          = 2.0f;              // 500 m at 2 m = 62,500 cells
         float      bodyRadiusPadding = 0.6f;              // the enemy's body radius: a cell is open only if a body fits
         float      stepHeight        = 0.3f;              // obstacles entirely below ground + this are stepped over
-        float      agentHeight       = 1.6f;              // the enemies' height: obstacles entirely above ground + this are walked under
+        float      agentHeight       = 1.6f;              // the enemies' height: obstacles entirely above ground + this are walked under; also the headroom a layer needs
+        int        maxLayersPerCell  = 4;                 // walkable surfaces kept per cell (the lowest ones), ground included
 
     };  // NAVGRIDSETTINGS STRUCT
 
@@ -132,10 +161,15 @@ namespace Crucible {
             \param terrain
             Wall test and ground height. FlatNavTerrain when there is no terrain.
 
+            \param walkables
+            Box colliders tagged Walkable: each one's top face is a layer
+            where an enemy fits on it (see the file's details).
+
             \return
             False if the settings make no sense; the grid is then left unbaked.
         */
-        bool Bake(const NavGridSettings& settings, const std::vector<NavObstacle>& obstacles, const NavTerrain& terrain);
+        bool Bake(const NavGridSettings& settings, const std::vector<NavObstacle>& obstacles, const NavTerrain& terrain,
+                  const std::vector<NavWalkable>& walkables = {});
 
         bool  IsBaked()  const { return m_baked; }
         int   Cols()     const { return m_cols; }
@@ -145,7 +179,8 @@ namespace Crucible {
         bool  Contains(const NavCell& cell) const { return cell.col >= 0 && cell.row >= 0 && cell.col < m_cols && cell.row < m_rows; }
         int   Index(const NavCell& cell)    const { return cell.row * m_cols + cell.col; }   // only valid when Contains(cell)
 
-        // Out of range, or not baked yet, counts as blocked.
+        // The cell's ground layer is blocked - or it has none (a Walkable box
+        // sits on it). Out of range, or not baked yet, counts as blocked.
         bool  IsBlocked(const NavCell& cell) const;
         bool  IsBlockedWorld(const Math::vec3& position) const { return IsBlocked(WorldToCell(position)); }
 
@@ -166,6 +201,10 @@ namespace Crucible {
         // The node of a cell's layer, counted from the lowest (0); -1 if there is none.
         int   NodeIndex(const NavCell& cell, int layer) const;
 
+        // The node of the cell's ground (terrain or flat floor); -1 if the
+        // ground there is not a layer (a Walkable box sits on it) or off the grid.
+        int   GroundNode(const NavCell& cell) const;
+
         int     NodeCount()                const { return static_cast<int>(m_nodeCell.size()); }
         NavCell NodeCell(int node)         const { return { m_nodeCell[static_cast<std::size_t>(node)] % m_cols,
                                                             m_nodeCell[static_cast<std::size_t>(node)] / m_cols }; }
@@ -179,8 +218,8 @@ namespace Crucible {
             \brief
             The nodes an obstacle blocks: its box grown by bodyRadiusPadding,
             if it reaches into the height band [ground + stepHeight,
-            ground + agentHeight] (ground under its centre). Today that is
-            each covered cell's ground layer.
+            ground + agentHeight] (ground under its centre). Until 6d that
+            is each covered cell's ground layer (where it has one).
 
             \param cells
             Cleared, then filled with the node indices. Empty when it is
@@ -207,6 +246,7 @@ namespace Crucible {
     private:
 
         bool IsBlockedIndex(std::size_t index) const { return m_static[index] != 0 || m_dynamic[index] != 0; }
+        void BuildLayers(const NavTerrain& terrain, const std::vector<NavWalkable>& walkables);
 
         NavGridSettings           m_settings;
         int                       m_cols    = 0;
@@ -216,6 +256,7 @@ namespace Crucible {
         // Per cell: where its nodes start, and how many (lowest layer first).
         std::vector<int>           m_layerStart;
         std::vector<std::uint8_t>  m_layerCount;
+        std::vector<int>           m_groundNode;    // its ground layer's node, or -1
 
         // Per node.
         std::vector<int>           m_nodeCell;      // the cell it is in (Index())

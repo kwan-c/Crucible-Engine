@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NavDebugDraw: the navigation overlay - the surface's
 *                outline, the grid's cells and blocked cells, and the flow
@@ -25,6 +25,7 @@
 * \history
 *    -v1.0       first version (moved out of ECSNavigationSystem, no
 *                behaviour change)
+*    -v1.1       raised layers drawn in green at their own height
 *
 **************************************************************************/
 #pragma once
@@ -45,7 +46,8 @@ namespace Crucible::NavDebugDraw {
     void Outline(const NavArea& area);
 
     // The cell lines in blue (not grey, which the editor's own world grid
-    // uses), and each blocked cell as a red square just above the ground.
+    // uses), each blocked cell as a red square just above the ground, and
+    // each raised layer (a Walkable top) as a green square at its height.
     void Grid(const NavGrid& grid, const NavTerrain& ground);
 
     // One yellow arrow per cell that has a direction, pointing the way an

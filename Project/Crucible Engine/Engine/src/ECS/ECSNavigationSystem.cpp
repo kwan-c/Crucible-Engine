@@ -8,12 +8,13 @@
 *                v1.6: baking and debug drawing split out;
 *                v1.7: goals and agent movement split out;
 *                v1.9: moving DynamicObstacles re-stamped;
-*                v1.10: obstacle tag suggestions, bake warning),
+*                v1.10: obstacle tag suggestions, bake warning;
+*                v1.11: Walkable boxes read for layers),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.10
+* \version       1.11
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -86,6 +87,9 @@
 *                Auto-tag obstacles button; the bake warns once about
 *                StaticObstacles that have a RigidBody (their cells would
 *                not follow them)
+*    -v1.11      Build step 6b: the bake reads box colliders tagged Walkable
+*                into NavBakeInput::walkables (and maxLayersPerCell); other
+*                shapes tagged Walkable are named in a warning
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
@@ -392,18 +396,27 @@ namespace Crucible {
         collider) is ground, never an obstacle.
 
         \param dynamicOnly
-        False (a bake): every obstacle into m_obstacles, and the dynamic ones
-        also into m_dynamicNow with their entities. True (a re-check): only
+        False (a bake): every obstacle into m_obstacles, the dynamic ones
+        also into m_dynamicNow with their entities, and the box colliders
+        tagged Walkable into m_walkables. True (a re-check): only
         m_dynamicNow.
     */
     void ECSNavigationSystem::ReadObstacles(World& world, bool dynamicOnly) {
 
-        if (!dynamicOnly) m_obstacles.clear();
+        if (!dynamicOnly) { m_obstacles.clear(); m_walkables.clear(); }
         m_dynamicNow.clear();
         std::vector<Entity> staticWithBody;   // a bake's warning: StaticObstacles something can move
+        std::vector<Entity> notBoxes;         // a bake's warning: Walkable on a shape with no top face
         world.CreateQuery<const Collider, const WorldTransform>()
             .ForEach([&](Entity entity, const Collider& collider, const WorldTransform& transform) {
                 if (collider.m_isTrigger || !transform.valid || collider.m_type == ShapeType::HeightField) return;
+
+                // Walkable: a layer, not an obstacle. Only boxes have a top face.
+                if (!dynamicOnly && world.CompareTag(entity, kWalkableTag)) {
+                    if (collider.m_type == ShapeType::Box) m_walkables.push_back({ transform.matrix, collider.m_center, collider.m_size * 0.5f });
+                    else                                   notBoxes.push_back(entity);
+                    return;
+                }
                 const bool isStatic  = !dynamicOnly && world.CompareTag(entity, kStaticObstacleTag);
                 const bool isDynamic = !isStatic && world.CompareTag(entity, kDynamicObstacleTag);
                 if (!isStatic && !isDynamic) return;
@@ -418,6 +431,12 @@ namespace Crucible {
         // it, enemies keep routing round where it was. Say so once per bake,
         // naming a few. (A DynamicObstacle with no RigidBody is fine: a
         // script may move its Transform.)
+        if (!notBoxes.empty()) {
+            std::string names;
+            for (std::size_t i = 0; i < notBoxes.size() && i < 5; ++i) names += (i ? ", " : "") + NameOf(world, notBoxes[i]);
+            if (notBoxes.size() > 5) names += ", ...";
+            CRU_WARN("Navigation: {} Walkable collider(s) are not boxes ({}) - only a Box collider's top face makes a layer", notBoxes.size(), names);
+        }
         if (!staticWithBody.empty()) {
             std::string names;
             for (std::size_t i = 0; i < staticWithBody.size() && i < 5; ++i) names += (i ? ", " : "") + NameOf(world, staticWithBody[i]);
@@ -520,6 +539,7 @@ namespace Crucible {
                 input.bodyRadiusPadding = found.m_bodyRadiusPadding;
                 input.stepHeight        = found.m_stepHeight;
                 input.agentHeight       = found.m_agentHeight;
+                input.maxLayersPerCell  = found.m_maxLayersPerCell;
                 input.wallAdjacencyCost = found.m_wallAdjacencyCost;
             });
 
@@ -551,7 +571,9 @@ namespace Crucible {
 
         // 3. The obstacles (ReadObstacles): tagged StaticObstacle or
         // DynamicObstacle; the dynamic ones are also kept with their entities.
+        // And the Walkable boxes, whose tops are layers.
         ReadObstacles(world, false);
+        input.walkables = m_walkables;
 
         // 4. The bake: area (fitted to the terrain if there is one), ground,
         // grid and the flow field's cost field.

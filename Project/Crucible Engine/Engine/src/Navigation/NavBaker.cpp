@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         See NavBaker.h.
 *
 **************************************************************************/
@@ -73,9 +73,10 @@ namespace Crucible {
         settings.bodyRadiusPadding = input.bodyRadiusPadding;
         settings.stepHeight        = input.stepHeight;
         settings.agentHeight       = input.agentHeight;
+        settings.maxLayersPerCell  = input.maxLayersPerCell;
 
         // The bake itself. NavGrid logs the result, or why it failed.
-        if (!grid.Bake(settings, obstacles, *m_terrain)) {
+        if (!grid.Bake(settings, obstacles, *m_terrain, input.walkables)) {
             field.Clear();
             return false;
         }

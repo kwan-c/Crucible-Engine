@@ -6,6 +6,7 @@
     "Enemy",
     "StaticObstacle",
     "DynamicObstacle",
+    "Walkable",
     "Wall",
     "Pickup"
   ]

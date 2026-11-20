@@ -258,7 +258,12 @@ returns false when the entity has no AnimatedModel controller with that paramete
   bake (moving one needs a rebake); `DynamicObstacle` is re-checked every
   `dynamicUpdateInterval` (Nav Surface, 0.25 s) while Playing, and its blocked cells follow it.
   Nav Surface > **Auto-tag obstacles** (Edit mode) tags untagged colliders in the height band
-  (Dynamic if they have a RigidBody) and fixes StaticObstacles with a RigidBody; one Ctrl+Z undoes it. The generated terrain's cliffs come
+  (Dynamic if they have a RigidBody) and fixes StaticObstacles with a RigidBody; one Ctrl+Z undoes it.
+- Layers (bridges, ramps, platforms): tag a **Box** collider `Walkable` and its top face becomes a
+  walkable surface above the ground, if an enemy fits on it (`agentHeight` of headroom); up to
+  `maxLayersPerCell` (Nav Surface, 4) per cell. Gizmos > Nav grid draws them as green tiles. Tag
+  ramps `Walkable` before using Auto-tag, or it may tag them as obstacles. (Enemies start using
+  layers in build step 6d.) The generated terrain's cliffs come
   from the generator itself, in Edit and Play; scenes without terrain have a flat floor at the
   Nav Surface's height.
 - `StateGraphAgent`: `CurrentState`, `Set/GetVariableValue<T>`. Behaviour-graph nodes live in

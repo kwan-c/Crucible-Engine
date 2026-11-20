@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NavGrid's bake and its cell maths.
 *
@@ -22,12 +22,15 @@
 *    -v1.2       shoulderHeight renamed agentHeight
 *    -v1.3       layer storage (nodes): one ground node per cell for now,
 *                with its height; the flags and counts live on nodes
+*    -v1.4       layers from Walkable boxes (BuildLayers): top faces with
+*                agentHeight of headroom, up to maxLayersPerCell; obstacles,
+*                terrain walls and IsBlocked use each cell's ground node
 *
 **************************************************************************/
 #include "NavGrid.h"
 
 // STL
-#include <algorithm>    // std::clamp, std::max, std::min
+#include <algorithm>    // std::clamp, std::max, std::min, std::sort
 #include <cmath>        // std::ceil, std::floor
 #include <limits>       // infinity: nothing above a layer
 
@@ -54,9 +57,47 @@ namespace Crucible {
 
         }   // ToCellNumber()
 
+        // Heights closer than this are the same surface (two deck boxes
+        // overlapping, a box resting on the ground).
+        constexpr float kSameHeight = 0.01f;
+
+        // Where a vertical line through (x, z) passes through a Walkable box:
+        // from `bottom` to `top`, in world height. False if it misses. The
+        // line is taken into the box's own space, where the box is axis-
+        // aligned, and clipped against its three pairs of faces (the slab
+        // test) - so turned, tilted and scaled boxes all work, a tilted one
+        // giving a ramp's height at that point.
+        bool ThroughBox(const NavWalkable& box, const Math::mat4& toLocal, float x, float z, float& bottom, float& top) {
+
+            // The line is (x, t, z): in local space, origin + t * along.
+            const Math::vec3 origin(toLocal * Math::vec4(x, 0.0f, z, 1.0f));
+            const Math::vec3 along (toLocal * Math::vec4(0.0f, 1.0f, 0.0f, 0.0f));
+
+            float low = -1e30f, high = 1e30f;
+            for (int axis = 0; axis < 3; ++axis) {
+                const float lo = box.centre[axis] - box.half[axis];
+                const float hi = box.centre[axis] + box.half[axis];
+                if (std::abs(along[axis]) < 1e-8f) {
+                    if (origin[axis] < lo || origin[axis] > hi) return false;   // parallel to these faces and outside them
+                    continue;
+                }
+                float t0 = (lo - origin[axis]) / along[axis];
+                float t1 = (hi - origin[axis]) / along[axis];
+                if (t0 > t1) std::swap(t0, t1);
+                low  = std::max(low, t0);
+                high = std::min(high, t1);
+                if (low > high) return false;
+            }
+            bottom = low;    // t is the world height, since the line is (x, t, z)
+            top    = high;
+            return true;
+
+        }   // ThroughBox()
+
     }   // ANONYMOUS NAMESPACE
 
-    bool NavGrid::Bake(const NavGridSettings& settings, const std::vector<NavObstacle>& obstacles, const NavTerrain& terrain) {
+    bool NavGrid::Bake(const NavGridSettings& settings, const std::vector<NavObstacle>& obstacles, const NavTerrain& terrain,
+                       const std::vector<NavWalkable>& walkables) {
 
         // Every early return below leaves the grid unbaked, and an unbaked grid
         // reads as blocked everywhere - so a failed bake can't send enemies
@@ -85,27 +126,10 @@ namespace Crucible {
         m_rows     = static_cast<int>(rows);
         m_minX     = settings.origin.x - settings.width * 0.5f;
         m_minZ     = settings.origin.z - settings.depth * 0.5f;
-        // 0. The layers. For now every cell holds one: the ground, at the
-        // terrain's height under the cell's centre, with nothing above it.
-        // So node i is cell i (the cell-based callers rely on that until the
-        // layered flow field). Layers from Walkable objects come with 6b.
-        const std::size_t cellCount = static_cast<std::size_t>(cols * rows);
-        m_layerStart.resize(cellCount);
-        m_layerCount.assign(cellCount, 1);
-        m_nodeCell.resize(cellCount);
-        m_nodeHeight.resize(cellCount);
-        m_nodeHeadroom.assign(cellCount, std::numeric_limits<float>::infinity());
-        for (int row = 0; row < m_rows; ++row) {
-            for (int col = 0; col < m_cols; ++col) {
-                const int index = Index({ col, row });
-                m_layerStart[static_cast<std::size_t>(index)]  = index;
-                m_nodeCell[static_cast<std::size_t>(index)]    = index;
-                m_nodeHeight[static_cast<std::size_t>(index)]  = terrain.GroundHeight(CellToWorldCenter({ col, row }));
-            }
-        }
-
-        m_static.assign(cellCount, 0);    // all open; obstacles and walls close nodes below
-        m_dynamic.assign(cellCount, 0);
+        // 0. The layers: the ground and the Walkable boxes' tops, per cell.
+        BuildLayers(terrain, walkables);
+        m_static.assign(m_nodeCell.size(), 0);    // all open; obstacles and walls close nodes below
+        m_dynamic.assign(m_nodeCell.size(), 0);
 
         const float cellSize = settings.cellSize;
 
@@ -125,14 +149,17 @@ namespace Crucible {
         // 2. Terrain walls: cliffs and off-map, tested at each cell's centre
         // only (so a cell that is part cliff can still read as open - Jean
         // David's prototype does the same). They close the cell's ground
-        // node. Nodes an obstacle already closed are skipped, so the wall
-        // count below is only the walls' own.
+        // node (a Walkable deck over a cliff stays open). Nodes an obstacle
+        // already closed are skipped, so the wall count below is only the
+        // walls' own.
         int wallCells = 0;
         for (int row = 0; row < m_rows; ++row) {
             for (int col = 0; col < m_cols; ++col) {
 
-                const NavCell     cell{ col, row };
-                const std::size_t index = static_cast<std::size_t>(NodeIndex(cell, 0));
+                const NavCell cell{ col, row };
+                const int     ground = GroundNode(cell);
+                if (ground < 0) continue;
+                const std::size_t index = static_cast<std::size_t>(ground);
                 if (!IsBlockedIndex(index) && terrain.IsWall(CellToWorldCenter(cell))) {
                     m_static[index] = 1;
                     ++wallCells;
@@ -149,6 +176,19 @@ namespace Crucible {
         }
         CRU_INFO("NavGrid baked: {} x {} cells of {} m, {} blocked ({} of {} obstacles inside the height band, {} terrain wall cells)",
                  m_cols, m_rows, cellSize, blocked, counted, obstacles.size(), wallCells);
+
+        // Only with Walkable boxes, so a scene without them logs as before.
+        if (!walkables.empty()) {
+            int upper = 0, layered = 0, noGround = 0;
+            for (std::size_t cell = 0; cell < m_layerCount.size(); ++cell) {
+                const int extra = static_cast<int>(m_layerCount[cell]) - (m_groundNode[cell] >= 0 ? 1 : 0);
+                upper += extra;
+                if (extra > 0) ++layered;
+                if (m_groundNode[cell] < 0) ++noGround;
+            }
+            CRU_INFO("NavGrid layers: {} Walkable box(es) give {} raised layer(s) over {} cells; {} cells have no ground layer (a box sits on it)",
+                     walkables.size(), upper, layered, noGround);
+        }
         return true;
 
     }   // NavGrid::Bake()
@@ -158,13 +198,155 @@ namespace Crucible {
         // Off the map is a wall: the flood never spreads outside the grid, and
         // an unbaked grid has no open cells to spread through.
         // Until the layered flow field (6d) a cell is asked about as one
-        // thing: its ground layer, the lowest node. A cell with no layer at
-        // all is a wall.
+        // thing: its ground layer. A cell whose ground is not a layer (a
+        // Walkable box sits on it) is a wall to something walking the ground.
         if (!m_baked || !Contains(cell)) return true;
-        const int node = NodeIndex(cell, 0);
+        const int node = GroundNode(cell);
         return node < 0 || IsBlockedIndex(static_cast<std::size_t>(node));
 
     }   // NavGrid::IsBlocked()
+
+    int NavGrid::GroundNode(const NavCell& cell) const {
+
+        // Not gated on m_baked: the bake uses it (see NodeIndex).
+        if (!Contains(cell)) return -1;
+        const std::size_t index = static_cast<std::size_t>(Index(cell));
+        return index < m_groundNode.size() ? m_groundNode[index] : -1;
+
+    }   // NavGrid::GroundNode()
+
+    /*!
+        \brief
+        Fills the per-cell layer lists and the per-node height and headroom.
+
+        \details
+        For each cell, the vertical line through its centre:
+          1. Every Walkable box it passes through is a solid stretch, from
+             where it enters the box to where it leaves.
+          2. The candidate surfaces are the ground and each box's top, if
+             above the ground.
+          3. A candidate's headroom is the gap up to the lowest solid stretch
+             above it; inside a solid (the ground under a box resting on it)
+             it has none.
+          4. Kept if the headroom is at least agentHeight, lowest first,
+             at most maxLayersPerCell (the extra ones, highest, are dropped
+             and reported). Two candidates at the same height are one.
+        Boxes are visited only over their own cells, so this costs nothing
+        with no Walkable boxes: one ground layer per cell, node i = cell i.
+    */
+    void NavGrid::BuildLayers(const NavTerrain& terrain, const std::vector<NavWalkable>& walkables) {
+
+        const std::size_t cellCount = static_cast<std::size_t>(m_cols) * static_cast<std::size_t>(m_rows);
+        const float       infinity  = std::numeric_limits<float>::infinity();
+        const int         maxLayers = std::clamp(m_settings.maxLayersPerCell, 1, 255);
+
+        // 1. Every (cell, solid stretch) pair, from each box's own cells only.
+        struct Stretch { int cell; float bottom; float top; };
+        std::vector<Stretch> stretches;
+        const float cellSize = m_settings.cellSize;
+        for (const NavWalkable& box : walkables) {
+
+            // The box's world AABB, to know which cell centres can be inside it.
+            Math::vec3 low(1e30f), high(-1e30f);
+            for (int corner = 0; corner < 8; ++corner) {
+                const Math::vec3 sign((corner & 1) ? 1.0f : -1.0f, (corner & 2) ? 1.0f : -1.0f, (corner & 4) ? 1.0f : -1.0f);
+                const Math::vec3 point(box.world * Math::vec4(box.centre + sign * box.half, 1.0f));
+                low  = glm::min(low, point);
+                high = glm::max(high, point);
+            }
+
+            // Cells whose centre lies inside [low, high]: centre = min + (c + 0.5) * size.
+            const int colFirst = std::max(0,          ToCellNumber(std::ceil((low.x - m_minX) / cellSize - 0.5f), m_cols));
+            const int colLast  = std::min(m_cols - 1, ToCellNumber(std::floor((high.x - m_minX) / cellSize - 0.5f), m_cols));
+            const int rowFirst = std::max(0,          ToCellNumber(std::ceil((low.z - m_minZ) / cellSize - 0.5f), m_rows));
+            const int rowLast  = std::min(m_rows - 1, ToCellNumber(std::floor((high.z - m_minZ) / cellSize - 0.5f), m_rows));
+
+            const Math::mat4 toLocal = glm::inverse(box.world);
+            for (int row = rowFirst; row <= rowLast; ++row) {
+                for (int col = colFirst; col <= colLast; ++col) {
+                    const Math::vec3 centre = CellToWorldCenter({ col, row });
+                    float bottom = 0.0f, top = 0.0f;
+                    if (ThroughBox(box, toLocal, centre.x, centre.z, bottom, top)) stretches.push_back({ Index({ col, row }), bottom, top });
+                }
+            }
+
+        }
+        std::sort(stretches.begin(), stretches.end(), [](const Stretch& a, const Stretch& b) { return a.cell < b.cell; });
+
+        // 2-4. Each cell's layers, cell by cell, into the flat node arrays.
+        m_layerStart.resize(cellCount);
+        m_layerCount.assign(cellCount, 0);
+        m_groundNode.assign(cellCount, -1);
+        m_nodeCell.clear();
+        m_nodeHeight.clear();
+        m_nodeHeadroom.clear();
+        m_nodeCell.reserve(cellCount);
+        m_nodeHeight.reserve(cellCount);
+        m_nodeHeadroom.reserve(cellCount);
+
+        struct Surface { float height; float headroom; bool ground; };
+        std::vector<Surface> surfaces;
+        int         overCap      = 0;          // cells that had more surfaces than maxLayersPerCell
+        Math::vec3  firstOverCap(0.0f);
+        std::size_t next = 0;                  // the next stretch in `stretches`
+
+        for (std::size_t cell = 0; cell < cellCount; ++cell) {
+
+            const NavCell    at{ static_cast<int>(cell) % m_cols, static_cast<int>(cell) / m_cols };
+            const Math::vec3 centre = CellToWorldCenter(at);
+            const float      ground = terrain.GroundHeight(centre);
+
+            // This cell's solid stretches.
+            const std::size_t first = next;
+            while (next < stretches.size() && stretches[next].cell == static_cast<int>(cell)) ++next;
+
+            // Headroom above a surface: up to the lowest stretch above it;
+            // none if the surface is inside a stretch.
+            const auto headroomAt = [&](float height) {
+                float room = infinity;
+                for (std::size_t i = first; i < next; ++i) {
+                    if (stretches[i].top <= height + kSameHeight) continue;          // below it (or its own top)
+                    if (stretches[i].bottom <= height + kSameHeight) return 0.0f;    // the surface is inside this box
+                    room = std::min(room, stretches[i].bottom - height);
+                }
+                return room;
+            };
+
+            surfaces.clear();
+            surfaces.push_back({ ground, headroomAt(ground), true });
+            for (std::size_t i = first; i < next; ++i) {
+                if (stretches[i].top > ground + kSameHeight) surfaces.push_back({ stretches[i].top, headroomAt(stretches[i].top), false });
+            }
+            std::sort(surfaces.begin(), surfaces.end(), [](const Surface& a, const Surface& b) { return a.height < b.height; });
+
+            m_layerStart[cell] = static_cast<int>(m_nodeCell.size());
+            int   kept       = 0;
+            float lastHeight = -infinity;
+            for (const Surface& surface : surfaces) {
+                if (surface.headroom < m_settings.agentHeight) continue;             // no room to stand
+                if (surface.height - lastHeight < kSameHeight) continue;             // the same surface twice
+                if (kept == maxLayers) {
+                    if (overCap++ == 0) firstOverCap = centre;
+                    break;
+                }
+                if (surface.ground) m_groundNode[cell] = static_cast<int>(m_nodeCell.size());
+                m_nodeCell.push_back(static_cast<int>(cell));
+                m_nodeHeight.push_back(surface.height);
+                m_nodeHeadroom.push_back(surface.headroom);
+                lastHeight = surface.height;
+                ++kept;
+            }
+            m_layerCount[cell] = static_cast<std::uint8_t>(kept);
+
+        }
+
+        if (overCap > 0) {
+            CRU_WARN("NavGrid: {} cell(s) have more than maxLayersPerCell ({}) walkable surfaces - the highest were dropped. "
+                     "First at ({:.1f}, {:.1f}); raise maxLayersPerCell or untag a surface there",
+                     overCap, maxLayers, firstOverCap.x, firstOverCap.z);
+        }
+
+    }   // NavGrid::BuildLayers()
 
     int NavGrid::LayerCount(const NavCell& cell) const {
 
@@ -226,7 +408,7 @@ namespace Crucible {
         // layered grid (6d) picks the layers the box actually reaches.
         for (int row = rowFirst; row <= rowLast; ++row) {
             for (int col = colFirst; col <= colLast; ++col) {
-                const int node = NodeIndex({ col, row }, 0);
+                const int node = GroundNode({ col, row });
                 if (node >= 0) cells.push_back(node);
             }
         }
