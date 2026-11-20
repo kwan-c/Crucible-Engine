@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Moves the FlowFieldAgents: steering, the crowd, collision,
 *                facing and standing on the ground.
@@ -17,12 +17,18 @@
 * \history
 *    -v1.0       first version (moved out of ECSNavigationSystem, no
 *                behaviour change)
+*    -v1.1       layers: the arrow at the agent's feet; crowd only among
+*                agents on the same layer; width warning; Arrive at a player
+*                follows the flow field while the straight line can't be
+*                walked (and isn't "arrived" meanwhile). OnGround asks physics
+*                for the body's contacts instead of one ray from its centre,
+*                so golems climb ramps
 *
 **************************************************************************/
 #include "NavAgentMover.h"
 
 // STL
-#include <algorithm>    // std::clamp, std::max, std::min
+#include <algorithm>    // std::clamp, std::max, std::min, std::remove_if
 #include <cmath>        // std::atan2, std::sqrt, std::cos, std::sin, std::abs
 
 // Crucible engine
@@ -304,8 +310,20 @@ namespace Crucible {
                 // nothing moves in memory.
                 const int index = static_cast<int>(m_agents.size());
                 const float radius = std::max(agent.m_radius, 0.0f);
+
+                // Wider than the grid was baked for: it may be sent through
+                // gaps it doesn't fit (decided 17 Nov: set the padding to the
+                // widest enemy; size classes later). Once per session.
+                if (radius > m_bodyRadiusPadding + 0.01f && !m_warnedWide) {
+                    CRU_WARN("Navigation: the FlowFieldAgent on entity {} is {} m wide (radius), wider than the Nav Surface's "
+                             "bodyRadiusPadding ({} m) - the grid may route it through gaps it doesn't fit. Set bodyRadiusPadding "
+                             "to the widest enemy", entity.index, radius, m_bodyRadiusPadding);
+                    m_warnedWide = true;
+                }
+
                 m_agents.push_back({ entity, &agent, &transform, transform.positions, agent.m_velocity,
-                                     radius, agent.m_avoidancePriority, agent.m_arrived, dynamic, bodyVelocity });
+                                     radius, agent.m_avoidancePriority, agent.m_arrived, dynamic, bodyVelocity,
+                                     transform.positions.y - agent.m_baseOffset });
                 m_hash.Insert(index, transform.positions);
                 largestRadius = std::max(largestRadius, radius);
 
@@ -402,6 +420,7 @@ namespace Crucible {
             Math::vec3 lookAt(0.0f);        // a point to face instead of its velocity (FaceTarget)
             bool       facesTarget = false;
             bool       hasGoal     = false; // something to measure the distance to
+            bool       roundabout  = false; // Arrive is taking the flow field (no straight way): never "arrived"
             float      remaining   = 0.0f;
             float      stopAt      = agent.m_stoppingDistance;   // MoveTo may bring its own
 
@@ -411,7 +430,8 @@ namespace Crucible {
                     break;
 
                 case AgentMovement::FollowField: {
-                    direction = field.SampleDirection(position);
+                    // The arrow of the layer at its feet (on the deck, the deck's).
+                    direction = field.SampleDirection(Math::vec3(position.x, position.y - agent.m_baseOffset, position.z));
                     if (direction == Math::vec3(0.0f)) direction = TowardsNearest(position, goals.Goals());
                     desired = direction * agent.m_speed;
 
@@ -438,6 +458,31 @@ namespace Crucible {
                     if (!target || !target->valid) break;
 
                     const Math::vec3 goal(target->matrix[3]);
+
+                    // Straight at it only when that line can be walked across
+                    // the layers - not under a bridge to someone on the deck,
+                    // not into a ledge with no way up. Otherwise, when the
+                    // target is a player (the flow field leads to players),
+                    // follow the field until the straight way opens: Unity's
+                    // NavMeshAgent pathed every SetDestination, and Arrive
+                    // stood in for it. Any other target keeps the straight
+                    // line (no field leads there; walls still slide it).
+                    const Math::vec3 feet(position.x, position.y - agent.m_baseOffset, position.z);
+                    if (grid.IsBaked() && goals.IsGoal(agent.m_target) && !grid.IsPathClear(feet, goal, ground)) {
+                        direction = field.SampleDirection(feet);
+                        if (direction == Math::vec3(0.0f)) {
+                            // No arrow here (outside the flood, or nothing
+                            // reaches the player's layer): straight at it.
+                            const Math::vec3 to(goal.x - position.x, 0.0f, goal.z - position.z);
+                            if (glm::dot(to, to) > 1e-8f) direction = glm::normalize(to);
+                        }
+                        desired     = direction * agent.m_speed;
+                        remaining   = glm::length(Math::vec3(goal.x - position.x, 0.0f, goal.z - position.z));
+                        hasGoal     = true;
+                        roundabout  = true;   // not there yet, however close it looks from above
+                        break;
+                    }
+
                     desired = ArriveVelocity(position, goal, agent, stopAt, agent.m_slowingDistance, direction, remaining);
                     hasGoal = true;
                     DebugDraw::Line(position, goal, pathStyle);
@@ -464,7 +509,7 @@ namespace Crucible {
             // agent just outside it, and it must still count as in range.
             agent.m_remainingDistance = remaining;
             agent.m_arrived = agent.m_movement == AgentMovement::None
-                           || (hasGoal && remaining <= stopAt + kArriveSlack);
+                           || (hasGoal && !roundabout && remaining <= stopAt + kArriveSlack);
 
             Math::vec3 force = Steer(desired, agent.m_velocity, agent.m_acceleration);
 
@@ -486,6 +531,14 @@ namespace Crucible {
             // build up speed and carry the agent on past the gap.
             m_hash.Query(m_agents[i].start, std::max(agent.m_neighbourRadius, m_agents[i].radius + largestRadius),
                          static_cast<int>(i), m_neighbours);
+
+            // Only the crowd on its own layer: feet agentHeight or more apart
+            // (one on the bridge, one under it) can't touch, so they neither
+            // push nor align. The hash is flat (XZ), so it finds both.
+            const float feet = m_agents[i].feet;
+            m_neighbours.erase(std::remove_if(m_neighbours.begin(), m_neighbours.end(), [&](int j) {
+                return std::abs(m_agents[static_cast<std::size_t>(j)].feet - feet) >= m_agentHeight;
+            }), m_neighbours.end());
             const Math::vec3 push = crowdPush(i);
 
             // Alignment only while following the field: it is what makes a horde
@@ -596,7 +649,7 @@ namespace Crucible {
             // off, its Rigidbody switched to physics until it is grounded again.
             // Its facing is still the agent's: the prefab locks the body's rotation,
             // so collisions can't tip it over, and step 6 turns it.
-            const bool airborne = dynamic && !OnGround(m_agents[i].entity, agent, position);
+            const bool airborne = dynamic && !OnGround(m_agents[i].entity);
             if (dynamic) {
                 RigidBody* body = world.GetComponent<RigidBody>(m_agents[i].entity);
                 if (!airborne && body && body->mass > 0.0f) {
@@ -679,37 +732,38 @@ namespace Crucible {
 
     /*!
         \brief
-        Is there walkable ground just under the agent's feet? For dynamic agents:
-        off the ground (thrown, falling) they don't steer.
+        Is a dynamic agent standing on something? Off the ground (thrown,
+        falling) it doesn't steer.
 
         \details
-        A ray down from 0.3 m above its position to 0.3 m below its feet
-        (m_baseOffset below the position), on the level's layers only
-        (NonMoving, Moving), skipping the agent itself. 0.3 m of slack so
-        walking over bumps and down gentle slopes still counts as grounded,
-        while an explosion's lift clearly doesn't. Starting at the position, not
-        at the feet, keeps it working when m_baseOffset is too big for the
-        collider (a root at the feet, baseOffset left at 1): the ray then just
-        reaches further. Starting at the computed feet, it began inside the
-        floor for such a crossbow, and the agent thought it was airborne.
-    */
-    bool NavAgentMover::OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const {
+        Asks physics what the body is touching right now (GetContacts, Unity's
+        OnCollisionStay): grounded if any solid contact lies below it at a
+        walkable angle - its normal, from the agent toward the other body,
+        points down at least kWalkableNormalY (about 45 degrees or flatter).
 
-        constexpr float kSlack = 0.3f;
+        Until 6d-2 this was one ray down from the body's centre with 0.3 m of
+        slack below the feet. A wide box with its rotation locked rests on a
+        slope by its uphill edge, so its centre floats above the surface by
+        half its depth x tan(slope): about 0.35-0.55 m for a Golem Mace on a
+        20 degree ramp. The ray missed, the agent thought it was airborne,
+        stopped steering and slid back down. Contacts don't depend on the
+        body's shape, its size or where its centre is.
+
+        Other enemies count as ground: an explosion can drop a golem on top of
+        another (seen in the test), and one that thought it was in the air
+        there would never steer, so it would stand on its friend forever.
+        Steering, it walks off. An explosion's lift touches nothing, so a
+        thrown golem is still airborne and flies as physics says.
+    */
+    bool NavAgentMover::OnGround(Entity self) const {
+
         if (!m_physics) return true;     // no physics: nothing can throw it, so treat it as standing
 
-        // Other enemies count as ground here: an explosion can drop a golem on top of
-        // another (seen in the test), and one that thought it was in the air there
-        // would never steer, so it would stand on its friend forever. Steering, it
-        // walks off.
-        EntityFilter filter;
-        filter.layers = LayerMask(PhysicsLayer::NonMoving, PhysicsLayer::Moving).With(PhysicsLayer::Enemy);
-        filter.ignore = self;
-
-        EntityHit hit;
-        return m_physics->Raycast(Math::vec3(position.x, position.y + kSlack, position.z), Math::vec3(0.0f, -1.0f, 0.0f), hit,
-                                  std::max(agent.m_baseOffset, 0.0f) + kSlack * 2.0f, filter)
-            && hit.normal.y > kWalkableNormalY;
+        m_physics->GetContacts(self, m_contacts);
+        for (const EntityContact& contact : m_contacts) {
+            if (!contact.isTrigger && contact.normal.y <= -kWalkableNormalY) return true;
+        }
+        return false;
 
     }   // NavAgentMover::OnGround()
 

@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NavAgentMover: moves every FlowFieldAgent one frame, by what
 *                it was told to do (FollowField, MoveTo, Arrive, Stop) - the
@@ -33,6 +33,14 @@
 *    -v1.0       first version (moved out of ECSNavigationSystem's
 *                UpdateAgents, Probe, OnGround and StandOnGround, no
 *                behaviour change)
+*    -v1.1       build step 6d-2: layers. An agent reads the arrow of the
+*                layer at its feet; the crowd (overlap push, alignment)
+*                ignores agents whose feet are agentHeight or more apart
+*                (one on a bridge, one under it); warns once about an agent
+*                wider than the grid's padding. Arrive at a player follows
+*                the flow field while the straight line to them can't be
+*                walked across the layers (and doesn't count as arrived).
+*                OnGround uses the body's physics contacts, not a ray
 *
 **************************************************************************/
 #pragma once
@@ -44,6 +52,7 @@
 #include "ECS/Core/ECSCore.h"   // Entity
 #include "Math/Math.h"
 #include "Navigation/AgentSpatialHash.h"
+#include "Physics/PhysicsEvents.h"     // EntityContact (a vector member needs the whole type)
 
 namespace Crucible {
 
@@ -88,25 +97,44 @@ namespace Crucible {
         */
         void Move(World& world, const FlowField& field, const NavGoalTracker& goals, const NavGrid& grid, const NavTerrain& ground);
 
-        // The surface's step height, from the last bake: where the probes'
-        // sweep starts, so they cover the same height band the bake uses.
-        void SetStepHeight(float stepHeight) { m_stepHeight = stepHeight; }
+        /*!
+            \brief
+            The surface's body settings, from the last bake.
 
-        // Stop: say "agents must be roots" again in the next session.
-        void ResetWarnings() { m_warnedParented = false; }
+            \param stepHeight
+            Where the probes' sweep starts, so they cover the same height
+            band the bake uses.
+
+            \param agentHeight
+            Feet this far apart (or more) are on different layers: such
+            agents don't push or align with each other.
+
+            \param bodyRadiusPadding
+            The width the grid was baked for: a wider agent is warned about
+            once, as it may be routed through gaps it doesn't fit.
+        */
+        void SetBodySettings(float stepHeight, float agentHeight, float bodyRadiusPadding) {
+            m_stepHeight = stepHeight; m_agentHeight = agentHeight; m_bodyRadiusPadding = bodyRadiusPadding;
+        }
+
+        // Stop: say the once-per-session warnings again in the next session.
+        void ResetWarnings() { m_warnedParented = false; m_warnedWide = false; }
 
     private:
 
         void StandOnGround(Entity self, FlowFieldAgent& agent, Math::vec3& position, float dt,
                            const NavGrid& grid, const NavTerrain& ground) const;
-        bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
+        bool OnGround(Entity self) const;   // touching walkable ground (physics contacts); dynamic agents only
         bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
                    float distance, EntityHit& hit) const;
 
         ECSSystemManager&  m_systems;
         ECSPhysicsSystem*  m_physics        = nullptr;   // found in m_systems on first use; null = no collision
-        float              m_stepHeight     = 0.3f;      // see SetStepHeight
+        float              m_stepHeight        = 0.3f;   // see SetBodySettings
+        float              m_agentHeight       = 1.6f;   // see SetBodySettings
+        float              m_bodyRadiusPadding = 0.6f;   // see SetBodySettings
         bool               m_warnedParented = false;     // "agents must be roots" said once per session, not every frame
+        bool               m_warnedWide     = false;     // "wider than the padding" said once per session
 
         // One agent for this frame's two-pass update: where to write, plus where
         // it was and how it moved at the START of the frame (what neighbours see).
@@ -127,12 +155,14 @@ namespace Crucible {
             bool            arrived  = false;
             bool            dynamic  = false;      // has a dynamic RigidBody: physics moves it, the agent steers its velocity
             Math::vec3      bodyVelocity{ 0.0f };  // dynamic: the body's own XZ velocity, as physics left it
+            float           feet = 0.0f;           // the height of its feet (position - baseOffset): which layer it is on
 
         };  // AGENTREF STRUCT
 
         std::vector<AgentRef> m_agents;       // refilled every frame (memory reused)
         AgentSpatialHash      m_hash;         // the agents by 8 m square, refilled every frame
         std::vector<int>      m_neighbours;   // one agent's neighbours, reused for every query
+        mutable std::vector<EntityContact> m_contacts;   // OnGround's contacts, reused for every agent
 
     };  // NAVAGENTMOVER CLASS
 

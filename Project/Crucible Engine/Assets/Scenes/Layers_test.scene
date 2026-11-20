@@ -3,13 +3,100 @@
     "name": "Layers_test",
     "entities": [
         {
+            "id": "01A190E2F8FC000B",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -16.62946128845215,
+                        "y": 2.379181385040283,
+                        "z": 17.517738342285156
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Enemy Spawner Cannon"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemySpawner",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "enemyPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8796023608539152641
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "enemiesPerWave",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 3,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "spawnStagger",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 3.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 4729220388229677059,
+                    "fileId": 2423377379015966721,
+                    "isRoot": true,
+                    "prefabHash": 12164519158737015921,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "08F808E2EBD08007",
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 0.0,
-                        "y": 4.0,
-                        "z": 0.0
+                        "x": 14.136259078979492,
+                        "y": 3.947357177734375,
+                        "z": -8.66832447052002
                     },
                     "rotation": {
                         "x": 0.0,
@@ -20,7 +107,7 @@
                     "scale": {
                         "x": 10.0,
                         "y": 0.5,
-                        "z": 4.0
+                        "z": 10.0
                     }
                 },
                 "MeshRenderer": {
@@ -174,9 +261,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -8.95361328125,
-                        "y": 1.5,
-                        "z": -11.576937675476074
+                        "x": -13.40644645690918,
+                        "y": 2.141649007797241,
+                        "z": -15.008759498596191
                     },
                     "rotation": {
                         "x": 0.0,
@@ -436,10 +523,97 @@
                     "isTrigger": false
                 },
                 "EntityName": {
-                    "name": "Low Platform"
+                    "name": "Low Platform Enemy Spawn"
                 },
                 "EntityTag": {
                     "tag": "Walkable"
+                }
+            }
+        },
+        {
+            "id": "79A190E2F8FC0009",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.5708324909210205,
+                        "y": 4.336747169494629,
+                        "z": 7.59636926651001
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Enemy Spawner Mace"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemySpawner",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "enemyPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12564058752782925993
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "enemiesPerWave",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 3,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "spawnStagger",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 3.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 1846916626712592391,
+                    "fileId": 7035063397443403781,
+                    "isRoot": true,
+                    "prefabHash": 8575032996791168211,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -448,20 +622,20 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -8.994894027709961,
-                        "y": 1.6532503366470337,
-                        "z": 0.0
+                        "x": 2.2744085788726807,
+                        "y": 1.4088929891586304,
+                        "z": -8.612225532531738
                     },
                     "rotation": {
                         "x": 0.0,
                         "y": 0.0,
-                        "z": 0.258819043636322,
-                        "w": 0.9659258127212524
+                        "z": 0.1736481785774231,
+                        "w": 0.9848077297210693
                     },
                     "scale": {
-                        "x": 10.0,
+                        "x": 15.0,
                         "y": 0.5,
-                        "z": 4.0
+                        "z": 10.0
                     }
                 },
                 "MeshRenderer": {
@@ -779,6 +953,68 @@
             }
         },
         {
+            "id": "C9A190E2F962800D",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 13.59689998626709,
+                        "y": 1.7992446422576904,
+                        "z": 1.9212641716003418
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 6.0,
+                        "y": 3.0,
+                        "z": 6.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Low Platform Island"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
+                }
+            }
+        },
+        {
             "id": "D8C838E2F708C03D",
             "parent": "B0C838E2F708C04D",
             "siblingIndex": 0,
@@ -986,9 +1222,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 0.0,
+                        "x": -13.185556411743164,
                         "y": 2.358170509338379,
-                        "z": -10.350850105285645
+                        "z": -4.96689510345459
                     },
                     "rotation": {
                         "x": 0.258819043636322,

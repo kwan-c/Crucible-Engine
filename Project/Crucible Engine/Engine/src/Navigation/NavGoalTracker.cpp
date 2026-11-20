@@ -3,13 +3,14 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                The goals (players) and when the flow field is rebuilt.
 *
 * \history
 *    -v1.0       first version (moved out of ECSNavigationSystem, no
 *                behaviour change)
+*    -v1.1       IsGoal
 *
 **************************************************************************/
 #include "NavGoalTracker.h"
@@ -43,6 +44,15 @@ namespace Crucible {
         return nearest;
 
     }   // NavGoalTracker::NearestEntity()
+
+    bool NavGoalTracker::IsGoal(Entity entity) const {
+
+        for (const Entity goal : m_goalEntities) {
+            if (goal == entity) return true;
+        }
+        return false;
+
+    }   // NavGoalTracker::IsGoal()
 
     /*!
         \details

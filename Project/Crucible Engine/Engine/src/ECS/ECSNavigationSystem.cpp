@@ -9,12 +9,13 @@
 *                v1.7: goals and agent movement split out;
 *                v1.9: moving DynamicObstacles re-stamped;
 *                v1.10: obstacle tag suggestions, bake warning;
-*                v1.11: Walkable boxes read for layers),
+*                v1.11: Walkable boxes read for layers;
+*                v1.12: queries and agents per layer),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.11
+* \version       1.12
 * \brief
 *                Bakes the NavGrid from the scene, and draws it.
 *
@@ -90,13 +91,15 @@
 *    -v1.11      Build step 6b: the bake reads box colliders tagged Walkable
 *                into NavBakeInput::walkables (and maxLayersPerCell); other
 *                shapes tagged Walkable are named in a warning
+*    -v1.12      Build step 6d-2: IsWalkable / IsPathClear are the grid's
+*                (layers and links); the mover gets agentHeight and the
+*                padding as well as the step height
 *
 **************************************************************************/
 #include "ECSNavigationSystem.h"
 
 // STL
 #include <algorithm>    // std::max
-#include <cmath>        // std::ceil
 #include <string>       // std::to_string
 
 // Crucible engine
@@ -211,37 +214,16 @@ namespace Crucible {
 
     }   // ECSNavigationSystem::~ECSNavigationSystem()
 
+    // Both on the grid, which knows the layers and links (NavGrid v1.7).
     bool ECSNavigationSystem::IsWalkable(const Math::vec3& position) const {
 
-        // IsBlockedWorld already says "blocked" while unbaked, so no separate check.
-        return !m_grid.IsBlockedWorld(position) && !m_baker.Terrain().IsWall(position);
+        return m_grid.IsWalkable(position, m_baker.Terrain());
 
     }   // ECSNavigationSystem::IsWalkable()
 
     bool ECSNavigationSystem::IsPathClear(const Math::vec3& from, const Math::vec3& to) const {
 
-        if (!m_grid.IsBaked()) return false;
-
-        // Half a cell per step (at least 20 cm), so the line can't skip over a
-        // one-cell wall between two samples. Unity's spacing exactly.
-        const Math::vec3 delta  = to - from;
-        const float      length = glm::length(Math::vec3(delta.x, 0.0f, delta.z));
-        const int        steps  = std::max(1, static_cast<int>(std::ceil(length / std::max(0.2f, m_grid.CellSize() * 0.5f))));
-
-        // Still inside the blocked cells it started in: those don't count (see the header).
-        bool leavingBlockedStart = m_grid.IsBlockedWorld(from);
-        for (int i = 0; i <= steps; ++i) {
-
-            const Math::vec3 sample = from + delta * (static_cast<float>(i) / static_cast<float>(steps));
-            if (m_baker.Terrain().IsWall(sample)) return false;
-            if (m_grid.IsBlockedWorld(sample)) {
-                if (!leavingBlockedStart) return false;
-            } else {
-                leavingBlockedStart = false;
-            }
-
-        }
-        return true;
+        return m_grid.IsPathClear(from, to, m_baker.Terrain());
 
     }   // ECSNavigationSystem::IsPathClear()
 
@@ -558,7 +540,7 @@ namespace Crucible {
         if (surfaces > 1) {
             CRU_WARN("Navigation: {} FlowFieldSurfaces in the scene - only the first one is used", surfaces);
         }
-        m_mover.SetStepHeight(input.stepHeight);   // the agents' probes sweep the same height band the bake uses
+        m_mover.SetBodySettings(input.stepHeight, input.agentHeight, input.bodyRadiusPadding);   // the probes' band, the crowd's layers, the width check
 
         // 2. The generated terrain, if there is one. Not generated yet: nothing
         // to stand on, so it doesn't count.

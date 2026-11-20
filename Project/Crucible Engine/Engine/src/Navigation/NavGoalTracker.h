@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NavGoalTracker: this frame's goals (the players) and the
 *                rule for when the flow field is rebuilt towards them.
@@ -27,6 +27,7 @@
 *    -v1.0       first version (moved out of ECSNavigationSystem's
 *                CollectGoals, NearestGoalEntity and UpdateField, no
 *                behaviour change)
+*    -v1.1       IsGoal: whether the flow field leads to an entity
 *
 **************************************************************************/
 #pragma once
@@ -57,6 +58,9 @@ namespace Crucible {
 
         // The player nearest `from` (flat distance), or kNullEntity if there is none.
         Entity NearestEntity(const Math::vec3& from) const;
+
+        // Whether `entity` is one of this frame's goals - so the flow field leads to it.
+        bool IsGoal(Entity entity) const;
 
         /*!
             \brief

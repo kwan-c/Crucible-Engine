@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                NavGrid: a flat 2D grid over the map where every cell is
 *                open or blocked. The bottom layer of enemy navigation.
@@ -83,6 +83,8 @@
 *                along, or a one-way drop of up to maxDropHeight); LinkedNode
 *    -v1.6       build step 6d-1: NodeAt (the layer under a position);
 *                obstacles block the layers whose height band they reach
+*    -v1.7       build step 6d-2: IsWalkable and IsPathClear (moved here
+*                from ECSNavigationSystem) go by layers and links
 *
 **************************************************************************/
 #pragma once
@@ -233,6 +235,36 @@ namespace Crucible {
         */
         int   NodeAt(const Math::vec3& position) const { return NodeAt(WorldToCell(position), position.y); }
         int   NodeAt(const NavCell& cell, float height) const;
+
+        // --- Queries (C# Navigation, through ECSNavigationSystem) ----------- //
+
+        /*!
+            \brief
+            Could an enemy stand here? The layer under the position is open,
+            and on the ground the terrain is not a wall at that exact point.
+            False unbaked, off the grid, or in a cell with no layer.
+        */
+        bool IsWalkable(const Math::vec3& position, const NavTerrain& terrain) const;
+
+        /*!
+            \brief
+            Could an enemy walk in a straight line from `from` to `to`? Samples
+            every half cell (at least 20 cm), following the links from the
+            layer under `from`: no link that way (a wall, a ledge up, a drop
+            higher than maxDropHeight, the map's edge) or a blocked layer
+            fails it, and so does a terrain wall on the ground. It must end
+            on the layer under `to`: from the ground under a bridge to its
+            deck is not a clear path.
+
+            \details
+            An enemy pushed into a blocked cell (by the crowd or a blast) must
+            still be able to walk OUT, so blocked samples at the very start of
+            the line are allowed; once it has reached an open layer, the next
+            blocked one fails it. Without that it would be stuck forever,
+            every way out "blocked". On a grid with only the ground this is
+            exactly the cell-by-cell check it was before layers.
+        */
+        bool IsPathClear(const Math::vec3& from, const Math::vec3& to, const NavTerrain& terrain) const;
 
         // The node of the cell's ground (terrain or flat floor); -1 if the
         // ground there is not a layer (a Walkable box sits on it) or off the grid.

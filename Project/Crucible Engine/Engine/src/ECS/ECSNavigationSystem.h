@@ -8,12 +8,13 @@
 *                v1.7: goals and agent movement split out;
 *                v1.9: moving DynamicObstacles re-stamped;
 *                v1.10: obstacle tag suggestions, bake warning;
-*                v1.11: Walkable boxes read for layers),
+*                v1.11: Walkable boxes read for layers;
+*                v1.12: queries and agents per layer),
 *                Hugo Low Ren Hao (initial engine port)
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.11
+* \version       1.12
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
 *                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
@@ -90,6 +91,8 @@
 *                StaticObstacles that have a RigidBody
 *    -v1.11      build step 6b: box colliders tagged Walkable are read at
 *                bake and handed to the grid as layers
+*    -v1.12      build step 6d-2: IsWalkable and IsPathClear go by layers
+*                and links (NavGrid)
 *
 **************************************************************************/
 #pragma once
@@ -177,9 +180,9 @@ namespace Crucible {
 
         /*!
             \brief
-            Could an enemy stand here? The grid cell under it is open (inside
-            the surface, no obstacle) and the terrain is not a wall there.
-            Height is ignored: this is the top-down map only.
+            Could an enemy stand here? The layer under the position (its
+            height picks it: on the bridge, the deck) is open, and - on the
+            ground - the terrain is not a wall there. See NavGrid::IsWalkable.
 
             \return
             False if the grid isn't baked (nothing is known yet).
@@ -189,9 +192,11 @@ namespace Crucible {
         /*!
             \brief
             Could an enemy walk in a straight line from `from` to `to` without
-            crossing a blocked cell or a terrain wall? Unity's
+            crossing a blocked cell or a terrain wall, following the links
+            from the layer under `from` (so not up a ledge, nor off a drop
+            higher than maxDropHeight)? Unity's
             EnemyLocalPositionQuery.ClearSegment (its grid half): samples
-            every half cell.
+            every half cell. See NavGrid::IsPathClear.
 
             \details
             An enemy pushed into a blocked cell (by the crowd or a blast) must

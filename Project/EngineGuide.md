@@ -266,7 +266,15 @@ returns false when the entity has no AnimatedModel controller with that paramete
   neighbours: along the same surface always, up or down within `stepHeight` (two-way), and down a
   drop of up to `maxDropHeight` (Nav Surface, 3 m; one-way). Gizmos draws climbs between surfaces
   as white lines and drops as magenta arrows. The flow field follows the links: its arrows run up
-  ramps, along decks and off drops, on each layer at its own height. The generated terrain's cliffs come
+  ramps, along decks and off drops, on each layer at its own height. Enemies read the arrow of the
+  layer at their feet, and only push/align with enemies on their own layer; `Navigation.IsWalkable`
+  and `IsPathClear` go by the layer under the position and follow the links (no path up a ledge;
+  a path must end on the target's layer). `Arrive` at a player walks straight only while that line
+  can be walked; otherwise it follows the flow field (up the ramp to a player on a bridge).
+  `MoveTo` is always a straight line (the field only leads to players). Keep `Walkable` ramps at
+  35 degrees or less (the generator's slope): physics-driven golems steer only sideways and rely on
+  physics to carry them up. A physics-driven enemy counts as on the ground when physics reports it
+  touching walkable ground below it (contacts, any body shape); off the ground it doesn't steer. The generated terrain's cliffs come
   from the generator itself, in Edit and Play; scenes without terrain have a flat floor at the
   Nav Surface's height.
 - `StateGraphAgent`: `CurrentState`, `Set/GetVariableValue<T>`. Behaviour-graph nodes live in

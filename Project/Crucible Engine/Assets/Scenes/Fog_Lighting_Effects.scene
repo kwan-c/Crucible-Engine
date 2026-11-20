@@ -80,7 +80,7 @@
                     "name": "Entity 1"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -479,7 +479,7 @@
                     "name": "Entity 3"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -1010,7 +1010,7 @@
                     "name": "Entity 7"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -1092,7 +1092,7 @@
                     "name": "Entity 8"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -1154,7 +1154,7 @@
                     "name": "Entity 32"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "StaticObstacle"
                 }
             }
         },
@@ -1457,7 +1457,7 @@
                     "name": "Entity 9"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -1719,7 +1719,7 @@
                     "name": "Entity 33"
                 },
                 "EntityTag": {
-                    "tag": "StaticObstacle"
+                    "tag": "Walkable"
                 }
             }
         },
@@ -2051,7 +2051,7 @@
                     "name": "Entity 11"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -2362,7 +2362,7 @@
                     "name": "Entity 12"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -2569,7 +2569,7 @@
                     "name": "Entity 14"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -2677,7 +2677,9 @@
                     "cellSize": 1.0,
                     "bodyRadiusPadding": 0.6000000238418579,
                     "stepHeight": 0.30000001192092896,
-                    "shoulderHeight": 1.600000023841858,
+                    "agentHeight": 1.600000023841858,
+                    "maxLayersPerCell": 4,
+                    "maxDropHeight": 3.0,
                     "floodRadius": 100.0,
                     "rebuildDistance": 3.0,
                     "wallAdjacencyCost": 4.0,
@@ -2799,7 +2801,7 @@
                     "name": "Entity 35"
                 },
                 "EntityTag": {
-                    "tag": "StaticObstacle"
+                    "tag": "Walkable"
                 }
             }
         },
@@ -2881,7 +2883,7 @@
                     "name": "Entity 15"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -2963,7 +2965,7 @@
                     "name": "Entity 16"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -3428,7 +3430,7 @@
                     "name": "Entity 36"
                 },
                 "EntityTag": {
-                    "tag": "StaticObstacle"
+                    "tag": "Walkable"
                 }
             }
         },
@@ -3490,7 +3492,7 @@
                     "name": "Entity 37"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "StaticObstacle"
                 }
             }
         },
@@ -3572,7 +3574,7 @@
                     "name": "Entity 18"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -3783,7 +3785,7 @@
                     "name": "Entity 38"
                 },
                 "EntityTag": {
-                    "tag": "StaticObstacle"
+                    "tag": "Walkable"
                 }
             }
         },
@@ -4602,7 +4604,7 @@
                     "name": "Entity 40"
                 },
                 "EntityTag": {
-                    "tag": "StaticObstacle"
+                    "tag": "Walkable"
                 }
             }
         },
@@ -4746,7 +4748,7 @@
                     "name": "Entity 41"
                 },
                 "EntityTag": {
-                    "tag": "Untagged"
+                    "tag": "StaticObstacle"
                 }
             }
         },

@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                NavGrid's bake and its cell maths.
 *
@@ -30,6 +30,8 @@
 *                meet; or a one-way drop up to maxDropHeight)
 *    -v1.6       NodeAt; Footprint judges each layer's own band. On flat
 *                ground with one layer the same cells as before
+*    -v1.7       IsWalkable, IsPathClear (from ECSNavigationSystem), by
+*                layers and links; a path must end on the layer at its end
 *
 **************************************************************************/
 #include "NavGrid.h"
@@ -238,6 +240,76 @@ namespace Crucible {
         return node < 0 || IsBlockedIndex(static_cast<std::size_t>(node));
 
     }   // NavGrid::IsBlocked()
+
+    bool NavGrid::IsWalkable(const Math::vec3& position, const NavTerrain& terrain) const {
+
+        const int node = NodeAt(position);
+        if (node < 0 || IsNodeBlocked(node)) return false;
+
+        // On the ground the terrain's own wall test, at this exact point (a
+        // cell can be open with a cliff in one corner). A deck over a cliff
+        // is walkable whatever the ground below it is.
+        return !(IsGroundNode(node) && terrain.IsWall(position));
+
+    }   // NavGrid::IsWalkable()
+
+    bool NavGrid::IsPathClear(const Math::vec3& from, const Math::vec3& to, const NavTerrain& terrain) const {
+
+        if (!m_baked) return false;
+
+        // Half a cell per step (at least 20 cm), so the line can't skip over a
+        // one-cell wall between two samples - and never crosses more than one
+        // cell per axis between two samples. Unity's spacing exactly.
+        const Math::vec3 delta  = to - from;
+        const float      length = glm::length(Math::vec3(delta.x, 0.0f, delta.z));
+        const int        steps  = std::max(1, static_cast<int>(std::ceil(length / std::max(0.2f, m_settings.cellSize * 0.5f))));
+
+        // The layer it walks on, carried along the links from cell to cell.
+        // -1: lost (no link where the line goes: off the map, a ledge, a wall).
+        int node = NodeAt(from);
+
+        // Still inside the blocked cells it started in: those don't count (see the header).
+        bool leavingBlockedStart = node < 0 || IsNodeBlocked(node);
+        for (int i = 0; i <= steps; ++i) {
+
+            const Math::vec3 sample = from + delta * (static_cast<float>(i) / static_cast<float>(steps));
+            const NavCell    want   = WorldToCell(sample);
+
+            // Walk the node over to the sample's cell, one link at a time.
+            while (node >= 0) {
+                const NavCell at = NodeCell(node);
+                if (at.col == want.col && at.row == want.row) break;
+                const int dc = (want.col > at.col) - (want.col < at.col);
+                const int dr = (want.row > at.row) - (want.row < at.row);
+                int dir = 0;
+                while (kNavDirCol[dir] != dc || kNavDirRow[dir] != dr) ++dir;
+                node = LinkedNode(node, dir);
+            }
+
+            // Still allowed to be anywhere (leaving a blocked start): pick
+            // the layer up again where the line is now.
+            if (node < 0 && leavingBlockedStart) node = NodeAt(sample);
+
+            // The terrain's own walls apply on the ground (and where the line
+            // has no layer, as off the map).
+            if ((node < 0 || IsGroundNode(node)) && terrain.IsWall(sample)) return false;
+
+            if (node < 0 || IsNodeBlocked(node)) {
+                if (!leavingBlockedStart) return false;
+            } else {
+                leavingBlockedStart = false;
+            }
+
+        }
+
+        // It must end on the layer at `to`, not just in its cell: from the
+        // ground under a bridge to someone standing on its deck is not clear.
+        // (With only the ground there is one layer per cell, so this never
+        // fails there.)
+        const int end = NodeAt(to);
+        return node < 0 || end < 0 || node == end;
+
+    }   // NavGrid::IsPathClear()
 
     int NavGrid::NodeAt(const NavCell& cell, float height) const {
 

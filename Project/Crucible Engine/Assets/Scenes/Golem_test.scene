@@ -254,6 +254,13 @@
                         }
                     ]
                 },
+                "PrefabInstance": {
+                    "prefabAsset": 1846916626712592391,
+                    "fileId": 7035063397443403781,
+                    "isRoot": true,
+                    "prefabHash": 8575032996791168211,
+                    "overrides": []
+                },
                 "EntityTag": {
                     "tag": "Untagged"
                 }
@@ -333,6 +340,13 @@
                             ]
                         }
                     ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 4729220388229677059,
+                    "fileId": 2423377379015966721,
+                    "isRoot": true,
+                    "prefabHash": 12164519158737015921,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"
