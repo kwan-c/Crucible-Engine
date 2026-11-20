@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         See NavDebugDraw.h.
 *
 * \history
@@ -12,6 +12,7 @@
 *                own height; blocked ground drawn at its node's height
 *    -v1.2       links between different surfaces: climbs as white lines,
 *                drops as magenta arrows (down)
+*    -v1.3       flow arrows on every layer, at its own height
 *
 **************************************************************************/
 #include "NavDebugDraw.h"
@@ -147,24 +148,24 @@ namespace Crucible::NavDebugDraw {
 
     }   // Grid()
 
-    void Arrows(const NavGrid& grid, const FlowField& field, const NavTerrain& ground) {
+    void Arrows(const NavGrid& grid, const FlowField& field) {
 
         const DebugStyle arrow{ .color = { 1.0f, 0.85f, 0.2f, 1.0f }, .depthTest = false, .category = DebugCategory::FlowField };
 
         // Each arrow spans 70% of a cell, so neighbouring arrows never touch.
         const float halfLength = grid.CellSize() * 0.35f;
 
-        for (int row = 0; row < grid.Rows(); ++row) {
-            for (int col = 0; col < grid.Cols(); ++col) {
+        // One per node that has a direction, at its own layer's height: up
+        // the ramp, along the deck, and on the ground under it.
+        for (int node = 0; node < grid.NodeCount(); ++node) {
 
-                const Math::vec3 direction = field.DirectionAt({ col, row });
-                if (direction.x == 0.0f && direction.z == 0.0f) continue;
+            const Math::vec3 direction = field.DirectionAtNode(node);
+            if (direction.x == 0.0f && direction.z == 0.0f) continue;
 
-                Math::vec3 centre = grid.CellToWorldCenter({ col, row });
-                centre.y = ground.GroundHeight(centre) + kDrawLift * 2.0f;   // a little above the grid lines
-                DebugDraw::Arrow(centre - direction * halfLength, centre + direction * halfLength, arrow);
+            Math::vec3 centre = grid.CellToWorldCenter(grid.NodeCell(node));
+            centre.y = grid.NodeHeight(node) + kDrawLift * 2.0f;   // a little above the grid lines
+            DebugDraw::Arrow(centre - direction * halfLength, centre + direction * halfLength, arrow);
 
-            }
         }
 
     }   // Arrows()

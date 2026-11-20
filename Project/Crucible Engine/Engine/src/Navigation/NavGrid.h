@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                NavGrid: a flat 2D grid over the map where every cell is
 *                open or blocked. The bottom layer of enemy navigation.
@@ -81,6 +81,8 @@
 *    -v1.5       build step 6c: links. Each node stores, per neighbour
 *                direction, which layer it connects to there (climb, walk
 *                along, or a one-way drop of up to maxDropHeight); LinkedNode
+*    -v1.6       build step 6d-1: NodeAt (the layer under a position);
+*                obstacles block the layers whose height band they reach
 *
 **************************************************************************/
 #pragma once
@@ -222,6 +224,16 @@ namespace Crucible {
         // The node of a cell's layer, counted from the lowest (0); -1 if there is none.
         int   NodeIndex(const NavCell& cell, int layer) const;
 
+        /*!
+            \brief
+            The layer under a position: the highest one at or a little below
+            its height (feet or body centre both work - layers in one cell
+            are at least agentHeight apart). Lower than every layer: the
+            lowest one. -1 off the grid, unbaked, or a cell with no layer.
+        */
+        int   NodeAt(const Math::vec3& position) const { return NodeAt(WorldToCell(position), position.y); }
+        int   NodeAt(const NavCell& cell, float height) const;
+
         // The node of the cell's ground (terrain or flat floor); -1 if the
         // ground there is not a layer (a Walkable box sits on it) or off the grid.
         int   GroundNode(const NavCell& cell) const;
@@ -247,17 +259,22 @@ namespace Crucible {
 
         /*!
             \brief
-            The nodes an obstacle blocks: its box grown by bodyRadiusPadding,
-            if it reaches into the height band [ground + stepHeight,
-            ground + agentHeight] (ground under its centre). Until 6d that
-            is each covered cell's ground layer (where it has one).
+            The nodes an obstacle blocks: in every cell under its box grown
+            by bodyRadiusPadding, each layer whose height band [layer +
+            stepHeight, layer + agentHeight] the box reaches into. A crate on
+            the bridge blocks the deck, not the ground under it; a tall wall
+            beside it blocks both.
+
+            \param terrain
+            Only for an obstacle entirely off the grid: its band is then
+            judged against the ground under its centre, for the bake's count.
 
             \param cells
             Cleared, then filled with the node indices. Empty when it is
-            outside the band or off the grid.
+            outside every band or off the grid.
 
             \return
-            Whether it is inside the height band (even if off the grid).
+            Whether it reaches into a band (even if off the grid).
         */
         bool Footprint(const NavObstacle& obstacle, const NavTerrain& terrain, std::vector<int>& cells) const;
 

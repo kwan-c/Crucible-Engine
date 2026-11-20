@@ -45,23 +45,27 @@
                     "name": "Player Golem"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "CombatHealth",
-                    "fields": [
+                    "scripts": [
                         {
-                            "declaringType": "Crucible.Scripts.CombatHealth",
-                            "name": "deactivateOnDeath",
-                            "type": "Bool",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "CombatHealth",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CombatHealth",
+                                    "name": "deactivateOnDeath",
+                                    "type": "Bool",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
                         }
                     ]
                 },
@@ -71,6 +75,9 @@
                     "isRoot": true,
                     "prefabHash": 3326835317903766686,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -128,6 +135,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -163,6 +173,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -191,51 +204,58 @@
                     "name": "Enemy Spawner Mace"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "EnemySpawner",
-                    "fields": [
+                    "scripts": [
                         {
-                            "declaringType": "Crucible.Scripts.EnemySpawner",
-                            "name": "enemyPrefab",
-                            "type": "Prefab",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 12564058752782925993
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.EnemySpawner",
-                            "name": "enemiesPerWave",
-                            "type": "Int",
-                            "boolean": false,
-                            "integer": 3,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.EnemySpawner",
-                            "name": "spawnStagger",
-                            "type": "Float",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 3.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemySpawner",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "enemyPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 12564058752782925993
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "enemiesPerWave",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 3,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "spawnStagger",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 3.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
                         }
                     ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -264,51 +284,119 @@
                     "name": "Enemy Spawner Cannon"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "EnemySpawner",
-                    "fields": [
+                    "scripts": [
                         {
-                            "declaringType": "Crucible.Scripts.EnemySpawner",
-                            "name": "enemyPrefab",
-                            "type": "Prefab",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 8796023608539152641
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.EnemySpawner",
-                            "name": "enemiesPerWave",
-                            "type": "Int",
-                            "boolean": false,
-                            "integer": 3,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.EnemySpawner",
-                            "name": "spawnStagger",
-                            "type": "Float",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 3.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "EnemySpawner",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "enemyPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 8796023608539152641
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "enemiesPerWave",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 3,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.EnemySpawner",
+                                    "name": "spawnStagger",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 3.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
                         }
                     ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "7D89096603C3DBCA",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Cursor Lock"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "CursorLock",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CursorLock",
+                                    "name": "locked",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 9856190331958001723,
+                    "fileId": 12162033341171695673,
+                    "isRoot": true,
+                    "prefabHash": 11482642849270556057,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -411,6 +499,9 @@
                         "y": 0.019999999552965164
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -451,6 +542,9 @@
                 },
                 "EntityName": {
                     "name": "Directional Light"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -515,10 +609,16 @@
                     "cellSize": 2.0,
                     "bodyRadiusPadding": 0.6000000238418579,
                     "stepHeight": 0.30000001192092896,
-                    "shoulderHeight": 1.600000023841858,
+                    "agentHeight": 1.600000023841858,
+                    "maxLayersPerCell": 4,
+                    "maxDropHeight": 3.0,
                     "floodRadius": 100.0,
                     "rebuildDistance": 3.0,
-                    "wallAdjacencyCost": 4.0
+                    "wallAdjacencyCost": 4.0,
+                    "dynamicUpdateInterval": 0.25
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -576,6 +676,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -618,6 +721,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -675,6 +781,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -718,6 +827,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -775,53 +887,9 @@
                     "isRoot": false,
                     "prefabHash": 0,
                     "overrides": []
-                }
-            }
-        },
-        {
-            "id": "7D89096603C3DBCA",
-            "components": {
-                "Transform": {
-                    "positions": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0
-                    },
-                    "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
-                    },
-                    "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
-                    }
                 },
-                "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "CursorLock",
-                    "fields": [
-                        {
-                            "declaringType": "Crucible.Scripts.CursorLock",
-                            "name": "locked",
-                            "type": "Boolean",
-                            "boolean": true,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        }
-                    ]
-                },
-                "EntityName": {
-                    "name": "Cursor Lock"
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         }

@@ -364,7 +364,7 @@ namespace Crucible {
         // Skipped outright when nothing would show them (Gizmos off, or their
         // category off): on a 500 m map the loops visit 62,500 cells a frame.
         if (m_grid.IsBaked()  && NavDebugDraw::WantsGrid())   NavDebugDraw::Grid(m_grid, m_baker.Terrain());
-        if (m_field.HasFlow() && NavDebugDraw::WantsArrows()) NavDebugDraw::Arrows(m_grid, m_field, m_baker.Terrain());
+        if (m_field.HasFlow() && NavDebugDraw::WantsArrows()) NavDebugDraw::Arrows(m_grid, m_field);
 
     }   // ECSNavigationSystem::Update()
 

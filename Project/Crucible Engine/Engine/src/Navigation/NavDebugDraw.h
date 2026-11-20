@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                NavDebugDraw: the navigation overlay - the surface's
 *                outline, the grid's cells and blocked cells, and the flow
@@ -26,6 +26,7 @@
 *    -v1.0       first version (moved out of ECSNavigationSystem, no
 *                behaviour change)
 *    -v1.1       raised layers drawn in green at their own height
+*    -v1.2       arrows per layer at its own height (no terrain needed)
 *
 **************************************************************************/
 #pragma once
@@ -50,9 +51,9 @@ namespace Crucible::NavDebugDraw {
     // each raised layer (a Walkable top) as a green square at its height.
     void Grid(const NavGrid& grid, const NavTerrain& ground);
 
-    // One yellow arrow per cell that has a direction, pointing the way an
-    // enemy standing there would go. Only flooded cells have one, so the
-    // arrows also show the flood radius.
-    void Arrows(const NavGrid& grid, const FlowField& field, const NavTerrain& ground);
+    // One yellow arrow per layer that has a direction, at that layer's
+    // height, pointing the way an enemy standing there would go. Only flooded
+    // layers have one, so the arrows also show the flood radius.
+    void Arrows(const NavGrid& grid, const FlowField& field);
 
 }   // NAMESPACE CRUCIBLE::NAVDEBUGDRAW

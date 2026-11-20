@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.5
+* \version       1.6
 * \brief
 *                NavGrid's bake and its cell maths.
 *
@@ -28,6 +28,8 @@
 *    -v1.5       BuildLinks: per node and direction, the neighbour layer it
 *                connects to (same surface; within a step where the cells
 *                meet; or a one-way drop up to maxDropHeight)
+*    -v1.6       NodeAt; Footprint judges each layer's own band. On flat
+*                ground with one layer the same cells as before
 *
 **************************************************************************/
 #include "NavGrid.h"
@@ -66,6 +68,11 @@ namespace Crucible {
 
         // A link entry meaning "no link in this direction".
         constexpr std::uint8_t kNoLink = 0xFF;
+
+        // NodeAt: a layer this far above a position still counts as under it,
+        // so a position at the feet, or a little below a ramp's surface, gets
+        // that surface. Layers in one cell are at least agentHeight apart.
+        constexpr float kStandSlack = 0.5f;
 
         // Points along the line between two cells' centres where a climb is
         // looked for: every quarter metre on 2 m cells.
@@ -231,6 +238,23 @@ namespace Crucible {
         return node < 0 || IsBlockedIndex(static_cast<std::size_t>(node));
 
     }   // NavGrid::IsBlocked()
+
+    int NavGrid::NodeAt(const NavCell& cell, float height) const {
+
+        const int layers = LayerCount(cell);
+        if (layers == 0) return -1;
+
+        // Lowest first: keep climbing while the next layer is still at or
+        // (a little) below the height.
+        int node = NodeIndex(cell, 0);
+        for (int layer = 1; layer < layers; ++layer) {
+            const int next = NodeIndex(cell, layer);
+            if (m_nodeHeight[static_cast<std::size_t>(next)] > height + kStandSlack) break;
+            node = next;
+        }
+        return node;
+
+    }   // NavGrid::NodeAt()
 
     int NavGrid::GroundNode(const NavCell& cell) const {
 
@@ -539,17 +563,6 @@ namespace Crucible {
 
         cells.clear();
 
-        // The height band is measured from the ground under the box's
-        // centre, so a rock on a hillside is judged against the hill.
-        const Math::vec3 centre = (obstacle.min + obstacle.max) * 0.5f;
-        const float      ground = terrain.GroundHeight(centre);
-
-        // Entirely below the step (a kerb, the floor itself): walk over it.
-        // Entirely above the enemies' heads (a branch, a bridge): walk under it.
-        if (obstacle.max.y < ground + m_settings.stepHeight || obstacle.min.y > ground + m_settings.agentHeight) {
-            return false;
-        }
-
         // Grow the footprint by the body radius, so the cells left open are
         // ones an enemy's whole body fits in, not just its centre point.
         const float cellSize = m_settings.cellSize;
@@ -572,16 +585,32 @@ namespace Crucible {
         const int rowFirst = std::max(0,          ToCellNumber(std::floor((z0 - m_minZ) / cellSize), m_rows));
         const int rowLast  = std::min(m_rows - 1, ToCellNumber(std::ceil((z1 - m_minZ) / cellSize), m_rows) - 1);
 
-        // A box entirely off the grid gives first > last, so these loops
-        // simply don't run. Each covered cell's ground layer for now; the
-        // layered grid (6d) picks the layers the box actually reaches.
+        // Entirely off the grid: nothing to block, but the bake still counts
+        // whether it is in the band - judged against the ground under its centre.
+        if (colFirst > colLast || rowFirst > rowLast) {
+            const Math::vec3 centre = (obstacle.min + obstacle.max) * 0.5f;
+            const float      ground = terrain.GroundHeight(centre);
+            return !(obstacle.max.y < ground + m_settings.stepHeight || obstacle.min.y > ground + m_settings.agentHeight);
+        }
+
+        // Each covered cell's layers whose band the box reaches into, so it
+        // is judged against the surface it stands on - the hill under it, or
+        // the bridge deck. Entirely below a layer's step (a kerb, the floor
+        // itself): walked over. Entirely above its agent height (a branch, the
+        // bridge over the ground): walked under.
+        bool inBand = false;
         for (int row = rowFirst; row <= rowLast; ++row) {
             for (int col = colFirst; col <= colLast; ++col) {
-                const int node = GroundNode({ col, row });
-                if (node >= 0) cells.push_back(node);
+                for (int layer = 0; layer < static_cast<int>(m_layerCount[static_cast<std::size_t>(Index({ col, row }))]); ++layer) {
+                    const int   node   = NodeIndex({ col, row }, layer);
+                    const float height = m_nodeHeight[static_cast<std::size_t>(node)];
+                    if (obstacle.max.y < height + m_settings.stepHeight || obstacle.min.y > height + m_settings.agentHeight) continue;
+                    cells.push_back(node);
+                    inBand = true;
+                }
             }
         }
-        return true;
+        return inBand;
 
     }   // NavGrid::Footprint()
 
