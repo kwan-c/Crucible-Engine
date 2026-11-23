@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Terrain: uneven ground built at runtime from a height grid,
 *                Unity's Terrain (or a generated mesh plus MeshCollider).
@@ -28,6 +28,7 @@
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       TerrainRegion::Tunnel and m_tunnelColour (cave floors)
 *
 **************************************************************************/
 #pragma once
@@ -53,6 +54,7 @@ namespace Crucible {
         Ground = 0,   // walkable ground
         Cliff  = 1,   // too steep to walk: a wall for players and enemies alike
         Road   = 2,   // a road the generator laid between chunks
+        Tunnel = 3,   // a cave tunnel's floor (walkable; only Cliff is a wall)
 
         Count         // keep last
 
@@ -83,6 +85,7 @@ namespace Crucible {
         Math::vec3 m_groundColour = Math::vec3(0.42f, 0.55f, 0.30f);
         Math::vec3 m_cliffColour  = Math::vec3(0.46f, 0.43f, 0.40f);
         Math::vec3 m_roadColour   = Math::vec3(0.63f, 0.53f, 0.39f);
+        Math::vec3 m_tunnelColour = Math::vec3(0.36f, 0.27f, 0.18f);
 
         // --- runtime only, never saved ---------------------------------------- //
         // The ground as last built. Null until a script builds it.

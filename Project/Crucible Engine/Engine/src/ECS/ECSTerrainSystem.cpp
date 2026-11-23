@@ -3,13 +3,14 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Implementation of ECSTerrainSystem. See the header for
 *                what happens each frame.
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       Compares the whole palette, so a new region needs no change here
 *
 **************************************************************************/
 #include "ECS/ECSTerrainSystem.h"
@@ -31,9 +32,10 @@ namespace {
 
     bool SameColour(const Math::vec3& a, const Math::vec3& b) { return a.x == b.x && a.y == b.y && a.z == b.z; }
 
-    bool SameColours(const Math::vec3 (&recorded)[3], const Terrain& terrain) {
-        return SameColour(recorded[0], terrain.m_groundColour) && SameColour(recorded[1], terrain.m_cliffColour)
-            && SameColour(recorded[2], terrain.m_roadColour);
+    bool SamePalette(const TerrainPalette& a, const TerrainPalette& b) {
+        for (int region = 0; region < static_cast<int>(TerrainRegion::Count); ++region)
+            if (!SameColour(a.colours[region], b.colours[region])) return false;
+        return true;
     }
 
 }   // ANONYMOUS NAMESPACE
@@ -64,7 +66,7 @@ namespace Crucible {
             record.generation = entity.generation;
             record.seenFrame  = m_frame;
 
-            if (record.grid != terrain.m_grid || !SameColours(record.colours, terrain)) Rebuild(record, terrain);
+            if (record.grid != terrain.m_grid || !SamePalette(record.palette, PaletteOf(terrain))) Rebuild(record, terrain);
 
             // Every frame, not only on a rebuild: anything that copies the
             // MeshRenderer (a scene reload, an undo) brings back an old handle.
@@ -100,13 +102,11 @@ namespace Crucible {
 
         Free(record);
         record.grid       = terrain.m_grid;
-        record.colours[0] = terrain.m_groundColour;
-        record.colours[1] = terrain.m_cliffColour;
-        record.colours[2] = terrain.m_roadColour;
+        record.palette    = PaletteOf(terrain);
 
         if (record.grid == nullptr) return;
 
-        const MeshData mesh = BuildTerrainMesh(*record.grid, PaletteOf(terrain));
+        const MeshData mesh = BuildTerrainMesh(*record.grid, record.palette);
         if (mesh.vertices.empty()) return;
         record.mesh = m_renderer.CreateMesh(mesh, "Terrain");
 

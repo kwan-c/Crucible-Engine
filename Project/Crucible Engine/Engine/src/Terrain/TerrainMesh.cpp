@@ -3,13 +3,14 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                BuildTerrainMesh: a TerrainGrid as flat-shaded triangles.
 *                See the header for the layout rules.
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       Tunnel colour in the palette
 *
 **************************************************************************/
 #include "Terrain/TerrainMesh.h"
@@ -62,6 +63,7 @@ namespace Crucible {
         palette.colours[static_cast<int>(TerrainRegion::Ground)] = terrain.m_groundColour;
         palette.colours[static_cast<int>(TerrainRegion::Cliff)]  = terrain.m_cliffColour;
         palette.colours[static_cast<int>(TerrainRegion::Road)]   = terrain.m_roadColour;
+        palette.colours[static_cast<int>(TerrainRegion::Tunnel)] = terrain.m_tunnelColour;
         return palette;
 
     }   // PaletteOf()

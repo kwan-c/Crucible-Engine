@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Script access to a Terrain: hand the engine a generated
 *                height grid, and ask how high the ground is. Part of
 *                Crucible.ScriptCore.dll.
@@ -26,6 +26,10 @@
 *
 *    C++ side: Engine/src/Scripting/Bindings/TerrainBindings.cpp.
 *
+* \history
+*    -v1.0       first version
+*    -v1.1       TerrainRegion.Tunnel
+*
 **************************************************************************/
 using System.Runtime.CompilerServices;
 
@@ -40,6 +44,8 @@ namespace Crucible
         Cliff = 1,
         /// <summary>A road between chunks.</summary>
         Road = 2,
+        /// <summary>A cave tunnel's floor: walkable (only Cliff is a wall).</summary>
+        Tunnel = 3,
     }
 
     /// <summary>Generated uneven ground (Unity's Terrain): built from a height grid by a script, drawn and collided with by the engine.</summary>
