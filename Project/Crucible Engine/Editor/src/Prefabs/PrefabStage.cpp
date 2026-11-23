@@ -15,6 +15,9 @@
 #include "Prefabs/PrefabAuthoring.h"
 #include "ImGui/ImGuiManager.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "ImGui/Panels/ImGuiPanel_SceneView.h"
+#include "Graphics/DebugDraw.h"
+#include "Graphics/RenderExtractSystem.h"
 #include "AssetPipe/Assetmanager.h"
 #include "Core.h"
 #include "Diagnostics/Logger.h"
@@ -57,10 +60,33 @@ namespace Crucible::PrefabStage {
 			bool                     saved = false;  // written at least once since opening
 			EntityKey                rootKey{};
 			std::unordered_map<std::uint64_t, Part> parts;   // by packed undo key
+			std::size_t              outsideWarned = 0;   // objects outside the root last warned about
+			bool                     framePending = false;   // frame the prefab once it has been placed
+			bool                     hasCamera = false;
+			SceneView::CameraView    camera;         // the Scene view's, to come back to
+			bool                     gridBefore = false;   // the Grid gizmo's state, to come back to
 		};
 		State g_stage;
 
 		bool g_transitionQueued = false;   // one open or exit waiting for the safe point
+
+		// The Save / Discard / Cancel box.
+		bool g_exitPrompt = false;
+		bool g_exitPromptOpen = false;
+		bool g_exitCancelled = false;
+		char const* const kExitPopup = "Unsaved Prefab Changes";
+
+		// Kept between prefabs for this editor session.
+		bool   g_autoSave = false;
+		bool   g_previewLight = true;
+		bool   g_showGround = true;
+		double g_dirtySince = -1.0;   // when the current unsaved edits were first seen
+		constexpr double kAutoSaveDelay = 1.0;   // seconds
+
+		void ApplyPreview() {
+			RenderExtractSystem::SetPreviewSun(g_previewLight);
+			DebugDraw::SetCategoryEnabled(DebugCategory::Grid, g_showGround);
+		}
 
 		// After an Exit that saved: the other scenes using the prefab, until the box is answered.
 		struct OtherScenesOffer {
@@ -121,8 +147,18 @@ namespace Crucible::PrefabStage {
 			std::uint64_t const asset = g_stage.asset;
 			std::string const name = g_stage.name;
 
+			RenderExtractSystem::SetPreviewSun(false);
+			DebugDraw::SetCategoryEnabled(DebugCategory::Grid, g_stage.gridBefore);
+			if (g_stage.hasCamera) {
+				if (auto view = EditorManager::GetInstance().GetPanel<SceneView>(ImguiPanels::EDITORSCENE)) {
+					view->SetCameraView(g_stage.camera);
+				}
+			}
+
 			scenes.SetSceneLocked(false);
 			g_stage = State{};
+			g_exitPrompt = false;
+			g_dirtySince = -1.0;
 
 			EditorManager::GetInstance().EndWorldSwap(true);
 
@@ -183,6 +219,11 @@ namespace Crucible::PrefabStage {
 			g_stage.prefabName = prefab.Name();
 			g_stage.asset      = assetGuid;
 			g_stage.diskText   = text;
+			g_stage.gridBefore = DebugDraw::IsCategoryEnabled(DebugCategory::Grid);
+			if (auto view = editor.GetPanel<SceneView>(ImguiPanels::EDITORSCENE)) {
+				g_stage.hasCamera = view->GetCameraView(g_stage.camera);
+			}
+			ApplyPreview();
 
 			scenes.SetSceneLocked(true);
 			scenes.ClearWorldForStage();
@@ -207,6 +248,7 @@ namespace Crucible::PrefabStage {
 				g_stage.parts[Pack(History().KeyOf(entries[i]))] = Part{ prefab.IdAt(i), scenes.EnsureId(entries[i]).m_Value };
 			}
 			g_stage.rootKey = History().KeyOf(root);
+			g_stage.framePending = true;   // its WorldTransforms are filled in this frame
 
 			if (auto inspector = editor.GetPanel<Inspector>(ImguiPanels::INSPECTOR)) { inspector->SetSelection({ root }); }
 			CRU_USER_INFO("Prefab Mode: {} ({} entit{})", g_stage.name, entries.size(), entries.size() == 1 ? "y" : "ies");
@@ -235,15 +277,34 @@ namespace Crucible::PrefabStage {
 		});
 	}
 
+	namespace {
+		void QueueExit() {
+			Core* core = EditorManager::GetInstance().GetCore();
+			if (core == nullptr || !g_stage.active || g_transitionQueued) { return; }
+
+			g_transitionQueued = true;
+			core->GetScenes().RunAtSafePoint([core] {
+				g_transitionQueued = false;
+				ApplyExit(*core);
+			});
+		}
+	}
+
 	void RequestExit() {
 		Core* core = EditorManager::GetInstance().GetCore();
-		if (core == nullptr || !g_stage.active || g_transitionQueued) { return; }
+		if (core == nullptr || !g_stage.active || g_transitionQueued || g_exitPrompt) { return; }
 
-		g_transitionQueued = true;
-		core->GetScenes().RunAtSafePoint([core] {
-			g_transitionQueued = false;
-			ApplyExit(*core);
-		});
+		CommitInspectorEdit();   // an edit still being typed counts as unsaved
+		if (core->GetScenes().IsDirty()) {
+			g_exitPrompt = true;
+			g_exitPromptOpen = true;
+			return;
+		}
+		QueueExit();
+	}
+
+	bool ConsumeExitCancelled() {
+		return std::exchange(g_exitCancelled, false);
 	}
 
 	bool Save() {
@@ -284,7 +345,9 @@ namespace Crucible::PrefabStage {
 		world.CreateQuery<const Transform>().ForEach([&](Entity e, Transform const&) {
 			if (world.GetParent(e) == kNullEntity && !(e == root)) { ++outside; }
 		});
-		if (outside > 0) {
+		bool const warnOutside = outside > 0 && outside != g_stage.outsideWarned;   // not on every auto-save
+		g_stage.outsideWarned = outside;
+		if (warnOutside) {
 			CRU_USER_WARN("{} object{} outside the root of '{}' {} not saved: drag {} under the root to include {}", outside,
 			              outside == 1 ? "" : "s", g_stage.name, outside == 1 ? "was" : "were",
 			              outside == 1 ? "it" : "them", outside == 1 ? "it" : "them");
@@ -389,12 +452,98 @@ namespace Crucible::PrefabStage {
 		}
 	}
 
+	namespace {
+		void DrawExitPrompt() {
+			if (!g_exitPrompt) { return; }
+			if (g_exitPromptOpen) {
+				ImGui::OpenPopup(kExitPopup);
+				g_exitPromptOpen = false;
+			}
+			ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+			if (!ImGui::BeginPopupModal(kExitPopup, nullptr, ImGuiWindowFlags_AlwaysAutoResize)) { return; }
+
+			ImGui::Text("Save your changes to %s?", g_stage.name.c_str());
+			if (g_stage.overwriteArmed) {
+				ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.3f, 1.0f), "The file changed on disk. Saving again overwrites that change.");
+			}
+			ImGui::Spacing();
+
+			bool close = false;
+			if (ImGui::Button("Save", ImVec2(110.0f, 0.0f)) && Save()) {   // a failed save keeps the box open
+				close = true;
+				QueueExit();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Discard", ImVec2(110.0f, 0.0f))) {
+				close = true;
+				QueueExit();
+			}
+			ImGui::SameLine();
+			if (ImGui::Button("Cancel", ImVec2(110.0f, 0.0f)) || ImGui::IsKeyPressed(ImGuiKey_Escape, false)) {
+				close = true;
+				g_exitCancelled = true;
+			}
+			if (close) {
+				ImGui::CloseCurrentPopup();
+				g_exitPrompt = false;
+			}
+			ImGui::EndPopup();
+		}
+
+		// Frames the whole prefab, from a fixed three-quarter angle, once it has been placed.
+		void FrameIfPending(Core& core) {
+			if (!g_stage.framePending) { return; }
+			World& world = core.GetWorld();
+			Entity const root = Root();
+			WorldTransform const* placed = world.IsAlive(root) ? world.Read<WorldTransform>(root) : nullptr;
+			if (world.IsAlive(root) && (placed == nullptr || !placed->valid)) { return; }   // next frame
+			g_stage.framePending = false;
+			if (!world.IsAlive(root)) { return; }
+
+			auto view = EditorManager::GetInstance().GetPanel<SceneView>(ImguiPanels::EDITORSCENE);
+			SceneView::CameraView camera;
+			if (!view || !view->GetCameraView(camera)) { return; }
+			camera.yaw   = -125.0f;
+			camera.pitch = -25.0f;
+			view->SetCameraView(camera);
+
+			std::vector<Entity> tree;
+			auto visit = [&](auto&& self, Entity e) -> void {
+				tree.push_back(e);
+				world.ForEachChild(e, [&](Entity child) { self(self, child); });
+			};
+			visit(visit, root);
+			view->FrameEntities(tree);
+		}
+
+		// Saves about a second after an edit, never in the middle of a drag or while typing. A
+		// failed save (or a file changed on disk) turns it off rather than retrying or overwriting.
+		void AutoSaveIfDue(bool dirty) {
+			if (!dirty) { g_dirtySince = -1.0; return; }
+			double const now = ImGui::GetTime();
+			if (g_dirtySince < 0.0) { g_dirtySince = now; }
+			if (!g_autoSave || now - g_dirtySince < kAutoSaveDelay || g_exitPrompt || g_transitionQueued) { return; }
+			if (ImGui::IsAnyItemActive() || ImGui::IsMouseDown(ImGuiMouseButton_Left)
+				|| ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel)) { return; }
+			if (Root() == kNullEntity) { return; }   // root deleted: wait for the undo
+			if (!Save()) {
+				g_autoSave = false;
+				CRU_USER_WARN("Auto Save was turned off because the prefab could not be saved");
+			}
+			g_dirtySince = -1.0;
+		}
+	}
+
 	void DrawBar() {
 		DrawOtherScenesOffer();
+		DrawExitPrompt();
 		if (!g_stage.active) { return; }
 
 		Core* core = EditorManager::GetInstance().GetCore();
+		if (core != nullptr) { FrameIfPending(*core); }
+		AutoSaveIfDue(core != nullptr && core->GetScenes().IsDirty());
 		bool const dirty = core != nullptr && core->GetScenes().IsDirty();
+		std::string const sceneName = g_stage.scene.path.empty() ? std::string("Untitled") : g_stage.scene.path.stem().string();
 
 		float const height = ImGui::GetFrameHeight() + 8.0f;
 		ImGuiWindowFlags const flags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse
@@ -403,21 +552,35 @@ namespace Crucible::PrefabStage {
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 4.0f));
 		ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(0.14f, 0.24f, 0.36f, 1.0f));
 		if (ImGui::BeginViewportSideBar("##PrefabStageBar", ImGui::GetMainViewport(), ImGuiDir_Up, height, flags)) {
-			if (ImGui::Button("< Exit")) { RequestExit(); }
+			if (ImGui::Button("<")) { RequestExit(); }
 			ImGui::SetItemTooltip("Back to the scene");
 			ImGui::SameLine();
+
+			// Breadcrumb: Scene > Prefab
+			if (ImGui::Button((sceneName + "##PrefabCrumbScene").c_str())) { RequestExit(); }
+			ImGui::SetItemTooltip("Back to the scene");
+			ImGui::SameLine();
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextDisabled(">");
+			ImGui::SameLine();
+			ImGui::Text("%s%s", g_stage.name.c_str(), dirty ? " *" : "");
+			ImGui::SetItemTooltip("%s", g_stage.path.c_str());
+
+			ImGui::SameLine(0.0f, 24.0f);
 			ImGui::BeginDisabled(!dirty);
 			if (ImGui::Button("Save")) { Save(); }
 			ImGui::EndDisabled();
 			ImGui::SetItemTooltip("Save the prefab (Ctrl+S)");
 			ImGui::SameLine();
-			ImGui::AlignTextToFramePadding();
-			ImGui::Text("Prefab Mode: %s%s", g_stage.name.c_str(), dirty ? " *" : "");
-			ImGui::SetItemTooltip("%s", g_stage.path.c_str());
-			if (dirty) {
-				ImGui::SameLine();
-				ImGui::TextDisabled("Unsaved changes are discarded on Exit.");
-			}
+			ImGui::Checkbox("Auto Save", &g_autoSave);
+			ImGui::SetItemTooltip("Save about a second after each change");
+
+			ImGui::SameLine(0.0f, 24.0f);
+			if (ImGui::Checkbox("Preview Light", &g_previewLight)) { ApplyPreview(); }
+			ImGui::SetItemTooltip("Add a neutral sun when the prefab has no directional light (not saved)");
+			ImGui::SameLine();
+			if (ImGui::Checkbox("Ground", &g_showGround)) { ApplyPreview(); }
+			ImGui::SetItemTooltip("Show the ground grid at y = 0 (not saved)");
 		}
 		ImGui::End();
 		ImGui::PopStyleColor();

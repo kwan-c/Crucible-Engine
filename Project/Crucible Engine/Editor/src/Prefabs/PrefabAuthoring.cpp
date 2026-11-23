@@ -1770,11 +1770,15 @@ namespace Crucible::PrefabAuthoring {
 			// A part: Select, and its own count. The full list, Apply and Unpack are on the
 			// instance's root, as in Unity.
 			std::size_t const count = DrawnOverrides(world, entity).size();
-			ButtonRow row(1, kMinBarButtonWidth);
+			ButtonRow row(2, kMinBarButtonWidth);
 			ImGui::BeginDisabled(path.empty());
 			if (row.Button("Select")) { RevealInBrowser(path); }
 			ImGui::EndDisabled();
 			ImGui::SetItemTooltip("Show the .cprefab in the Asset Browser");
+			ImGui::BeginDisabled(path.empty() || !CanCreate());
+			if (row.Button("Open")) { PrefabStage::RequestOpen(path); }
+			ImGui::EndDisabled();
+			ImGui::SetItemTooltip("Edit the prefab in Prefab Mode");
 			if (count > 0) { ImGui::TextDisabled("%zu override%s here (listed on the instance's root)", count, count == 1 ? "" : "s"); }
 			return;
 		}
@@ -1782,12 +1786,17 @@ namespace Crucible::PrefabAuthoring {
 		// Line 2+: the root's buttons, sharing the panel's width (wrapping onto a second row
 		// when it is narrow): Select | Overrides (n) | Unpack. Apply lives in the Overrides menu.
 		std::vector<Override> const all = InstanceOverrides(world, entity);
-		ButtonRow row(3, kMinBarButtonWidth);
+		ButtonRow row(4, kMinBarButtonWidth);
 
 		ImGui::BeginDisabled(path.empty());
 		if (row.Button("Select")) { RevealInBrowser(path); }
 		ImGui::EndDisabled();
 		ImGui::SetItemTooltip("Show the .cprefab in the Asset Browser");
+
+		ImGui::BeginDisabled(path.empty() || !CanCreate());
+		if (row.Button("Open")) { PrefabStage::RequestOpen(path); }
+		ImGui::EndDisabled();
+		ImGui::SetItemTooltip("Edit the prefab in Prefab Mode");
 
 		// Always clickable: with no overrides the menu still offers Apply to All Scenes (push the
 		// prefab as it is now out to every scene).

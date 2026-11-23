@@ -61,7 +61,9 @@ void Crucible::Menu::Update(float) {
 
 	// Exit asked for during play mode: Stop has run since (it restores the edited scene and
 	// its unsaved-changes flag), so now ask about saving as usual.
-	// The same for Prefab Mode, which has restored the scene by then.
+	// The same for Prefab Mode, which has restored the scene by then - unless its Save / Discard
+	// box was cancelled, which cancels closing the editor too.
+	if (PrefabStage::ConsumeExitCancelled()) { m_exitAfterStop = false; }
 	if (m_exitAfterStop && !m_scenes.IsPlaySessionActive() && !PrefabStage::IsActive())
 	{
 		m_exitAfterStop = false;

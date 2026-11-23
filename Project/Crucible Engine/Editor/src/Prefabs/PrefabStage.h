@@ -25,7 +25,9 @@
 *	- Play is refused, and so are Create Prefab, Apply, placing prefabs and project-wide tag
 *	  changes, which all assume the world holds the scene.
 *
-* Exit discards edits made since the last Save.
+* Exit with unsaved edits asks Save / Discard / Cancel. The Scene view frames the prefab on open
+* and returns to where it was on Exit. The preview light and ground grid are render-only: they
+* are not entities, so they can never end up in the file.
 *
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
 * All Rights Reserved
@@ -45,8 +47,12 @@ namespace Crucible::PrefabStage {
 	// message) during Play or while another prefab is open.
 	void RequestOpen(std::string const& virtualPath);
 
-	// Asks to go back to the scene at the next safe point. Does nothing if no prefab is open.
+	// Asks to go back to the scene at the next safe point, first asking Save / Discard / Cancel
+	// if there are unsaved edits. Does nothing if no prefab is open.
 	void RequestExit();
+
+	// True once after that box was cancelled, so a pending "close the editor" can be dropped.
+	bool ConsumeExitCancelled();
 
 	// Writes the open prefab to its file, keeping the ids its instances link to. If the file
 	// changed on disk since it was opened or saved, the first call warns and writes nothing; a
