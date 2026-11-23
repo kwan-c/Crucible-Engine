@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.3
+* \version       1.4
 * \brief         Generates a sub-level from a seed. Terrain only for now:
 *                chunks, roads and decor are later port steps.
 *
@@ -45,6 +45,8 @@
 *                is gone (maxWalkableSlope here is the one slope limit)
 *    -v1.3       Optional caves feature (CaveGenerator): plans tunnel
 *                networks, painted as the Tunnel region; ground unchanged
+*    -v1.4       Caves carve plateaus and trenches (tunnelHeight,
+*                roofThickness, caveBlend)
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -76,6 +78,9 @@ namespace Crucible.@Scripts
         public float caveZoneSize = 120f;       // metres across each system's zone
         public float caveFill = 0.45f;          // chance a cell starts solid
         public int caveSmoothing = 5;           // passes of the 4-5 rule
+        public float tunnelHeight = 6f;         // metres from tunnel floor to roof
+        public float roofThickness = 1f;        // metres; the roof's top is level with the plateau
+        public float caveBlend = 12f;           // metres over which each plateau blends into the land around
 
         // --- movement ------------------------------------------------------- //
         public float maxWalkableSlope = 35f;    // degrees: the default walker's limit, for the player and enemies
@@ -118,8 +123,9 @@ namespace Crucible.@Scripts
                 return;
             }
 
-            map = TerrainGenerator.Generate(seed, ToTerrainSettings());
-            if (caves) PlanCaves();
+            TerrainSettings terrainSettings = ToTerrainSettings();
+            map = TerrainGenerator.Generate(seed, terrainSettings);
+            if (caves) AddCaves(terrainSettings);
             if (!ground.Build(map.Cols, map.Rows, map.CellSize, map.Heights, map.Regions()))
             {
                 Log.Error("SubLevelGenerator: Terrain.Build refused the map");
@@ -155,22 +161,24 @@ namespace Crucible.@Scripts
         {
             CaveSettings s = new CaveSettings();
             s.caveCount = caveCount; s.zoneSize = caveZoneSize; s.fill = caveFill; s.smoothing = caveSmoothing;
+            s.tunnelHeight = tunnelHeight; s.roofThickness = roofThickness; s.blendWidth = caveBlend;
             return s;
         }
 
-        // The tunnel plan, with one log line per cave system (centre in metres from the terrain's centre).
-        private void PlanCaves()
+        // The cave systems, with one log line each (centre in metres from the terrain's centre).
+        private void AddCaves(TerrainSettings terrainSettings)
         {
-            CaveZone[] zones = CaveGenerator.Plan(map, seed, ToCaveSettings());
+            CaveZone[] zones = CaveGenerator.Generate(map, seed, ToCaveSettings(), terrainSettings);
             if (zones.Length < caveCount)
                 Log.Warning("SubLevelGenerator: room for only " + zones.Length + " of " + caveCount + " cave systems");
             for (int i = 0; i < zones.Length; i++)
             {
                 CaveZone zone = zones[i];
                 float x = map.MinX + (zone.CentreCol + 0.5f) * map.CellSize, z = map.MinZ + (zone.CentreRow + 0.5f) * map.CellSize;
-                Log.Info("SubLevelGenerator: cave " + (i + 1) + " at (" + x.ToString("F0") + ", " + z.ToString("F0") + "): " +
-                         zone.TunnelCells + " tunnel cells, culled " + zone.CulledByWidth + " too narrow and " +
-                         zone.CulledPockets + " in pockets");
+                Log.Info("SubLevelGenerator: cave " + (i + 1) + " at (" + x.ToString("F0") + ", " + z.ToString("F0") + "): plateau " +
+                         zone.PlateauHeight.ToString("F0") + " m (ground there varied " + zone.HeightRange.ToString("F0") + " m), floor " +
+                         zone.FloorHeight.ToString("F0") + " m, " + zone.TunnelCells + " tunnel cells, culled " + zone.CulledByWidth +
+                         " too narrow and " + zone.CulledPockets + " in pockets");
             }
         }
 
