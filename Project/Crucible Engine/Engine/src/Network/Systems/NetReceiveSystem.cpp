@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.14
+* \version       1.15
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -38,6 +38,7 @@
 *                DontDestroyOnLoad entities removed (Networking C# Phase 9)
 *    -v1.14      EndSessionObjects: spawned objects removed and scene objects made local again
 *                when a session ends, so the next one in the same Play starts clean
+*    -v1.15      NetAnimator removed from scene objects too (Networking C# Phase 7)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -470,6 +471,7 @@ namespace Crucible
 			if (world.HasComponent<NetworkIdentity>(object.entity)) world.RemoveComponent<NetworkIdentity>(object.entity);
 			if (world.HasComponent<NetInterpolation>(object.entity)) world.RemoveComponent<NetInterpolation>(object.entity);
 			if (world.HasComponent<NetVariables>(object.entity)) world.RemoveComponent<NetVariables>(object.entity);   // the next session starts at 0
+			if (world.HasComponent<NetAnimator>(object.entity)) world.RemoveComponent<NetAnimator>(object.entity);     // the same
 			SetComponentsEnabled(world, object.entity, object.switchedOff, true, m_scratch);   // what the client switched off
 		}
 		for (const Entity e : spawned)

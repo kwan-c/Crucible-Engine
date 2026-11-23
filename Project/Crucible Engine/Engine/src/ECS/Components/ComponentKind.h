@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          19 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                Declares the fixed ComponentKind enum (one entry per
 *                engine component type) and the CRUCIBLE_COMPONENT /
@@ -34,6 +34,7 @@
 *    -v1.6       EntityTag kind (40): every entity's gameplay tag
 *                (mandatory, WorldValidated - see Components.h)
 *    -v1.7       NetVariables kind (41): replicated script values
+*    -v1.8       NetAnimator kind (42): replicated Animator parameters
 *
 *
 **************************************************************************/
@@ -108,8 +109,9 @@ namespace Crucible
 		NetworkObjectAuthoring = 39,   // Network: an object's saved networking settings (Network/NetComponents.h)
 		EntityTag = 40,          // every entity's gameplay tag, "Untagged" by default (mandatory) - Components.h
 		NetVariables = 41,       // Network: a network object's replicated script values (Network/NetComponents.h)
+		NetAnimator = 42,        // Network: a network object's replicated Animator parameters (Network/NetComponents.h)
 
-		MAXCOMPONENT = 42
+		MAXCOMPONENT = 43
 	};
 
 
@@ -326,5 +328,6 @@ namespace Crucible
  X(NetworkObjectAuthoring)                                                     \
  X(EntityTag)                                                                  \
  X(NetVariables)                                                               \
+ X(NetAnimator)                                                                \
 
 }

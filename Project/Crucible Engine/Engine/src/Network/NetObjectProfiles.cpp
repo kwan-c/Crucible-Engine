@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          6 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NetworkObjectAuthoring -> NetPrefabDesc, and network prefab
 *                discovery (see the header).
@@ -13,6 +13,7 @@
 *    -v1.1       AuthoringOptions, CheckAuthoring (Networking Phase 14.3)
 *    -v1.2       NetVariables offered although the object has none in the editor
 *                (Networking C# Phase 4)
+*    -v1.3       NetAnimator offered the same way (Networking C# Phase 7)
 *
 **************************************************************************/
 #include "Network/NetObjectProfiles.h"
@@ -156,7 +157,7 @@ namespace Crucible
 		{
 			return id == ComponentTypeId<NetworkIdentity>() || id == ComponentTypeId<NetInterpolation>()
 				|| id == ComponentTypeId<PlayerInput>() || id == ComponentTypeId<NetworkObjectAuthoring>()
-				|| id == ComponentTypeId<NetVariables>();
+				|| id == ComponentTypeId<NetVariables>() || id == ComponentTypeId<NetAnimator>();
 		}
 	}
 

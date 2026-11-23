@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.1
+* \version       1.2
 * \brief
 *                ReplicationRegistry and the built-in serializers (see the
 *                header).
@@ -14,6 +14,7 @@
 *                decode/commit, bounded readers, owned names; records
 *                applied as transactions with rollback
 *    -v1.1       the NetVariables serializer; EnsureRuntimeComponents
+*    -v1.2       the Animator serializer (NetAnimator)
 *
 **************************************************************************/
 #include "Network/ReplicationRegistry.h"
@@ -283,6 +284,57 @@ namespace Crucible
 		}
 	}
 
+	namespace
+	{
+		// Animator on the wire: a u32 mask of the slots the host has set, then those slots, 4 bytes
+		// each, lowest first. Unlike NetVariables a set slot may be 0 (false, 0, 0.0): the mask
+		// says which ones the host wrote, the others keep the controller's initial value.
+		struct NetAnimatorState
+		{
+			std::array<std::uint32_t, NetAnimator::kSlots> slots;
+			std::uint32_t written;
+		};
+
+		bool WriteNetAnimator(const World& world, Entity entity, const ReplicationContext&, ByteWriter& out)
+		{
+			const NetAnimator* animator = world.Read<NetAnimator>(entity);
+			if (animator == nullptr) return false;
+			out.U32(animator->written);
+			for (std::uint32_t i = 0; i < NetAnimator::kSlots; ++i)
+				if ((animator->written & (1u << i)) != 0) out.U32(animator->slots[i]);
+			return out.Ok();
+		}
+
+		bool DecodeNetAnimator(ByteReader& in, const ReplicationContext&, NetAnimatorState& out)
+		{
+			out.slots = {};
+			out.written = in.U32();
+			for (std::uint32_t i = 0; i < NetAnimator::kSlots && in.Ok(); ++i)
+				if ((out.written & (1u << i)) != 0) out.slots[i] = in.U32();
+			return in.Ok();
+		}
+
+		// The client's own bookkeeping (firedSeen, primed) stays: NetAnimatorSystem plays the
+		// trigger counts that changed.
+		bool CommitNetAnimator(NetAnimator& animator, const NetAnimatorState& state, const ReplicationContext&)
+		{
+			animator.slots = state.slots;
+			animator.written = state.written;
+			animator.received = true;
+			return true;
+		}
+
+		ReplicatedComponent NetAnimatorSerializer()
+		{
+			ReplicatedComponent serializer = MakeSerializer<NetAnimator, NetAnimatorState, &DecodeNetAnimator, &CommitNetAnimator>({
+				.id = NetComponentId::Animator, .name = "Animator", .schemaVersion = 1,
+				.maxBytes = 4 + 4 * NetAnimator::kSlots, .write = &WriteNetAnimator });
+			serializer.addedAtRuntime = true;
+			serializer.ensure = [](World& world, Entity entity) { world.AddComponent(entity, NetAnimator{}); };
+			return serializer;
+		}
+	}
+
 	void ReplicationRegistry::EnsureRuntimeComponents(World& world, Entity entity, const ReplicationContext& ctx) const
 	{
 		if (ctx.desc == nullptr || !world.IsAlive(entity)) return;
@@ -296,6 +348,7 @@ namespace Crucible
 	bool ReplicationRegistry::RegisterBuiltIns(std::string& error)
 	{
 		return Register(NetVariablesSerializer(), error)
+			&& Register(NetAnimatorSerializer(), error)
 			&& Register(MakeSerializer<Transform, TransformState, &DecodeTransformFull, &CommitTransform>({
 				.id = NetComponentId::TransformFull, .name = "Transform/Full", .schemaVersion = 1,
 				.maxBytes = 16, .write = &WriteTransformFull }), error)

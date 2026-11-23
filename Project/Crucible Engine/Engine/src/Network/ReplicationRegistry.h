@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                ReplicationRegistry: how each replicated piece of state is
 *                written, decoded and committed, keyed by a stable protocol
@@ -74,6 +74,10 @@
 *                                    2 to 66 bytes. Its component is added by
 *                                    the network layer (addedAtRuntime), not
 *                                    saved with the object.
+*                  Animator          the 32 Animator parameter slots
+*                                    (NetAnimator): a u32 mask of the slots
+*                                    the host has set, then 4 bytes each: 4
+*                                    to 132 bytes. Added at runtime too.
 *
 * \history
 *    -v1.0       replication registry and serializers; review
@@ -85,6 +89,7 @@
 *                (Networking Phase 14.2)
 *    -v1.2       NetVariables; addedAtRuntime serializers and EnsureRuntimeComponents
 *                (Networking C# Phase 4)
+*    -v1.3       Animator: replicated Animator parameters (Networking C# Phase 7)
 *
 **************************************************************************/
 #pragma once
@@ -118,6 +123,7 @@ namespace Crucible
 		TransformYawOnly = 2,   // position + yaw: upright characters and enemies
 		EnabledMask      = 3,   // on/off state of the prefab's enabledReplicated components
 		NetVariables     = 4,   // the object's 16 replicated script value slots
+		Animator         = 5,   // the object's replicated Animator parameters (NetAnimator)
 		FirstGameId      = 64,
 	};
 
@@ -230,7 +236,7 @@ namespace Crucible
 		/// enabledFlags on anything but the built-in EnabledMask.
 		bool Register(const ReplicatedComponent& component, std::string& error);
 
-		/// TransformFull, TransformYawOnly, EnabledMask and NetVariables.
+		/// TransformFull, TransformYawOnly, EnabledMask, NetVariables and Animator.
 		bool RegisterBuiltIns(std::string& error);
 
 		/// Adds the default component of every addedAtRuntime serializer in ctx.desc's replicated

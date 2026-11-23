@@ -160,10 +160,13 @@ Steps to make your own:
 Copy `Assets/Prefabs/NetworkedPlayer.cprefab`. It's set up like this:
 
 ```
-Player (root)                Transform, MeshRenderer, CharacterController,
-                             PlayerController, NetworkObjectAuthoring
-└── Camera Pivot             Transform, CameraOrbit
-    └── Player Camera        Transform, Camera
+Player (root)                Transform, CharacterController, PlayerController,
+                             NetPlayerAnimation script, NetworkObjectAuthoring
+├── Camera Pivot             Transform, CameraOrbit
+│   └── Player Camera        Transform, Camera
+└── Mech Visual              the game's mech, scaled to the 2 m capsule
+    └── Legs                 Mech Legs controller (Pose, Speed)
+        └── Torso            on the legs' Hip socket; head and sword below it
 ```
 
 Its `NetworkObjectAuthoring`:
@@ -171,17 +174,22 @@ Its `NetworkObjectAuthoring`:
 | Component | Network state | Runs on |
 |---|---|---|
 | Transform | Replicated: Transform/Full | Everywhere |
+| NetAnimator | Replicated: Animator | Everywhere |
 | CharacterController | Local | **Host only** |
 | PlayerController | Local | **Host only** |
 | CameraOrbit | Local | **Owner only** |
 | Camera | Local | **Owner only** |
-| MeshRenderer | Local | Everywhere |
 
 - **Critical** = on, so players are updated in every snapshot.
 - **Spawn per player** = on, so this prefab is the player.
 - The Host moves every player from the input their owner sends. Clients only show the
   result, which is why the movement components are **Host only**.
 - Each machine keeps only **its own** player's camera, which is why the camera is **Owner only**.
+- **The body is the game's mech** (legs, torso, head and sword from the single-player
+  player), without its single-player parts (`MechPart` scripts, part colliders, labels,
+  sounds). `NetPlayerAnimation.cs` runs on the Host, which moves every player: from each
+  one's speed and whether it is on the ground it sets the legs' `Pose` and `Speed`, as
+  `MechPlayer` does, and the **Animator** row sends them to every Client (section 8.12).
 
 ### 5.2 Player spawn points
 
@@ -400,8 +408,8 @@ Read this before designing gameplay for multiplayer.
 | 1 | **Other Client actions must be sent as commands.** | Movement, turning and jump are sent automatically. Fire, interact, reload and the rest reach the Host only if your script sends them with `Network.SendCommand` (section 8). A Host-only C# script using `Input.IsPressed` still reads the **Host's own keyboard**, not the Client's. |
 | 2 | **Script events are moments, not state.** | The Host tells every machine "this happened" with `Network.SendEvent` (section 8.4). A player who joins later never hears an old event, so lasting state must still be something that is synced. |
 | 3 | **`Prefab.Instantiate` is still local.** | It creates the object only on the machine that runs the script. Use `Network.Spawn` on the Host for objects every player should see (section 8.5); the prefab must be a network prefab. |
-| 4 | **Script values are synced only through network variables.** | The Transform, component on/off state and an object's 16 network variables are sent (section 8.6). Ordinary script fields and other component values are **not**: put health, ammo or score in a network variable. |
-| 5 | **Animation isn't synced.** | If a Host-only script sets Animator parameters, remote characters slide around without animating on Clients. |
+| 4 | **Script values are synced only through network variables.** | The Transform, component on/off state, an object's 16 network variables (section 8.6) and its Animator parameters (section 8.12) are sent. Ordinary script fields and other component values are **not**: put health, ammo or score in a network variable. |
+| 5 | **Animation is synced through Animator parameters only.** | Turn on **Animator** in the object's Network Object table (section 8.12) and the Host's `Animator.Set...` calls reach every Client. Up to 32 parameters per object; a trigger fired twice within one snapshot (about 33 ms) plays once on Clients; `ResetTrigger` stays on the Host. Without the row, a Host-only script's animation is seen only on the Host. |
 | 6 | **Gameplay audio, particles and UI need a script event.** | Effects triggered by Host-only gameplay happen only on the Host unless the Host sends an event and a script that runs **Everywhere** plays them (section 8.4). |
 | 7 | **Clients can't use physics.** | Colliders are Host only, so a Client-side raycast or trigger doesn't hit anything networked. |
 | 8 | **Only the Host's `Network.LoadScene` keeps the session across scenes.** | It moves everyone to the new scene (section 8.8). `Scene.Load`, or opening a scene in the Editor, during a session still ends it. Network objects marked DontDestroyOnLoad do not stay networked in the next scene. |
@@ -416,8 +424,8 @@ Read this before designing gameplay for multiplayer.
   moving platforms, doors switched on and off with **Sync on/off**.
 - **Works with scripts (section 8):** Host/Client checks, the player list, object
   ownership, Client actions sent to the Host as commands, Host events to every machine,
-  and spawning network objects from the Host.
-- **Needs more networking work first:** synced animation.
+  spawning network objects from the Host, and animation the Host's scripts drive
+  (section 8.12).
 
 ## 8. Networking from C# scripts
 
@@ -594,6 +602,7 @@ API above. Nothing in it is native code.
 |---|---|
 | `Assets/Scripts/network_tests/ArenaRules.cs` | **The rules, decided by the Host.** Fire requests (**commands**) are checked: alive, cooldown, the shot starts at the shooter. Bolts are **spawned** owned by the shooter. Health, kills, deaths and alive/dead live in **network variables**. Hits, deaths and respawns are **reliable events**; "somebody fired" is **unreliable**. |
 | `Assets/Scripts/network_tests/ArenaView.cs` | **What every machine shows**, read from those variables and events: nameplates with health bars, hiding dead bodies, the HUD, hit and kill messages, a kill feed. It never changes the game. |
+| `Assets/Scripts/network_tests/NetPlayerAnimation.cs` | The players' mech legs: walk, stand and jump, set on the Host and synced (section 8.12). |
 | `Assets/Scripts/network_tests/NetBolt.cs` | The projectile. Runs on the Host only: flies, raycasts against the players' capsules, reports hits to `ArenaRules`, despawns itself. |
 | `Assets/Prefabs/network_tests/NetBolt.cprefab` | Network prefab: Transform replicated, script **Host only**, **critical** (fast, so in every snapshot). |
 | `Assets/Prefabs/network_tests/NetNameplate.cprefab`, `NetHud.cprefab` | Local prefabs (not networked): each machine makes its own. |
@@ -604,7 +613,8 @@ lifetime on the NetBolt prefab. Respawn points are the entities named **Arena Re
 to **4**: move them, or add **Arena Respawn 5** and so on.
 
 **Death:** the Host switches off the dead player's CharacterController and PlayerController
-(no movement, no capsule to hit, fire refused), and every machine hides the body. After the
+(no movement, no capsule to hit, fire refused), and every machine hides the body (its
+**Mech Visual**). After the
 delay the Host moves it to the respawn point farthest from everyone, switches them back on
 and restores full health.
 
@@ -847,3 +857,39 @@ lobby.FromServer, lobby.FromLan   // how a LobbyInfo was found (both = the same 
 **Not covered:** the internet. The server only lists lobbies; it does not relay or punch
 through routers (no NAT traversal, STUN, ICE or TURN). Players must be able to reach the
 host's IP directly, as on a LAN.
+
+### 8.12 Animation: the Host's Animator on every machine
+
+A character's animation comes from its **Animator parameters** (`Speed`, `Attack`, ...),
+which scripts set with `Animator.SetFloat`, `SetBool`, `SetInteger` and `SetTrigger`. When
+those scripts run on the Host only (AI, game rules), turn on Animator syncing and the Host's
+parameter values reach every Client. Each Client's own animator then plays the same states
+from them, a snapshot behind the Host, like the movement it goes with.
+
+- **Turn it on per object:** in the object's **Network Object** table, set the
+  **NetAnimator** row (serializer **Animator**) to **Replicated**. Like NetVariables, the row
+  is always listed and the engine adds the component itself during a session.
+- **Nothing changes in your scripts.** Keep calling `Animator.Set...` on the Host; the engine
+  notices the calls on a network object and sends them. Models below the root count too: the
+  root and all its children, in hierarchy order, each with all its controller's parameters.
+- **Up to 32 parameters per object.** Any more are not synced, and a warning names the
+  object; they still work on each machine on its own.
+- **Triggers** are sent as a count, so a Client fires each one once. A Client that joins
+  later doesn't replay triggers fired before it arrived. Two fires within one snapshot
+  (about 33 ms) play once. `ResetTrigger` is not sent.
+- **On a Client** a synced parameter belongs to the Host: a script's `Set...` returns false.
+  Parameters of objects without the row, and of local entities, work as usual.
+- A parameter the Host has never set keeps its controller's initial value on Clients.
+- **Both machines need the same controllers.** Every animator controller's parameter names
+  and types are part of the content check, so a Client whose controllers differ is refused
+  when joining.
+
+**Example:** `network_gamplay.scene` has an **Animation Dummy** (script
+`Assets/Scripts/network_tests/NetAnimDummy.cs`, with a **Body** child that uses the golem
+model and the Enemy Fodder controller). The Host walks it back and forth, jogs it, and stops
+it for a melee attack (the `Attack` trigger) and a flinch (`HitDirection` and the `Hit`
+trigger). Its table replicates **Transform/YawOnly** and **Animator**. Play the arena as Host and
+Client: on the Client the dummy should walk, jog, attack and flinch at the same moments as on
+the Host. The players' mechs use the same mechanism: their legs walk when they move and
+stand when they stop, on every machine (section 5.1). Set its **Animator** row back to **Local** to see the difference: on the Client it
+slides along in its idle pose.

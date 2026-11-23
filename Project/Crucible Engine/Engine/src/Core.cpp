@@ -39,6 +39,7 @@
 #include "Network/Systems/LocalPlayerInputSystem.h"
 #include "Network/Systems/NetInputSystem.h"
 #include "Network/Systems/NetInterpolationSystem.h"
+#include "Network/Systems/NetAnimatorSystem.h"
 
 // STL
 #include <algorithm>
@@ -360,6 +361,10 @@ namespace Crucible {
         m_systems.RegisterSystem<NetInterpolationSystem>(*m_network);   // PreRender, before the hierarchy, client only: proxies drawn 100 ms behind the host, between snapshots
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
+        // PreRender, before the animation system: C# Animator calls go through its binding (the host's writes on a
+        // network object that syncs "Animator" are recorded and sent); on a client it hands the host's values to the animator.
+        auto& netAnimator = m_systems.RegisterSystem<NetAnimatorSystem>(*m_network, animator, *m_world,
+            [resources = m_resources.get()](std::uint64_t id) { return resources->GetAnimatorController(id); });
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get(), &m_systems);   // PreRender: simulates ParticleEmitters, submits their particles and lights; m_systems: Play vs Edit
@@ -374,7 +379,7 @@ namespace Crucible {
         if (m_scriptRuntime->IsRunning()) {
             auto* physics = m_systems.FindSystem<ECSPhysicsSystem>();
             m_scriptRuntime->ConnectEngine({
-                .animator     = &animator,                                   // C# Animator
+                .animator     = &netAnimator.Binding(),                      // C# Animator (through the network: NetAnimatorSystem)
                 .world        = m_world.get(),                               // Transform, Entity, Prefab, components
                 .play         = m_playMode.get(),
                 .scenes       = m_scenes.get(),

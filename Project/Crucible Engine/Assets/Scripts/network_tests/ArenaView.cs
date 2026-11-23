@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Networking sample: everything the arena shooter SHOWS, on
 *                every machine. It never changes the game; it reads
 *                ArenaRules' network variables and listens to its events.
@@ -15,15 +15,22 @@
 *                   following its character: name, health bar, "down"
 *                   while dead, a red flash when hit. Built from the
 *                   network variables, so a late joiner sees the same.
-*      Bodies       a dead player's MeshRenderer is switched off here, on
-*                   each machine (the renderer is not replicated: every
-*                   machine draws what the shared state says).
+*      Bodies       a dead player's body is hidden here, on each machine
+*                   (the renderers are not replicated: every machine draws
+*                   what the shared state says): its "Mech Visual" child
+*                   (SetActive), and a MeshRenderer on the player itself
+*                   if it has one.
 *      HUD          a local NetHud canvas: this player's health bar and
 *                   number, everyone's kills and deaths, a crosshair, a
 *                   centre message (hit, killed, respawning in N) and a
 *                   kill feed.
 *      Events       HitEvent, DeathEvent, RespawnEvent (reliable) and
 *                   ShotEvent (unreliable: a muzzle flash on a nameplate).
+*
+* \history
+*    -v1.0       arena shooter (Networking C# Phase 6)
+*    -v1.1       the player is the game's mech: a dead player's whole Mech
+*                Visual is hidden, not only a MeshRenderer on the root
 **************************************************************************/
 using System;
 using System.Collections.Generic;
@@ -109,8 +116,11 @@ namespace Crucible.@Scripts
 
             // The body: hidden while dead, on every machine.
             bool visible = state == ArenaRules.StateAlive;
-            if (player.IsEnabled<MeshRenderer>() != visible)
+            if (player.HasComponent<MeshRenderer>() && player.IsEnabled<MeshRenderer>() != visible)
                 player.SetEnabled<MeshRenderer>(visible);
+            Entity body = player.FindChild("Mech Visual");
+            if (body != null && body.IsActiveSelf != visible)
+                body.SetActive(visible);
 
             // The nameplate.
             if (peer == Network.LocalPeerId && !showOwnNameplate)

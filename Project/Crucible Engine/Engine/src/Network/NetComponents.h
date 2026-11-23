@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                The networking ECS components: NetworkIdentity,
 *                NetInterpolation and PlayerInput (ComponentKind 33-35),
@@ -33,6 +33,7 @@
 *                when something set it)
 *    -v1.2       NetworkObjectAuthoring (Phase 14.1)
 *    -v1.3       NetVariables: replicated script values (Networking C# Phase 4)
+*    -v1.4       NetAnimator: replicated Animator parameters (Networking C# Phase 7)
 *
 **************************************************************************/
 #pragma once
@@ -175,7 +176,45 @@ namespace Crucible
 		std::uint16_t changed = 0;   // bit i: slot i changed since the scripts last heard
 	};
 
+	/*************************************************************************
+	 \brief
+		A network object's replicated Animator parameters (Networking C#
+		Phase 7): the values the host's scripts set, for every animated
+		model in the object (root and children).
+	 \details
+		Slot i is the i-th parameter of the object's animated models, taken
+		breadth first through the hierarchy, each model's parameters in its
+		controller's order (Network/NetAnimator.h builds that layout the
+		same way on every machine). A slot holds a Bool (0/1), an Integer,
+		a Float's bits, or for a Trigger how many times the host fired it.
+		`written` marks the slots the host has set: the others keep the
+		controller's own initial value on clients.
+
+		An object replicates them when its Network Object settings list the
+		"Animator" serializer; the network layer then adds this component
+		itself on every machine (never saved). The host fills it from its
+		scripts' Animator calls; each client gives the values to its own
+		animator every frame, so its state machine follows the host's.
+
+		firedSeen, received and primed are a client's own bookkeeping, never
+		sent: which trigger counts it has already played, and whether the
+		counts of its first record were taken as the starting point (a
+		joining client does not replay old triggers).
+	 *************************************************************************/
+	struct NetAnimator
+	{
+		static constexpr std::uint32_t kSlots = 32;
+
+		std::array<std::uint32_t, kSlots> slots{};
+		std::uint32_t written = 0;   // bit i: the host has set slot i
+
+		std::array<std::uint32_t, kSlots> firedSeen{};   // client: trigger counts already played
+		bool received = false;   // client: a record has been applied
+		bool primed = false;     // client: firedSeen holds the first record's counts
+	};
+
 	// Bind each one to its ComponentKind (see ComponentKind.h).
+	CRUCIBLE_COMPONENT(NetAnimator, NetAnimator);
 	CRUCIBLE_COMPONENT(NetVariables, NetVariables);
 	CRUCIBLE_COMPONENT(NetworkIdentity, NetworkIdentity);
 	CRUCIBLE_COMPONENT(NetInterpolation, NetInterpolation);
@@ -187,11 +226,13 @@ namespace Crucible
 	template <> struct RuntimeOnly<NetInterpolation> : std::true_type {};
 	template <> struct RuntimeOnly<PlayerInput>      : std::true_type {};
 	template <> struct RuntimeOnly<NetVariables>     : std::true_type {};
+	template <> struct RuntimeOnly<NetAnimator>      : std::true_type {};
 
 	template <> struct NotToggleable<NetworkIdentity>  : std::true_type {};
 	template <> struct NotToggleable<NetInterpolation> : std::true_type {};
 	template <> struct NotToggleable<PlayerInput>      : std::true_type {};
 	template <> struct NotToggleable<NetVariables>     : std::true_type {};
+	template <> struct NotToggleable<NetAnimator>      : std::true_type {};
 
 	// Authored settings: saved (not RuntimeOnly), but never switched off - "networking off for
 	// now" is not a state an object can be in; remove the component instead.
