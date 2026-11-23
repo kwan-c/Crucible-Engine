@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.4
+* \version       1.5
 * \brief         Generates a sub-level from a seed. Terrain only for now:
 *                chunks, roads and decor are later port steps.
 *
@@ -47,6 +47,10 @@
 *                networks, painted as the Tunnel region; ground unchanged
 *    -v1.4       Caves carve plateaus and trenches (tunnelHeight,
 *                roofThickness, caveBlend)
+*    -v1.5       Caves are a rock hill with tunnels at ground level and
+*                entrances (caveHillHeight, caveHillNoise,
+*                caveHillNoiseSize, caveEntrances); roofThickness is the
+*                least rock over a tunnel
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -75,12 +79,16 @@ namespace Crucible.@Scripts
         // --- caves (optional feature; off = the map is exactly as without it) -- //
         public bool caves = false;
         public int caveCount = 2;               // cave systems per map
-        public float caveZoneSize = 120f;       // metres across each system's zone
+        public float caveZoneSize = 160f;       // metres across each system's zone (the hill)
         public float caveFill = 0.45f;          // chance a cell starts solid
         public int caveSmoothing = 5;           // passes of the 4-5 rule
         public float tunnelHeight = 6f;         // metres from tunnel floor to roof
-        public float roofThickness = 1f;        // metres; the roof's top is level with the plateau
-        public float caveBlend = 12f;           // metres over which each plateau blends into the land around
+        public float roofThickness = 2f;        // metres: the least rock over a tunnel
+        public float caveBlend = 12f;           // metres over which each cave's base blends into the land around
+        public float caveHillHeight = 14f;      // metres the rock hill rises above its base
+        public float caveHillNoise = 4f;        // metres up or down the hill's top varies
+        public float caveHillNoiseSize = 60f;   // metres across a bump on the hill's top
+        public int caveEntrances = 3;           // passages from each cave to the outside
 
         // --- movement ------------------------------------------------------- //
         public float maxWalkableSlope = 35f;    // degrees: the default walker's limit, for the player and enemies
@@ -162,6 +170,7 @@ namespace Crucible.@Scripts
             CaveSettings s = new CaveSettings();
             s.caveCount = caveCount; s.zoneSize = caveZoneSize; s.fill = caveFill; s.smoothing = caveSmoothing;
             s.tunnelHeight = tunnelHeight; s.roofThickness = roofThickness; s.blendWidth = caveBlend;
+            s.hillHeight = caveHillHeight; s.hillNoise = caveHillNoise; s.hillNoiseSize = caveHillNoiseSize; s.entrances = caveEntrances;
             return s;
         }
 
@@ -175,10 +184,12 @@ namespace Crucible.@Scripts
             {
                 CaveZone zone = zones[i];
                 float x = map.MinX + (zone.CentreCol + 0.5f) * map.CellSize, z = map.MinZ + (zone.CentreRow + 0.5f) * map.CellSize;
-                Log.Info("SubLevelGenerator: cave " + (i + 1) + " at (" + x.ToString("F0") + ", " + z.ToString("F0") + "): plateau " +
-                         zone.PlateauHeight.ToString("F0") + " m (ground there varied " + zone.HeightRange.ToString("F0") + " m), floor " +
-                         zone.FloorHeight.ToString("F0") + " m, " + zone.TunnelCells + " tunnel cells, culled " + zone.CulledByWidth +
-                         " too narrow and " + zone.CulledPockets + " in pockets");
+                Log.Info("SubLevelGenerator: cave " + (i + 1) + " at (" + x.ToString("F0") + ", " + z.ToString("F0") + "): base " +
+                         zone.BaseHeight.ToString("F0") + " m (ground there varied " + zone.HeightRange.ToString("F0") + " m), hill up to " +
+                         zone.TopHeight.ToString("F0") + " m, " + zone.TunnelCells + " tunnel cells (" + zone.EntranceCells + " in " +
+                         zone.Entrances + " entrances), culled " + zone.CulledByWidth + " too narrow and " + zone.CulledPockets + " in pockets");
+                if (zone.Unreachable > 0)
+                    Log.Warning("SubLevelGenerator: cave " + (i + 1) + " has " + zone.Unreachable + " tunnel cells no entrance leads to");
             }
         }
 
