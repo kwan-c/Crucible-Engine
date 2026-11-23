@@ -55,25 +55,42 @@ component the object no longer has show a **Remove** button.
 
 ---
 
-## 2. The Network tab
+## 2. The Network window
 
-Open the **Network** panel. It's a tab next to the Inspector. You can only change it in
-**Edit mode**: it locks while playing, so press **Stop** to change it.
+Open it from the menu bar: **Network > Network Window**.
+Like the Animator, it opens as a tab beside the Scene and Game views, and you can drag it
+anywhere else. The settings can only be changed in
+**Edit mode**: they lock while playing, so press **Stop** to change them.
 
-| Mode | Fields | Use |
-|---|---|---|
-| **Offline** | — | Plain single-player. Networking is off. |
-| **Host** | **Port** (default `27020`); *Advanced > Listen address* (leave empty = all network cards) | This Editor runs the game and others join it. |
-| **Client** | **Host IP** (default `127.0.0.1`), **Host port** (default `27020`) | Joins a Host. |
+The **Network** menu also has **Start / Stop Connection Server**, **Connection Server...** and
+**Debug...** (they open that tab).
+
+**Session tab**
+
+| Setting | Use |
+|---|---|
+| **Player name** | Shown to the other players and in lobby lists. |
+| **Lobby discovery** | How lobby lists find sessions: **Auto**, **Server** or **LAN**, plus the connection server's address and port (section 8.11). |
+| **Quick test (start at Play)** | **Offline** (the normal choice: the game's own lobby hosts and joins), or **Host** / **Client**, which start a session as soon as you press Play, to test a scene without the lobby. **Client** asks for the **Host IP**. **Game port** (default `27020`) is the port a host listens on and a client joins. |
+| **Network simulation (testing)** | Adds latency and packet loss to every session of this Editor, lobby sessions included. |
+
+Below the settings, the tab shows the status:
+- Host: `Hosting on port 27020`, then the players who joined, with their IP and ping.
+- Client: `Connecting...`, `Joining...`, then `Joined <ip>:<port> as player N` with the ping and
+  everyone in the session.
+- The connection server: `online`, `connecting...` or `unreachable`.
+- Errors: `Could not start: ...` or `Last session ended: ...` (for example, the Host stopped or
+  the content didn't match).
+
+**Connection Server tab:** start and stop the lobby server on this PC (section 8.11).
+
+**Debug tab:** while a session runs, each connection's ping, quality, KB/s and lifecycle
+messages, the per-second rates, and **Counters** (malformed, refused, timeouts, commands...).
 
 - The defaults come from `Assets/Config/EngineConfig.json` (the `"network"` section).
-  Changes made in the panel apply only to **that Editor window**, are **not saved**, and are
-  lost when you close it. Two Editors on the same PC can each use different settings.
-- Under the settings, the panel shows the status:
-  - Host: `Hosting on port 27020`, plus the players who joined.
-  - Client: `Connecting...`, `Joining...`, then `Joined <ip>:<port> as player N`.
-  - Errors: `Could not start: ...` or `Last session ended: ...` (for example, the Host
-    stopped or the content didn't match).
+  Changes made in the window apply only to **that Editor**, are **not saved**, and are lost when
+  you close it. Two Editors on the same PC can each use different settings. The listen address
+  is only in `EngineConfig.json` (`"listenAddress"`; empty = every network card).
 
 **Finding the Host IP on a LAN:** on the Host PC, open a terminal, run `ipconfig`, and use
 the **IPv4 Address** of the network adapter you're connected through (e.g. `192.168.1.23`). On the same PC, use
@@ -90,10 +107,10 @@ on the network. Allow it on **Private networks**, or Clients on other PCs can't 
    the same prefabs. Network prefabs and scene objects are checked by hash, and a Client with
    different content is refused (look for *content* or *scene mismatch* in the panel).
 2. Open the **same scene** in both Editors (e.g. `Scenes/Network_Test.scene`).
-3. **Editor 1 (Host):** in the Network tab, select **Host**, keep port `27020`, and press **Play**.
-   The panel should show `Hosting on port 27020`.
-4. **Editor 2 (Client):** in the Network tab, select **Client**, enter the Host's IP
-   (`127.0.0.1` on the same PC, the Host's LAN IP otherwise) and port `27020`, then press **Play**.
+3. **Editor 1 (Host):** in **Network Window > Session > Quick test**, select **Host**, keep
+   game port `27020`, and press **Play**. The window should show `Hosting on port 27020`.
+4. **Editor 2 (Client):** in the same place, select **Client**, enter the Host's IP
+   (`127.0.0.1` on the same PC, the Host's LAN IP otherwise), keep `27020`, then press **Play**.
    The panel should show `Joined ... as player 1`, and the Host's list shows the new player.
 5. Move in each window. Each player controls their own character and sees the others move.
    Objects that the Host simulates (e.g. the physics sphere) move the same on every screen.
@@ -594,7 +611,7 @@ and restores full health.
 **Controls:** move as usual; **left mouse** or **F** fires where your camera looks.
 
 **Play it:** open `network_gamplay.scene` in 2 to 4 Editors; one **Host**, the others
-**Client** (Network tab), then Play in each. Offline nothing happens: there is no spawned
+**Client** (Network window > Session > Quick test), then Play in each. Offline nothing happens: there is no spawned
 player.
 
 ### 8.8 Changing scenes without ending the session
@@ -620,7 +637,7 @@ if (Network.IsHost) Network.LoadScene("Scenes/network_gamplay.scene");
 ### 8.9 Starting a session from a script, and the lobby example
 
 ```csharp
-Network.StartHost();                 // port and player name from the Network tab / EngineConfig.json
+Network.StartHost();                 // port and player name from the Network window / EngineConfig.json
 Network.Join("192.168.1.20");        // the Host's IP address
 Network.Leave();                     // the Host leaving ends the session for everyone
 ```
@@ -629,9 +646,9 @@ Network.Leave();                     // the Host leaving ends the session for ev
   `OnNetworkStopped(reason)` if it failed: port in use, refused, version mismatch.
 - **A session can't be started twice.** `StartHost` and `Join` return false (with the reason
   logged) while one runs.
-- **The Network tab:**
-  - **Offline** means "the game's own menu decides".
-  - **Host** and **Client** remain the quick test that starts at Play.
+- **The Network window:**
+  - **Quick test: Offline** means "the game's own menu decides".
+  - **Host** and **Client** are the quick test that starts at Play.
   - **Player name** is used when a script gives none.
 
 **Finding sessions on the network (no IP address to type):**
@@ -668,8 +685,8 @@ A session never outlives its host. When the host leaves, closes the game or stop
 answering, every client's session ends.
 
 **The lobby example: `network_lobby.scene`** (`NetLobby.cs`, `NetLobbyUi.cprefab`). Leave
-the Network tab on **Offline** and press Play in every Editor. Each Editor's **Player name**
-is shown in the lists; if it is left as "Player", the Windows user name is used.
+the Network window's **Quick test** on **Offline** and press Play in every Editor. Each Editor's **Player name**
+is shown in the lists (default "Player"; set a different name in each Editor to tell them apart).
 
 | Screen | What it does |
 |---|---|
@@ -686,7 +703,147 @@ again. **L** leaves.
 sentence saying why: the host left, the connection was lost, the lobby was full, the game
 had already started, or the join was cancelled. After a failed join it goes back to the list.
 
-### 8.10 In the Network tab
+### 8.10 In the Network window
 
-A Client now lists every player in the session under its status. **Statistics > Counters**
-shows rosters and commands sent, received and refused.
+A Client lists every player in the session under its status. **Debug > Counters** shows
+rosters and commands sent, received and refused.
+
+### 8.11 The connection server: one place that lists every lobby
+
+LAN broadcast (8.9) only reaches PCs on the same subnet, and some networks (university Wi-Fi,
+some routers) block it. The **connection server** is a small program that runs on one PC.
+Hosts tell it about their lobby, and lobby browsers ask it for the list. It only knows
+**who is hosting**: the game itself still connects directly to the host, and **the server never
+carries gameplay**. If it crashes or is closed, running matches carry on. In **Auto** mode a
+lobby browser tries it 5 times, then says it is not accessible and offers to search the LAN
+instead.
+
+| Port (UDP) | What |
+|---|---|
+| `27018` | the connection server |
+| `27019` | LAN discovery (broadcast) |
+| `27020` | the game itself (Host port) |
+
+**Running it from the Editor (easiest):** **Network > Start Connection Server**, or the
+**Connection Server** tab of the Network window. Building the Editor also builds the server
+(`ConnectionServer/` project). The tab shows:
+- whether it runs, its uptime and how many lobbies it lists;
+- **Addresses**: what other PCs should type, each with **Copy**;
+- **Use this server**: sets this Editor's Lobby discovery to it;
+- the server's **log**.
+
+It runs as its own hidden program: **closing the Editor leaves it running**, and the next
+Editor you open finds it again. Stop it with **Network > Stop Connection Server**. The tab
+also sets its **UDP port** and **Lobby lifetime** before starting. If the server stops by
+itself (for example, another server already uses the port), the tab says so and the log shows
+why. Its files are next to the exe: `CrucibleConnectionServer.log`, and
+`CrucibleConnectionServer.pid` while it runs.
+
+**Running it by hand** (for example on a PC without the Editor): start
+`Build/ConnectionServer/Release/CrucibleConnectionServer.exe` (or the Debug one). It prints the
+addresses it can be reached at, for example `192.168.0.7:27018 (Wi-Fi)`, and logs lobbies as they
+come and go. Press **Ctrl+C** to stop it. The Editor's tab can't stop a server started this way,
+but the Session tab still shows whether it answers.
+
+```text
+CrucibleConnectionServer.exe [--port 27018] [--lifetime 7000]
+```
+
+- `--port`: the UDP port to listen on.
+- `--lifetime`: milliseconds without a heartbeat before a lobby is dropped (3000 to 60000).
+  Hosts send a heartbeat every 2 s.
+
+Windows may ask to allow it through the firewall the first time it runs: allow it on
+**Private networks**.
+
+**Pointing the game at it:** in **Network Window > Session**, open **Lobby discovery** (or press
+**Use this server** on the PC that runs it):
+
+| Field | Meaning |
+|---|---|
+| **Auto** (default) | Lobby lists come from the connection server. A browser sends it up to 5 list requests (about 5 s); if none is answered, the server is **not accessible**, the list stays empty, and the game can offer **LAN discovery** instead (the lobby example shows a **Search LAN instead** button). LAN is used only once the player chooses it, until the browser is opened again. With no address set, Auto uses LAN broadcast. A host registers with the server **and** answers LAN broadcasts, so it is found either way. |
+| **Server** | The connection server only (testing). |
+| **LAN** | LAN broadcast only; the server is not used (testing). |
+| **Server address** | The IPv4 address the server printed, e.g. `192.168.0.7`. Empty means no server. There is no built-in address. |
+| **Server port** | Default `27018`. |
+
+The same values can be set for everyone in `Assets/Config/EngineConfig.json`:
+
+```json
+"network": {
+    "lobbyDiscovery": "auto",
+    "lobbyServerAddress": "192.168.0.7",
+    "lobbyServerPort": 27018,
+    "discoveryPort": 27019
+}
+```
+
+Under its status, the Session tab shows `Connection server 192.168.0.7:27018: online`
+(`(this session is listed)` on a host), `connecting (attempt 2 of 5)...` or `unreachable`. The
+lobby example's list header shows where the list comes from: **Connecting to the connection
+server...**, **Lobbies - connection server**, **Connection server not accessible** (with
+**Search LAN instead**), **Lobbies on your network (LAN)**, or **Lobbies - showing 6 of 40**.
+
+**From C#:**
+
+```csharp
+Network.LobbyServerState      // Off, Connecting, Online, Unreachable (LobbyServerStatus)
+Network.LobbyServerAddress    // "192.168.0.7:27018", or ""
+Network.LobbyDiscovery        // Auto, Server, Lan (LobbyDiscoveryMode)
+Network.LobbyListFromServer   // true: Lobbies is the server's list; false: the LAN list
+Network.LobbyListTotal        // how many lobbies the server knows of
+Network.LobbyListTruncated    // it sent fewer than that (one reply holds about 25)
+Network.IsLobbyRegistered     // host: the server lists this session
+Network.LobbyServerFailedAttempts  // unanswered list requests in a row (LobbyServerMaxAttempts = 5: Unreachable)
+Network.CanUseLanDiscovery    // Auto, server not chosen against yet: UseLanDiscovery would switch now
+Network.UseLanDiscovery()     // the player agreed: list LAN lobbies until the next StartBrowsing
+Network.IsUsingLanDiscovery   // LAN was chosen for this browse
+lobby.FromServer, lobby.FromLan   // how a LobbyInfo was found (both = the same lobby seen both ways)
+```
+
+**How it behaves:**
+- **A host appears** within about a second of starting, and **disappears** at once when it
+  stops (it unregisters). If it crashes, it disappears after the lifetime (7 s by default).
+- **Player counts** update with each heartbeat (every 2 s).
+- **The server lists lobbies, not matches.** When the host closes its lobby (the match
+  starts, `Network.SetLobby(false, "In match")`), it unregisters: it leaves the server's list
+  and frees its place (see Limits) at once. The match and its players are not affected, and
+  nothing waits for the server: if it is unreachable, the entry expires after the lifetime
+  (7 s). When the session goes back to its lobby (`SetLobby(true, ...)`), it registers again.
+  LAN lists still show a closed lobby, as **In progress**.
+- **If the server restarts,** hosts register again by themselves within about 2 s.
+- **Every lobby has a random 64-bit id and a secret owner token** (from Windows'
+  `BCryptGenRandom`). Only the host holding the token can update or remove its lobby. This
+  stops other players on the LAN from changing a lobby by mistake or as a prank. It is **not**
+  strong security: anyone who can see the network traffic can read the token.
+- **One lobby, two sources:** in Auto mode the same lobby found through the server and through
+  LAN broadcast is listed once.
+- **Which address you join:** the host reports its own network addresses, and each browser
+  picks the one on its own subnet, so PCs with several network adapters (Wi-Fi + Ethernet,
+  VirtualBox, VPN) get a reachable address. A host on the same PC as the browser is joined at
+  `127.0.0.1` when LAN broadcast also found it.
+- **Limits:** at most 256 lobbies on a server, 8 from one IP address (open lobbies only:
+  matches in progress are not registered), and one list reply (about 25 lobbies) per request.
+  The list says when it was cut short.
+
+**Testing across PCs:**
+1. On PC A: **Network > Start Connection Server**. Open **Network > Connection Server...**,
+   note the address under **Addresses** (e.g. `192.168.0.7:27018`), and press **Use this server**.
+2. In every other Editor (PC B, ...): **Network > Network Window > Session**, keep **Quick test**
+   on **Offline**, then **Lobby discovery > Auto**, **Server address** `192.168.0.7`,
+   **Server port** `27018`.
+3. Open `network_lobby.scene` and press **Play** in every Editor. One player chooses
+   **Create Lobby**, and the others choose **Find Lobbies**. The header should say
+   **Lobbies - connection server**, and the lobby should be listed. Join it.
+4. Start the match, then on PC A choose **Network > Stop Connection Server**. The match should
+   keep going. In a browser (**Find Lobbies**), the header changes to **Connection server not
+   accessible** after about 5 s, with **Search LAN instead**. Press it: the LAN lobbies appear.
+5. Start the server again (**Network > Start Connection Server**). Within a couple of seconds
+   the host is registered again, without doing anything. A browser that chose LAN keeps the LAN
+   list; press **Back** and **Find Lobbies** to use the server again.
+6. Optional: set **Lobby discovery > Server** on a browser PC to check that the list really comes
+   from the server, or **LAN** to check the broadcast path.
+
+**Not covered:** the internet. The server only lists lobbies; it does not relay or punch
+through routers (no NAT traversal, STUN, ICE or TURN). Players must be able to reach the
+host's IP directly, as on a LAN.

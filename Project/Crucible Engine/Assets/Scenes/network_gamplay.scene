@@ -1284,6 +1284,39 @@
                     "name": "Arena Respawn 4"
                 }
             }
+        },
+        {
+            "id": "4E65744F76657231",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 24.0,
+                        "z": 26.0
+                    },
+                    "rotation": {
+                        "x": -0.3420201433256687,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.9396926207859084
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 0
+                },
+                "EntityName": {
+                    "name": "Arena Overview Camera"
+                }
+            }
         }
     ]
 }

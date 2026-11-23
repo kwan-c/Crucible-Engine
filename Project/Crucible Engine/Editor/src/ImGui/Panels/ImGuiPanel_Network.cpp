@@ -4,7 +4,8 @@
 * @par			a.patchamuthu@digipen.edu
 * @date			3 November 2026
 *
-* @brief		The editor's Network panel, defined in ImGuiPanel_Network.h.
+* @brief		The editor's Network window, defined in ImGuiPanel_Network.h: the Session,
+*				Connection Server and Debug tabs.
 *
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
 * All Rights Reserved
@@ -15,9 +16,14 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <format>
 
 #include "Core.h"
+#include "Diagnostics/Logger.h"
 #include "ImGui/EditorTheme.h"
+#include "Network/ConnectionServerControl.h"
+#include "Network/LobbyServerClient.h"
 #include "Network/NetworkSession.h"
 
 namespace Crucible {
@@ -71,34 +77,59 @@ namespace {
     unsigned long long U64(std::uint64_t value) { return static_cast<unsigned long long>(value); }
 }
 
+NetworkPanel::NetworkPanel(Core& core) : m_core(core) {}
+
+NetworkPanel::~NetworkPanel() = default;   // the control lets go of the server: it keeps running
+
 void NetworkPanel::Init()
 {
-    m_panelName = "Network";
+    // Like the Animator: hidden until opened (Network menu), then a tab in the
+    // centre area beside the Scene and Game views; drag it elsewhere if you like. The "###" id is
+    // new, so a layout saved when this was a tab beside the Inspector no longer applies; the
+    // title still reads "Network".
+    m_panelName = "Network###NetworkWindow";
     m_flags = ImGuiWindowFlags_None;
     m_docked = true;
-    m_dockArea = DockArea::Right;   // a tab beside the Inspector
+    m_dockArea = DockArea::Center;
     LoadFromSession();
+
+    // The connection server on this PC: found next to the Editor or in the build folder, and taken
+    // back if an earlier Editor started it and it is still running.
+#ifdef CRUCIBLE_BUILD_DIR
+    std::filesystem::path const buildDir = CRUCIBLE_BUILD_DIR;
+#else
+    std::filesystem::path const buildDir;
+#endif
+    m_server = std::make_unique<ConnectionServerControl>(ConnectionServerControl::FindExecutable(ConnectionServerControl::ThisProgramDir(), buildDir));
+    m_serverPort = m_edit.lobbyServerPort != 0 ? m_edit.lobbyServerPort : LobbyServer::kDefaultPort;
+    m_serverLifetimeMs = static_cast<int>(LobbyServer::kDefaultLifetime.count());
+    if (m_server->HasExecutable() && m_server->Reattach()) {
+        m_serverPort = m_server->Port();
+        m_serverLifetimeMs = static_cast<int>(m_server->LifetimeMs());
+        CRU_INFO("[Net] the connection server started earlier is still running (process {}, port {})", m_server->ProcessId(), m_server->Port());
+    }
 }
 
 void NetworkPanel::LoadFromSession()
 {
     m_edit = m_core.GetNetwork().Settings();   // EngineConfig.json's defaults until this panel changes them
-    CopyTo(m_listenAddress, m_edit.listenAddress);
     CopyTo(m_connectAddress, m_edit.connectAddress);
     CopyTo(m_playerName, m_edit.playerName);
-    m_hostPort = m_edit.hostPort;
-    m_connectPort = m_edit.connectPort;
+    CopyTo(m_lobbyServerAddress, m_edit.lobbyServerAddress);
+    m_lobbyServerPort = m_edit.lobbyServerPort;
+    m_gamePort = m_edit.hostPort;
     m_validationError.clear();
     Validate(m_edit, m_validationError);   // a bad EngineConfig.json value shows up here at once
 }
 
 void NetworkPanel::Apply()
 {
-    m_edit.listenAddress = m_listenAddress.data();
     m_edit.connectAddress = m_connectAddress.data();
     m_edit.playerName = m_playerName.data();
-    m_edit.hostPort = ToPort(m_hostPort);
-    m_edit.connectPort = ToPort(m_connectPort);
+    m_edit.lobbyServerAddress = m_lobbyServerAddress.data();
+    m_edit.lobbyServerPort = ToPort(m_lobbyServerPort);
+    m_edit.hostPort = ToPort(m_gamePort);      // one game port: hosted on, and joined at
+    m_edit.connectPort = ToPort(m_gamePort);
     m_validationError.clear();
     Validate(m_edit, m_validationError);
     // Always handed over, valid or not: Play then uses exactly what the panel shows, and an invalid
@@ -108,63 +139,276 @@ void NetworkPanel::Apply()
 
 void NetworkPanel::Update(float)
 {
-    if (ImGui::Begin(m_panelName.c_str(), nullptr, m_flags)) {
-        NetworkSession& network = m_core.GetNetwork();
+    // The server is watched even while the window is closed, so the tab is current when opened.
+    m_server->Update(ConnectionServerControl::Clock::now());
+    NetworkSession& network = m_core.GetNetwork();
+    if (network.IsActive()) UpdateRates();   // every frame while a session runs, so the window never spans a gap
+
+    if (!m_visible) return;
+    if (m_makeFocus) { ImGui::SetNextWindowFocus(); m_makeFocus = false; }
+    bool open = true;
+    if (ImGui::Begin(m_panelName.c_str(), &open, m_flags)) {
         // Only in Edit with no session running: a running session is never reconfigured.
         bool const editable = m_core.GetPlayState() == PlayState::Edit && !network.IsActive();
-        bool changed = false;
-
-        ImGui::BeginDisabled(!editable);
-
-        int mode = static_cast<int>(m_edit.mode);
-        ImGui::TextUnformatted("Mode");
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton("Offline", &mode, static_cast<int>(NetMode::Offline));
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton("Host", &mode, static_cast<int>(NetMode::Host));
-        ImGui::SameLine();
-        changed |= ImGui::RadioButton("Client", &mode, static_cast<int>(NetMode::Client));
-        m_edit.mode = static_cast<NetMode>(mode);
-
-        ImGuiInputTextFlags const addressFlags = ImGuiInputTextFlags_CharsNoBlank;
-        if (m_edit.mode == NetMode::Host) {
-            changed |= ImGui::InputInt("Port##host", &m_hostPort, 0, 0);
-            if (ImGui::TreeNode("Advanced")) {
-                changed |= ImGui::InputTextWithHint("Listen address", "all interfaces",
-                                                    m_listenAddress.data(), m_listenAddress.size(), addressFlags);
-                ImGui::TreePop();
+        if (ImGui::BeginTabBar("##network")) {
+            auto const flagsFor = [this](Tab tab) {
+                return m_hasSelectTab && m_selectTab == tab ? ImGuiTabItemFlags_SetSelected : ImGuiTabItemFlags_None;
+            };
+            if (ImGui::BeginTabItem("Session", nullptr, flagsFor(Tab::Session))) {
+                DrawSessionTab(editable);
+                ImGui::EndTabItem();
             }
+            if (ImGui::BeginTabItem("Connection Server", nullptr, flagsFor(Tab::ConnectionServer))) {
+                DrawServerTab();
+                ImGui::EndTabItem();
+            }
+            if (ImGui::BeginTabItem("Debug", nullptr, flagsFor(Tab::Debug))) {
+                DrawDebugTab();
+                ImGui::EndTabItem();
+            }
+            m_hasSelectTab = false;
+            ImGui::EndTabBar();
         }
-        else if (m_edit.mode == NetMode::Client) {
-            changed |= ImGui::InputTextWithHint("Host IP", "127.0.0.1",
-                                                m_connectAddress.data(), m_connectAddress.size(), addressFlags);
-            changed |= ImGui::InputInt("Host port", &m_connectPort, 0, 0);
-        }
-        else {
-            ImGui::TextDisabled("Play starts no session. A menu or lobby script can still host or");
-            ImGui::TextDisabled("join (Network.StartHost / Join), with the settings below.");
-        }
-        // Sent when joining; also what a script's StartHost / Join uses when it gives no name.
-        changed |= ImGui::InputTextWithHint("Player name", "Player", m_playerName.data(), m_playerName.size());
-        if (m_edit.mode != NetMode::Offline) changed |= DrawSimulation();
-
-        ImGui::EndDisabled();
-        if (changed && editable) Apply();
-
-        if (!m_validationError.empty()) {
-            ImGui::PushTextWrapPos(0.0f);
-            ImGui::TextColored(EditorTheme::GetPalette().error, "%s", m_validationError.c_str());
-            ImGui::PopTextWrapPos();
-        }
-        if (!editable && m_core.GetPlayState() != PlayState::Edit) {
-            ImGui::TextDisabled("Locked while playing - press Stop to change.");
-        }
-
-        ImGui::Separator();
-        DrawStatus();
-        if (network.IsActive()) DrawStatistics();
     }
     ImGui::End();
+    if (!open) m_visible = false;
+}
+
+// ---- Session ----------------------------------------------------------------------------------
+
+void NetworkPanel::DrawSessionTab(bool editable)
+{
+    bool changed = false;
+    ImGui::BeginDisabled(!editable);
+    // Sent when joining; shown in lobby lists; what a script's StartHost / Join uses when it gives none.
+    changed |= ImGui::InputTextWithHint("Player name", "Player", m_playerName.data(), m_playerName.size());
+    changed |= DrawLobbyDiscovery();
+    changed |= DrawQuickTest();
+    changed |= DrawSimulation();
+    ImGui::EndDisabled();
+    if (changed && editable) Apply();
+
+    if (!m_validationError.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(EditorTheme::GetPalette().error, "%s", m_validationError.c_str());
+        ImGui::PopTextWrapPos();
+    }
+    if (!editable && m_core.GetPlayState() != PlayState::Edit) {
+        ImGui::TextDisabled("Locked while playing - press Stop to change.");
+    }
+    ImGui::Separator();
+    DrawStatus();
+}
+
+bool NetworkPanel::DrawQuickTest()
+{
+    bool changed = false;
+    bool const open = ImGui::TreeNode("Quick test (start at Play)");
+    if (!open) {
+        ImGui::SameLine();
+        if (m_edit.mode == NetMode::Offline) ImGui::TextDisabled("(off)");
+        else ImGui::TextColored(EditorTheme::GetPalette().warning, "(%s at Play)", ToString(m_edit.mode));
+        return false;
+    }
+    int mode = static_cast<int>(m_edit.mode);
+    changed |= ImGui::RadioButton("Offline", &mode, static_cast<int>(NetMode::Offline));
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("Play starts no session: the game's own menu or lobby hosts and joins\n"
+                          "(Network.StartHost / Join). The normal choice.");
+    ImGui::SameLine();
+    changed |= ImGui::RadioButton("Host", &mode, static_cast<int>(NetMode::Host));
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Play hosts a session at once (testing a scene without the lobby).");
+    ImGui::SameLine();
+    changed |= ImGui::RadioButton("Client", &mode, static_cast<int>(NetMode::Client));
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Play joins the host below at once (testing a scene without the lobby).");
+    m_edit.mode = static_cast<NetMode>(mode);
+
+    if (m_edit.mode == NetMode::Client) {
+        changed |= ImGui::InputTextWithHint("Host IP", "127.0.0.1", m_connectAddress.data(), m_connectAddress.size(),
+                                            ImGuiInputTextFlags_CharsNoBlank);
+    }
+    changed |= ImGui::InputInt("Game port", &m_gamePort, 0, 0);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("The port a host listens on and a client joins (default 27020).");
+    ImGui::TreePop();
+    return changed;
+}
+
+// ---- Connection Server ------------------------------------------------------------------------
+
+bool NetworkPanel::ServerRunning() const { return m_server && m_server->IsRunning(); }
+
+bool NetworkPanel::CanStartServer() const { return m_server && m_server->HasExecutable() && !m_server->IsRunning(); }
+
+void NetworkPanel::StartServer()
+{
+    m_serverError.clear();
+    ConnectionServerControl::Options options;
+    options.port = ToPort(m_serverPort);
+    options.lifetimeMs = static_cast<std::uint32_t>(std::clamp(m_serverLifetimeMs, 3000, 60000));
+    if (!m_server->Start(options, m_serverError)) {
+        CRU_ERROR("[Net] connection server not started: {}", m_serverError);
+        return;
+    }
+    CRU_INFO("[Net] connection server started on UDP port {} (process {}); it keeps running when the Editor closes",
+             options.port, m_server->ProcessId());
+}
+
+void NetworkPanel::StopServer()
+{
+    if (!m_server->IsRunning()) return;
+    const std::uint32_t pid = m_server->ProcessId();
+    m_server->Stop();
+    m_serverError.clear();
+    CRU_INFO("[Net] connection server stopped (process {})", pid);
+}
+
+void NetworkPanel::UseLocalServer()
+{
+    const auto networks = LobbyServerClient::LocalNetworks();
+    const std::string address = networks.empty() ? std::string("127.0.0.1") : LobbyServer::AddressText(networks.front().ipv4);
+    CopyTo(m_lobbyServerAddress, address);
+    m_lobbyServerPort = m_server->IsRunning() ? m_server->Port() : ToPort(m_serverPort);
+    if (m_edit.lobbyDiscovery == LobbyDiscovery::Lan) m_edit.lobbyDiscovery = LobbyDiscovery::Auto;
+    Apply();
+}
+
+void NetworkPanel::DrawServerTab()
+{
+    auto const& palette = EditorTheme::GetPalette();
+    auto const now = ConnectionServerControl::Clock::now();
+    ConnectionServerControl& server = *m_server;
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("Lists the lobbies on your network so every PC finds them. It runs as its own program "
+                        "(CrucibleConnectionServer.exe) and keeps running when the Editor closes. Games never depend on it.");
+    ImGui::PopTextWrapPos();
+    ImGui::Spacing();
+
+    if (!server.HasExecutable()) {
+        ImGui::TextColored(palette.error, "CrucibleConnectionServer.exe was not found.");
+        ImGui::TextDisabled("Build the CrucibleConnectionServer project, then reopen this tab.");
+        if (ImGui::Button("Look again")) {
+#ifdef CRUCIBLE_BUILD_DIR
+            server.SetExecutable(ConnectionServerControl::FindExecutable(ConnectionServerControl::ThisProgramDir(), CRUCIBLE_BUILD_DIR));
+#else
+            server.SetExecutable(ConnectionServerControl::FindExecutable(ConnectionServerControl::ThisProgramDir(), {}));
+#endif
+        }
+        return;
+    }
+
+    // Settings: only while stopped (the running server keeps its own).
+    bool const running = server.IsRunning();
+    ImGui::BeginDisabled(running);
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputInt("UDP port", &m_serverPort, 0, 0);
+    ImGui::SetNextItemWidth(120.0f);
+    ImGui::InputInt("Lobby lifetime (ms)", &m_serverLifetimeMs, 0, 0);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("How long a lobby stays listed without a heartbeat (3000 to 60000).\n"
+                          "Hosts send one every 2 s; a crashed host disappears after this long.");
+    ImGui::EndDisabled();
+
+    if (!running) {
+        ImGui::BeginDisabled(!CanStartServer());
+        if (ImGui::Button("Start server")) StartServer();
+        ImGui::EndDisabled();
+    }
+    else if (ImGui::Button("Stop server")) {
+        StopServer();
+    }
+
+    // State
+    ImGui::Spacing();
+    switch (server.GetState()) {
+    case ConnectionServerControl::State::Running: {
+        LobbyServerStatus const status = server.MonitorState(now);
+        if (server.Verified()) {
+            auto const& s = server.ServerStatus();
+            ImGui::TextColored(palette.success, "Running: up %u:%02u:%02u, %u lobby(s) listed", s.uptimeSeconds / 3600,
+                               (s.uptimeSeconds / 60) % 60, s.uptimeSeconds % 60, static_cast<unsigned>(s.lobbies));
+        }
+        else if (server.HasServerStatus()) {
+            ImGui::TextColored(palette.warning, "Another program answers on port %u (process %u, not %u).", server.Port(),
+                               server.ServerStatus().processId, server.ProcessId());
+        }
+        else if (status == LobbyServerStatus::Unreachable) {
+            ImGui::TextColored(palette.warning, "Running, but not answering on 127.0.0.1:%u.", server.Port());
+        }
+        else {
+            ImGui::TextUnformatted("Starting...");
+        }
+        ImGui::TextDisabled("Process %u, UDP port %u, lifetime %u ms%s", server.ProcessId(), server.Port(), server.LifetimeMs(),
+                            server.Reattached() ? " - started earlier, still running" : "");
+        break;
+    }
+    case ConnectionServerControl::State::Exited:
+        ImGui::TextColored(palette.error, "The server stopped by itself (exit code %u). The log below says why.", server.ExitCode());
+        break;
+    default:
+        ImGui::TextDisabled("Not running.");
+        break;
+    }
+    if (!m_serverError.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(palette.error, "%s", m_serverError.c_str());
+        ImGui::PopTextWrapPos();
+    }
+
+    // Where other PCs reach it
+    ImGui::SeparatorText("Addresses");
+    std::uint16_t const port = running ? server.Port() : ToPort(m_serverPort);
+    const auto networks = LobbyServerClient::LocalNetworks();
+    if (networks.empty()) ImGui::TextDisabled("This PC has no network connection: only this PC can use it.");
+    int row = 0;
+    for (const auto& n : networks) {
+        std::string const text = std::format("{}:{}", LobbyServer::AddressText(n.ipv4), port);
+        ImGui::PushID(row++);
+        ImGui::BulletText("%s", text.c_str());
+        ImGui::SameLine();
+        if (ImGui::SmallButton("Copy")) ImGui::SetClipboardText(LobbyServer::AddressText(n.ipv4).c_str());
+        ImGui::PopID();
+    }
+    ImGui::BulletText("127.0.0.1:%u  (this PC only)", static_cast<unsigned>(port));
+    ImGui::PushTextWrapPos(0.0f);
+    ImGui::TextDisabled("On every other PC: Network > Network Window > Session > Lobby discovery: Server address = one of the "
+                        "addresses above (the one on the same network), Server port = %u.", static_cast<unsigned>(port));
+    ImGui::PopTextWrapPos();
+
+    bool const editable = m_core.GetPlayState() == PlayState::Edit && !m_core.GetNetwork().IsActive();
+    std::string const preferred = networks.empty() ? std::string("127.0.0.1") : LobbyServer::AddressText(networks.front().ipv4);
+    bool const usesIt = m_edit.lobbyDiscovery != LobbyDiscovery::Lan && m_edit.lobbyServerPort == port &&
+                        (m_edit.lobbyServerAddress == preferred || m_edit.lobbyServerAddress == "127.0.0.1");
+    ImGui::BeginDisabled(!editable || usesIt);
+    if (ImGui::Button("Use this server")) UseLocalServer();
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Sets this Editor's Lobby discovery to %s:%u.", preferred.c_str(), static_cast<unsigned>(port));
+    ImGui::SameLine();
+    if (usesIt) ImGui::TextColored(palette.success, "This Editor uses it.");
+    else if (!editable) ImGui::TextDisabled("(press Stop to change)");
+
+    // The log
+    ImGui::SeparatorText("Log");
+    ImGui::Checkbox("Follow", &m_followLog);
+    ImGui::SameLine();
+    ImGui::TextDisabled("%s", server.LogPath().string().c_str());
+    if (ImGui::BeginChild("##serverlog", ImVec2(0.0f, 0.0f), ImGuiChildFlags_Borders, ImGuiWindowFlags_HorizontalScrollbar)) {
+        if (server.LogTail().empty()) ImGui::TextDisabled(running ? "(nothing yet)" : "(the log of the last run appears here)");
+        for (const std::string& line : server.LogTail()) ImGui::TextUnformatted(line.c_str());
+        if (m_followLog && ImGui::GetScrollY() < ImGui::GetScrollMaxY()) ImGui::SetScrollHereY(1.0f);
+    }
+    ImGui::EndChild();
+}
+
+// ---- Debug ------------------------------------------------------------------------------------
+
+void NetworkPanel::DrawDebugTab()
+{
+    if (!m_core.GetNetwork().IsActive()) {
+        ImGui::TextDisabled("No session. The numbers appear here while one runs.");
+        return;
+    }
+    DrawStatistics();
 }
 
 bool NetworkPanel::DrawSimulation()
@@ -207,6 +451,98 @@ bool NetworkPanel::DrawSimulation()
     return changed;
 }
 
+bool NetworkPanel::DrawLobbyDiscovery()
+{
+    bool changed = false;
+    ImGui::SetNextItemOpen(true, ImGuiCond_FirstUseEver);
+    bool const open = ImGui::TreeNode("Lobby discovery");
+    bool const needsAddress = m_edit.lobbyDiscovery == LobbyDiscovery::Server && m_lobbyServerAddress[0] == '\0';
+    if (!open) {
+        ImGui::SameLine();
+        ImGui::TextDisabled("(%s%s%s)", ToString(m_edit.lobbyDiscovery), m_edit.lobbyServerAddress.empty() ? "" : ", server ",
+                            m_edit.lobbyServerAddress.c_str());
+        if (needsAddress) {
+            ImGui::SameLine();
+            ImGui::TextColored(EditorTheme::GetPalette().warning, "no server address");
+        }
+        return false;
+    }
+    int discovery = static_cast<int>(m_edit.lobbyDiscovery);
+    changed |= ImGui::RadioButton("Auto", &discovery, static_cast<int>(LobbyDiscovery::Auto));
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The connection server first. If it does not answer %d list requests, the lobby browser\n"
+                          "says so and the game may offer LAN broadcast instead. No server address: LAN broadcast.\n"
+                          "A hosted session is listed both ways.", LobbyServer::kListAttempts);
+    ImGui::SameLine();
+    changed |= ImGui::RadioButton("Server", &discovery, static_cast<int>(LobbyDiscovery::Server));
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("The connection server only (testing).");
+    ImGui::SameLine();
+    changed |= ImGui::RadioButton("LAN", &discovery, static_cast<int>(LobbyDiscovery::Lan));
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("LAN broadcast only; the connection server is not used (testing).");
+    m_edit.lobbyDiscovery = static_cast<LobbyDiscovery>(discovery);
+
+    ImGui::BeginDisabled(m_edit.lobbyDiscovery == LobbyDiscovery::Lan);
+    changed |= ImGui::InputTextWithHint("Server address", "none (e.g. 192.168.0.5)", m_lobbyServerAddress.data(),
+                                        m_lobbyServerAddress.size(), ImGuiInputTextFlags_CharsNoBlank);
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("The IPv4 address of the PC running CrucibleConnectionServer.exe\n"
+                          "(it prints its addresses when it starts). Empty: no connection server.");
+    changed |= ImGui::InputInt("Server port", &m_lobbyServerPort, 0, 0);
+    ImGui::EndDisabled();
+    if (m_edit.lobbyDiscovery == LobbyDiscovery::Server && m_lobbyServerAddress[0] == '\0') {
+        // Not an error that stops Play (Quick test Host / Client need no server), but nothing is
+        // listed or found this way: say so here instead of a lobby browser searching forever.
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(EditorTheme::GetPalette().warning,
+                           "Server needs a Server address: hosted lobbies are not listed and lobby lists stay empty. "
+                           "Set the address, or choose Auto.");
+        ImGui::PopTextWrapPos();
+    }
+    ImGui::TextDisabled("Applies to the next Play / the next lobby browser.");
+    ImGui::TreePop();
+    return changed;
+}
+
+void NetworkPanel::DrawLobbyServerStatus()
+{
+    NetworkSession const& network = m_core.GetNetwork();
+    if (std::string const problem = network.LobbyListingProblem(); !problem.empty()) {
+        ImGui::PushTextWrapPos(0.0f);
+        ImGui::TextColored(EditorTheme::GetPalette().warning, "This session is not in lobby lists: %s", problem.c_str());
+        ImGui::PopTextWrapPos();
+    }
+    LobbyServerStatus const status = network.LobbyServerState();
+    if (network.IsServer() && !network.LobbyOpen() && network.ActiveSettings().lobbyDiscovery != LobbyDiscovery::Lan &&
+        !network.ActiveSettings().lobbyServerAddress.empty()) {
+        // Closed (the match started): unregistered on purpose, so the server line below is gone.
+        ImGui::TextDisabled("Connection server: not listed while the lobby is closed (match in progress)");
+    }
+    if (status == LobbyServerStatus::Off) return;
+    std::string const endpoint = network.LobbyServerEndpoint();
+    auto const& palette = EditorTheme::GetPalette();
+    switch (status) {
+    case LobbyServerStatus::Online:
+        ImGui::TextColored(palette.success, "Connection server %s: online%s", endpoint.c_str(),
+                           network.IsServer() ? (network.LobbyRegistered() ? " (this session is listed)" : "") : "");
+        break;
+    case LobbyServerStatus::Connecting:
+        if (network.IsBrowsing() && network.LobbyListFromServer())
+            ImGui::Text("Connection server %s: connecting (attempt %d of %d)...", endpoint.c_str(),
+                        std::min(network.LobbyServerFailedAttempts() + 1, LobbyServer::kListAttempts), LobbyServer::kListAttempts);
+        else
+            ImGui::Text("Connection server %s: connecting...", endpoint.c_str());
+        break;
+    default:
+        ImGui::TextColored(palette.warning, "Connection server %s: unreachable%s", endpoint.c_str(),
+                           network.LanDiscoveryChosen() ? " - lobby list from LAN broadcast (chosen)"
+                           : network.CanUseLanDiscovery() ? " - the lobby browser can offer LAN broadcast" : "");
+        break;
+    }
+    if (network.IsBrowsing() && network.LobbyListFromServer() && network.LobbyListTruncated()) {
+        ImGui::TextDisabled("Lobby list: %zu of %u (truncated)", network.Lobbies().size(), static_cast<unsigned>(network.LobbyListTotal()));
+    }
+}
+
 void NetworkPanel::UpdateRates()
 {
     NetworkSession const& network = m_core.GetNetwork();
@@ -243,8 +579,6 @@ void NetworkPanel::UpdateRates()
 
 void NetworkPanel::DrawStatistics()
 {
-    UpdateRates();   // every frame while a session runs, so the window never spans a gap
-    if (!ImGui::CollapsingHeader("Statistics", ImGuiTreeNodeFlags_DefaultOpen)) return;
 
     NetworkSession const& network = m_core.GetNetwork();
     NetStats const& stats = network.Stats();
@@ -378,7 +712,12 @@ void NetworkPanel::DrawStatus()
         if (network.IsChangingScene())
             ImGui::TextColored(EditorTheme::GetPalette().warning, "Changing scene (%u): waiting for the players to load it", network.SceneTransition());
         for (PeerState const& peer : network.Peers()) {
-            if (peer.IsJoined()) ImGui::BulletText("Player %u: %s (%s)", static_cast<unsigned>(peer.peer), peer.name.c_str(), peer.remoteAddress.c_str());
+            if (!peer.IsJoined()) continue;
+            ConnectionStatus link;
+            if (network.PeerLinkStatus(peer.peer, link))
+                ImGui::BulletText("Player %u: %s (%s) - %d ms", static_cast<unsigned>(peer.peer), peer.name.c_str(), peer.remoteAddress.c_str(), link.pingMs);
+            else
+                ImGui::BulletText("Player %u: %s (%s)", static_cast<unsigned>(peer.peer), peer.name.c_str(), peer.remoteAddress.c_str());
         }
     }
     else if (network.IsClient()) {
@@ -394,6 +733,10 @@ void NetworkPanel::DrawStatus()
                 ImGui::TextColored(EditorTheme::GetPalette().warning, "Loading the host's scene (change %u)...", network.SceneTransition());
             ImGui::TextColored(EditorTheme::GetPalette().success, "Joined %s:%u as player %u", active.connectAddress.c_str(),
                                static_cast<unsigned>(active.connectPort), static_cast<unsigned>(network.LocalPeer()));
+            if (ConnectionStatus link; network.HostLinkStatus(link)) {
+                ImGui::SameLine();
+                ImGui::TextDisabled("- %d ms", link.pingMs);
+            }
             // Everyone in the session, as the host told this client (its roster).
             ImGui::Text("Players in the session: %zu", network.PlayerCount());
             for (NetPeerInfo const& player : network.Roster()) {
@@ -408,6 +751,7 @@ void NetworkPanel::DrawStatus()
     else {
         ImGui::TextDisabled("No session.");
     }
+    DrawLobbyServerStatus();
     if (network.IsSimulating()) {
         ImGui::TextColored(EditorTheme::GetPalette().warning, "Simulating a bad network: +%u ms round trip, %.1f%% packet loss",
                            active.simulation.extraRoundTripMs, static_cast<double>(active.simulation.packetLossPercent));

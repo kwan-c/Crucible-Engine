@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          21 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         One session found on the local network (Network.Lobbies),
 *                and the numbers a session can end with (EndCode).
 *                Part of Crucible.ScriptCore.dll.
@@ -18,10 +18,12 @@
 *    What a host says about itself is only shown, never trusted: the host
 *    refuses a join itself when it is full or closed.
 *
-*    C++ side: Engine/src/Network/LanDiscovery.h.
+*    C++ side: Engine/src/Network/LanDiscovery.h (LAN broadcast) and
+*    LobbyServerClient.h (the connection server).
 *
 * \history
 *    -v1.0       LobbyInfo, EndCode (Networking C# lobby browser)
+*    -v1.1       FromLan, FromServer, StaleAfterServer; LobbyServerStatus, LobbyDiscoveryMode (LAN connection server)
 *
 **************************************************************************/
 namespace Crucible
@@ -29,8 +31,10 @@ namespace Crucible
     /// <summary>A session hosted on the local network, as its host last described it.</summary>
     public sealed class LobbyInfo
     {
-        /// <summary>Seconds without an answer after which an entry is treated as gone.</summary>
+        /// <summary>Seconds without an answer after which a LAN entry is treated as gone.</summary>
         public const float StaleAfter = 2.5f;
+        /// <summary>The same for an entry listed by the connection server (hosts report every 2 s).</summary>
+        public const float StaleAfterServer = 5.0f;
 
         /// <summary>Tells two sessions apart (random per session; stays the same while it runs).</summary>
         public string Id { get; private set; }
@@ -50,10 +54,14 @@ namespace Crucible
         public bool IsCompatible { get; private set; }
         /// <summary>Seconds since the host last answered.</summary>
         public float Age { get; private set; }
+        /// <summary>Seen through LAN broadcast.</summary>
+        public bool FromLan { get; private set; }
+        /// <summary>Listed by the connection server.</summary>
+        public bool FromServer { get; private set; }
 
         public bool IsFull { get { return MaxPlayers > 0 && Players >= MaxPlayers; } }
         /// <summary>Heard from too long ago: it may have closed.</summary>
-        public bool IsStale { get { return Age > StaleAfter; } }
+        public bool IsStale { get { return Age > (FromServer && !FromLan ? StaleAfterServer : StaleAfter); } }
         /// <summary>Worth trying to join now.</summary>
         public bool IsJoinable { get { return IsOpen && IsCompatible && !IsFull && !IsStale; } }
 
@@ -71,8 +79,10 @@ namespace Crucible
         }
 
         internal LobbyInfo(string id, string address, int port, string hostName, string status, int players, int maxPlayers,
-                           bool open, bool compatible, float age)
+                           bool open, bool compatible, float age, bool fromLan = true, bool fromServer = false)
         {
+            FromLan = fromLan;
+            FromServer = fromServer;
             Id = id;
             Address = address;
             Port = port;
@@ -89,6 +99,29 @@ namespace Crucible
         {
             return HostName + "'s lobby (" + Players + "/" + MaxPlayers + ", " + Availability + ") at " + Address + ":" + Port;
         }
+    }
+
+    /// <summary>The connection server as this machine sees it (Network.LobbyServerState).</summary>
+    public enum LobbyServerStatus
+    {
+        /// <summary>No server set, or nothing asked of it.</summary>
+        Off = 0,
+        /// <summary>Asked, no answer yet.</summary>
+        Connecting = 1,
+        Online = 2,
+        /// <summary>Not answering: lobby lists come from LAN broadcast in Auto mode.</summary>
+        Unreachable = 3,
+    }
+
+    /// <summary>How lobbies are found (the Network settings' lobby discovery).</summary>
+    public enum LobbyDiscoveryMode
+    {
+        /// <summary>The connection server when set and answering, LAN broadcast otherwise.</summary>
+        Auto = 0,
+        /// <summary>The connection server only.</summary>
+        Server = 1,
+        /// <summary>LAN broadcast only.</summary>
+        Lan = 2,
     }
 
     /// <summary>Why a session ended (Network.LastEndCode). Network.DescribeEnd turns it into a sentence.</summary>

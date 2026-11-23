@@ -13,7 +13,11 @@
         "hostPort": 27020,
         "connectAddress": "127.0.0.1",
         "connectPort": 27020,
-        "maxClients": 3
+        "maxClients": 3,
+        "lobbyDiscovery": "auto",
+        "lobbyServerAddress": "",
+        "lobbyServerPort": 27018,
+        "discoveryPort": 27019
     },
     "project": {
         "startupScene": "Scenes/Fog_Lighting_Effects.scene",

@@ -68,6 +68,10 @@ target_compile_definitions(Editor PRIVATE
     CRUCIBLE_BUILD_DIR="${CMAKE_BINARY_DIR}"
 )
 
+# Network > Connection Server starts CrucibleConnectionServer.exe (ConnectionServer/): building the
+# Editor builds it too, so the exe is there to start.
+add_dependencies(Editor CrucibleConnectionServer)
+
 # Copy Engine.dll to Editor output directory (ImGui is static, so no imgui.dll)
 add_custom_command(TARGET Editor POST_BUILD
 

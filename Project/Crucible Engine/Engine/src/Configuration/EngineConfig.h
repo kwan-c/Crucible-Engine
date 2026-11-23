@@ -49,6 +49,13 @@ namespace Crucible
 		std::string connectAddress = "127.0.0.1"; // client: the host's IP address
 		uint16_t    connectPort = 27020;          // client: the host's port
 		uint32_t    maxClients = 3;               // host: remote players accepted (1..3; the host is the 4th)
+		// Finding lobbies: "auto" (the connection server if one is set, else / when it is down LAN
+		// broadcast), "server" or "lan"; the connection server's IPv4 address ("" = none) and port;
+		// the LAN broadcast port.
+		std::string lobbyDiscovery = "auto";
+		std::string lobbyServerAddress;
+		uint16_t    lobbyServerPort = 27018;
+		uint16_t    discoveryPort = 27019;
 	};
 
 	// No audio section: volumes are the PLAYER's choice, so they live in UserSettings.json

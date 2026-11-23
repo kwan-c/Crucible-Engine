@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          21 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                Finding sessions on the local network: hosts answer, and
 *                a lobby browser lists who answered. Plain UDP broadcast,
@@ -44,6 +44,7 @@
 *
 * \history
 *    -v1.0       hosts answer, browsers list (Networking C# lobby browser)
+*    -v1.1       LobbyInfo::sources (LAN broadcast and/or the connection server)
 *
 **************************************************************************/
 #pragma once
@@ -74,12 +75,18 @@ namespace Crucible
 		std::string   status;                // "In lobby", "In match"..., <= 64 bytes
 	};
 
+	/// LobbyInfo::sources: how a browser learned of a lobby (both bits: the same lobby id came
+	/// from both, listed once).
+	inline constexpr std::uint8_t kLobbyFromLan = 1;      // LAN broadcast (LanDiscovery)
+	inline constexpr std::uint8_t kLobbyFromServer = 2;   // the connection server (LobbyServerClient)
+
 	/// One host a browser heard from.
 	struct LobbyInfo
 	{
 		LobbyAdvert   advert;
 		std::string   address;               // the IP to join it at ("127.0.0.1" on this PC)
 		std::chrono::steady_clock::time_point lastHeard{};
+		std::uint8_t  sources = kLobbyFromLan;   // kLobbyFromLan | kLobbyFromServer
 
 		/// Seconds since its last reply.
 		float Age(std::chrono::steady_clock::time_point now) const noexcept

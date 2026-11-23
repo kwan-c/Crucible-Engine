@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.5
+* \version       1.6
 * \brief         The multiplayer session for scripts: who am I, who else is
 *                here, and how a client asks the host to do something.
 *                Part of Crucible.ScriptCore.dll.
@@ -89,6 +89,10 @@
 *                (Networking C# Phase 10)
 *    -v1.5       the LAN lobby list (StartBrowsing, Lobbies, Join(LobbyInfo),
 *                SetLobby); LastEndCode, LastEndReason, DescribeEnd
+*    -v1.6       the LAN connection server: LobbyServerState, LobbyServerAddress, LobbyDiscovery,
+*                LobbyListFromServer, LobbyListTotal, LobbyListTruncated, IsLobbyRegistered;
+*                LastBrowseError, LobbyListingProblem; LobbyServerFailedAttempts,
+*                LobbyServerMaxAttempts, UseLanDiscovery, CanUseLanDiscovery, IsUsingLanDiscovery
 *
 **************************************************************************/
 using System.Collections.Generic;
@@ -137,27 +141,42 @@ namespace Crucible
 
         /// <summary>
         /// Starts listing the sessions hosted on the local network (Lobbies). Keep it on while a
-        /// lobby browser is shown; StopBrowsing when it closes. False (reason logged) if the
-        /// network cannot be listened to.
+        /// lobby browser is shown; StopBrowsing when it closes. False (reason logged) if nothing
+        /// can be listened to (LAN mode and the port is taken; Server mode and no server address).
+        /// Where the list comes from is the Network settings' lobby discovery (LobbyDiscovery):
+        /// the connection server, LAN broadcast, or (Auto) the connection server first - if it
+        /// does not answer LobbyServerMaxAttempts requests, LobbyServerState is Unreachable and
+        /// the game may offer LAN discovery (CanUseLanDiscovery, UseLanDiscovery).
         /// </summary>
         public static bool StartBrowsing()
         {
             string error = BrowseInternal(1);
+            LastBrowseError = error ?? "";
             if (error == null)
                 return true;
             Log.Error("Network.StartBrowsing: " + error);
             return false;
         }
 
+        /// <summary>
+        /// Why the last StartBrowsing failed, for showing in place of an empty list ("" when it
+        /// succeeded, and after StopBrowsing). For example: "Lobby discovery is set to the
+        /// connection server, but no server address is set."
+        /// </summary>
+        public static string LastBrowseError { get; private set; } = "";
+
         /// <summary>Stops listing sessions (Lobbies becomes empty).</summary>
         public static void StopBrowsing()
         {
             BrowseInternal(0);
+            LastBrowseError = "";
         }
 
         /// <summary>
-        /// The sessions on the local network that answered recently, in the order they were
-        /// found. A session that closes drops off within a few seconds. A new array each call.
+        /// The sessions found, one entry per session (LobbyInfo.FromServer / FromLan say how):
+        /// the connection server's list (open ones first, then in the order they were created), or
+        /// the LAN list (in the order found). Either way a session keeps its place. A session that
+        /// closes drops off within a few seconds. A new array each call.
         /// </summary>
         public static LobbyInfo[] Lobbies
         {
@@ -173,7 +192,8 @@ namespace Crucible
                         continue;
                     lobbies.Add(new LobbyInfo(GetLobbyTextInternal(i, 3) ?? "", GetLobbyTextInternal(i, 0) ?? "", port,
                                               GetLobbyTextInternal(i, 1) ?? "", GetLobbyTextInternal(i, 2) ?? "", players,
-                                              maxPlayers, (flags & 1) != 0, (flags & 2) != 0, age));
+                                              maxPlayers, (flags & 1) != 0, (flags & 2) != 0, age,
+                                              (flags & 4) != 0, (flags & 8) != 0));
                 }
                 return lobbies.ToArray();
             }
@@ -195,10 +215,140 @@ namespace Crucible
             return Join(lobby.Address, lobby.Port, playerName);
         }
 
+        // --- the LAN connection server ------------------------------------------------------ //
+
+        /// <summary>
+        /// The connection server (ConnectionServer/) as this machine sees it: Off when none is
+        /// set or nothing is asked of it (not browsing, not hosting a listed session), Connecting,
+        /// Online or Unreachable. A running session never depends on it.
+        /// </summary>
+        public static LobbyServerStatus LobbyServerState
+        {
+            get
+            {
+                int status, mode, total, flags;
+                return LobbyServerInfoInternal(out status, out mode, out total, out flags) != 0 ? (LobbyServerStatus)status : LobbyServerStatus.Off;
+            }
+        }
+
+        /// <summary>"192.168.0.5:27018": the connection server in use (or set), "" if none.</summary>
+        public static string LobbyServerAddress { get { return LobbyServerAddressInternal() ?? ""; } }
+
+        /// <summary>How lobbies are found: the browser's mode while browsing, else the setting.</summary>
+        public static LobbyDiscoveryMode LobbyDiscovery
+        {
+            get
+            {
+                int status, mode, total, flags;
+                return LobbyServerInfoInternal(out status, out mode, out total, out flags) != 0 ? (LobbyDiscoveryMode)mode : LobbyDiscoveryMode.Auto;
+            }
+        }
+
+        /// <summary>True while Lobbies is the connection server's list (false: the LAN list).</summary>
+        public static bool LobbyListFromServer { get { return (LobbyServerFlags() & 1) != 0; } }
+
+        /// <summary>
+        /// How many sessions the connection server knows of (0 while the LAN list is shown). More
+        /// than Lobbies.Length when the list was truncated (one reply holds about 25).
+        /// </summary>
+        public static int LobbyListTotal
+        {
+            get
+            {
+                int status, mode, total, flags;
+                return LobbyServerInfoInternal(out status, out mode, out total, out flags) != 0 ? total : 0;
+            }
+        }
+
+        /// <summary>The connection server sent fewer sessions than it knows of (LobbyListTotal).</summary>
+        public static bool LobbyListTruncated { get { return (LobbyServerFlags() & 2) != 0; } }
+
+        /// <summary>Host: the connection server has this session in its list.</summary>
+        public static bool IsLobbyRegistered { get { return (LobbyServerFlags() & 4) != 0; } }
+
+        /// <summary>
+        /// Host: why lobby browsers cannot find this session, or "" (listed, still trying, or not
+        /// hosting). For example lobby discovery is Server but no server address is set. Join by
+        /// IP still works either way.
+        /// </summary>
+        public static string LobbyListingProblem { get { return LobbyListingProblemInternal() ?? ""; } }
+
+        /// <summary>
+        /// The lobby browser's list requests to the connection server that went unanswered in a
+        /// row (0 after a reply). While connecting, attempt LobbyServerFailedAttempts + 1 of
+        /// LobbyServerMaxAttempts is in flight; at LobbyServerMaxAttempts the state is Unreachable.
+        /// </summary>
+        public static int LobbyServerFailedAttempts
+        {
+            get
+            {
+                int attempts, max;
+                return LobbyBrowseInfoInternal(out attempts, out max) != 0 ? attempts : 0;
+            }
+        }
+
+        /// <summary>How many unanswered list requests make the connection server Unreachable (5).</summary>
+        public static int LobbyServerMaxAttempts
+        {
+            get
+            {
+                int attempts, max;
+                LobbyBrowseInfoInternal(out attempts, out max);
+                return max > 0 ? max : 5;
+            }
+        }
+
+        /// <summary>The player chose LAN discovery for this browse (UseLanDiscovery).</summary>
+        public static bool IsUsingLanDiscovery
+        {
+            get
+            {
+                int attempts, max;
+                return (LobbyBrowseInfoInternal(out attempts, out max) & 1) != 0;
+            }
+        }
+
+        /// <summary>
+        /// UseLanDiscovery would switch the list now: Auto mode, a connection server set, LAN
+        /// discovery running, not chosen yet. Offer it when LobbyServerState is Unreachable.
+        /// </summary>
+        public static bool CanUseLanDiscovery
+        {
+            get
+            {
+                int attempts, max;
+                return (LobbyBrowseInfoInternal(out attempts, out max) & 2) != 0;
+            }
+        }
+
+        /// <summary>
+        /// Lists the sessions found by LAN discovery instead of the connection server, until the
+        /// next StartBrowsing (which tries the server again). For when the player agreed after
+        /// the server was not accessible. False (reason logged) if not browsing, in Server mode,
+        /// or LAN discovery could not start on this PC.
+        /// </summary>
+        public static bool UseLanDiscovery()
+        {
+            string error = UseLanDiscoveryInternal();
+            if (error == null)
+                return true;
+            Log.Warning("Network.UseLanDiscovery: " + error);
+            return false;
+        }
+
+        private static int LobbyServerFlags()
+        {
+            int status, mode, total, flags;
+            return LobbyServerInfoInternal(out status, out mode, out total, out flags) != 0 ? flags : 0;
+        }
+
         /// <summary>
         /// Host: whether new players may join (a closed session refuses them, and lobby lists
         /// show it as not joinable) and the status lists show ("In lobby", "In match").
-        /// A new session starts open. False unless this machine hosts.
+        /// A new session starts open. False unless this machine hosts. Closing it (the match
+        /// started) also takes it off the connection server's list, freeing its slot there - the
+        /// session and its players are not affected; opening it again lists it again. LAN lobby
+        /// lists keep showing it, as not joinable.
         /// </summary>
         public static bool SetLobby(bool open, string status = null)
         {
@@ -713,6 +863,16 @@ namespace Crucible
         private static extern string GetLobbyTextInternal(int index, int which);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SetLobbyInternal(int open, string status);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int LobbyServerInfoInternal(out int status, out int mode, out int total, out int flags);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string LobbyServerAddressInternal();
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string LobbyListingProblemInternal();
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int LobbyBrowseInfoInternal(out int attempts, out int maxAttempts);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern string UseLanDiscoveryInternal();
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int LastEndCodeInternal();
         [MethodImpl(MethodImplOptions.InternalCall)]

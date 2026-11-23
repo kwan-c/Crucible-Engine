@@ -203,6 +203,10 @@ namespace Crucible
 				ReadString(*network, "connectAddress", config.network.connectAddress);
 				ReadUInt16(*network, "connectPort", config.network.connectPort);
 				ReadUInt(*network, "maxClients", config.network.maxClients);
+				ReadString(*network, "lobbyDiscovery", config.network.lobbyDiscovery);
+				ReadString(*network, "lobbyServerAddress", config.network.lobbyServerAddress);
+				ReadUInt16(*network, "lobbyServerPort", config.network.lobbyServerPort);
+				ReadUInt16(*network, "discoveryPort", config.network.discoveryPort);
 			}
 
 			// (no "audio": the volumes are the player's - see Configuration/UserSettings.h)
@@ -374,6 +378,10 @@ namespace Crucible
 		doc.Set("network/connectAddress", config.network.connectAddress);
 		doc.Set("network/connectPort",    static_cast<std::uint32_t>(config.network.connectPort));
 		doc.Set("network/maxClients",     config.network.maxClients);
+		doc.Set("network/lobbyDiscovery",     config.network.lobbyDiscovery);
+		doc.Set("network/lobbyServerAddress", config.network.lobbyServerAddress);
+		doc.Set("network/lobbyServerPort",    static_cast<std::uint32_t>(config.network.lobbyServerPort));
+		doc.Set("network/discoveryPort",      static_cast<std::uint32_t>(config.network.discoveryPort));
 
 		doc.Set("project/startupScene", config.project.startupScene);
 		doc.SetList("project/aspectRatio", std::vector<std::uint32_t>{ config.project.aspectWidth, config.project.aspectHeight });

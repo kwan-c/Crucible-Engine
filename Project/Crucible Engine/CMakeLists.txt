@@ -39,6 +39,7 @@ add_subdirectory(Engine)
 add_subdirectory(ManagedScripts)
 add_subdirectory(Editor)
 add_subdirectory(Game)
+add_subdirectory(ConnectionServer)   # the LAN connection server (lobby lists); standalone exe
 add_subdirectory(Tools/Cook)   # after Engine: the Cook target waits for its Shaders target
 
 # ------------------------------------------------------------

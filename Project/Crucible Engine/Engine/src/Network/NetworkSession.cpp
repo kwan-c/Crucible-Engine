@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.19
+* \version       1.20
 * \brief
 *                NetworkSession: start/stop, connection events, the join
 *                handshake, bounded receive, quotas and timeouts, spawn
@@ -48,6 +48,10 @@
 *    -v1.18      the LAN lobby list (PumpDiscovery, SetLobby, StartBrowsing); closed lobbies
 *                refuse joins; LastEndCode (Networking C# lobby browser)
 *    -v1.19      a session a script starts no longer becomes the settings of the next Play
+*    -v1.20      the LAN connection server: registration, list from the server with LAN fallback, secure lobby
+*                ids and owner tokens (BCryptGenRandom), Unregister on Stop; LobbyListingProblem;
+*                Auto lists from the server only until UseLanDiscovery; a closed lobby (SetLobby
+*                false: the match started) is unregistered from the server, registered again on reopen
 *
 **************************************************************************/
 #include "Network/NetworkSession.h"
@@ -181,8 +185,9 @@ namespace Crucible
 		ResetSceneChange();
 		m_lobbyOpen = true;
 		m_lobbyStatus.clear();
-		m_lobbyInstance = (static_cast<std::uint64_t>(std::random_device{}()) << 32) ^ std::random_device{}() ^ 1u;
+		NewLobbyIdentity();
 		m_advertiseFailed = false;
+		m_noServerWarned = false;
 		m_endCode = 0;
 		m_stopRequested = false;
 		m_stopReason.clear();
@@ -226,6 +231,7 @@ namespace Crucible
 	{
 		m_startRequested = false;   // a start asked for this frame belongs to what is ending
 		m_discovery.StopAdvertising();
+		m_lobbyServer.StopHosting();   // Unregister: browsers stop listing it at their next refresh
 		m_stopRequested = false;
 		if (m_state == SessionState::Offline && m_transport == nullptr) return;
 		m_state = SessionState::Stopping;
@@ -1263,16 +1269,134 @@ namespace Crucible
 
 	bool NetworkSession::StartBrowsing(std::string& error)
 	{
-		return m_discovery.StartBrowsing(m_settings.discoveryPort, error);
+		StopBrowsing();
+		const LobbyDiscovery mode = m_settings.lobbyDiscovery;
+		const bool hasServer = !m_settings.lobbyServerAddress.empty() && m_settings.lobbyServerPort != 0;
+		if (mode == LobbyDiscovery::Server && !hasServer)
+		{
+			error = "Lobby discovery is set to the connection server, but no server address is set.";
+			return false;
+		}
+		if (mode != LobbyDiscovery::Server)
+		{
+			std::string lanError;
+			if (!m_discovery.StartBrowsing(m_settings.discoveryPort, lanError))
+			{
+				if (mode == LobbyDiscovery::Lan || !hasServer)
+				{
+					error = lanError;
+					return false;
+				}
+				CRU_WARN("[Net] LAN lobby discovery unavailable ({}); using the connection server only", lanError);
+			}
+		}
+		m_browseMode = mode;
+		m_lanChosen = false;   // every browse tries the server first again
+		m_browseServerAddress = mode != LobbyDiscovery::Lan && hasServer ? m_settings.lobbyServerAddress : std::string();
+		m_browseServerPort = m_settings.lobbyServerPort;
+		if (!m_browseServerAddress.empty()) m_lobbyServer.StartBrowsing(kProtocolVersion);
+		m_browsing = true;
+		return true;
+	}
+
+	void NetworkSession::StopBrowsing() noexcept
+	{
+		m_discovery.StopBrowsing();
+		m_lobbyServer.StopBrowsing();
+		m_browsing = false;
+		m_lanChosen = false;
+		m_lobbyList.clear();
+		m_listFromServer = false;
+	}
+
+	bool NetworkSession::UseLanDiscovery(std::string& error)
+	{
+		if (!m_browsing)
+		{
+			error = "not browsing (StartBrowsing first)";
+			return false;
+		}
+		if (m_browseMode == LobbyDiscovery::Server)
+		{
+			error = "Lobby discovery is Server: the connection server only";
+			return false;
+		}
+		if (m_browseMode == LobbyDiscovery::Lan || m_browseServerAddress.empty()) return true;   // LAN already
+		if (!m_discovery.IsBrowsing())
+		{
+			error = "LAN lobby discovery could not start on this PC";
+			return false;
+		}
+		if (!m_lanChosen) CRU_INFO("[Net] lobby list: LAN discovery, chosen instead of the connection server {}", LobbyServerEndpoint());
+		m_lanChosen = true;
+		RebuildLobbyList(SteadyClock::now());
+		return true;
+	}
+
+	bool NetworkSession::CanUseLanDiscovery() const noexcept
+	{
+		return m_browsing && m_browseMode == LobbyDiscovery::Auto && !m_browseServerAddress.empty() && !m_lanChosen &&
+		       m_discovery.IsBrowsing();
+	}
+
+	LobbyServerStatus NetworkSession::LobbyServerState() const noexcept
+	{
+		return m_lobbyServer.Status(SteadyClock::now());
+	}
+
+	std::string NetworkSession::LobbyServerEndpoint() const
+	{
+		if (!m_lobbyServer.HasServer()) return {};
+		return std::format("{}:{}", LobbyServer::AddressText(m_lobbyServer.ServerIp()), m_lobbyServer.ServerPort());
+	}
+
+	std::string NetworkSession::LobbyListingProblem() const
+	{
+		if (!IsServer() || m_state != SessionState::Running) return {};
+		const LobbyDiscovery mode = m_active.lobbyDiscovery;
+		const bool hasServer = !m_active.lobbyServerAddress.empty();
+		if (mode == LobbyDiscovery::Server && !hasServer)
+			return "Lobby discovery is Server, but no connection server address is set.";
+		if (m_advertiseFailed && (mode == LobbyDiscovery::Lan || !hasServer))
+			return "LAN lobby lists cannot see it: the discovery port could not be opened.";
+		return {};
+	}
+
+	// The lobby id and the owner token: from the operating system's secure generator, so another
+	// host cannot guess the token and change or remove this lobby at the server.
+	void NetworkSession::NewLobbyIdentity()
+	{
+		const auto fallback = [] {
+			std::random_device rd;
+			return ((static_cast<std::uint64_t>(rd()) << 32) ^ rd()) | 1u;
+		};
+		if (!LobbyServerClient::SecureRandom64(m_lobbyInstance)) m_lobbyInstance = fallback();
+		if (!LobbyServerClient::SecureRandom64(m_lobbyToken)) m_lobbyToken = fallback();
+	}
+
+	namespace
+	{
+		// At most `limit` bytes, not cutting a UTF-8 character in half.
+		std::string Clip(const std::string& text, std::size_t limit)
+		{
+			if (text.size() <= limit) return text;
+			std::size_t n = limit;
+			while (n > 0 && (static_cast<unsigned char>(text[n]) & 0xC0) == 0x80) --n;
+			return text.substr(0, n);
+		}
 	}
 
 	// A running host keeps its answer up to date every frame (players come and go); anything else
 	// answers nobody. Browsing is independent of the session.
 	void NetworkSession::PumpDiscovery()
 	{
-		if (IsServer() && m_state == SessionState::Running && m_active.discoveryPort != 0 && !m_advertiseFailed)
+		const auto now = SteadyClock::now();
+		const bool hosting = IsServer() && m_state == SessionState::Running;
+		const LobbyDiscovery hostMode = m_active.lobbyDiscovery;
+
+		LobbyAdvert advert;
+		if (hosting)
 		{
-			LobbyAdvert advert;
 			advert.instance = m_lobbyInstance;
 			advert.protocolVersion = kProtocolVersion;
 			advert.gamePort = m_active.hostPort;
@@ -1281,18 +1405,109 @@ namespace Crucible
 			advert.open = m_lobbyOpen;
 			advert.name = m_active.playerName;
 			advert.status = m_lobbyStatus;
+		}
+
+		// LAN broadcast answers (not in Server mode).
+		if (hosting && hostMode != LobbyDiscovery::Server && m_active.discoveryPort != 0 && !m_advertiseFailed)
+		{
 			std::string error;
 			if (!m_discovery.Advertise(m_active.discoveryPort, advert, error))
 			{
 				m_advertiseFailed = true;   // the session itself is fine: it just is not listed
-				CRU_WARN("[Net] this session will not appear in lobby lists: {}", error);
+				CRU_WARN("[Net] this session will not appear in LAN lobby lists: {}", error);
 			}
 		}
 		else if (m_discovery.IsAdvertising())
 		{
 			m_discovery.StopAdvertising();
 		}
-		m_discovery.Pump(SteadyClock::now());
+
+		// The connection server: one server per session object. A listed host uses the one it
+		// started with; otherwise the browser's. The server is a directory of lobbies, so only an
+		// open lobby is registered: closing it (SetLobby false: the match started) unregisters it
+		// below (StopHosting), which frees its slot at once - or, if the Unregister is lost, when
+		// the server's lifetime passes without a heartbeat. The session itself never depends on
+		// it. Opening it again (back to the lobby) registers it again, same id and token.
+		const bool hostOnServer = hosting && m_lobbyOpen && hostMode != LobbyDiscovery::Lan && !m_active.lobbyServerAddress.empty();
+		if (hostOnServer)
+			m_lobbyServer.SetServer(m_active.lobbyServerAddress, m_active.lobbyServerPort);
+		else if (m_browsing)
+			m_lobbyServer.SetServer(m_browseServerAddress, m_browseServerPort);
+		if (hosting && hostMode == LobbyDiscovery::Server && m_active.lobbyServerAddress.empty() && !m_noServerWarned)
+		{
+			m_noServerWarned = true;
+			CRU_WARN("[Net] lobby discovery is 'server' but no connection server address is set: this session is not listed");
+		}
+
+		if (hostOnServer)
+		{
+			if (m_hostNetworks.empty() || now - m_hostNetworksAt > std::chrono::seconds(10))
+			{
+				m_hostNetworks = LobbyServerClient::LocalNetworks();
+				if (m_hostNetworks.size() > LobbyServer::kMaxAddresses) m_hostNetworks.resize(LobbyServer::kMaxAddresses);
+				m_hostNetworksAt = now;
+			}
+			LobbyServer::RegisterMsg registration;
+			registration.lobby = m_lobbyInstance;
+			registration.ownerToken = m_lobbyToken;
+			registration.protocolVersion = kProtocolVersion;
+			registration.gamePort = advert.gamePort;
+			registration.players = advert.players;
+			registration.maxPlayers = advert.maxPlayers;
+			registration.open = advert.open;
+			registration.name = Clip(advert.name, LobbyServer::kMaxName);
+			registration.status = Clip(advert.status, LobbyServer::kMaxStatus);
+			registration.addresses = m_hostNetworks;
+			m_lobbyServer.Host(registration);
+		}
+		else if (m_lobbyServer.IsHosting())
+		{
+			m_lobbyServer.StopHosting();
+		}
+
+		m_discovery.Pump(now);
+		m_lobbyServer.Pump(now);
+
+		if (m_lobbyServer.TakeIdConflict())
+		{
+			// Another host already has this id at the server (it would need the same 64 random
+			// bits): draw a new one. LAN browsers see the new id at their next query.
+			NewLobbyIdentity();
+			CRU_WARN("[Net] the connection server already lists a lobby with this id; registering under a new one");
+		}
+
+		if (m_browsing) RebuildLobbyList(now);
+	}
+
+	// Auto with a server: the server's list (LAN copies of the same lobby are merged in) - empty
+	// while it is tried and after it failed - until UseLanDiscovery, then the LAN list. Auto with
+	// no server: LAN. Server / Lan: that source only.
+	void NetworkSession::RebuildLobbyList(std::chrono::steady_clock::time_point)
+	{
+		const bool useServer = m_browseMode == LobbyDiscovery::Server ||
+		                       (m_browseMode == LobbyDiscovery::Auto && !m_browseServerAddress.empty() && !m_lanChosen);
+		m_listFromServer = useServer;
+		m_lobbyList.clear();
+		if (!useServer)
+		{
+			m_lobbyList.assign(m_discovery.Lobbies().begin(), m_discovery.Lobbies().end());
+			// The same lobby seen at the server too (Auto, server still connecting): say so.
+			for (LobbyInfo& lan : m_lobbyList)
+				for (const LobbyInfo& s : m_lobbyServer.Lobbies())
+					if (s.advert.instance == lan.advert.instance) lan.sources |= kLobbyFromServer;
+			return;
+		}
+		m_lobbyList.assign(m_lobbyServer.Lobbies().begin(), m_lobbyServer.Lobbies().end());
+		for (const LobbyInfo& lan : m_discovery.Lobbies())
+		{
+			const auto same = std::ranges::find_if(m_lobbyList, [&](const LobbyInfo& s) { return s.advert.instance == lan.advert.instance; });
+			if (same == m_lobbyList.end()) continue;
+			// One lobby, two sources: listed once. The LAN reply came straight from the host to
+			// this PC, so its address is the one known to work (127.0.0.1 on the same PC).
+			same->sources |= kLobbyFromLan;
+			same->address = lan.address;
+			same->lastHeard = std::max(same->lastHeard, lan.lastHeard);
+		}
 	}
 
 	// ---- scene changes (Networking C# Phase 9) ----------------------------------------------------

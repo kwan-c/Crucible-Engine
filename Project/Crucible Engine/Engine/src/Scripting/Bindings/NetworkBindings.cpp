@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.5
+* \version       1.6
 * \brief         Internal calls behind the C# Network class
 *                (ManagedScripts/Runtime/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
@@ -61,6 +61,8 @@
 *                StartHost, Join, Leave (Networking C# Phase 10)
 *    -v1.5       lobby list: Browse, LobbyCount, GetLobby, GetLobbyText, SetLobby;
 *                LastEndCode, LastEndReason (Networking C# lobby browser)
+*    -v1.6       the LAN connection server: GetLobby source flags (4 LAN, 8 server), LobbyServerInfo,
+*                LobbyServerAddress, LobbyListingProblem, LobbyBrowseInfo, UseLanDiscovery
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -856,7 +858,8 @@ namespace Crucible::ScriptBindings
 
 		/*********************************************************************
 		 \brief  C# Network.Lobbies: one host's numbers. flags: 1 open, 2 same
-		         protocol version (joinable by this build). 0 if no such index.
+		         protocol version (joinable by this build), 4 seen on LAN, 8 listed
+		         by the connection server. 0 if no such index.
 		 *********************************************************************/
 		int32_t ManagedNetworkGetLobby(int32_t index, int32_t* port, int32_t* players, int32_t* maxPlayers, int32_t* flags,
 		                               float* age) noexcept
@@ -871,7 +874,8 @@ namespace Crucible::ScriptBindings
 				*port = lobby.advert.gamePort;
 				*players = lobby.advert.players;
 				*maxPlayers = lobby.advert.maxPlayers;
-				*flags = (lobby.advert.open ? 1 : 0) | (lobby.advert.protocolVersion == kProtocolVersion ? 2 : 0);
+				*flags = (lobby.advert.open ? 1 : 0) | (lobby.advert.protocolVersion == kProtocolVersion ? 2 : 0) |
+				         ((lobby.sources & kLobbyFromLan) != 0 ? 4 : 0) | ((lobby.sources & kLobbyFromServer) != 0 ? 8 : 0);
 				*age = lobby.Age(std::chrono::steady_clock::now());
 				return 1;
 			}
@@ -901,6 +905,113 @@ namespace Crucible::ScriptBindings
 				case 3: return NewString(std::format("{:016X}", lobby.advert.instance));
 				default: return nullptr;
 				}
+			}
+			catch (...)
+			{
+				return nullptr;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.LobbyServerState and friends: the connection server
+		         as this session sees it. status: LobbyServerStatus; mode: the
+		         browser's LobbyDiscovery; flags: 1 the list is the server's,
+		         2 it was truncated, 4 the host is registered. 0 without a session.
+		 *********************************************************************/
+		int32_t ManagedNetworkLobbyServerInfo(int32_t* status, int32_t* mode, int32_t* total, int32_t* flags) noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				if (!session || !status || !mode || !total || !flags)
+					return 0;
+				*status = static_cast<int32_t>(session->LobbyServerState());
+				*mode = static_cast<int32_t>(session->IsBrowsing() ? session->BrowseDiscovery() : session->Settings().lobbyDiscovery);
+				*total = session->LobbyListTotal();
+				*flags = (session->LobbyListFromServer() ? 1 : 0) | (session->LobbyListTruncated() ? 2 : 0) |
+				         (session->LobbyRegistered() ? 4 : 0);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.LobbyServerFailedAttempts / IsUsingLanDiscovery /
+		         CanUseLanDiscovery. Returns flags: 1 LAN discovery chosen,
+		         2 it can be chosen now. 0 without a session.
+		 *********************************************************************/
+		int32_t ManagedNetworkLobbyBrowseInfo(int32_t* attempts, int32_t* maxAttempts) noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				if (!session || !attempts || !maxAttempts)
+					return 0;
+				*attempts = session->LobbyServerFailedAttempts();
+				*maxAttempts = LobbyServer::kListAttempts;
+				return (session->LanDiscoveryChosen() ? 1 : 0) | (session->CanUseLanDiscovery() ? 2 : 0);
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.UseLanDiscovery: null on success, else why not.
+		 *********************************************************************/
+		MonoString* ManagedNetworkUseLanDiscovery() noexcept
+		{
+			try
+			{
+				NetworkSession* session = Session();
+				if (!session)
+					return NewString("no network session");
+				std::string error;
+				return session->UseLanDiscovery(error) ? nullptr : NewString(error);
+			}
+			catch (...)
+			{
+				return NewString("the request failed");
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.LobbyListingProblem: why the hosted session is not
+		         in lobby lists, or "" (listed, still trying, or not hosting).
+		 *********************************************************************/
+		MonoString* ManagedNetworkLobbyListingProblem() noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				return NewString(session ? session->LobbyListingProblem() : std::string());
+			}
+			catch (...)
+			{
+				return nullptr;
+			}
+		}
+
+		/*********************************************************************
+		 \brief  C# Network.LobbyServerAddress: "192.168.0.5:27018" of the
+		         connection server in use (else the one set in the settings),
+		         or "" if none.
+		 *********************************************************************/
+		MonoString* ManagedNetworkLobbyServerAddress() noexcept
+		{
+			try
+			{
+				const NetworkSession* session = Session();
+				if (!session)
+					return NewString("");
+				std::string endpoint = session->LobbyServerEndpoint();
+				if (endpoint.empty() && !session->Settings().lobbyServerAddress.empty())
+					endpoint = std::format("{}:{}", session->Settings().lobbyServerAddress, session->Settings().lobbyServerPort);
+				return NewString(endpoint);
 			}
 			catch (...)
 			{
@@ -1125,6 +1236,11 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Network::GetLobbyInternal", &ManagedNetworkGetLobby);
 		Add("Crucible.Network::GetLobbyTextInternal", &ManagedNetworkGetLobbyText);
 		Add("Crucible.Network::SetLobbyInternal", &ManagedNetworkSetLobby);
+		Add("Crucible.Network::LobbyServerInfoInternal", &ManagedNetworkLobbyServerInfo);
+		Add("Crucible.Network::LobbyServerAddressInternal", &ManagedNetworkLobbyServerAddress);
+		Add("Crucible.Network::LobbyListingProblemInternal", &ManagedNetworkLobbyListingProblem);
+		Add("Crucible.Network::LobbyBrowseInfoInternal", &ManagedNetworkLobbyBrowseInfo);
+		Add("Crucible.Network::UseLanDiscoveryInternal", &ManagedNetworkUseLanDiscovery);
 		Add("Crucible.Network::LastEndCodeInternal", &ManagedNetworkLastEndCode);
 		Add("Crucible.Network::LastEndReasonInternal", &ManagedNetworkLastEndReason);
 		Add("Crucible.NetVars::GetInternal", &ManagedNetVarsGet);
