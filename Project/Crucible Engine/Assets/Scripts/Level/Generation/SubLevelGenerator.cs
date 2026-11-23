@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         Generates a sub-level from a seed. Terrain only for now:
 *                chunks, roads and decor are later port steps.
 *
@@ -17,7 +17,8 @@
 *        |- Terrain            Terrain, MeshRenderer, Collider (HeightField)
 *        '- Nav Surface        FlowFieldSurface: navigation's settings
 *
-*    Each run: TerrainGenerator builds the map (plain data), the Terrain
+*    Each run: TerrainGenerator builds the map (plain data), optional
+*    features add to it (caves: CaveGenerator), the Terrain
 *    child draws and collides with it, the player gets the slope limit (so
 *    player and enemies agree on what is a wall), and navigation re-bakes:
 *    it reads the terrain's heights and cliffs and fits its grid to the
@@ -42,6 +43,8 @@
 *                its grid to the terrain on its own (Edit and Play), and
 *                takes its cliffs from here, so the surface's slope setting
 *                is gone (maxWalkableSlope here is the one slope limit)
+*    -v1.3       Optional caves feature (CaveGenerator): plans tunnel
+*                networks, painted as the Tunnel region; ground unchanged
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -66,6 +69,13 @@ namespace Crucible.@Scripts
         public float variationSize = 350f;      // metres across a cliffy or smooth region
         public float regionBlend = 0.25f;       // width of the change from cliffy to smooth
         public float smoothAreaTerracing = 0.4f; // how much terracing smooth regions keep (0..1)
+
+        // --- caves (optional feature; off = the map is exactly as without it) -- //
+        public bool caves = false;
+        public int caveCount = 2;               // cave systems per map
+        public float caveZoneSize = 120f;       // metres across each system's zone
+        public float caveFill = 0.45f;          // chance a cell starts solid
+        public int caveSmoothing = 5;           // passes of the 4-5 rule
 
         // --- movement ------------------------------------------------------- //
         public float maxWalkableSlope = 35f;    // degrees: the default walker's limit, for the player and enemies
@@ -109,6 +119,7 @@ namespace Crucible.@Scripts
             }
 
             map = TerrainGenerator.Generate(seed, ToTerrainSettings());
+            if (caves) PlanCaves();
             if (!ground.Build(map.Cols, map.Rows, map.CellSize, map.Heights, map.Regions()))
             {
                 Log.Error("SubLevelGenerator: Terrain.Build refused the map");
@@ -138,6 +149,29 @@ namespace Crucible.@Scripts
             s.cliffCoverage = cliffCoverage; s.variationSize = variationSize; s.regionBlend = regionBlend;
             s.smoothAreaTerracing = smoothAreaTerracing;
             return s;
+        }
+
+        private CaveSettings ToCaveSettings()
+        {
+            CaveSettings s = new CaveSettings();
+            s.caveCount = caveCount; s.zoneSize = caveZoneSize; s.fill = caveFill; s.smoothing = caveSmoothing;
+            return s;
+        }
+
+        // The tunnel plan, with one log line per cave system (centre in metres from the terrain's centre).
+        private void PlanCaves()
+        {
+            CaveZone[] zones = CaveGenerator.Plan(map, seed, ToCaveSettings());
+            if (zones.Length < caveCount)
+                Log.Warning("SubLevelGenerator: room for only " + zones.Length + " of " + caveCount + " cave systems");
+            for (int i = 0; i < zones.Length; i++)
+            {
+                CaveZone zone = zones[i];
+                float x = map.MinX + (zone.CentreCol + 0.5f) * map.CellSize, z = map.MinZ + (zone.CentreRow + 0.5f) * map.CellSize;
+                Log.Info("SubLevelGenerator: cave " + (i + 1) + " at (" + x.ToString("F0") + ", " + z.ToString("F0") + "): " +
+                         zone.TunnelCells + " tunnel cells, culled " + zone.CulledByWidth + " too narrow and " +
+                         zone.CulledPockets + " in pockets");
+            }
         }
 
         // Navigation fits its grid to the terrain and reads its cliffs on its own (they come from

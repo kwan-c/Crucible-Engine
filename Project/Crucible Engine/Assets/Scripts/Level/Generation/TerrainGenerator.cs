@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Seeded terraced terrain as plain data: TerrainSettings in,
 *                TerrainMap out. No engine calls, so it can be tested alone.
 *
@@ -25,6 +25,11 @@
 *    The map is centred on the origin of the entity it is built on, the
 *    same layout as the engine's Terrain: (cols + 1) * (rows + 1) corner
 *    heights, row-major.
+*
+* \history
+*    -v1.0       ported from Unity
+*    -v1.1       TerrainMap.Tunnel (set by CaveGenerator), painted as the
+*                Tunnel region
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -59,6 +64,7 @@ namespace Crucible.@Scripts
         public float[] Heights { get; private set; }   // (Cols + 1) * (Rows + 1) corners
         public bool[] Walkable { get; private set; }   // Cols * Rows cells
         public bool[] Road { get; private set; }       // Cols * Rows cells, set by the road builder later
+        public bool[] Tunnel { get; private set; }     // Cols * Rows cells, set by the cave feature (CaveGenerator)
 
         public TerrainMap(int cols, int rows, float cellSize, float minX, float minZ)
         {
@@ -66,11 +72,13 @@ namespace Crucible.@Scripts
             Heights = new float[(cols + 1) * (rows + 1)];
             Walkable = new bool[cols * rows];
             Road = new bool[cols * rows];
+            Tunnel = new bool[cols * rows];
         }
 
         public float Height(int cornerX, int cornerZ) { return Heights[cornerZ * (Cols + 1) + cornerX]; }
         public bool IsWalkable(int col, int row) { return Walkable[row * Cols + col]; }
         public bool IsRoad(int col, int row) { return Road[row * Cols + col]; }
+        public bool IsTunnel(int col, int row) { return Tunnel[row * Cols + col]; }
 
         // True on cliffs and anywhere off the map (x, z in the map's own space).
         public bool WallAt(float x, float z)
@@ -85,12 +93,14 @@ namespace Crucible.@Scripts
             get { int n = 0; foreach (bool w in Walkable) if (w) n++; return n; }
         }
 
-        // One TerrainRegion per cell, for Terrain.Build: a road wins over ground, a wall is a cliff.
+        // One TerrainRegion per cell, for Terrain.Build: a road wins over everything, then a wall is
+        // a cliff (navigation reads Cliff as a wall, so a tunnel never opens one), then tunnel, then ground.
         public byte[] Regions()
         {
             byte[] regions = new byte[Cols * Rows];
             for (int i = 0; i < regions.Length; i++)
-                regions[i] = (byte)(Road[i] ? TerrainRegion.Road : Walkable[i] ? TerrainRegion.Ground : TerrainRegion.Cliff);
+                regions[i] = (byte)(Road[i] ? TerrainRegion.Road : !Walkable[i] ? TerrainRegion.Cliff
+                                  : Tunnel[i] ? TerrainRegion.Tunnel : TerrainRegion.Ground);
             return regions;
         }
 
