@@ -33,6 +33,12 @@ namespace Crucible {
 			CRU_USER_WARN("SceneManager: cannot save '{}' while in play mode - press Stop first", m_scene.Name());
 			return false;
 		}
+		// The world holds a prefab, not this scene: saving would overwrite the scene with it.
+		if (m_sceneLocked)
+		{
+			CRU_USER_WARN("SceneManager: cannot save '{}' while in Prefab Mode - exit it first", m_scene.Name());
+			return false;
+		}
 
 		for (const auto& callback : m_beforeSave) callback();   // OnBeforeSave
 
@@ -59,6 +65,11 @@ namespace Crucible {
 	//  Requests
 	// =======================================================================
 	void SceneManager::RequestNew(bool bypassLoadGate) {
+		if (m_sceneLocked)
+		{
+			CRU_USER_WARN("SceneManager: cannot create a scene while in Prefab Mode - exit it first");
+			return;
+		}
 		if (ShouldHold(bypassLoadGate))
 		{
 			Hold(Pending::New, {}, 0);
@@ -95,6 +106,11 @@ namespace Crucible {
 	}
 
 	bool SceneManager::RequestLoad(const std::filesystem::path& file, bool bypassLoadGate) {
+		if (m_sceneLocked)
+		{
+			CRU_USER_WARN("SceneManager: cannot open a scene while in Prefab Mode - exit it first");
+			return false;
+		}
 		std::error_code ec;
 		if (!std::filesystem::is_regular_file(file, ec))
 		{
@@ -114,6 +130,11 @@ namespace Crucible {
 	}
 
 	bool SceneManager::RequestLoadAsset(std::uint64_t sceneAsset, bool bypassLoadGate) {
+		if (m_sceneLocked)
+		{
+			CRU_USER_WARN("SceneManager: cannot open a scene while in Prefab Mode - exit it first");
+			return false;
+		}
 		if (m_resources == nullptr)
 		{
 			CRU_USER_ERROR("SceneManager: cannot load scene {:X} - no ResourceManager to load it through", sceneAsset);
@@ -198,11 +219,27 @@ namespace Crucible {
 
 		switch (pending)
 		{
-		case Pending::None:                     return;
-		case Pending::New:  ApplyNew();         return;
-		case Pending::Load: ApplyLoad(path);    return;
-		case Pending::LoadAsset: ApplyLoadAsset(asset); return;
+		case Pending::None:                     break;
+		case Pending::New:  ApplyNew();         break;
+		case Pending::Load: ApplyLoad(path);    break;
+		case Pending::LoadAsset: ApplyLoadAsset(asset); break;
 		}
+
+		// Taken first, like the request above: one queued from a callback runs next frame.
+		const std::vector<std::function<void()>> safePoint = std::exchange(m_safePoint, {});
+		for (const auto& callback : safePoint) callback();
+	}
+
+	void SceneManager::RunAtSafePoint(std::function<void()> callback) {
+		if (callback)
+		{
+			m_safePoint.push_back(std::move(callback));
+		}
+	}
+
+	void SceneManager::ClearWorldForStage() {
+		m_scene.Clear(m_world, {});
+		m_dirty = false;
 	}
 
 	void SceneManager::ApplyNew() {

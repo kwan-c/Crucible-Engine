@@ -150,6 +150,14 @@ namespace Crucible {
 		void Undo();
 		void Redo();
 
+		// ---- Replacing the world and bringing the scene back (Play / Stop, Prefab Mode) ----
+		// Begin: after the scene's snapshot was taken (it gives every entity a guid). Remembers
+		// the selection and hidden entities by guid and puts the undo history aside.
+		// End: after the snapshot was restored (restored = true), or with the world kept (false).
+		// Brings them back, pointed at the restored entities.
+		void BeginWorldSwap();
+		void EndWorldSwap(bool restored);
+
 		// ---- Editor shortcuts ----
 		// Frees the mouse while the game has it captured in Play mode. Project Settings > Editor
 		// ("releaseCursorKey" in EngineConfig.json), Shift+F1 by default. Escape is left to the game.

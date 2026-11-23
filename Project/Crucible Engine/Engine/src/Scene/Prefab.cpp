@@ -41,6 +41,7 @@
 #include "Scene/EntityRefs.h"
 
 #include <unordered_map>
+#include <unordered_set>
 
 namespace fs = std::filesystem;
 
@@ -74,6 +75,35 @@ namespace Crucible {
                           std::vector<std::pair<Entity, std::uint64_t>>* outIds,
                           const std::function<std::uint64_t(Entity)>& sceneIdOf)
     {
+        return WriteTree(world, root, file, name, {}, outIds, sceneIdOf);
+    }
+
+    bool Prefab::SaveKeepingIds(World& world,
+                                Entity root,
+                                const fs::path& file,
+                                const std::function<std::uint64_t(Entity)>& entryIdOf,
+                                const std::string& name,
+                                std::vector<std::pair<Entity, std::uint64_t>>* outIds,
+                                const std::function<std::uint64_t(Entity)>& sceneIdOf)
+    {
+        // Checked before anything is written: instances find their root by this id.
+        if (!entryIdOf || (world.IsAlive(root) && entryIdOf(root) == 0))
+        {
+            CRU_ERROR("Prefab: not saving '{}' - its root has no entry id, which would "
+                      "disconnect every instance", file.string());
+            return false;
+        }
+        return WriteTree(world, root, file, name, entryIdOf, outIds, sceneIdOf);
+    }
+
+    bool Prefab::WriteTree(World& world,
+                           Entity root,
+                           const fs::path& file,
+                           const std::string& name,
+                           const std::function<std::uint64_t(Entity)>& entryIdOf,
+                           std::vector<std::pair<Entity, std::uint64_t>>* outIds,
+                           const std::function<std::uint64_t(Entity)>& sceneIdOf)
+    {
         if (!world.IsAlive(root))
         {
             CRU_ERROR("Prefab: cannot save from a dead entity (index {}, gen {})",
@@ -91,13 +121,26 @@ namespace Crucible {
         // every parent index is smaller than its child's, and appending
         // children in file order restores the sibling order.
         std::vector<std::pair<Entity, std::uint64_t>> entries;   // every saved entity with its entry id
+        std::unordered_set<std::uint64_t> usedIds;
         auto visit = [&](auto&& self, Entity entity, int parentIndex) -> void
         {
             const std::size_t index = doc.PushObject(PREFAB_ENTITIES);
             const std::string base  = EntityBase(index);
 
-            // A fresh random id per entry: what instances link to (PrefabInstance::fileId).
-            const std::uint64_t id = xresource::instance_guid::GenerateGUIDCopy().m_Value;
+            // What instances link to (PrefabInstance::fileId): the id the caller is keeping for
+            // this entity, else a fresh random one. Ids must be unique within the file.
+            std::uint64_t id = entryIdOf ? entryIdOf(entity) : 0;
+            if (id != 0 && !usedIds.insert(id).second)
+            {
+                CRU_WARN("Prefab: entry id {} was given to two entities in '{}' - the second gets a new one",
+                         id, file.string());
+                id = 0;
+            }
+            while (id == 0)
+            {
+                const std::uint64_t fresh = xresource::instance_guid::GenerateGUIDCopy().m_Value;
+                if (fresh != 0 && usedIds.insert(fresh).second) id = fresh;
+            }
             doc.Set(base + "/id", AssetRegistry::GuidToString(xresource::instance_guid{ id }));
             if (outIds != nullptr) outIds->emplace_back(entity, id);
             entries.emplace_back(entity, id);
@@ -323,7 +366,8 @@ namespace Crucible {
     }
 
     Entity Prefab::Instantiate(World& world, Entity parent,
-                               const std::function<std::uint64_t(Entity)>& ensureSceneId) const
+                               const std::function<std::uint64_t(Entity)>& ensureSceneId,
+                               std::vector<Entity>* outEntries) const
     {
         if (!m_valid)
         {
@@ -396,8 +440,9 @@ namespace Crucible {
             throw;
         }
 
-
-        return created.front();
+        const Entity newRoot = created.front();
+        if (outEntries != nullptr) *outEntries = std::move(created);   // created[i] is entry i
+        return newRoot;
     }
 
 }
