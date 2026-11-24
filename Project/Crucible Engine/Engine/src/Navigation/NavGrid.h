@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.8
+* \version       1.9
 * \brief
 *                NavGrid: a flat 2D grid over the map where every cell is
 *                open or blocked. The bottom layer of enemy navigation.
@@ -88,6 +88,9 @@
 *    -v1.8       cave V4a: where the terrain is a cave volume, a cell's
 *                layers are its floors (NavTerrain::Floors); steep ones are
 *                walls. IsCaveNode. No links to them yet (V4b)
+*    -v1.9       cave V4b: cave floors linked by following each floor
+*                (BuildLinks); to the ground at the cave's edge by the
+*                climb rule
 *
 **************************************************************************/
 #pragma once
@@ -290,7 +293,7 @@ namespace Crucible {
         // Whether the node is a floor of the terrain's cave volume (NavTerrain::Floors).
         bool    IsCaveNode(int node)       const { return m_nodeSource[static_cast<std::size_t>(node)] == kCaveSource; }
 
-        // Whether two nodes are on the same surface: both the ground, or the same Walkable box.
+        // Whether two nodes are on the same surface: both the ground, both cave floors, or the same Walkable box.
         bool    IsSameSurface(int a, int b) const { return m_nodeSource[static_cast<std::size_t>(a)] == m_nodeSource[static_cast<std::size_t>(b)]; }
 
         // --- Dynamic obstacles ---------------------------------------------- //

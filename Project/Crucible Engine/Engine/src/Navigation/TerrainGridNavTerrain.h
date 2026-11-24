@@ -90,7 +90,7 @@ namespace Crucible {
         float GroundHeight(const Math::vec3& position) const override;
 
         // Under the cave volume's footprint (the cells it replaces): scans the
-        // column for floors. Not thread-safe (reuses one column buffer); the
+        // column for floors. Not thread-safe (reuses its column buffers); the
         // bake calls it from one thread.
         bool Floors(const Math::vec3& position, std::vector<NavFloor>& floors) const override;
 
@@ -103,7 +103,9 @@ namespace Crucible {
         Math::mat4 m_toWorld = Math::mat4(1.0f);
         Math::mat4 m_toLocal = Math::mat4(1.0f);
         Math::mat3 m_normalToWorld = Math::mat3(1.0f);   // a local surface normal to world (inverse transpose)
-        mutable std::vector<float> m_column;             // Floors' density column (memory reused)
+        mutable std::vector<float> m_column;             // Floors' density column, and how it changes
+        mutable std::vector<float> m_alongX;             // along x and z (memory reused)
+        mutable std::vector<float> m_alongZ;
         float      m_offTerrainHeight = 0.0f;
 
     };  // TERRAINGRIDNAVTERRAIN CLASS
