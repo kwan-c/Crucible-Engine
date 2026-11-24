@@ -42,6 +42,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
+#include <list>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -243,7 +244,7 @@ namespace Crucible {
             Commands are matched to their entity through Target(), which is
             the one entity every current command edits.
          *********************************************************************/
-        void BeginPlaySession();
+        void BeginPlaySession(bool nested = false);   // nested: Prefab Mode opening one prefab from another
 
         /*********************************************************************
          \brief
@@ -349,6 +350,9 @@ namespace Crucible {
             std::unordered_map<Entity, std::uint64_t, EntityHash> guidOfKey;
         };
         PlayStash m_stash;
+        // The levels below m_stash when sessions are nested. A list: a deque of unique_ptrs is
+        // not nothrow-movable, so a vector would try to copy it when growing.
+        std::list<PlayStash> m_outerStashes;
     };
 
 }
