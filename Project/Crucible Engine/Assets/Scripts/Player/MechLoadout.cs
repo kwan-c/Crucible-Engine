@@ -120,7 +120,7 @@ namespace Crucible.Scripts
                               Ability = MechAbilityKind.DamageAmp, AbilityPower = 50f, AbilityDuration = 20f },
             new MechPartDef { Id = "golem_legs", Name = "GOLEM LEGS", Kind = MechPartKind.Legs, Health = 50f, AbilityCooldown = 6f },
             new MechPartDef { Id = "fast_legs", Name = "FAST LEGS", Kind = MechPartKind.Legs, Health = 50f, Speed = 10f, AbilityCooldown = 4f,
-                              Ability = MechAbilityKind.Jump, AbilityPower = 2f },
+                              Ability = MechAbilityKind.Jump, AbilityPower = 1f },
             new MechPartDef { Id = "heavy_legs", Name = "HEAVY LEGS", Kind = MechPartKind.Legs, Health = 50f, Speed = 5f, AbilityCooldown = 5f },
         };
 

@@ -169,5 +169,6 @@ namespace Crucible
 		void RegisterTerrainBindings();        // Bindings/TerrainBindings.cpp        (C# Terrain: Build, GroundHeight)
 		void RegisterApplicationBindings();    // Bindings/ApplicationBindings.cpp    (C# Application: IsPlaying)
 		void RegisterTagBindings();            // Bindings/TagBindings.cpp            (C# Entity.Tag, CompareTag, FindWithTag)
+		void RegisterRagdollBindings();        // Bindings/RagdollBindings.cpp        (C# Ragdoll.Spawn) - Hugo
 	}
 }

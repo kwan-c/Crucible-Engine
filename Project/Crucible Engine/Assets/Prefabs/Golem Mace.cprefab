@@ -19,9 +19,9 @@
                         "w": 1.0
                     },
                     "scale": {
-                        "x": 1.0,
-                        "y": 1.0,
-                        "z": 1.0
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
                     }
                 },
                 "RigidBody": {
@@ -67,36 +67,66 @@
                     "name": "Golem Mace"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "Enemy",
-                    "fields": [
+                    "scripts": [
                         {
-                            "declaringType": "Crucible.Scripts.CombatHealth",
-                            "name": "maximumHealth",
-                            "type": "Float",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 120.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
-                        },
-                        {
-                            "declaringType": "Crucible.Scripts.Enemy",
-                            "name": "dropPrefab",
-                            "type": "Prefab",
-                            "boolean": false,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 17814913246604209385
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "Enemy",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CombatHealth",
+                                    "name": "maximumHealth",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 120.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "dropPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 17814913246604209385
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "startAsleep",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "wakeGroup",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "Part 3",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
                         }
                     ]
                 },
@@ -265,22 +295,44 @@
             "parent": 1,
             "components": {
                 "Transform": {
-                    "positions": { "x": 0.0, "y": 0.0, "z": 0.0 },
-                    "rotation": { "x": 0.70710677, "y": 0.0, "z": 0.0, "w": 0.70710677 },
-                    "scale": { "x": 1.0, "y": 1.0, "z": 1.0 }
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.70710677,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.70710677
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
                 },
                 "MeshRenderer": {
                     "visible": true,
                     "modelAsset": 14686256933579063307,
                     "modelRoot": 4294967295,
                     "materialOverrides": [],
-                    "colour": { "x": 0.550000011920929, "y": 0.41999998688697815, "z": 0.30000001192092896, "w": 0.5 },
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
                     "meshAsset": 0,
                     "materialAsset": 0
                 },
                 "MaterialParams": {
                     "emissiveScale": 1.0,
-                    "custom": { "x": 0.0, "y": 0.0, "z": 0.0 }
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
                 },
                 "AnimatedModel": {
                     "controllerAsset": 7930011071109024257,

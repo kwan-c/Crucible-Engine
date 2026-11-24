@@ -85,7 +85,7 @@ namespace Crucible.Scripts
     public sealed class MechPlayer : CombatHealth
     {
         // --- Ground locomotion (MechMovementController defaults) ------------------- //
-        public float moveSpeed = 10f;           // m/s when the legs have no Speed stat (FullPlayer_mech_specialist: 10)
+        public float moveSpeed = 5f;           // m/s when the legs have no Speed stat (FullPlayer_mech_specialist: 10)
         // Unity main (8 Nov, FullPlayer_mech_specialist): run after 3 s at twice the walk speed.
         // A multiplier, not a speed, so heavy parts slow running exactly as much as walking.
         public float autoRunSpeedMultiplier = 2f;

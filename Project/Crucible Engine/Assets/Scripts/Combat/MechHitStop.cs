@@ -106,6 +106,17 @@ namespace Crucible.Scripts
             }
         }
 
+        /// <summary>
+        /// Ends this actor's stop now and puts its animations back. For an actor that dies during a
+        /// stop: its death code runs this first, then sets the animation it wants, which the stop's
+        /// own end would otherwise overwrite with the old speeds a moment later.
+        /// </summary>
+        public static void End(Entity actor)
+        {
+            Stop stop = Find(actor);
+            if (stop != null && stop.Holding) Release(stop);
+        }
+
         /// <summary>Forgets every stop (a new Play session: the clock starts again from 0).</summary>
         public static void Reset()
         {
