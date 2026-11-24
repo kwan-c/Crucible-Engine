@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.5
+* \version       2.0
 * \brief         Generates a sub-level from a seed. Terrain only for now:
 *                chunks, roads and decor are later port steps.
 *
@@ -51,6 +51,11 @@
 *                entrances (caveHillHeight, caveHillNoise,
 *                caveHillNoiseSize, caveEntrances); roofThickness is the
 *                least rock over a tunnel
+*    -v2.0       Caves are a cave volume (one system per map): a mountain
+*                with rooms on two levels, winding tunnels and mouths;
+*                handed to Terrain.Build. Settings replaced (caveVoxelSize,
+*                caveMountainHeight, caveRooms, caveDeepRooms, tunnelHeight,
+*                caveEntrances, caveWallNoise)
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -77,18 +82,16 @@ namespace Crucible.@Scripts
         public float smoothAreaTerracing = 0.4f; // how much terracing smooth regions keep (0..1)
 
         // --- caves (optional feature; off = the map is exactly as without it) -- //
-        public bool caves = false;
-        public int caveCount = 2;               // cave systems per map
-        public float caveZoneSize = 160f;       // metres across each system's zone (the hill)
-        public float caveFill = 0.45f;          // chance a cell starts solid
-        public int caveSmoothing = 5;           // passes of the 4-5 rule
-        public float tunnelHeight = 6f;         // metres from tunnel floor to roof
-        public float roofThickness = 2f;        // metres: the least rock over a tunnel
-        public float caveBlend = 12f;           // metres over which each cave's base blends into the land around
-        public float caveHillHeight = 14f;      // metres the rock hill rises above its base
-        public float caveHillNoise = 4f;        // metres up or down the hill's top varies
-        public float caveHillNoiseSize = 60f;   // metres across a bump on the hill's top
-        public int caveEntrances = 3;           // passages from each cave to the outside
+        public bool caves = false;              // one cave system: a mountain with rooms and tunnels through it
+        public float caveZoneSize = 200f;       // metres across the cave's box
+        public float caveVoxelSize = 2f;        // metres per cave sample; must divide cellSize
+        public float caveBlend = 12f;           // metres over which the cave's levelled base blends into the land around
+        public float caveMountainHeight = 34f;  // metres the mountain rises over its base
+        public int caveRooms = 8;               // chambers in the system
+        public int caveDeepRooms = 4;           // of those, under the ground; the rest inside the mountain
+        public float tunnelHeight = 8f;         // metres from a tunnel's floor to its ceiling
+        public int caveEntrances = 3;           // tunnels out of the mountainside
+        public float caveWallNoise = 2.5f;      // metres the cave walls are pushed in or out
 
         // --- movement ------------------------------------------------------- //
         public float maxWalkableSlope = 35f;    // degrees: the default walker's limit, for the player and enemies
@@ -134,7 +137,7 @@ namespace Crucible.@Scripts
             TerrainSettings terrainSettings = ToTerrainSettings();
             map = TerrainGenerator.Generate(seed, terrainSettings);
             if (caves) AddCaves(terrainSettings);
-            if (!ground.Build(map.Cols, map.Rows, map.CellSize, map.Heights, map.Regions()))
+            if (!ground.Build(map.Cols, map.Rows, map.CellSize, map.Heights, map.Regions(), map.Volume))
             {
                 Log.Error("SubLevelGenerator: Terrain.Build refused the map");
                 map = null;
@@ -168,29 +171,29 @@ namespace Crucible.@Scripts
         private CaveSettings ToCaveSettings()
         {
             CaveSettings s = new CaveSettings();
-            s.caveCount = caveCount; s.zoneSize = caveZoneSize; s.fill = caveFill; s.smoothing = caveSmoothing;
-            s.tunnelHeight = tunnelHeight; s.roofThickness = roofThickness; s.blendWidth = caveBlend;
-            s.hillHeight = caveHillHeight; s.hillNoise = caveHillNoise; s.hillNoiseSize = caveHillNoiseSize; s.entrances = caveEntrances;
+            s.zoneSize = caveZoneSize; s.voxelSize = caveVoxelSize; s.blendWidth = caveBlend; s.mountainHeight = caveMountainHeight;
+            s.rooms = caveRooms; s.deepRooms = caveDeepRooms; s.tunnelHeight = tunnelHeight; s.entrances = caveEntrances;
+            s.wallNoise = caveWallNoise;
             return s;
         }
 
-        // The cave systems, with one log line each (centre in metres from the terrain's centre).
+        // The cave system, with one log line (centre in metres from the terrain's centre).
         private void AddCaves(TerrainSettings terrainSettings)
         {
-            CaveZone[] zones = CaveGenerator.Generate(map, seed, ToCaveSettings(), terrainSettings);
-            if (zones.Length < caveCount)
-                Log.Warning("SubLevelGenerator: room for only " + zones.Length + " of " + caveCount + " cave systems");
-            for (int i = 0; i < zones.Length; i++)
+            CaveSystem cave = CaveGenerator.Generate(map, seed, ToCaveSettings(), terrainSettings);
+            if (cave == null)
             {
-                CaveZone zone = zones[i];
-                float x = map.MinX + (zone.CentreCol + 0.5f) * map.CellSize, z = map.MinZ + (zone.CentreRow + 0.5f) * map.CellSize;
-                Log.Info("SubLevelGenerator: cave " + (i + 1) + " at (" + x.ToString("F0") + ", " + z.ToString("F0") + "): base " +
-                         zone.BaseHeight.ToString("F0") + " m (ground there varied " + zone.HeightRange.ToString("F0") + " m), hill up to " +
-                         zone.TopHeight.ToString("F0") + " m, " + zone.TunnelCells + " tunnel cells (" + zone.EntranceCells + " in " +
-                         zone.Entrances + " entrances), culled " + zone.CulledByWidth + " too narrow and " + zone.CulledPockets + " in pockets");
-                if (zone.Unreachable > 0)
-                    Log.Warning("SubLevelGenerator: cave " + (i + 1) + " has " + zone.Unreachable + " tunnel cells no entrance leads to");
+                Log.Warning("SubLevelGenerator: no cave - the box doesn't fit the map, or caveVoxelSize doesn't divide cellSize");
+                return;
             }
+            Log.Info("SubLevelGenerator: cave at (" + cave.CentreX.ToString("F0") + ", " + cave.CentreZ.ToString("F0") + "): base " +
+                     cave.BaseHeight.ToString("F0") + " m (ground there varied " + cave.HeightRange.ToString("F0") + " m), mountain up to " +
+                     cave.TopHeight.ToString("F0") + " m, " + cave.Rooms + " rooms (" + cave.DeepRooms + " deep), " + cave.Tunnels +
+                     " tunnels (steepest " + cave.SteepestDegrees.ToString("F0") + " deg), " + cave.Entrances + " mouths, " + cave.Samples + " samples");
+            if (cave.Rooms < caveRooms)
+                Log.Warning("SubLevelGenerator: room for only " + cave.Rooms + " of " + caveRooms + " cave rooms (a ground-level room needs mountain over it)");
+            if (cave.UnreachableRooms > 0)
+                Log.Warning("SubLevelGenerator: " + cave.UnreachableRooms + " cave rooms can't be reached from outside");
         }
 
         // Navigation fits its grid to the terrain and reads its cliffs on its own (they come from
