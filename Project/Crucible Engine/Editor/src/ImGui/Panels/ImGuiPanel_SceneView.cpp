@@ -216,11 +216,30 @@ void Crucible::SceneView::UpdateEditorCamera(float dt) {
 	m_flyController.Update(m_viewport.GetCamera(), input, dt);
 }
 
-void Crucible::SceneView::FrameSelected() {
-	if (!m_viewport.IsValid()) { return; }   // GetCamera() is not safe before this
+bool Crucible::SceneView::GetCameraView(CameraView& out) {
+	if (!m_viewport.IsValid()) { return false; }
+	Camera const& camera = m_viewport.GetCamera();
+	out = CameraView{ camera.position, camera.yaw, camera.pitch };
+	return true;
+}
 
+void Crucible::SceneView::SetCameraView(CameraView const& view) {
+	if (!m_viewport.IsValid()) { return; }
+	Camera& camera = m_viewport.GetCamera();
+	camera.position = view.position;
+	camera.yaw      = view.yaw;
+	camera.pitch    = view.pitch;
+	m_focusT = -1.0f;
+}
+
+void Crucible::SceneView::FrameSelected() {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	if (!inspector) { return; }
+	FrameEntities(inspector->GetSelection());
+}
+
+void Crucible::SceneView::FrameEntities(std::vector<Entity> const& entities) {
+	if (!m_viewport.IsValid()) { return; }   // GetCamera() is not safe before this
 
 	// World-space box around everything selected. A mesh contributes its real bounds; anything
 	// without one (lights, cameras, empties) a small box around its position.
@@ -229,7 +248,7 @@ void Crucible::SceneView::FrameSelected() {
 	bool any = false;
 	auto add = [&](AABB const& b) { box = any ? AABB::Union(box, b) : b; any = true; };
 
-	for (Entity const entity : inspector->GetSelection()) {
+	for (Entity const entity : entities) {
 		if (!m_world.IsAlive(entity)) { continue; }
 		WorldTransform const* wt = m_world.Read<WorldTransform>(entity);
 		if (!wt || !wt->valid) { continue; }   // created this frame: not placed yet

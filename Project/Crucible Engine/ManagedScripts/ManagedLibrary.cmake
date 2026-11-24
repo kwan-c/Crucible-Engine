@@ -8,7 +8,9 @@ endforeach()
 # REFERENCES accepts previously declared managed targets or explicit compatible
 # DLL files. Declare every non-framework transitive dependency for deployment.
 function(crucible_add_managed_library target)
-    cmake_parse_arguments(PARSE_ARGV 1 library "" "ASSEMBLY" "SOURCES;REFERENCES")
+    # FALLBACK_SOURCE: compile errors in this library warn instead of failing the build. It keeps
+    # its last good DLL, or builds a placeholder from this one source if it has none.
+    cmake_parse_arguments(PARSE_ARGV 1 library "" "ASSEMBLY;FALLBACK_SOURCE" "SOURCES;REFERENCES")
     if(library_UNPARSED_ARGUMENTS OR NOT library_ASSEMBLY MATCHES "^[A-Za-z_][A-Za-z0-9_.]*$" OR NOT library_SOURCES)
         message(FATAL_ERROR "${target}: provide ASSEMBLY, SOURCES and optional REFERENCES. See Docs/ScriptingDevelopment.md.")
     endif()
@@ -22,6 +24,7 @@ function(crucible_add_managed_library target)
     set(output "${output_dir}/${library_ASSEMBLY}.dll")
     set(staged "${output_dir}/work/${library_ASSEMBLY}/${library_ASSEMBLY}.dll")
     set(arguments "-noconfig\n-sdk:4.5\n-langversion:7.2\n-platform:anycpu\n-target:library\n-debug\n-r:System.dll\n-r:System.Core.dll\n$<IF:$<CONFIG:Debug>,-optimize-,-optimize+>\n-define:TRACE\n$<$<CONFIG:Debug>:-define:DEBUG>\n-out:\"${staged}\"\n")
+    set(fallback_arguments "${arguments}")
     set(inputs)
     set(references)
     foreach(source IN LISTS library_SOURCES)
@@ -47,15 +50,24 @@ function(crucible_add_managed_library target)
             set_property(GLOBAL APPEND PROPERTY CRUCIBLE_MANAGED_FILES "${reference_file}")
         endif()
         string(APPEND arguments "-r:\"${reference_file}\"\n")
+        string(APPEND fallback_arguments "-r:\"${reference_file}\"\n")
         list(APPEND inputs "${reference_file}")
     endforeach()
     set_property(GLOBAL APPEND PROPERTY CRUCIBLE_MANAGED_FILES "${output}" "${output}.mdb")
     set(response "${output_dir}/args/${library_ASSEMBLY}.rsp")
     file(GENERATE OUTPUT "${response}" CONTENT "${arguments}")
+    set(fallback_define)
+    if(library_FALLBACK_SOURCE)
+        get_filename_component(fallback_source "${library_FALLBACK_SOURCE}" ABSOLUTE BASE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
+        string(APPEND fallback_arguments "\"${fallback_source}\"\n")
+        set(fallback_response "${output_dir}/args/${library_ASSEMBLY}.fallback.rsp")
+        file(GENERATE OUTPUT "${fallback_response}" CONTENT "${fallback_arguments}")
+        set(fallback_define "-DFALLBACK_RESPONSE=${fallback_response}")
+    endif()
     add_custom_command(OUTPUT "${output}" "${output}.mdb"
         COMMAND "${CMAKE_COMMAND}"
             "-DMONO_SDK=${CRUCIBLE_MONO_ROOT}" "-DRESPONSE=${response}"
-            "-DSTAGED=${staged}" "-DOUTPUT=${output}"
+            "-DSTAGED=${staged}" "-DOUTPUT=${output}" ${fallback_define}
             -P "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/CompileManaged.cmake"
         DEPENDS ${inputs} "${response}" "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/CompileManaged.cmake"
         COMMENT "Compiling ${library_ASSEMBLY} (Mono 4.5 / C# 7.2)"

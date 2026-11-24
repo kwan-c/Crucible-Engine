@@ -95,6 +95,14 @@ namespace Crucible
 		int Priority() const override { return 0; }
 
 		/*********************************************************************
+		 \brief  Editor preview (Prefab Mode): adds a neutral sun on frames
+				 where the world has no enabled directional light of its own.
+				 Submitted to the Renderer only; no entity exists for it.
+		 \param[in] enabled Whether to add it. Off by default.
+		 *********************************************************************/
+		static void SetPreviewSun(bool enabled);
+
+		/*********************************************************************
 		 \brief  Declares its query's read access and its ordering
 				 requirement on HierarchyTransformSystem (required: without
 				 it, WorldTransform is never computed and nothing would

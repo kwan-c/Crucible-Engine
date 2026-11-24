@@ -171,6 +171,34 @@ namespace Crucible {
 		bool IsPlaySessionActive() const noexcept { return m_playSession; }
 
 		// ===================================================================
+		//  Editor stages (Prefab Mode)
+		// ===================================================================
+
+		/*********************************************************************
+		 \brief  Run a callback once at the next frame's safe point, after any
+				 pending scene change: nothing is iterating the world there.
+		 *********************************************************************/
+		void RunAtSafePoint(std::function<void()> callback);
+
+		/*********************************************************************
+		 \brief  While locked the world holds something other than the open
+				 scene: Save, New and Load are refused, so that content can
+				 never be written over the scene's file.
+		 *********************************************************************/
+		void SetSceneLocked(bool locked) noexcept { m_sceneLocked = locked; }
+		bool IsSceneLocked() const noexcept { return m_sceneLocked; }
+
+		/*********************************************************************
+		 \brief  Empty the world for an editor stage and clear the dirty flag,
+				 which then tracks the stage's edits.
+		 \details
+			Call only after CaptureSnapshot; RestoreSnapshot brings the scene,
+			its guids and its dirty flag back. Listeners are not notified: the
+			scene has not changed, so its undo history and assets stay.
+		 *********************************************************************/
+		void ClearWorldForStage();
+
+		// ===================================================================
 		//  DontDestroyOnLoad
 		// ===================================================================
 
@@ -283,6 +311,8 @@ namespace Crucible {
 		  *********************************************************************/
 		bool IsDirty() const { return m_dirty; }
 		void MarkDirty()	 { m_dirty = true; }
+		//! For Prefab Mode, where "dirty" tracks the open prefab: its file was just saved.
+		void MarkClean()	 { m_dirty = false; }
 
 		/*********************************************************************
 		 \brief  The Scene object for the open scene (guid lookups etc.).
@@ -352,6 +382,8 @@ namespace Crucible {
 		std::filesystem::path				 m_path;
 		bool								 m_dirty = false;
 		bool								 m_playSession = false;   // Play..Stop: saving refused
+		bool								 m_sceneLocked = false;   // an editor stage holds the world: save / new / load refused
+		std::vector<std::function<void()>>	 m_safePoint;             // RunAtSafePoint: run once, then dropped
 
 		Pending								 m_pending = Pending::None;
 		std::filesystem::path				 m_pendingPath;

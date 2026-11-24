@@ -11,6 +11,7 @@
 * All Rights Reserved
 */
 #include "Prefabs/PrefabAuthoring.h"
+#include "Prefabs/PrefabStage.h"
 
 #include "ImGui/ImGuiManager.h"
 #include "ImGui/EditorWidgets.h"
@@ -120,7 +121,8 @@ namespace Crucible::PrefabAuthoring {
 
 	bool CanCreate() {
 		Core* core = EditorManager::GetInstance().GetCore();
-		return core != nullptr && !core->IsInPlaySession() && !core->HasPendingPlayRequest();
+		// In Prefab Mode the world holds a prefab, not the scene these operations work on.
+		return core != nullptr && !core->IsInPlaySession() && !core->HasPendingPlayRequest() && !PrefabStage::IsActive();
 	}
 
 	std::vector<Entity> DraggedEntities(World& world, Entity dragged) {
@@ -257,6 +259,12 @@ namespace Crucible::PrefabAuthoring {
 	Entity PlacePrefab(World& world, std::string const& virtualPath, Entity parent, std::optional<Math::vec3> position) {
 		Core* core = EditorManager::GetInstance().GetCore();
 		if (core == nullptr) { return kNullEntity; }
+
+		// Nested prefabs aren't supported yet: saving would flatten this into plain entities.
+		if (PrefabStage::IsActive()) {
+			CRU_USER_WARN("Cannot place a prefab inside Prefab Mode yet");
+			return kNullEntity;
+		}
 
 		if (!IsPrefabFile(virtualPath)) {
 			CRU_USER_WARN("'{}' is not a prefab ({} file)", virtualPath, kPrefabExtension);
@@ -978,14 +986,20 @@ namespace Crucible::PrefabAuthoring {
 				: m_prefab(prefab), m_file(std::move(file)), m_before(std::move(before)), m_after(std::move(after))
 				, m_select(select), m_label(std::move(label)) {}
 
-			void Undo(UndoHistory&) override { Write(m_before); }
-			void Redo(UndoHistory&) override { Write(m_after); }
+			void Undo(UndoHistory&) override { Write(m_before, m_after); }
+			void Redo(UndoHistory&) override { Write(m_after, m_before); }
 			EntityKey          Target() const override { return m_select; }
 			std::string const& Label()  const override { return m_label; }
 
 		private:
-			void Write(std::string const& text) const {
-				if (!WriteText(m_file, text)) {
+			// Only over the version this step left: the file may have been saved since (Prefab
+			// Mode, a git pull), and undoing an old Apply must not throw that work away.
+			void Write(std::string const& text, std::string const& expected) const {
+				std::string current;
+				if (ReadText(m_file, current) && current != expected) {
+					CRU_USER_WARN("'{}' has changed since this step, so the file was left as it is", m_file.filename().string());
+				}
+				else if (!WriteText(m_file, text)) {
 					CRU_USER_ERROR("Could not write '{}' - the prefab file and the scene may now disagree", m_file.string());
 				}
 				InvalidateCachedPrefab(m_prefab);
@@ -1530,6 +1544,15 @@ namespace Crucible::PrefabAuthoring {
 		return true;
 	}
 
+	void RememberPrefabVersion(std::uint64_t prefabAsset) {
+		LoadedPrefab(prefabAsset);   // caches it in g_versions, by content hash
+	}
+
+	void PrefabFileReplaced(std::uint64_t prefabAsset) {
+		InvalidateCachedPrefab(prefabAsset);
+		LoadedPrefab(prefabAsset);
+	}
+
 	namespace {
 		// The update pass over one world: every instance (of `onlyPrefab`, or of any prefab when it
 		// is 0) whose prefab changed since it last matched. Returns how many were updated.
@@ -1747,11 +1770,15 @@ namespace Crucible::PrefabAuthoring {
 			// A part: Select, and its own count. The full list, Apply and Unpack are on the
 			// instance's root, as in Unity.
 			std::size_t const count = DrawnOverrides(world, entity).size();
-			ButtonRow row(1, kMinBarButtonWidth);
+			ButtonRow row(2, kMinBarButtonWidth);
 			ImGui::BeginDisabled(path.empty());
 			if (row.Button("Select")) { RevealInBrowser(path); }
 			ImGui::EndDisabled();
 			ImGui::SetItemTooltip("Show the .cprefab in the Asset Browser");
+			ImGui::BeginDisabled(path.empty() || !CanCreate());
+			if (row.Button("Open")) { PrefabStage::RequestOpen(path); }
+			ImGui::EndDisabled();
+			ImGui::SetItemTooltip("Edit the prefab in Prefab Mode");
 			if (count > 0) { ImGui::TextDisabled("%zu override%s here (listed on the instance's root)", count, count == 1 ? "" : "s"); }
 			return;
 		}
@@ -1759,12 +1786,17 @@ namespace Crucible::PrefabAuthoring {
 		// Line 2+: the root's buttons, sharing the panel's width (wrapping onto a second row
 		// when it is narrow): Select | Overrides (n) | Unpack. Apply lives in the Overrides menu.
 		std::vector<Override> const all = InstanceOverrides(world, entity);
-		ButtonRow row(3, kMinBarButtonWidth);
+		ButtonRow row(4, kMinBarButtonWidth);
 
 		ImGui::BeginDisabled(path.empty());
 		if (row.Button("Select")) { RevealInBrowser(path); }
 		ImGui::EndDisabled();
 		ImGui::SetItemTooltip("Show the .cprefab in the Asset Browser");
+
+		ImGui::BeginDisabled(path.empty() || !CanCreate());
+		if (row.Button("Open")) { PrefabStage::RequestOpen(path); }
+		ImGui::EndDisabled();
+		ImGui::SetItemTooltip("Edit the prefab in Prefab Mode");
 
 		// Always clickable: with no overrides the menu still offers Apply to All Scenes (push the
 		// prefab as it is now out to every scene).

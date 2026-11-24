@@ -31,6 +31,10 @@
 
 namespace Crucible {
 
+    namespace { bool g_previewSun = false; }
+
+    void RenderExtractSystem::SetPreviewSun(bool enabled) { g_previewSun = enabled; }
+
     void RenderExtractSystem::ReleaseDraws(ProxyRecord& record) {
         if (record.proxy.IsValid()) m_renderer.DestroyRenderProxy(record.proxy);
         for (const auto& part : record.parts) m_renderer.DestroyRenderProxy(part.proxy);
@@ -285,9 +289,11 @@ namespace Crucible {
         // any scale the entity or a parent carries.
         if (!m_lightQuery) { m_lightQuery.emplace(world.CreateQuery<const WorldTransform, const Light>()); }
 
-        m_lightQuery->ForEach([this](Entity, const WorldTransform& worldTransform, const Light& light) {
+        bool hasDirectional = false;
+        m_lightQuery->ForEach([this, &hasDirectional](Entity, const WorldTransform& worldTransform, const Light& light) {
 
             if (!light.enabled || !worldTransform.valid) { return; }
+            hasDirectional = hasDirectional || light.type == LightType::Directional;
 
             const glm::mat4& m = worldTransform.matrix;
             LightData data;
@@ -303,6 +309,18 @@ namespace Crucible {
             m_renderer.SubmitLight(data);
 
         });
+
+        // Prefab Mode's preview light: the same sun an unlit scene gets, so a prefab holding
+        // only point or spot lights can still be seen.
+        if (g_previewSun && !hasDirectional) {
+            LightData sun;
+            sun.type        = LightType::Directional;
+            sun.direction   = -glm::normalize(glm::vec3(0.2f, 0.8f, 0.5f));
+            sun.colour      = glm::vec3(1.0f);
+            sun.intensity   = 3.0f;
+            sun.castShadows = true;
+            m_renderer.SubmitLight(sun);
+        }
 
         // Environment: the scene's Skybox (last one visited wins if there are several). With none,
         // the Renderer simply keeps its defaults for the frame.
