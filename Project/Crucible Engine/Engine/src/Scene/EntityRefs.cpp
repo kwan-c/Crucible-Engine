@@ -66,7 +66,10 @@ namespace Crucible::EntityRefs {
         {
             for (ScriptFieldValue& field : script.fields)
             {
-                if (field.type == ScriptFieldType::Entity) changed |= Apply(field.entityId, map);
+                // Entity fields and component fields (public Transform t;) both keep the
+                // target in entityId.
+                if (field.type == ScriptFieldType::Entity || field.type == ScriptFieldType::Component)
+                    changed |= Apply(field.entityId, map);
             }
         }
         return changed;

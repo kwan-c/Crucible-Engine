@@ -14,9 +14,12 @@
 *
 **************************************************************************/
 #pragma once
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <string>
+#include <string_view>
 #include <variant>
 
 namespace Crucible
@@ -25,7 +28,8 @@ namespace Crucible
 	 \brief  C# field types that can be shown in the Inspector and saved
 	         in scenes (bool, int, float, double, string, Crucible.Entity,
 	         Crucible.Prefab, Crucible.AudioClip, Crucible.Texture,
-	         Crucible.Font, Crucible.Material, Crucible.Model).
+	         Crucible.Font, Crucible.Material, Crucible.Model, and the
+	         component wrappers in kScriptComponentTypes).
 	 *********************************************************************/
 	enum class ScriptFieldType
 	{
@@ -40,8 +44,33 @@ namespace Crucible
 		Texture,   // an image (.png, .jpg, ...), saved as its asset guid
 		Font,      // a font (.ttf / .otf / .cfont), saved as its asset guid
 		Material,  // a material (.mat), saved as its asset guid
-		Model      // a model (.gltf / .glb / .fbx ...), saved as its asset guid
+		Model,     // a model (.gltf / .glb / .fbx ...), saved as its asset guid
+		Component  // a component of another entity (public Transform t;): saved as the
+		           // entity's scene id (entityId) + which component (componentType)
 	};
+
+	/*********************************************************************
+	 \brief  The C# component classes a public field can reference
+	         (`public Transform target;`), by their Crucible.<name>.
+	 \note   Must match what Entity.GetComponent<T>() accepts
+	         (ManagedScripts/Runtime/Entity.cs, GetComponentOfType), minus
+	         script classes.
+	 *********************************************************************/
+	inline constexpr const char* kScriptComponentTypes[] = {
+	    "Transform",       "RigidBody",       "Animator",         "AudioSource",      "CharacterController",
+	    "Camera",          "CameraOrbit",     "Light",            "ParticleEmitter",  "Collider",
+	    "MeshRenderer",    "PlayerController", "WorldText",       "MaterialParams",   "FlowFieldAgent",
+	    "FlowFieldSurface", "StateGraphAgent", "Terrain",         "UIText",           "UIImage",
+	    "UISlider",        "UIButton",        "UIRect",           "UICanvas"};
+
+	/*********************************************************************
+	 \brief  true if `name` is in kScriptComponentTypes.
+	 *********************************************************************/
+	inline bool IsScriptComponentType(std::string_view name)
+	{
+		return std::find(std::begin(kScriptComponentTypes), std::end(kScriptComponentTypes), name) !=
+		       std::end(kScriptComponentTypes);
+	}
 
 	/*********************************************************************
 	 \brief  The saved value of one public C# field on a ScriptComponent.
@@ -60,18 +89,22 @@ namespace Crucible
 		double real = 0;
 		std::string text;
 		bool stringIsNull = false; // distinguishes a null string from ""
-		uint64_t entityId = 0;     // Entity: the target's scene id (Scene::EnsureId); 0 = none
+		uint64_t entityId = 0;     // Entity / Component: the target's scene id (Scene::EnsureId); 0 = none
+		std::string componentType; // Component: which one, e.g. "Transform" (see kScriptComponentTypes)
 		uint64_t assetId = 0;      // Prefab / AudioClip / Texture / Font / Material / Model: the asset guid (from its .meta); 0 = none
 		bool operator==(const ScriptFieldValue&) const = default;
 	};
 
 	/*********************************************************************
 	 \brief  True if a and b describe the same field (same declaring class,
-	         name and type), regardless of their values.
+	         name and type), regardless of their values. For a component
+	         field the component type counts too, so changing
+	         `public Transform t` to `public RigidBody t` drops the old value.
 	 *********************************************************************/
 	inline bool SameScriptField(const ScriptFieldValue& a, const ScriptFieldValue& b)
 	{
-		return a.declaringType == b.declaringType && a.name == b.name && a.type == b.type;
+		return a.declaringType == b.declaringType && a.name == b.name && a.type == b.type &&
+		       (a.type != ScriptFieldType::Component || a.componentType == b.componentType);
 	}
 
 	// Host-local handles, never serialized. Copying does not create another object.

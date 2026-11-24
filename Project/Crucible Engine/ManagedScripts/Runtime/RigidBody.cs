@@ -9,6 +9,9 @@ namespace Crucible
         private readonly EntityIdentity entity;
         internal RigidBody(EntityIdentity owner) { entity = owner; }
 
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
+
         public Vector3 Velocity
         {
             get { Vector3 v;    return GetVelocity((int)entity.Index, (int)entity.Generation, out v) != 0 ? v : Vector3.Zero; }

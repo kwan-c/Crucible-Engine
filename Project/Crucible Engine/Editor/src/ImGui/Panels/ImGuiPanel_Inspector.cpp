@@ -30,6 +30,7 @@
 #include "Scripting/ScriptRuntime.h"
 #include "Scripting/EntityScriptSystem.h"
 #include "Scripting/ScriptAuthoring.h"
+#include "Scripting/ScriptComponentLookup.h"   // HasScriptComponent (component fields)
 #include "ECS/ECSNavigationSystem.h"   // the FlowFieldSurface Bake button
 #include "Core.h"
 #include "Undo/EntityCommands.h"
@@ -548,7 +549,11 @@ namespace {
 	// from the Hierarchy onto it to set it, X clears it. Only the scene id is stored, never the
 	// Entity handle, so the link survives saving, reloading and play-mode Stop (all of which
 	// hand out new handles but keep scene ids).
-	bool EntityRefField(char const* label, std::uint64_t& id) {
+	// componentType (optional): a script's component field (`public RigidBody body;`). Only an
+	// entity that has that component (HasScriptComponent) can be dropped - any other is refused
+	// with a tooltip saying why - and the field reads "Door (RigidBody)", or "Door (no RigidBody)"
+	// if the component was removed after it was assigned.
+	bool EntityRefField(char const* label, std::uint64_t& id, char const* componentType = nullptr) {
 		Crucible::Core* core = Crucible::EditorManager::GetInstance().GetCore();
 		if (!core) {
 			ImGui::TextDisabled("%s: (no Core)", label);
@@ -563,12 +568,20 @@ namespace {
 		                                          : scenes.Current().EntityOf(xresource::instance_guid{ id });
 		// Shown by its EntityName, the same label the Hierarchy uses, so a renamed entity reads
 		// as "LeftThigh" rather than "Entity 12". Read every frame, so a rename shows straight away.
+		auto const nameOf = [&world](Crucible::Entity entity) {
+			Crucible::EntityName const* name = world.Read<Crucible::EntityName>(entity);
+			return (name && !name->name.empty()) ? name->name : "Entity " + std::to_string(entity.index);
+		};
 		std::string text;
 		if (id == 0)                                          text = "None";
 		else if (!target.IsValid() || !world.IsAlive(target)) text = "Missing entity";   // deleted, or from another scene
 		else {
-			Crucible::EntityName const* name = world.Read<Crucible::EntityName>(target);
-			text = (name && !name->name.empty()) ? name->name : "Entity " + std::to_string(target.index);
+			text = nameOf(target);
+			if (componentType) {
+				text += Crucible::HasScriptComponent(world, target, componentType) ? " (" : " (no ";
+				text += componentType;
+				text += ")";
+			}
 		}
 
 		bool changed = false;
@@ -577,17 +590,29 @@ namespace {
 		float const spacing    = ImGui::GetStyle().ItemInnerSpacing.x;
 		float const clearWidth = ImGui::GetFrameHeight();
 		ImGui::Button(text.c_str(), ImVec2(ImGui::CalcItemWidth() - clearWidth - spacing, 0.0f));
-		if (ImGui::IsItemHovered()) ImGui::SetTooltip("Drag an entity here from the Hierarchy");
+		if (ImGui::IsItemHovered()) {
+			if (componentType) ImGui::SetTooltip("Drag an entity with a %s here from the Hierarchy", componentType);
+			else               ImGui::SetTooltip("Drag an entity here from the Hierarchy");
+		}
 
 		if (ImGui::BeginDragDropTarget()) {
-			if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(Crucible::EditorWidgets::kEntityPayload)) {
-				Crucible::Entity dropped{};
-				std::memcpy(&dropped, payload->Data, sizeof(Crucible::Entity));   // the Hierarchy sends the Entity by value
-				if (world.IsAlive(dropped)) {
-					// EnsureId, not IdOf: an entity created since the last save has no id yet.
-					std::uint64_t const droppedId = scenes.EnsureId(dropped).m_Value;
-					if (droppedId != id) { id = droppedId; changed = true; }
-				}
+			// Look at what is being dragged before accepting it, so an entity without the wanted
+			// component is refused: no highlight, no drop, and a tooltip saying why.
+			Crucible::Entity dropped{};
+			bool valid = false;
+			ImGuiPayload const* dragged = ImGui::GetDragDropPayload();
+			if (dragged && dragged->IsDataType(Crucible::EditorWidgets::kEntityPayload) &&
+			    dragged->DataSize == static_cast<int>(sizeof(Crucible::Entity))) {
+				std::memcpy(&dropped, dragged->Data, sizeof(Crucible::Entity));   // the Hierarchy sends the Entity by value
+				valid = world.IsAlive(dropped) &&
+				        (!componentType || Crucible::HasScriptComponent(world, dropped, componentType));
+				if (!valid && componentType && world.IsAlive(dropped))
+					ImGui::SetTooltip("%s has no %s", nameOf(dropped).c_str(), componentType);
+			}
+			if (valid && ImGui::AcceptDragDropPayload(Crucible::EditorWidgets::kEntityPayload)) {
+				// EnsureId, not IdOf: an entity created since the last save has no id yet.
+				std::uint64_t const droppedId = scenes.EnsureId(dropped).m_Value;
+				if (droppedId != id) { id = droppedId; changed = true; }
 			}
 			ImGui::EndDragDropTarget();
 		}
@@ -2351,10 +2376,13 @@ bool Crucible::Inspector::DrawScriptFields(ScriptEntry& script, std::size_t slot
             edited = ImGui::InputText(label.c_str(), &field.text);
             if (edited) field.stringIsNull = false;
             break;
-        case ScriptFieldType::Entity: {
+        case ScriptFieldType::Entity:
+        case ScriptFieldType::Component: {
             // Same drag-from-Hierarchy picker as a PhysicsJoint's connected body; stores the scene id.
+            // A component field (public RigidBody body;) only takes entities that have that component.
             const std::string shown = label.substr(0, label.find("###"));
-            edited = EntityRefField(shown.c_str(), field.entityId);
+            edited = EntityRefField(shown.c_str(), field.entityId,
+                                    field.type == ScriptFieldType::Component ? field.componentType.c_str() : nullptr);
             break;
         }
         case ScriptFieldType::Prefab:
