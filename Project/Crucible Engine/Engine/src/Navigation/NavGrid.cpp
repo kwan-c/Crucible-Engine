@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                NavGrid's bake and its cell maths.
 *
@@ -32,6 +32,8 @@
 *                ground with one layer the same cells as before
 *    -v1.7       IsWalkable, IsPathClear (from ECSNavigationSystem), by
 *                layers and links; a path must end on the layer at its end
+*    -v1.8       cave V4a: cave floors as layers (BuildLayers), steep ones
+*                closed as walls (Bake); not linked yet
 *
 **************************************************************************/
 #include "NavGrid.h"
@@ -189,6 +191,15 @@ namespace Crucible {
             }
         }
 
+        // 3. Cave floors too steep to walk: walls, like cliffs.
+        int caveNodes = 0, caveCells = 0, caveWalls = 0, lastCaveCell = -1;
+        for (std::size_t node = 0; node < m_nodeCell.size(); ++node) {
+            if (m_nodeSource[node] != kCaveSource) continue;
+            ++caveNodes;
+            if (m_nodeCell[node] != lastCaveCell) { ++caveCells; lastCaveCell = m_nodeCell[node]; }   // a cell's nodes are together
+            if (m_nodeSteep[node] && !IsBlockedIndex(node)) { m_static[node] = 1; ++caveWalls; }
+        }
+
         m_baked = true;
 
         std::size_t blocked = 0;
@@ -197,6 +208,9 @@ namespace Crucible {
         }
         CRU_INFO("NavGrid baked: {} x {} cells of {} m, {} blocked ({} of {} obstacles inside the height band, {} terrain wall cells)",
                  m_cols, m_rows, cellSize, blocked, counted, obstacles.size(), wallCells);
+        if (caveNodes > 0) {
+            CRU_INFO("NavGrid cave: {} floor layer(s) over {} cells, {} too steep to walk (walls)", caveNodes, caveCells, caveWalls);
+        }
 
         // Only with Walkable boxes, so a scene without them logs as before.
         if (!walkables.empty()) {
@@ -405,13 +419,16 @@ namespace Crucible {
         m_nodeHeight.clear();
         m_nodeHeadroom.clear();
         m_nodeSource.clear();
+        m_nodeSteep.clear();
         m_nodeSource.reserve(cellCount);
+        m_nodeSteep.reserve(cellCount);
         m_nodeCell.reserve(cellCount);
         m_nodeHeight.reserve(cellCount);
         m_nodeHeadroom.reserve(cellCount);
 
-        struct Surface { float height; float headroom; int source; };   // source: -1 the ground, else the box
-        std::vector<Surface> surfaces;
+        struct Surface { float height; float headroom; int source; bool steep; };   // source: as m_nodeSource
+        std::vector<Surface>  surfaces;
+        std::vector<NavFloor> floors;          // a cave column's floors
         int         overCap      = 0;          // cells that had more surfaces than maxLayersPerCell
         Math::vec3  firstOverCap(0.0f);
         std::size_t next = 0;                  // the next stretch in `stretches`
@@ -420,7 +437,21 @@ namespace Crucible {
 
             const NavCell    at{ static_cast<int>(cell) % m_cols, static_cast<int>(cell) / m_cols };
             const Math::vec3 centre = CellToWorldCenter(at);
-            const float      ground = terrain.GroundHeight(centre);
+
+            // In a cave the floors are the ground (the lowest one under
+            // Walkable boxes' tops); elsewhere the terrain's one height.
+            const bool  cave   = terrain.Floors(centre, floors) && !floors.empty();
+            const float ground = cave ? floors.front().height : terrain.GroundHeight(centre);
+
+            // In a cave, the room above a height before the rock: up to the
+            // ceiling of the floor it is over, none inside the rock.
+            const auto rockRoom = [&](float height) {
+                if (!cave) return infinity;
+                for (const NavFloor& floor : floors) {
+                    if (height >= floor.height - kSameHeight && height < floor.height + floor.headroom) return floor.height + floor.headroom - height;
+                }
+                return 0.0f;
+            };
 
             // This cell's solid stretches.
             const std::size_t first = next;
@@ -429,7 +460,7 @@ namespace Crucible {
             // Headroom above a surface: up to the lowest stretch above it;
             // none if the surface is inside a stretch.
             const auto headroomAt = [&](float height) {
-                float room = infinity;
+                float room = rockRoom(height);
                 for (std::size_t i = first; i < next; ++i) {
                     if (stretches[i].top <= height + kSameHeight) continue;          // below it (or its own top)
                     if (stretches[i].bottom <= height + kSameHeight) return 0.0f;    // the surface is inside this box
@@ -439,9 +470,10 @@ namespace Crucible {
             };
 
             surfaces.clear();
-            surfaces.push_back({ ground, headroomAt(ground), -1 });
+            if (cave) for (const NavFloor& floor : floors) surfaces.push_back({ floor.height, headroomAt(floor.height), kCaveSource, floor.steep });
+            else      surfaces.push_back({ ground, headroomAt(ground), kGroundSource, false });
             for (std::size_t i = first; i < next; ++i) {
-                if (stretches[i].top > ground + kSameHeight) surfaces.push_back({ stretches[i].top, headroomAt(stretches[i].top), stretches[i].box });
+                if (stretches[i].top > ground + kSameHeight) surfaces.push_back({ stretches[i].top, headroomAt(stretches[i].top), stretches[i].box, false });
             }
             std::sort(surfaces.begin(), surfaces.end(), [](const Surface& a, const Surface& b) { return a.height < b.height; });
 
@@ -455,11 +487,12 @@ namespace Crucible {
                     if (overCap++ == 0) firstOverCap = centre;
                     break;
                 }
-                if (surface.source < 0) m_groundNode[cell] = static_cast<int>(m_nodeCell.size());
+                if (surface.source == kGroundSource) m_groundNode[cell] = static_cast<int>(m_nodeCell.size());
                 m_nodeCell.push_back(static_cast<int>(cell));
                 m_nodeHeight.push_back(surface.height);
                 m_nodeHeadroom.push_back(surface.headroom);
                 m_nodeSource.push_back(surface.source);
+                m_nodeSteep.push_back(surface.steep ? 1 : 0);
                 lastHeight = surface.height;
                 ++kept;
             }
@@ -544,6 +577,7 @@ namespace Crucible {
             const NavCell    cell{ cellIndex % m_cols, cellIndex / m_cols };
             const Math::vec3 centre = CellToWorldCenter(cell);
             const int        source = m_nodeSource[static_cast<std::size_t>(node)];
+            if (source == kCaveSource) continue;   // cave floors are linked in V4b; until then, islands
 
             for (int dir = 0; dir < kNavDirections; ++dir) {
 
@@ -563,6 +597,7 @@ namespace Crucible {
 
                     const int other = m_layerStart[static_cast<std::size_t>(Index(next))] + layer;
                     const int otherSource = m_nodeSource[static_cast<std::size_t>(other)];
+                    if (otherSource == kCaveSource) continue;   // V4b
 
                     if (otherSource == source) { best = layer; break; }   // the same surface: always, and best
 

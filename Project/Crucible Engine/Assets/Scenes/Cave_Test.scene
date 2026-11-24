@@ -107,6 +107,110 @@
             }
         },
         {
+            "id": "1B2730E440174007",
+            "parent": "932730E440174001",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9399999976158142,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.019999999552965164,
+                        "z": 3.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.4000000059604645,
+                        "z": 0.11999999731779099,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890417,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "232730E440174005",
+            "parent": "932730E440174001",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658961575,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "3758E0DCA67A0007",
             "components": {
                 "Transform": {
@@ -330,6 +434,74 @@
             }
         },
         {
+            "id": "832730E440174003",
+            "parent": "932730E440174001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9718225002288818,
+                        "z": -0.2288585901260376
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 4175691030365061123,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 15446362514300043429,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "868540DC9CCE8009",
             "parent": "3E8540DC9CCE8007",
             "siblingIndex": 0,
@@ -361,6 +533,138 @@
                 },
                 "EntityName": {
                     "name": "Player Camera"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "932730E440174001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 17.208940505981445,
+                        "y": 38.414947509765625,
+                        "z": 54.60002899169922
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 200.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 3.041851282119751,
+                        "y": 2.0844321250915527,
+                        "z": 1.7326987981796265
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -0.22885863482952118
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Enemy",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Golem Mace"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "Enemy",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CombatHealth",
+                                    "name": "maximumHealth",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 120.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "dropPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5267962757949921808
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890403,
+                    "isRoot": true,
+                    "prefabHash": 1811445575636163755,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.200000047683716,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 1.600000023841858,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 4968574966415897207,
+                    "logStateChanges": false
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -648,6 +952,80 @@
                 },
                 "EntityName": {
                     "name": "Player"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "EB2730E440174009",
+            "parent": "832730E440174003",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 14686256933579063307,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 5334910539341692929,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 },
                 "EntityTag": {
                     "tag": "Untagged"

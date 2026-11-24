@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                NavGrid: a flat 2D grid over the map where every cell is
 *                open or blocked. The bottom layer of enemy navigation.
@@ -85,6 +85,9 @@
 *                obstacles block the layers whose height band they reach
 *    -v1.7       build step 6d-2: IsWalkable and IsPathClear (moved here
 *                from ECSNavigationSystem) go by layers and links
+*    -v1.8       cave V4a: where the terrain is a cave volume, a cell's
+*                layers are its floors (NavTerrain::Floors); steep ones are
+*                walls. IsCaveNode. No links to them yet (V4b)
 *
 **************************************************************************/
 #pragma once
@@ -281,8 +284,11 @@ namespace Crucible {
         // -1: no layer there an enemy can step, walk or drop to.
         int     LinkedNode(int node, int dir) const;
 
-        // Whether the node is the ground (terrain or flat floor), not a Walkable top.
-        bool    IsGroundNode(int node)     const { return m_nodeSource[static_cast<std::size_t>(node)] < 0; }
+        // Whether the node is the ground (terrain or flat floor), not a Walkable top or a cave floor.
+        bool    IsGroundNode(int node)     const { return m_nodeSource[static_cast<std::size_t>(node)] == kGroundSource; }
+
+        // Whether the node is a floor of the terrain's cave volume (NavTerrain::Floors).
+        bool    IsCaveNode(int node)       const { return m_nodeSource[static_cast<std::size_t>(node)] == kCaveSource; }
 
         // Whether two nodes are on the same surface: both the ground, or the same Walkable box.
         bool    IsSameSurface(int a, int b) const { return m_nodeSource[static_cast<std::size_t>(a)] == m_nodeSource[static_cast<std::size_t>(b)]; }
@@ -325,6 +331,10 @@ namespace Crucible {
 
     private:
 
+        // m_nodeSource values that are not a Walkable box's index.
+        static constexpr int kGroundSource = -1;
+        static constexpr int kCaveSource   = -2;
+
         bool IsBlockedIndex(std::size_t index) const { return m_static[index] != 0 || m_dynamic[index] != 0; }
         void BuildLayers(const NavTerrain& terrain, const std::vector<NavWalkable>& walkables);
         void BuildLinks(const NavTerrain& terrain, const std::vector<NavWalkable>& walkables);
@@ -343,7 +353,8 @@ namespace Crucible {
         std::vector<int>           m_nodeCell;      // the cell it is in (Index())
         std::vector<float>         m_nodeHeight;    // the surface's height at the cell's centre
         std::vector<float>         m_nodeHeadroom;  // free height above it; infinity when nothing is above
-        std::vector<int>           m_nodeSource;    // where the surface comes from: -1 the ground, else the Walkable box's index
+        std::vector<int>           m_nodeSource;    // where the surface comes from: kGroundSource, kCaveSource, else the Walkable box's index
+        std::vector<std::uint8_t>  m_nodeSteep;     // 1 = a cave floor steeper than the walkable slope (closed as a wall at the bake)
         std::vector<std::uint8_t>  m_links;         // per node, 8 entries: the linked layer in that neighbour, or kNoLink
         std::vector<std::uint8_t>  m_static;        // 1 = terrain wall or StaticObstacle; uint8_t, not vector<bool>, so reads are plain loads
         std::vector<std::uint16_t> m_dynamic;       // how many DynamicObstacles cover the node

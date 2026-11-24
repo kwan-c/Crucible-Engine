@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                BuildTerrainMesh: a TerrainGrid as flat-shaded triangles.
 *                See the header for the layout rules.
@@ -15,6 +15,8 @@
 *                under it
 *    -v1.3       the marching cubes moved to VolumeSurface.cpp, shared
 *                with physics; this only colours its triangles
+*    -v1.4       the floor slope is TerrainVolume::kFloorNormalY, shared
+*                with navigation
 *
 **************************************************************************/
 #include "Terrain/TerrainMesh.h"
@@ -31,10 +33,6 @@ namespace {
     // The same tangent Primitives::MakePlane gives its +Y faces, so a normal
     // map on a terrain material lies the same way as on a plane.
     const Math::vec4 kTangent(1.0f, 0.0f, 0.0f, -1.0f);
-
-    // A volume triangle whose normal points up at least this much is ground
-    // (about the 35 degree walkable slope); anything steeper is rock.
-    constexpr float kUpFacing = 0.82f;
 
     // One triangle with its own vertices and face normal (from its winding:
     // counter-clockwise seen from the side it faces). UVs are in cells, so a
@@ -84,7 +82,7 @@ namespace {
 
         for (const VolumeTriangle& t : BuildVolumeSurface(grid.volume)) {
             const float up = glm::normalize(glm::cross(t.b - t.a, t.c - t.a)).y;
-            const Math::vec3& colour = up < kUpFacing ? rock : t.underRock ? floor : ground;
+            const Math::vec3& colour = up < TerrainVolume::kFloorNormalY ? rock : t.underRock ? floor : ground;
             AddTriangle(mesh, colour, t.a, uv(t.a), t.b, uv(t.b), t.c, uv(t.c));
         }
 

@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.3
+* \version       1.4
 * \brief         See NavDebugDraw.h.
 *
 * \history
@@ -13,6 +13,8 @@
 *    -v1.2       links between different surfaces: climbs as white lines,
 *                drops as magenta arrows (down)
 *    -v1.3       flow arrows on every layer, at its own height
+*    -v1.4       cave floors drawn like raised layers; a cave cell has no
+*                ground tile
 *
 **************************************************************************/
 #include "NavDebugDraw.h"
@@ -106,16 +108,18 @@ namespace Crucible::NavDebugDraw {
                 const int     groundNode = grid.GroundNode(cell);
 
                 // The ground: red where it is blocked, or where it is not a
-                // layer at all (a Walkable box sits on it).
-                if (grid.IsBlocked(cell)) {
+                // layer at all (a Walkable box sits on it). A cave cell has
+                // floors instead, drawn below.
+                const bool cave = grid.LayerCount(cell) > 0 && grid.IsCaveNode(grid.NodeIndex(cell, 0));
+                if (!cave && grid.IsBlocked(cell)) {
                     Math::vec3 centre = grid.CellToWorldCenter(cell);
                     centre.y = (groundNode >= 0 ? grid.NodeHeight(groundNode) : ground.GroundHeight(centre)) + kDrawLift;
                     Square(centre, inset, blocked);
                 }
 
-                // Raised layers (Walkable tops): green where open, red where
-                // blocked, at their own height, so a bridge reads as a
-                // second floor of tiles over the grid.
+                // Raised layers (Walkable tops) and cave floors: green where
+                // open, red where blocked, at their own height, so a bridge
+                // reads as a second floor of tiles over the grid.
                 for (int layer = 0; layer < grid.LayerCount(cell); ++layer) {
                     const int node = grid.NodeIndex(cell, layer);
                     if (node == groundNode) continue;

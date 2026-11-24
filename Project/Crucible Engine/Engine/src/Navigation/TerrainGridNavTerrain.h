@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          17 November 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                TerrainGridNavTerrain: the generated terrain's answers to
 *                navigation's two questions (is this a wall, how high is the
@@ -37,12 +37,16 @@
 * \history
 *    -v1.0       first version (F2: replaces the ray-sampled
 *                HeightfieldNavTerrain)
+*    -v1.1       Floors: under the cave volume, the floors in each column
+*                (density from rock to air going up), with headroom and
+*                slope
 *
 **************************************************************************/
 #pragma once
 
 // STL
 #include <memory>       // std::shared_ptr
+#include <vector>
 
 // Crucible engine
 #include "Math/Math.h"
@@ -85,6 +89,11 @@ namespace Crucible {
         bool  IsWall(const Math::vec3& position) const override;
         float GroundHeight(const Math::vec3& position) const override;
 
+        // Under the cave volume's footprint (the cells it replaces): scans the
+        // column for floors. Not thread-safe (reuses one column buffer); the
+        // bake calls it from one thread.
+        bool Floors(const Math::vec3& position, std::vector<NavFloor>& floors) const override;
+
     private:
 
         // The point in the grid's own space (x, z), from a world position.
@@ -93,6 +102,8 @@ namespace Crucible {
         std::shared_ptr<const TerrainGrid> m_grid;
         Math::mat4 m_toWorld = Math::mat4(1.0f);
         Math::mat4 m_toLocal = Math::mat4(1.0f);
+        Math::mat3 m_normalToWorld = Math::mat3(1.0f);   // a local surface normal to world (inverse transpose)
+        mutable std::vector<float> m_column;             // Floors' density column (memory reused)
         float      m_offTerrainHeight = 0.0f;
 
     };  // TERRAINGRIDNAVTERRAIN CLASS
