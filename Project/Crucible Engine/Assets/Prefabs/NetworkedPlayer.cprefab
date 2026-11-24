@@ -73,7 +73,8 @@
                 "NetworkObjectAuthoring": {
                     "replicated": [
                         "Transform/Full",
-                        "Animator"
+                        "Animator",
+                        "EnabledMask"
                     ],
                     "serverOnly": [
                         "CharacterController",
@@ -83,7 +84,9 @@
                         "CameraOrbit",
                         "Camera"
                     ],
-                    "enabledReplicated": [],
+                    "enabledReplicated": [
+                        "CharacterController"
+                    ],
                     "sendPriority": 1.0,
                     "critical": true,
                     "allowScenePlacement": true,

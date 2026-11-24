@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.15
+* \version       1.16
 * \brief
 *                NetReceiveSystem: drives NetworkSession::Update each frame,
 *                performs host spawns and applies the host's lifecycle stream
@@ -39,6 +39,8 @@
 *    -v1.14      EndSessionObjects: spawned objects removed and scene objects made local again
 *                when a session ends, so the next one in the same Play starts clean
 *    -v1.15      NetAnimator removed from scene objects too (Networking C# Phase 7)
+*    -v1.16      client query bodies (Network/NetQueryBodies.h) on proxies, except this
+*                client's own player, and on scene objects (Networking C# Phase 8)
 *
 **************************************************************************/
 #include "Network/Systems/NetReceiveSystem.h"
@@ -47,6 +49,7 @@
 #include "ECS/Components/Components.h"
 #include "ECS/World.h"
 #include "Network/NetComponents.h"
+#include "Network/NetQueryBodies.h"
 #include "Network/NetContent.h"
 #include "Network/NetIdentityHooks.h"
 #include "Network/NetSceneObjects.h"
@@ -399,6 +402,13 @@ namespace Crucible
 			// Before physics or scripts ever see it (they run later this frame): no Jolt body, no AI.
 			SetComponentsEnabled(world, root, desc->serverOnly, false, m_scratch);
 			if (spawn.owner != m_session.LocalPeer()) SetComponentsEnabled(world, root, desc->ownerLocalOnly, false, m_scratch);
+			// What this client's raycasts hit instead of the Host-only physics; they go with the
+			// proxy. Not on its own player: its camera's rays would hit its own body.
+			if (!(spawn.owner == m_session.LocalPeer() && spawn.prefab == m_content.PlayerPrefab()))
+			{
+				std::vector<Entity> bodies;
+				AddClientQueryBodies(world, root, bodies);
+			}
 
 			std::string error;
 			const ReplicationContext context{ .desc = desc, .tick = tick };
@@ -467,6 +477,7 @@ namespace Crucible
 		});
 		for (const SessionSceneObject& object : m_sessionSceneObjects)
 		{
+			RemoveClientQueryBodies(world, object.queryBodies);   // before the scene object is checked: they are its children
 			if (!world.IsAlive(object.entity)) continue;
 			if (world.HasComponent<NetworkIdentity>(object.entity)) world.RemoveComponent<NetworkIdentity>(object.entity);
 			if (world.HasComponent<NetInterpolation>(object.entity)) world.RemoveComponent<NetInterpolation>(object.entity);
@@ -545,6 +556,7 @@ namespace Crucible
 				m_localSceneObjects[object.sceneId] = LocalSceneObject{ .entity = object.entity, .profile = object.profile };
 				SessionSceneObject kept{ .entity = object.entity, .switchedOff = desc->serverOnly };
 				kept.switchedOff.insert(kept.switchedOff.end(), desc->ownerLocalOnly.begin(), desc->ownerLocalOnly.end());
+				AddClientQueryBodies(world, object.entity, kept.queryBodies);   // removed when the session ends
 				m_sessionSceneObjects.push_back(std::move(kept));
 			}
 		}

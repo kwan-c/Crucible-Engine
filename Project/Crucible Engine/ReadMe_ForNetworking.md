@@ -175,7 +175,7 @@ Its `NetworkObjectAuthoring`:
 |---|---|---|
 | Transform | Replicated: Transform/Full | Everywhere |
 | NetAnimator | Replicated: Animator | Everywhere |
-| CharacterController | Local | **Host only** |
+| CharacterController | Local, **Sync on/off** | **Host only** |
 | PlayerController | Local | **Host only** |
 | CameraOrbit | Local | **Owner only** |
 | Camera | Local | **Owner only** |
@@ -185,6 +185,9 @@ Its `NetworkObjectAuthoring`:
 - The Host moves every player from the input their owner sends. Clients only show the
   result, which is why the movement components are **Host only**.
 - Each machine keeps only **its own** player's camera, which is why the camera is **Owner only**.
+- **CharacterController: Host only + Sync on/off.** The Host switches it off for a dead player;
+  Clients never switch theirs on, but the capsule their raycasts hit (section 8.13) follows that
+  on/off, so nobody can aim at a dead player. This adds **EnabledMask** to the replicated list.
 - **The body is the game's mech** (legs, torso, head and sword from the single-player
   player), without its single-player parts (`MechPart` scripts, part colliders, labels,
   sounds). `NetPlayerAnimation.cs` runs on the Host, which moves every player: from each
@@ -398,6 +401,8 @@ Read this before designing gameplay for multiplayer.
   **Replicated**. On a Client, the players' PlayerController is switched off, so AI running
   there finds **no players** and stands still.
 - **Physics:** any player can push props, because the Host simulates everything.
+- **Physics queries on Clients:** a Client's raycasts hit other players, props and walls
+  where it draws them (section 8.13), for aim highlights, interaction prompts and the like.
 - **Joining mid-game:** a Client can join while the game is running and receives the
   current world.
 
@@ -411,7 +416,7 @@ Read this before designing gameplay for multiplayer.
 | 4 | **Script values are synced only through network variables.** | The Transform, component on/off state, an object's 16 network variables (section 8.6) and its Animator parameters (section 8.12) are sent. Ordinary script fields and other component values are **not**: put health, ammo or score in a network variable. |
 | 5 | **Animation is synced through Animator parameters only.** | Turn on **Animator** in the object's Network Object table (section 8.12) and the Host's `Animator.Set...` calls reach every Client. Up to 32 parameters per object; a trigger fired twice within one snapshot (about 33 ms) plays once on Clients; `ResetTrigger` stays on the Host. Without the row, a Host-only script's animation is seen only on the Host. |
 | 6 | **Gameplay audio, particles and UI need a script event.** | Effects triggered by Host-only gameplay happen only on the Host unless the Host sends an event and a script that runs **Everywhere** plays them (section 8.4). |
-| 7 | **Clients can't use physics.** | Colliders are Host only, so a Client-side raycast or trigger doesn't hit anything networked. |
+| 7 | **Clients query physics; they don't simulate it.** | A Client's `Physics.Raycast`, `SphereCast` and `CheckSphere` hit network objects where they are drawn, through query bodies the engine adds (section 8.13). They are for display and feel only: the Host's own queries decide hits and damage. When the Host switches a Host-only Collider or CharacterController off (a dead player), Clients' query bodies follow only if that component also has **Sync on/off** (section 8.13). Client triggers fire only for the Client's local objects. |
 | 8 | **Only the Host's `Network.LoadScene` keeps the session across scenes.** | It moves everyone to the new scene (section 8.8). `Scene.Load`, or opening a scene in the Editor, during a session still ends it. Network objects marked DontDestroyOnLoad do not stay networked in the next scene. |
 | 9 | **A Client's own player responds with a small delay.** | About 110–150 ms on a LAN, because the Client waits for the Host instead of predicting its own movement. The Host's player has no delay. |
 | 10 | **LAN only, at most 4 players.** | The Host plus 3 Clients, connecting by IP address. A lobby can be built in C# (section 8.9 has one), but there is no internet play or server list: players type the Host's IP address. |
@@ -893,3 +898,45 @@ Client: on the Client the dummy should walk, jog, attack and flinch at the same 
 the Host. The players' mechs use the same mechanism: their legs walk when they move and
 stand when they stop, on every machine (section 5.1). Set its **Animator** row back to **Local** to see the difference: on the Client it
 slides along in its idle pose.
+
+### 8.13 Physics queries on a Client
+
+A network object's Collider, RigidBody and CharacterController run **Host only**, so a
+Client has no physics of its own for it. So that a Client's `Physics.Raycast`, `SphereCast`
+and `CheckSphere` still hit what the player sees, the engine gives the Client a
+**query body** for each of them: a hidden child named **Network Query Body** with a copy of
+the Collider (same shape, size, layer and trigger setting), or a capsule the size of the
+CharacterController. It follows the object as drawn and is never simulated, pushed or sent.
+
+- **Nothing to set up.** Every network object gets them on Clients, for each Collider or
+  CharacterController that is **Host only**. One that runs **Everywhere** has a real body
+  already and gets none. The Host gets none: it has the real ones.
+- **Not on the Client's own player**, so rays from its camera don't hit its own body.
+- **A hit lands on the query body**, a child of the object, while on the Host it lands on the
+  object (or one of its parts). Use `Network.ObjectOf(hit.Entity)` to get the network object
+  on both:
+
+  ```csharp
+  RaycastHit hit;
+  if (Physics.Raycast(origin, direction, out hit, 100f, Network.LocalPlayerEntity))
+  {
+      Entity target = Network.ObjectOf(hit.Entity);   // the player, prop or wall; null if not networked
+  }
+  ```
+
+- **For display and feel only:** aim highlights, interaction prompts, "can I reach it" checks.
+  The Host still decides every hit and its damage with its own raycast, as the arena does.
+  A Client's query sees each object where it was drawn last frame, about 100 ms behind the
+  Host, so the two can disagree near an edge. The Host's answer wins.
+- **When the Host switches physics off** (a dead player's CharacterController, an open door's
+  Collider): tick **Sync on/off** on that **Host only** component, on the object's root. The
+  component stays off on Clients, and their query body switches off and on with the Host's.
+  This combination is allowed only for Collider and CharacterController. Without it, a
+  Client's query still sees the object: check the game's own state instead. The player prefab
+  has it on its CharacterController.
+- **Triggers** on query bodies only notice the Client's own local objects; gameplay triggers
+  belong on the Host.
+
+**Example:** in `network_gamplay.scene` the crosshair turns red while your aim is on another
+living player (`ArenaView.cs`, `UpdateAim`). On the Host the ray hits the player's
+CharacterController; on a Client it hits that player's query body. It works the same on both.

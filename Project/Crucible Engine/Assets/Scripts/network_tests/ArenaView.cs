@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          20 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         Networking sample: everything the arena shooter SHOWS, on
 *                every machine. It never changes the game; it reads
 *                ArenaRules' network variables and listens to its events.
@@ -26,11 +26,17 @@
 *                   kill feed.
 *      Events       HitEvent, DeathEvent, RespawnEvent (reliable) and
 *                   ShotEvent (unreliable: a muzzle flash on a nameplate).
+*      Aim          the crosshair turns red while this player's
+*                   aim (the ray a shot would take) is on another living
+*                   player: a raycast on THIS machine, so on a Client it hits
+*                   the players' query bodies (Networking C# Phase 8). Only
+*                   a display: the host's own raycast decides every hit.
 *
 * \history
 *    -v1.0       arena shooter (Networking C# Phase 6)
 *    -v1.1       the player is the game's mech: a dead player's whole Mech
 *                Visual is hidden, not only a MeshRenderer on the root
+*    -v1.2       aim highlight on the crosshair (client physics queries)
 **************************************************************************/
 using System;
 using System.Collections.Generic;
@@ -62,7 +68,9 @@ namespace Crucible.@Scripts
         private readonly float[] deadSince = new float[Network.MaxPlayers];
         private readonly List<string> feed = new List<string>();
         private readonly List<float> feedAge = new List<float>();
-        private UIText hudHealth, hudScores, hudFeed, hudMessage;
+        private UIText hudHealth, hudScores, hudFeed, hudMessage, hudCrosshair;
+        /// <summary>How far the aim highlight looks, in metres.</summary>
+        public float aimRange = 100f;
         private UISlider hudBar;
         private string message = "";
         private float messageTime;
@@ -80,6 +88,7 @@ namespace Crucible.@Scripts
             hudScores = Text(hud, "Scores");
             hudFeed = Text(hud, "Feed");
             hudMessage = Text(hud, "Message");
+            hudCrosshair = Text(hud, "Crosshair");
             Entity bar = hud.FindChild("Health Bar");
             hudBar = bar != null ? bar.GetComponent<UISlider>() : null;
         }
@@ -202,6 +211,8 @@ namespace Crucible.@Scripts
             if (hudFeed != null)
                 hudFeed.Text = string.Join("\n", feed);
 
+            UpdateAim(self);
+
             if (hudMessage != null)
             {
                 if (self >= 0 && rules.StateOf(self) == ArenaRules.StateDead)
@@ -217,6 +228,31 @@ namespace Crucible.@Scripts
                     hudMessage.Color = Color.White;
                 }
             }
+        }
+
+        // The crosshair: red while the aim is on another living player (white otherwise).
+        private void UpdateAim(int self)
+        {
+            if (hudCrosshair == null)
+                return;
+            int target = -1;
+            Entity player = Network.IsReady ? Network.LocalPlayerEntity : null;
+            if (player != null && rules.StateOf(self) == ArenaRules.StateAlive)
+            {
+                // The same ray ArenaRules.AskToFire sends with a shot.
+                Entity pivot = player.FindChild("Camera Pivot");
+                Vector3 direction = (pivot != null ? pivot.Transform.Forward : player.Transform.Forward).Normalized;
+                Vector3 origin = player.Transform.WorldPosition + new Vector3(0f, 0.6f, 0f) + direction * 0.8f;
+                RaycastHit hit;
+                if (Physics.Raycast(origin, direction, out hit, aimRange, player))
+                {
+                    // Host: the player itself; Client: a query body under it.
+                    int peer = ArenaRules.PeerOfPlayer(Network.ObjectOf(hit.Entity));
+                    if (peer >= 0 && peer != self && rules.StateOf(peer) == ArenaRules.StateAlive)
+                        target = peer;
+                }
+            }
+            hudCrosshair.Color = target >= 0 ? Color.Red : Color.White;
         }
 
         private void Say(string text, float seconds)

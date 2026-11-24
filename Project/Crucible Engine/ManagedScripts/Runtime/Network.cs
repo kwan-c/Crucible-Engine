@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.6
+* \version       1.7
 * \brief         The multiplayer session for scripts: who am I, who else is
 *                here, and how a client asks the host to do something.
 *                Part of Crucible.ScriptCore.dll.
@@ -93,6 +93,7 @@
 *                LobbyListFromServer, LobbyListTotal, LobbyListTruncated, IsLobbyRegistered;
 *                LastBrowseError, LobbyListingProblem; LobbyServerFailedAttempts,
 *                LobbyServerMaxAttempts, UseLanDiscovery, CanUseLanDiscovery, IsUsingLanDiscovery
+*    -v1.7       ObjectOf (Networking C# Phase 8: client physics queries)
 *
 **************************************************************************/
 using System.Collections.Generic;
@@ -583,6 +584,24 @@ namespace Crucible
             get { int peer = LocalPeerId; return peer < 0 ? null : GetPlayerEntity(peer); }
         }
 
+        /// <summary>
+        /// The network object an entity belongs to: the entity itself or its nearest parent
+        /// that is one, or null (not networked, no session, or gone). Use it on raycast hits:
+        /// on the Host a ray hits the object (or one of its parts), on a Client it hits a
+        /// "Network Query Body" the engine added under the object, because a Client has no
+        /// physics of its own for network objects. Network.ObjectOf(hit.Entity) is the object
+        /// on both.
+        /// </summary>
+        public static Entity ObjectOf(Entity entity)
+        {
+            if (entity == null)
+                return null;
+            int index, generation;
+            return ObjectOfInternal((int)entity.Index, (int)entity.Generation, out index, out generation) != 0
+                ? new Entity(unchecked((uint)index), unchecked((uint)generation))
+                : null;
+        }
+
         // --- commands ------------------------------------------------------------------ //
 
         /// <summary>
@@ -846,6 +865,8 @@ namespace Crucible
         private static extern byte[] GetEventPayloadInternal(int serial);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int GetPlayerEntityInternal(int peer, out int index, out int generation);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int ObjectOfInternal(int index, int generation, out int outIndex, out int outGeneration);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern string StartInternal(int mode, string address, int port, string playerName);
         [MethodImpl(MethodImplOptions.InternalCall)]

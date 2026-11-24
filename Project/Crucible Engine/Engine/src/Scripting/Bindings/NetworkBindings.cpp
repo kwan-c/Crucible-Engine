@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          16 November 2026
-* \version       1.6
+* \version       1.7
 * \brief         Internal calls behind the C# Network class
 *                (ManagedScripts/Runtime/Network.cs) and the network part of
 *                Entity (NetworkId, Owner, IsMine), and the queue of network
@@ -63,6 +63,8 @@
 *                LastEndCode, LastEndReason (Networking C# lobby browser)
 *    -v1.6       the LAN connection server: GetLobby source flags (4 LAN, 8 server), LobbyServerInfo,
 *                LobbyServerAddress, LobbyListingProblem, LobbyBrowseInfo, UseLanDiscovery
+*    -v1.7       ObjectOf: the network object an entity belongs to, e.g. a client's raycast hit
+*                on a query body (Networking C# Phase 8)
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -75,6 +77,7 @@
 #include "ECS/Components/Components.h"   // Transform
 #include "ECS/Systems/EventBus/EventBuses.h"
 #include "ECS/Systems/EventBus/Network/NetworkEvents.h"
+#include "Network/NetAnimator.h"   // FindNetworkRoot
 #include "Network/NetComponents.h"
 #include "Network/NetContent.h"
 #include "Network/NetworkSession.h"
@@ -716,6 +719,33 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		/*********************************************************************
+		 \brief  C# Network.ObjectOf: the network object `index`/`generation`
+		         belongs to - itself, or its nearest ancestor with a
+		         NetworkIdentity (a client's raycast hits a query body, a child
+		         of the object). 0 if it belongs to none, or no longer exists.
+		 *********************************************************************/
+		int32_t ManagedNetworkObjectOf(int32_t index, int32_t generation, int32_t* outIndex, int32_t* outGeneration) noexcept
+		{
+			try
+			{
+				Entity entity;
+				const World* world = EntityContext::GetWorld();
+				if (!outIndex || !outGeneration || !world || !EntityContext::ResolveEntity(index, generation, entity))
+					return 0;
+				const Entity root = FindNetworkRoot(*world, entity);
+				if (!root.IsValid())
+					return 0;
+				*outIndex = static_cast<int32_t>(root.index);
+				*outGeneration = static_cast<int32_t>(root.generation);
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		// A C# string as UTF-8; empty for null.
 		std::string ReadString(MonoString* value)
 		{
@@ -1228,6 +1258,7 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.Network::SendEventInternal", &ManagedNetworkSendEvent);
 		Add("Crucible.Network::SpawnInternal", &ManagedNetworkSpawn);
 		Add("Crucible.Network::GetPlayerEntityInternal", &ManagedNetworkGetPlayerEntity);
+		Add("Crucible.Network::ObjectOfInternal", &ManagedNetworkObjectOf);
 		Add("Crucible.Network::StartInternal", &ManagedNetworkStart);
 		Add("Crucible.Network::LeaveInternal", &ManagedNetworkLeave);
 		Add("Crucible.Network::LoadSceneInternal", &ManagedNetworkLoadScene);

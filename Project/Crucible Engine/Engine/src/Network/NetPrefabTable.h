@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                NetPrefabTable: which prefabs can be spawned over the
 *                network, under which explicit NetPrefabId, and what of each
@@ -44,6 +44,8 @@
 *    -v1.2       prefabGuid (found by asset GUID: renames and moves are
 *                harmless); Remove, FindByGuid, FindByName, HighestId for
 *                discovered network prefabs (Networking Phase 14.2)
+*    -v1.3       a Collider or CharacterController may be both serverOnly and
+*                enabledReplicated (Networking C# Phase 8: query bodies)
 *
 **************************************************************************/
 #pragma once
@@ -105,7 +107,8 @@ namespace Crucible
 		/// Adds `desc` as prefab `id`. Refuses: an id >= kMaxNetPrefabs, an id or name already
 		/// registered (the message names both), an empty name or path, more than 8 replicated or
 		/// enabledReplicated entries, a duplicate or invalid entry in any list, enabledReplicated
-		/// overlapping serverOnly or ownerLocalOnly, serverOnly overlapping ownerLocalOnly, and
+		/// overlapping serverOnly (except a Collider or CharacterController: clients' query bodies
+		/// follow its on/off) or ownerLocalOnly, serverOnly overlapping ownerLocalOnly, and
 		/// EnabledMask without enabledReplicated (or the other way round).
 		bool Register(Net::NetPrefabId id, NetPrefabDesc desc, std::string& error);
 

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.2
+* \version       1.3
 * \brief
 *                ReplicationRegistry and the built-in serializers (see the
 *                header).
@@ -15,6 +15,10 @@
 *                applied as transactions with rollback
 *    -v1.1       the NetVariables serializer; EnsureRuntimeComponents
 *    -v1.2       the Animator serializer (NetAnimator)
+*    -v1.3       EnabledMask: a flag for a server-only Collider or CharacterController
+*                switches the entity's client query body, never the component itself
+*                (Networking C# Phase 8); a Collider's flag on an entity with a
+*                CharacterController switches nothing (the host ignores that Collider too)
 *
 **************************************************************************/
 #include "Network/ReplicationRegistry.h"
@@ -27,6 +31,7 @@
 #include "Network/CanonicalHash.h"
 #include "Network/NetComponents.h"
 #include "Network/NetPrefabTable.h"
+#include "Network/NetQueryBodies.h"
 #include "Network/Protocol.h"
 #include "Network/Quantize.h"
 
@@ -513,6 +518,26 @@ namespace Crucible
 		return true;
 	}
 
+	namespace
+	{
+		// What EnabledMask's flag i switches on `entity`: the component itself, or - for a
+		// server-only one (a synced Host-only Collider or CharacterController, Phase 8) - the
+		// Collider of the entity's client query body. That component stays off on a client.
+		// False: nothing to switch (no query body: the host, or this client's own player; or a
+		// Collider beside a CharacterController, which is no body on the host either - the
+		// query body copies the character, and only its flag moves it).
+		bool FlagTarget(const World& world, Entity entity, const NetPrefabDesc& desc, std::size_t i, Entity& target, ComponentId& id)
+		{
+			id = desc.enabledReplicated[i];
+			target = entity;
+			if (std::ranges::find(desc.serverOnly, id) == desc.serverOnly.end()) return true;
+			if (id == ComponentTypeId<Collider>() && world.HasComponent<CharacterController>(entity)) return false;
+			target = FindClientQueryBody(world, entity);
+			id = ComponentTypeId<Collider>();
+			return target.IsValid();
+		}
+	}
+
 	bool ReplicationRegistry::Transact(World& world, Entity entity, std::span<Entry> entries, const ReplicationContext& ctx,
 		std::string* error) noexcept
 	{
@@ -537,7 +562,12 @@ namespace Crucible
 				if (e.c->enabledFlags)
 				{
 					for (std::size_t i = 0; i < ctx.desc->enabledReplicated.size(); ++i)
-						if (world.IsComponentEnabled(entity, ctx.desc->enabledReplicated[i])) e.oldFlags |= static_cast<std::uint8_t>(1u << i);
+					{
+						Entity target;
+						ComponentId id;
+						if (FlagTarget(world, entity, *ctx.desc, i, target, id) && world.IsComponentEnabled(target, id))
+							e.oldFlags |= static_cast<std::uint8_t>(1u << i);
+					}
 					continue;
 				}
 				const void* current = e.c->read(world, entity);
@@ -558,7 +588,10 @@ namespace Crucible
 					{
 						const bool on = ((wanted >> i) & 1u) != 0;
 						if ((((e.oldFlags >> i) & 1u) != 0) == on) continue;
-						if (!world.TrySetComponentEnabled(entity, ctx.desc->enabledReplicated[i], on))
+						Entity target;
+						ComponentId id;
+						if (!FlagTarget(world, entity, *ctx.desc, i, target, id)) continue;   // no query body here: nothing to switch
+						if (!world.TrySetComponentEnabled(target, id, on))
 						{
 							SetError(error, std::format("'{}' could not switch a component", e.c->name));
 							ok = false;
@@ -595,7 +628,10 @@ namespace Crucible
 					for (std::size_t i = 0; i < ctx.desc->enabledReplicated.size(); ++i)
 					{
 						if (((e.changedFlags >> i) & 1u) == 0) continue;
-						try { world.TrySetComponentEnabled(entity, ctx.desc->enabledReplicated[i], ((e.oldFlags >> i) & 1u) != 0); }
+						Entity target;
+						ComponentId id;
+						if (!FlagTarget(world, entity, *ctx.desc, i, target, id)) continue;
+						try { world.TrySetComponentEnabled(target, id, ((e.oldFlags >> i) & 1u) != 0); }
 						catch (...) {}   // cannot happen: the same call just succeeded in the same context
 					}
 				}

@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.11
+* \version       1.12
 * \brief
 *                The ECS system that runs the network session once per
 *                frame, first in PreUpdate, and makes the World follow it:
@@ -117,6 +117,8 @@
 *                SceneChange applied on clients (Networking C# Phase 9)
 *    -v1.11      EndSessionObjects: a session's objects end with it (a new session in the same
 *                Play found its scene objects still marked as networked)
+*    -v1.12      client query bodies on proxies and scene objects, removed with the session
+*                (Networking C# Phase 8)
 *
 **************************************************************************/
 #pragma once
@@ -222,7 +224,12 @@ namespace Crucible
 
 		// The scene's own entities this session made network objects (both roles), with what the
 		// client switched off on them: given back as plain scene entities when the session ends.
-		struct SessionSceneObject { Entity entity = kNullEntity; std::vector<ComponentId> switchedOff; };
+		struct SessionSceneObject
+		{
+			Entity entity = kNullEntity;
+			std::vector<ComponentId> switchedOff;
+			std::vector<Entity> queryBodies;   // client: removed when the session ends (Phase 8)
+		};
 		std::vector<SessionSceneObject> m_sessionSceneObjects;
 	};
 #ifdef _MSC_VER

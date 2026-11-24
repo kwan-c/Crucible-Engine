@@ -3,7 +3,7 @@
 * \author:       Abhishek Akilandeswari Patchamuthu
 * \par:          Email: a.patchamuthu@digipen.edu
 * \date          3 November 2026
-* \version       1.3
+* \version       1.4
 * \brief
 *                NetPrefabTable (see the header).
 *
@@ -14,6 +14,8 @@
 *    -v1.2       a known prefabGuid is used instead of the path; Remove,
 *                FindByGuid, FindByName, HighestId (Networking Phase 14.2)
 *    -v1.3       a serializer whose component is added at runtime needs none in the file
+*    -v1.4       a Collider or CharacterController may be server-only AND enabledReplicated:
+*                a client's query body follows its on/off (Networking C# Phase 8)
 *
 **************************************************************************/
 #include "Network/NetPrefabTable.h"
@@ -24,6 +26,7 @@
 
 #include "AssetPipe/Assetmanager.h"
 #include "ECS/Components/ComponentRegistry.h"
+#include "ECS/Components/Components.h"   // Collider, CharacterController
 #include "Json/JsonWrapper.h"
 #include "Network/CanonicalHash.h"
 #include "Network/Protocol.h"
@@ -101,10 +104,20 @@ namespace Crucible
 			return false;
 		}
 		// Replicating the on/off state of a component that each machine switches itself would
-		// fight: the server's "physics on" would switch client physics back on.
-		if (Overlap(desc.enabledReplicated, desc.serverOnly) || Overlap(desc.enabledReplicated, desc.ownerLocalOnly))
+		// fight: the server's "physics on" would switch client physics back on. Except the
+		// physics a client has query bodies for (Phase 8): a server-only Collider or
+		// CharacterController with its on/off replicated stays off on clients, and their query
+		// body follows the host's on/off instead (ReplicationRegistry, EnabledMask).
+		const auto queryBodySource = [](ComponentId id) {
+			return id == ComponentTypeId<Collider>() || id == ComponentTypeId<CharacterController>();
+		};
+		const bool serverOnlyClash = std::ranges::any_of(desc.enabledReplicated, [&](ComponentId id) {
+			return !queryBodySource(id) && std::ranges::find(desc.serverOnly, id) != desc.serverOnly.end();
+		});
+		if (serverOnlyClash || Overlap(desc.enabledReplicated, desc.ownerLocalOnly))
 		{
-			error = where + ": a component in enabledReplicated is also server-only or owner-local";
+			error = where + ": a component in enabledReplicated is also server-only or owner-local"
+				" (only a Collider or CharacterController may be both server-only and synced)";
 			return false;
 		}
 		if (Overlap(desc.serverOnly, desc.ownerLocalOnly)) { error = where + ": a component is both server-only and owner-local"; return false; }
