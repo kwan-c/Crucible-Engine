@@ -31,6 +31,7 @@
 
 #include "Shaders/ShaderHotReload.h"
 #include "ShaderGraph/ShaderGraphAsset.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 
 #include "AssetPipe/AssetPaths.h"
 #include "Graphics/MaterialShaderParams.h"
@@ -60,6 +61,9 @@ namespace Crucible {
 			// frame, the others when a material first names them. Every mesh shader has the same
 			// two entry points (SurfaceTemplate.slang; Engine/CompileShaders.cmake lists them too);
 			// one that moves vertices has its own versions of the depth-only passes' shaders too.
+			// Sub-graphs in Assets, kept current (at most twice a second): graphs using one that changed are made again.
+			SyncSubgraphs(m_core.GetAssets());
+
 			Renderer& renderer = m_core.GetRenderer();
 			for (const uint32_t count = renderer.GetMaterialShaderCount(); m_watched < count; ++m_watched) {
 				const MaterialShaderHandle shader{ m_watched };
@@ -96,6 +100,10 @@ namespace Crucible {
 					watch.generate = [this, name](std::string& source, std::string& paramsJson, std::string& error) {
 						return GenerateShaderGraph(m_core.GetAssets(), name, source, paramsJson, error);
 					};
+					// The sub-graphs it uses: generated again when one of them changes.
+					watch.dependencies = []() { return ShaderGraph::SubgraphsVersion(); };
+					// The graph deleted: its materials show the error material, as they would in the game.
+					watch.missing = [this, shader]() { m_core.GetRenderer().MarkMaterialShaderMissing(shader); };
 				}
 				m_hotReload.Watch(std::move(watch));
 			}

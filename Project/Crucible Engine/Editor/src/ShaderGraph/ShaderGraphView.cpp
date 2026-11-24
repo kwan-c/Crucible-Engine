@@ -16,6 +16,7 @@
 #include "ShaderGraph/ShaderGraphView.h"
 
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 
 #include <algorithm>
 #include <cfloat>
@@ -36,6 +37,10 @@ namespace Crucible {
 		constexpr float kRow       = 20.0f;   // one pin
 		constexpr float kPad       = 5.0f;    // above the first pin and below the last
 		constexpr float kTextScale = 0.85f;   // pin labels, against the node's title
+		constexpr float kRerouteWidth  = 34.0f;   // a Reroute: a dot with a pin each side, room between them to grab it
+		constexpr float kRerouteHeight = 20.0f;
+		constexpr float kCommentBar    = 26.0f;   // a comment box's title strip: drag it to move the box
+		constexpr float kCommentGrip   = 14.0f;   // its bottom-right corner: drag it to resize
 
 		constexpr ImU32 kGold     = IM_COL32(255, 215, 110, 255);   // selected and hovered things, as in the other graph views
 		constexpr ImU32 kError    = IM_COL32(235, 90, 80, 255);
@@ -72,6 +77,7 @@ namespace Crucible {
 			if (category == "Texture")  { return IM_COL32(170, 105, 50, 255); }
 			if (category == "UV")       { return IM_COL32(30, 130, 140, 255); }
 			if (category == "Effect")   { return IM_COL32(160, 80, 130, 255); }
+			if (category == "Sub-graph") { return IM_COL32(45, 115, 175, 255); }
 			return IM_COL32(95, 100, 112, 255);
 		}
 
@@ -84,6 +90,12 @@ namespace Crucible {
 				title += name[i];
 			}
 			return title;
+		}
+
+		// "Glow.shadersubgraph" -> "Glow": a sub-graph's name as a title.
+		std::string SubgraphTitle(const SubgraphEntry& entry) {
+			const size_t dot = entry.label.rfind('.');
+			return dot == std::string::npos ? entry.label : entry.label.substr(0, dot);
 		}
 
 		std::string Lower(std::string_view text) {
@@ -139,12 +151,22 @@ namespace Crucible {
 			return nearest;
 		}
 
+		bool IsReroute(const NodeType* type) {
+			return type && std::string_view(type->name) == kRerouteNode;
+		}
+
+		float NodeWidth(const NodeType* type) {
+			return IsReroute(type) ? kRerouteWidth : kNodeWidth;
+		}
+
 		float NodeHeight(const NodeType* type) {
+			if (IsReroute(type)) { return kRerouteHeight; }
 			const size_t rows = type ? (std::max)((std::max)(type->inputs.size(), type->outputs.size()), size_t{ 1 }) : 1;
 			return kHeader + kPad * 2.0f + kRow * static_cast<float>(rows);
 		}
 
 		ImVec2 PinAt(const Box& box, bool output, size_t index, float zoom) {
+			if (IsReroute(box.type)) { return { output ? box.max.x : box.min.x, (box.min.y + box.max.y) * 0.5f }; }
 			return { output ? box.max.x : box.min.x, box.min.y + (kHeader + kPad + kRow * (static_cast<float>(index) + 0.5f)) * zoom };
 		}
 
@@ -167,15 +189,49 @@ namespace Crucible {
 	void ShaderGraphView::Select(uint32_t node) {
 		m_selected.assign(1, node);
 		m_hasLink = false;
+		m_comment = 0;
 	}
 
 	void ShaderGraphView::ClearSelection() {
 		m_selected.clear();
 		m_hasLink = false;
+		m_comment = 0;
+	}
+
+	void ShaderGraphView::EditComment(const Graph& graph, uint32_t comment) {
+		const Comment* found = graph.FindComment(comment);
+		if (!found) { return; }
+		m_editComment = comment;
+		std::snprintf(m_commentText, sizeof(m_commentText), "%s", found->text.c_str());
+		m_openCommentEditor = true;   // opened by DrawMenus, where its popup lives
+	}
+
+	bool ShaderGraphView::CommentAroundSelection(Graph& graph) {
+		bool any = false;
+		Math::vec2 low(0.0f), high(0.0f);
+		for (const uint32_t id : m_selected) {
+			const Node* node = graph.FindNode(id);
+			if (!node) { continue; }
+			const NodeType* type = TypeOfNode(graph, *node);
+			const Math::vec2 a(node->x, node->y), b(node->x + NodeWidth(type), node->y + NodeHeight(type));
+			low = any ? glm::min(low, a) : a;
+			high = any ? glm::max(high, b) : b;
+			any = true;
+		}
+		if (!any) { return false; }
+		constexpr float kMargin = 20.0f;
+		const uint32_t comment = graph.AddComment(low.x - kMargin, low.y - kMargin - kCommentBar,
+		                                          high.x - low.x + kMargin * 2.0f, high.y - low.y + kMargin * 2.0f + kCommentBar, "Comment");
+		ClearSelection();
+		m_comment = comment;
+		EditComment(graph, comment);   // straight on to its title
+		return true;
 	}
 
 	void ShaderGraphView::KeepSelectionIn(const Graph& graph) {
 		std::erase_if(m_selected, [&](uint32_t id) { return graph.FindNode(id) == nullptr; });
+		if (m_comment != 0 && !graph.FindComment(m_comment)) { m_comment = 0; }
+		m_commentDragging = m_commentResizing = false;
 		if (m_hasLink) {
 			const Link* now = graph.FindLinkInto(m_link.toNode, m_link.toPin);
 			m_hasLink = now && now->fromNode == m_link.fromNode && now->fromPin == m_link.fromPin;
@@ -187,15 +243,20 @@ namespace Crucible {
 		if (graph.nodes.empty()) { return; }
 		Math::vec2 low(graph.nodes.front().x, graph.nodes.front().y), high = low;
 		for (const Node& node : graph.nodes) {
+			const NodeType* type = TypeOfNode(graph, node);
 			low = glm::min(low, Math::vec2(node.x, node.y));
-			high = glm::max(high, Math::vec2(node.x + kNodeWidth, node.y + NodeHeight(FindNodeType(node.type))));
+			high = glm::max(high, Math::vec2(node.x + NodeWidth(type), node.y + NodeHeight(type)));
+		}
+		for (const Comment& comment : graph.comments) {
+			low = glm::min(low, Math::vec2(comment.x, comment.y));
+			high = glm::max(high, Math::vec2(comment.x + comment.width, comment.y + comment.height));
 		}
 		m_canvas.FrameBox(low, high);
 	}
 
 	bool ShaderGraphView::LinkNewNode(Graph& graph, uint32_t node) {
 		const Node* target = graph.FindNode(node);
-		const NodeType* type = target ? FindNodeType(target->type) : nullptr;
+		const NodeType* type = target ? TypeOfNode(graph, *target) : nullptr;
 		if (!type) { return false; }
 		std::string why;
 		if (m_linkFromOutput) {
@@ -247,10 +308,10 @@ namespace Crucible {
 			for (const Node& node : graph.nodes) {
 				Box box;
 				box.node = &node;
-				box.type = FindNodeType(node.type);
+				box.type = TypeOfNode(graph, node);
 				if (const auto found = results.find(node.id); found != results.end()) { box.result = found->second; }
 				box.min = m_canvas.ToScreen({ node.x, node.y });
-				box.max = { box.min.x + kNodeWidth * zoom, box.min.y + NodeHeight(box.type) * zoom };
+				box.max = { box.min.x + NodeWidth(box.type) * zoom, box.min.y + NodeHeight(box.type) * zoom };
 				boxOf[node.id] = boxes.size();
 				boxes.push_back(box);
 			}
@@ -306,6 +367,20 @@ namespace Crucible {
 				}
 			}
 		}
+		// A comment box's title strip or resize corner - only where nothing else is: a comment lies
+		// under everything, and its inside is empty canvas (drag there to box-select).
+		uint32_t commentBar = 0, commentGrip = 0;
+		if (m_canvas.Hovered() && hoveredNode == 0 && pinNode == 0 && !overLink) {
+			const Math::vec2 at = m_canvas.MouseGraph();
+			const float grip = (std::max)(kCommentGrip, 10.0f / zoom);   // never under 10 pixels
+			for (auto it = graph.comments.rbegin(); it != graph.comments.rend(); ++it) {   // the one on top first
+				const Comment& comment = *it;
+				if (at.x < comment.x || at.y < comment.y || at.x > comment.x + comment.width || at.y > comment.y + comment.height) { continue; }
+				if (at.x >= comment.x + comment.width - grip && at.y >= comment.y + comment.height - grip) { commentGrip = comment.id; break; }
+				if (at.y <= comment.y + kCommentBar) { commentBar = comment.id; break; }
+			}
+		}
+
 		const auto pinName = [&]() -> std::string {
 			const NodeType* type = boxes[boxOf[pinNode]].type;
 			return pinIsOutput ? type->outputs[pinIndex].name : type->inputs[pinIndex].name;
@@ -314,6 +389,7 @@ namespace Crucible {
 		// ---- 2. The mouse and keys, turned into edits ---------------------------------------------
 		const ImGuiIO& io = ImGui::GetIO();
 		if (m_canvas.LeftClicked()) {
+			if (commentBar == 0 && commentGrip == 0) { m_comment = 0; }
 			if (pinNode != 0 && !readOnly) {
 				m_linking = true;
 				m_linkDetached = false;
@@ -348,6 +424,39 @@ namespace Crucible {
 				m_selected.clear();
 				m_link = hoveredLink;
 				m_hasLink = true;
+				// A double-click puts a reroute point there, to bend the link around something.
+				if (!readOnly && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+					const Math::vec2 at = m_canvas.MouseGraph();
+					const uint32_t reroute = InsertReroute(graph, hoveredLink.toNode, hoveredLink.toPin,
+					                                       at.x - kRerouteWidth * 0.5f, at.y - kRerouteHeight * 0.5f, result.refused);
+					if (reroute != 0) {
+						result.changed = true;
+						Select(reroute);
+					}
+				}
+			} else if (commentBar != 0 || commentGrip != 0) {
+				m_selected.clear();
+				m_hasLink = false;
+				m_comment = commentGrip != 0 ? commentGrip : commentBar;
+				m_moved = false;
+				if (!readOnly && commentGrip != 0) {
+					m_commentResizing = true;
+				} else if (!readOnly && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+					EditComment(graph, m_comment);
+				} else if (!readOnly) {
+					// The nodes inside the box now move with it.
+					m_commentDragging = true;
+					m_commentNodes.clear();
+					if (const Comment* comment = graph.FindComment(m_comment)) {
+						for (const Node& node : graph.nodes) {
+							const NodeType* type = TypeOfNode(graph, node);
+							if (node.x >= comment->x && node.y >= comment->y && node.x + NodeWidth(type) <= comment->x + comment->width &&
+							    node.y + NodeHeight(type) <= comment->y + comment->height) {
+								m_commentNodes.push_back(node.id);
+							}
+						}
+					}
+				}
 			} else {
 				if (!io.KeyShift) { ClearSelection(); }
 				m_boxSelecting = true;
@@ -364,8 +473,31 @@ namespace Crucible {
 			}
 			m_moved = true;
 		}
+		if ((m_commentDragging || m_commentResizing) && m_canvas.LeftHeld() && (io.MouseDelta.x != 0.0f || io.MouseDelta.y != 0.0f)) {
+			if (Comment* comment = graph.FindComment(m_comment)) {
+				const float dx = io.MouseDelta.x / zoom, dy = io.MouseDelta.y / zoom;
+				if (m_commentResizing) {
+					comment->width  = (std::max)(comment->width + dx, kMinCommentSize);
+					comment->height = (std::max)(comment->height + dy, kMinCommentSize);
+				} else {
+					comment->x += dx;
+					comment->y += dy;
+					for (const uint32_t id : m_commentNodes) {
+						if (Node* node = graph.FindNode(id)) {
+							node->x += dx;
+							node->y += dy;
+						}
+					}
+				}
+				m_moved = true;
+			}
+		}
 
 		if (m_canvas.LeftReleased()) {
+			if (m_commentDragging || m_commentResizing) {
+				m_commentDragging = m_commentResizing = false;
+				if (m_moved) { result.changed = true; }
+			}
 			if (m_dragging) {
 				m_dragging = false;
 				if (m_moved) { result.changed = true; }
@@ -395,8 +527,9 @@ namespace Crucible {
 				const Math::vec2 low = glm::min(m_boxStart, end), high = glm::max(m_boxStart, end);
 				if (high.x - low.x > 2.0f || high.y - low.y > 2.0f) {   // a click is not a box
 					for (const Node& node : graph.nodes) {
-						const float bottom = node.y + NodeHeight(FindNodeType(node.type));
-						if (node.x <= high.x && node.x + kNodeWidth >= low.x && node.y <= high.y && bottom >= low.y && !IsSelected(node.id)) {
+						const NodeType* type = TypeOfNode(graph, node);
+						const float bottom = node.y + NodeHeight(type);
+						if (node.x <= high.x && node.x + NodeWidth(type) >= low.x && node.y <= high.y && bottom >= low.y && !IsSelected(node.id)) {
 							m_selected.push_back(node.id);
 						}
 					}
@@ -410,9 +543,16 @@ namespace Crucible {
 				ImGui::OpenPopup("ShaderNodeMenu");
 			} else if (overLink) {
 				m_selected.clear();
+				m_comment = 0;
 				m_link = hoveredLink;
 				m_hasLink = true;
+				m_menuPosition = m_canvas.MouseGraph();   // where "Add reroute point" puts it
 				ImGui::OpenPopup("ShaderLinkMenu");
+			} else if (commentBar != 0 || commentGrip != 0) {
+				m_selected.clear();
+				m_hasLink = false;
+				m_comment = commentBar != 0 ? commentBar : commentGrip;
+				ImGui::OpenPopup("ShaderCommentMenu");
 			} else {
 				m_menuPosition = m_canvas.MouseGraph();
 				m_menuLinks = false;
@@ -427,11 +567,16 @@ namespace Crucible {
 				if (!m_selected.empty()) {
 					if (DeleteNodes(graph, m_selected) != 0) { result.changed = true; }
 					ClearSelection();
+				} else if (m_comment != 0) {
+					if (DeleteComments(graph, { m_comment }) != 0) { result.changed = true; }
+					m_comment = 0;
 				} else if (m_hasLink) {
 					if (DeleteLinkInto(graph, m_link.toNode, m_link.toPin)) { result.changed = true; }
 					m_hasLink = false;
 				}
 			}
+			// C: a comment box around the selected nodes.
+			if (ImGui::Shortcut(ImGuiKey_C) && !m_selected.empty() && CommentAroundSelection(graph)) { result.changed = true; }
 			if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_C) && !m_selected.empty()) { m_clipboard = Copy(graph, m_selected); }
 			if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_V) && !m_clipboard.Empty()) {
 				// At the mouse if it is over the canvas; else in the middle of the view.
@@ -454,6 +599,28 @@ namespace Crucible {
 		// ---- 3. Draw: links under the nodes ------------------------------------------------------
 		layout();   // the edits above may have added, removed or moved nodes
 		ImDrawList* draw = m_canvas.DrawList();
+
+		// Comment boxes, under everything: a tinted box, a stronger title strip, a resize corner.
+		for (const Comment& comment : graph.comments) {
+			const ImVec2 low = m_canvas.ToScreen({ comment.x, comment.y });
+			const ImVec2 high = m_canvas.ToScreen({ comment.x + comment.width, comment.y + comment.height });
+			const ImVec2 barHigh{ high.x, (std::min)(low.y + kCommentBar * zoom, high.y) };
+			const auto channel = [](float v) { return static_cast<int>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+			const int red = channel(comment.colour[0]), green = channel(comment.colour[1]), blue = channel(comment.colour[2]);
+			const bool selected = comment.id == m_comment;
+			const bool hovered = comment.id == commentBar || comment.id == commentGrip;
+			const float rounding = 6.0f * zoom;
+			draw->AddRectFilled(low, high, IM_COL32(red, green, blue, 40), rounding);
+			draw->AddRectFilled(low, barHigh, IM_COL32(red, green, blue, 150), rounding, ImDrawFlags_RoundCornersTop);
+			draw->AddRect(low, high, selected ? kGold : IM_COL32(red, green, blue, hovered ? 230 : 150), rounding, 0, selected ? 2.5f : 1.5f);
+			const float titleSize = ImGui::GetFontSize() * zoom;
+			const ImVec4 titleClip{ low.x, low.y, high.x - 4.0f * zoom, barHigh.y };
+			draw->AddText(ImGui::GetFont(), titleSize, { low.x + 8.0f * zoom, low.y + (kCommentBar * zoom - titleSize) * 0.5f }, kLabel,
+			              comment.text.c_str(), nullptr, 0.0f, &titleClip);
+			const float corner = kCommentGrip * zoom;
+			draw->AddTriangleFilled({ high.x - corner, high.y }, { high.x, high.y - corner }, high,
+			                        IM_COL32(red, green, blue, comment.id == commentGrip ? 255 : 150));
+		}
 
 		for (const Link& link : graph.links) {
 			ImVec2 from, to;
@@ -487,13 +654,49 @@ namespace Crucible {
 			const bool used = box.result && box.result->used;
 			const bool selected = IsSelected(node.id);
 
+			// A reroute point: a dot in the colour of what it carries, a pin each side, no title.
+			if (IsReroute(box.type)) {
+				bool stops = false, any = false;
+				for (const Problem& problem : problems) {
+					if (problem.node != node.id) { continue; }
+					any = true;
+					stops = stops || problem.stops;
+					if (hoveredNode == node.id) { hoveredProblems += (hoveredProblems.empty() ? "" : "\n") + problem.message; }
+				}
+				const ImVec2 centre{ (box.min.x + box.max.x) * 0.5f, (box.min.y + box.max.y) * 0.5f };
+				const ImU32 carried = TypeColour(PinType(box, true, 0));
+				const ImU32 fill = used ? carried : (carried & 0x00FFFFFFu) | 0x80000000u;   // faded when the Output does not use it
+				const float dot = (std::max)(4.0f, 7.0f * zoom);
+				draw->AddLine(PinAt(box, false, 0, zoom), PinAt(box, true, 0, zoom), fill, 2.0f * (std::max)(zoom, 0.6f));
+				draw->AddCircleFilled(centre, dot, fill);
+				const ImU32 ring = any ? (stops ? kError : kWarning) : selected || hoveredNode == node.id ? kGold : IM_COL32(20, 22, 26, 255);
+				draw->AddCircle(centre, dot + 1.5f, ring, 0, selected || any ? 2.5f : 1.5f);
+				for (const bool output : { false, true }) {
+					const bool hovered = pinNode == node.id && pinIsOutput == output;
+					draw->AddCircleFilled(PinAt(box, output, 0, zoom), radius * 0.8f, hovered ? kGold : carried);
+				}
+				continue;
+			}
+
 			std::string title = box.type ? Title(node.type) : node.type + "?";
 			if (node.type == kParameterNode) {
 				const auto setting = node.settings.find(kParameterSetting);
 				title = setting != node.settings.end() && !setting->second.empty() ? setting->second : "(choose a parameter)";
 			}
+			if (node.type == kSubgraphInputNode || node.type == kSubgraphOutputNode) {
+				// In a sub-graph: "in: colour", "out: glow".
+				const bool input = node.type == kSubgraphInputNode;
+				const auto setting = node.settings.find(input ? kSubgraphInputSetting : kSubgraphOutputSetting);
+				title = std::string(input ? "in: " : "out: ") + (setting != node.settings.end() ? setting->second : "?");
+			}
+			const bool isSubgraph = node.type == kSubgraphNode || node.type == kSubgraphInputNode || node.type == kSubgraphOutputNode;
+			if (node.type == kSubgraphNode) {
+				const auto setting = node.settings.find(kSubgraphSetting);
+				const SubgraphEntry* entry = setting != node.settings.end() ? FindSubgraph(setting->second) : nullptr;
+				title = entry ? SubgraphTitle(*entry) : "(missing sub-graph)";
+			}
 			const ImVec2 size{ box.max.x - box.min.x, box.max.y - box.min.y };
-			m_canvas.DrawNode(box.min, size, CategoryColour(box.type ? box.type->category : ""), title.c_str(), nullptr, selected, !used);
+			m_canvas.DrawNode(box.min, size, CategoryColour(isSubgraph ? "Sub-graph" : box.type ? box.type->category : ""), title.c_str(), nullptr, selected, !used);
 
 			// Its problems: an outline, and the text when the mouse is over it.
 			bool stops = false, any = false;
@@ -584,6 +787,39 @@ namespace Crucible {
 	bool ShaderGraphView::DrawMenus(Graph& graph, Result& result) {
 		bool changed = false;
 
+		// A comment's title and colour, in a small window of its own (double-click a title, C, or the menus).
+		if (m_openCommentEditor) {
+			m_openCommentEditor = false;
+			ImGui::OpenPopup("ShaderCommentEdit");
+		}
+		if (ImGui::BeginPopup("ShaderCommentEdit")) {
+			Comment* comment = graph.FindComment(m_editComment);
+			if (!comment) {
+				ImGui::CloseCurrentPopup();
+			} else {
+				if (ImGui::IsWindowAppearing()) { ImGui::SetKeyboardFocusHere(); }
+				ImGui::SetNextItemWidth(260.0f);
+				if (ImGui::InputText("Title", m_commentText, sizeof(m_commentText))) {
+					comment->text = m_commentText;
+					changed = true;
+				}
+				const bool entered = ImGui::IsItemDeactivated() && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false));
+				if (ImGui::ColorEdit3("Colour", comment->colour.data(), ImGuiColorEditFlags_NoInputs)) { changed = true; }
+				if (entered) { ImGui::CloseCurrentPopup(); }
+			}
+			ImGui::EndPopup();
+		}
+
+		if (ImGui::BeginPopup("ShaderCommentMenu")) {
+			if (ImGui::MenuItem("Title and colour...", "double-click")) { EditComment(graph, m_comment); }
+			if (ImGui::MenuItem("Delete comment", "Del")) {
+				if (DeleteComments(graph, { m_comment }) != 0) { changed = true; }
+				m_comment = 0;
+			}
+			ImGui::TextDisabled("Deleting a comment keeps the nodes in it.");
+			ImGui::EndPopup();
+		}
+
 		if (ImGui::BeginPopup("ShaderNodeMenu")) {
 			const uint32_t output = OutputNodeOf(graph);
 			const bool onlyOutput = m_selected.size() == 1 && m_selected.front() == output;
@@ -596,11 +832,34 @@ namespace Crucible {
 				if (DeleteNodes(graph, m_selected) != 0) { changed = true; }
 				ClearSelection();
 			}
+			if (ImGui::MenuItem("Comment around them", "C") && CommentAroundSelection(graph)) { changed = true; }
+			// A sub-graph node: point it at another sub-graph (or find its own again, after its GUID changed).
+			if (const Node* only = m_selected.size() == 1 ? graph.FindNode(m_selected.front()) : nullptr; only && only->type == kSubgraphNode) {
+				const uint32_t id = only->id;
+				const auto current = only->settings.find(kSubgraphSetting);
+				if (ImGui::BeginMenu("Use sub-graph")) {
+					const std::vector<const SubgraphEntry*> subgraphs = ListSubgraphs();
+					for (const SubgraphEntry* entry : subgraphs) {
+						const bool chosen = current != only->settings.end() && FindSubgraph(current->second) == entry;
+						if (ImGui::MenuItem(SubgraphTitle(*entry).c_str(), nullptr, chosen, entry->error.empty()) && !chosen && SetSubgraph(graph, id, entry->guid)) { changed = true; }
+					}
+					if (subgraphs.empty()) { ImGui::TextDisabled("No sub-graphs in Assets."); }
+					ImGui::EndMenu();
+				}
+			}
 			if (onlyOutput) { ImGui::TextDisabled("A graph always has its Output node."); }
 			ImGui::EndPopup();
 		}
 
 		if (ImGui::BeginPopup("ShaderLinkMenu")) {
+			if (ImGui::MenuItem("Add reroute point", "double-click") && m_hasLink) {
+				const uint32_t reroute = InsertReroute(graph, m_link.toNode, m_link.toPin, m_menuPosition.x - kRerouteWidth * 0.5f,
+				                                       m_menuPosition.y - kRerouteHeight * 0.5f, result.refused);
+				if (reroute != 0) {
+					changed = true;
+					Select(reroute);
+				}
+			}
 			if (ImGui::MenuItem("Delete link", "Del") && m_hasLink) {
 				if (DeleteLinkInto(graph, m_link.toNode, m_link.toPin)) { changed = true; }
 				m_hasLink = false;
@@ -616,6 +875,7 @@ namespace Crucible {
 			const bool entered = ImGui::IsItemDeactivated() && (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false));
 			const std::string filter = Lower(m_filter);
 			const bool hasOutput = OutputNodeOf(graph) != 0;
+			const bool subgraph = graph.domain == kSubgraphDomain;   // inputs and outputs, not parameters and the Output
 
 			uint32_t added = 0;
 			const auto add = [&](std::string_view type, std::string_view parameter) {
@@ -625,21 +885,51 @@ namespace Crucible {
 			// offered per parameter instead.
 			const auto offered = [&](const NodeType& type) {
 				const std::string_view name = type.name;
-				return name != kParameterNode && !(name == kOutputNode && hasOutput);
+				return name != kParameterNode && !(name == kOutputNode && (hasOutput || subgraph));
 			};
 
 			if (filter.empty()) {
+				if (!m_menuLinks && ImGui::MenuItem("Comment")) {
+					const uint32_t comment = graph.AddComment(m_menuPosition.x, m_menuPosition.y, 300.0f, 200.0f, "Comment");
+					ClearSelection();
+					m_comment = comment;
+					EditComment(graph, comment);
+					changed = true;
+					ImGui::CloseCurrentPopup();
+				}
+				ImGui::SetItemTooltip("A box with a title, for notes. Select nodes and press C to put one around them.");
 				if (!m_menuLinks && !m_clipboard.Empty() && ImGui::MenuItem("Paste", "Ctrl+V")) {
 					m_selected = Paste(graph, m_clipboard, m_menuPosition.x, m_menuPosition.y);
 					m_hasLink = false;
 					changed = true;
 					ImGui::CloseCurrentPopup();
 				}
-				if (ImGui::BeginMenu("Parameter")) {
+				if (subgraph) {
+					// A sub-graph: a node per input it reads, a node per output it gives.
+					for (const bool input : { true, false }) {
+						if (!ImGui::BeginMenu(input ? "Input" : "Output")) { continue; }
+						const std::vector<Parameter>& list = input ? graph.inputs : graph.outputs;
+						for (const Parameter& entry : list) {
+							if (ImGui::MenuItem(entry.name.c_str(), ParameterTypeName(entry.type))) { add(input ? kSubgraphInputNode : kSubgraphOutputNode, entry.name); }
+						}
+						if (list.empty()) { ImGui::TextDisabled("None yet - add one in the list on the left."); }
+						ImGui::EndMenu();
+					}
+				} else if (ImGui::BeginMenu("Parameter")) {
 					for (const Parameter& parameter : graph.parameters) {
 						if (ImGui::MenuItem(parameter.name.c_str(), ParameterTypeName(parameter.type))) { add(kParameterNode, parameter.name); }
 					}
 					if (graph.parameters.empty()) { ImGui::TextDisabled("No parameters yet - add one in the list on the left."); }
+					ImGui::EndMenu();
+				}
+				// Every sub-graph in Assets (.shadersubgraph): one node each, its pins its inputs and outputs.
+				if (ImGui::BeginMenu("Sub-graph")) {
+					const std::vector<const SubgraphEntry*> subgraphs = ListSubgraphs();
+					for (const SubgraphEntry* entry : subgraphs) {
+						if (ImGui::MenuItem(SubgraphTitle(*entry).c_str(), nullptr, false, entry->error.empty())) { add(kSubgraphNode, entry->guid); }
+						if (!entry->error.empty()) { ImGui::SetItemTooltip("Cannot be used: %s", entry->error.c_str()); }
+					}
+					if (subgraphs.empty()) { ImGui::TextDisabled("No sub-graphs yet - a .shadersubgraph file in Assets."); }
 					ImGui::EndMenu();
 				}
 				// One submenu per category, in the table's order.
@@ -667,6 +957,23 @@ namespace Crucible {
 					if (ImGui::Selectable(Title(type.name).c_str(), first) || (first && entered)) { add(type.name, {}); }
 					ImGui::SetItemTooltip("%s", type.summary);
 					first = false;
+				}
+				for (const SubgraphEntry* entry : ListSubgraphs()) {
+					if (!entry->error.empty() || (Lower(entry->label).find(filter) == std::string::npos && std::string_view("sub-graph").find(filter) == std::string_view::npos)) { continue; }
+					any = true;
+					if (ImGui::Selectable(("Sub-graph: " + SubgraphTitle(*entry)).c_str(), first) || (first && entered)) { add(kSubgraphNode, entry->guid); }
+					first = false;
+				}
+				for (const bool input : { true, false }) {
+					for (const Parameter& entry : subgraph ? (input ? graph.inputs : graph.outputs) : std::vector<Parameter>{}) {
+						const std::string word = input ? "input" : "output";
+						if (Lower(entry.name).find(filter) == std::string::npos && word.find(filter) == std::string::npos) { continue; }
+						any = true;
+						if (ImGui::Selectable(((input ? "Input: " : "Output: ") + entry.name).c_str(), first) || (first && entered)) {
+							add(input ? kSubgraphInputNode : kSubgraphOutputNode, entry.name);
+						}
+						first = false;
+					}
 				}
 				for (const Parameter& parameter : graph.parameters) {
 					if (Lower(parameter.name).find(filter) == std::string::npos && std::string_view("parameter").find(filter) == std::string_view::npos) { continue; }

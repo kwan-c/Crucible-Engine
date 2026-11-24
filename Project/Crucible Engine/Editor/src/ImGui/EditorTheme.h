@@ -12,6 +12,14 @@
 * so it comes back the next time the editor starts. It is per-machine: deleting the
 * Build folder (clean.bat) resets it to Crucible Dark.
 *
+* Sharing themes: the Theme Editor's Export writes the live style to
+* Assets/Editor/Themes/<Name>.crutones (JSON, colours and shape settings by name). Every file
+* there is listed under View > Theme > Shared Themes, and double-clicking one in the Asset
+* Browser applies it too; either way it is loaded into the Custom slot. The folder is in git,
+* so the team gets each other's themes, but it is editor-only: Cook never copies Assets/Editor
+* (Tools/Cook/Cook.cpp, ShouldCopy), so a theme can never end up in a packaged game.
+* The font size is not part of a theme - it stays each person's own setting.
+*
 * Panels that draw their own coloured text should take the colour from GetPalette()
 * instead of hard-coding it, so it stays readable on the Light theme too.
 *
@@ -20,6 +28,11 @@
 */
 
 #include <imgui.h>
+
+#include <filesystem>
+#include <functional>
+#include <string>
+#include <vector>
 
 namespace Crucible::EditorTheme {
 
@@ -54,6 +67,26 @@ namespace Crucible::EditorTheme {
 
 	// Copies the live style (as edited in the Theme Editor) into the Custom slot and selects it.
 	void SaveCurrentAsCustom();
+
+	// ---- Theme files (.crutones) ----
+	inline constexpr char const* kThemeExtension = ".crutones";
+	inline constexpr char const* kThemeFolder    = "Editor/Themes";   // under Assets; never cooked
+
+	// Where the theme files live: <assetRoot>/Editor/Themes. Set once by the Asset Browser.
+	void SetAssetRoot(std::filesystem::path const& assetRoot);
+	// Called after Export writes a file, with its path under Assets ("Editor/Themes/Warm.crutones"),
+	// so the Asset Browser can pick it up and show it.
+	void SetOnThemeExported(std::function<void(std::string const&)> callback);
+
+	std::vector<std::filesystem::path> ListThemeFiles();   // the folder's .crutones files, by name
+	// Writes the live style as <Name>.crutones (Name: letters, digits, spaces, '-' and '_' kept) and
+	// makes it the Custom theme. false (with *error) if the name is empty or the write failed.
+	bool ExportCurrent(std::string const& name, std::string* error = nullptr);
+	bool ThemeFileExists(std::string const& name);
+	// Loads a .crutones into the Custom slot and selects it. false (with *error) if it is not one.
+	bool ImportFile(std::filesystem::path const& file, std::string* error = nullptr);
+	// The theme file the Custom slot came from ("Warm"); empty if it was made in this editor.
+	std::string const& CustomName();
 
 	// Contents of the View > Theme submenu. Sets *openEditor when "Theme Editor..." is chosen.
 	void DrawMenu(bool* openEditor);

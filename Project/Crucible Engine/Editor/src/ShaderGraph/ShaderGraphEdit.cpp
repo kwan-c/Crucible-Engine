@@ -13,6 +13,7 @@
 
 #include "ShaderGraph/ShaderGraphGenerator.h"
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 
 #include <algorithm>
 #include <set>
@@ -52,6 +53,25 @@ namespace Crucible::ShaderGraph {
 	}
 
 	uint32_t AddNode(Graph& graph, std::string_view type, float x, float y, std::string_view parameter) {
+		const bool subgraph = graph.domain == kSubgraphDomain;
+		if (type == kSubgraphInputNode || type == kSubgraphOutputNode) {
+			// Only in a sub-graph, and only for one of its inputs or outputs (named by `parameter`).
+			const bool input = type == kSubgraphInputNode;
+			const std::vector<Parameter>& list = input ? graph.inputs : graph.outputs;
+			if (!subgraph || std::none_of(list.begin(), list.end(), [&](const Parameter& p) { return p.name == parameter; })) { return 0; }
+			const uint32_t id = graph.AddNode(std::string(type), x, y);
+			graph.FindNode(id)->settings[input ? kSubgraphInputSetting : kSubgraphOutputSetting] = std::string(parameter);
+			return id;
+		}
+		if (subgraph && (type == kOutputNode || type == kParameterNode)) { return 0; }   // a sub-graph has neither
+		if (type == kSubgraphNode) {
+			// A sub-graph, named by its GUID (passed as `parameter`): its pins come from its file.
+			if (parameter.empty()) { return 0; }
+			const uint32_t id = graph.AddNode(std::string(type), x, y);
+			graph.FindNode(id)->settings[kSubgraphSetting] = std::string(parameter);
+			if (const SubgraphEntry* entry = FindSubgraph(parameter)) { graph.FindNode(id)->settings[kSubgraphLabelSetting] = entry->label; }
+			return id;
+		}
 		if (!FindNodeType(type)) { return 0; }
 		if (type == kOutputNode && OutputNodeOf(graph) != 0) { return 0; }
 		const uint32_t id = graph.AddNode(std::string(type), x, y);
@@ -74,11 +94,50 @@ namespace Crucible::ShaderGraph {
 		return std::erase_if(graph.links, [&](const Link& link) { return link.toNode == toNode && link.toPin == toPin; }) != 0;
 	}
 
+	uint32_t InsertReroute(Graph& graph, uint32_t toNode, std::string_view toPin, float x, float y, std::string& why) {
+		const Link* link = graph.FindLinkInto(toNode, toPin);
+		if (!link) {
+			why = "There is no link there.";
+			return 0;
+		}
+		// On a copy: if either half is refused, the graph is as it was.
+		Graph trial = graph;
+		const Link original = *link;
+		const uint32_t reroute = AddNode(trial, kRerouteNode, x, y);
+		if (reroute == 0 || !Connect(trial, original.fromNode, original.fromPin, reroute, "in", why) ||
+		    !Connect(trial, reroute, "out", original.toNode, original.toPin, why)) {
+			why = "A reroute point carries numbers and vectors only - not this link. (" + why + ")";
+			return 0;
+		}
+		graph = std::move(trial);
+		return reroute;
+	}
+
+	bool SetSubgraph(Graph& graph, uint32_t node, std::string_view guid) {
+		Node* target = graph.FindNode(node);
+		const SubgraphEntry* entry = FindSubgraph(guid);
+		if (!target || target->type != kSubgraphNode || !entry) { return false; }
+		target->settings[kSubgraphSetting] = entry->guid;
+		target->settings[kSubgraphLabelSetting] = entry->label;
+		// Links on pins it has no longer go; a constant for an input it has no longer goes too.
+		if (entry->error.empty()) {
+			std::erase_if(graph.links, [&](const Link& link) {
+				return (link.toNode == node && entry->type.FindInput(link.toPin) < 0) || (link.fromNode == node && entry->type.FindOutput(link.fromPin) < 0);
+			});
+			std::erase_if(target->inputs, [&](const auto& constant) { return entry->type.FindInput(constant.first) < 0; });
+		}
+		return true;
+	}
+
+	size_t DeleteComments(Graph& graph, const std::vector<uint32_t>& ids) {
+		return std::erase_if(graph.comments, [&](const Comment& comment) { return Contains(ids, comment.id); });
+	}
+
 	bool Connect(Graph& graph, uint32_t fromNode, std::string_view fromPin, uint32_t toNode, std::string_view toPin, std::string& why) {
 		const Node* from = graph.FindNode(fromNode);
 		const Node* to = graph.FindNode(toNode);
-		const NodeType* fromType = from ? FindNodeType(from->type) : nullptr;
-		const NodeType* toType = to ? FindNodeType(to->type) : nullptr;
+		const NodeType* fromType = from ? TypeOfNode(graph, *from) : nullptr;
+		const NodeType* toType = to ? TypeOfNode(graph, *to) : nullptr;
 		if (!fromType || !toType || fromType->FindOutput(fromPin) < 0 || toType->FindInput(toPin) < 0) {
 			why = "One of those pins is not there.";
 			return false;
@@ -158,70 +217,119 @@ namespace Crucible::ShaderGraph {
 		return pasted;
 	}
 
-	std::string UniqueParameterName(const Graph& graph, std::string_view wanted) {
-		const std::string base = wanted.empty() ? std::string("parameter") : std::string(wanted);
-		if (!graph.FindParameter(base)) { return base; }
+	// ---- Parameters, and a sub-graph's inputs and outputs -------------------------------------------
+
+	namespace {
+
+		// One of the three lists, and the node that reads (or gives) an entry of it by name.
+		struct ListParts {
+			std::vector<Parameter>* list;
+			const char*             nodeType;
+			const char*             setting;
+			const char*             what;
+		};
+
+		ListParts PartsOf(Graph& graph, ListKind kind) {
+			switch (kind) {
+			case ListKind::Inputs:  return { &graph.inputs, kSubgraphInputNode, kSubgraphInputSetting, "input" };
+			case ListKind::Outputs: return { &graph.outputs, kSubgraphOutputNode, kSubgraphOutputSetting, "output" };
+			default:                return { &graph.parameters, kParameterNode, kParameterSetting, "parameter" };
+			}
+		}
+
+		bool Named(const std::vector<Parameter>& list, std::string_view name) {
+			return std::any_of(list.begin(), list.end(), [&](const Parameter& p) { return p.name == name; });
+		}
+
+	}   // anonymous namespace
+
+	std::string UniqueListName(const Graph& graph, ListKind kind, std::string_view wanted) {
+		const std::vector<Parameter>& list = *PartsOf(const_cast<Graph&>(graph), kind).list;
+		const std::string base = wanted.empty() ? std::string(PartsOf(const_cast<Graph&>(graph), kind).what) : std::string(wanted);
+		if (!Named(list, base)) { return base; }
 		for (int number = 2;; ++number) {
 			const std::string name = base + std::to_string(number);
-			if (!graph.FindParameter(name)) { return name; }
+			if (!Named(list, name)) { return name; }
 		}
 	}
 
-	size_t AddParameter(Graph& graph, ParameterType type) {
-		Parameter parameter;
-		parameter.type = type;
+	size_t AddListEntry(Graph& graph, ListKind kind, ParameterType type) {
+		if (kind == ListKind::Outputs && type == ParameterType::Texture) { type = ParameterType::Vec3; }   // a sub-graph gives back no textures
+		Parameter entry;
+		entry.type = type;
 		switch (type) {
-		case ParameterType::Colour:  parameter.name = UniqueParameterName(graph, "colour"); parameter.defaultValue = { 1.0f, 1.0f, 1.0f, 1.0f }; break;
-		case ParameterType::Texture: parameter.name = UniqueParameterName(graph, "texture"); break;
-		case ParameterType::Float:   parameter.name = UniqueParameterName(graph, "value"); break;
-		default:                     parameter.name = UniqueParameterName(graph, "vector"); break;
+		case ParameterType::Colour:  entry.name = UniqueListName(graph, kind, "colour"); entry.defaultValue = { 1.0f, 1.0f, 1.0f, 1.0f }; break;
+		case ParameterType::Texture: entry.name = UniqueListName(graph, kind, "texture"); break;
+		case ParameterType::Float:   entry.name = UniqueListName(graph, kind, "value"); break;
+		default:                     entry.name = UniqueListName(graph, kind, "vector"); break;
 		}
-		graph.parameters.push_back(std::move(parameter));
-		return graph.parameters.size() - 1;
+		std::vector<Parameter>& list = *PartsOf(graph, kind).list;
+		list.push_back(std::move(entry));
+		return list.size() - 1;
 	}
 
-	bool RenameParameter(Graph& graph, size_t index, std::string_view name, std::string& why) {
-		if (index >= graph.parameters.size()) {
-			why = "That parameter is not there.";
+	bool RenameListEntry(Graph& graph, ListKind kind, size_t index, std::string_view name, std::string& why) {
+		const ListParts parts = PartsOf(graph, kind);
+		std::vector<Parameter>& list = *parts.list;
+		if (index >= list.size()) {
+			why = std::string("That ") + parts.what + " is not there.";
 			return false;
 		}
-		const std::string old = graph.parameters[index].name;
+		const std::string old = list[index].name;
 		if (name == old) { return true; }
 		if (!IsIdentifier(name)) {
 			why = "A name is a letter or '_', then letters, digits and '_' (no spaces).";
 			return false;
 		}
-		if (graph.FindParameter(name)) {
-			why = "Another parameter is already called " + std::string(name) + ".";
+		if (Named(list, name)) {
+			why = std::string("Another ") + parts.what + " is already called " + std::string(name) + ".";
 			return false;
 		}
-		graph.parameters[index].name = std::string(name);
+		list[index].name = std::string(name);
 		for (Node& node : graph.nodes) {
-			if (node.type != kParameterNode) { continue; }
-			const auto setting = node.settings.find(kParameterSetting);
+			if (node.type != parts.nodeType) { continue; }
+			const auto setting = node.settings.find(parts.setting);
 			if (setting != node.settings.end() && setting->second == old) { setting->second = std::string(name); }
 		}
 		return true;
 	}
 
-	void DeleteParameter(Graph& graph, size_t index) {
-		if (index >= graph.parameters.size()) { return; }
-		const std::string name = graph.parameters[index].name;
+	void DeleteListEntry(Graph& graph, ListKind kind, size_t index) {
+		const ListParts parts = PartsOf(graph, kind);
+		std::vector<Parameter>& list = *parts.list;
+		if (index >= list.size()) { return; }
+		const std::string name = list[index].name;
 		std::vector<uint32_t> readers;
 		for (const Node& node : graph.nodes) {
-			if (node.type != kParameterNode) { continue; }
-			const auto setting = node.settings.find(kParameterSetting);
+			if (node.type != parts.nodeType) { continue; }
+			const auto setting = node.settings.find(parts.setting);
 			if (setting != node.settings.end() && setting->second == name) { readers.push_back(node.id); }
 		}
 		DeleteNodes(graph, readers);
-		graph.parameters.erase(graph.parameters.begin() + static_cast<std::ptrdiff_t>(index));
+		list.erase(list.begin() + static_cast<std::ptrdiff_t>(index));
 	}
 
-	bool MoveParameter(Graph& graph, size_t index, int by) {
-		if (index >= graph.parameters.size() || (by != -1 && by != 1)) { return false; }
-		if ((by < 0 && index == 0) || (by > 0 && index + 1 >= graph.parameters.size())) { return false; }
-		std::swap(graph.parameters[index], graph.parameters[by < 0 ? index - 1 : index + 1]);
+	bool MoveListEntry(Graph& graph, ListKind kind, size_t index, int by) {
+		std::vector<Parameter>& list = *PartsOf(graph, kind).list;
+		if (index >= list.size() || (by != -1 && by != 1)) { return false; }
+		if ((by < 0 && index == 0) || (by > 0 && index + 1 >= list.size())) { return false; }
+		std::swap(list[index], list[by < 0 ? index - 1 : index + 1]);
 		return true;
+	}
+
+	std::string UniqueParameterName(const Graph& graph, std::string_view wanted) { return UniqueListName(graph, ListKind::Parameters, wanted.empty() ? "parameter" : wanted); }
+	size_t AddParameter(Graph& graph, ParameterType type) { return AddListEntry(graph, ListKind::Parameters, type); }
+	bool RenameParameter(Graph& graph, size_t index, std::string_view name, std::string& why) { return RenameListEntry(graph, ListKind::Parameters, index, name, why); }
+	void DeleteParameter(Graph& graph, size_t index) { DeleteListEntry(graph, ListKind::Parameters, index); }
+	bool MoveParameter(Graph& graph, size_t index, int by) { return MoveListEntry(graph, ListKind::Parameters, index, by); }
+
+	Graph NewSubgraph() {
+		Graph graph;
+		graph.domain = kSubgraphDomain;
+		graph.outputs.push_back({ "out", ParameterType::Vec3, {}, 0.0f, 1.0f, true, "white" });
+		const uint32_t output = graph.AddNode(kSubgraphOutputNode, 400.0f, 100.0f);
+		graph.FindNode(output)->settings[kSubgraphOutputSetting] = "out";
+		return graph;
 	}
 
 }

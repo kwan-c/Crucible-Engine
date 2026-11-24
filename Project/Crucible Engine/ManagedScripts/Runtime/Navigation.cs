@@ -50,9 +50,9 @@ namespace Crucible
         public static bool IsPathClear(Vector3 from, Vector3 to) { return IsPathClearInternal(ref from, ref to) != 0; }
 
         /// <summary>
-        /// Bakes the grid again once physics has caught up (a frame or two), for a script
-        /// that just built or changed the ground mid-Play: call it after Terrain.Build.
-        /// The old grid is used until then: wait for BakeCount to change to know the new one is in.
+        /// Bakes the grid again on the next frame, for a script that just built or changed
+        /// the ground mid-Play: call it after Terrain.Build. The old grid is used until then:
+        /// wait for BakeCount to change to know the new one is in.
         /// </summary>
         /// <returns>False outside Play or with no navigation.</returns>
         public static bool Rebake() { return RebakeInternal() != 0; }

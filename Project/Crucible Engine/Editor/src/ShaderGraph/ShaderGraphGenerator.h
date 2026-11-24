@@ -108,6 +108,9 @@ namespace Crucible::ShaderGraph {
 		/// named LiveConstantName(node, pin). The shader looks the same; only use it for a
 		/// preview material - a real material would show and save the hidden parameters.
 		bool liveConstants = false;
+		/// For a sub-graph (domain "subgraph"): which of its outputs a preview shows - it goes into
+		/// the Output's albedo (ShaderGraphSubgraphs.h, SubgraphAsSurface).
+		size_t previewOutput = 0;
 	};
 
 	/// Checks `graph` and writes its shader. See the file comment.

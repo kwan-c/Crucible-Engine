@@ -23,8 +23,8 @@ namespace Crucible::ShaderGraph {
 		m_saved = m_current;   // nothing to lose yet
 	}
 
-	void Document::New() {
-		m_graph = NewGraph();
+	void Document::New(bool subgraph) {
+		m_graph = subgraph ? NewSubgraph() : NewGraph();
 		m_current = Save(m_graph);
 		m_saved.clear();       // not in any file
 		m_undo.clear();

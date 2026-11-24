@@ -12,6 +12,7 @@
 
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/EditorWidgets.h"
+#include "ImGui/EditorTheme.h"
 #include "AssetPipe/AssetRegistry.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/ECSAudioSystem.h"
@@ -111,6 +112,7 @@ namespace {
 		case AssetType::Text:     return IM_COL32(150, 150, 165, 255);
 		case AssetType::AnimatorController: return IM_COL32(170, 120, 220, 255);
 		case AssetType::ShaderGraph: return IM_COL32(170, 100, 200, 255);   // a shader, like the Shader type
+		case AssetType::EditorTheme: return IM_COL32(237, 130, 51, 255);    // the editor's ember accent
 		default:                  return IM_COL32(90, 90, 95, 255);
 		}
 	}
@@ -410,6 +412,14 @@ void Crucible::AssetBrowser::Init() {
 	if (m_ready) {
 		RebuildFolderTree();
 		QueueModelCompiles();   // a .glb added while the editor was closed
+
+		// Editor themes (View > Theme > Shared Themes) live in Assets/Editor/Themes. An exported
+		// one is picked up and selected here straight away, so it shows without pressing F5.
+		EditorTheme::SetAssetRoot(fs::path{ m_assets.GetAssetRoot() });
+		EditorTheme::SetOnThemeExported([this](std::string const& virtualPath) {
+			Refresh();
+			Reveal(virtualPath);
+		});
 	}
 	else
 		CRU_WARN("[AssetBrowser] AssetManager::Init() failed: Assets folder not found");
@@ -1247,6 +1257,13 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 		if (auto fonts = EditorManager::GetInstance().GetPanel<FontImporter>(ImguiPanels::FONTIMPORTER))
 			fonts->Open(item.virtualPath);
 		return;
+	case AssetType::EditorTheme: {
+		// A shared editor theme: becomes this editor's Custom theme (View > Theme).
+		std::string error;
+		if (!EditorTheme::ImportFile(fs::path{ AbsolutePathOf(item.virtualPath) }, &error))
+			CRU_USER_ERROR("Could not load theme '{}': {}", item.name, error);
+		return;
+	}
 	case AssetType::Texture:
 		// An image: its import settings, compile, and the BC format comparison.
 		if (auto textures = EditorManager::GetInstance().GetPanel<TextureImporter>(ImguiPanels::TEXTUREIMPORTER))

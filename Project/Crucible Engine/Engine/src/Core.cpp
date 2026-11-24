@@ -50,6 +50,43 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <thread>
+
+#ifdef _WIN32
+// winmm's timer-resolution calls, declared here so Core.cpp does not pull in <windows.h> and its
+// macros. Same signatures as <timeapi.h> (MMRESULT is a UINT, WINAPI is __stdcall).
+extern "C" __declspec(dllimport) unsigned int __stdcall timeBeginPeriod(unsigned int uPeriod);
+extern "C" __declspec(dllimport) unsigned int __stdcall timeEndPeriod(unsigned int uPeriod);
+#pragma comment(lib, "winmm.lib")
+#endif
+
+namespace {
+
+    // Windows sleeps in steps of the system timer (often 15.6 ms), far too coarse to pace a
+    // 60 fps frame. This asks for 1 ms steps for as long as the main loop runs.
+    struct FrameTimerResolution {
+#ifdef _WIN32
+        FrameTimerResolution()  { timeBeginPeriod(1); }
+        ~FrameTimerResolution() { timeEndPeriod(1); }
+#else
+        FrameTimerResolution()  = default;
+#endif
+        FrameTimerResolution(const FrameTimerResolution&) = delete;
+        FrameTimerResolution& operator=(const FrameTimerResolution&) = delete;
+    };
+
+    // Returns at `deadline` (glfwGetTime seconds). Sleeps for most of the wait and spins only the
+    // last ~1.5 ms, since a sleep can wake a little late but a spin cannot.
+    void WaitUntil(double deadline) {
+        for (;;) {
+            const double remaining = deadline - glfwGetTime();
+            if (remaining <= 0.0) { return; }
+            if (remaining > 0.002) { std::this_thread::sleep_for(std::chrono::duration<double>(remaining - 0.0015)); }
+            else                   { std::this_thread::yield(); }
+        }
+    }
+
+}   // anonymous namespace
 
 
 
@@ -258,7 +295,26 @@ namespace Crucible {
 
     void Core::Run() {
 
+        // Frame pacing: EngineConfig "graphics" targetFPS, and backgroundFPS while the window is
+        // minimized or unfocused (see EngineConfig.h). Without it the loop runs as fast as the GPU
+        // can draw, which pins the GPU at 100% whatever the scene costs.
+        const FrameTimerResolution timerResolution;
+        const auto frameCap = [this](bool minimized) -> uint32_t {
+            const uint32_t target = m_config.graphics.targetFPS;
+            const bool background = minimized || !m_window->IsFocused();
+            const bool networked  = m_network && m_network->IsActive();
+            uint32_t cap = target;
+            if (background && !networked) {
+                const uint32_t bg = m_config.graphics.backgroundFPS;
+                if (bg > 0 && (cap == 0 || bg < cap)) { cap = bg; }
+            }
+            // A minimized window draws nothing, so an uncapped loop would only spin the CPU.
+            if (minimized && cap == 0) { cap = 60; }
+            return cap;
+        };
+
         double lastTime = glfwGetTime();
+        double nextFrame = lastTime;   // when the next frame may start (frame pacing)
 
         while (!m_window->ShouldClose()) {
 
@@ -294,7 +350,26 @@ namespace Crucible {
             m_playMode->TickEvents(dt);         // delayed events whose time has come get queued (gameplay time only while Playing)
 
             for (auto& layer : m_layers) layer->OnUpdate(dt);
+
+            // Minimized: nothing can be seen, so nothing is drawn. Everything else above still
+            // runs, so a network session or a script keeps ticking.
+            const bool minimized = m_window->IsMinimized();
+            m_renderer->SetDrawSuspended(minimized);
             m_renderer->Update(dt);
+
+            // Wait out the rest of this frame. The schedule advances by whole periods so the
+            // average rate is exact; if the loop has fallen more than a frame behind (a slow
+            // frame, a breakpoint, the cap just changed) it restarts from now instead of racing
+            // to catch up.
+            if (const uint32_t cap = frameCap(minimized); cap > 0) {
+                const double period = 1.0 / static_cast<double>(cap);
+                nextFrame += period;
+                const double after = glfwGetTime();
+                if (after - nextFrame > period || nextFrame - after > period) { nextFrame = after; }
+                WaitUntil(nextFrame);
+            } else {
+                nextFrame = glfwGetTime();
+            }
         }
         // Entity teardown precedes GPU shutdown as well as world destruction.
         if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();

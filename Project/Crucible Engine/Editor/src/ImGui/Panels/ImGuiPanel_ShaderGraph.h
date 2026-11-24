@@ -36,6 +36,13 @@
 *
 * Undo and redo cover everything done in the window (ShaderGraph/ShaderGraphDocument.h).
 *
+* The window also edits SUB-GRAPHS (.shadersubgraph, ShaderGraph/ShaderGraphSubgraphs.h): New >
+* Sub-graph, Open, or a double-click in the Asset Browser. The left side then lists the sub-graph's
+* Inputs and Outputs instead of parameters; the add menu has Input and Output nodes instead of
+* Parameter nodes and the Output; the preview shows one output (chosen beside it) as the albedo,
+* with every input at its default. A sub-graph is not a shader of its own: nothing in the scene
+* changes while it is edited. Saving it updates every graph using it (and their materials).
+*
 * All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
 * All Rights Reserved
 */
@@ -44,6 +51,8 @@
 #include "ImGui/ImGuiManager.h"
 #include <Graphics/ViewportPanel.h>
 #include "ShaderGraph/ShaderGraphDocument.h"
+#include "ShaderGraph/ShaderGraphEdit.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 #include "ShaderGraph/ShaderGraphView.h"
 
 #include <cstdint>
@@ -69,9 +78,10 @@ namespace Crucible {
 		void RequestOpen(std::uint64_t asset);
 
 	private:
-		enum class Pending { None, New, Open };
+		enum class Pending { None, New, NewSubgraph, Open };
 
-		void NewGraph();
+		void NewGraph(bool subgraph = false);
+		bool IsSubgraph() const { return m_hasDocument && m_document.GetGraph().domain == ShaderGraph::kSubgraphDomain; }
 		bool Load(std::uint64_t asset);
 		bool Save();
 		bool SaveAs(std::string path);
@@ -79,7 +89,8 @@ namespace Crucible {
 		void AfterRebuild();                                   // after undo, redo or load: the graph is a new one
 
 		void DrawToolbar(bool readOnly);
-		bool DrawParameters(bool readOnly);   // the left list; true if the graph changed
+		bool DrawParameters(bool readOnly);   // the left side: parameters, or a sub-graph's inputs and outputs; true if the graph changed
+		bool DrawList(ShaderGraph::ListKind kind, bool readOnly);   // one of those lists
 		bool DrawDetails(bool readOnly);      // the right side; true if the graph changed
 		void DrawDialogs();
 		void DrawPreview();          // the preview image and its controls, at the top of the right-hand side
@@ -117,10 +128,13 @@ namespace Crucible {
 		float                  m_orbitPitch = -20.0f;
 		float                  m_orbitZoom = 1.0f;      // 1 = the mesh fills the view
 		bool                   m_liveDue = false;       // the graph changed: it is to be sent again
+		std::uint64_t          m_subgraphsSeen = 0;     // ShaderGraph::SubgraphsVersion() when last looked at
 		double                 m_liveAt = 0.0;          // ... once ImGui's time reaches this
 		std::string            m_liveName;              // the scene shader this window has given a live source ("" = none)
 
-		int                    m_parameter = -1;        // the parameter selected in the left list
+		int                    m_parameter = -1;        // the entry selected in the left side's lists...
+		ShaderGraph::ListKind  m_list = ShaderGraph::ListKind::Parameters;   // ...and which list it is in
+		int                    m_previewOutput = 0;     // a sub-graph: which of its outputs the preview shows
 		std::string            m_nameBuffer;            // its name, as being typed
 		std::string            m_nameShown;             // the parameter name m_nameBuffer was last filled from
 		bool                   m_nameEditing = false;

@@ -5,7 +5,7 @@
 * \par:          Email: jeandavidvidal.c@digipen.edu,
 *                Email: low.h@digipen.edu
 * \date          5 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Script access to a FlowFieldSurface: the ground enemies
 *                navigate. Unity's NavMeshSurface. Part of
 *                Crucible.ScriptCore.dll.
@@ -17,8 +17,9 @@
 *        surface.FloodRadius = 0f;      // boss fight: arrows across the whole level
 *
 *    A change shows at the next rebuild, after the player has moved
-*    RebuildDistance. Cell size, heights and padding are baked once at
-*    Play, so they're set in the Inspector only.
+*    RebuildDistance. DynamicUpdateInterval (v1.1) applies at once. Cell
+*    size, heights and padding are baked once at Play, so they're set in
+*    the Inspector only.
 *
 *    C++ side: Engine/src/Scripting/Bindings/NavigationBindings.cpp.
 *
@@ -53,14 +54,11 @@ namespace Crucible
             set { SetRebuildDistanceInternal(I, G, ref value); }
         }
 
-        /// <summary>
-        /// Degrees: steeper ground is a wall to enemies. Read by the next bake, so set it before
-        /// Navigation.Rebake(), and give the player's CharacterController.SlopeLimit the same value.
-        /// </summary>
-        public float MaxWalkableSlope
+        /// <summary>Seconds between checks of the DynamicObstacles while Playing; 0 = every frame. A moved obstacle's cells follow it after at most this long.</summary>
+        public float DynamicUpdateInterval
         {
-            get { float v; return GetMaxWalkableSlopeInternal(I, G, out v) != 0 ? v : 0f; }
-            set { SetMaxWalkableSlopeInternal(I, G, ref value); }
+            get { float v; return GetDynamicUpdateIntervalInternal(I, G, out v) != 0 ? v : 0f; }
+            set { SetDynamicUpdateIntervalInternal(I, G, ref value); }
         }
 
         public override string ToString() { return "FlowFieldSurface on " + Entity; }
@@ -69,7 +67,7 @@ namespace Crucible
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetFloodRadiusInternal(int index, int generation, ref float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetRebuildDistanceInternal(int index, int generation, out float value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetRebuildDistanceInternal(int index, int generation, ref float value);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetMaxWalkableSlopeInternal(int index, int generation, out float value);
-        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetMaxWalkableSlopeInternal(int index, int generation, ref float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetDynamicUpdateIntervalInternal(int index, int generation, out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetDynamicUpdateIntervalInternal(int index, int generation, ref float value);
     }
 }

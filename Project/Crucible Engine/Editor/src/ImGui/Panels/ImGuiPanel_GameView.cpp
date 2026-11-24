@@ -85,6 +85,9 @@ void Crucible::GameView::Update(float) {
 	bool const visible = ImGui::Begin(m_panelName.c_str(), nullptr, m_flags);
 	ImGui::PopStyleVar();
 
+	// Hidden tab or collapsed window: stop rendering into it (it keeps its last image).
+	// SetActive is cheap to call every frame.
+	m_viewport.SetActive(visible);
 	if (!visible) {
 		m_hovered = false;
 		m_renderer.SetGameScreenPlacement(glm::vec2(0.0f), 1.0f, false);   // hidden: the mouse is never on the game screen

@@ -31,7 +31,10 @@
 *                   size.
 *      3. Switch    the held scene change is let through. The change itself
 *                   is one frame; the screen stays on the full bar meanwhile.
-*                   What was preloaded stays loaded through it.
+*                   What was preloaded stays loaded through it. Then it waits
+*                   for the new scene's material shaders to be built
+*                   (Graphics.ShadersReady), at most maxShaderWait seconds, so
+*                   the scene never shows with plain default-shader surfaces.
 *      4. FadeOut   the bar hides, the black fades away to the new scene.
 *
 *    Camera: the canvas is Screen Space, drawn over whatever camera is
@@ -57,6 +60,9 @@ namespace Crucible.Scripts
         /// <summary>How fast the bar catches up with the real progress (per second).</summary>
         public float barSpeed = 4f;
 
+        /// <summary>Longest wait (seconds) for the new scene's shaders to be built before fading out anyway.</summary>
+        public float maxShaderWait = 5f;
+
         enum State { Idle, FadeIn, Preload, Switch, FadeOut }
 
         static LoadingScreen instance;   // the live one, kept across scene loads
@@ -67,6 +73,7 @@ namespace Crucible.Scripts
         float shown;                     // bar value drawn (smoothed)
         float showTimer;
         int switchFrames;
+        float shaderWait;                // seconds waited for shaders after the switch
 
         UICanvas canvas;
         UIImage background;
@@ -155,6 +162,7 @@ namespace Crucible.Scripts
                         Scene.ReleaseHeldLoad();
                         SetBar(1f, 0f);
                         switchFrames = 0;
+                        shaderWait = 0f;
                         state = State.Switch;
                     }
                     break;
@@ -165,6 +173,16 @@ namespace Crucible.Scripts
                     // Wait one more so the new scene's first (slow) frame is drawn under the screen.
                     if (++switchFrames >= 2)
                     {
+                        // Its materials' shaders are built in the background: until they are, those
+                        // materials draw with the default shader. Stay on the full bar until they are
+                        // (or until maxShaderWait - a slow driver must not keep the screen up forever).
+                        shaderWait += dt;
+                        if (!Graphics.ShadersReady && shaderWait < maxShaderWait)
+                        {
+                            if (label != null)
+                                label.Text = "Preparing shaders...";
+                            break;
+                        }
                         SetContentVisible(false);
                         state = State.FadeOut;
                     }

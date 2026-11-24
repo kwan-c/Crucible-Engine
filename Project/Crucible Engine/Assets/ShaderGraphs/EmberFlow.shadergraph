@@ -1,7 +1,7 @@
 {
   "version": 1,
   "domain": "surface",
-  "nextId": 27,
+  "nextId": 31,
   "parameters": [
     { "name": "coolColour", "type": "colour", "default": [0.05406575, 0.3546076, 0.7352941] },
     { "name": "hotColour", "type": "colour", "default": [0.5695349, 0.8088235, 0.3568339] },
@@ -35,14 +35,14 @@
     { "id": 21, "type": "Multiply", "x": 1300.0, "y": 340.0 },
     { "id": 22, "type": "Multiply", "x": 1560.0, "y": 300.0 },
     { "id": 23, "type": "Add", "x": 1820.0, "y": 200.0 },
-    { "id": 24, "type": "Lerp", "x": 1305.2538, "y": -69.92398, "inputs": { "a": 0.9, "b": 0.3 } }
+    { "id": 24, "type": "Lerp", "x": 1305.2538, "y": -69.92398, "inputs": { "a": 0.9, "b": 0.3 } },
+    { "id": 29, "type": "Reroute", "x": 1553.03, "y": -136.5287 }
   ],
   "links": [
     { "from": [2, "out"], "to": [3, "speed"] },
     { "from": [3, "out"], "to": [5, "uv"] },
     { "from": [4, "out"], "to": [5, "scale"] },
     { "from": [6, "out"], "to": [7, "uv"] },
-    { "from": [5, "out"], "to": [8, "a"] },
     { "from": [7, "out"], "to": [8, "b"] },
     { "from": [8, "out"], "to": [9, "in"] },
     { "from": [9, "out"], "to": [12, "t"] },
@@ -61,9 +61,14 @@
     { "from": [18, "out"], "to": [23, "a"] },
     { "from": [22, "out"], "to": [23, "b"] },
     { "from": [23, "out"], "to": [1, "emissive"] },
-    { "from": [24, "out"], "to": [1, "roughness"] },
     { "from": [9, "out"], "to": [24, "t"] },
     { "from": [10, "out"], "to": [12, "a"] },
-    { "from": [11, "out"], "to": [12, "b"] }
+    { "from": [11, "out"], "to": [12, "b"] },
+    { "from": [5, "out"], "to": [8, "a"] },
+    { "from": [24, "out"], "to": [29, "in"] },
+    { "from": [29, "out"], "to": [1, "roughness"] }
+  ],
+  "comments": [
+    { "id": 30, "x": 1020.0, "y": -526.0, "w": 490.0, "h": 218.0, "text": "Texture", "colour": [0.3, 0.4, 0.6] }
   ]
 }

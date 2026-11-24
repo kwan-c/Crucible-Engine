@@ -13,6 +13,8 @@ add_executable(ShaderGraphTests
     ../../Editor/src/ShaderGraph/ShaderGraphNodes.h
     ../../Editor/src/ShaderGraph/ShaderGraphGenerator.cpp
     ../../Editor/src/ShaderGraph/ShaderGraphGenerator.h
+    ../../Editor/src/ShaderGraph/ShaderGraphSubgraphs.cpp
+    ../../Editor/src/ShaderGraph/ShaderGraphSubgraphs.h
     ../../Editor/src/ShaderGraph/ShaderGraphEdit.cpp
     ../../Editor/src/ShaderGraph/ShaderGraphEdit.h
     ../../Editor/src/ShaderGraph/ShaderGraphDocument.cpp
