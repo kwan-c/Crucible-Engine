@@ -2,12 +2,12 @@
 * \file:         PhysicsSystem.h
 * \author:       Hugo Low Ren Hao (main author),
 *                Tan Chun Kwang Xavier (v1.3: gravity, damping, axis locks),
-*                Jean David Vidal Cruzado (v1.10: heightfields)
+*                Jean David Vidal Cruzado (v1.10, v1.11: heightfields, caves)
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu,
 *                Email: jeandavidvidal.c@digipen.edu
 * \date          22 September 2026
-* \version       1.10
+* \version       1.11
 * \brief
 *                Crucible::Physics: the public face of the Jolt physics
 *                world. Bodies, characters, joints, raycasts and forces,
@@ -38,6 +38,9 @@
 *    -v1.9       GetCenterOfMass and ClosestPointOnBody (for explosions)
 *    -v1.10      ShapeType::HeightField: static uneven ground from a
 *                HeightGrid (Math/HeightGrid.h), for generated terrain
+*    -v1.11      ShapeDesc::m_volume: a HeightField's cave volume
+*                (Math/TerrainVolume.h), holes in the heightfield under it
+*                and its surface as a triangle mesh
 *
 **************************************************************************/
 #pragma once
@@ -46,7 +49,7 @@
 #include <cstdint>
 #include <cstddef>
 #include <functional>   // ForEachContact
-#include <memory>       // ShapeDesc::m_heightGrid
+#include <memory>       // ShapeDesc::m_heightGrid, m_volume
 #include <vector>       // RaycastAll, Overlap*
 
 // Crucible engine
@@ -54,7 +57,7 @@
 #include "Math/Math.h"
 #include "Physics/PhysicsLayers.h"
 
-namespace Crucible { struct HeightGrid; }   // Math/HeightGrid.h: only PhysicsShapes.cpp needs the whole thing
+namespace Crucible { struct HeightGrid; struct TerrainVolume; }   // Math/: only PhysicsShapes.cpp needs the whole things
 
 // ---------------------------------------------------------------------------
 // Crucible::Physics
@@ -157,6 +160,11 @@ namespace Crucible {
         // scaled terrain entity collides where its mesh is drawn.
         std::shared_ptr<const HeightGrid> m_heightGrid;
         Math::vec3                        m_gridScale = Math::vec3(1.0f, 1.0f, 1.0f);
+
+        // HeightField only, and optional: a cave volume in the same grid space,
+        // shared the same way. The heightfield cells under it become holes and
+        // its surface collides instead, stretched by the same m_gridScale.
+        std::shared_ptr<const TerrainVolume> m_volume;
 
     };  // SHAPEDESC STRUCT
 
