@@ -23,8 +23,8 @@
 *                  4: 4-5   5: 5-6   6: 6-7   7: 7-4
 *                  8: 0-4   9: 1-5  10: 2-6  11: 3-7
 *                A case's index has bit i set when corner i is inside.
-*                The triangles' winding is not relied on: TerrainMesh faces
-*                each triangle away from the rock itself.
+*                The triangles' winding is not relied on: VolumeSurface
+*                faces each triangle away from the rock itself.
 *
 * \history
 *    -v1.0       first version
