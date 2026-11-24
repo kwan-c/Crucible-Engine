@@ -163,16 +163,19 @@ namespace Crucible {
 		// files, its compiled copy in Resources, and the open scene's path if it is affected.
 		bool MoveOnDisk(std::string const& from, std::string const& to, std::string& error);
 
-		// ---- Delete (Del / right-click; any file or folder) ----
+		// ---- Delete (Del / right-click; any files and folders, one or a whole selection) ----
 		// Asks first in a modal. The delete itself happens after the frame's drawing
 		// (ApplyPendingDelete), like rename, so the item list never changes mid-loop.
-		void BeginDelete(std::string const& virtualPath);
+		void BeginDelete(std::vector<std::string> virtualPaths);
 		void DrawDeleteConfirm();
 		void ApplyPendingDelete();
 		bool DeleteOnDisk(std::string const& virtualPath);
 		// Files outside `virtualPath` that refer to it - or, for a folder, to anything in it - by
 		// guid or by path. fileCount receives how many files are being deleted.
 		std::vector<std::string> FindReferences(std::string const& virtualPath, bool isFolder, std::size_t& fileCount) const;
+		// The same for several files and folders at once, in one pass over Assets: a file
+		// referring to one of the others is not listed, as it goes too.
+		std::vector<std::string> FindReferences(std::vector<std::string> const& virtualPaths, std::size_t& fileCount) const;
 
 		// ---- Create Prefab (a Hierarchy entity dropped on the grid or on a folder tile) ----
 		// Saved after the frame's drawing (ApplyPendingPrefab), like rename, because saving
@@ -201,7 +204,7 @@ namespace Crucible {
 
 		void InstallDropCallback();
 		void ProcessDroppedFiles();
-		void PlanImport(std::vector<std::filesystem::path> const& paths, bool jumpToFolder);
+		void PlanImport(std::vector<std::filesystem::path> const& paths);
 		std::string ImportFolderFor(std::string const& extension) const;
 		std::string UniqueDestination(std::string const& destination) const;
 		void ResolveConflict(Conflict conflict, ConflictChoice choice);
@@ -227,9 +230,10 @@ namespace Crucible {
 		std::vector<std::string> FilesToMove(std::string const& dragged) const;   // the whole selection if `dragged` is part of it
 		std::optional<std::pair<std::vector<std::string>, std::string>> m_pendingMove;   // { files, folder }
 
-		// ---- Selecting several files (Ctrl / Shift + click) ----
-		// m_selected stays the file last clicked, which everything else reads. m_selection only
-		// counts while it contains m_selected, so setting m_selected to any other file ends it.
+		// ---- Selecting several files and folders (Ctrl / Shift + click) ----
+		// m_selected stays the item last clicked, which everything else reads. m_selection only
+		// counts while it contains m_selected, so setting m_selected to any other item ends it.
+		// Delete takes the whole selection; a drag moves only its files.
 		bool IsMultiSelect() const;
 		bool IsSelected(std::string const& virtualPath) const;
 		void ToggleInSelection(std::string const& virtualPath);
@@ -288,14 +292,14 @@ namespace Crucible {
 		int         m_renameIdleFrames = 0;     // frames the field has existed without focus
 		std::optional<std::pair<std::string, std::string>> m_pendingRename;   // { from, typed name }
 
-		std::string                m_deleteTarget;              // virtual path the confirm modal asks about ("" = none)
+		std::vector<std::string>   m_deleteTargets;             // virtual paths the confirm modal asks about (empty = none)
 		bool                       m_openDeleteConfirm = false; // open the modal next time it is drawn
-		std::optional<std::string> m_pendingDelete;             // confirmed; applied after drawing
+		std::optional<std::vector<std::string>> m_pendingDelete; // confirmed; applied after drawing
 		// Gathered when the confirm modal opens (BeginDelete) and shown in it.
 		struct DeleteInfo {
-			bool                     isFolder  = false;
-			std::size_t              fileCount = 0;   // files that will go (a folder's contents; 1 for a file)
-			std::vector<std::string> usedBy;          // other assets that still reference them
+			std::size_t              folderCount = 0;   // of the targets, how many are folders
+			std::size_t              fileCount   = 0;   // files that will go (folders' contents included)
+			std::vector<std::string> usedBy;            // other assets that still reference them
 		};
 		DeleteInfo                 m_deleteInfo;
 

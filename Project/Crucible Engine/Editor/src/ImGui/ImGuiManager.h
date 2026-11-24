@@ -44,7 +44,8 @@ enum class ImguiPanels
 	NETWORK,			// multiplayer Offline/Host/Client for this editor instance (Network/NetworkSession)
 	BEHAVIORGRAPH,	// floating window: edit a .behaviorgraph (View > Behavior Graph, or double-click one in the Asset Browser)
 	STATEGRAPH,		// floating window: edit a .stategraph (View > State Graph, or double-click one in the Asset Browser)
-	PACKAGEGAME		// floating window: File > Package Game... builds and zips the game (Packaging/PackageJob)
+	PACKAGEGAME,	// floating window: File > Package Game... builds and zips the game (Packaging/PackageJob)
+	SHADERGRAPH		// floating window: edit a .shadergraph (View > Shader Graph, or double-click one in the Asset Browser)
 };
 
 namespace Crucible {
@@ -149,6 +150,14 @@ namespace Crucible {
 		void Undo();
 		void Redo();
 
+		// ---- Replacing the world and bringing the scene back (Play / Stop, Prefab Mode) ----
+		// Begin: after the scene's snapshot was taken (it gives every entity a guid). Remembers
+		// the selection and hidden entities by guid and puts the undo history aside.
+		// End: after the snapshot was restored (restored = true), or with the world kept (false).
+		// Brings them back, pointed at the restored entities.
+		void BeginWorldSwap();
+		void EndWorldSwap(bool restored);
+
 		// ---- Editor shortcuts ----
 		// Frees the mouse while the game has it captured in Play mode. Project Settings > Editor
 		// ("releaseCursorKey" in EngineConfig.json), Shift+F1 by default. Escape is left to the game.
@@ -196,6 +205,7 @@ namespace Crucible {
 		KeyChord      m_releaseCursorKey{ KeyCode::F1, false, true, false };   // Shift+F1 until Init reads the config
 		bool          m_uiPositionYUp = true;                                  // display only, not saved: +Y up on every start
 		std::vector<std::uint64_t> m_selectionBeforePlay;   // scene guids of the entities selected at Play; active one last
+		std::vector<std::uint64_t> m_hiddenBeforePlay;      // scene guids of the entities hidden in the Scene view at Play (SceneVisibility.h)
 	};
 
 	namespace ImGuiManager {

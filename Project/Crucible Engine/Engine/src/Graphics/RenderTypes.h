@@ -35,6 +35,7 @@
 #include "MeshHandle.h"
 #include "TextureHandle.h"
 #include "MaterialHandle.h"
+#include "MaterialShaderHandle.h"
 #include "CubemapHandle.h"
 #include "LightTypes.h"
 #include "Vulkan/RenderLayouts.h"   // for Vertex (adjust if Vertex lives elsewhere)
@@ -114,6 +115,7 @@ namespace Crucible {
         glm::mat4      model{ 1.0f };
         glm::vec4      params{ 1.0f, 0.0f, 0.0f, 0.0f };   // per-object material parameters, see InstanceData
         glm::uvec4     skin{0u}; // palette offset/count in this frame's instance buffer
+        bool           sceneHidden = false;                // editor: left out of Scene-role views (Renderer::Submit)
     };
 
     inline bool IsMirroredTransform(const glm::mat4& model) {
@@ -307,6 +309,8 @@ namespace Crucible {
           - flipbookCols/Rows: the texture is an atlas of this many frames.
           - boundsMin/Max: world box around the batch, for frustum culling
                       and for ordering batches by distance.
+          - sceneHidden: editor scene visibility (the SceneHidden tag on the
+                      emitter): left out of Scene-role views only.
      *************************************************************************/
     struct ParticleDrawDesc {
         TextureHandle texture{};
@@ -315,6 +319,7 @@ namespace Crucible {
         uint32_t      flipbookRows = 1;
         glm::vec3     boundsMin{ 0.0f };
         glm::vec3     boundsMax{ 0.0f };
+        bool          sceneHidden = false;
     };
 
     /// Push constant of the particle pipeline (Particle.slang's ParticlePush).
@@ -855,6 +860,14 @@ namespace Crucible {
         // Both sides drawn (leaf cards, thin sheets); the back side is lit as its own front.
         bool             doubleSided = false;
         MaterialToon     toon{};
+        // The mesh shader that draws it (Renderer::LoadMaterialShader). Invalid, the default, is
+        // the built-in shader (DefaultShader.slang). Many materials share one shader.
+        MaterialShaderHandle shader{};
+        // Its values for that shader's own parameters and textures (the shader's list:
+        // MaterialShaderParams), by slot. Shorter than the list - empty, usually, for a material
+        // that sets none - means the list's defaults for the rest. Unused by the built-in shader.
+        std::vector<glm::vec4>     params;
+        std::vector<TextureHandle> shaderTextures;
     };
 
     /*************************************************************************
@@ -887,21 +900,32 @@ namespace Crucible {
         glm::vec4        toonEdge{ 0.1f, 0.03f, 0.0f, 0.0f };   // x = edge position, y = softness (flag bit 2)
         glm::vec4        toonShade{ 1.0f };                     // rgb = shade tint, linear (flag bit 3)
         glm::vec4        toonLit{ 1.0f };                       // rgb = lit tint, linear
+        uint32_t         paramOffset = 0;      // where the material's own parameters start in the parameter buffer (MaterialParamBuffer)
     };
     inline constexpr uint32_t kMaterialFlagOwnEdge  = 1u << 2;
     inline constexpr uint32_t kMaterialFlagOwnShade = 1u << 3;
     static_assert(sizeof(MaterialFactors) == 36 && offsetof(PushConstants, alphaCutoff) == 36 && offsetof(PushConstants, flags) == 40
                   && offsetof(PushConstants, outline) == 44 && offsetof(PushConstants, toonEdge) == 48 && offsetof(PushConstants, toonShade) == 64 && offsetof(PushConstants, toonLit) == 80
-                  && sizeof(PushConstants) == 96,
-        "PushConstants must match DefaultShader.slang's (checked against the compiled SPIR-V).");
+                  && offsetof(PushConstants, paramOffset) == 96 && sizeof(PushConstants) == 100,
+        "PushConstants must match Surface.slang's (checked against the compiled SPIR-V).");
 
-    /// Push constant of the depth-only passes' cut-out pipelines (shadow, ambient occlusion,
-    /// selection mask): what decides which pixels of a cut-out material are drawn.
+    /// Push constant of the depth-only passes (shadow, ambient occlusion, selection mask) for a
+    /// material they need to know: what decides which pixels of a cut-out material are drawn,
+    /// and - for a shader that moves vertices, which reads its parameters in the vertex stage -
+    /// where the material's parameters are. The shared depth shaders (Shadow.slang,
+    /// DepthNormal.slang, OutlineMask.slang) declare only the first two fields.
     struct CutoutPush {
-        float alphaCutoff = 0.0f;
-        float alphaTint = 1.0f;   // MaterialFactors::albedoTint.a
+        float    alphaCutoff = 0.0f;
+        float    alphaTint = 1.0f;   // MaterialFactors::albedoTint.a
+        uint32_t paramOffset = 0;    // PushConstants::paramOffset
     };
-    static_assert(sizeof(CutoutPush) == 8, "CutoutPush must match the depth shaders' cutout fields.");
+    static_assert(sizeof(CutoutPush) == 12 && offsetof(CutoutPush, paramOffset) == 8,
+        "CutoutPush must match the depth shaders' cutout fields, and SurfaceDepthPush in SurfaceTemplate.slang.");
+
+    /// The depth-only passes a mesh is drawn in besides the scene pass. A shader that moves
+    /// vertices has pipelines of its own for each of them (MaterialShaders).
+    enum class DepthPass : uint32_t { Shadow, DepthNormal, OutlineMask };
+    inline constexpr uint32_t kDepthPassCount = 3;
     static_assert(sizeof(PushConstants) <= 128,
         "PushConstants must fit in the 128-byte push-constant range every Vulkan implementation "
         "is required to support (VkPhysicalDeviceLimits::maxPushConstantsSize's guaranteed floor).");

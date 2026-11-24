@@ -3,8 +3,8 @@
 * \file:         VulkanContext.h
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
-* \date          30 September 2026
-* \version       1.0
+* \date          16 November 2026
+* \version       1.1
 * \brief
 *                Owns the core Vulkan instance/device/queue objects plus
 *                the one shared VmaAllocator every GPU resource
@@ -21,6 +21,7 @@
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       added support for pipeline caching (shader graph editor)
 *
 **************************************************************************/
 
@@ -41,6 +42,7 @@
 
 // Crucible Engine
 #include "Systems/WindowManager.h"
+#include "PipelineCache.h"
 
 namespace Crucible {
 
@@ -136,6 +138,18 @@ namespace Crucible {
          *********************************************************************/
         VmaAllocator                     GetAllocator() const;
 
+        /*********************************************************************
+         \brief  The pipeline cache every pass builds its pipelines with (see
+                 PipelineCache.h). Loaded from disk by the constructor.
+         *********************************************************************/
+        const vk::raii::PipelineCache&   GetPipelineCache() const;
+
+        /*********************************************************************
+         \brief  Writes the pipeline cache to disk if it has grown. Called by
+                 ShutDown(), and by the Renderer once its pipelines exist.
+         *********************************************************************/
+        void                             SavePipelineCache();
+
     private:
         void CreateInstance();
         void SetupDebugMessenger();
@@ -165,6 +179,8 @@ namespace Crucible {
         vk::raii::Queue                     m_graphicsQueue = nullptr;
 
         uint32_t                            m_queueIndex = ~0u;
+
+        PipelineCache                       m_pipelineCache;
 
         // Declared last so it is created last and destroyed FIRST among VulkanContext's own
         // members (C++ destroys members in reverse declaration order) - it must be torn down

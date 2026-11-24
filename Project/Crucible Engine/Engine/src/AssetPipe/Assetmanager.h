@@ -80,6 +80,10 @@ namespace Crucible {
         AnimatorController,
         StateGraph,         // .stategraph: an enemy's state machine (AI/StateGraph.h)
         BehaviorGraph,      // .behaviorgraph: a behaviour tree (AI/BehaviorGraph.h)
+        ShaderGraph,        // .shadergraph: a mesh shader made of nodes (Editor/src/ShaderGraph). The Editor
+                            // turns it into a compiled shader; the game never reads the file itself.
+        EditorTheme,        // .crutones: an editor colour theme (Editor/src/ImGui/EditorTheme.h). Editor-only:
+                            // kept in Assets/Editor/Themes, which Cook never copies into Resources.
 
         Count
     };

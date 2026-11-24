@@ -2,17 +2,19 @@
 * \file:         VulkanContext.cpp
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
-* \date          30 September 2026
-* \version       1.0
+* \date          16 November 2026
+* \version       1.1
 * \brief
 *                See VulkanContext.h for what this class owns and why.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       added support for pipeline caching (shader graph editor)
 *
 **************************************************************************/
 
 #include "VulkanContext.h"
+#include "Systems/ExecutablePath.h"   // where the pipeline cache file lives
 
 // Compile VMA's implementation exactly once, here. VulkanContext.h already pulled in
 // <vk_mem_alloc.h> for declarations (no VMA_IMPLEMENTATION defined there); the library's own
@@ -51,6 +53,8 @@ namespace Crucible {
     vk::SurfaceKHR                  VulkanContext::GetSurface()             const { return m_surface; }
     uint32_t                        VulkanContext::GetGraphicsQueueFamily() const { return m_queueIndex; }
     VmaAllocator                    VulkanContext::GetAllocator()           const { return m_allocator; }
+    const vk::raii::PipelineCache&  VulkanContext::GetPipelineCache()       const { return m_pipelineCache.Get(); }
+    void                            VulkanContext::SavePipelineCache()            { m_pipelineCache.Save(); }
 
     // ------------------------------------------------------------------------------------------------------------- //
     // VULKAN CONTEXT
@@ -64,6 +68,9 @@ namespace Crucible {
         PickPhysicalDevice();
         CreateLogicalDevice();
         CreateAllocator();
+
+        // Beside the program: one cache per machine and per build folder, never in the repository.
+        m_pipelineCache.Load(m_physicalDevice, m_device, ExecutableDirectory() / "Cache" / "PipelineCache.bin");
 
     }   // VulkanContext::VulkanContext()
 
@@ -83,6 +90,7 @@ namespace Crucible {
     void VulkanContext::ShutDown() {
 
         m_device.waitIdle();
+        m_pipelineCache.Save();
 
     }   // VulkanContext::ShutDown()
 

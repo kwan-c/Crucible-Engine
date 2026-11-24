@@ -63,9 +63,11 @@ namespace Crucible {
         }
     }
 
-    void RenderScene::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) {
+    void RenderScene::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params, bool sceneHidden) {
 
-        m_renderQueue.push_back(RenderItem{ mesh, material, model, params });
+        RenderItem item{ mesh, material, model, params };
+        item.sceneHidden = sceneHidden;
+        m_renderQueue.push_back(item);
 
     }   // RenderScene::Submit()
 
@@ -73,10 +75,11 @@ namespace Crucible {
 
         uint32_t id;
         if (!m_freeProxies.empty()) { id = m_freeProxies.back(); m_freeProxies.pop_back(); }
-        else { id = static_cast<uint32_t>(m_proxies.size()); m_proxies.emplace_back(); m_proxyDraw.emplace_back(); }
+        else { id = static_cast<uint32_t>(m_proxies.size()); m_proxies.emplace_back(); m_proxyDraw.emplace_back(); m_sceneHidden.emplace_back(); }
 
         m_proxies[id]   = RenderProxy{};
         m_proxyDraw[id] = ProxyDraw{};
+        m_sceneHidden[id] = 0;
         m_proxies[id].alive = true;
         m_proxies[id].userData = userData;
         ++m_proxyRevision;
@@ -113,9 +116,19 @@ namespace Crucible {
         std::erase(m_animatedProxies, handle.id);
         ++m_proxyRevision;
         m_proxyDraw[handle.id] = ProxyDraw{};
+        m_sceneHidden[handle.id] = 0;
         m_freeProxies.push_back(handle.id);
 
     }   // RenderScene::DestroyProxy()
+
+    void RenderScene::SetProxySceneHidden(RenderProxyHandle handle, bool hidden) {
+
+        if (!handle.IsValid() || handle.id >= m_proxies.size() || !m_proxies[handle.id].alive) { return; }
+        // Only a flag: the proxy stays in the spatial index (the Game view still draws it), so
+        // nothing else needs refreshing.
+        m_sceneHidden[handle.id] = hidden ? 1 : 0;
+
+    }   // RenderScene::SetProxySceneHidden()
 
     void RenderScene::RefreshProxyBounds(uint32_t id) {
 
@@ -203,8 +216,8 @@ namespace Crucible {
     uint64_t RenderScene::DepthKey(MeshHandle mesh, MaterialHandle material) const {
 
         // The depth-only passes (shadows, ambient occlusion, selection mask) only care about a
-        // material that is cut-out or double-sided; for those the key carries it (as id + 1, so 0
-        // can mean "none").
+        // material that is cut-out or double-sided, or whose shader moves vertices; for those
+        // the key carries it (as id + 1, so 0 can mean "none").
         const uint64_t high = m_resources.NeedsMaterialInDepthPasses(material) ? uint64_t{ material.id } + 1 : 0;
         return high << 32 | mesh.id;
 
@@ -227,7 +240,7 @@ namespace Crucible {
     }   // RenderScene::RunTasks()
 
     void RenderScene::BuildViewBatches(const Camera& camera, std::span<const glm::mat4> cascadeViewProj, RenderCullStats& stats,
-                                       std::vector<DrawBatch>& mainOut, std::span<std::vector<DrawBatch>> shadowOut) {
+                                       std::vector<DrawBatch>& mainOut, std::span<std::vector<DrawBatch>> shadowOut, bool sceneView) {
 
         const uint32_t cascades = static_cast<uint32_t>(std::min({ cascadeViewProj.size(), shadowOut.size(), size_t{ kMaxShadowCascades } }));
         const uint32_t passes   = 1 + cascades;
@@ -248,11 +261,16 @@ namespace Crucible {
         const uint32_t treeTasks = treeParts * passes;
         if (m_treeHits.size() < size_t{ treeParts } * kMaxPasses) { m_treeHits.resize(size_t{ treeParts } * kMaxPasses); }
 
-        // A hit's sort key: by (material, mesh) in the main pass; by mesh alone in the depth-only
+        const bool hideInThisView = sceneView && !m_showSceneHidden;   // read-only in the culling tasks
+
+        // A hit's sort key: by (material, mesh) in the main pass (GroupPass then orders the
+        // materials by shader); by mesh alone in the depth-only
         // cascades (DepthKey), where the material doesn't matter and batches can merge across
         // materials - unless it is cut-out or double-sided. Returns false for what can't be drawn
-        // (it still counts as seen).
+        // (it still counts as seen) - which, in a Scene view, includes the proxies the editor hid
+        // there (SetProxySceneHidden): this is the one place they are filtered, for every pass.
         const auto keysOf = [&](uint32_t proxy, uint64_t& mainKey, uint64_t& depthKey) {
+            if (hideInThisView && m_sceneHidden[proxy]) { return false; }
             const ProxyDraw& d = m_proxyDraw[proxy];
             if (!IsDrawable(d.mesh)) { return false; }
             const MaterialHandle material = ResolveMaterial(d.material);
@@ -306,6 +324,7 @@ namespace Crucible {
             glm::vec3 mn, mx;
             for (uint32_t q = 0; q < static_cast<uint32_t>(m_renderQueue.size()); ++q) {
                 const RenderItem& item = m_renderQueue[q];
+                if (hideInThisView && item.sceneHidden) { continue; }   // hidden in the editor's Scene view (e.g. a vine)
                 if (m_resources.GetMeshBounds(item.mesh, mn, mx) && !frusta[pass].Intersects(AABB::Transform(AABB(mn, mx), item.model))) { continue; }
                 ++immediate.seen;
                 if (!IsDrawable(item.mesh)) { continue; }
@@ -344,7 +363,8 @@ namespace Crucible {
         // Copy the instances, in equal chunks across the threads (the main pass usually has most).
         const uint32_t total      = next - firstOfView;
         const uint32_t copyChunks = (total + kCopyChunk - 1) / kCopyChunk;
-        const glm::vec4 noParams{ 1.0f, 0.0f, 0.0f, 0.0f };   // depth-only passes don't read them
+        // Every pass gets the object's own parameters: a shader that moves vertices can read them
+        // (the Object Custom node) and has to move the shadow exactly as it moves the mesh.
         RunTasks(parallel, copyChunks, [&](uint32_t task) {
             uint32_t index = firstOfView + task * kCopyChunk;
             const uint32_t end = std::min(next, index + kCopyChunk);
@@ -355,10 +375,10 @@ namespace Crucible {
                 const SortItem& item = m_pass[pass].grouped[index - m_pass[pass].firstInstance];
                 if (item.ref & kImmediateRef) {
                     const RenderItem& r = m_renderQueue[item.ref & ~kImmediateRef];
-                    m_instanceScratch[index] = InstanceData{ r.model, pass == 0 ? r.params : noParams, r.skin };
+                    m_instanceScratch[index] = InstanceData{ r.model, r.params, r.skin };
                 } else {
                     const RenderProxy& p = m_proxies[item.ref];
-                    m_instanceScratch[index] = InstanceData{ p.model, pass == 0 ? p.params : noParams, p.skin };
+                    m_instanceScratch[index] = InstanceData{ p.model, p.params, p.skin };
                 }
             }
         });
@@ -436,10 +456,22 @@ namespace Crucible {
             total += static_cast<uint32_t>(list.items.size());
         });
 
-        // Lay the buckets out in key order (few of them).
+        // Lay the buckets out in key order (few of them). The main pass goes by shader first -
+        // shader, then material, then mesh - so the scene pass changes pipeline only where the
+        // shader does. (A material has one shader, so this only moves whole materials around.)
         ps.keyOrder.resize(ps.buckets.size());
         for (uint32_t b = 0; b < ps.keyOrder.size(); ++b) { ps.keyOrder[b] = b; }
-        std::sort(ps.keyOrder.begin(), ps.keyOrder.end(), [&](uint32_t a, uint32_t b) { return ps.buckets[a].key < ps.buckets[b].key; });
+        if (pass == 0) {
+            const auto shaderOf = [&](uint32_t bucket) {
+                return m_resources.MaterialShaderOf(MaterialHandle{ static_cast<uint32_t>(ps.buckets[bucket].key >> 32) }).id;
+            };
+            std::sort(ps.keyOrder.begin(), ps.keyOrder.end(), [&](uint32_t a, uint32_t b) {
+                const uint32_t shaderA = shaderOf(a), shaderB = shaderOf(b);
+                return shaderA != shaderB ? shaderA < shaderB : ps.buckets[a].key < ps.buckets[b].key;
+            });
+        } else {
+            std::sort(ps.keyOrder.begin(), ps.keyOrder.end(), [&](uint32_t a, uint32_t b) { return ps.buckets[a].key < ps.buckets[b].key; });
+        }
         uint32_t first = 0;
         for (uint32_t b : ps.keyOrder) for (uint32_t orientation = 0; orientation < 2; ++orientation) {
             auto& bucket = ps.buckets[b];
@@ -467,7 +499,8 @@ namespace Crucible {
         m_casterItems.clear();
         // A model entity owns several proxies. Outline every part sharing its entity key.
         for (uint32_t id : m_outlineProxies) {
-            if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid) {
+            // Hidden in the Scene view: no outline around nothing (only Scene views draw the outline).
+            if (id != 0xFFFFFFFFu && m_proxies[id].spatial != SpatialIndex::kInvalid && (m_showSceneHidden || !m_sceneHidden[id])) {
                 // The material only when the mask needs it (a cut-out leaf's outline follows the leaf).
                 const MaterialHandle material = ResolveMaterial(m_proxyDraw[id].material);
                 m_casterItems.push_back(RenderItem{ m_proxies[id].mesh,
@@ -587,7 +620,8 @@ namespace Crucible {
         return true;
     }
 
-    bool RenderScene::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const {
+    bool RenderScene::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit,
+                              bool ignoreSceneHidden) const {
 
         const float len = glm::length(direction);
         if (len < 1e-8f || maxDistance <= 0.0f) { return false; }
@@ -598,7 +632,9 @@ namespace Crucible {
 
         m_spatial.RayCast(ray, maxDistance, [&](SpatialIndex::Handle h, float tBox) {
             if (tBox >= best) { return best; }
-            const RenderProxy& p = m_proxies[static_cast<uint32_t>(m_spatial.GetUserData(h))];
+            const uint32_t id = static_cast<uint32_t>(m_spatial.GetUserData(h));
+            if (ignoreSceneHidden && m_sceneHidden[id]) { return best; }   // the ray passes through it
+            const RenderProxy& p = m_proxies[id];
             if (!p.mesh.IsValid() || p.mesh.id >= m_resources.Meshes().size()) { return best; }
             if (m_resources.Meshes()[p.mesh.id].indexCount == 0 && !m_resources.Meshes()[p.mesh.id].dynamic) { return best; }   // destroyed / not uploaded yet
             const GpuMesh& mesh = m_resources.Meshes()[p.mesh.id];

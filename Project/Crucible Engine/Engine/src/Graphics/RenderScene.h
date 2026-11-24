@@ -54,10 +54,16 @@ namespace Crucible {
         void Init(uint32_t framesInFlight);
 
         // ---- What to draw (see the Renderer functions these forward from) ----
-        void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params);
+        void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params, bool sceneHidden);
         RenderProxyHandle CreateProxy(std::uint64_t userData);
         void SetProxy(RenderProxyHandle handle, MeshHandle mesh, MaterialHandle material, const glm::mat4& model, bool visible, const glm::vec4& params);
         void DestroyProxy(RenderProxyHandle handle);
+        /// Hides a proxy in Scene-role views only (the editor's scene visibility). See BuildViewBatches' sceneView.
+        void SetProxySceneHidden(RenderProxyHandle handle, bool hidden);
+        /// true = Scene views draw the scene-hidden proxies after all (the editor's "Show hidden
+        /// objects"). The flags themselves are kept.
+        void SetSceneHiddenShown(bool shown) { m_showSceneHidden = shown; }
+        bool GetSceneHiddenShown() const     { return m_showSceneHidden; }
         /// Which object gets the selection outline (0 = none). Matched against proxies' userData.
         void SetOutlinedObject(std::uint64_t userData);
         /// Several objects outlined at once (multi-selection). Zeros are ignored; empty = none.
@@ -102,10 +108,14 @@ namespace Crucible {
          \param[out] stats           Reset, then filled with the culling counts (all but drawCalls).
          \param[out] mainOut         Receives the main pass's batches.
          \param[out] shadowOut       One batch list per cascade, as many as cascadeViewProj.
+         \param[in] sceneView        true for an editor Scene view: proxies flagged with
+                                     SetProxySceneHidden are left out of every pass (so they
+                                     cast no shadow in this view either). They still count
+                                     in stats.proxiesVisible.
          *********************************************************************/
         void BuildViewBatches(const Camera& camera, std::span<const glm::mat4> cascadeViewProj, RenderCullStats& stats,
-                              std::vector<DrawBatch>& mainOut, std::span<std::vector<DrawBatch>> shadowOut);
-        /// Appends the selected objects' batches (those that have a proxy and are visible).
+                              std::vector<DrawBatch>& mainOut, std::span<std::vector<DrawBatch>> shadowOut, bool sceneView);
+        /// Appends the selected objects' batches (those that have a proxy, are visible and not scene-hidden).
         void BuildOutlineBatches(std::vector<DrawBatch>& out);
 
         /*********************************************************************
@@ -120,7 +130,9 @@ namespace Crucible {
 
         // ---- Queries ----
         bool GetObjectBounds(std::uint64_t userData, glm::vec3& boundsMin, glm::vec3& boundsMax) const;
-        bool Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const;
+        /// ignoreSceneHidden: the ray passes through proxies flagged with SetProxySceneHidden (Scene view picking).
+        bool Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit,
+                     bool ignoreSceneHidden = false) const;
         const SpatialIndex& Spatial() const { return m_spatial; }
 
     private:
@@ -178,6 +190,10 @@ namespace Crucible {
             MaterialHandle material;
         };
         std::vector<ProxyDraw>      m_proxyDraw;
+        // 1 = hidden in Scene-role views (SetProxySceneHidden). Parallel to m_proxies; its own
+        // array so ProxyDraw stays 8 bytes, and only read while a view is culled.
+        std::vector<std::uint8_t>   m_sceneHidden;
+        bool                        m_showSceneHidden = false;   // SetSceneHiddenShown: the flags are ignored
         std::vector<uint32_t>       m_freeProxies;
         std::vector<uint32_t>       m_animatedProxies;
         std::vector<uint32_t>       m_proxiesAwaitingBounds;

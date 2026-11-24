@@ -45,6 +45,13 @@
 *                                Each AudioListener gets an arrow the way it
 *                                faces (local -Z), so ears turned the wrong
 *                                way - left and right swapped - show.
+
+*                  - Particles:	 the selected ParticleEmitter's shape, as it
+								 spawns (scaled and turned with the entity):
+								 the sphere, box or disc they start in, and
+								 an arrow along local +Y. A Cone shows its
+								 near disc (shapeRadius) and, 1 m along, how
+								 wide coneAngleDeg has opened it.
 * 
 *                  - Grid:       a 40 x 40 m, 1 m ground grid on y = 0 plus
 *                                the world X (red) and Z (blue) axes.
@@ -152,6 +159,14 @@ namespace Crucible
 		static bool   GetCollidersThroughWalls();
 
 		/*********************************************************************
+		 \brief  The editor's "Show hidden objects". Entities hidden in the
+				 Scene view (the SceneHidden tag) get no collider, velocity or
+				 light lines unless this is on.
+		 \param[in] shown True to draw their lines as usual.
+		 *********************************************************************/
+		static void   SetSceneHiddenShown(bool shown);
+
+		/*********************************************************************
 		 \brief  Whether every 3D AudioSource shows its ranges, or only the
 				 selected one. Off by default: Max Distance is 500 m unless
 				 changed, so a scene of sources is mostly spheres.
@@ -181,7 +196,8 @@ namespace Crucible
 		void DrawColliders(World& world);
 		void DrawVelocities(World& world);
 		void DrawLights(World& world);
-		void DrawAudio(World& world);	  // DebugCategory::Audio
+		void DrawAudio(World& world);	  		// DebugCategory::Audio
+		void DrawParticleShape(World& world);	// DebugCategory::Particles
 		void DrawGrid();
 		void DrawSelection(World& world);
 		void DrawWorldUI(World& world);   // DebugCategory::WorldUI

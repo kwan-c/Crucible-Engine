@@ -3,12 +3,13 @@
 * \author:       Chewn Thing Kwan
 * \par:          Email: kwan.c@digipen.edu
 * \date          1 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                See DebugDrawSystem.h for what is drawn and the colour key.
 *
 * \history
 *    -v1.0       initial implementation
+*    -v1.1       HeightField colliders are not outlined (Jean David)
 *
 **************************************************************************/
 
@@ -21,6 +22,7 @@
 #include "ECS/HierarchyTransformSystem.h"
 #include "Graphics/DebugDraw.h"
 #include "Graphics/RenderSystem.h"
+#include "Graphics/ParticleSystem.h"   // ParticleSystem::ConeFarRadius: the gizmo's cone is the one particles follow
 #include "Resources/ResourceManager.h"
 #include "UI/UISystem.h"      // UI::LayoutWorldCanvas: the selected element's rect on its page
 #include "UI/WorldUIPlane.h"  // where a world canvas's page is for the Scene view's camera
@@ -34,6 +36,13 @@ namespace Crucible {
 		std::atomic<std::uint64_t> g_selected{ 0 };   // (index << 32) | generation; 0 = kNullEntity
 		std::atomic<float>         g_velocityScale{ 0.25f };
 		std::atomic<bool>          g_collidersThroughWalls{ false };
+		std::atomic<bool>          g_showSceneHidden{ false };   // the editor's "Show hidden objects"
+
+		// Hidden in the editor's Scene view (SceneHidden tag), the only view that shows these
+		// lines: no lines for it either, unless "Show hidden objects" is on.
+		bool HiddenInScene(const World& world, Entity entity) {
+			return !g_showSceneHidden.load() && world.HasComponent<SceneHidden>(entity);
+		}
 		std::atomic<bool>		   g_audioRangesForAll{ false };
 
 		const glm::vec4 kStaticCollider  { 0.30f, 0.90f, 0.40f, 1.0f };
@@ -49,6 +58,7 @@ namespace Crucible {
 		const glm::vec4 kAudioRangeDim   { 0.22f, 0.40f, 0.55f, 1.0f };	  // Max Distance with Logarithmic rolloff (still heard beyond it)
 		const glm::vec4 kAudioOff        { 0.50f, 0.50f, 0.50f, 1.0f };	  // switched off, or no clip
 		const glm::vec4 kAudioListener   { 0.95f, 0.95f, 0.95f, 1.0f };
+		const glm::vec4 kParticleShape   { 1.00f, 0.75f, 0.30f, 1.0f };
 
 		// The Scene view's camera (SetViewCamera). Main thread only, like the rest of the system.
 		bool      g_hasViewCamera = false;
@@ -84,6 +94,10 @@ namespace Crucible {
 				case ShapeType::Capsule:
 					DebugDraw::Capsule(center, c.m_radius, std::max(c.m_height * 0.5f - c.m_radius, 0.0f), t.rotation, style);
 					break;
+				case ShapeType::HeightField:
+					// Not outlined: the terrain's own mesh IS its collision shape (same grid, same
+					// triangles), and a wireframe of thousands of cells would bury the view.
+					break;
 			}
 		}
 
@@ -117,6 +131,7 @@ namespace Crucible {
 
 	void DebugDrawSystem::SetCollidersThroughWalls(bool enabled) { g_collidersThroughWalls.store(enabled); }
 	bool DebugDrawSystem::GetCollidersThroughWalls() { return g_collidersThroughWalls.load(); }
+	void DebugDrawSystem::SetSceneHiddenShown(bool shown) { g_showSceneHidden.store(shown); }
 
 	void DebugDrawSystem::SetAudioRangesForAll(bool enabled) { g_audioRangesForAll.store(enabled); }
 	bool DebugDrawSystem::GetAudioRangesForAll() { return g_audioRangesForAll.load(); }
@@ -134,7 +149,7 @@ namespace Crucible {
 	void DebugDrawSystem::Describe(SystemDesc& desc) const {
 
 		desc.Reads<Transform, WorldTransform, Collider, RigidBody, CharacterController, Light, MeshRenderer, CameraComponent,
-		           UICanvas, UIRect, HierarchyNode, AudioSource, AudioListener>()   // world canvases' pages and the selected element's rect
+		           UICanvas, UIRect, HierarchyNode, AudioSource, AudioListener, ParticleEmitter, SceneHidden>()   // world canvases' pages and the selected element's rect
 			.RunAfter<HierarchyTransformSystem>()        // WorldTransform must be this frame's
 			.Affinity(SystemAffinity::MainThread);       // Renderer/ResourceManager aren't thread-safe
 
@@ -148,6 +163,7 @@ namespace Crucible {
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Velocities)) { DrawVelocities(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Lights))     { DrawLights(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Audio))      { DrawAudio(world); }
+		if (DebugDraw::IsCategoryEnabled(DebugCategory::Particles))  { DrawParticleShape(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Grid))       { DrawGrid(); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::Selection))  { DrawSelection(world); }
 		if (DebugDraw::IsCategoryEnabled(DebugCategory::WorldUI))    { DrawWorldUI(world); }
@@ -176,6 +192,7 @@ namespace Crucible {
 		const Entity selected = GetSelectedEntity();
 		world.CreateQuery<const WorldTransform, const UICanvas>().ForEach([&](Entity entity, const WorldTransform& wt, const UICanvas& canvas) {
 			if (canvas.renderMode != UICanvas::RenderMode::WorldSpace || !wt.valid) { return; }
+			if (entity != selected && HiddenInScene(world, entity)) { return; }   // hidden in the Scene view: only outlined while selected
 			const glm::vec4& colour = entity == selected ? kWorldUISelected : canvas.enabled ? kWorldCanvas : kWorldCanvasOff;
 			outline(WorldUIBoxCorners(planeFor(canvas, wt.matrix), WorldCanvasBoxInPlane(canvas)), colour);
 		});
@@ -215,17 +232,18 @@ namespace Crucible {
 		// Static: a Collider with no RigidBody (and not a character - the CharacterController wins).
 		style.color = kStaticCollider;
 		world.BuildQuery<const Transform, const WorldTransform, const Collider>().Exclude<RigidBody, CharacterController>().Build()
-			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const Collider& c) { DrawCollider(WorldPoseOf(t, wt), c, style); });
+			.ForEach([&](Entity e, const Transform& t, const WorldTransform& wt, const Collider& c) { if (!HiddenInScene(world, e)) { DrawCollider(WorldPoseOf(t, wt), c, style); } });
 
 		// Dynamic: Collider + RigidBody.
 		style.color = kDynamicCollider;
 		world.BuildQuery<const Transform, const WorldTransform, const Collider, const RigidBody>().Exclude<CharacterController>().Build()
-			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const Collider& c, const RigidBody&) { DrawCollider(WorldPoseOf(t, wt), c, style); });
+			.ForEach([&](Entity e, const Transform& t, const WorldTransform& wt, const Collider& c, const RigidBody&) { if (!HiddenInScene(world, e)) { DrawCollider(WorldPoseOf(t, wt), c, style); } });
 
 		// Characters: an upright capsule at position + m_center (CharacterVirtual doesn't rotate).
 		style.color = kCharacter;
 		world.CreateQuery<const Transform, const WorldTransform, const CharacterController>()
-			.ForEach([&](Entity, const Transform& local, const WorldTransform& wt, const CharacterController& cc) {
+			.ForEach([&](Entity e, const Transform& local, const WorldTransform& wt, const CharacterController& cc) {
+				if (HiddenInScene(world, e)) { return; }
 				const Transform t = WorldPoseOf(local, wt);
 				DebugDraw::Capsule(t.positions + cc.m_center, cc.m_radius,
 					std::max(cc.m_height * 0.5f - cc.m_radius, 0.0f), glm::quat(1.0f, 0.0f, 0.0f, 0.0f), style);
@@ -236,10 +254,10 @@ namespace Crucible {
 	void DebugDrawSystem::DrawVelocities(World& world) {
 
 		world.CreateQuery<const Transform, const WorldTransform, const RigidBody>()
-			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const RigidBody& rb) { DrawVelocity(WorldPoseOf(t, wt).positions, rb.velocity); });
+			.ForEach([&](Entity e, const Transform& t, const WorldTransform& wt, const RigidBody& rb) { if (!HiddenInScene(world, e)) { DrawVelocity(WorldPoseOf(t, wt).positions, rb.velocity); } });
 
 		world.CreateQuery<const Transform, const WorldTransform, const CharacterController>()
-			.ForEach([&](Entity, const Transform& t, const WorldTransform& wt, const CharacterController& cc) { DrawVelocity(WorldPoseOf(t, wt).positions + cc.m_center, cc.m_velocity); });
+			.ForEach([&](Entity e, const Transform& t, const WorldTransform& wt, const CharacterController& cc) { if (!HiddenInScene(world, e)) { DrawVelocity(WorldPoseOf(t, wt).positions + cc.m_center, cc.m_velocity); } });
 
 	}   // DebugDrawSystem::DrawVelocities()
 
@@ -251,7 +269,7 @@ namespace Crucible {
 		world.BuildQuery<const WorldTransform, const Light>().IncludeDisabled().Build()
 			.ForEach([&](Entity entity, const WorldTransform& wt, const Light& light) {
 
-				if (!wt.valid) { return; }
+				if (!wt.valid || HiddenInScene(world, entity)) { return; }
 				const glm::vec3 p(wt.matrix[3]);
 				glm::vec3 dir = -glm::vec3(wt.matrix[2]);   // local -Z, same as RenderExtractSystem
 				const float len = glm::length(dir);
@@ -350,6 +368,74 @@ namespace Crucible {
 				if (length > 1e-6f) { DebugDraw::Arrow(p, p + forward / length, style); }
 			});
 	}	// DebugDrawSystem::DrawAudio()
+
+	void DebugDrawSystem::DrawParticleShape(World& world) {
+
+		const Entity selected = GetSelectedEntity();
+		if (selected == kNullEntity || !world.IsAlive(selected)) { return; }
+		const ParticleEmitter* 	emitter = world.Read<ParticleEmitter>(selected);
+		const WorldTransform*	wt		= world.Read<WorldTransform>(selected);
+		if (!emitter || !wt || !wt->valid) { return; }
+
+		DebugStyle style;
+		style.category 	= DebugCategory::Particles;
+		style.depthTest = false;	// the shape is usually inside the effect's own particles or a mesh
+		style.color		= kParticleShape;
+
+		const glm::mat4& m = wt->matrix;
+		auto world3 = [&](const glm::vec3& local) { return glm::vec3(m * glm::vec4(local, 1.0f)); };
+		// A circle of 'radius' around local point 'centre', in the plane of local axes a and b.
+		auto circle = [&](const glm::vec3& centre, const glm::vec3& a, const glm::vec3& b, float radius) {
+			if (radius <= 0.0f) { return; }
+			constexpr int kSegments = 32;
+			for (int i = 0; i < kSegments; ++i) {
+				const float a0 = 6.2831853f * static_cast<float>(i) / kSegments;
+				const float a1 = 6.2831853f * static_cast<float>(i + 1) / kSegments;
+				DebugDraw::Line(world3(centre + (a * std::cos(a0) + b * std::sin(a0)) * radius),
+								world3(centre + (a * std::cos(a1) + b * std::sin(a1)) * radius), style);
+			}
+		};
+		const glm::vec3 X(1.0f, 0.0f, 0.0f), Y(0.0f, 1.0f, 0.0f), Z(0.0f, 0.0f, 1.0f), O(0.0f);
+		const float radius = std::max(emitter->shapeRadius, 0.0f);
+
+		switch (emitter->shape) {
+			case ParticleShape::Point: {
+				break;
+			}
+			case ParticleShape::Sphere: {
+				circle(O, X, Z, radius);
+				circle(O, X, Y, radius);
+				circle(O, Y, Z, radius);
+				break;
+			}
+			case ParticleShape::Box: {
+				const glm::vec3 half = glm::max(emitter->boxExtents, glm::vec3(0.0f));
+				DebugDraw::TransformedBox(-half, half, m, style);
+				break;
+			}
+			case ParticleShape::Circle: {
+				// The disc, and four short arrows from its rim: particles go straight out, along it.
+				circle(O, X, Z, radius);
+				for (const glm::vec3& side : { X, Z, -X, -Z }) {
+					DebugDraw::Arrow(world3(side * radius), world3(side * (radius + 0.3f)), style);
+				}
+				break;
+			}
+			case ParticleShape::Cone: {
+				// The near end (where particles start) and the far end coneLength along +Y, joined by
+				// four lines down the cone's wall: what a rim particle follows. A cone that closes
+				// has no far circle (radius 0): the four lines meet at its tip.
+				const float length = std::max(emitter->coneLength, 0.01f);
+				const float farRadius = ParticleSystem::ConeFarRadius(*emitter);   // not "far": a macro in <windows.h>
+				circle(O, X, Z, radius);
+				circle(Y * length, X, Z, farRadius);
+				for (const glm::vec3& side : { X, Z, -X, -Z }) {
+					DebugDraw::Line(world3(side * radius), world3(Y * length + side * farRadius), style);
+				}
+				break;
+			}
+		}
+	}
 
 	void DebugDrawSystem::DrawGrid() {
 

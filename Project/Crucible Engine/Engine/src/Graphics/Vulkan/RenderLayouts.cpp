@@ -38,7 +38,7 @@ namespace Crucible {
         // shadow map, the light clusters) are visible to compute as well.
         const vk::ShaderStageFlags fragCompute = vk::ShaderStageFlagBits::eFragment | vk::ShaderStageFlagBits::eCompute;
 
-        std::array<vk::DescriptorSetLayoutBinding, 11> bindings{ {
+        std::array<vk::DescriptorSetLayoutBinding, 12> bindings{ {
             {
                 .binding            = 0,
                 .descriptorType     = vk::DescriptorType::eUniformBuffer,
@@ -126,6 +126,16 @@ namespace Crucible {
                 .descriptorType     = vk::DescriptorType::eCombinedImageSampler,
                 .descriptorCount    = 1,
                 .stageFlags         = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
+            },
+            {
+                // Every material's values for its shader's own parameters
+                // (StructuredBuffer<float4> materialParams in Surface.slang; MaterialParamBuffer).
+                // Per frame in flight, shared like the lights. Vertex as well as fragment: a
+                // shader that moves vertices will read its parameters there.
+                .binding            = 11,
+                .descriptorType     = vk::DescriptorType::eStorageBuffer,
+                .descriptorCount    = 1,
+                .stageFlags         = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             }
         } };
         vk::DescriptorSetLayoutCreateInfo layoutInfo{
@@ -138,18 +148,22 @@ namespace Crucible {
 
     void RenderLayouts::CreateMaterialDescriptorSetLayout(VulkanContext& context) {
 
-        // Set 1, bindings 0-4: albedo, normal, metallicRoughness, emissive, occlusion - all
-        // fragment-stage-only combined image samplers. One of these sets is allocated per
+        // Set 1, bindings 0-7 (kMaterialTextureSlots): eight texture slots, all combined image
+        // samplers, read by the fragment stage - and by the vertex stage of a shader that moves
+        // vertices, which can read a texture there. The built-in shader's are 0-4: albedo, normal,
+        // metallicRoughness, emissive, occlusion; a shader with a texture list of its own uses the
+        // slots in its list's order. Eight for every material, so that every mesh shader shares
+        // one pipeline layout. One of these sets is allocated per
         // Material (Renderer::CreateMaterial), never per frame-in-flight: unlike the camera UBO,
         // a material's texture bindings don't change every frame, so a single set can be reused
         // across all frames in flight (see Renderer::WriteMaterialDescriptorSet).
-        std::array<vk::DescriptorSetLayoutBinding, 5> bindings{};
+        std::array<vk::DescriptorSetLayoutBinding, kMaterialTextureSlots> bindings{};
         for (uint32_t i = 0; i < static_cast<uint32_t>(bindings.size()); ++i) {
             bindings[i] = vk::DescriptorSetLayoutBinding{
                 .binding         = i,
                 .descriptorType  = vk::DescriptorType::eCombinedImageSampler,
                 .descriptorCount = 1,
-                .stageFlags      = vk::ShaderStageFlagBits::eFragment
+                .stageFlags      = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment
             };
         }
         vk::DescriptorSetLayoutCreateInfo layoutInfo{

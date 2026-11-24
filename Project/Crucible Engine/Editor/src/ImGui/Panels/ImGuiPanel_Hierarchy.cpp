@@ -22,6 +22,7 @@
 #include "Undo/EntityCommands.h"
 #include "ImGui/EditorWidgets.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "SceneVisibility.h"
 #include "Diagnostics/Logger.h"
 #include "ImGui/EditorWidgets.h"
 #include <Graphics/ParticlePresets.h>
@@ -250,6 +251,9 @@ void Crucible::Hierarchy::Update(float dt) {
 		// Right-click on empty space in the panel: paste as a new root entity.
 		if (ImGui::BeginPopupContextWindow("HierarchyContext", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
 			if (ImGui::MenuItem("Paste", "Ctrl+V", false, !m_clipboard.empty())) { RequestAction(PendingAction::Paste, kNullEntity); }
+			ImGui::Separator();
+			if (ImGui::MenuItem("Show All Hidden")) { RequestAction(PendingAction::ShowAllHidden, kNullEntity); }
+			ImGui::SetItemTooltip("Shows every entity hidden in the Scene view and UI Editor tab again.");
 			ImGui::EndPopup();
 		}
 
@@ -274,6 +278,12 @@ void Crucible::Hierarchy::Update(float dt) {
 			// so only while the Hierarchy is focused - the Scene / UI views handle F themselves.
 			if (hasSelection && ImGui::Shortcut(ImGuiKey_F)) { FocusSelection(); }
 
+			// H: hide / show the selection in the Scene view (with its children), going by the
+			// active entity's state. Same route as F: only while the Hierarchy is focused.
+			if (hasSelection && ImGui::Shortcut(ImGuiKey_H)) {
+				RequestSetHidden(selected, !SceneVisibility::IsHidden(m_world, selected), true, true);
+			}
+
 			// Ctrl+A: select every entity. Only while the Hierarchy is focused (default route), so
 			// it never steals Ctrl+A from a text field elsewhere.
 			if (inspector && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_A)) {
@@ -292,7 +302,9 @@ void Crucible::Hierarchy::Update(float dt) {
 void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 	std::uint32_t const childCount = m_world.ChildCount(entity);
 
-	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth;
+	// AllowOverlap: the eye button at the row's right edge (drawn after the row, below) takes the
+	// mouse while it is hovered, so clicking it neither selects nor drags the row.
+	ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ImGuiTreeNodeFlags_AllowOverlap;
 	if (childCount == 0) { flags |= ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen; }
 
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
@@ -306,10 +318,19 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 	std::string const label = LabelOf(m_world, entity);
 	// Prefab instances in the prefab colour (red if their .cprefab is gone), like Unity.
 	ImVec4 prefabColour;
-	bool const tinted = PrefabAuthoring::RowColour(m_world, entity, prefabColour);
-	if (tinted) { ImGui::PushStyleColor(ImGuiCol_Text, prefabColour); }
+	bool const prefabTint = PrefabAuthoring::RowColour(m_world, entity, prefabColour);
+	// Hidden in the Scene view (SceneVisibility.h): the same colour, dimmed.
+	bool const sceneHidden = SceneVisibility::IsHidden(m_world, entity);
+	ImVec4 rowColour = prefabTint ? prefabColour : ImGui::GetStyleColorVec4(ImGuiCol_Text);
+	if (sceneHidden) { rowColour.w *= 0.45f; }
+	bool const tinted = prefabTint || sceneHidden;
+	if (tinted) { ImGui::PushStyleColor(ImGuiCol_Text, rowColour); }
 	bool const open = ImGui::TreeNodeEx("##node", flags, "%s", label.c_str());
 	if (tinted) { ImGui::PopStyleColor(); }
+	// The row's rectangle, for the eye button drawn once everything that refers to "the last
+	// item" (clicks, drag and drop, the right-click menu) is done.
+	ImVec2 const rowMin = ImGui::GetItemRectMin();
+	ImVec2 const rowMax = ImGui::GetItemRectMax();
 	// A UI element was just created somewhere under this row: open it once, so the new entity shows.
 	if (childCount > 0 && m_revealEntity.IsValid()) {
 		for (Entity p = m_world.GetParent(m_revealEntity); p.IsValid(); p = m_world.GetParent(p)) {
@@ -443,8 +464,56 @@ void Crucible::Hierarchy::DrawEntityNode(Entity entity) {
 		}
 		if (!orderable) { ImGui::SetItemTooltip("Root entities have no order. Canvases: use UICanvas sortOrder."); }
 		ImGui::Separator();
+		// Scene visibility: editor only, never saved (SceneVisibility.h). Acts on the whole
+		// selection when the row is part of it, children included.
+		if (ImGui::MenuItem(sceneHidden ? "Show in Editor Views" : "Hide in Editor Views", "H")) { RequestSetHidden(entity, !sceneHidden, true, true); }
+		if (ImGui::MenuItem("Show All Hidden"))                             { RequestAction(PendingAction::ShowAllHidden, entity); }
+		ImGui::Separator();
 		if (ImGui::MenuItem(deleteLabel.c_str(), "Del"))                    { RequestAction(PendingAction::Delete, entity); }
 		ImGui::EndPopup();
+	}
+
+	// The eye: hides / shows the entity in the Scene view only (SceneVisibility.h). At the row's
+	// right edge; drawn while the row is hovered, and always while the entity is hidden. Click:
+	// the entity and everything under it. Alt+click: only the entity. Deferred like every other
+	// change: adding the tag mid-query is a structural change the World rejects.
+	if (ImGui::IsRectVisible(rowMin, rowMax)) {
+		float const size = rowMax.y - rowMin.y;
+		ImVec2 const eyeMin(rowMax.x - size - 2.0f, rowMin.y);
+		ImVec2 const eyeMax(eyeMin.x + size, rowMax.y);
+		// ItemAdd + ButtonBehavior (imgui_internal.h) instead of InvisibleButton: a button placed
+		// by hand, without moving the layout cursor the next row starts from. Not a keyboard-nav stop.
+		ImRect const eyeRect(eyeMin, eyeMax);
+		ImGuiID const eyeId = ImGui::GetID("##eye");
+		bool eyeHovered = false, eyeHeld = false, clicked = false;
+		if (ImGui::ItemAdd(eyeRect, eyeId, nullptr, ImGuiItemFlags_NoNav)) {
+			clicked = ImGui::ButtonBehavior(eyeRect, eyeId, &eyeHovered, &eyeHeld);
+		}
+
+		if (clicked) { RequestSetHidden(entity, !sceneHidden, !ImGui::GetIO().KeyAlt, false); }
+		if (eyeHovered) {
+			ImGui::SetTooltip(sceneHidden ? "Show in the Scene view and UI Editor tab (Alt+click: only this entity)"
+			                              : "Hide in the Scene view and UI Editor tab (Alt+click: only this entity)");
+		}
+
+		bool const rowHovered = ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByActiveItem)
+			&& ImGui::IsMouseHoveringRect(rowMin, ImVec2(rowMax.x, rowMax.y));
+		if ((sceneHidden || rowHovered) && ImGui::GetDragDropPayload() == nullptr) {
+			// Drawn, not a font glyph: an eye outline with a pupil, struck through while hidden.
+			ImDrawList* dl = ImGui::GetWindowDrawList();
+			ImVec4 colour = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+			colour.w *= eyeHovered ? 1.0f : (sceneHidden ? 0.75f : 0.5f);
+			ImU32 const col = ImGui::GetColorU32(colour);
+			ImVec2 const c((eyeMin.x + eyeMax.x) * 0.5f, (eyeMin.y + eyeMax.y) * 0.5f);
+			float const w = size * 0.34f;   // half width of the eye
+			float const h = size * 0.20f;   // half height
+			dl->PathLineTo(ImVec2(c.x - w, c.y));
+			dl->PathBezierQuadraticCurveTo(ImVec2(c.x, c.y - h * 2.0f), ImVec2(c.x + w, c.y));
+			dl->PathBezierQuadraticCurveTo(ImVec2(c.x, c.y + h * 2.0f), ImVec2(c.x - w, c.y));
+			dl->PathStroke(col, ImDrawFlags_Closed, 1.2f);
+			dl->AddCircleFilled(c, size * 0.09f, col);
+			if (sceneHidden) { dl->AddLine(ImVec2(c.x - w, c.y + h * 1.6f), ImVec2(c.x + w, c.y - h * 1.6f), col, 1.5f); }
+		}
 	}
 
 	// NoTreePushOnOpen (set above for a leaf) means no matching push happened regardless of
@@ -663,6 +732,19 @@ void Crucible::Hierarchy::RunPendingAction() {
 		m_pendingParent = kNullEntity;
 		break;
 	}
+
+	case PendingAction::SetHidden:
+		// The eye acts on its own row; the menu and H on the whole selection (top-level entities,
+		// so with children every selected entity is covered). No undo step, scene not marked changed.
+		if (targetAlive) {
+			if (m_pendingHideSelection) { for (Entity const t : targets) { SceneVisibility::SetHidden(m_world, t, m_pendingHidden, m_pendingHideChildren); } }
+			else                        { SceneVisibility::SetHidden(m_world, target, m_pendingHidden, m_pendingHideChildren); }
+		}
+		break;
+
+	case PendingAction::ShowAllHidden:
+		SceneVisibility::ShowAll(m_world);
+		break;
 
 	case PendingAction::UnpackPrefab:
 		for (Entity const t : targets) { PrefabAuthoring::Unpack(m_world, t); }   // skips anything that isn't an instance root

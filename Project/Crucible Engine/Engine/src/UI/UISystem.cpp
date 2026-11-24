@@ -513,7 +513,7 @@ namespace Crucible {
 		// UIRect: every element's layout box and its on/off state (ReadActive / IsComponentActive -
 		// also read when checking UIImage, UIText and UISlider, which require it). Left out, the first
 		// canvas with an element raised an access violation and the system was switched off.
-		desc.Reads<UICanvas, UIRect, UIButton, UISlider, UIText, HierarchyNode, WorldTransform>()   // canvases, layout, element states, text, the tree, placement
+		desc.Reads<UICanvas, UIRect, UIButton, UISlider, UIText, HierarchyNode, WorldTransform, SceneHidden>()   // canvases, layout, element states, text, the tree, placement, editor scene visibility
 			.Writes<UIImage>()                              // UIImage::texture (AppendDrawList resolves it)
 			.RunAfter<HierarchyTransformSystem>()           // the canvases' world matrices must be this frame's
 			.Affinity(SystemAffinity::MainThread);          // touches the Renderer
@@ -541,19 +541,22 @@ namespace Crucible {
 			UI::LayoutWorldCanvas(world, entity, canvas, m_layout);
 			if (m_layout.empty()) { continue; }
 
-			m_vertices.clear();
-			m_indices.clear();
-			m_commands.clear();
-			UI::AppendDrawList(world, m_layout, m_resources, m_vertices, m_indices, m_commands);
-			const float reach = UI::BuildWorldCanvasPanel(canvas, m_vertices, m_indices, m_commands, m_panelVertices, m_panelRuns);
-			if (m_panelRuns.empty()) { continue; }
-
-			const glm::mat4& m = world.Read<WorldTransform>(entity)->matrix;
+			const glm::mat4 m = world.Read<WorldTransform>(entity)->matrix;   // a copy, for the same reason as the canvas
 			const glm::vec3 right(m[0]), up(m[1]);
 			const float scale = std::max(glm::length(right), glm::length(up));
 			if (!(scale > 0.0f)) { continue; }   // scaled to nothing
 
+			// One panel from a list of elements, drawn in `views`.
+			const auto submit = [&](const std::vector<UI::LayoutItem>& layout, WorldUIViews views) {
+			m_vertices.clear();
+			m_indices.clear();
+			m_commands.clear();
+			UI::AppendDrawList(world, layout, m_resources, m_vertices, m_indices, m_commands);
+			const float reach = UI::BuildWorldCanvasPanel(canvas, m_vertices, m_indices, m_commands, m_panelVertices, m_panelRuns);
+			if (m_panelRuns.empty()) { return; }
+
 			WorldUIDesc desc;
+			desc.views       = views;
 			desc.anchor      = glm::vec3(m[3]);
 			desc.right       = right;
 			desc.up          = up;
@@ -569,6 +572,21 @@ namespace Crucible {
 				desc.fadeEnd   = std::max(canvas.fadeEnd, desc.fadeStart + 0.001f);
 			}
 			m_renderer.SubmitWorldUI(desc, m_panelVertices, m_panelRuns);
+			};
+
+			// Editor scene visibility (the SceneHidden tag, per element). Nothing hidden - always
+			// the case in the built game - is one panel, as before. Otherwise two: everything, for
+			// the Game view; and the elements that are not hidden, for the editor's Scene view.
+			m_sceneLayout.clear();
+			for (const UI::LayoutItem& item : m_layout) {
+				if (!world.HasComponent<SceneHidden>(item.entity)) { m_sceneLayout.push_back(item); }
+			}
+			if (m_sceneLayout.size() == m_layout.size()) {
+				submit(m_layout, WorldUIViews::All);
+			} else {
+				submit(m_layout, WorldUIViews::NotInSceneViews);
+				if (!m_sceneLayout.empty()) { submit(m_sceneLayout, WorldUIViews::SceneViewsOnly); }
+			}
 		}
 	}
 

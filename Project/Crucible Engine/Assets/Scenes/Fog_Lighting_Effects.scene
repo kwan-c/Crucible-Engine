@@ -78,6 +78,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 1"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -117,6 +120,8 @@
                         "z": 0.5
                     },
                     "spreadDeg": 15.0,
+                    "coneAngleDeg": 25.0,
+                    "coneLength": 1.0,
                     "worldSpace": true,
                     "lifetimeMin": 2.5,
                     "lifetimeMax": 4.0,
@@ -158,6 +163,52 @@
                 },
                 "EntityName": {
                     "name": "Entity 24"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "185FA0E18977C001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 5.944511413574219,
+                        "y": 0.9342334270477295,
+                        "z": -1.673969030380249
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.190000057220459,
+                        "y": 1.190000057220459,
+                        "z": 1.190000057220459
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5644444227218628,
+                        "y": 0.5644444227218628,
+                        "z": 0.5644444227218628,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 5295002677416493057
+                },
+                "EntityName": {
+                    "name": "Sphere"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -219,6 +270,52 @@
                         "w": 1.0
                     },
                     "textureAsset": 0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "1D0D60E1D5CAC003",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 1.4101687669754028,
+                        "y": 0.9911396503448486,
+                        "z": 2.9491961002349854
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 2832448475356102659
+                },
+                "EntityName": {
+                    "name": "Cylinder (1)"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -298,6 +395,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 2"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -377,6 +477,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 3"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -432,7 +535,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -461,7 +564,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": [
                         "FlowFieldAgent/stoppingDistance",
                         "FlowFieldAgent/slowingDistance"
@@ -481,6 +584,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -521,6 +627,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 28"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -571,6 +680,9 @@
                     "fade": false,
                     "fadeStart": 20.0,
                     "fadeEnd": 30.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -650,6 +762,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 4"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -729,6 +844,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 5"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -808,6 +926,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 6"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -887,6 +1008,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 7"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -966,6 +1090,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 8"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -1025,6 +1152,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 32"
+                },
+                "EntityTag": {
+                    "tag": "StaticObstacle"
                 }
             }
         },
@@ -1033,9 +1163,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -4.020785808563232,
-                        "y": 0.5,
-                        "z": -2.538909435272217
+                        "x": -4.298933982849121,
+                        "y": 0.5000000596046448,
+                        "z": -6.987565040588379
                     },
                     "rotation": {
                         "x": 0.0,
@@ -1056,7 +1186,7 @@
                     "rate": 0.0,
                     "burstCount": 60,
                     "maxParticles": 200,
-                    "shape": "Point",
+                    "shape": "Cone",
                     "shapeRadius": 0.25,
                     "boxExtents": {
                         "x": 0.5,
@@ -1064,15 +1194,17 @@
                         "z": 0.5
                     },
                     "spreadDeg": 70.0,
+                    "coneAngleDeg": 12.569999694824219,
+                    "coneLength": 1.6059999465942383,
                     "worldSpace": true,
-                    "lifetimeMin": 0.3499999940395355,
-                    "lifetimeMax": 0.8999999761581421,
-                    "speedMin": 3.0,
-                    "speedMax": 8.0,
+                    "lifetimeMin": 0.25,
+                    "lifetimeMax": 0.44999998807907104,
+                    "speedMin": 10.350000381469727,
+                    "speedMax": 15.149999618530273,
                     "sizeMin": 0.02500000037252903,
                     "sizeMax": 0.05000000074505806,
                     "endSizeScale": 0.30000001192092896,
-                    "gravityScale": 1.0,
+                    "gravityScale": 0.0,
                     "drag": 0.800000011920929,
                     "spinDeg": 0.0,
                     "stretch": 0.03999999910593033,
@@ -1105,6 +1237,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 25"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1141,7 +1276,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 3578055278504480029,
-                    "materialAsset": 6726452403956826127
+                    "materialAsset": 2832448475356102659
                 },
                 "CharacterController": {
                     "height": 2.6500000953674316,
@@ -1238,6 +1373,9 @@
                 },
                 "EntityName": {
                     "name": "test 1"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1317,6 +1455,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 9"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -1372,7 +1513,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -1401,7 +1542,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -1418,6 +1559,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1446,25 +1590,32 @@
                     "name": "Cursor Lock"
                 },
                 "ScriptComponent": {
-                    "enabled": true,
-                    "assembly": "Managed/Crucible.Scripts.dll",
-                    "namespace": "Crucible.Scripts",
-                    "class": "CursorLock",
-                    "fields": [
+                    "scripts": [
                         {
-                            "declaringType": "Crucible.Scripts.CursorLock",
-                            "name": "locked",
-                            "type": "Bool",
-                            "boolean": true,
-                            "integer": 0,
-                            "single": 0.0,
-                            "real": 0.0,
-                            "text": "",
-                            "stringIsNull": false,
-                            "entityId": 0,
-                            "assetId": 0
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "CursorLock",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CursorLock",
+                                    "name": "locked",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
                         }
                     ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1504,6 +1655,9 @@
                 },
                 "EntityName": {
                     "name": "Empty"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1563,6 +1717,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 33"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
                 }
             }
         },
@@ -1642,6 +1799,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 10"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -1697,7 +1857,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -1726,7 +1886,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -1743,6 +1903,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1804,6 +1967,9 @@
                         "w": 0.95686274766922
                     },
                     "textureAsset": 3715637708821250059
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -1883,6 +2049,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 11"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -2026,6 +2195,9 @@
                         "y": 2.0
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2106,6 +2278,9 @@
                     },
                     "handleSize": 0.0,
                     "trackThickness": 0.4000000059604645
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2185,6 +2360,52 @@
                 },
                 "EntityName": {
                     "name": "Entity 12"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
+                }
+            }
+        },
+        {
+            "id": "974EE0E1A2B00007",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 3.6151678562164307,
+                        "y": 0.9911396503448486,
+                        "z": 4.721102237701416
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 2856787514755437467,
+                    "materialAsset": 9587425704811823105
+                },
+                "EntityName": {
+                    "name": "Cylinder"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2264,6 +2485,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 13"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2320,7 +2544,7 @@
                         "w": 0.5
                     },
                     "meshAsset": 8362592118289502741,
-                    "materialAsset": 6913985107136102423
+                    "materialAsset": 16347548646000803841
                 },
                 "Collider": {
                     "type": "Sphere",
@@ -2343,6 +2567,52 @@
                 },
                 "EntityName": {
                     "name": "Entity 14"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
+                }
+            }
+        },
+        {
+            "id": "A3EE68E199C58005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 3.8673107624053955,
+                        "y": 1.3543248176574707,
+                        "z": -3.1163716316223145
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 8362592118289502741,
+                    "materialAsset": 3049588827540701185
+                },
+                "EntityName": {
+                    "name": "Sphere"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2407,10 +2677,16 @@
                     "cellSize": 1.0,
                     "bodyRadiusPadding": 0.6000000238418579,
                     "stepHeight": 0.30000001192092896,
-                    "shoulderHeight": 1.600000023841858,
+                    "agentHeight": 1.600000023841858,
+                    "maxLayersPerCell": 4,
+                    "maxDropHeight": 3.0,
                     "floodRadius": 100.0,
                     "rebuildDistance": 3.0,
-                    "wallAdjacencyCost": 4.0
+                    "wallAdjacencyCost": 4.0,
+                    "dynamicUpdateInterval": 0.25
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2461,6 +2737,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 46"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2520,6 +2799,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 35"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
                 }
             }
         },
@@ -2599,6 +2881,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 15"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -2678,6 +2963,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 16"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -2733,7 +3021,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -2762,7 +3050,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": [
                         "+StateGraphAgent"
                     ]
@@ -2785,6 +3073,9 @@
                 "StateGraphAgent": {
                     "graph": 0,
                     "logStateChanges": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2840,7 +3131,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -2869,7 +3160,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -2886,6 +3177,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -2896,7 +3190,7 @@
                     "positions": {
                         "x": 4.65203857421875,
                         "y": 3.1049344539642334,
-                        "z": -12.981210708618164
+                        "z": -13.019291877746582
                     },
                     "rotation": {
                         "x": 0.0,
@@ -2965,6 +3259,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 17"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -3069,6 +3366,9 @@
                         "y": 2.0
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3128,6 +3428,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 36"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
                 }
             }
         },
@@ -3187,6 +3490,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 37"
+                },
+                "EntityTag": {
+                    "tag": "StaticObstacle"
                 }
             }
         },
@@ -3266,6 +3572,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 18"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -3306,6 +3615,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 29"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3361,8 +3673,8 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
-                    "materialAsset": 0
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 16347548646000803841
                 },
                 "Collider": {
                     "type": "Box",
@@ -3390,8 +3702,10 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
-                    "overrides": []
+                    "prefabHash": 7306435685216836802,
+                    "overrides": [
+                        "MeshRenderer/materialAsset"
+                    ]
                 },
                 "FlowFieldAgent": {
                     "speed": 6.0,
@@ -3407,6 +3721,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3466,6 +3783,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 38"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
                 }
             }
         },
@@ -3545,6 +3865,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 19"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3624,6 +3947,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 20"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -3679,7 +4005,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -3708,7 +4034,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -3725,6 +4051,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3780,7 +4109,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -3809,7 +4138,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -3826,6 +4155,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -3969,6 +4301,9 @@
                         "y": 2.0
                     },
                     "shadowSoftness": 0.0
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4028,6 +4363,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 39"
+                },
+                "EntityTag": {
+                    "tag": "StaticObstacle"
                 }
             }
         },
@@ -4107,6 +4445,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 21"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -4147,6 +4488,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 30"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4196,6 +4540,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 47"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         },
@@ -4255,6 +4602,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 40"
+                },
+                "EntityTag": {
+                    "tag": "Walkable"
                 }
             }
         },
@@ -4334,6 +4684,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 22"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -4393,6 +4746,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 41"
+                },
+                "EntityTag": {
+                    "tag": "StaticObstacle"
                 }
             }
         },
@@ -4472,6 +4828,9 @@
                 },
                 "EntityName": {
                     "name": "Entity 23"
+                },
+                "EntityTag": {
+                    "tag": "DynamicObstacle"
                 }
             }
         },
@@ -4527,7 +4886,7 @@
                         "z": 0.5,
                         "w": 0.5
                     },
-                    "meshAsset": 3578055278504480029,
+                    "meshAsset": 5067099792209742713,
                     "materialAsset": 0
                 },
                 "Collider": {
@@ -4556,7 +4915,7 @@
                     "prefabAsset": 17246782011306147853,
                     "fileId": 10905713735968489483,
                     "isRoot": true,
-                    "prefabHash": 17290836789032328677,
+                    "prefabHash": 7306435685216836802,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -4573,6 +4932,9 @@
                     "radius": 0.6000000238418579,
                     "avoidanceDistance": 3.0,
                     "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
                 }
             }
         }

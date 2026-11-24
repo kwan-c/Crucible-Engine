@@ -192,6 +192,7 @@ namespace Crucible
 				ReadBool(*graphics, "fullScreen", config.graphics.fullScreen);
 				ReadBool(*graphics, "maximized", config.graphics.maximized);
 				ReadUInt(*graphics, "targetFPS", config.graphics.targetFPS);
+				ReadUInt(*graphics, "backgroundFPS", config.graphics.backgroundFPS);
 			}
 
 			//networking
@@ -371,6 +372,7 @@ namespace Crucible
 		doc.Set("graphics/fullScreen",   config.graphics.fullScreen);
 		doc.Set("graphics/maximized",    config.graphics.maximized);
 		doc.Set("graphics/targetFPS",    config.graphics.targetFPS);
+		doc.Set("graphics/backgroundFPS", config.graphics.backgroundFPS);
 
 		doc.Set("network/mode",           config.network.mode);
 		doc.Set("network/listenAddress",  config.network.listenAddress);

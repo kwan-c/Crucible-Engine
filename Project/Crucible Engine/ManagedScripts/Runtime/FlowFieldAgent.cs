@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         FlowFieldAgent.cs
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          5 November 2026
 * \version       1.1
 * \brief         Script access to an enemy's FlowFieldAgent: how it moves,

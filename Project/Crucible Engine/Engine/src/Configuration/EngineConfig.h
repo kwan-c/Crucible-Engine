@@ -33,7 +33,16 @@ namespace Crucible
 		uint32_t    fullscreenWidth       = 0;
 		uint32_t    fullscreenHeight      = 0;
 		uint32_t    fullscreenRefreshRate = 0;   // Hz; 0 = the highest at that size
+		// Frame-rate cap (Core::Run sleeps out the rest of each frame). 0 = uncapped. This is a
+		// cap on top of the swapchain's present mode: with FIFO (vsync) the monitor's refresh
+		// rate is also a limit, whichever is lower wins.
 		uint32_t    targetFPS = 60;
+		// Cap used instead while the window is minimized or unfocused (alt-tabbed, editor in the
+		// background), so an idle window stops using the whole GPU. 0 = no background cap
+		// (targetFPS applies). Not applied while a network session is running: Host + Client on
+		// one PC means one window is always unfocused, and it must keep ticking at full rate.
+		// A minimized window never draws at all, whatever this says.
+		uint32_t    backgroundFPS = 15;
 	};
 
 	//network config - the team's shared multiplayer defaults ("network" in EngineConfig.json).

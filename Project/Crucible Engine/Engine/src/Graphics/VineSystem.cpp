@@ -38,7 +38,7 @@ namespace Crucible {
     void VineSystem::Describe(SystemDesc& desc) const {
 
         desc.Uses<VineQuery>()                                   // WorldTransform + Vine of the vine entity
-            .Reads<HierarchyNode, WorldTransform, MeshRenderer>() // its children; the target's transform and mesh
+            .Reads<HierarchyNode, WorldTransform, MeshRenderer, SceneHidden>() // its children; the target's transform and mesh; editor scene visibility
             .RunAfter<HierarchyTransformSystem>()                // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);               // touches the Renderer/ResourceManager
 
@@ -158,8 +158,12 @@ namespace Crucible {
                 }
             }
             const glm::mat4 identity(1.0f);   // the vertices are already in world space
-            if (!m_stemIndices.empty()) { m_renderer.Submit(record.stemMesh, stemMaterial, identity); }
-            if (!m_leafIndices.empty()) { m_renderer.Submit(record.leafMesh, leafMaterial, identity); }
+            // Hidden in the editor's Scene view (the SceneHidden tag on the vine entity): still
+            // grown and submitted, so the Game view draws it; only Scene-role views leave it out.
+            const bool sceneHidden = world.HasComponent<SceneHidden>(entity);
+            const glm::vec4 noParams(1.0f, 0.0f, 0.0f, 0.0f);
+            if (!m_stemIndices.empty()) { m_renderer.Submit(record.stemMesh, stemMaterial, identity, noParams, sceneHidden); }
+            if (!m_leafIndices.empty()) { m_renderer.Submit(record.leafMesh, leafMaterial, identity, noParams, sceneHidden); }
         });
 
         // Vines whose entity is gone (destroyed, or lost its component): free the state, keep

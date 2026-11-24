@@ -45,6 +45,7 @@
 #include "Math/Math.h"
  
 #include "Vulkan/VulkanContext.h"
+#include "Vulkan/DeferredDestroy.h"
 #include "Vulkan/VulkanSwapchain.h"
 #include "Vulkan/RenderLayouts.h"
 #include "Vulkan/VulkanFrameManager.h"
@@ -69,6 +70,7 @@
 #include "Passes/WorldUIPass.h"
 #include "DrawList.h"
 #include "RenderResources.h"
+#include "MaterialShaders.h"
 #include "EnvironmentMaps.h"
 #include "GpuProfiler.h"
 #include "SceneLights.h"
@@ -346,6 +348,106 @@ namespace Crucible {
         ENGINE_API void UpdateMaterial(MaterialHandle handle, const MaterialData& data);
 
         /*********************************************************************
+         \brief  The mesh shader called `name`, loaded the first time it is
+                 asked for. A material is drawn with it by setting
+                 MaterialData::shader to the handle (a .mat file's "shader"
+                 key does this - see ResourceManager).
+         \details
+            A mesh shader is Assets/Shaders/<name>.slang - a surface function
+            followed by SurfaceTemplate.slang - compiled to
+            Resources/Shaders/<name>.spv by the build. Its pipelines are
+            built in the background: until they are ready its materials draw
+            with the built-in shader. When the .spv is missing (a shader graph
+            not compiled or cooked, a deleted one) or cannot be built, they
+            draw with the error shader (ErrorShader.slang, magenta squares).
+         \param[in] name  The shader's name, without folder or extension
+                          ("MagicOrb"). Empty = the built-in shader.
+         \return Its handle (the same one every time), or an Invalid handle -
+                 the built-in shader - for an empty or unusable name.
+         \note  Frame thread only. Shaders are never unloaded.
+         *********************************************************************/
+        /// `quiet`: say nothing if the shader has no compiled code yet - for one that never has
+        /// any on disk and is given its code straight away (the Shader Graph window's preview).
+        ENGINE_API MaterialShaderHandle LoadMaterialShader(const std::string& name, bool quiet = false);
+
+        /*********************************************************************
+         \brief  A mesh shader's name, as given to LoadMaterialShader.
+         \return Empty for an Invalid handle (the built-in shader, when a
+                 material never named one).
+         *********************************************************************/
+        ENGINE_API const std::string& GetMaterialShaderName(MaterialShaderHandle shader) const;
+
+        /*********************************************************************
+         \brief  How many mesh shaders are loaded. Their handles are
+                 0 .. count - 1; 0 is the built-in shader ("DefaultShader").
+         *********************************************************************/
+        ENGINE_API uint32_t GetMaterialShaderCount() const;
+
+        /*********************************************************************
+         \brief  Replaces a mesh shader's code with newly compiled SPIR-V
+                 while the program runs. The Editor's shader hot reload
+                 calls this (ShaderHotReloadLayer); the Game never does - it
+                 has no compiler.
+         \param[in] shader  The shader; handle 0 is the built-in one.
+         \param[in] spirv   The compiled shader: the entry points vertMain
+                           and fragMain, and the mesh shader's interface
+                           (anything that ends with SurfaceTemplate.slang).
+         \param[out] error  Why it was refused, when it was.
+         \return false if `spirv` is not such a module. On true, the new
+                 pipelines are built in the background and swapped in a few
+                 frames later; the shader's materials keep drawing with the
+                 previous ones until then (and after, if the build fails -
+                 that is logged).
+         \note  Call on the frame thread, outside DrawFrame().
+         *********************************************************************/
+        ENGINE_API bool ReloadMaterialShader(MaterialShaderHandle shader, std::span<const uint32_t> spirv, std::string& error);
+
+        /*********************************************************************
+         \brief  Says a mesh shader's source is gone (the Editor, when a shader
+                 graph's file is deleted): its materials draw with the error
+                 shader until ReloadMaterialShader gives it code again.
+         \note   Frame thread only. Nothing happens for the built-in shader.
+         *********************************************************************/
+        ENGINE_API void MarkMaterialShaderMissing(MaterialShaderHandle shader);
+
+        /// Whether a mesh shader's materials draw with the error shader: it has no code, or its
+        /// code could not be built. False while it only waits for its first build.
+        ENGINE_API bool IsMaterialShaderBroken(MaterialShaderHandle shader) const;
+
+        /*********************************************************************
+         \brief  How many mesh shaders are still having their pipelines built
+                 in the background (their materials draw with the built-in
+                 shader meanwhile). A loading screen can wait for 0 so the
+                 first frames of a level show every material as it is meant
+                 to look.
+         *********************************************************************/
+        ENGINE_API uint32_t GetPendingMaterialShaderBuilds() const;
+
+        /*********************************************************************
+         \brief  A mesh shader's own parameters and textures: what a
+                 material using it can set (MaterialData::params and
+                 shaderTextures, by slot) - see MaterialShaderParams.h.
+                 Loaded with the shader from <name>.params.json.
+         \return The list; empty for the built-in shader, a shader without
+                 one, and an Invalid handle.
+         *********************************************************************/
+        ENGINE_API const MaterialShaderParams& GetMaterialShaderParams(MaterialShaderHandle shader) const;
+
+        /*********************************************************************
+         \brief  Replaces a mesh shader's list while the program runs (the
+                 Editor, when <name>.params.json is saved). Every material
+                 using the shader keeps its values by name; new parameters
+                 start from their defaults.
+         \param[in] shader  The shader. Not the built-in one (handle 0),
+                           which has no list.
+         \param[in] params  The new list.
+         \return false for the built-in shader or a handle that is not ours.
+         \note  Call on the frame thread, outside DrawFrame(). Waits for the
+                GPU once if the list's textures changed.
+         *********************************************************************/
+        ENGINE_API bool SetMaterialShaderParams(MaterialShaderHandle shader, const MaterialShaderParams& params);
+
+        /*********************************************************************
          \brief  Reads back a material's current texture bindings/scalar
                  factors.
          \param[in] handle The material to look up.
@@ -563,6 +665,16 @@ namespace Crucible {
         ENGINE_API void           SetViewportActive(ViewportHandle handle, bool active);
 
         /*********************************************************************
+         \brief  Skips DrawFrame() while set: Update() still consumes the
+                 frame's submissions (so nothing piles up) but records and
+                 presents nothing. Core sets it while the window is
+                 minimized - nothing can be seen, and a 0x0 swapchain cannot
+                 be drawn into anyway.
+         *********************************************************************/
+        void                      SetDrawSuspended(bool suspended) { m_drawSuspended = suspended; }
+        bool                      IsDrawSuspended() const { return m_drawSuspended; }
+
+        /*********************************************************************
          \brief  The colour a viewport shows where no scene is drawn: always
                  for a UI viewport, and for a Game viewport while there is
                  no main camera. Default opaque black.
@@ -663,7 +775,8 @@ namespace Crucible {
             pass in two halves. Not pickable in the editor, casts no shadow,
             and is not in the ambient occlusion pre-pass.
          *********************************************************************/
-        ENGINE_API void SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings);
+        // sceneHidden: editor scene visibility - the surface is left out of Scene-role views only.
+        ENGINE_API void SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings, bool sceneHidden = false);
 
         /*********************************************************************
          \brief
@@ -835,8 +948,9 @@ namespace Crucible {
         ENGINE_API void SetRenderProxyAnimation(RenderProxyHandle handle, std::span<const glm::mat4> palette,
                                                const glm::vec3& boundsMin, const glm::vec3& boundsMax);
 
+        // sceneHidden: editor scene visibility - the item is left out of Scene-role views only.
         ENGINE_API void Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model,
-                               const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
+                               const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f), bool sceneHidden = false);
 
         // ---- Render proxies (persistent, culled objects) -------------------------------------
 
@@ -878,6 +992,29 @@ namespace Crucible {
                                        const glm::vec4& params = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f));
 
         /*********************************************************************
+         \brief
+            Hides a proxy in Scene-role viewports only (the editor's scene
+            visibility - RenderExtractSystem sets it from the SceneHidden
+            component). Game viewports and the window pass draw it as usual.
+
+         \param[in] handle  The proxy.
+         \param[in] hidden  true = left out of Scene views: not drawn, casts
+                            no shadow there, gets no selection outline, and
+                            Raycast(..., ignoreSceneHidden = true) passes
+                            through it. Cheap to call every frame.
+         *********************************************************************/
+        ENGINE_API void SetRenderProxySceneHidden(RenderProxyHandle handle, bool hidden);
+
+        /*********************************************************************
+         \brief
+            The editor's "Show hidden objects": while true, Scene viewports
+            draw the proxies flagged with SetRenderProxySceneHidden as usual
+            (and outline them when selected). The flags are kept.
+         *********************************************************************/
+        ENGINE_API void SetSceneHiddenShown(bool shown);
+        ENGINE_API bool GetSceneHiddenShown() const;
+
+        /*********************************************************************
          \brief  Unregisters a proxy; its handle may be reused.
          *********************************************************************/
         ENGINE_API void DestroyRenderProxy(RenderProxyHandle handle);
@@ -892,9 +1029,13 @@ namespace Crucible {
          \param[in]  direction   Ray direction (any length).
          \param[in]  maxDistance Ignore hits farther than this.
          \param[out] outHit      Nearest hit (userData, distance, point).
+         \param[in]  ignoreSceneHidden  true = skip proxies hidden in the Scene
+                                 view (SetRenderProxySceneHidden), so the
+                                 editor picks what is behind them.
          \return true if anything was hit.
          *********************************************************************/
-        ENGINE_API bool Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const;
+        ENGINE_API bool Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit,
+                                bool ignoreSceneHidden = false) const;
 
         /*********************************************************************
          \brief  Last frame's culling numbers for an editor viewport.
@@ -956,7 +1097,12 @@ namespace Crucible {
         ParticlePass                m_particlePass{ m_context, m_resources };
         WaterPass                   m_waterPass{ m_resources };   // water surfaces, drawn inside the scene pass
         WorldUIPass                 m_worldUIPass{ m_context, m_resources };   // world-space UI (WorldText, world canvases), drawn inside the scene pass
-        ScenePass                   m_scenePass{ m_resources, m_particlePass, m_waterPass, m_worldUIPass };
+        ScenePass                   m_scenePass{ m_resources, m_particlePass, m_waterPass, m_worldUIPass, m_materialShaders };
+        // The mesh shaders and their scene pipelines. AFTER m_scenePass: it is destroyed first, which
+        // stops its background thread while the pass whose layout that thread builds with is still there.
+        MaterialShaders             m_materialShaders;
+        uint32_t                    m_pendingShaderBuilds = 0;      // m_materialShaders.PendingBuilds() last frame
+        bool                        m_savedCacheAfterBuilds = false; // the pipeline cache was saved once the first builds were done
         DebugLinePass               m_debugLinePass;
         UIPass                      m_uiPass{ m_context, m_resources };   // also holds m_resources (declared below; used once frames start)
         VolumetricFogPass           m_fogPass{ m_context };   // froxel fog (compute); its pool is BEFORE every view's FogVolumeTargets
@@ -1008,6 +1154,7 @@ namespace Crucible {
         RenderFrameStats                            m_frameStats;
         GpuProfiler                                 m_profiler;
         double                                      m_lastFrameStart = 0.0;  // seconds, steady clock
+        bool                                        m_drawSuspended = false; // SetDrawSuspended
 
         // Load test (see StressSettings).
         StressSettings                              m_stressSettings;
@@ -1030,6 +1177,10 @@ namespace Crucible {
         // m_viewTargets, whose pool their PostTargets sets come from.
         ViewportSet                                m_viewportSet{ m_context, m_viewTargets };
 
+        // GPU objects that were replaced while frames using them may still be in flight (a
+        // reloaded shader's old pipelines). Declared last: what is still waiting in it at
+        // shutdown is destroyed first, before the pools and layouts it came from.
+        DeferredDestroyQueue                       m_deferred;
 
         // Vulkan helpers
         void RecordCommandBuffer(FrameContext& fc);
@@ -1061,9 +1212,10 @@ namespace Crucible {
         // ---- Frame preparation (before recording) ----
         // Culls and batches everything one view draws this frame (main pass, shadow cascades,
         // selection mask) into `out`, appending instances to m_instanceScratch, and writes the
-        // view's FrameUniforms to `uniformDst`.
+        // view's FrameUniforms to `uniformDst`. sceneView: an editor Scene-role viewport, which
+        // leaves out the proxies hidden there (SetRenderProxySceneHidden).
         void PrepareView(Camera& camera, vk::Extent2D extent, RenderCullStats& stats, ViewDrawList& out,
-                         bool outline, void* uniformDst);
+                         bool outline, bool sceneView, void* uniformDst);
         // Uploads this frame's instances; re-points set 0, binding 2 if the buffer was replaced.
         void UploadInstances(uint32_t frameIndex);
         // Points set 0's shared bindings (1 lights, 2 instances, 3/4 shadow map) of each per-frame

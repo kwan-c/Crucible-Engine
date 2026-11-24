@@ -65,6 +65,7 @@ namespace Crucible {
 
         desc.Uses<EmitterQuery>()                    // reads WorldTransform + ParticleEmitter
             .Writes<ParticleEmitter>()               // playing = false when a run finishes, after the query
+            .Reads<SceneHidden>()                    // editor scene visibility: the batch is flagged, the simulation is unchanged
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
             .Affinity(SystemAffinity::MainThread);   // touches the Renderer/ResourceManager
 
@@ -114,7 +115,7 @@ namespace Crucible {
             if (request && request->emit > 0) {
                 Spawn(state, settings, worldTransform.matrix, request->emit);   // playing or not; maxParticles still applies
             }
-            Submit(state, settings, worldTransform.matrix);
+            Submit(state, settings, worldTransform.matrix, world.HasComponent<SceneHidden>(entity));
             m_liveParticles += static_cast<std::uint32_t>(state.particles.size());
 
             // A non-looping run past its Duration spawns nothing more: switch it off (Unity's
@@ -188,6 +189,15 @@ namespace Crucible {
 
     }   // ParticleSystem::GetParticleCount()
 
+    float ParticleSystem::ConeFarRadius(const ParticleEmitter& settings) {
+
+        // +-90 would be a flat cone with an infinite far end (tan); 89 is already 57 m per metre.
+        const float angle = glm::radians(std::clamp(settings.coneAngleDeg, -89.0f, 89.0f));
+        const float near_ = std::max(settings.shapeRadius, 0.0f);   // "near"/"far" are macros in <windows.h>
+        return std::max(near_ + std::max(settings.coneLength, 0.01f) * std::tan(angle), 0.0f);
+
+    }   // ParticleSystem::ConeFarRadius()
+
     void ParticleSystem::Spawn(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, int count) {
 
         const int cap  = std::clamp(settings.maxParticles, 0, kMaxParticlesPerEmitter);
@@ -205,9 +215,13 @@ namespace Crucible {
 
             // Where: a point in the emitter's local space, by shape.
             glm::vec3 local(0.0f);
+            glm::vec3 dir(0.0f, 1.0f, 0.0f);
+            bool      shapeSetsDirection = false;
+
             switch (settings.shape) {
-                case ParticleShape::Point:
+                case ParticleShape::Point: {
                     break;
+                }
                 case ParticleShape::Sphere: {
                     // Rejection sampling: uniform inside the unit sphere.
                     glm::vec3 v;
@@ -217,17 +231,52 @@ namespace Crucible {
                     local = v * std::max(settings.shapeRadius, 0.0f);
                     break;
                 }
-                case ParticleShape::Box:
+                case ParticleShape::Box: {
                     local = glm::vec3(RandRange(state.rng, -1.0f, 1.0f), RandRange(state.rng, -1.0f, 1.0f), RandRange(state.rng, -1.0f, 1.0f))
                           * glm::max(settings.boxExtents, glm::vec3(0.0f));
                     break;
+                }
+                case ParticleShape::Circle: {
+                    // Uniform over a flat disc in the local XZ plane (facing +Y). The square root
+                    // spreads them evenly by area: a ring twice as far out is twice as long, so it
+                    // gets twice the particles - without it they bunch up in the middle.
+                    // Then straight out from the centre, along the disc. `out` comes from the angle,
+                    // not the position, so a particle right at the centre still has a direction.
+                    const float     r = std::max(settings.shapeRadius, 0.0f) * std::sqrt(Rand01(state.rng));
+                    const float     phi = Rand01(state.rng) * kTwoPi;
+                    const glm::vec3 out(std::cos(phi), 0.0f, std::sin(phi));
+                    local = out * r;
+                    dir = out;
+                    shapeSetsDirection = true;
+                    break;
+                }
+                case ParticleShape::Cone: {
+                    // A cut-off cone: the near disc (shapeRadius) here, the far disc coneLength along
+                    // +Y (ConeFarRadius: wider, narrower, or closed to a point). Start on the near
+                    // disc, evenly by area like Circle: s is how far out (0 = centre, 1 = rim), `out`
+                    // which side. Then aim at the same spot on the far disc - same side, same s - so
+                    // the middle goes straight, the rim follows the cone's wall, and every path runs
+                    // through the cone's tip: a spray looks thrown from one point behind the emitter,
+                    // a narrowing cone gathers into one point in front of it.
+                    const float     s = std::sqrt(Rand01(state.rng));
+                    const float     phi = Rand01(state.rng) * kTwoPi;
+                    const glm::vec3 out(std::cos(phi), 0.0f, std::sin(phi));
+                    const float     length = std::max(settings.coneLength, 0.01f);
+                    local = out * (std::max(settings.shapeRadius, 0.0f) * s);
+                    const glm::vec3 target = out * (ConeFarRadius(settings) * s) + glm::vec3(0.0f, length, 0.0f);
+                    dir = glm::normalize(target - local);   // never zero: target is `length` above
+                    shapeSetsDirection = true;
+                    break;
+                }
             }
 
-            // Which way: uniformly inside a cone of half-angle spreadDeg around local +Y.
-            const float cosTheta = RandRange(state.rng, cosSpread, 1.0f);
-            const float sinTheta = std::sqrt(std::max(1.0f - cosTheta * cosTheta, 0.0f));
-            const float phi      = Rand01(state.rng) * kTwoPi;
-            const glm::vec3 dir(sinTheta * std::cos(phi), cosTheta, sinTheta * std::sin(phi));
+            // Which way (all but Cone, Circle): uniformly inside a cone of half-angle spreadDeg around local +Y.
+            if (!shapeSetsDirection) {
+                const float cosTheta = RandRange(state.rng, cosSpread, 1.0f);
+                const float sinTheta = std::sqrt(std::max(1.0f - cosTheta * cosTheta, 0.0f));
+                const float phi      = Rand01(state.rng) * kTwoPi;
+                dir = glm::vec3(sinTheta * std::cos(phi), cosTheta, sinTheta * std::sin(phi));
+            }
             const float speed = RandRange(state.rng, settings.speedMin, settings.speedMax);
 
             if (settings.worldSpace) {
@@ -305,7 +354,7 @@ namespace Crucible {
 
     }   // ParticleSystem::Simulate()
 
-    void ParticleSystem::Submit(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix) {
+    void ParticleSystem::Submit(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, bool sceneHidden) {
 
         if (state.particles.empty()) { return; }
 
@@ -363,6 +412,7 @@ namespace Crucible {
         desc.flipbookRows = static_cast<std::uint32_t>(rows);
         desc.boundsMin    = boundsMin - glm::vec3(maxReach);
         desc.boundsMax    = boundsMax + glm::vec3(maxReach);
+        desc.sceneHidden  = sceneHidden;   // hidden in the editor's Scene view only; still simulated and still lit
         m_renderer.SubmitParticles(desc, m_gpuScratch.data(), static_cast<std::uint32_t>(m_gpuScratch.size()));
 
         // One light for the whole emitter, at the middle of its hot particles. Its strength follows

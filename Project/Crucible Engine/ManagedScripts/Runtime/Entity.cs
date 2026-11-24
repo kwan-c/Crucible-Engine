@@ -70,6 +70,7 @@ namespace Crucible
         private FlowFieldSurface flowFieldSurface;
         private StateGraphAgent stateGraphAgent;
         private NetVars netVars;
+        private Terrain terrain;
 
         internal Entity(uint index, uint generation)
         {
@@ -118,6 +119,8 @@ namespace Crucible
         public FlowFieldSurface FlowFieldSurface { get { return flowFieldSurface ?? (flowFieldSurface = new FlowFieldSurface(Identity)); } }
         /// <summary>This entity's StateGraphAgent: its brain's variables and state (needs a StateGraphAgent component).</summary>
         public StateGraphAgent StateGraphAgent { get { return stateGraphAgent ?? (stateGraphAgent = new StateGraphAgent(Identity)); } }
+        /// <summary>This entity's Terrain: generated ground - Build, GroundHeight (needs a Terrain component).</summary>
+        public Terrain Terrain { get { return terrain ?? (terrain = new Terrain(Identity)); } }
 
         /// <summary>False once the entity has been destroyed (and outside Play).</summary>
         public bool IsAlive
@@ -321,6 +324,8 @@ namespace Crucible
                 return Has(ComponentKind.FlowFieldSurface) ? (T)(object)FlowFieldSurface : null;
             if (type == typeof(StateGraphAgent))
                 return Has(ComponentKind.StateGraphAgent) ? (T)(object)StateGraphAgent : null;
+            if (type == typeof(Terrain))
+                return Has(ComponentKind.Terrain) ? (T)(object)Terrain : null;
             if (type == typeof(UIText))   return Has(ComponentKind.UIText)   ? (T)(object)new UIText(Identity)   : null;
             if (type == typeof(UIImage))  return Has(ComponentKind.UIImage)  ? (T)(object)new UIImage(Identity)  : null;
             if (type == typeof(UISlider)) return Has(ComponentKind.UISlider) ? (T)(object)new UISlider(Identity) : null;
@@ -340,7 +345,7 @@ namespace Crucible
                 return null;
             }
             throw new ArgumentException("GetComponent<" + type.Name +
-                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, FlowFieldAgent, FlowFieldSurface, StateGraphAgent, a UI component or a script class.");
+                                        ">: use Transform, RigidBody, Animator, AudioSource, CharacterController, Camera, CameraOrbit, Light, ParticleEmitter, Collider, MeshRenderer, PlayerController, WorldText, MaterialParams, FlowFieldAgent, FlowFieldSurface, StateGraphAgent, Terrain, a UI component or a script class.");
         }
 
         /// <summary>Does the entity have a component or script of type T? See GetComponent.</summary>
@@ -435,6 +440,7 @@ namespace Crucible
             if (type == typeof(FlowFieldAgent)) return (int)ComponentKind.FlowFieldAgent;
             if (type == typeof(FlowFieldSurface)) return (int)ComponentKind.FlowFieldSurface;
             if (type == typeof(StateGraphAgent)) return (int)ComponentKind.StateGraphAgent;
+            if (type == typeof(Terrain)) return (int)ComponentKind.Terrain;
             if (type == typeof(UIText)) return (int)ComponentKind.UIText;
             if (type == typeof(UIImage)) return (int)ComponentKind.UIImage;
             if (type == typeof(UISlider)) return (int)ComponentKind.UISlider;
@@ -472,6 +478,7 @@ namespace Crucible
             FlowFieldAgent = 21,
             FlowFieldSurface = 22,
             StateGraphAgent = 23,
+            Terrain = 24,
         }
 
         private bool Has(ComponentKind kind)

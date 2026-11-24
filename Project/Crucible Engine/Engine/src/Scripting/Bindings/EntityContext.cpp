@@ -1,7 +1,9 @@
 /*************************************************************************
 * \file:         EntityContext.cpp
-* \author:       Tan Chun Kwang Xavier
-* \par:          Email: chunkwangxavier.tan@digipen.edu
+* \author:       Tan Chun Kwang Xavier (main author),
+*                Jean David Vidal Cruzado (EditorCallScope)
+* \par:          Email: chunkwangxavier.tan@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          1 November 2026
 * \version       1.0
 * \brief         Implementation - see EntityContext.h. Also defines
@@ -36,7 +38,15 @@ namespace Crucible::ScriptBindings
 			Entity entity;
 			float remaining; // seconds of Play time left
 		};
-		thread_local std::vector<PendingDestroy> pendingDestroys;
+		// Function-local thread_local, created on first use: a namespace-scope thread_local with
+		// a constructor is built by MSVC for EVERY thread that starts in the process (Jolt workers,
+		// FMOD, the GPU driver, ...), and threads still running at exit never destroy it - each
+		// left one leaked copy in the Debug leak report.
+		std::vector<PendingDestroy>& PendingDestroys()
+		{
+			thread_local std::vector<PendingDestroy> list;
+			return list;
+		}
 
 		// Audio.PlayClipAtPoint entities waiting for their sound to end.
 		struct OneShotAudio
@@ -45,11 +55,17 @@ namespace Crucible::ScriptBindings
 			float waited = 0.0f;  // seconds before it started playing
 			bool started = false; // its AudioSource has reported playing
 		};
-		thread_local std::vector<OneShotAudio> oneShots;
+		std::vector<OneShotAudio>& OneShots()   // created on first use, see PendingDestroys()
+		{
+			thread_local std::vector<OneShotAudio> list;
+			return list;
+		}
 
 		// C# Time: Playing time and frames since Play started.
 		thread_local double playTime = 0.0;
 		thread_local int32_t playFrames = 0;
+		// Open EditorCallScopes (an Inspector [EditorButton] running a script method in Edit mode).
+		thread_local int editorCalls = 0;
 
 		// A one-shot that has not started after this long never will (missing clip).
 		constexpr float OneShotStartTimeout = 2.0f;
@@ -67,8 +83,8 @@ namespace Crucible::ScriptBindings
 		play = newPlay;
 		scenes = newScenes;
 		assets = newAssets;
-		pendingDestroys.clear();
-		oneShots.clear();
+		PendingDestroys().clear();
+		OneShots().clear();
 		playTime = 0.0;
 		playFrames = 0;
 	}
@@ -140,23 +156,23 @@ namespace Crucible::ScriptBindings
 
 		void QueueDestroy(Entity entity, float delaySeconds)
 		{
-			const auto existing = std::find_if(pendingDestroys.begin(), pendingDestroys.end(),
+			const auto existing = std::find_if(PendingDestroys().begin(), PendingDestroys().end(),
 			                                   [&](const PendingDestroy& pending) { return pending.entity == entity; });
-			if (existing != pendingDestroys.end())
+			if (existing != PendingDestroys().end())
 				existing->remaining = std::min(existing->remaining, delaySeconds);
 			else
-				pendingDestroys.push_back({entity, delaySeconds});
+				PendingDestroys().push_back({entity, delaySeconds});
 		}
 
 		void TakeDueDestroys(float deltaTime, std::vector<Entity>& due)
 		{
-			for (auto it = pendingDestroys.begin(); it != pendingDestroys.end();)
+			for (auto it = PendingDestroys().begin(); it != PendingDestroys().end();)
 			{
 				it->remaining -= deltaTime;
 				if (it->remaining <= 0.0f)
 				{
 					due.push_back(it->entity);
-					it = pendingDestroys.erase(it);
+					it = PendingDestroys().erase(it);
 				}
 				else
 					++it;
@@ -165,12 +181,12 @@ namespace Crucible::ScriptBindings
 
 		void ClearDestroyQueue()
 		{
-			pendingDestroys.clear();
+			PendingDestroys().clear();
 		}
 
 		void PruneDestroyQueue(const World& liveWorld)
 		{
-			std::erase_if(pendingDestroys,
+			std::erase_if(PendingDestroys(),
 			              [&liveWorld](const PendingDestroy& pending) { return !liveWorld.IsAlive(pending.entity); });
 		}
 
@@ -204,14 +220,14 @@ namespace Crucible::ScriptBindings
 
 		void TrackOneShotAudio(Entity entity)
 		{
-			oneShots.push_back({entity});
+			OneShots().push_back({entity});
 		}
 
 		void UpdateOneShotAudio(float deltaTime)
 		{
 			if (!world)
 				return;
-			for (auto it = oneShots.begin(); it != oneShots.end();)
+			for (auto it = OneShots().begin(); it != OneShots().end();)
 			{
 				const AudioSource* source = world->IsAlive(it->entity) ? world->Read<AudioSource>(it->entity) : nullptr;
 				bool done = !source; // destroyed by a script, or its AudioSource removed
@@ -228,7 +244,7 @@ namespace Crucible::ScriptBindings
 				{
 					if (source)
 						QueueDestroy(it->entity, 0.0f);
-					it = oneShots.erase(it);
+					it = OneShots().erase(it);
 				}
 				else
 					++it;
@@ -237,12 +253,20 @@ namespace Crucible::ScriptBindings
 
 		void ClearOneShotAudio()
 		{
-			oneShots.clear();
+			OneShots().clear();
+		}
+
+		EditorCallScope::EditorCallScope() { ++editorCalls; }
+		EditorCallScope::~EditorCallScope() { --editorCalls; }
+
+		bool InEditorCall()
+		{
+			return editorCalls > 0;
 		}
 
 		bool ResolveEntity(int32_t index, int32_t generation, Entity& entity)
 		{
-			if (!world || !play || !play->InSession())
+			if (!world || (!InPlaySession() && !InEditorCall()))
 				return false;
 			entity = Entity{static_cast<uint32_t>(index), static_cast<uint32_t>(generation)};
 			return world->IsAlive(entity);

@@ -1,9 +1,11 @@
 /*************************************************************************
 * \file:         PhysicsComponents.h
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Hugo Low Ren Hao (main author),
+*                Jean David Vidal Cruzado (v1.8: HeightField colliders)
+* \par:          Email: low.h@digipen.edu,
+*                Email: jeandavidvidal.c@digipen.edu
 * \date          27 September 2026
-* \version       1.7
+* \version       1.8
 * \brief
 *                The physics components the designer and gameplay touch:
 *                Collider, CharacterController, ConstantForce and
@@ -27,6 +29,8 @@
 *    -v1.6       PlayerController and CameraOrbit moved out to
 *                Player/PlayerComponents.h: controls, not physics
 *    -v1.7       Collider::m_isTrigger
+*    -v1.8       ShapeType::HeightField: the ground of a Terrain on the
+*                same entity
 *
 **************************************************************************/
 #pragma once
@@ -67,7 +71,9 @@ namespace Crucible {
         to put in an inspector than "remove this component, add that one".
 
         Which fields matter depends on m_type: a sphere reads m_radius and
-        ignores the rest.
+        ignores the rest. A HeightField reads no size at all: its shape is the
+        Terrain on the same entity (Terrain/TerrainComponents.h), stretched by
+        the entity's scale, and it can only be static ground (no RigidBody).
     */
     struct Collider {
 
@@ -138,6 +144,10 @@ namespace Crucible {
             case ShapeType::Capsule:
                 scaled.m_radius = collider.m_radius * std::max(size.x, size.z);
                 scaled.m_height = collider.m_height * size.y;
+                break;
+            case ShapeType::HeightField:
+                // No sizes to scale: the grid itself is stretched by the scale,
+                // which ECSPhysicsSystem hands to physics as ShapeDesc::m_gridScale.
                 break;
         }
 

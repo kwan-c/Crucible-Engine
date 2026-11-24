@@ -5,6 +5,9 @@
 *************************************************************************/
 #include "Graphics/RenderResources.h"
 
+#include "Graphics/MaterialShaders.h"
+#include "Diagnostics/Logger.h"
+
 #include "Graphics/Vulkan/RenderLayouts.h"   // Vertex
 #include "Graphics/Vulkan/VulkanFrameManager.h"   // MAX_FRAMES_IN_FLIGHT (ReleaseDestroyed)
 #include "Resources/CompiledTexture.h"            // CreateTextureCompressed
@@ -449,6 +452,7 @@ namespace Crucible {
 
         m_defaultWhiteTexture  = CreateSolidColorTexture(255, 255, 255, 255, /*isSRGB*/ true);
         m_defaultNormalTexture = CreateSolidColorTexture(128, 128, 255, 255, /*isSRGB*/ false);   // flat tangent-space normal (0,0,1)
+        m_defaultBlackTexture  = CreateSolidColorTexture(0, 0, 0, 255, /*isSRGB*/ true);
 
     }   // RenderResources::CreateDefaultTextures()
 
@@ -482,11 +486,11 @@ namespace Crucible {
 
     void RenderResources::CreateMaterialDescriptorPool() {
 
-        // One block's worth (kMaterialsPerDescriptorPool materials, each a set of five
+        // One block's worth (kMaterialsPerDescriptorPool materials, each a set of eight
         // combined-image-samplers) - see CreateMaterial() for what happens when it fills up.
         vk::DescriptorPoolSize poolSize{
             .type = vk::DescriptorType::eCombinedImageSampler,
-            .descriptorCount = kMaterialsPerDescriptorPool * 5 };
+            .descriptorCount = kMaterialsPerDescriptorPool * RenderLayouts::kMaterialTextureSlots };
         vk::DescriptorPoolCreateInfo poolInfo{
             .flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet,
             .maxSets = kMaterialsPerDescriptorPool, .poolSizeCount = 1, .pPoolSizes = &poolSize };
@@ -497,24 +501,51 @@ namespace Crucible {
 
     void RenderResources::WriteMaterialDescriptorSet(vk::DescriptorSet set, const MaterialData& data) {
 
-        // Binding order must match RenderLayouts::CreateMaterialDescriptorSetLayout AND the
-        // shader's [[vk::binding(n,1)]] declarations exactly: 0=albedo, 1=normal,
-        // 2=metallicRoughness, 3=emissive, 4=occlusion.
-        auto resolve = [&](TextureHandle h, bool isNormalSlot) -> vk::ImageView {
-            const TextureHandle fallback = isNormalSlot ? m_defaultNormalTexture : m_defaultWhiteTexture;
-            return *GetTextureOrThrow(IsTextureUsable(h) ? h : fallback).view;   // destroyed counts as missing
+        static_assert(MaterialShaderParams::kMaxTextures == RenderLayouts::kMaterialTextureSlots,
+                      "a shader's texture list fills the material set's slots");
+        constexpr uint32_t kSlots = RenderLayouts::kMaterialTextureSlots;
+
+        // A slot's texture, or its placeholder when the slot is empty (a destroyed texture counts
+        // as missing).
+        const auto viewOf = [&](TextureHandle handle, TextureHandle fallback) -> vk::ImageView {
+            return *GetTextureOrThrow(IsTextureUsable(handle) ? handle : fallback).view;
         };
 
-        vk::DescriptorImageInfo imageInfos[5] = {
-            { .sampler = *m_materialSampler, .imageView = resolve(data.albedo, false),            .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-            { .sampler = *m_materialSampler, .imageView = resolve(data.normal, true),              .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-            { .sampler = *m_materialSampler, .imageView = resolve(data.metallicRoughness, false),  .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-            { .sampler = *m_materialSampler, .imageView = resolve(data.emissive, false),           .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-            { .sampler = *m_materialSampler, .imageView = resolve(data.occlusion, false),          .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal },
-        };
+        std::array<vk::ImageView, kSlots> views;
+        const MaterialShaderParams& list = ParamsOf(data.shader);
+        if (list.textures.empty()) {
+            // The built-in slots. Binding order must match RenderLayouts::
+            // CreateMaterialDescriptorSetLayout AND DefaultSurface.slang's [[vk::binding(n,1)]]
+            // declarations exactly: 0=albedo, 1=normal, 2=metallicRoughness, 3=emissive,
+            // 4=occlusion. The other three are unused.
+            views.fill(viewOf(TextureHandle{}, m_defaultWhiteTexture));
+            views[0] = viewOf(data.albedo,            m_defaultWhiteTexture);
+            views[1] = viewOf(data.normal,            m_defaultNormalTexture);
+            views[2] = viewOf(data.metallicRoughness, m_defaultWhiteTexture);
+            views[3] = viewOf(data.emissive,          m_defaultWhiteTexture);
+            views[4] = viewOf(data.occlusion,         m_defaultWhiteTexture);
+        } else {
+            // The shader's own textures, slot = position in its list (MATERIAL_TEXTURE(slot, name)
+            // in the shader). An empty slot shows the default its list names.
+            for (uint32_t i = 0; i < kSlots; ++i) {
+                TextureHandle fallback = m_defaultWhiteTexture;
+                if (i < list.textures.size()) {
+                    switch (list.textures[i].fallback) {
+                        case MaterialTextureDefault::Black:  fallback = m_defaultBlackTexture;  break;
+                        case MaterialTextureDefault::Normal: fallback = m_defaultNormalTexture; break;
+                        default: break;
+                    }
+                }
+                const bool hasSlot = i < list.textures.size() && i < data.shaderTextures.size();
+                views[i] = viewOf(hasSlot ? data.shaderTextures[i] : TextureHandle{}, fallback);
+            }
+        }
 
-        vk::WriteDescriptorSet writes[5];
-        for (uint32_t i = 0; i < 5; ++i) {
+        std::array<vk::DescriptorImageInfo, kSlots> imageInfos;
+        std::array<vk::WriteDescriptorSet, kSlots>  writes;
+        for (uint32_t i = 0; i < kSlots; ++i) {
+            imageInfos[i] = vk::DescriptorImageInfo{
+                .sampler = *m_materialSampler, .imageView = views[i], .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal };
             writes[i] = vk::WriteDescriptorSet{
                 .dstSet = set, .dstBinding = i, .dstArrayElement = 0,
                 .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler,
@@ -548,8 +579,8 @@ namespace Crucible {
 
     void RenderResources::DrawDepthBatches(vk::CommandBuffer cmd, const std::vector<DrawBatch>& batches, const DepthPassPipelines& p) const {
 
-        bool              cutoutBound = false;
-        vk::CullModeFlags cullBound   = p.cull;
+        vk::Pipeline      pipelineBound = p.solid;
+        vk::CullModeFlags cullBound     = p.cull;
         cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, p.solid);
         if (p.dynamicCull) { cmd.setCullMode(cullBound); }
         bool mirroredBound = false;
@@ -566,16 +597,24 @@ namespace Crucible {
             }
 
             if (!(batch.material == boundMaterial)) {
-                const MaterialData* data = IsMaterialUsable(batch.material)   // destroyed: plain solid depth
-                                         ? &m_materials[batch.material.id].data : nullptr;
-                const bool cutout = data && data->alphaCutoff > 0.0f;
-                if (cutout != cutoutBound) {
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, cutout ? p.cutout : p.solid);   // same layout: sets stay bound
-                    cutoutBound = cutout;
+                const GpuMaterial*  material = IsMaterialUsable(batch.material)   // destroyed: plain solid depth
+                                             ? &m_materials[batch.material.id] : nullptr;
+                const MaterialData* data   = material ? &material->data : nullptr;
+                const bool          cutout = data && data->alphaCutoff > 0.0f;
+                // A shader that moves vertices brings its own pipelines for this pass, so the
+                // depth it writes here is where the scene pass draws it. Null while they are not
+                // built: the scene pass is then drawing the material with the built-in shader.
+                const vk::Pipeline moved = data && m_shaders ? m_shaders->MovedPipeline(data->shader, p.pass, cutout) : vk::Pipeline{};
+                const vk::Pipeline pipeline = moved ? moved : cutout ? p.cutout : p.solid;
+                if (pipeline != pipelineBound) {
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);   // same layout: sets stay bound
+                    pipelineBound = pipeline;
                 }
-                if (cutout) {
-                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, p.layout, 1, *m_materials[batch.material.id].descriptorSet, nullptr);
-                    const CutoutPush push{ std::clamp(data->alphaCutoff, 0.0f, 1.0f), data->factors.albedoTint.a };
+                if (cutout || moved) {
+                    // Set 1 and the push constant: the cut-out's alpha - and what a moved
+                    // shader's vertex stage reads, its textures and where its parameters are.
+                    cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, p.layout, 1, *material->descriptorSet, nullptr);
+                    const CutoutPush push{ std::clamp(data->alphaCutoff, 0.0f, 1.0f), data->factors.albedoTint.a, material->push.paramOffset };
                     cmd.pushConstants(p.layout, p.cutoutPushStages, p.cutoutPushOffset, sizeof(CutoutPush), &push);
                 }
                 const vk::CullModeFlags cull = data && data->doubleSided ? vk::CullModeFlags(vk::CullModeFlagBits::eNone) : p.cull;
@@ -591,6 +630,16 @@ namespace Crucible {
         }
 
     }   // RenderResources::DrawDepthBatches()
+
+    bool RenderResources::NeedsMaterialInDepthPasses(MaterialHandle handle) const {
+
+        if (!IsMaterialUsable(handle)) { return false; }
+        const MaterialData& d = m_materials[handle.id].data;
+        // Cut-out and double-sided change how the depth-only passes draw a mesh; a shader that
+        // moves vertices is drawn there with its own pipelines (DrawDepthBatches).
+        return d.alphaCutoff > 0.0f || d.doubleSided || (m_shaders && m_shaders->MovesVertices(d.shader));
+
+    }   // RenderResources::NeedsMaterialInDepthPasses()
 
     MaterialHandle RenderResources::CreateMaterial(const MaterialData& data) {
 
@@ -616,6 +665,7 @@ namespace Crucible {
         GpuMaterial mat;
         mat.data = data;
         mat.push = MakeMaterialPush(data);
+        ApplyShaderParams(mat);   // its range in the parameter buffer, and push.paramOffset
         mat.descriptorSet = std::move(sets.front());
         WriteMaterialDescriptorSet(*mat.descriptorSet, data);
 
@@ -633,13 +683,19 @@ namespace Crucible {
         GpuMaterial& mat = m_materials[handle.id];
         if (mat.destroyed) { return; }   // freed (no scene used it): nothing to update
 
+        // What is bound in its texture set: the five built-in textures, or its shader's own - and
+        // which of the two, so a change of shader counts as well.
         const bool texturesChanged =
             !(mat.data.albedo == data.albedo) || !(mat.data.normal == data.normal) ||
             !(mat.data.metallicRoughness == data.metallicRoughness) ||
-            !(mat.data.emissive == data.emissive) || !(mat.data.occlusion == data.occlusion);
+            !(mat.data.emissive == data.emissive) || !(mat.data.occlusion == data.occlusion) ||
+            !(mat.data.shader == data.shader) || mat.data.shaderTextures != data.shaderTextures;
 
         mat.data = data;
         mat.push = MakeMaterialPush(data);
+        // The shader's own parameters: a write into the parameter buffer (uploaded per frame), so
+        // dragging one of their sliders needs no GPU synchronization either.
+        ApplyShaderParams(mat);
 
         if (texturesChanged) {
             // A command buffer from a still-in-flight frame may currently be executing a draw
@@ -656,6 +712,67 @@ namespace Crucible {
 
     }   // RenderResources::UpdateMaterial()
 
+    const MaterialShaderParams& RenderResources::ParamsOf(MaterialShaderHandle shader) const {
+
+        static const MaterialShaderParams none;
+        return m_shaders ? m_shaders->Params(shader) : none;
+
+    }   // RenderResources::ParamsOf()
+
+    void RenderResources::ApplyShaderParams(GpuMaterial& mat) {
+
+        const MaterialShaderParams& list = ParamsOf(mat.data.shader);
+        const uint32_t count = static_cast<uint32_t>(list.params.size());
+
+        // A range of the right size: only when the number of parameters changes (a new
+        // material, another shader, a longer list).
+        if (count != mat.paramCount) {
+            m_materialParams.Free(mat.paramOffset, mat.paramCount);
+            mat.paramOffset = m_materialParams.Allocate(count);
+            mat.paramCount  = mat.paramOffset != MaterialParamBuffer::kNone ? count : 0;
+            if (count != 0 && mat.paramCount == 0 && !m_paramsFullReported) {
+                m_paramsFullReported = true;
+                CRU_ERROR("[Renderer] The material parameter buffer is full ({} values): materials made from now on get "
+                          "wrong shader parameters. Raise MaterialParamBuffer::kCapacity.", MaterialParamBuffer::kCapacity);
+            }
+        }
+
+        // The material's values, the list's defaults for those it does not have.
+        if (mat.paramCount != 0) {
+            m_paramScratch.resize(count);
+            for (uint32_t i = 0; i < count; ++i) {
+                m_paramScratch[i] = i < mat.data.params.size() ? mat.data.params[i] : list.params[i].defaultValue;
+            }
+            m_materialParams.Write(mat.paramOffset, m_paramScratch);
+        }
+        mat.push.paramOffset = mat.paramCount != 0 ? mat.paramOffset : 0;
+
+    }   // RenderResources::ApplyShaderParams()
+
+    void RenderResources::OnShaderParamsChanged(MaterialShaderHandle shader, const MaterialShaderParams& before) {
+
+        const MaterialShaderParams& now = ParamsOf(shader);
+        const bool texturesChanged = !(before.textures == now.textures);
+
+        std::vector<GpuMaterial*> affected;
+        for (GpuMaterial& mat : m_materials) {
+            if (mat.destroyed || !(mat.data.shader == shader)) { continue; }
+
+            // Its values are kept by slot: carried over by name to where the new list has them.
+            RemapMaterialShaderValues(before, now, mat.data.params, mat.data.shaderTextures);
+            ApplyShaderParams(mat);
+            affected.push_back(&mat);
+        }
+
+        // The texture sets are read by frames still in flight: wait for them once, as
+        // UpdateMaterial does for a texture change.
+        if (texturesChanged && !affected.empty()) {
+            m_context.GetDevice().waitIdle();
+            for (GpuMaterial* mat : affected) { WriteMaterialDescriptorSet(*mat->descriptorSet, mat->data); }
+        }
+
+    }   // RenderResources::OnShaderParamsChanged()
+
     const MaterialData& RenderResources::GetMaterialData(MaterialHandle handle) const {
 
         if (!handle.IsValid() || handle.id >= m_materials.size()) {
@@ -665,9 +782,10 @@ namespace Crucible {
 
     }   // RenderResources::GetMaterialData()
 
-    void RenderResources::InitMaterials(vk::DescriptorSetLayout materialSetLayout) {
+    void RenderResources::InitMaterials(vk::DescriptorSetLayout materialSetLayout, const MaterialShaders& shaders) {
 
         m_materialSetLayout = materialSetLayout;
+        m_shaders = &shaders;
         CreateMaterialSampler();
         CreateMaterialDescriptorPool();
         CreateDefaultTextures();
@@ -715,6 +833,7 @@ namespace Crucible {
         if (!IsMaterialUsable(handle) || handle == m_defaultMaterial) { return false; }
 
         GpuMaterial& material = m_materials[handle.id];
+        m_materialParams.Free(material.paramOffset, material.paramCount);   // frames in flight have their own copy of the values
         m_retiredMaterials.push_back({ m_releaseCount, std::move(material) });
         material = GpuMaterial{};
         material.destroyed = true;            // IsMaterialUsable false: draws use the default material instead

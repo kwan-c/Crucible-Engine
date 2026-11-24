@@ -9,6 +9,7 @@
 #include "Diagnostics/FatalError.h"
 #include "Diagnostics/Logger.h"
 #include "ImGui/ImGuiLayer.h"
+#include "Shaders/ShaderHotReloadLayer.h"
 #include "Assets/EditorImageDecoders.h"
 
 int main(int argc, char** argv)
@@ -61,6 +62,8 @@ int main(int argc, char** argv)
         // EditorManager - see EditorManager::GetResources().
         Crucible::EditorManager::GetInstance().SetResources(&core.GetResources());
         core.PushLayer(std::make_unique<Crucible::ImGuiLayer>(core));
+        // Saved .slang files are recompiled and swapped in while the Editor runs.
+        core.PushLayer(std::make_unique<Crucible::ShaderHotReloadLayer>(core));
 
         core.Run();
     }

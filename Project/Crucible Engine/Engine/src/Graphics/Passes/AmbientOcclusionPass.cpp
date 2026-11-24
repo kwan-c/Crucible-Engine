@@ -13,11 +13,50 @@
 
 #include <algorithm>
 #include <array>
+#include <vector>
 
 namespace Crucible {
 
+    namespace {
+        // CutoutPush is read by the cut-out fragment shaders, and by the vertex stage of a shader
+        // that moves vertices (where its parameters are).
+        constexpr vk::ShaderStageFlags kCutoutPushStages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+    }
+
     void AmbientOcclusionPass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout,
                                       vk::DescriptorSetLayout twoTextureSetLayout) {
+
+        // Set 0 (camera and instance data); set 1 and CutoutPush for the cut-out pipelines and for
+        // the shaders that move vertices (which read CutoutPush in the vertex stage). One layout
+        // for all of them, so switching pipelines keeps the sets bound.
+        const std::array<vk::DescriptorSetLayout, 2> prepassSetLayouts{ frameSetLayout, materialSetLayout };
+        vk::PushConstantRange cutoutPush{ .stageFlags = kCutoutPushStages, .offset = 0, .size = sizeof(CutoutPush) };
+        vk::PipelineLayoutCreateInfo prepassLayoutInfo{
+            .setLayoutCount = static_cast<uint32_t>(prepassSetLayouts.size()), .pSetLayouts = prepassSetLayouts.data(),
+            .pushConstantRangeCount = 1, .pPushConstantRanges = &cutoutPush };
+        m_prepassLayout = vk::raii::PipelineLayout(context.GetDevice(), prepassLayoutInfo);
+
+        const vk::raii::ShaderModule prepassModule = LoadShaderModule(context, "DepthNormal.spv");
+        BuildPrepassPipelines(context, *prepassModule, false, m_depthPrepassPipeline, m_cutoutPrepassPipeline);
+
+
+        // Occlusion and its blur: fullscreen steps reading two textures each (Post.spv).
+        vk::raii::ShaderModule postModule = LoadShaderModule(context, "Post.spv");
+        vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(PostPush) };
+        {
+            vk::DescriptorSetLayout setLayout = twoTextureSetLayout;
+            vk::PipelineLayoutCreateInfo layoutInfo{
+                .setLayoutCount = 1, .pSetLayouts = &setLayout,
+                .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
+            m_aoLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
+        }
+        m_aoPipeline     = CreateFullscreenPipeline(context, postModule, "aoFrag",     false, *m_aoLayout, RenderLayouts::kAoFormat, vk::Format::eUndefined);   // depth + normals
+        m_aoBlurPipeline = CreateFullscreenPipeline(context, postModule, "aoBlurFrag", false, *m_aoLayout, RenderLayouts::kAoFormat, vk::Format::eUndefined);
+
+    }   // AmbientOcclusionPass::Create()
+
+    void AmbientOcclusionPass::BuildPrepassPipelines(VulkanContext& context, vk::ShaderModule module, bool allAttributes,
+                                                     vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const {
 
         // Cull mode is dynamic so double-sided materials can turn it off (as in the scene pass).
         std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
@@ -52,7 +91,6 @@ namespace Crucible {
             .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
         vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
 
-        vk::raii::ShaderModule module = LoadShaderModule(context, "DepthNormal.spv");
         vk::PipelineShaderStageCreateInfo stages[] = {
             { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "depthNormalVert" },
             { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "depthNormalFrag" }
@@ -60,23 +98,17 @@ namespace Crucible {
 
         auto binding    = Vertex::GetBindingDescription();
         auto attributes = Vertex::GetAttributeDescriptions();
-        const std::array solidAttributes{attributes[0], attributes[1], attributes[5], attributes[6]};
-        const std::array cutoutAttributes{attributes[0], attributes[1], attributes[2], attributes[5], attributes[6]};
+        // A mesh shader that moves vertices is given every attribute: its offset can depend on any.
+        using Attributes = std::vector<vk::VertexInputAttributeDescription>;
+        const Attributes everyAttribute(attributes.begin(), attributes.end());
+        const Attributes solidAttributes  = allAttributes ? everyAttribute : Attributes{ attributes[0], attributes[1], attributes[5], attributes[6] };
+        const Attributes cutoutAttributes = allAttributes ? everyAttribute : Attributes{ attributes[0], attributes[1], attributes[2], attributes[5], attributes[6] };
         vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
             .vertexBindingDescriptionCount   = 1,
             .pVertexBindingDescriptions      = &binding,
             .vertexAttributeDescriptionCount = static_cast<uint32_t>(solidAttributes.size()),   // position and normal
             .pVertexAttributeDescriptions    = solidAttributes.data()
         };
-
-        // Set 0 (camera and instance data); set 1 and CutoutPush only for the cut-out pipeline.
-        // One layout for both, so switching pipelines keeps the sets bound.
-        const std::array<vk::DescriptorSetLayout, 2> prepassSetLayouts{ frameSetLayout, materialSetLayout };
-        vk::PushConstantRange cutoutPush{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(CutoutPush) };
-        vk::PipelineLayoutCreateInfo prepassLayoutInfo{
-            .setLayoutCount = static_cast<uint32_t>(prepassSetLayouts.size()), .pSetLayouts = prepassSetLayouts.data(),
-            .pushConstantRangeCount = 1, .pPushConstantRanges = &cutoutPush };
-        m_prepassLayout = vk::raii::PipelineLayout(context.GetDevice(), prepassLayoutInfo);
 
         const vk::Format normalFormat = RenderLayouts::kAoNormalFormat;
         vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
@@ -96,7 +128,7 @@ namespace Crucible {
             },
             {.colorAttachmentCount = 1, .pColorAttachmentFormats = &normalFormat, .depthAttachmentFormat = RenderLayouts::kAoDepthFormat }
         };
-        m_depthPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        solid = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
 
         // Cut-out materials: also the uv (location 2), and pixels the material cuts out are dropped.
         const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
@@ -106,23 +138,9 @@ namespace Crucible {
         vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
         vertexInputInfo.pVertexAttributeDescriptions = cutoutAttributes.data();   // position, normal, uv
         chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;
-        m_cutoutPrepassPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+        cutout = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
 
-
-        // Occlusion and its blur: fullscreen steps reading two textures each (Post.spv).
-        vk::raii::ShaderModule postModule = LoadShaderModule(context, "Post.spv");
-        vk::PushConstantRange push{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(PostPush) };
-        {
-            vk::DescriptorSetLayout setLayout = twoTextureSetLayout;
-            vk::PipelineLayoutCreateInfo layoutInfo{
-                .setLayoutCount = 1, .pSetLayouts = &setLayout,
-                .pushConstantRangeCount = 1, .pPushConstantRanges = &push };
-            m_aoLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
-        }
-        m_aoPipeline     = CreateFullscreenPipeline(context, postModule, "aoFrag",     false, *m_aoLayout, RenderLayouts::kAoFormat, vk::Format::eUndefined);   // depth + normals
-        m_aoBlurPipeline = CreateFullscreenPipeline(context, postModule, "aoBlurFrag", false, *m_aoLayout, RenderLayouts::kAoFormat, vk::Format::eUndefined);
-
-    }   // AmbientOcclusionPass::Create()
+    }   // AmbientOcclusionPass::BuildPrepassPipelines()
 
     void AmbientOcclusionPass::Record(vk::CommandBuffer cmd, PostTargets& t, const PostSettings& settings, vk::DescriptorSet frameSet,
                                       const std::vector<DrawBatch>& meshes, const glm::vec4& projInfo) const {
@@ -201,9 +219,9 @@ namespace Crucible {
             cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
             cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_prepassLayout, 0, frameSet, nullptr);
             const DepthPassPipelines pipelines{ .solid = *m_depthPrepassPipeline, .cutout = *m_cutoutPrepassPipeline, .layout = *m_prepassLayout,
-                                                .cutoutPushStages = vk::ShaderStageFlagBits::eFragment, .cutoutPushOffset = 0,
-                                                  .dynamicCull = true, .cull = vk::CullModeFlagBits::eBack,
-                                                  .dynamicFrontFace = true };
+                                                .cutoutPushStages = kCutoutPushStages, .cutoutPushOffset = 0,
+                                                .dynamicCull = true, .cull = vk::CullModeFlagBits::eBack,
+                                                .dynamicFrontFace = true, .pass = DepthPass::DepthNormal };
             m_resources.DrawDepthBatches(cmd, meshes, pipelines);   // binds the pipelines itself
             cmd.endRendering();
         }

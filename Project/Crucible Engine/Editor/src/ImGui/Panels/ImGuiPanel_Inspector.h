@@ -168,6 +168,7 @@ namespace Crucible {
         struct ScriptFieldCache {
             uint64_t reload = 0;                     // ScriptRuntime::ReloadCount() they were read at
             std::vector<ScriptFieldValue> defaults;
+            std::vector<std::string> buttons;        // the class's [EditorButton] methods (Jean David)
             std::string error;
         };
         std::map<std::string, ScriptFieldCache> m_scriptFieldCache;   // "assembly|namespace.class" -> fields

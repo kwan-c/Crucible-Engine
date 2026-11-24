@@ -23,6 +23,16 @@ macro(crucible_shader name)
 endmacro()
 
 crucible_shader(DefaultShader    vertMain fragMain)
+# More mesh shaders: a surface function followed by SurfaceTemplate.slang (see Surface.slang), with
+# the same two entry points. A material picks one by name ("shader" in its .mat).
+# One that moves vertices (SURFACE_MOVES_VERTICES in Surface.slang) also needs, on its line here,
+# the eleven entry points at the end of SurfaceTemplate.slang: shadowVert shadowCutoutVert
+# shadowCutoutFrag depthNormalVert depthNormalFrag depthNormalCutoutVert depthNormalCutoutFrag
+# maskVert maskFrag maskCutoutVert maskCutoutFrag. (A shader graph's shader is compiled by the
+# Editor, which adds them itself.)
+crucible_shader(MagicOrb         vertMain fragMain)
+# What a material is drawn with when its shader cannot be (missing .spv, a broken or deleted graph).
+crucible_shader(ErrorShader      vertMain fragMain)
 crucible_shader(Skybox           skyVert skyFrag)
 crucible_shader(DebugLine        lineVert sphereOutlineVert lineFrag)
 crucible_shader(Shadow           shadowVert shadowCutoutVert shadowCutoutFrag)
@@ -90,11 +100,28 @@ foreach(_shader IN LISTS CRUCIBLE_SHADERS)
     list(APPEND CRUCIBLE_SHADER_OUTPUTS "${_shader_out}")
 endforeach()
 
-# The .slang files show up under this project in Visual Studio.
+# A mesh shader's parameter list (<Name>.params.json beside its .slang: the numbers, colours and
+# textures a material using the shader can set - Engine/src/Graphics/MaterialShaderParams.h) is
+# copied beside its .spv as it is, so the game finds both in Resources/Shaders.
+file(GLOB CRUCIBLE_SHADER_PARAM_LISTS CONFIGURE_DEPENDS "${CRUCIBLE_SHADER_DIR}/*.params.json")
+foreach(_list IN LISTS CRUCIBLE_SHADER_PARAM_LISTS)
+    get_filename_component(_list_name "${_list}" NAME)
+    set(_list_out "${CRUCIBLE_SHADER_OUT_DIR}/${_list_name}")
+    add_custom_command(
+        OUTPUT  "${_list_out}"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different "${_list}" "${_list_out}"
+        DEPENDS "${_list}"
+        COMMENT "Copying shader parameter list ${_list_name}"
+        VERBATIM
+    )
+    list(APPEND CRUCIBLE_SHADER_OUTPUTS "${_list_out}")
+endforeach()
+
+# The .slang files (and the parameter lists) show up under this project in Visual Studio.
 add_custom_target(Shaders ALL
     DEPENDS ${CRUCIBLE_SHADER_OUTPUTS}
-    SOURCES ${CRUCIBLE_SHADER_SOURCES}
+    SOURCES ${CRUCIBLE_SHADER_SOURCES} ${CRUCIBLE_SHADER_PARAM_LISTS}
 )
-source_group("Shaders" FILES ${CRUCIBLE_SHADER_SOURCES})
+source_group("Shaders" FILES ${CRUCIBLE_SHADER_SOURCES} ${CRUCIBLE_SHADER_PARAM_LISTS})
 
 add_dependencies(Engine Shaders)

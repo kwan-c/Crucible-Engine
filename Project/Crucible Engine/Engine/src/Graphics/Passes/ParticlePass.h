@@ -73,8 +73,10 @@ namespace Crucible {
          \param[in] camera  The view's camera.
          \param[out] out    Receives the view's batches, far to near.
          \param[in,out] stats  particles and particleDrawCalls are added to.
+         \param[in] hideSceneHidden  true (an editor Scene view): batches with
+                            ParticleDrawDesc::sceneHidden are left out.
          *********************************************************************/
-        void Prepare(const Camera& camera, std::vector<ParticleBatch>& out, RenderCullStats& stats);
+        void Prepare(const Camera& camera, std::vector<ParticleBatch>& out, RenderCullStats& stats, bool hideSceneHidden);
 
         /*********************************************************************
          \brief  Copies everything Prepare() gathered into this frame's buffer.

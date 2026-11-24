@@ -8,98 +8,40 @@
 #include "Graphics/Passes/ParticlePass.h"
 #include "Graphics/Passes/WaterPass.h"
 #include "Graphics/Passes/WorldUIPass.h"
+#include "Graphics/MaterialShaders.h"
 #include "Graphics/RenderResources.h"
 #include "Graphics/Vulkan/RenderLayouts.h"
 #include "Graphics/Vulkan/VulkanCommands.h"
 #include "Graphics/Vulkan/VulkanShader.h"
 
+
 namespace Crucible {
 
     static_assert(RenderLayouts::kMsaaLevels == 3, "ScenePass keeps one pipeline per MSAA level");
+    static_assert(MaterialShaders::kLevels == RenderLayouts::kMsaaLevels, "MaterialShaders builds one pair of mesh pipelines per MSAA level");
+
+    namespace {
+        // The stages the mesh push constant (PushConstants) is declared for and pushed to.
+        constexpr vk::ShaderStageFlags kMeshPushStages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+    }
 
     void ScenePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout,
                            vk::DescriptorSetLayout skySetLayout, vk::Format colourFormat, vk::Format depthFormat) {
 
+        // The mesh pipelines are built later, per shader and more than once (BuildMeshPipelines).
+        m_colourFormat = colourFormat;
+        m_depthFormat  = depthFormat;
+
         // ---- Meshes ----
         {
-            // Programmable stages (Vertex and Fragment shaders) ----------------------------------- //
-            vk::raii::ShaderModule shaderModule = LoadShaderModule(context, "DefaultShader.spv");
-
-            vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
-                .stage = vk::ShaderStageFlagBits::eVertex,
-                .module = shaderModule,
-                .pName = "vertMain"
-            };
-            vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
-                .stage = vk::ShaderStageFlagBits::eFragment,
-                .module = shaderModule,
-                .pName = "fragMain"
-            };
-            vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
-
-            // Fixed functions --------------------------------------------------------------------- //
-            auto bindingDescription = Vertex::GetBindingDescription();
-            auto attributeDescriptions = Vertex::GetAttributeDescriptions();
-            vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-                .vertexBindingDescriptionCount = 1,
-                .pVertexBindingDescriptions = &bindingDescription,
-                .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
-                .pVertexAttributeDescriptions = attributeDescriptions.data()
-            };
-            vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
-
-            // Set viewport to entire swapchain extent, make them dynamic for more flexibility in future.
-            // Cull mode too (core in Vulkan 1.3): double-sided materials switch it off per draw.
-            std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
-                vk::DynamicState::eCullMode, vk::DynamicState::eFrontFace };
-            vk::PipelineDynamicStateCreateInfo dynamicState = {
-                .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
-                .pDynamicStates = dynamicStates.data()
-            };
-            vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
-
-            vk::PipelineRasterizationStateCreateInfo rasterizer{
-                .depthClampEnable = vk::False,
-                .rasterizerDiscardEnable = vk::False,
-                .polygonMode = vk::PolygonMode::eFill,
-                .cullMode = vk::CullModeFlagBits::eBack,
-                .frontFace = vk::FrontFace::eCounterClockwise,
-                .depthBiasEnable = vk::False,
-                .lineWidth = 1.0f
-            };
-
-            // Disable multisampling and color blending for now...
-            vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
-            // Two outputs: the lit colour, and the line data the toon outline pass reads (both
-            // written as they are; identical states, as independentBlend is not enabled).
-            const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
-                .blendEnable = vk::False,
-                .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
-            const vk::PipelineColorBlendAttachmentState colorBlendAttachments[2] = { colorBlendAttachment, colorBlendAttachment };
-            vk::PipelineColorBlendStateCreateInfo colorBlending{
-                .logicOpEnable = vk::False,
-                .logicOp = vk::LogicOp::eCopy,
-                .attachmentCount = 2,
-                .pAttachments = colorBlendAttachments
-            };
-
-            // Depth testing so overlapping meshes sort correctly (a single hard-coded cube never
-            // needed this; multiple/imported models will).
-            vk::PipelineDepthStencilStateCreateInfo depthStencil{
-                .depthTestEnable = vk::True,
-                .depthWriteEnable = vk::True,
-                .depthCompareOp = vk::CompareOp::eLess,
-                .depthBoundsTestEnable = vk::False,
-                .stencilTestEnable = vk::False
-            };
-
             // Pipeline layout object. Set 0 = per-view frame data (camera, lights, instances, shadow
             // map). Set 1 = the current draw's material (five texture bindings - see
             // CreateMaterialDescriptorSetLayout). The push constant carries the material's scalar
-            // factors (PushConstants, RenderTypes.h) - fragment only, since the per-object model
-            // matrix now comes from the instance buffer.
+            // factors (PushConstants, RenderTypes.h). Vertex as well as fragment: a surface that moves
+            // vertices reads its parameters in vertMain too, through pc.paramOffset (Surface.slang).
+            // Must match kMeshPushStages, which every push with this layout uses.
             vk::PushConstantRange pushConstantRange{
-                .stageFlags = vk::ShaderStageFlagBits::eFragment,
+                .stageFlags = kMeshPushStages,
                 .offset     = 0,
                 .size       = sizeof(PushConstants)
             };
@@ -111,45 +53,6 @@ namespace Crucible {
                 .pPushConstantRanges    = &pushConstantRange
             };
             m_meshLayout = vk::raii::PipelineLayout(context.GetDevice(), pipelineLayoutInfo);
-
-            // The scene is drawn into the HDR image, not the swapchain (see kSceneColorFormat).
-            const vk::Format colourFormats[2] = { colourFormat, RenderLayouts::kLineDataFormat };
-
-            // Consolidate all information to create Graphics Pipeline.
-            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
-            {
-                {
-                    .stageCount = 2,
-                    .pStages = shaderStages,
-                    .pVertexInputState = &vertexInputInfo,
-                    .pInputAssemblyState = &inputAssembly,
-                    .pViewportState = &viewportState,
-                    .pRasterizationState = &rasterizer,
-                    .pMultisampleState = &multisampling,
-                    .pDepthStencilState = &depthStencil,
-                    .pColorBlendState = &colorBlending,
-                    .pDynamicState = &dynamicState,
-                    .layout = m_meshLayout,
-                    .renderPass = nullptr
-                },
-                {.colorAttachmentCount = 2, .pColorAttachmentFormats = colourFormats, .depthAttachmentFormat = depthFormat }
-            };
-            // One pipeline per MSAA level (1, 2, 4 samples per pixel): the sample count is baked into a
-            // pipeline and must match the target it draws into. `multisampling` is referenced by
-            // pointer above, so changing it here changes what the next pipeline is built with.
-            // Each level twice: solid, and cut-out (DefaultShader's kCutout specialization constant
-            // on, so only cut-out materials pay for a shader that can discard).
-            const vk::Bool32               cutoutOn = vk::True;
-            const vk::SpecializationMapEntry cutoutEntry{ .constantID = 0, .offset = 0, .size = sizeof(vk::Bool32) };
-            const vk::SpecializationInfo   cutoutInfo{ .mapEntryCount = 1, .pMapEntries = &cutoutEntry, .dataSize = sizeof(vk::Bool32), .pData = &cutoutOn };
-            for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
-                multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
-                shaderStages[1].pSpecializationInfo = nullptr;
-                m_meshPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-                shaderStages[1].pSpecializationInfo = &cutoutInfo;
-                m_cutoutPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
-            }
-            shaderStages[1].pSpecializationInfo = nullptr;
         }
 
         // ---- Sky ----
@@ -248,11 +151,120 @@ namespace Crucible {
             // pointer above, so changing it here changes what the next pipeline is built with.
             for (uint32_t i = 0; i < RenderLayouts::kMsaaLevels; ++i) {
                 multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << i);
-                m_skyPipelines[i] = vk::raii::Pipeline(context.GetDevice(), nullptr, pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+                m_skyPipelines[i] = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
             }
         }
-
     }   // ScenePass::Create()
+
+    void ScenePass::BuildMeshPipelines(VulkanContext& context, vk::ShaderModule shader, uint32_t msaaIndex,
+                                       vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const {
+
+        // Programmable stages (Vertex and Fragment shaders) ----------------------------------- //
+        vk::PipelineShaderStageCreateInfo vertShaderStageInfo{
+            .stage = vk::ShaderStageFlagBits::eVertex,
+            .module = shader,
+            .pName = "vertMain"
+        };
+        vk::PipelineShaderStageCreateInfo fragShaderStageInfo{
+            .stage = vk::ShaderStageFlagBits::eFragment,
+            .module = shader,
+            .pName = "fragMain"
+        };
+        vk::PipelineShaderStageCreateInfo shaderStages[] = { vertShaderStageInfo, fragShaderStageInfo };
+
+        // Fixed functions --------------------------------------------------------------------- //
+        auto bindingDescription = Vertex::GetBindingDescription();
+        auto attributeDescriptions = Vertex::GetAttributeDescriptions();
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+            .vertexBindingDescriptionCount = 1,
+            .pVertexBindingDescriptions = &bindingDescription,
+            .vertexAttributeDescriptionCount = static_cast<uint32_t>(attributeDescriptions.size()),
+            .pVertexAttributeDescriptions = attributeDescriptions.data()
+        };
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+
+        // Set viewport to entire swapchain extent, make them dynamic for more flexibility in future.
+        // Cull mode too (core in Vulkan 1.3): double-sided materials switch it off per draw.
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor,
+            vk::DynamicState::eCullMode, vk::DynamicState::eFrontFace };
+        vk::PipelineDynamicStateCreateInfo dynamicState = {
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode = vk::PolygonMode::eFill,
+            .cullMode = vk::CullModeFlagBits::eBack,
+            .frontFace = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable = vk::False,
+            .lineWidth = 1.0f
+        };
+
+        // Disable multisampling and color blending for now...
+        vk::PipelineMultisampleStateCreateInfo multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        // Two outputs: the lit colour, and the line data the toon outline pass reads (both
+        // written as they are; identical states, as independentBlend is not enabled).
+        const vk::PipelineColorBlendAttachmentState colorBlendAttachment{
+            .blendEnable = vk::False,
+            .colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA };
+        const vk::PipelineColorBlendAttachmentState colorBlendAttachments[2] = { colorBlendAttachment, colorBlendAttachment };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{
+            .logicOpEnable = vk::False,
+            .logicOp = vk::LogicOp::eCopy,
+            .attachmentCount = 2,
+            .pAttachments = colorBlendAttachments
+        };
+
+        // Depth testing so overlapping meshes sort correctly (a single hard-coded cube never
+        // needed this; multiple/imported models will).
+        vk::PipelineDepthStencilStateCreateInfo depthStencil{
+            .depthTestEnable = vk::True,
+            .depthWriteEnable = vk::True,
+            .depthCompareOp = vk::CompareOp::eLess,
+            .depthBoundsTestEnable = vk::False,
+            .stencilTestEnable = vk::False
+        };
+
+        // The scene is drawn into the HDR image, not the swapchain (see kSceneColorFormat).
+        const vk::Format colourFormats[2] = { m_colourFormat, RenderLayouts::kLineDataFormat };
+
+        // Consolidate all information to create Graphics Pipeline.
+        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> pipelineCreateInfoChain =
+        {
+            {
+                .stageCount = 2,
+                .pStages = shaderStages,
+                .pVertexInputState = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState = &multisampling,
+                .pDepthStencilState = &depthStencil,
+                .pColorBlendState = &colorBlending,
+                .pDynamicState = &dynamicState,
+                .layout = m_meshLayout,
+                .renderPass = nullptr
+            },
+            {.colorAttachmentCount = 2, .pColorAttachmentFormats = colourFormats, .depthAttachmentFormat = m_depthFormat }
+        };
+        // The sample count (1, 2 or 4 per pixel) is baked into a pipeline and must match the target
+        // it draws into: this builds the pair for one level. `multisampling` is referenced by
+        // pointer above, so setting it here sets what the pipelines are built with.
+        // The pair: solid, and cut-out (the shader's kCutout specialization constant on, so only
+        // cut-out materials pay for a shader that can discard).
+        const vk::Bool32               cutoutOn = vk::True;
+        const vk::SpecializationMapEntry cutoutEntry{ .constantID = 0, .offset = 0, .size = sizeof(vk::Bool32) };
+        const vk::SpecializationInfo   cutoutInfo{ .mapEntryCount = 1, .pMapEntries = &cutoutEntry, .dataSize = sizeof(vk::Bool32), .pData = &cutoutOn };
+        multisampling.rasterizationSamples = static_cast<vk::SampleCountFlagBits>(1u << msaaIndex);
+        shaderStages[1].pSpecializationInfo = nullptr;
+        solid = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+        shaderStages[1].pSpecializationInfo = &cutoutInfo;
+        cutout = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), pipelineCreateInfoChain.get<vk::GraphicsPipelineCreateInfo>());
+
+    }   // ScenePass::BuildMeshPipelines()
 
     void ScenePass::Record(vk::CommandBuffer cmd, PostTargets& t, vk::Image depthImage, vk::ImageView depthView, vk::Extent2D extent,
                            vk::DescriptorSet frameSet, const std::vector<DrawBatch>& meshes, vk::DescriptorSet skySet,
@@ -489,21 +501,24 @@ namespace Crucible {
 
         const std::vector<DrawBatch>& batches = meshes;
 
+        // Starts on the built-in shader's solid pipeline; each material then binds its own shader's
+        // (below). Every mesh pipeline shares m_meshLayout, so the sets stay bound across them.
         const uint32_t msaa = RenderLayouts::MsaaIndex(samples);
-        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, *m_meshPipelines[msaa]);
+        vk::Pipeline boundPipeline = m_shaders.Pipeline(MaterialShaderHandle{}, msaa, false);
+        cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, boundPipeline);
         cmd.setViewport(0, vk::Viewport(0.0f, static_cast<float>(extent.height), static_cast<float>(extent.width), -static_cast<float>(extent.height), 0.0f, 1.0f));
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
         cmd.setCullMode(vk::CullModeFlagBits::eBack);
         cmd.setFrontFace(vk::FrontFace::eCounterClockwise);
         bool mirroredBound = false;
-        bool cutoutBound = false;
         bool cullBack    = true;
 
         // Per-view data (camera, lights, instances, shadow map) is bound once for the whole pass.
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_meshLayout, 0, cameraSet, nullptr);
 
-        // One instanced draw per batch (PrepareView/AppendBatches). Batches are in (material, mesh)
-        // order, so the material set (set 1) and the mesh's buffers rebind only on change.
+        // One instanced draw per batch (PrepareView/AppendBatches). Batches are in (shader, material,
+        // mesh) order, so the pipeline, the material set (set 1) and the mesh's buffers rebind only
+        // on change.
         MeshHandle     boundMesh;       // starts Invalid
         MaterialHandle boundMaterial;   // starts Invalid
         uint32_t       indexCount = 0;  // of boundMesh
@@ -517,12 +532,14 @@ namespace Crucible {
             const GpuMaterial& mat  = m_resources.Materials()[batch.material.id];   // default-substituted when batched
 
             if (!(batch.material == boundMaterial)) {
-                // Cut-out materials use the pipelines that can discard; double-sided ones draw
-                // without culling. Both pipelines share the layout, so the sets stay bound.
-                const bool cutout = mat.data.alphaCutoff > 0.0f;
-                if (cutout != cutoutBound) {
-                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, cutout ? *m_cutoutPipelines[msaa] : *m_meshPipelines[msaa]);
-                    cutoutBound = cutout;
+                // The pipeline is the material's shader's - the one that can discard, for a cut-out
+                // material. While a shader's pipelines are still being built, its materials get the
+                // built-in shader's (MaterialShaders::Pipeline). Double-sided materials draw
+                // without culling.
+                const vk::Pipeline pipeline = m_shaders.Pipeline(mat.data.shader, msaa, mat.data.alphaCutoff > 0.0f);
+                if (pipeline != boundPipeline) {
+                    cmd.bindPipeline(vk::PipelineBindPoint::eGraphics, pipeline);
+                    boundPipeline = pipeline;
                 }
                 if (mat.data.doubleSided == cullBack) {
                     cullBack = !mat.data.doubleSided;
@@ -531,7 +548,7 @@ namespace Crucible {
                 cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_meshLayout, 1, *mat.descriptorSet, nullptr);
                 // The material's settings (MakeMaterialPush), recorded into the command buffer (so
                 // an Inspector slider change needs no GPU synchronization). Constant across the batch.
-                cmd.pushConstants<PushConstants>(*m_meshLayout, vk::ShaderStageFlagBits::eFragment, 0, mat.push);
+                cmd.pushConstants<PushConstants>(*m_meshLayout, kMeshPushStages, 0, mat.push);
                 boundMaterial = batch.material;
             }
 

@@ -1,0 +1,19 @@
+{
+  "version": 1,
+  "domain": "surface",
+  "nextId": 15,
+  "parameters": [
+    { "name": "texture", "type": "texture", "colour": true, "default": "white" }
+  ],
+  "nodes": [
+    { "id": 1, "type": "Output", "x": 790.26086, "y": 161.21739 },
+    { "id": 9, "type": "Parameter", "x": 197.61855, "y": 183.79288, "settings": { "parameter": "texture" } },
+    { "id": 11, "type": "UV", "x": -19.731256, "y": 259.37088 },
+    { "id": 13, "type": "RotateUV", "x": 224.06879, "y": 288.53482, "inputs": { "centre": [0.5, 0.64], "turns": 0.4 } },
+    { "id": 14, "type": "MaterialTint", "x": 454.7659, "y": 394.6093 }
+  ],
+  "links": [
+    { "from": [11, "out"], "to": [13, "uv"] },
+    { "from": [14, "rgb"], "to": [1, "normal"] }
+  ]
+}

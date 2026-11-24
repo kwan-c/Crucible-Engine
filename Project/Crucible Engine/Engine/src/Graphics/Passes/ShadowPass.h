@@ -41,6 +41,21 @@ namespace Crucible {
         void Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout, vk::Format depthFormat);
 
         /*********************************************************************
+         \brief  Builds the pass's two pipelines - solid and cut-out - from a
+                 module that has Shadow.slang's entry points: Shadow.spv
+                 itself, or a mesh shader that moves vertices (MaterialShaders
+                 calls this for each, on its background thread, so it only
+                 reads state that no longer changes). After Create().
+         \param[in] shader         The module.
+         \param[in] allAttributes  true for a mesh shader: its vertex stage is
+                                   given every vertex attribute, not just the
+                                   position (and uv).
+         \param[out] solid, cutout The pipelines.
+         *********************************************************************/
+        void BuildPipelines(VulkanContext& context, vk::ShaderModule shader, bool allAttributes,
+                            vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const;
+
+        /*********************************************************************
          \brief  Creates the shadow map (one layer per cascade), a view of the
                  whole array to sample and one per layer to draw into, and the
                  comparison sampler. Call once. The image starts in an
@@ -87,6 +102,7 @@ namespace Crucible {
         vk::raii::Pipeline       m_shadowPipeline = nullptr;
         vk::raii::Pipeline       m_shadowCutoutPipeline = nullptr;   // cut-out materials (leaves)
         vk::raii::PipelineLayout m_shadowLayout = nullptr;
+        vk::Format               m_depthFormat = vk::Format::eUndefined;   // the shadow map's (Create)
 
         // One D32 array image (a layer per cascade) shared by every view: each view renders its
         // own cascades into it right before its main pass. It rests in SHADER_READ_ONLY whenever

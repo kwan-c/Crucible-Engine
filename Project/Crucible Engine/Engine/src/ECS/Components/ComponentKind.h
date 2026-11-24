@@ -33,8 +33,9 @@
 *                settings of an object (Networking Phase 14)
 *    -v1.6       EntityTag kind (40): every entity's gameplay tag
 *                (mandatory, WorldValidated - see Components.h)
-*    -v1.7       NetVariables kind (41): replicated script values
-*    -v1.8       NetAnimator kind (42): replicated Animator parameters
+*    -v1.7       Terrain kind (41): generated ground (Jean David)
+*    -v1.8       NetVariables kind (42): replicated script values
+*    -v1.9       NetAnimator kind (43): replicated Animator parameters
 *
 *
 **************************************************************************/
@@ -108,10 +109,12 @@ namespace Crucible
 		StateGraphAgent = 38,    // AI: one enemy's brain, runs a .stategraph (AI/AIComponents.h)
 		NetworkObjectAuthoring = 39,   // Network: an object's saved networking settings (Network/NetComponents.h)
 		EntityTag = 40,          // every entity's gameplay tag, "Untagged" by default (mandatory) - Components.h
-		NetVariables = 41,       // Network: a network object's replicated script values (Network/NetComponents.h)
-		NetAnimator = 42,        // Network: a network object's replicated Animator parameters (Network/NetComponents.h)
+		Terrain = 41,            // Terrain: generated uneven ground, drawn and collided with (Terrain/TerrainComponents.h)
+		SceneHidden = 42,        // Editor: hidden in the editor's Scene view only, never saved - Components.h
+		NetVariables = 43,       // Network: a network object's replicated script values (Network/NetComponents.h)
+		NetAnimator = 44,        // Network: a network object's replicated Animator parameters (Network/NetComponents.h)
 
-		MAXCOMPONENT = 43
+		MAXCOMPONENT = 45
 	};
 
 
@@ -329,5 +332,7 @@ namespace Crucible
  X(EntityTag)                                                                  \
  X(NetVariables)                                                               \
  X(NetAnimator)                                                                \
+ X(Terrain)                                                                    \
+ X(SceneHidden)                                                                \
 
 }

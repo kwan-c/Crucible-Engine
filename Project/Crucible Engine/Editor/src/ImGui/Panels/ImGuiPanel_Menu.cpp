@@ -17,6 +17,7 @@
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "ImGui/Panels/ImGuiPanel_StateGraph.h"
+#include "ImGui/Panels/ImGuiPanel_ShaderGraph.h"
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_GameView.h"
 #include "ImGui/Panels/ImGuiPanel_FontImporter.h"
@@ -26,6 +27,7 @@
 #include "Configuration/EngineConfigLoader.h"
 #include "Cook.h"   // Tools/Cook
 #include "Assets/BuildProblems.h"
+#include "Prefabs/PrefabStage.h"
 
 #include <GLFW/glfw3.h>
 #include <algorithm>
@@ -60,7 +62,10 @@ void Crucible::Menu::Update(float) {
 
 	// Exit asked for during play mode: Stop has run since (it restores the edited scene and
 	// its unsaved-changes flag), so now ask about saving as usual.
-	if (m_exitAfterStop && !m_scenes.IsPlaySessionActive())
+	// The same for Prefab Mode, which has restored the scene by then - unless its Save / Discard
+	// box was cancelled, which cancels closing the editor too.
+	if (PrefabStage::ConsumeExitCancelled()) { m_exitAfterStop = false; }
+	if (m_exitAfterStop && !m_scenes.IsPlaySessionActive() && !PrefabStage::IsActive())
 	{
 		m_exitAfterStop = false;
 		RequestGuarded(GuardedAction::Exit);
@@ -68,6 +73,8 @@ void Crucible::Menu::Update(float) {
 
 	// Scene files are edit-mode only: the world holds runtime state until Stop.
 	bool const playing = m_scenes.IsPlaySessionActive();
+	// ...and in Prefab Mode the world doesn't hold the scene at all.
+	bool const sceneBusy = playing || m_scenes.IsSceneLocked();
 
 	// C# hot reload: watch Assets/Scripts, compile on save, reload (after Stop if playing).
 	if (Core* core = EditorManager::GetInstance().GetCore(); core && core->GetScriptRuntime().IsRunning()) {
@@ -102,7 +109,10 @@ void Crucible::Menu::Update(float) {
 	if ((!animator || !animator->HasKeyboardFocus()) && !ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel))
 	{
 		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_S, ImGuiInputFlags_RouteGlobal))
-			SaveScene();
+		{
+			if (PrefabStage::IsActive()) { PrefabStage::Save(); }
+			else                         { SaveScene(); }
+		}
 		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_O, ImGuiInputFlags_RouteGlobal))
 			OpenSceneFunc();
 		if (ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_N, ImGuiInputFlags_RouteGlobal))
@@ -167,25 +177,27 @@ void Crucible::Menu::Update(float) {
 		// ---------------- Scene ----------------
 		if (ImGui::BeginMenu("Scene"))
 		{
-			if (ImGui::MenuItem("New Scene", "Ctrl+N", false, !playing)) {
+			if (ImGui::MenuItem("New Scene", "Ctrl+N", false, !sceneBusy)) {
 				RequestGuarded(GuardedAction::New);
 			}
 
-			if (ImGui::MenuItem("Open Scene...", "Ctrl+O", false, !playing)) {
+			if (ImGui::MenuItem("Open Scene...", "Ctrl+O", false, !sceneBusy)) {
 				OpenSceneFunc();
 			}
 
 
-			if (ImGui::MenuItem("Save Scene", "Ctrl+S", false, !playing)) {
+			if (ImGui::MenuItem("Save Scene", "Ctrl+S", false, !sceneBusy)) {
 				if (!m_scenes.HasPath()) m_openSaveAsPopup = true;   // never saved -> ask for a name
 				else                     { SaveScene(); }
 			}
 
-			if (ImGui::MenuItem("Save Scene As...", nullptr, false, !playing))
+			if (ImGui::MenuItem("Save Scene As...", nullptr, false, !sceneBusy))
 				m_openSaveAsPopup = true;
 
 			if (playing)
 				ImGui::TextDisabled("Stop play mode to open or save scenes");
+			else if (sceneBusy)
+				ImGui::TextDisabled("Exit Prefab Mode to open or save scenes");
 
 			ImGui::EndMenu();
 		}
@@ -242,6 +254,11 @@ void Crucible::Menu::Update(float) {
 			if (auto states = EditorManager::GetInstance().GetPanel<StateGraphPanel>(ImguiPanels::STATEGRAPH)) {
 				if (ImGui::MenuItem("State Graph", nullptr, states->IsOpen())) {
 					if (states->IsOpen()) { states->SetOpen(false); } else { states->Show(); }
+				}
+			}
+			if (auto shaders = EditorManager::GetInstance().GetPanel<ShaderGraphPanel>(ImguiPanels::SHADERGRAPH)) {
+				if (ImGui::MenuItem("Shader Graph", nullptr, shaders->IsOpen())) {
+					if (shaders->IsOpen()) { shaders->SetOpen(false); } else { shaders->Show(); }
 				}
 			}
 			// The third argument is a bool* that MenuItem toggles for us (shows a tick).
@@ -396,6 +413,10 @@ void Crucible::Menu::Update(float) {
 
 bool Crucible::Menu::BlockedByPlayMode(const char* what) const
 {
+	if (m_scenes.IsSceneLocked()) {
+		CRU_USER_WARN("Cannot {} while in Prefab Mode - exit it first", what);
+		return true;
+	}
 	if (!m_scenes.IsPlaySessionActive()) { return false; }
 	CRU_USER_WARN("Cannot {} while in play mode - press Stop first", what);
 	return true;
@@ -414,6 +435,13 @@ void Crucible::Menu::RequestGuarded(GuardedAction action, std::filesystem::path 
 			m_exitAfterStop = true;
 			return;
 		}
+	}
+	// Leaving from Prefab Mode: back to the scene first, then ask about ITS changes (see Update).
+	if (action == GuardedAction::Exit && PrefabStage::IsActive())
+	{
+		PrefabStage::RequestExit();
+		m_exitAfterStop = true;
+		return;
 	}
 	if (action == GuardedAction::New && BlockedByPlayMode("create a new scene")) { return; }
 	if (action == GuardedAction::Open && BlockedByPlayMode("open a scene")) { return; }

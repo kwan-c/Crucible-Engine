@@ -44,8 +44,11 @@
 #include "ImGui/Panels/ImGuiPanel_Network.h"
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "ImGui/Panels/ImGuiPanel_StateGraph.h"
+#include "ImGui/Panels/ImGuiPanel_ShaderGraph.h"
 #include "Graphics/DebugDrawSystem.h"   // the Scene view's selection outline
+#include "SceneVisibility.h"            // entities hidden in the Scene view, kept across Play / Stop
 #include "Assets/BuildProblems.h"       // failed asset/script compiles block Play
+#include "Prefabs/PrefabStage.h"        // Prefab Mode: its bar, and blocking Play while it is open
 
 
 std::unique_ptr<Crucible::EditorManager> Crucible::EditorManager::s_Instance;
@@ -243,6 +246,8 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Core& core)
 }
 
 void Crucible::ImGuiManager::Update(float dt) {
+	PrefabStage::DrawBar();   // before the dockspace, so the bar takes its space from the top
+
 	ImGuiWindowFlags window_flags = ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
 		ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
 		ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus |
@@ -419,6 +424,7 @@ void Crucible::EditorManager::Init(Core& core)
 	m_panels[ImguiPanels::NETWORK] = std::make_shared<NetworkPanel>(core);   // this instance's Offline/Host/Client settings, used at the next Play
 	m_panels[ImguiPanels::BEHAVIORGRAPH] = std::make_shared<BehaviorGraphPanel>(core);   // floating: edit .behaviorgraph files (AI)
 	m_panels[ImguiPanels::STATEGRAPH] = std::make_shared<StateGraphPanel>(core);         // floating: edit .stategraph files (AI)
+	m_panels[ImguiPanels::SHADERGRAPH] = std::make_shared<ShaderGraphPanel>(core);       // floating: edit .shadergraph files (mesh shaders made of nodes)
 	m_panels[ImguiPanels::PACKAGEGAME] = std::make_shared<PackageGamePanel>(core);       // floating: File > Package Game... (zip for players)
 
 	for (auto& panel : m_panels)
@@ -429,7 +435,10 @@ void Crucible::EditorManager::Init(Core& core)
 #ifdef CRUCIBLE_BUILD_DIR
 	BuildProblems::LoadBuildReports(std::filesystem::path(CRUCIBLE_BUILD_DIR));
 #endif
-	core.GetPlayMode().SetPlayGuard([] { return BuildProblems::PlayBlockReason(); });
+	core.GetPlayMode().SetPlayGuard([] {
+		std::string reason = PrefabStage::PlayBlockReason();   // the world holds a prefab, not the scene
+		return reason.empty() ? BuildProblems::PlayBlockReason() : reason;
+	});
 
 	// The mouse-release key. A bad value in the file falls back to the default (and says so).
 	{
@@ -478,44 +487,65 @@ void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateCh
 {
 	if (m_core == nullptr) { return; }
 
+	bool const started = change.from == PlayState::Edit && change.to != PlayState::Edit;
+	bool const stopped = change.from != PlayState::Edit && change.to == PlayState::Edit;
+
+	if (started)      { BeginWorldSwap(); }
+	else if (stopped) { EndWorldSwap(change.sceneRestored); }
+	// Pause / Resume: same world, same handles
+}
+
+void Crucible::EditorManager::BeginWorldSwap()
+{
+	if (m_core == nullptr) { return; }
+
 	auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	World& world = m_core->GetWorld();
 	SceneManager& scenes = m_core->GetScenes();
 
-	bool const started = change.from == PlayState::Edit && change.to != PlayState::Edit;
-	bool const stopped = change.from != PlayState::Edit && change.to == PlayState::Edit;
-
-	if (started) {
-		// Finish an edit in progress while it still belongs to edit mode, then remember the
-		// selection by guid - the Play snapshot has just given every live entity one.
-		if (inspector) { inspector->CommitPendingEdit(); }
-		m_selectionBeforePlay.clear();
-		if (inspector) {
-			// Active entity last, so it is active again after Stop (SetSelection's default).
-			std::vector<Entity> selection = inspector->GetSelection();
-			Entity const active = inspector->GetSelectedEntity();
-			std::stable_partition(selection.begin(), selection.end(), [&](Entity e) { return !(e == active); });
-			for (Entity const e : selection) {
-				std::uint64_t const guid = scenes.Current().IdOf(e).m_Value;
-				if (guid != 0) { m_selectionBeforePlay.push_back(guid); }
-			}
-		}
-		m_history.BeginPlaySession();
-		return;
-	}
-
-	if (!stopped) { return; }   // Pause / Resume: same world, same handles
-
-	// A play-mode edit still open goes into the play-mode history, which is dropped next.
+	// Finish an edit in progress while it still belongs to edit mode, then remember the
+	// selection by guid - the snapshot has just given every live entity one.
 	if (inspector) { inspector->CommitPendingEdit(); }
-	m_history.EndPlaySession(change.sceneRestored);
+	m_selectionBeforePlay.clear();
+	if (inspector) {
+		// Active entity last, so it is active again afterwards (SetSelection's default).
+		std::vector<Entity> selection = inspector->GetSelection();
+		Entity const active = inspector->GetSelectedEntity();
+		std::stable_partition(selection.begin(), selection.end(), [&](Entity e) { return !(e == active); });
+		for (Entity const e : selection) {
+			std::uint64_t const guid = scenes.Current().IdOf(e).m_Value;
+			if (guid != 0) { m_selectionBeforePlay.push_back(guid); }
+		}
+	}
+	// Scene visibility (the Hierarchy's eye) is a RuntimeOnly tag: the snapshot does not hold
+	// it, so a restore would show everything again. Remembered by guid like the selection.
+	// Without a snapshot the guids are zero - and the world, tags included, is kept anyway.
+	m_hiddenBeforePlay.clear();
+	for (Entity const e : SceneVisibility::ListHidden(world)) {
+		std::uint64_t const guid = scenes.Current().IdOf(e).m_Value;
+		if (guid != 0) { m_hiddenBeforePlay.push_back(guid); }
+	}
+	m_history.BeginPlaySession();
+}
+
+void Crucible::EditorManager::EndWorldSwap(bool sceneRestored)
+{
+	if (m_core == nullptr) { return; }
+
+	auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	World& world = m_core->GetWorld();
+	SceneManager& scenes = m_core->GetScenes();
+
+	// An edit still open goes into the temporary history, which is dropped next.
+	if (inspector) { inspector->CommitPendingEdit(); }
+	m_history.EndPlaySession(sceneRestored);
 
 	if (inspector) {
-		// Every handle from before is stale after a restore: find the pre-Play selection
+		// Every handle from before is stale after a restore: find the earlier selection
 		// again by guid. Without a restore the world was kept, so keep a selection that
 		// is still alive.
 		std::vector<Entity> restored;
-		if (change.sceneRestored) {
+		if (sceneRestored) {
 			for (std::uint64_t const guid : m_selectionBeforePlay) {
 				Entity const e = scenes.Current().EntityOf(xresource::instance_guid{ guid });
 				if (e.IsValid() && world.IsAlive(e)) { restored.push_back(e); }
@@ -528,12 +558,23 @@ void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateCh
 		}
 
 		if (!restored.empty()) {
-			inspector->SetSelection(restored);   // the last one (the pre-Play active entity) is active
+			inspector->SetSelection(restored);   // the last one (the earlier active entity) is active
 		}
 		else if (inspector->GetSelectedEntity().IsValid()) {
-			inspector->ClearTarget();   // a stale or play-mode-only selection; an asset preview is left alone
+			inspector->ClearTarget();   // a stale or temporary selection; an asset preview is left alone
 		}
 	}
+
+	// Hide again what was hidden in the Scene view before (the restored entities are new ones,
+	// without the tag). Each entity was listed itself, so no walk down its children. What was
+	// hidden or shown in the meantime is dropped with that world, like every other change.
+	if (sceneRestored) {
+		for (std::uint64_t const guid : m_hiddenBeforePlay) {
+			Entity const e = scenes.Current().EntityOf(xresource::instance_guid{ guid });
+			if (e.IsValid() && world.IsAlive(e)) { SceneVisibility::SetHidden(world, e, true, false); }
+		}
+	}
+	m_hiddenBeforePlay.clear();
 
 	// The Scene view's outline reads this every frame; don't let it hold a stale handle meanwhile.
 	DebugDrawSystem::SetSelectedEntity(inspector ? inspector->GetSelectedEntity() : kNullEntity);

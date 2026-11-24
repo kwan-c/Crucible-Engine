@@ -67,6 +67,7 @@ namespace Crucible {
         Audio      = 1u << 8,   //!< audio sources' ranges, audio listeners' facing
         NavGrid    = 1u << 9,   //!< the FlowFieldSurface's outline, cells and blocked cells (ECSNavigationSystem)
         FlowField  = 1u << 10,  //!< the flow field's arrows towards the player, in Play (ECSNavigationSystem)
+        Particles  = 1u << 11,  //!< the selected ParticleEmitter's shape: where particles start, which way they go
         All        = 0xFFFFFFFFu
     };
 

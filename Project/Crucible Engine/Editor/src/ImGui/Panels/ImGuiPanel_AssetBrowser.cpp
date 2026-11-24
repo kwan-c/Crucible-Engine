@@ -12,6 +12,7 @@
 
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/EditorWidgets.h"
+#include "ImGui/EditorTheme.h"
 #include "AssetPipe/AssetRegistry.h"
 #include "Diagnostics/Logger.h"
 #include "ECS/ECSAudioSystem.h"
@@ -24,9 +25,11 @@
 #include "ImGui/Panels/ImGuiPanel_BehaviorGraph.h"
 #include "Graph/GraphAssets.h"   // Create State Graph / Behavior Graph
 #include "ImGui/Panels/ImGuiPanel_StateGraph.h"
+#include "ImGui/Panels/ImGuiPanel_ShaderGraph.h"
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "Prefabs/PrefabStage.h"
 #include "Scene/Prefab.h"   // kPrefabExtension
 #include "Scripting/ScriptAuthoring.h"
 #include "Resources/ResourceManager.h"   // hot reload after a refresh
@@ -109,6 +112,8 @@ namespace {
 		case AssetType::Script:   return IM_COL32(100, 185, 120, 255);
 		case AssetType::Text:     return IM_COL32(150, 150, 165, 255);
 		case AssetType::AnimatorController: return IM_COL32(170, 120, 220, 255);
+		case AssetType::ShaderGraph: return IM_COL32(170, 100, 200, 255);   // a shader, like the Shader type
+		case AssetType::EditorTheme: return IM_COL32(237, 130, 51, 255);    // the editor's ember accent
 		default:                  return IM_COL32(90, 90, 95, 255);
 		}
 	}
@@ -408,6 +413,14 @@ void Crucible::AssetBrowser::Init() {
 	if (m_ready) {
 		RebuildFolderTree();
 		QueueModelCompiles();   // a .glb added while the editor was closed
+
+		// Editor themes (View > Theme > Shared Themes) live in Assets/Editor/Themes. An exported
+		// one is picked up and selected here straight away, so it shows without pressing F5.
+		EditorTheme::SetAssetRoot(fs::path{ m_assets.GetAssetRoot() });
+		EditorTheme::SetOnThemeExported([this](std::string const& virtualPath) {
+			Refresh();
+			Reveal(virtualPath);
+		});
 	}
 	else
 		CRU_WARN("[AssetBrowser] AssetManager::Init() failed: Assets folder not found");
@@ -530,9 +543,7 @@ void Crucible::AssetBrowser::Update(float) {
 		// selected entities), and only a focus-route Shortcut claims the key ahead of it -
 		// otherwise one press would delete the scene file AND the selected entities.
 		if (!m_selected.empty() && m_renaming.empty() && ImGui::Shortcut(ImGuiKey_Delete)) {
-			// Still claimed above, so the key never falls through to the Hierarchy's selected entities.
-			if (IsMultiSelect()) CRU_USER_INFO("Select one file to delete it");
-			else BeginDelete(m_selected);
+			BeginDelete(IsMultiSelect() ? m_selection : std::vector<std::string>{ m_selected });
 		}
 	}
 
@@ -690,7 +701,8 @@ void Crucible::AssetBrowser::CreateFolder() {
 
 	if (fs::create_directory(AbsolutePathOf(candidate), ec)) {
 		Refresh();
-		m_selected = candidate;
+		m_selection.clear();
+		BeginRename(candidate);   // type its name straight away, like Create Scene
 	}
 	else {
 		CRU_WARN("[AssetBrowser] Could not create folder '{}': {}", candidate, ec.message());
@@ -956,7 +968,7 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	// is kept until the next press, so it is still readable on the release frame.
 	ImGuiIO const& io = ImGui::GetIO();
 	bool const dragged = io.MouseDragMaxDistanceSqr[ImGuiMouseButton_Left] >= io.MouseDragThreshold * io.MouseDragThreshold;
-	bool const addingToSelection = !item.isFolder && (io.KeyCtrl || io.KeyShift);
+	bool const addingToSelection = io.KeyCtrl || io.KeyShift;   // folders too, so they can be deleted together
 	if (released && !dragged) {
 		if (addingToSelection) {
 			if (io.KeyCtrl) ToggleInSelection(item.virtualPath);
@@ -991,8 +1003,9 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 		// asset. Only a drop on a folder looks at the selection (AcceptAssetMove).
 		ImGui::SetDragDropPayload(EditorWidgets::kAssetPayload, item.virtualPath.c_str(), item.virtualPath.size() + 1);
 		if (IsMultiSelect() && IsSelected(item.virtualPath)) {
-			ImGui::Text("%zu files", m_selection.size());
-			ImGui::TextDisabled("Drop on a folder to move them");
+			std::size_t const files = FilesToMove(item.virtualPath).size();
+			ImGui::Text("%zu file%s", files, files == 1 ? "" : "s");
+			ImGui::TextDisabled(files == m_selection.size() ? "Drop on a folder to move them" : "Drop on a folder to move them (selected folders stay)");
 		}
 		else {
 			ImGui::TextUnformatted(item.name.c_str());
@@ -1093,11 +1106,12 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	bool const severalSelected = IsMultiSelect();
 	if (ImGui::MenuItem("Rename", "F2", false, IsRefreshAllowed() && !severalSelected))
 		BeginRename(item.virtualPath);
-	if (severalSelected) ImGui::SetItemTooltip("Select one file to rename it");
+	if (severalSelected) ImGui::SetItemTooltip("Select one item to rename it");
 
-	if (ImGui::MenuItem("Delete", "Del", false, IsRefreshAllowed() && !severalSelected))
-		BeginDelete(item.virtualPath);
-	if (severalSelected) ImGui::SetItemTooltip("Select one file to delete it");
+	// The right-click kept the selection only if this tile is part of it (see DrawTile).
+	std::string const deleteLabel = severalSelected ? "Delete " + std::to_string(m_selection.size()) + " Items" : std::string("Delete");
+	if (ImGui::MenuItem(deleteLabel.c_str(), "Del", false, IsRefreshAllowed()))
+		BeginDelete(severalSelected ? m_selection : std::vector<std::string>{ item.virtualPath });
 
 	if (ImGui::MenuItem("Show in Explorer"))
 		ShowInExplorer(AbsolutePathOf(item.virtualPath), true);
@@ -1179,7 +1193,7 @@ void Crucible::AssetBrowser::DrawFooter() {
 		ImGui::SameLine(0.0f, 24.0f);
 	}
 	if (IsMultiSelect()) {
-		ImGui::Text("%zu files selected", m_selection.size());
+		ImGui::Text("%zu items selected", m_selection.size());
 		return;
 	}
 	if (m_selected.empty()) {
@@ -1203,6 +1217,9 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	}
 
 	switch (item.type) {
+	case AssetType::Prefab:
+		PrefabStage::RequestOpen(item.virtualPath);
+		return;
 	case AssetType::AnimatorController:
 		if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) {
 			if (const auto* entry = m_assets.Find(item.virtualPath)) animator->RequestOpen(entry->guid.m_Value);
@@ -1216,6 +1233,11 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	case AssetType::StateGraph:
 		if (auto states = EditorManager::GetInstance().GetPanel<StateGraphPanel>(ImguiPanels::STATEGRAPH)) {
 			if (const auto* entry = m_assets.Find(item.virtualPath)) states->RequestOpen(entry->guid.m_Value);
+		}
+		return;
+	case AssetType::ShaderGraph:
+		if (auto shaders = EditorManager::GetInstance().GetPanel<ShaderGraphPanel>(ImguiPanels::SHADERGRAPH)) {
+			if (const auto* entry = m_assets.Find(item.virtualPath)) shaders->RequestOpen(entry->guid.m_Value);
 		}
 		return;
 	case AssetType::Scene: {
@@ -1240,6 +1262,13 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 		if (auto fonts = EditorManager::GetInstance().GetPanel<FontImporter>(ImguiPanels::FONTIMPORTER))
 			fonts->Open(item.virtualPath);
 		return;
+	case AssetType::EditorTheme: {
+		// A shared editor theme: becomes this editor's Custom theme (View > Theme).
+		std::string error;
+		if (!EditorTheme::ImportFile(fs::path{ AbsolutePathOf(item.virtualPath) }, &error))
+			CRU_USER_ERROR("Could not load theme '{}': {}", item.name, error);
+		return;
+	}
 	case AssetType::Texture:
 		// An image: its import settings, compile, and the BC format comparison.
 		if (auto textures = EditorManager::GetInstance().GetPanel<TextureImporter>(ImguiPanels::TEXTUREIMPORTER))
@@ -1387,33 +1416,51 @@ void Crucible::AssetBrowser::DrawCreateScriptModal() {
 
 // ------------------------------------------------------------------ delete
 
-void Crucible::AssetBrowser::BeginDelete(std::string const& virtualPath) {
+void Crucible::AssetBrowser::BeginDelete(std::vector<std::string> virtualPaths) {
 	if (!IsRefreshAllowed()) {
 		CRU_USER_WARN("Cannot delete while in play mode - press Stop first");
 		return;
 	}
-	if (virtualPath.empty()) return;   // the Assets folder itself
 
+	// Gone already, or the Assets folder itself: left out. Inside another target folder: left out
+	// too, as it goes with that folder (a search can list a folder and a file inside it).
 	std::error_code ec;
-	fs::path const path = AbsolutePathOf(virtualPath);
-	if (!fs::exists(path, ec)) {
-		CRU_USER_WARN("Cannot delete '{}': it no longer exists", virtualPath);
-		return;
-	}
+	std::erase_if(virtualPaths, [&](std::string const& path) {
+		if (path.empty()) return true;
+		if (!fs::exists(AbsolutePathOf(path), ec)) {
+			CRU_USER_WARN("Cannot delete '{}': it no longer exists", path);
+			return true;
+		}
+		return false;
+	});
+	std::sort(virtualPaths.begin(), virtualPaths.end());
+	virtualPaths.erase(std::unique(virtualPaths.begin(), virtualPaths.end()), virtualPaths.end());
+	std::erase_if(virtualPaths, [&](std::string const& path) {
+		return std::any_of(virtualPaths.begin(), virtualPaths.end(),
+			[&](std::string const& other) { return path.size() > other.size() && path.rfind(other + "/", 0) == 0; });
+	});
+	if (virtualPaths.empty()) return;
 
 	// Gathered once, when the modal opens: what will go, and what still uses it.
 	m_deleteInfo = DeleteInfo{};
-	m_deleteInfo.isFolder = fs::is_directory(path, ec);
-	m_deleteInfo.usedBy = FindReferences(virtualPath, m_deleteInfo.isFolder, m_deleteInfo.fileCount);
+	for (std::string const& path : virtualPaths)
+		if (fs::is_directory(AbsolutePathOf(path), ec)) ++m_deleteInfo.folderCount;
+	m_deleteInfo.usedBy = FindReferences(virtualPaths, m_deleteInfo.fileCount);
 
-	m_deleteTarget = virtualPath;
-	m_selected = virtualPath;
+	if (virtualPaths.size() == 1) {
+		m_selected = virtualPaths.front();
+		m_selection.clear();
+	}
+	m_deleteTargets = std::move(virtualPaths);
 	m_openDeleteConfirm = true;
 }
 
-std::vector<std::string> Crucible::AssetBrowser::FindReferences(std::string const& virtualPath, bool isFolder, std::size_t& fileCount) const {
+std::vector<std::string> Crucible::AssetBrowser::FindReferences(std::string const& virtualPath, bool, std::size_t& fileCount) const {
+	return FindReferences(std::vector<std::string>{ virtualPath }, fileCount);
+}
+
+std::vector<std::string> Crucible::AssetBrowser::FindReferences(std::vector<std::string> const& virtualPaths, std::size_t& fileCount) const {
 	fs::path const root{ m_assets.GetAssetRoot() };
-	fs::path const target = AbsolutePathOf(virtualPath);
 	fileCount = 0;
 
 	// What the files being deleted are known by: the guid as a number (how scenes and prefabs
@@ -1430,17 +1477,25 @@ std::vector<std::string> Crucible::AssetBrowser::FindReferences(std::string cons
 		}
 	};
 
+	std::vector<fs::path> targets;
 	std::error_code walk, ec;
-	if (!isFolder) {
-		addFile(virtualPath);
-	}
-	else {
+	for (std::string const& virtualPath : virtualPaths) {
+		fs::path const target = AbsolutePathOf(virtualPath);
+		targets.push_back(target);
+		if (!fs::is_directory(target, ec)) {
+			addFile(virtualPath);
+			continue;
+		}
+		walk.clear();
 		for (fs::recursive_directory_iterator it(target, walk), end; !walk && it != end; it.increment(walk)) {
 			if (!it->is_regular_file(ec) || AssetRegistry::IsMetaFile(it->path())) continue;
 			addFile(virtualPath + "/" + fs::relative(it->path(), target, ec).generic_string());
 		}
 	}
 	if (needles.empty()) return {};
+	auto const beingDeleted = [&](fs::path const& p) {
+		return std::any_of(targets.begin(), targets.end(), [&](fs::path const& target) { return IsInside(p, target); });
+	};
 
 	// Every file that can point at another asset, except the ones being deleted. A handful of
 	// small text files, so reading them whole each time the modal opens is fine.
@@ -1448,7 +1503,7 @@ std::vector<std::string> Crucible::AssetBrowser::FindReferences(std::string cons
 	walk.clear();
 	for (fs::recursive_directory_iterator it(root, walk), end; !walk && it != end; it.increment(walk)) {
 		fs::path const& p = it->path();
-		if (!it->is_regular_file(ec) || !CanReferenceAssets(p) || IsInside(p, target)) continue;
+		if (!it->is_regular_file(ec) || !CanReferenceAssets(p) || beingDeleted(p)) continue;
 		if (it->file_size(ec) > (16u << 20)) continue;   // nothing that refers to assets is this big
 
 		std::ifstream in(p, std::ios::binary);
@@ -1476,21 +1531,34 @@ void Crucible::AssetBrowser::DrawDeleteConfirm() {
 
 	ImVec4 const warn(1.0f, 0.75f, 0.3f, 1.0f);
 	DeleteInfo const& info = m_deleteInfo;
+	std::size_t const count = m_deleteTargets.size();
+	bool const single = count == 1;
+	bool const singleFolder = single && info.folderCount == 1;
 
-	if (info.isFolder) {
-		ImGui::Text("Delete the folder '%s'?", m_deleteTarget.c_str());
-		if (info.fileCount > 0)
+	if (single) {
+		ImGui::Text(singleFolder ? "Delete the folder '%s'?" : "Delete '%s'?", m_deleteTargets.front().c_str());
+		if (singleFolder && info.fileCount > 0)
 			ImGui::TextDisabled("Everything in it goes too: %zu file%s.", info.fileCount, info.fileCount == 1 ? "" : "s");
 	}
 	else {
-		ImGui::Text("Delete '%s'?", m_deleteTarget.c_str());
+		ImGui::Text("Delete these %zu items?", count);
+		constexpr std::size_t kShown = 10;
+		std::error_code ec;
+		for (std::size_t i = 0; i < count && i < kShown; ++i)
+			ImGui::BulletText("%s%s", m_deleteTargets[i].c_str(),
+				fs::is_directory(AbsolutePathOf(m_deleteTargets[i]), ec) ? "/" : "");
+		if (count > kShown) ImGui::TextDisabled("...and %zu more", count - kShown);
+		if (info.folderCount > 0)
+			ImGui::TextDisabled("Everything in the folders goes too: %zu file%s in all.", info.fileCount, info.fileCount == 1 ? "" : "s");
 	}
 
-	// The open scene is this file, or somewhere inside this folder.
-	bool const isOpenScene = m_scenes.HasPath() && IsInside(m_scenes.CurrentPath(), AbsolutePathOf(m_deleteTarget));
+	// The open scene is one of these files, or somewhere inside one of these folders.
+	bool const isOpenScene = m_scenes.HasPath() && std::any_of(m_deleteTargets.begin(), m_deleteTargets.end(),
+		[this](std::string const& target) { return IsInside(m_scenes.CurrentPath(), AbsolutePathOf(target)); });
 	if (isOpenScene) {
 		ImGui::Spacing();
-		ImGui::TextColored(warn, "%s", info.isFolder ? "The scene open in the editor is in this folder." : "This scene is open in the editor.");
+		ImGui::TextColored(warn, "%s", singleFolder ? "The scene open in the editor is in this folder."
+			: single ? "This scene is open in the editor." : "The scene open in the editor is one of these.");
 		ImGui::TextDisabled("It stays open, but unsaved: saving will ask for a new name.");
 	}
 
@@ -1507,15 +1575,16 @@ void Crucible::AssetBrowser::DrawDeleteConfirm() {
 
 	ImGui::Spacing();
 #ifdef _WIN32
-	ImGui::TextDisabled("%s", info.isFolder ? "The folder goes to the Recycle Bin." : "The file and its .meta go to the Recycle Bin.");
+	ImGui::TextDisabled("%s", singleFolder ? "The folder goes to the Recycle Bin."
+		: single ? "The file and its .meta go to the Recycle Bin." : "They go to the Recycle Bin, .meta files and all.");
 #else
 	ImGui::TextDisabled("This cannot be undone.");
 #endif
 
 	ImGui::Spacing();
 	bool close = false;
-	if (ImGui::Button("Delete", ImVec2(120.0f, 0.0f))) {
-		m_pendingDelete = m_deleteTarget;
+	if (ImGui::Button(single ? "Delete" : ("Delete " + std::to_string(count)).c_str(), ImVec2(120.0f, 0.0f))) {
+		m_pendingDelete = m_deleteTargets;
 		close = true;
 	}
 	ImGui::SameLine();
@@ -1523,7 +1592,7 @@ void Crucible::AssetBrowser::DrawDeleteConfirm() {
 		close = true;
 
 	if (close) {
-		m_deleteTarget.clear();
+		m_deleteTargets.clear();
 		ImGui::CloseCurrentPopup();
 	}
 	ImGui::EndPopup();
@@ -1531,7 +1600,7 @@ void Crucible::AssetBrowser::DrawDeleteConfirm() {
 
 void Crucible::AssetBrowser::ApplyPendingDelete() {
 	if (!m_pendingDelete) return;
-	std::string const target = std::move(*m_pendingDelete);
+	std::vector<std::string> const targets = std::move(*m_pendingDelete);
 	m_pendingDelete.reset();
 
 	// Play may have started while the modal was up.
@@ -1540,25 +1609,37 @@ void Crucible::AssetBrowser::ApplyPendingDelete() {
 		return;
 	}
 
-	// Checked before deleting: afterwards the file is gone and the paths cannot be compared
-	// by what is on disk.
-	bool const wasOpen = m_scenes.HasPath() && IsInside(m_scenes.CurrentPath(), AbsolutePathOf(target));
-	bool const wasFolder = m_deleteInfo.isFolder;
+	std::size_t deleted = 0;
+	auto const under = [](std::string const& path, std::string const& target) {
+		return path == target || path.rfind(target + "/", 0) == 0;
+	};
+	for (std::string const& target : targets) {
+		// Checked before deleting: afterwards the file is gone and the paths cannot be compared
+		// by what is on disk.
+		std::error_code ec;
+		bool const wasOpen = m_scenes.HasPath() && IsInside(m_scenes.CurrentPath(), AbsolutePathOf(target));
+		bool const wasFolder = fs::is_directory(AbsolutePathOf(target), ec);
 
-	if (!DeleteOnDisk(target)) return;
+		if (!DeleteOnDisk(target)) continue;   // it says why; the others still go
+		++deleted;
 
-	// The open scene lost its file: keep it open, but make the next save ask for a name.
-	if (wasOpen) m_scenes.DetachCurrentFile();
+		// The open scene lost its file: keep it open, but make the next save ask for a name.
+		if (wasOpen) m_scenes.DetachCurrentFile();
 
-	// Deleted the folder being browsed, or one of its parents: show what is left.
-	if (m_currentFolder == target || m_currentFolder.rfind(target + "/", 0) == 0) {
-		m_currentFolder = ParentOf(target);
-		m_syncTree = true;
+		// Deleted the folder being browsed, or one of its parents: show what is left.
+		if (under(m_currentFolder, target)) {
+			m_currentFolder = ParentOf(target);
+			m_syncTree = true;
+		}
+		if (under(m_selected, target)) m_selected.clear();
+		std::erase_if(m_selection, [&](std::string const& path) { return under(path, target); });
+
+		CRU_USER_INFO("Deleted {}{}", wasFolder ? "folder " : (IsSceneFile(target) ? "scene " : ""), target);
 	}
-	if (m_selected == target || m_selected.rfind(target + "/", 0) == 0) m_selected.clear();
 
-	Refresh();   // drops it from the index and the grid
-	CRU_USER_INFO("Deleted {}{}", wasFolder ? "folder " : (IsSceneFile(target) ? "scene " : ""), target);
+	if (deleted == 0) return;
+	if (targets.size() > 1) CRU_USER_INFO("Deleted {} of {} items", deleted, targets.size());
+	Refresh();   // drops them from the index and the grid
 }
 
 bool Crucible::AssetBrowser::DeleteOnDisk(std::string const& virtualPath) {

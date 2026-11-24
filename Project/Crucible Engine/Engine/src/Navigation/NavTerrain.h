@@ -1,9 +1,11 @@
 /*************************************************************************
 * \file:         NavTerrain.h
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.0
+* \version       1.1
 * \brief
 *                NavTerrain: the two questions navigation asks the ground
 *                (is this a wall, how high is it here). FlatNavTerrain:
@@ -18,6 +20,7 @@
 *
 * \history
 *    -v1.0       first version
+*    -v1.1       comment: the step / agent-height band (was "shoulder")
 *
 **************************************************************************/
 #pragma once
@@ -54,7 +57,7 @@ namespace Crucible {
 
         // The ground's height under this point (y is ignored on the way in).
         // Agents use it to stand on the ground; the bake uses it to measure
-        // obstacles against the step/shoulder band.
+        // obstacles against the step / agent-height band.
         virtual float GroundHeight(const Math::vec3& position) const = 0;
 
     };  // NAVTERRAIN CLASS

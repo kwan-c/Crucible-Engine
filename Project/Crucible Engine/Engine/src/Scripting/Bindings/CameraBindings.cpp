@@ -419,6 +419,11 @@ namespace Crucible::ScriptBindings
 		renderer = newRenderer;
 	}
 
+	const Renderer* CurrentRenderer()
+	{
+		return renderer;
+	}
+
 	void RegisterCameraBindings()
 	{
 		Add("Crucible.Camera::GetMainInternal", &ManagedCameraGetMain);

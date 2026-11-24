@@ -130,6 +130,14 @@ namespace Crucible {
          *********************************************************************/
         std::uint32_t GetParticleCount(Entity entity) const;
 
+        /*********************************************************************
+         \brief  Radius of a Cone emitter's far end (coneLength along +Y):
+                 shapeRadius + coneLength x tan(coneAngleDeg), never below 0.
+                 One place for the rule, so the Scene view's outline
+                 (DebugDrawSystem) always matches where particles go.
+         *********************************************************************/
+        static float ConeFarRadius(const ParticleEmitter& settings);
+
     private:
         struct Particle {
             glm::vec3 position{ 0.0f };   // world space, or emitter-local when !worldSpace
@@ -167,7 +175,8 @@ namespace Crucible {
 
         void Simulate(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, float dt);
         void Spawn(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, int count);
-        void Submit(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix);
+        // sceneHidden: the emitter has the SceneHidden tag (editor: not drawn in the Scene view).
+        void Submit(Emitter& state, const ParticleEmitter& settings, const glm::mat4& matrix, bool sceneHidden);
 
         Renderer&                   m_renderer;
         ResourceManager*            m_resources = nullptr;

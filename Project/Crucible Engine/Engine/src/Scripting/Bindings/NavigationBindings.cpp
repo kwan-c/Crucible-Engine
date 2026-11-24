@@ -1,9 +1,11 @@
 /*************************************************************************
 * \file:         NavigationBindings.cpp
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          5 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         Internal calls behind the C# FlowFieldAgent,
 *                FlowFieldSurface and Navigation classes
 *                (ManagedScripts/Runtime/).
@@ -15,13 +17,15 @@
 *    state graph's nodes do; ECSNavigationSystem carries them out in its
 *    Update (the same stage as scripts, so this frame or the next).
 *
-*    FlowFieldSurface: only the two settings read on every field rebuild
-*    (flood radius, rebuild distance). The rest - cell size, heights,
-*    padding, wall cost - are read when the grid is baked at Play, so
-*    changing them from a script would do nothing until the next Play.
+*    FlowFieldSurface: only the settings that apply live: flood radius and
+*    rebuild distance (read on every field rebuild) and the dynamic update
+*    interval (v1.2). The rest - cell size, heights, padding, wall cost -
+*    are read when the grid is baked at Play, so changing them from a
+*    script would do nothing until the next Play.
 *
 *    Navigation: IsWalkable and IsPathClear on the baked grid, through
-*    ECSNavigationSystem::Active().
+*    ECSNavigationSystem::Active(); Rebake (RequestBake) for a script that
+*    built new ground mid-Play, and IsBaked to know when it is ready.
 *
 *    Same shape as PlayerControllerBindings.cpp: 1 = done, 0 = refused (dead
 *    entity, no such component, a bad value); never throws into C#.
@@ -300,6 +304,50 @@ namespace Crucible::ScriptBindings
 			}
 		}
 
+		// Navigation.Rebake (Jean David, 10 Nov 2026): bakes again once physics has
+		// built the new bodies. 0 with no navigation system or outside Play.
+		int32_t ManagedNavigationRebake() noexcept
+		{
+			try
+			{
+				ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				if (!navigation || !EntityContext::InPlaySession())
+					return 0;
+				navigation->RequestBake();
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedNavigationGetBakeCount() noexcept
+		{
+			try
+			{
+				const ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				return navigation ? static_cast<int32_t>(navigation->BakeCount()) : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		int32_t ManagedNavigationIsBaked() noexcept
+		{
+			try
+			{
+				const ECSNavigationSystem* navigation = ECSNavigationSystem::Active();
+				return navigation && navigation->IsBaked() ? 1 : 0;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
 		int32_t ManagedNavigationIsPathClear(const ScriptVec3* from, const ScriptVec3* to) noexcept
 		{
 			try
@@ -360,15 +408,20 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.FlowFieldAgent::GetRemainingDistanceInternal", &GetFloat<FlowFieldAgent, &FlowFieldAgent::m_remainingDistance>);
 		Add("Crucible.FlowFieldAgent::GetVelocityInternal", &ManagedAgentGetVelocity);
 
-		// FlowFieldSurface: the settings read on every field rebuild
+		// FlowFieldSurface: the settings that apply live
 		Add("Crucible.FlowFieldSurface::GetFloodRadiusInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_floodRadius>);
 		Add("Crucible.FlowFieldSurface::SetFloodRadiusInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_floodRadius>);
 		Add("Crucible.FlowFieldSurface::GetRebuildDistanceInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_rebuildDistance>);
 		Add("Crucible.FlowFieldSurface::SetRebuildDistanceInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_rebuildDistance>);
+		Add("Crucible.FlowFieldSurface::GetDynamicUpdateIntervalInternal", &GetFloat<FlowFieldSurface, &FlowFieldSurface::m_dynamicUpdateInterval>);
+		Add("Crucible.FlowFieldSurface::SetDynamicUpdateIntervalInternal", &SetFloat<FlowFieldSurface, &FlowFieldSurface::m_dynamicUpdateInterval>);
 
 		// Navigation: grid queries
 		Add("Crucible.Navigation::IsWalkableInternal", &ManagedNavigationIsWalkable);
 		Add("Crucible.Navigation::IsPathClearInternal", &ManagedNavigationIsPathClear);
+		Add("Crucible.Navigation::RebakeInternal", &ManagedNavigationRebake);
+		Add("Crucible.Navigation::IsBakedInternal", &ManagedNavigationIsBaked);
+		Add("Crucible.Navigation::GetBakeCountInternal", &ManagedNavigationGetBakeCount);
 	}
 }
 #endif

@@ -161,6 +161,12 @@ namespace Crucible {
         /// The scene pipelines (meshes, sky, particles) exist once per MSAA level: pass the
         /// number of samples per pixel of the target being drawn into (1, 2 or 4).
         static constexpr uint32_t kMsaaLevels = 3;
+
+        /// Texture slots in a material's descriptor set (set 1, bindings 0 .. 7), the same for every
+        /// material and every mesh shader. The built-in shader uses the first five (albedo, normal,
+        /// metallic-roughness, emissive, occlusion); a shader with a texture list of its own
+        /// (MaterialShaderParams) uses them in its list's order.
+        static constexpr uint32_t kMaterialTextureSlots = 8;
         static uint32_t MsaaIndex(uint32_t samples) { return samples >= 4 ? 2u : samples >= 2 ? 1u : 0u; }
 
         /*********************************************************************

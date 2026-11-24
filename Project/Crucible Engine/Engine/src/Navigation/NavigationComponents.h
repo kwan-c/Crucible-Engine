@@ -1,9 +1,14 @@
 /*************************************************************************
 * \file:         NavigationComponents.h
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original;
+*                v1.2: max walkable slope; v1.4: dynamic update interval;
+*                v1.5: agent height; v1.6: layers per cell;
+*                v1.7: max drop height),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.1
+* \version       1.7
 * \brief
 *                FlowFieldSurface: where enemies can walk (Unity's
 *                NavMeshSurface). FlowFieldAgent: one enemy's legs (Unity's
@@ -25,6 +30,22 @@
 *                m_avoidancePriority replace the separation radius and weight;
 *                FaceTarget(); MoveTo() takes optional stopping and slowing
 *                distances
+*    -v1.2       FlowFieldSurface::m_maxWalkableSlope replaces the bake's
+*                fixed 35 degrees, so a level generator can set the same
+*                limit for enemies as for the player
+*    -v1.3       m_maxWalkableSlope removed: since F2 the generated terrain's
+*                cliffs come from the generator itself (its own
+*                maxWalkableSlope), so navigation no longer judges slopes
+*    -v1.4       FlowFieldSurface::m_dynamicUpdateInterval: how often moving
+*                DynamicObstacles are re-checked while Playing
+*    -v1.5       m_shoulderHeight renamed m_agentHeight (scene key
+*                "agentHeight"; an old "shoulderHeight" key is skipped and
+*                loads as the default 1.6): it is the enemies' height, which
+*                the layered grid will also use as the headroom a surface needs
+*    -v1.6       m_maxLayersPerCell: how many walkable surfaces (the ground
+*                and the tops of Walkable boxes) a cell keeps
+*    -v1.7       m_maxDropHeight: the furthest enemies drop (one-way) from a
+*                surface to a lower one
 *
 **************************************************************************/
 #pragma once
@@ -52,30 +73,42 @@ namespace Crucible {
         than 500 m wide, and the bake warns until it is scaled up.
 
         Sit it on the floor: until a terrain system exists, the entity's height
-        IS the ground height, and the step/shoulder band is measured from it.
+        IS the ground height, and the step / agent-height band is measured from it.
 
         Unlike Unity, the bake is not saved to a file. Ours takes milliseconds
         and the terrain is generated fresh every run, so a saved bake would
         only ever be out of date: Play always bakes again from the scene as it
         is.
 
-        What blocks: every static Collider (no RigidBody) on the NonMoving
-        layer that is not a trigger and reaches into the band between
-        m_stepHeight and m_shoulderHeight above the ground. Floors are under
-        the band, so they never block.
+        What blocks: the colliders (not triggers) of entities tagged
+        StaticObstacle or DynamicObstacle that reach into the band between
+        m_stepHeight and m_agentHeight above the ground; untagged colliders
+        are ignored. StaticObstacles are stamped once at bake; DynamicObstacles
+        are re-checked every m_dynamicUpdateInterval while Playing and follow
+        the obstacle when it covers different cells.
+
+        Layers: the top face of a box collider tagged Walkable (a bridge deck,
+        a ramp, a platform) is a walkable surface above the ground, if an
+        enemy fits on it (m_agentHeight of headroom). Up to m_maxLayersPerCell
+        per cell, lowest first.
     */
     struct FlowFieldSurface {
 
         float m_cellSize          = 2.0f;     // metres. Smaller is finer but slower: halving it makes 4x the cells
         float m_bodyRadiusPadding = 0.6f;     // the enemy's body radius: obstacles grow by this, so open cells fit a whole body
         float m_stepHeight        = 0.3f;     // obstacles entirely lower than this above the ground are stepped over
-        float m_shoulderHeight    = 1.6f;     // obstacles entirely higher than this above the ground are walked under
+        float m_agentHeight       = 1.6f;     // the enemies' height (set it to the tallest): obstacles entirely higher than this above the ground are walked under; also the headroom a layer needs
+        int   m_maxLayersPerCell  = 4;        // walkable surfaces kept per cell, the ground included (the lowest ones; the rest are dropped with a warning)
+        float m_maxDropHeight     = 3.0f;     // the furthest enemies drop (one-way) to a lower surface; higher edges are walls. Steps up are m_stepHeight
 
         // The flow field, rebuilt in Play as the player moves. These two apply
         // live; the wall cost needs a Bake (or Play) to take effect.
         float m_floodRadius       = 100.0f;   // metres round the player that get arrows; 0 = the whole surface. Beyond it enemies head straight in
         float m_rebuildDistance   = 3.0f;     // metres the player must move before the field is rebuilt
         float m_wallAdjacencyCost = 4.0f;     // extra cost of a cell touching a wall, so routes keep clear of walls instead of hugging them
+
+        // Moving obstacles (applies live).
+        float m_dynamicUpdateInterval = 0.25f;   // seconds between checks of the DynamicObstacles while Playing; 0 = every frame
 
     };  // FLOWFIELDSURFACE STRUCT
 

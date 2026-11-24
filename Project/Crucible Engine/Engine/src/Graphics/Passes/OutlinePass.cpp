@@ -11,8 +11,15 @@
 #include "Graphics/Vulkan/VulkanCommands.h"
 
 #include <array>
+#include <vector>
 
 namespace Crucible {
+
+    namespace {
+        // CutoutPush is read by the cut-out fragment shaders, and by the vertex stage of a shader
+        // that moves vertices (where its parameters are).
+        constexpr vk::ShaderStageFlags kCutoutPushStages = vk::ShaderStageFlagBits::eVertex | vk::ShaderStageFlagBits::eFragment;
+    }
 
     void OutlinePass::Create(VulkanContext& context, vk::DescriptorSetLayout frameSetLayout, vk::DescriptorSetLayout materialSetLayout, vk::Format colourFormat) {
 
@@ -38,62 +45,18 @@ namespace Crucible {
 
         // ---- Mask: the selected object's instances -> R8, no depth (shows through walls) ----
         {
-            vk::raii::ShaderModule module = LoadShaderModule(context, "OutlineMask.spv");
-            vk::PipelineShaderStageCreateInfo stages[] = {
-                { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "maskVert" },
-                { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "maskFrag" }
-            };
-            auto binding    = Vertex::GetBindingDescription();
-            auto attributes = Vertex::GetAttributeDescriptions();
-            const std::array solidAttributes{attributes[0], attributes[5], attributes[6]};
-            vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
-                .vertexBindingDescriptionCount   = 1,
-                .pVertexBindingDescriptions      = &binding,
-                .vertexAttributeDescriptionCount = static_cast<uint32_t>(solidAttributes.size()),
-                .pVertexAttributeDescriptions    = solidAttributes.data()
-            };
-            vk::PipelineColorBlendAttachmentState blend{ .blendEnable = vk::False, .colorWriteMask = vk::ColorComponentFlagBits::eR };
-            vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
-
-            // Set 1 and CutoutPush are only read by the cut-out pipeline; one layout for both, so
+            // Set 1 and CutoutPush are read by the cut-out pipelines and by the shaders that move
+            // vertices (which read CutoutPush in the vertex stage); one layout for all of them, so
             // switching pipelines keeps the sets bound.
             const std::array<vk::DescriptorSetLayout, 2> setLayouts{ frameSetLayout, materialSetLayout };
-            vk::PushConstantRange cutoutPush{ .stageFlags = vk::ShaderStageFlagBits::eFragment, .offset = 0, .size = sizeof(CutoutPush) };
+            vk::PushConstantRange cutoutPush{ .stageFlags = kCutoutPushStages, .offset = 0, .size = sizeof(CutoutPush) };
             vk::PipelineLayoutCreateInfo layoutInfo{
                 .setLayoutCount = static_cast<uint32_t>(setLayouts.size()), .pSetLayouts = setLayouts.data(),
                 .pushConstantRangeCount = 1, .pPushConstantRanges = &cutoutPush };
             m_outlineMaskLayout = vk::raii::PipelineLayout(context.GetDevice(), layoutInfo);
 
-            const vk::Format maskFormat = RenderLayouts::kOutlineMaskFormat;
-            vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
-                {
-                    .stageCount          = 2,
-                    .pStages             = stages,
-                    .pVertexInputState   = &vertexInputInfo,
-                    .pInputAssemblyState = &inputAssembly,
-                    .pViewportState      = &viewportState,
-                    .pRasterizationState = &rasterizer,
-                    .pMultisampleState   = &multisampling,
-                    .pDepthStencilState  = &noDepth,
-                    .pColorBlendState    = &colorBlending,
-                    .pDynamicState       = &dynamicState,
-                    .layout              = m_outlineMaskLayout,
-                    .renderPass          = nullptr
-                },
-                {.colorAttachmentCount = 1, .pColorAttachmentFormats = &maskFormat }
-            };
-            m_outlineMaskPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
-
-            // Cut-out materials: also the uv (location 2), so the mask follows the leaf, not its card.
-            const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
-                { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "maskCutoutVert" },
-                { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "maskCutoutFrag" }
-            };
-            const std::array cutoutAttributes{ attributes[0], attributes[2], attributes[5], attributes[6] };
-            vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
-            vertexInputInfo.pVertexAttributeDescriptions    = cutoutAttributes.data();
-            chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;
-            m_outlineMaskCutoutPipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+            const vk::raii::ShaderModule maskModule = LoadShaderModule(context, "OutlineMask.spv");
+            BuildMaskPipelines(context, *maskModule, false, m_outlineMaskPipeline, m_outlineMaskCutoutPipeline);
         }
 
         // ---- Composite: fullscreen triangle, edge of the mask -> outline colour, blended ----
@@ -152,10 +115,85 @@ namespace Crucible {
                 },
                 {.colorAttachmentCount = 1, .pColorAttachmentFormats = &colorFormat }
             };
-            m_outlineCompositePipeline = vk::raii::Pipeline(context.GetDevice(), nullptr, chain.get<vk::GraphicsPipelineCreateInfo>());
+            m_outlineCompositePipeline = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
         }
 
     }   // OutlinePass::Create()
+
+    void OutlinePass::BuildMaskPipelines(VulkanContext& context, vk::ShaderModule module, bool allAttributes,
+                                         vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const {
+
+        // The same fixed state as Create() gives the composite: no culling, no depth.
+        std::vector<vk::DynamicState> dynamicStates = { vk::DynamicState::eViewport, vk::DynamicState::eScissor };
+        vk::PipelineDynamicStateCreateInfo dynamicState{
+            .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()),
+            .pDynamicStates    = dynamicStates.data()
+        };
+        vk::PipelineViewportStateCreateInfo      viewportState{ .viewportCount = 1, .scissorCount = 1 };
+        vk::PipelineInputAssemblyStateCreateInfo inputAssembly{ .topology = vk::PrimitiveTopology::eTriangleList };
+        vk::PipelineRasterizationStateCreateInfo rasterizer{
+            .depthClampEnable        = vk::False,
+            .rasterizerDiscardEnable = vk::False,
+            .polygonMode             = vk::PolygonMode::eFill,
+            .cullMode                = vk::CullModeFlagBits::eNone,
+            .frontFace               = vk::FrontFace::eCounterClockwise,
+            .depthBiasEnable         = vk::False,
+            .lineWidth               = 1.0f
+        };
+        vk::PipelineMultisampleStateCreateInfo  multisampling{ .rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False };
+        vk::PipelineDepthStencilStateCreateInfo noDepth{ .depthTestEnable = vk::False, .depthWriteEnable = vk::False };
+
+        vk::PipelineShaderStageCreateInfo stages[] = {
+            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "maskVert" },
+            { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "maskFrag" }
+        };
+        auto binding    = Vertex::GetBindingDescription();
+        auto attributes = Vertex::GetAttributeDescriptions();
+        // A mesh shader that moves vertices is given every attribute: its offset can depend on any.
+        using Attributes = std::vector<vk::VertexInputAttributeDescription>;
+        const Attributes everyAttribute(attributes.begin(), attributes.end());
+        const Attributes solidAttributes = allAttributes ? everyAttribute : Attributes{ attributes[0], attributes[5], attributes[6] };
+        vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+            .vertexBindingDescriptionCount   = 1,
+            .pVertexBindingDescriptions      = &binding,
+            .vertexAttributeDescriptionCount = static_cast<uint32_t>(solidAttributes.size()),
+            .pVertexAttributeDescriptions    = solidAttributes.data()
+        };
+        vk::PipelineColorBlendAttachmentState blend{ .blendEnable = vk::False, .colorWriteMask = vk::ColorComponentFlagBits::eR };
+        vk::PipelineColorBlendStateCreateInfo colorBlending{ .logicOpEnable = vk::False, .attachmentCount = 1, .pAttachments = &blend };
+
+        const vk::Format maskFormat = RenderLayouts::kOutlineMaskFormat;
+        vk::StructureChain<vk::GraphicsPipelineCreateInfo, vk::PipelineRenderingCreateInfo> chain = {
+            {
+                .stageCount          = 2,
+                .pStages             = stages,
+                .pVertexInputState   = &vertexInputInfo,
+                .pInputAssemblyState = &inputAssembly,
+                .pViewportState      = &viewportState,
+                .pRasterizationState = &rasterizer,
+                .pMultisampleState   = &multisampling,
+                .pDepthStencilState  = &noDepth,
+                .pColorBlendState    = &colorBlending,
+                .pDynamicState       = &dynamicState,
+                .layout              = m_outlineMaskLayout,
+                .renderPass          = nullptr
+            },
+            {.colorAttachmentCount = 1, .pColorAttachmentFormats = &maskFormat }
+        };
+        solid = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
+
+        // Cut-out materials: also the uv (location 2), so the mask follows the leaf, not its card.
+        const vk::PipelineShaderStageCreateInfo cutoutStages[] = {
+            { .stage = vk::ShaderStageFlagBits::eVertex,   .module = module, .pName = "maskCutoutVert" },
+            { .stage = vk::ShaderStageFlagBits::eFragment, .module = module, .pName = "maskCutoutFrag" }
+        };
+        const Attributes cutoutAttributes = allAttributes ? everyAttribute : Attributes{ attributes[0], attributes[2], attributes[5], attributes[6] };
+        vertexInputInfo.vertexAttributeDescriptionCount = static_cast<uint32_t>(cutoutAttributes.size());
+        vertexInputInfo.pVertexAttributeDescriptions    = cutoutAttributes.data();
+        chain.get<vk::GraphicsPipelineCreateInfo>().pStages = cutoutStages;
+        cutout = vk::raii::Pipeline(context.GetDevice(), context.GetPipelineCache(), chain.get<vk::GraphicsPipelineCreateInfo>());
+
+    }   // OutlinePass::BuildMaskPipelines()
 
     void OutlinePass::RecordMask(vk::CommandBuffer cmd, vk::Image maskImage, vk::ImageView maskView, vk::Extent2D extent,
                                  vk::DescriptorSet frameSet, const std::vector<DrawBatch>& meshes) const {
@@ -186,8 +224,9 @@ namespace Crucible {
         cmd.setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), extent));
         cmd.bindDescriptorSets(vk::PipelineBindPoint::eGraphics, *m_outlineMaskLayout, 0, frameSet, nullptr);
         const DepthPassPipelines pipelines{ .solid = *m_outlineMaskPipeline, .cutout = *m_outlineMaskCutoutPipeline, .layout = *m_outlineMaskLayout,
-                                            .cutoutPushStages = vk::ShaderStageFlagBits::eFragment, .cutoutPushOffset = 0,
-                                            .dynamicCull = false };   // no culling at all: the mask covers both sides
+                                            .cutoutPushStages = kCutoutPushStages, .cutoutPushOffset = 0,
+                                            .dynamicCull = false,     // no culling at all: the mask covers both sides
+                                            .pass = DepthPass::OutlineMask };
         m_resources.DrawDepthBatches(cmd, meshes, pipelines);   // binds the pipelines itself
         cmd.endRendering();
 

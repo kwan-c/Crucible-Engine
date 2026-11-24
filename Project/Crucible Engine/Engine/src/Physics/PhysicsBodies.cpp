@@ -5,7 +5,7 @@
 * \par:          Email: low.h@digipen.edu,
 *                Email: chunkwangxavier.tan@digipen.edu
 * \date          27 September 2026
-* \version       1.6
+* \version       1.7
 * \brief
 *                Bodies: create, destroy, teleport, move, set velocity,
 *                and push with impulses and forces.
@@ -24,6 +24,7 @@
 *    -v1.4       DestroyBody removes the body's joints first
 *    -v1.5       sensors (BodyDesc::m_isSensor)
 *    -v1.6       GetCenterOfMass
+*    -v1.7       a HeightField is refused on a moving body (Jean David)
 *
 **************************************************************************/
 #include "PhysicsSystem.h"
@@ -91,6 +92,13 @@ namespace Crucible {
         if (static_cast<std::size_t>(desc.m_layer) >= kPhysicsLayerCount) {
             CRU_ERROR("Physics::CreateBody: layer {} is not one of the {} in PhysicsLayer",
                       static_cast<int>(desc.m_layer), kPhysicsLayerCount);
+            return BodyHandle{};
+        }
+
+        // Jolt can only collide a heightfield as static ground: as a dynamic or
+        // kinematic body it would assert. Refused here, where the motion is known.
+        if (desc.m_shape.m_type == ShapeType::HeightField && desc.m_motion != BodyMotion::Static) {
+            CRU_ERROR("Physics::CreateBody: a HeightField can only be static ground - remove the RigidBody from the terrain");
             return BodyHandle{};
         }
 

@@ -37,6 +37,21 @@ namespace Crucible {
                     vk::DescriptorSetLayout twoTextureSetLayout);
 
         /*********************************************************************
+         \brief  Builds the pre-pass's two pipelines - solid and cut-out - from
+                 a module that has DepthNormal.slang's entry points:
+                 DepthNormal.spv itself, or a mesh shader that moves vertices
+                 (MaterialShaders calls this for each, on its background
+                 thread, so it only reads state that no longer changes).
+                 After Create().
+         \param[in] shader         The module.
+         \param[in] allAttributes  true for a mesh shader: its vertex stage is
+                                   given every vertex attribute.
+         \param[out] solid, cutout The pipelines.
+         *********************************************************************/
+        void BuildPrepassPipelines(VulkanContext& context, vk::ShaderModule shader, bool allAttributes,
+                                   vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const;
+
+        /*********************************************************************
          \brief  Records ambient occlusion for one view.
          \param[in] cmd          Command buffer, with no rendering pass open.
          \param[in,out] targets  The view's targets.

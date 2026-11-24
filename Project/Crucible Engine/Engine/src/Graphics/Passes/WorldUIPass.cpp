@@ -203,7 +203,7 @@ namespace Crucible {
 
     }   // WorldUIPass::ClearSubmitted()
 
-    void WorldUIPass::Prepare(const Camera& camera, std::vector<WorldUIDraw>& out) {
+    void WorldUIPass::Prepare(const Camera& camera, std::vector<WorldUIDraw>& out, bool hideSceneHidden) {
 
         if (m_panels.empty()) { return; }
 
@@ -213,6 +213,8 @@ namespace Crucible {
         m_order.clear();
         for (uint32_t i = 0; i < m_panels.size(); ++i) {
             const WorldUIDesc& desc = m_panels[i].desc;
+            // Editor scene visibility: each view draws one of the two versions of a panel (WorldUIViews).
+            if (desc.views == (hideSceneHidden ? WorldUIViews::NotInSceneViews : WorldUIViews::SceneViewsOnly)) { continue; }
             const glm::vec3 reach(desc.radius);
             if (!frustum.Intersects(AABB(desc.anchor - reach, desc.anchor + reach))) { continue; }
 

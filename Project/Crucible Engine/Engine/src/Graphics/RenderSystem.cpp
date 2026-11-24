@@ -15,6 +15,7 @@
 
 #include "RenderSystem.h"
 #include "Vulkan/VulkanCommands.h"
+#include "Vulkan/VulkanShader.h"   // LoadShaderWords
 
 // STL
 #include <stdexcept>
@@ -28,6 +29,8 @@
 #include <chrono>
 #include <cmath>
 #include <memory>
+#include <fstream>
+#include <iterator>
 
 #include <glm/gtc/packing.hpp>   // packHalf4x16 - RGBA16F cubemap texels
 
@@ -53,7 +56,38 @@ namespace Crucible {
             return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
         }
 
-    }   // namespace
+        // ErrorShader.spv: what a material whose shader cannot be drawn is drawn with
+        // (MaterialShaders). Empty if it is missing - not fatal, MaterialShaders says so.
+        std::vector<uint32_t> LoadErrorShader() {
+            try {
+                return LoadShaderWords("ErrorShader.spv");
+            } catch (const std::exception&) {
+                return {};
+            }
+        }
+
+        // A mesh shader's parameter list, <name>.params.json: beside its compiled code
+        // (Resources/Shaders, where the build copies it) or, when the shader has not been built
+        // yet and the sources are there (the Editor), beside its source. False if it has none -
+        // or one that cannot be used, which is reported.
+        bool LoadShaderParamList(const std::string& name, MaterialShaderParams& out) {
+            const std::string file = name + ".params.json";
+            std::vector<std::filesystem::path> places{ ResourcePath("Shaders") / file };
+            if (!IsCookedRun()) { places.push_back(AssetPath("Shaders") / file); }
+
+            for (const std::filesystem::path& path : places) {
+                std::ifstream in(path, std::ios::binary);
+                if (!in) { continue; }
+                const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+                std::string error;
+                if (MaterialShaderParams::Parse(text, out, error)) { return true; }
+                CRU_USER_ERROR("[Renderer] {} cannot be used: {}. Materials on '{}' get no parameters of its own.", PathToUtf8(path), error, name);
+                return false;
+            }
+            return false;
+        }
+
+    }   // anonymous namespace
 
     Renderer::Renderer(WindowManager& window) 
         : m_window{ window }, m_context{ m_window }, m_swapchain{ m_context, m_window } {
@@ -65,6 +99,23 @@ namespace Crucible {
         // Passes that own their pipelines.
         m_scenePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(),
                            *m_layouts.GetSkyboxDescriptorSetLayout(), RenderLayouts::kSceneColorFormat, m_swapchain.GetDepthFormat());
+        // The mesh shaders. The built-in one's pipelines are built here, for every MSAA level; the
+        // others in the background as materials ask for them. After m_scenePass.Create(): they are
+        // built with its layout.
+        m_materialShaders.Init(m_context,
+            [this](vk::ShaderModule shader, uint32_t level, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) {
+                m_scenePass.BuildMeshPipelines(m_context, shader, level, solid, cutout);
+            },
+            // A shader that moves vertices: its own pipelines for the depth-only passes, built
+            // by each pass. Only called from the first Update() on, when those passes exist.
+            [this](vk::ShaderModule shader, DepthPass pass, vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) {
+                switch (pass) {
+                case DepthPass::Shadow:      m_shadowPass.BuildPipelines(m_context, shader, true, solid, cutout); break;
+                case DepthPass::DepthNormal: m_aoPass.BuildPrepassPipelines(m_context, shader, true, solid, cutout); break;
+                default:                     m_outlinePass.BuildMaskPipelines(m_context, shader, true, solid, cutout); break;
+                }
+            },
+            "DefaultShader", LoadShaderWords("DefaultShader.spv"), LoadErrorShader());
         m_outlinePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format);
         m_aoPass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), *m_layouts.GetTonemapDescriptorSetLayout());
         m_bloomPass.Create(m_context, *m_layouts.GetSingleTextureSetLayout(), RenderLayouts::kSceneColorFormat);
@@ -88,6 +139,7 @@ namespace Crucible {
         static_assert(SceneLights::kMaxClusterViews >= ViewportSet::kMaxViewports + 1, "one cluster grid per viewport, plus the window");
         m_lights.Init(m_context, m_frameManager.MaxFramesInFlight());   // light buffer + cluster buffers
         m_scene.Init(m_frameManager.MaxFramesInFlight());   // instance buffers
+        m_resources.InitMaterialParams(m_frameManager.MaxFramesInFlight());   // the materials' shader-parameter buffers
         CreateShadowResources();
         m_viewTargets.Init(ViewportSet::kMaxViewports + 1, *m_layouts.GetSingleTextureSetLayout(), *m_layouts.GetTonemapDescriptorSetLayout(),
                            m_swapchain.GetDepthFormat());   // samplers and the pool every view's targets use
@@ -99,7 +151,7 @@ namespace Crucible {
         m_viewportSet.Init(m_frameManager.MaxFramesInFlight(), *m_layouts.GetDescriptorSetLayout(), *m_outlinePass.GetMaskSetLayout(),
                            m_swapchain.GetSurfaceFormat().format, m_swapchain.GetDepthFormat());
 
-        m_resources.InitMaterials(*m_layouts.GetMaterialDescriptorSetLayout());   // sampler, placeholders, default material
+        m_resources.InitMaterials(*m_layouts.GetMaterialDescriptorSetLayout(), m_materialShaders);   // sampler, placeholders, default material
         m_particlePass.EnsureTextureSet(m_resources.DefaultWhiteTexture());   // the particle pipeline's fallback texture set
         // Screen-space UI: drawn into viewport images and the swapchain, which share one format.
         m_uiPass.Create(*m_layouts.GetSingleTextureSetLayout(), m_swapchain.GetSurfaceFormat().format,
@@ -115,7 +167,11 @@ namespace Crucible {
         CreatePrimitiveMeshes();
         m_profiler.Init(m_context, m_frameManager.MaxFramesInFlight());
 
-    }
+        // Every pipeline now exists: keep what the driver compiled for the next start, even if
+        // this run never reaches ShutDown() (stopped from the debugger, for example).
+        m_context.SavePipelineCache();
+
+    }   // Renderer::Renderer()
 
     void Renderer::ShutDown() { m_context.ShutDown(); }
 
@@ -145,7 +201,9 @@ namespace Crucible {
         // CULL, SORT & DRAW
         //   Per view (PrepareView -> RenderScene::BuildViewBatches, on the worker threads): each camera
         //   gets its own visible list, so the Scene and Game views never cull with each other's camera.
-        DrawFrame();
+        //   Not while suspended (window minimized): the frame time stats restart when drawing resumes.
+        if (m_drawSuspended) { m_lastFrameStart = 0.0; }
+        else                 { DrawFrame(); }
 
         // Everything submitted for this frame is consumed; lights and environment are per-frame
         // state exactly like the render queue (see SubmitLight/SetEnvironment).
@@ -193,11 +251,29 @@ namespace Crucible {
         m_uploads.ReleaseFrame(frameIndex);
         m_resources.ReleaseDestroyed();   // frees meshes/textures/materials destroyed long enough ago
         m_environmentMaps.ReleaseDestroyed();   // ... and skyboxes
+        m_deferred.Release();                   // ... and pipelines a shader reload replaced
 
         // ...and with this index's dynamic-mesh buffers: refill the ones whose geometry changed.
         m_resources.UploadDynamicMeshes(frameIndex);
+        // ...and with this index's copy of the materials' shader parameters: refill it if any changed.
+        m_resources.UploadMaterialParams(frameIndex);
 
         ApplyMsaaSetting();
+
+        // Mesh shaders: take in the pipelines built since last frame, and ask for whatever the MSAA
+        // level in use still needs (a shader a material has just named, a reloaded one).
+        m_materialShaders.Update(RenderLayouts::MsaaIndex(m_msaaSamples), m_deferred);
+
+        // The first time the shaders the start-up scene asked for are all built, keep the pipeline
+        // cache on disk now rather than only at shutdown: the next start (even after a crash) then
+        // builds them in a fraction of the time. The background thread is idle at this point.
+        const uint32_t pendingBuilds = m_materialShaders.PendingBuilds();
+        if (!m_savedCacheAfterBuilds && m_pendingShaderBuilds > 0 && pendingBuilds == 0) {
+            m_savedCacheAfterBuilds = true;
+            m_context.SavePipelineCache();
+            CRU_INFO("[Renderer] Every mesh shader is built; pipeline cache saved.");
+        }
+        m_pendingShaderBuilds = pendingBuilds;
 
         // Lights first: every view's uniforms read the light count and shadow light this picks.
         m_lights.BuildFrameLights(frameIndex);
@@ -223,7 +299,7 @@ namespace Crucible {
                     m_viewTargets.Create(m_windowPost, extent.width, extent.height, m_msaaSamples);
                 }
                 if (fogVolume) { m_fogPass.EnsureTargets(m_windowFog); }
-                PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, m_uniformBuffersMapped[frameIndex]);
+                PrepareView(m_camera, extent, m_windowCullStats, m_windowDraws, false, false, m_uniformBuffersMapped[frameIndex]);
                 WriteViewTextures(*m_descriptorSets[frameIndex], m_windowPost, fogVolume ? &m_windowFog : nullptr);
             } else {
                 m_windowCullStats = RenderCullStats{};
@@ -238,7 +314,9 @@ namespace Crucible {
                 // set from the viewport's own size, in PrepareView).
                 if (vp.role == ViewportRole::Game) { vp.camera = m_camera; }
                 if (fogVolume) { m_fogPass.EnsureTargets(vp.fog); }
-                PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.uniformBuffersMapped[frameIndex]);
+                // Only a Scene view leaves out what the editor hid there (SceneHidden); a Game view never does.
+                PrepareView(vp.camera, vp.extent, vp.cullStats, vp.draws, vp.outline, vp.role == ViewportRole::Scene,
+                            vp.uniformBuffersMapped[frameIndex]);
                 WriteViewTextures(*vp.descriptorSets[frameIndex], vp.post, fogVolume ? &vp.fog : nullptr);
             }
         }
@@ -270,7 +348,7 @@ namespace Crucible {
                                            const glm::vec3& boundsMin, const glm::vec3& boundsMax) {
         m_scene.SetProxyAnimation(handle, palette, boundsMin, boundsMax);
     }
-    void Renderer::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params) { m_scene.Submit(mesh, material, model, params); }
+    void Renderer::Submit(MeshHandle mesh, MaterialHandle material, const glm::mat4& model, const glm::vec4& params, bool sceneHidden) { m_scene.Submit(mesh, material, model, params, sceneHidden); }
 
     void Renderer::CreatePrimitiveMeshes() {
 
@@ -752,14 +830,15 @@ namespace Crucible {
     void Renderer::CreateDescriptorPool() {
 
         uint32_t maxFrames = m_frameManager.MaxFramesInFlight();
-        // Each set 0 = FrameUniforms UBO (binding 0), five storage buffers (lights 1, instances 2,
-        // particles 5, light-cluster grid 6 and indices 7), shadow map image + comparison sampler (3, 4).
+        // Each set 0 = FrameUniforms UBO (binding 0), six storage buffers (lights 1, instances 2,
+        // particles 5, light-cluster grid 6 and indices 7, material parameters 11), shadow map image
+        // + comparison sampler (3, 4).
         // ... plus three textures: the environment map (8), the view's ambient occlusion (9) and
         // its fog volume (10).
         std::array<vk::DescriptorPoolSize, 5> poolSizes{ {
             { .type = vk::DescriptorType::eCombinedImageSampler, .descriptorCount = maxFrames * 3 },
             { .type = vk::DescriptorType::eUniformBuffer, .descriptorCount = maxFrames },
-            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 5 },
+            { .type = vk::DescriptorType::eStorageBuffer, .descriptorCount = maxFrames * 6 },
             { .type = vk::DescriptorType::eSampledImage,  .descriptorCount = maxFrames },
             { .type = vk::DescriptorType::eSampler,       .descriptorCount = maxFrames }
         } };
@@ -817,6 +896,81 @@ namespace Crucible {
     }
     MaterialHandle Renderer::CreateMaterial(const MaterialData& data) { return m_resources.CreateMaterial(data); }
     void Renderer::UpdateMaterial(MaterialHandle handle, const MaterialData& data) { m_resources.UpdateMaterial(handle, data); }
+    
+    MaterialShaderHandle Renderer::LoadMaterialShader(const std::string& name, bool quiet) {
+
+        if (name.empty()) { return {}; }   // the built-in shader
+        if (const MaterialShaderHandle loaded = m_materialShaders.Find(name); loaded.IsValid()) { return loaded; }
+
+        // The name becomes a file name: only what is safe in one.
+        const bool usable = name.front() != '.' && name.find("..") == std::string::npos &&
+            std::all_of(name.begin(), name.end(), [](char c) {
+                return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_' || c == '-' || c == '.';
+            });
+        if (!usable) {
+            CRU_USER_WARN("[Renderer] \"{}\" is not a usable shader name (letters, digits, '_', '-' and '.' only) - "
+                          "the material draws with the default shader.", name);
+            return {};
+        }
+
+        // Its compiled code, if the build has made it. Without it the shader is registered all
+        // the same: its materials draw with the error shader, and under the Editor the shader
+        // hot reload compiles Assets/Shaders/<name>.slang (or generates and compiles the shader
+        // graph) and hands the result to ReloadMaterialShader.
+        std::vector<uint32_t> spirv;
+        try {
+            spirv = LoadShaderWords(name + ".spv");
+        } catch (const std::exception& e) {
+            if (!quiet) {
+                CRU_USER_WARN("[Renderer] Shader '{}' has no compiled code - its materials draw with the error shader "
+                              "until it has some. ({})", name, e.what());
+            }
+        }
+        const MaterialShaderHandle shader = m_materialShaders.Add(name, std::move(spirv));
+
+        // Its own parameters and textures, if it has any. No material uses the shader yet, so
+        // there is nothing to bring in line.
+        MaterialShaderParams list;
+        if (LoadShaderParamList(name, list)) { m_materialShaders.SetParams(shader, std::move(list)); }
+        return shader;
+
+    }   // Renderer::LoadMaterialShader()
+
+    const MaterialShaderParams& Renderer::GetMaterialShaderParams(MaterialShaderHandle shader) const { return m_materialShaders.Params(shader); }
+
+    bool Renderer::SetMaterialShaderParams(MaterialShaderHandle shader, const MaterialShaderParams& params) {
+
+        // Handle 0 is the built-in shader: its settings are MaterialData's fixed fields.
+        if (shader.id == 0 || shader.id >= m_materialShaders.Count()) { return false; }
+
+        const MaterialShaderParams before = m_materialShaders.Params(shader);
+        if (before == params) { return true; }
+        m_materialShaders.SetParams(shader, params);
+        m_resources.OnShaderParamsChanged(shader, before);   // its materials keep their values, by name
+        CRU_INFO("[Renderer] Shader '{}' now has {} parameter(s) and {} texture(s).", m_materialShaders.Name(shader),
+                 params.params.size(), params.textures.size());
+        return true;
+
+    }   // Renderer::SetMaterialShaderParams()
+
+    const std::string& Renderer::GetMaterialShaderName(MaterialShaderHandle shader) const { return m_materialShaders.Name(shader); }
+    void Renderer::MarkMaterialShaderMissing(MaterialShaderHandle shader) { m_materialShaders.SetMissing(shader); }
+    bool Renderer::IsMaterialShaderBroken(MaterialShaderHandle shader) const { return m_materialShaders.IsBroken(shader); }
+    uint32_t Renderer::GetPendingMaterialShaderBuilds() const { return m_materialShaders.PendingBuilds(); }
+    uint32_t Renderer::GetMaterialShaderCount() const { return m_materialShaders.Count(); }
+
+    bool Renderer::ReloadMaterialShader(MaterialShaderHandle shader, std::span<const uint32_t> spirv, std::string& error) {
+
+        // Built in the background from the next frame on; what is drawing now keeps drawing
+        // until the new pipelines are in (MaterialShaders::Update).
+        if (!m_materialShaders.SetCode(shader, std::vector<uint32_t>(spirv.begin(), spirv.end()), error)) {
+            CRU_ERROR("[Renderer] Shader '{}' could not be reloaded: {}", m_materialShaders.Name(shader), error);
+            return false;
+        }
+        return true;
+
+    }   // Renderer::ReloadMaterialShader()
+    
     const MaterialData& Renderer::GetMaterialData(MaterialHandle handle) const { return m_resources.GetMaterialData(handle); }
     bool Renderer::DestroyMesh(MeshHandle handle)         { return m_resources.DestroyMesh(handle); }
     bool Renderer::DestroyTexture(TextureHandle handle)   { return m_resources.DestroyTexture(handle); }
@@ -838,7 +992,8 @@ namespace Crucible {
     void Renderer::WriteSharedFrameDescriptors(std::vector<vk::raii::DescriptorSet>& sets) {
 
         for (size_t i = 0; i < sets.size() && i < m_lights.BufferCount() && i < m_scene.InstanceBufferCount()
-                           && i < m_particlePass.BufferCount(); ++i) {
+                           && i < m_particlePass.BufferCount() && i < m_resources.MaterialParamBufferCount(); ++i) {
+            vk::DescriptorBufferInfo materialParamInfo{ .buffer = m_resources.MaterialParamBuffers(i), .offset = 0, .range = vk::WholeSize };
             vk::DescriptorBufferInfo particleInfo{ .buffer = m_particlePass.Buffer(static_cast<uint32_t>(i)), .offset = 0, .range = vk::WholeSize };
             vk::DescriptorBufferInfo clusterGridInfo{ .buffer = m_lights.ClusterGridBuffer(i), .offset = 0, .range = vk::WholeSize };
             vk::DescriptorBufferInfo clusterIndexInfo{ .buffer = m_lights.ClusterIndexBuffer(i), .offset = 0, .range = vk::WholeSize };
@@ -857,7 +1012,9 @@ namespace Crucible {
             // Binding 10 starts at the "no fog" volume; WriteViewTextures points it at the view's own.
             vk::DescriptorImageInfo fogInfo = m_fogPass.SampledVolume(nullptr);
 
-            const std::array<vk::WriteDescriptorSet, 8> writes{ {
+            const std::array<vk::WriteDescriptorSet, 9> writes{ {
+                { .dstSet = *sets[i], .dstBinding = 11, .descriptorCount = 1,
+                  .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &materialParamInfo },
                 { .dstSet = *sets[i], .dstBinding = 5, .descriptorCount = 1,
                   .descriptorType = vk::DescriptorType::eStorageBuffer, .pBufferInfo = &particleInfo },
                 { .dstSet = *sets[i], .dstBinding = 6, .descriptorCount = 1,
@@ -997,6 +1154,9 @@ namespace Crucible {
     void Renderer::SetRenderProxy(RenderProxyHandle handle, MeshHandle mesh, MaterialHandle material, const glm::mat4& model, bool visible, const glm::vec4& params) {
         m_scene.SetProxy(handle, mesh, material, model, visible, params);
     }
+    void Renderer::SetRenderProxySceneHidden(RenderProxyHandle handle, bool hidden) { m_scene.SetProxySceneHidden(handle, hidden); }
+    void Renderer::SetSceneHiddenShown(bool shown) { m_scene.SetSceneHiddenShown(shown); }
+    bool Renderer::GetSceneHiddenShown() const     { return m_scene.GetSceneHiddenShown(); }
     void Renderer::DestroyRenderProxy(RenderProxyHandle handle) { m_scene.DestroyProxy(handle); }
 
     RenderCullStats Renderer::GetViewportCullStats(ViewportHandle handle) const {
@@ -1011,7 +1171,7 @@ namespace Crucible {
     // ------------------------------------------------------------------------------------------------------------- //
 
     void Renderer::PrepareView(Camera& camera, vk::Extent2D extent, RenderCullStats& stats, ViewDrawList& out,
-                               bool outline, void* uniformDst) {
+                               bool outline, bool sceneView, void* uniformDst) {
 
         out.Clear();
         camera.SetAspect(static_cast<float>(extent.width), static_cast<float>(extent.height));   // ignores 0 height
@@ -1038,15 +1198,18 @@ namespace Crucible {
         // ---- What the camera and each cascade see: one instanced draw per (material, mesh) run in
         //      the main pass, per mesh run in each cascade. Culled and batched on the worker threads. ----
         m_scene.BuildViewBatches(camera, std::span<const glm::mat4>(cascadeViewProj.data(), cascadeCount), stats,
-                                 out.main, std::span<std::vector<DrawBatch>>(out.shadow.data(), cascadeCount));
+                                 out.main, std::span<std::vector<DrawBatch>>(out.shadow.data(), cascadeCount), sceneView);
         stats.drawCalls  = static_cast<uint32_t>(out.main.size());
         out.cascadeCount = cascadeCount;
 
         // ---- Point/spot lights binned into this view's cluster grid; particles ----
         stats.clusteredLights = m_lights.BuildClusters(camera, extent, ubo);
-        m_particlePass.Prepare(camera, out.particles, stats);
-        m_waterPass.Prepare(camera, out.water);
-        m_worldUIPass.Prepare(camera, out.worldUI);
+        // What the editor hid in the Scene view (SceneHidden) is left out of these too, unless
+        // "Show hidden objects" is on - the same rule BuildViewBatches applies to the meshes.
+        const bool hideSceneHidden = sceneView && !m_scene.GetSceneHiddenShown();
+        m_particlePass.Prepare(camera, out.particles, stats, hideSceneHidden);
+        m_waterPass.Prepare(camera, out.water, hideSceneHidden);
+        m_worldUIPass.Prepare(camera, out.worldUI, hideSceneHidden);
         m_lights.EndView();
 
         // ---- Selection outline mask: just the selected objects ----
@@ -1066,7 +1229,7 @@ namespace Crucible {
 
     void Renderer::SubmitParticles(const ParticleDrawDesc& desc, const GpuParticle* particles, uint32_t count) { m_particlePass.Submit(desc, particles, count); }
 
-    void Renderer::SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings) { m_waterPass.Submit(mesh, model, settings); }
+    void Renderer::SubmitWater(MeshHandle mesh, const glm::mat4& model, const WaterSettings& settings, bool sceneHidden) { m_waterPass.Submit(mesh, model, settings, sceneHidden); }
 
     void Renderer::SubmitWorldUI(const WorldUIDesc& desc, std::span<const WorldUIVertex> vertices, std::span<const WorldUIRun> runs) {
         m_worldUIPass.Submit(desc, vertices, runs);
@@ -1264,7 +1427,8 @@ namespace Crucible {
     //  SELECTION OUTLINE
     // ------------------------------------------------------------------------------------------------------------- //
 
-    bool Renderer::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit) const { return m_scene.Raycast(origin, direction, maxDistance, outHit); }
+    bool Renderer::Raycast(const glm::vec3& origin, const glm::vec3& direction, float maxDistance, RenderRaycastHit& outHit,
+                           bool ignoreSceneHidden) const { return m_scene.Raycast(origin, direction, maxDistance, outHit, ignoreSceneHidden); }
 
     vk::raii::CommandBuffer Renderer::BeginSingleTimeCommand() {
 

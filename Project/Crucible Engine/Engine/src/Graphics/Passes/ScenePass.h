@@ -25,10 +25,12 @@
 #include "Graphics/DrawList.h"
 
 #include <array>
+#include <span>
 
 namespace Crucible {
 
     class VulkanContext;
+    class MaterialShaders;
     class RenderResources;
     class ParticlePass;
     class WaterPass;
@@ -36,12 +38,15 @@ namespace Crucible {
 
     class ScenePass {
     public:
-        ScenePass(const RenderResources& resources, const ParticlePass& particles, const WaterPass& water, const WorldUIPass& worldUI)
-            : m_resources(resources), m_particles(particles), m_water(water), m_worldUI(worldUI) {}
+        ScenePass(const RenderResources& resources, const ParticlePass& particles, const WaterPass& water, const WorldUIPass& worldUI,
+                  const MaterialShaders& shaders)
+            : m_resources(resources), m_particles(particles), m_water(water), m_worldUI(worldUI), m_shaders(shaders) {}
 
         /*********************************************************************
-         \brief  Creates the mesh and sky pipelines (one of each per MSAA
-                 level) and their layouts. Call once, before recording.
+         \brief  Creates the mesh pipeline layout, and the sky pipelines
+                 (one per MSAA level) with their layout. Call once, before
+                 recording. The mesh pipelines themselves are built per
+                 shader, by MaterialShaders through BuildMeshPipelines().
          \param[in] context            The VulkanContext to create them through.
          \param[in] frameSetLayout     Layout of set 0 (the per-frame data).
          \param[in] materialSetLayout  Layout of the mesh pipeline's set 1
@@ -55,6 +60,24 @@ namespace Crucible {
                     vk::DescriptorSetLayout skySetLayout, vk::Format colourFormat, vk::Format depthFormat);
 
         /*********************************************************************
+         \brief  Builds one MSAA level's two mesh pipelines - solid, and
+                 cut-out (the shader's kCutout specialization constant on) -
+                 from one mesh shader's module. What MaterialShaders builds
+                 every shader's pipelines with.
+         \param[in] context    The VulkanContext to create them through.
+         \param[in] shader     The shader's module: a surface function +
+                              SurfaceTemplate.slang (vertMain, fragMain).
+         \param[in] msaaIndex  Which level (RenderLayouts::MsaaIndex).
+         \param[out] solid     The pipeline for solid materials.
+         \param[out] cutout    The pipeline for cut-out materials.
+         \throws If a pipeline cannot be created.
+         \note  Safe to call from another thread once Create() has returned:
+                it only reads the layout and the formats Create() was given.
+         *********************************************************************/
+        void BuildMeshPipelines(VulkanContext& context, vk::ShaderModule shader, uint32_t msaaIndex,
+                                vk::raii::Pipeline& solid, vk::raii::Pipeline& cutout) const;
+
+        /*********************************************************************
          \brief  Records the whole scene pass for one view, barriers included.
                  Leaves the HDR image ready to sample, and the depth image
                  holding the scene's depth, still in the attachment layout.
@@ -64,7 +87,7 @@ namespace Crucible {
                                 depthView its view.
          \param[in] extent       Size of the view.
          \param[in] frameSet     The view's set 0.
-         \param[in] meshes       Batches in (material, mesh) order.
+         \param[in] meshes       Batches in (shader, material, mesh) order.
          \param[in] skySet       The sky cubemap's descriptor set, or a null
                                 handle to draw no sky.
          \param[in] particles    Far to near.
@@ -92,9 +115,11 @@ namespace Crucible {
         const ParticlePass&    m_particles;   // drawn last, inside this pass
         const WaterPass&       m_water;       // drawn after the sky, before the particles
         const WorldUIPass&     m_worldUI;     // world-space UI: drawn after the particles, last in this pass
+        const MaterialShaders& m_shaders;     // every mesh shader's pipelines (built through BuildMeshPipelines)
 
-        std::array<vk::raii::Pipeline, 3> m_meshPipelines{ nullptr, nullptr, nullptr };   // 1, 2, 4 samples
-        std::array<vk::raii::Pipeline, 3> m_cutoutPipelines{ nullptr, nullptr, nullptr }; // the same with kCutout on (cut-out materials)
+        vk::Format                        m_colourFormat = vk::Format::eUndefined;        // what Create() was given: mesh pipelines
+        vk::Format                        m_depthFormat  = vk::Format::eUndefined;        // are built later, and more than once
+
         vk::raii::PipelineLayout          m_meshLayout = nullptr;                         // set 0 + material set + PushConstants
         std::array<vk::raii::Pipeline, 3> m_skyPipelines{ nullptr, nullptr, nullptr };
         vk::raii::PipelineLayout          m_skyLayout = nullptr;                          // set 0 + cubemap set

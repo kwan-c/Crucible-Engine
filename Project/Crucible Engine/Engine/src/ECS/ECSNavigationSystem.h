@@ -1,12 +1,23 @@
 /*************************************************************************
 * \file:         ECSNavigationSystem.h
-* \author:       Hugo Low Ren Hao
-* \par:          Email: low.h@digipen.edu
+* \author:       Jean David Vidal Cruzado (main author; design and Unity original;
+*                v1.2: re-bake on request;
+*                v1.3: tagged obstacles; v1.4: rays read only the terrain;
+*                v1.5: terrain read from the generator's grid;
+*                v1.6: baking and debug drawing split out;
+*                v1.7: goals and agent movement split out;
+*                v1.9: moving DynamicObstacles re-stamped;
+*                v1.10: obstacle tag suggestions, bake warning;
+*                v1.11: Walkable boxes read for layers;
+*                v1.12: queries and agents per layer),
+*                Hugo Low Ren Hao (initial engine port)
+* \par:          Email: jeandavidvidal.c@digipen.edu,
+*                Email: low.h@digipen.edu
 * \date          31 October 2026
-* \version       1.1
+* \version       1.12
 * \brief
 *                Enemy navigation's ECS side: bakes the NavGrid from the
-*                scene's FlowFieldSurface and static colliders, and draws
+*                scene's FlowFieldSurface and "Obstacle"-tagged colliders, and draws
 *                the result.
 *
 * \details
@@ -47,19 +58,59 @@
 *                ground heights: the Play bake samples the colliders into a
 *                HeightfieldNavTerrain (slopes, ledges), and colliders that
 *                are ground no longer count as obstacles
+*    -v1.2       RequestBake(): a script that changed the level mid-Play
+*                (generated terrain) asks for a fresh bake, which waits
+*                for physics to build the new bodies, as Play's does
+*    -v1.3       obstacles are the entities tagged "Obstacle"
+*                (kObstacleTag); the ground rays pass through them, and the
+*                ground-entity list that un-blocked floors is gone
+*    -v1.4       SampleTerrain reads only the terrain (HeightField with a
+*                built Terrain); untagged colliders are invisible to
+*                navigation
+*    -v1.5       F2: the terrain's heights and cliffs come straight from the
+*                Terrain component's grid (TerrainGridNavTerrain), in Edit and
+*                Play - no ground rays, no ledge rule, no
+*                HeightfieldNavTerrain. Bakes no longer wait for physics.
+*                Tags StaticObstacle and DynamicObstacle replace Obstacle
+*                (both stamped at bake until dynamic re-stamping exists).
+*                With a generated terrain the grid is fitted to the terrain's
+*                bounds (m_fittedToTerrain)
+*    -v1.6       build step 3, part 1: the bake's work is NavBaker (which
+*                owns the ground), the overlay NavDebugDraw; no behaviour
+*                change
+*    -v1.7       build step 3, part 2: the goals and the field's rebuild rule
+*                are NavGoalTracker, the agents' movement NavAgentMover; no
+*                behaviour change
+*    -v1.9       build step 4c: while Playing, every DynamicObstacle is
+*                checked every dynamicUpdateInterval and re-stamped when the
+*                cells it covers change (NavDynamicObstacles); costs are
+*                fixed locally and the flow rebuilt only if it is touched.
+*                (v1.8, 4a, was a .cpp-only change.)
+*    -v1.10      build step 4d: SuggestObstacleTags (the Inspector's
+*                Auto-tag obstacles button); the bake warns about
+*                StaticObstacles that have a RigidBody
+*    -v1.11      build step 6b: box colliders tagged Walkable are read at
+*                bake and handed to the grid as layers
+*    -v1.12      build step 6d-2: IsWalkable and IsPathClear go by layers
+*                and links (NavGrid)
 *
 **************************************************************************/
 #pragma once
 
 // STL
+#include <cstdint>   // BakeCount
+#include <string>
+#include <string_view>   // kStaticObstacleTag, kDynamicObstacleTag
 #include <vector>
 
 // Crucible engine
 #include "EngineExport.h"
 #include "Math/Math.h"
-#include "Navigation/AgentSpatialHash.h"
 #include "Navigation/FlowField.h"
-#include "Navigation/HeightfieldNavTerrain.h"
+#include "Navigation/NavAgentMover.h"
+#include "Navigation/NavBaker.h"
+#include "Navigation/NavDynamicObstacles.h"
+#include "Navigation/NavGoalTracker.h"
 #include "Navigation/NavGrid.h"
 #include "Navigation/NavTerrain.h"
 #include "Systems/IECSSystems.h"
@@ -67,13 +118,31 @@
 
 namespace Crucible {
 
-    class ECSPhysicsSystem;
+    // The tags (Assets/Config/Tags.json) that make a collider a navigation
+    // obstacle: the bake blocks the cells under it (within the height band).
+    // Static ones are stamped once at bake; dynamic ones are stamped at bake
+    // and then re-checked every dynamicUpdateInterval while Playing.
+    // Untagged colliders are invisible to navigation.
+    inline constexpr std::string_view kStaticObstacleTag  = "StaticObstacle";
+    inline constexpr std::string_view kDynamicObstacleTag = "DynamicObstacle";
+
+    // The tag that makes a box collider's top face a walkable layer (a bridge
+    // deck, a ramp, a platform). Read at bake; it does not move afterwards.
+    inline constexpr std::string_view kWalkableTag = "Walkable";
+
+    // One tag the Inspector's "Auto-tag obstacles" button would give
+    // (ECSNavigationSystem::SuggestObstacleTags).
+    struct NavTagSuggestion {
+
+        Entity           entity;
+        std::string_view tag;      // kStaticObstacleTag or kDynamicObstacleTag
+        std::string      reason;   // for the log: why this tag
+
+    };  // NAVTAGSUGGESTION STRUCT
+
     class ECSSystemManager;
     class PlayMode;
-    struct EntityHit;
-    struct FlowFieldAgent;
     struct FlowFieldSurface;
-    struct Transform;
 
     // Not exported as a whole class (like ECSPhysicsSystem): only the members
     // the editor calls are ENGINE_API. That keeps the std::vector and NavGrid
@@ -111,9 +180,9 @@ namespace Crucible {
 
         /*!
             \brief
-            Could an enemy stand here? The grid cell under it is open (inside
-            the surface, no obstacle) and the terrain is not a wall there.
-            Height is ignored: this is the top-down map only.
+            Could an enemy stand here? The layer under the position (its
+            height picks it: on the bridge, the deck) is open, and - on the
+            ground - the terrain is not a wall there. See NavGrid::IsWalkable.
 
             \return
             False if the grid isn't baked (nothing is known yet).
@@ -123,9 +192,11 @@ namespace Crucible {
         /*!
             \brief
             Could an enemy walk in a straight line from `from` to `to` without
-            crossing a blocked cell or a terrain wall? Unity's
+            crossing a blocked cell or a terrain wall, following the links
+            from the layer under `from` (so not up a ledge, nor off a drop
+            higher than maxDropHeight)? Unity's
             EnemyLocalPositionQuery.ClearSegment (its grid half): samples
-            every half cell.
+            every half cell. See NavGrid::IsPathClear.
 
             \details
             An enemy pushed into a blocked cell (by the crowd or a blast) must
@@ -152,8 +223,14 @@ namespace Crucible {
         /*!
             \brief
             Rebuilds the grid from the scene as it is now: the first
-            FlowFieldSurface gives the size and settings, and every static,
-            non-trigger collider is an obstacle.
+            FlowFieldSurface gives the size and settings, and every
+            non-trigger collider on an entity tagged StaticObstacle or
+            DynamicObstacle is an obstacle. Untagged colliders are ignored.
+            The ground is the generated terrain's grid (its heights and
+            cliffs, in Edit and Play) or, with no terrain, the flat plane
+            at the surface's height. With a terrain, the grid covers the
+            terrain's own bounds and the surface's scale is ignored.
+            Needs no physics.
 
             \param world
             The scene to bake.
@@ -166,75 +243,80 @@ namespace Crucible {
 
         ENGINE_API bool IsBaked() const { return m_grid.IsBaked(); }
 
+        /*!
+            \brief
+            What the Inspector's "Auto-tag obstacles" button would tag. Only
+            suggests: the editor applies them (as one undo step). Bakes first,
+            because the height band needs the ground.
+              - Untagged collider reaching into the height band, on the grid:
+                StaticObstacle, or DynamicObstacle if it has a RigidBody
+                (dynamic or kinematic - physics or a script moves it).
+              - StaticObstacle with a RigidBody: DynamicObstacle.
+            Never touches: triggers, the terrain, the Nav Surface's own
+            collider, enemies (FlowFieldAgent) and players (PlayerController,
+            CharacterController) and anything parented under them, or
+            entities with any other tag.
+
+            \return
+            Empty outside Edit (tags changed in Play are lost at Stop), or if
+            there is no surface to bake.
+        */
+        ENGINE_API std::vector<NavTagSuggestion> SuggestObstacleTags(World& world);
+
+        /*!
+            \brief
+            Bakes again a frame later while Playing, once the transforms
+            scripts changed this frame are worked out. For a script that
+            just built or changed the ground (C# Navigation.Rebake); several
+            requests before the bake runs are one bake.
+
+            \details
+            Ignored outside Play (an Edit bake is the Inspector's Bake
+            button). Several requests before the bake runs are one bake.
+        */
+        ENGINE_API void RequestBake() { m_rebakeRequested = true; }
+
+        // How many bakes have succeeded since the engine started: a script that
+        // asked for one waits for this to change (C# Navigation.BakeCount).
+        ENGINE_API std::uint32_t BakeCount() const { return m_bakeCount; }
+
     private:
 
         void CollectGoals(World& world);
-        Entity NearestGoalEntity(const Math::vec3& from) const;
-        void UpdateField(const FlowFieldSurface& surface);
-        void UpdateAgents(World& world);
-        void StandOnGround(Entity self, FlowFieldAgent& agent, Math::vec3& position, float dt) const;
-        bool OnGround(Entity self, const FlowFieldAgent& agent, const Math::vec3& position) const;
-        bool Probe(Entity self, const FlowFieldAgent& agent, const Math::vec3& position, const Math::vec3& direction,
-                   float distance, EntityHit& hit) const;
-        bool SampleTerrain(const NavGridSettings& settings, float stepHeight);
-        void DrawGrid() const;
-        void DrawArrows() const;
+        void ReadObstacles(World& world, bool dynamicOnly);
+        void UpdateDynamicObstacles(World& world, const FlowFieldSurface& surface);
+        void RestampDynamicObstacles(World& world);
 
         static inline ECSNavigationSystem* s_active = nullptr;   // see Active()
 
         const PlayMode&          m_playMode;
-        ECSSystemManager&        m_systems;
-        ECSPhysicsSystem*        m_physics   = nullptr;           // found in m_systems on first use; null = no collision
         PlayState                m_lastState = PlayState::Edit;   // last frame's, to catch Edit -> Playing and back
         bool                     m_bakePending = false;           // Play started; bake once the surface's WorldTransform is worked out
-        float                    m_stepHeight = 0.3f;             // the surface's, from the last bake: where the probe's sweep starts
 
         NavGrid                  m_grid;
         FlowField                m_field;        // flows over m_grid, which it points at: declared after it
 
-        // The ground. m_terrain points at one of the two below, chosen by Bake:
-        // the heightfield when physics could be sampled (Play), else the flat
-        // plane at the surface's height (the Edit preview, or no physics).
-        // A pointer so every user asks "the terrain" without caring which.
-        FlatNavTerrain           m_flatTerrain;
-        HeightfieldNavTerrain    m_heightTerrain;
-        const NavTerrain*        m_terrain = &m_flatTerrain;
+        // The bake's work and the ground (m_baker.Terrain(): the generated
+        // terrain's grid when there is one, else the flat plane at the
+        // surface's height). Every user asks it without caring which.
+        NavBaker                 m_baker;
 
-        std::vector<NavObstacle> m_obstacles;        // kept between bakes so a re-bake reuses its memory
-        std::vector<Entity>      m_obstacleEntities; // whose collider each obstacle is, same order: ground ones are dropped
-        std::vector<Entity>      m_groundEntities;   // colliders the sampling found agents stand on (sorted, for binary search)
-        bool                     m_physicsStepped = false;   // physics has stepped this Play, so its bodies exist to be sampled
+        std::vector<NavObstacle> m_obstacles;        // the tagged obstacles read for a bake; kept so a re-bake reuses its memory
+        std::vector<NavWalkable> m_walkables;        // the Walkable boxes read for a bake
+        bool                     m_rebakeRequested = false;  // RequestBake() since the last Update: bake on the next one
+        bool                     m_bakeNextFrame   = false;  // a bake was just asked for: wait a frame so WorldTransforms catch up
+        std::uint32_t            m_bakeCount = 0;            // successful bakes so far (BakeCount)
 
-        std::vector<Math::vec3>  m_goals;         // this frame's player positions (reused every frame)
-        std::vector<Entity>      m_goalEntities;  // the same players, same order - for Arrive(nearest player)
-        std::vector<Math::vec3>  m_goalsAtBuild;  // where they were at the last rebuild; empty = rebuild as soon as there is a player
-        bool                     m_warnedParented = false;   // "agents must be roots" said once per session, not every frame
+        // The DynamicObstacles as last stamped, re-checked every
+        // dynamicUpdateInterval while Playing (build step 4c).
+        NavDynamicObstacles             m_dynamicObstacles;
+        std::vector<NavDynamicObstacle> m_dynamicNow;          // this check's DynamicObstacle boxes (memory reused)
+        std::vector<int>                m_changedCells;        // cells that went open <-> blocked in this check
+        float                           m_dynamicTimer   = 0.0f;   // seconds since the last check
+        int                             m_dynamicRefresh = 0;      // after Stop: frames until the restored positions are re-stamped
 
-        // One agent for this frame's two-pass update: where to write, plus where
-        // it was and how it moved at the START of the frame (what neighbours see).
-        struct AgentRef {
-
-            Entity          entity;                // so its own collider is ignored by its probes
-            FlowFieldAgent* agent     = nullptr;
-            Transform*      transform = nullptr;
-            Math::vec3      start{ 0.0f };
-            Math::vec3      velocity{ 0.0f };
-
-            // For the crowd: who gives way when two bodies overlap. Copied at the
-            // start of the frame, like start and velocity, so an agent pass 2 has
-            // already handled (and maybe marked arrived) can't change the answer
-            // for the ones after it.
-            float           radius   = 0.0f;
-            int             priority = 50;
-            bool            arrived  = false;
-            bool            dynamic  = false;      // has a dynamic RigidBody: physics moves it, the agent steers its velocity
-            Math::vec3      bodyVelocity{ 0.0f };  // dynamic: the body's own XZ velocity, as physics left it
-
-        };  // AGENTREF STRUCT
-
-        std::vector<AgentRef>    m_agents;        // refilled every frame (memory reused)
-        AgentSpatialHash         m_hash;          // the agents by 8 m square, refilled every frame
-        std::vector<int>         m_neighbours;    // one agent's neighbours, reused for every query
+        NavGoalTracker           m_goals;   // this frame's players, and when the field is rebuilt towards them
+        NavAgentMover            m_mover;   // moves the FlowFieldAgents (owns the probes' physics lookup)
 
     };  // ECSNAVIGATIONSYSTEM CLASS
 

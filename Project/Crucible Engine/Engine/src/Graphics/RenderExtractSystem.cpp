@@ -31,6 +31,10 @@
 
 namespace Crucible {
 
+    namespace { bool g_previewSun = false; }
+
+    void RenderExtractSystem::SetPreviewSun(bool enabled) { g_previewSun = enabled; }
+
     void RenderExtractSystem::ReleaseDraws(ProxyRecord& record) {
         if (record.proxy.IsValid()) m_renderer.DestroyRenderProxy(record.proxy);
         for (const auto& part : record.parts) m_renderer.DestroyRenderProxy(part.proxy);
@@ -76,6 +80,9 @@ namespace Crucible {
             }
         }
         if (!record.model) return;
+        // Editor scene visibility: every part of the model follows the entity's SceneHidden tag.
+        const bool sceneHidden = record.hiddenFrame == m_frame;
+        for (const auto& part : record.parts) m_renderer.SetRenderProxySceneHidden(part.proxy, sceneHidden);
         const auto& pose = animation ? animation->pose : record.restPose;
         glm::mat4 rootInverse;
         // A pose evaluated before a hot reload has the old model's node count.
@@ -120,6 +127,7 @@ namespace Crucible {
             .Uses<CameraQuery>()                     // reads WorldTransform + CameraComponent
             .Uses<ParamsQuery>()                     // reads MeshRenderer + MaterialParams
             .Uses<WaterQuery>()                      // reads WorldTransform + Water
+            .Uses<HiddenQuery>()                     // reads SceneHidden
             .Uses<Query<const AnimatedModel>>()
             .RunAfter<AnimatedModelSystem>()
             .RunAfter<HierarchyTransformSystem>()    // WorldTransform must already be this frame's
@@ -149,6 +157,16 @@ namespace Crucible {
             record.paramsFrame = m_frame;
         });
 
+        // Hidden in the editor's Scene view (SceneHidden tag): noted the same way. The proxy is only
+        // flagged - MeshRenderer::visible is untouched, so the Game view still draws the entity.
+        // Every tagged entity, not only those with a MeshRenderer: a Water without one (drawn on
+        // the built-in Plane) is hidden the same way.
+        if (!m_hiddenQuery) { m_hiddenQuery.emplace(world.CreateQuery<const SceneHidden>()); }
+        m_hiddenQuery->ForEach([this](Entity entity, const SceneHidden&) {
+            if (entity.index >= m_records.size()) { m_records.resize(static_cast<size_t>(entity.index) + 1); }
+            m_records[entity.index].hiddenFrame = m_frame;
+        });
+
         // Water surfaces: gathered first, so the MeshRenderer loop below knows which entities'
         // meshes are water rather than ordinary objects.
         if (!m_waterQuery) { m_waterQuery.emplace(world.CreateQuery<const WorldTransform, const Water>()); }
@@ -162,6 +180,7 @@ namespace Crucible {
 
             WaterItem item;
             item.entityIndex             = entity.index;
+            item.sceneHidden             = record.hiddenFrame == m_frame;
             item.model                   = worldTransform.matrix;
             item.settings.shallowColour  = water.shallowColour;
             item.settings.deepColour     = water.deepColour;
@@ -214,6 +233,7 @@ namespace Crucible {
             }
             if (record.modelAsset != 0) ReleaseDraws(record);
             if (!record.proxy.IsValid()) record.proxy = m_renderer.CreateRenderProxy(EntityToUserData(entity));
+            m_renderer.SetRenderProxySceneHidden(record.proxy, record.hiddenFrame == m_frame);   // editor scene visibility
 
             // Hidden, or not yet computed this frame (e.g. spawned during PreRender - see
             // WorldTransform's own doc comment): keep the proxy, but out of culling and picking.
@@ -261,7 +281,7 @@ namespace Crucible {
         for (const WaterItem& item : m_waterItems) {
             const ProxyRecord& record = m_records[item.entityIndex];
             const MeshHandle   mesh   = record.waterMesh.IsValid() ? record.waterMesh : m_planeMesh;
-            if (mesh.IsValid()) { m_renderer.SubmitWater(mesh, item.model, item.settings); }
+            if (mesh.IsValid()) { m_renderer.SubmitWater(mesh, item.model, item.settings, item.sceneHidden); }
         }
 
         // Lights: position = the world matrix's translation, direction = its local -Z axis (see
@@ -269,9 +289,11 @@ namespace Crucible {
         // any scale the entity or a parent carries.
         if (!m_lightQuery) { m_lightQuery.emplace(world.CreateQuery<const WorldTransform, const Light>()); }
 
-        m_lightQuery->ForEach([this](Entity, const WorldTransform& worldTransform, const Light& light) {
+        bool hasDirectional = false;
+        m_lightQuery->ForEach([this, &hasDirectional](Entity, const WorldTransform& worldTransform, const Light& light) {
 
             if (!light.enabled || !worldTransform.valid) { return; }
+            hasDirectional = hasDirectional || light.type == LightType::Directional;
 
             const glm::mat4& m = worldTransform.matrix;
             LightData data;
@@ -287,6 +309,18 @@ namespace Crucible {
             m_renderer.SubmitLight(data);
 
         });
+
+        // Prefab Mode's preview light: the same sun an unlit scene gets, so a prefab holding
+        // only point or spot lights can still be seen.
+        if (g_previewSun && !hasDirectional) {
+            LightData sun;
+            sun.type        = LightType::Directional;
+            sun.direction   = -glm::normalize(glm::vec3(0.2f, 0.8f, 0.5f));
+            sun.colour      = glm::vec3(1.0f);
+            sun.intensity   = 3.0f;
+            sun.castShadows = true;
+            m_renderer.SubmitLight(sun);
+        }
 
         // Environment: the scene's Skybox (last one visited wins if there are several). With none,
         // the Renderer simply keeps its defaults for the frame.
