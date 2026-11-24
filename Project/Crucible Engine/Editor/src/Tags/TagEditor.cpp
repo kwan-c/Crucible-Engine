@@ -23,6 +23,7 @@
 #include "ImGui/EditorTheme.h"
 #include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"
 #include "ImGui/Panels/ImGuiPanel_Inspector.h"
+#include "Prefabs/PrefabStage.h"
 #include "AssetPipe/AssetPaths.h"
 #include "AssetPipe/Assetmanager.h"
 #include "Core.h"
@@ -95,7 +96,9 @@ namespace Crucible
 		bool InPlay()
 		{
 			Core* core = EditorManager::GetInstance().GetCore();
-			return core && core->IsInPlaySession();
+			// Prefab Mode counts: project-wide tag changes rewrite the open scene through the
+			// world, which holds a prefab then.
+			return core && (core->IsInPlaySession() || PrefabStage::IsActive());
 		}
 
 		// An Inspector edit still open becomes its own undo step before ours is pushed.

@@ -29,6 +29,7 @@
 #include "Json/JsonWrapper.h"
 #include "Scene/SceneManager.h"
 #include "Prefabs/PrefabAuthoring.h"
+#include "Prefabs/PrefabStage.h"
 #include "Scene/Prefab.h"   // kPrefabExtension
 #include "Scripting/ScriptAuthoring.h"
 #include "Resources/ResourceManager.h"   // hot reload after a refresh
@@ -1362,6 +1363,9 @@ void Crucible::AssetBrowser::OpenItem(Item const& item) {
 	}
 
 	switch (item.type) {
+	case AssetType::Prefab:
+		PrefabStage::RequestOpen(item.virtualPath);
+		return;
 	case AssetType::AnimatorController:
 		if (auto animator = EditorManager::GetInstance().GetPanel<AnimatorPanel>(ImguiPanels::ANIMATOR)) {
 			if (const auto* entry = m_assets.Find(item.virtualPath)) animator->RequestOpen(entry->guid.m_Value);

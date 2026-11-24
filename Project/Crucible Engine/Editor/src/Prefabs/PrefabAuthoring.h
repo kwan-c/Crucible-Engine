@@ -234,6 +234,15 @@ namespace Crucible::PrefabAuthoring {
 	// does); runs UpdateChangedInstances once, as soon as the asset index is up.
 	void RunStartupCheck(World& world);
 
+	// ---- Writing a .cprefab from elsewhere (Prefab Mode) ----
+
+	// Call just BEFORE replacing the file: keeps the current version in memory, so instances can
+	// work out their overrides against it exactly when they update.
+	void RememberPrefabVersion(std::uint64_t prefabAsset);
+
+	// Call just AFTER replacing the file: drops the cached copies and loads the new version.
+	void PrefabFileReplaced(std::uint64_t prefabAsset);
+
 	// ---- Every scene at once ("Apply to All Scenes...") ----
 
 	// The scene files other than the open one that contain an instance of the prefab (virtual

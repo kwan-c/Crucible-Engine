@@ -17,7 +17,8 @@ crucible_add_managed_library(CrucibleManagedExamples
 # AssemblyInfo.cs stays here so the assembly still builds when there are no scripts.
 file(GLOB_RECURSE project_scripts CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/Assets/Scripts/*.cs")
 crucible_add_managed_library(CrucibleProjectScripts
-    ASSEMBLY Crucible.Scripts SOURCES AssemblyInfo.cs ${project_scripts} REFERENCES CrucibleScriptCore)
+    ASSEMBLY Crucible.Scripts SOURCES AssemblyInfo.cs ${project_scripts} REFERENCES CrucibleScriptCore
+    FALLBACK_SOURCE AssemblyInfo.cs)   # a broken gameplay script warns; it never stops the engine build
 add_custom_target(CrucibleManagedScripts)
 get_property(managed_targets GLOBAL PROPERTY CRUCIBLE_MANAGED_TARGETS)
 add_dependencies(CrucibleManagedScripts ${managed_targets})

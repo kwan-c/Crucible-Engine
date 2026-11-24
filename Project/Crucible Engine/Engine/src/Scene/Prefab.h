@@ -177,6 +177,37 @@ namespace Crucible {
                              const std::function<std::uint64_t(Entity)>& sceneIdOf = {});
 
         /*********************************************************************
+         \brief
+            Write an edited copy of a prefab back to its file, keeping the
+            entry ids its instances link to (PrefabInstance::fileId).
+
+         \param[in] world     The world the edited entities live in.
+         \param[in] root      The top entity. Must be alive.
+         \param[in] file      The .cprefab to write.
+         \param[in] entryIdOf An entity's existing entry id, or 0 for an
+                              entity added since (it gets a fresh id).
+         \param[in] name      Name stored in the file. Defaults to the
+                              filename without its extension.
+         \param[out] outIds   Optional: every saved entity with its entry id,
+                              parents first.
+         \param[in] sceneIdOf Optional: as for SaveFrom.
+         \return true if the file was written. False, with the file untouched,
+                 if the root has no entry id: instances find their root by
+                 that id, so a new one would orphan all of them.
+
+         \details
+            Otherwise the same file as SaveFrom. An id given to two entities
+            is kept by the first and replaced on the second, with a warning.
+         *********************************************************************/
+        static bool SaveKeepingIds(World& world,
+                                   Entity root,
+                                   const std::filesystem::path& file,
+                                   const std::function<std::uint64_t(Entity)>& entryIdOf,
+                                   const std::string& name = std::string{},
+                                   std::vector<std::pair<Entity, std::uint64_t>>* outIds = nullptr,
+                                   const std::function<std::uint64_t(Entity)>& sceneIdOf = {});
+
+        /*********************************************************************
          \brief  Read a prefab file into memory, ready to instantiate.
          \return true if the file parsed, is a version this build
                  understands, and its entity tree is well formed.
@@ -220,6 +251,11 @@ namespace Crucible {
                                The root's saved local Transform is kept, so
                                with a zeroed position it sits exactly on
                                the parent.
+         \param[out]    outEntries Optional: the new entity of each entry, in
+                               file order, so (*outEntries)[i] is entry i
+                               (IdAt(i)). File order is not always depth-first:
+                               Apply appends new entries at the end. Left
+                               untouched if this fails.
          \return
             The new root entity, or kNullEntity if this Prefab is not valid.
 
@@ -245,7 +281,8 @@ namespace Crucible {
             a Query - use a CommandBuffer instead.
          *********************************************************************/
         Entity Instantiate(World& world, Entity parent = kNullEntity,
-                           const std::function<std::uint64_t(Entity)>& ensureSceneId = {}) const;
+                           const std::function<std::uint64_t(Entity)>& ensureSceneId = {},
+                           std::vector<Entity>* outEntries = nullptr) const;
 
         /*********************************************************************
          \brief  Points entity references that name one of this prefab's
@@ -319,6 +356,19 @@ namespace Crucible {
         int Version() const { return m_version; }
 
     private:
+        /*********************************************************************
+         \brief  Shared body of SaveFrom / SaveKeepingIds.
+         \param[in] entryIdOf An entity's id to keep; empty, or 0 for an
+                              entity, issues a fresh one.
+         *********************************************************************/
+        static bool WriteTree(World& world,
+                              Entity root,
+                              const std::filesystem::path& file,
+                              const std::string& name,
+                              const std::function<std::uint64_t(Entity)>& entryIdOf,
+                              std::vector<std::pair<Entity, std::uint64_t>>* outIds,
+                              const std::function<std::uint64_t(Entity)>& sceneIdOf);
+
         /*********************************************************************
          \brief  Shared tail of Load / LoadFromString: version check and
                  tree validation of the already-parsed m_doc.
