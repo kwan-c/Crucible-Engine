@@ -12,16 +12,62 @@ execute_process(COMMAND "${MONO_SDK}/bin/mono.exe" "${MONO_SDK}/lib/mono/4.5/mcs
     RESULT_VARIABLE result OUTPUT_VARIABLE compiler_out ERROR_VARIABLE compiler_err)
 set(log "${output_dir}/logs/${assembly}.log")
 file(WRITE "${log}" "${compiler_out}${compiler_err}")
+set(compile_failed FALSE)
+if(NOT result STREQUAL "0" OR NOT EXISTS "${STAGED}" OR NOT EXISTS "${STAGED}.mdb")
+    set(compile_failed TRUE)
+endif()
+# FALLBACK_RESPONSE marks a library whose errors must not stop the engine build
+# (gameplay scripts). Visual Studio fails a build step on any "error CS..." line,
+# even with exit code 0, so those lines are reported as warnings instead.
+if(compile_failed AND DEFINED FALLBACK_RESPONSE)
+    foreach(stream IN ITEMS compiler_out compiler_err)
+        string(REGEX REPLACE "error (CS[0-9]+):" "warning \\1:" ${stream} "${${stream}}")
+        string(REPLACE "Compilation failed:" "Scripts did not compile:" ${stream} "${${stream}}")
+    endforeach()
+endif()
 if(NOT compiler_out STREQUAL "")
     message("${compiler_out}")
 endif()
 if(NOT compiler_err STREQUAL "")
     message("${compiler_err}")
 endif()
-if(NOT result STREQUAL "0" OR NOT EXISTS "${STAGED}" OR NOT EXISTS "${STAGED}.mdb")
-    message(FATAL_ERROR "C# build failed for ${assembly}; previous successful outputs were retained. See ${log}. Fix the compiler errors and rebuild.")
+if(compile_failed)
+    if(NOT DEFINED FALLBACK_RESPONSE)
+        message(FATAL_ERROR "C# build failed for ${assembly}; previous successful outputs were retained. See ${log}. Fix the compiler errors and rebuild.")
+    endif()
+    # The last good DLL stays. It is older than the broken source, so the next build
+    # compiles again and the Editor's hot reload reports the errors when it opens.
+    if(EXISTS "${OUTPUT}" AND EXISTS "${OUTPUT}.mdb")
+        file(TIMESTAMP "${OUTPUT}" output_year "%Y")   # a placeholder is dated 2000 (below)
+        if(output_year STREQUAL "2000")
+            message("${assembly} : warning SCRIPTS: C# scripts did not compile; still using the placeholder with no scripts. See ${log}.")
+        else()
+            message("${assembly} : warning SCRIPTS: C# scripts did not compile; continuing with the last good ${assembly}.dll. See ${log}.")
+        endif()
+        return()
+    endif()
+    # No good DLL yet (clean build): a script-less placeholder lets the apps build and open.
+    file(REMOVE "${STAGED}" "${STAGED}.mdb")
+    execute_process(COMMAND "${MONO_SDK}/bin/mono.exe" "${MONO_SDK}/lib/mono/4.5/mcs.exe" "@${FALLBACK_RESPONSE}"
+        RESULT_VARIABLE fallback_result OUTPUT_VARIABLE fallback_out ERROR_VARIABLE fallback_err)
+    if(NOT fallback_result STREQUAL "0" OR NOT EXISTS "${STAGED}" OR NOT EXISTS "${STAGED}.mdb")
+        message(FATAL_ERROR "C# build failed for ${assembly} and its placeholder could not be built: ${fallback_out}${fallback_err}")
+    endif()
+    file(COPY_FILE "${STAGED}" "${OUTPUT}")
+    file(COPY_FILE "${STAGED}.mdb" "${OUTPUT}.mdb")
+    # Dated in the past so it never counts as up to date: the next build and the Editor
+    # both compile the real scripts again.
+    set(ENV{CRUCIBLE_PLACEHOLDER_DLL} "${OUTPUT}")
+    execute_process(COMMAND powershell -NoProfile -ExecutionPolicy Bypass -Command
+        [=[$p = $env:CRUCIBLE_PLACEHOLDER_DLL; foreach ($f in @($p, "$p.mdb")) { (Get-Item -LiteralPath $f).LastWriteTime = [datetime]'2000-01-01' }]=]
+        RESULT_VARIABLE stamp_result OUTPUT_QUIET ERROR_QUIET)
+    if(NOT stamp_result STREQUAL "0")
+        file(REMOVE "${OUTPUT}" "${OUTPUT}.mdb")
+        message(FATAL_ERROR "C# build failed for ${assembly} and its placeholder could not be marked out of date. See ${log}.")
+    endif()
+    message("${assembly} : warning SCRIPTS: C# scripts did not compile and there is no earlier build; using a placeholder with no scripts. See ${log}.")
+    return()
 endif()
-# Publish only a complete successful compiler result. On compiler failure the
-# previous DLL/symbol pair remains available, and dependent deploy targets fail.
+# Publish only a complete successful compiler result.
 file(COPY_FILE "${STAGED}" "${OUTPUT}")
 file(COPY_FILE "${STAGED}.mdb" "${OUTPUT}.mdb")
