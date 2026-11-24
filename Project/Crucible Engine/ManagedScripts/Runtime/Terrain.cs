@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         Script access to a Terrain: hand the engine a generated
 *                height grid, and ask how high the ground is. Part of
 *                Crucible.ScriptCore.dll.
@@ -29,6 +29,7 @@
 * \history
 *    -v1.0       first version
 *    -v1.1       TerrainRegion.Tunnel
+*    -v1.2       TerrainVolume: Build with a cave volume
 *
 **************************************************************************/
 using System.Runtime.CompilerServices;
@@ -46,6 +47,30 @@ namespace Crucible
         Road = 2,
         /// <summary>A cave tunnel's floor: walkable (only Cliff is a wall).</summary>
         Tunnel = 3,
+    }
+
+    /// <summary>
+    /// Ground a height grid can't hold - caves, overhangs - as a box of rock and air: a density per
+    /// sample, above 0 rock, below 0 air (the surface is where it crosses 0). Sample (x, y, z) sits at
+    /// Origin + (x, y, z) * VoxelSize in the terrain's own space; Density is x fastest, then z, then y
+    /// (Index). It replaces the height grid's cells under it, so to meet them without a crack: Origin's
+    /// x and z sit on a grid corner, VoxelSize divides the cell size, the box ends on a corner, and the
+    /// samples along its sides are the grid's own ground there (height - y).
+    /// </summary>
+    public sealed class TerrainVolume
+    {
+        public Vector3 Origin;
+        public float VoxelSize = 1f;
+        public int CountX, CountY, CountZ;      // samples per axis, at least 2 each
+        public float[] Density;                 // CountX * CountY * CountZ
+
+        public TerrainVolume(Vector3 origin, float voxelSize, int countX, int countY, int countZ)
+        {
+            Origin = origin; VoxelSize = voxelSize; CountX = countX; CountY = countY; CountZ = countZ;
+            Density = new float[countX * countY * countZ];
+        }
+
+        public int Index(int x, int y, int z) { return (y * CountZ + z) * CountX + x; }
     }
 
     /// <summary>Generated uneven ground (Unity's Terrain): built from a height grid by a script, drawn and collided with by the engine.</summary>
@@ -73,8 +98,23 @@ namespace Crucible
         /// <returns>False if the sizes disagree, a height is not a number, or a region is unknown; the old ground stays.</returns>
         public bool Build(int cols, int rows, float cellSize, float[] heights, byte[] regions)
         {
+            return Build(cols, rows, cellSize, heights, regions, null);
+        }
+
+        /// <summary>
+        /// Replaces the ground, with a cave volume in place of the grid cells under it (see
+        /// TerrainVolume). Drawn with the ground: ground colour facing up, Tunnel colour on cave floors,
+        /// cliff colour on anything steeper. Null for no volume.
+        /// </summary>
+        /// <returns>False if the sizes disagree, a value is not a number, a region is unknown or the
+        /// volume doesn't line up with the grid; the old ground stays.</returns>
+        public bool Build(int cols, int rows, float cellSize, float[] heights, byte[] regions, TerrainVolume volume)
+        {
             if (heights == null || regions == null) return false;
-            return BuildInternal(I, G, cols, rows, cellSize, heights, regions) != 0;
+            if (volume == null)
+                return BuildInternal(I, G, cols, rows, cellSize, heights, regions, 0f, 0f, 0f, 1f, 0, 0, 0, null) != 0;
+            return BuildInternal(I, G, cols, rows, cellSize, heights, regions, volume.Origin.X, volume.Origin.Y, volume.Origin.Z,
+                                 volume.VoxelSize, volume.CountX, volume.CountY, volume.CountZ, volume.Density) != 0;
         }
 
         /// <summary>True once a script has built this terrain's ground this session.</summary>
@@ -96,7 +136,9 @@ namespace Crucible
         public override string ToString() { return "Terrain on " + Entity; }
 
         [MethodImpl(MethodImplOptions.InternalCall)]
-        private static extern int BuildInternal(int index, int generation, int cols, int rows, float cellSize, float[] heights, byte[] regions);
+        private static extern int BuildInternal(int index, int generation, int cols, int rows, float cellSize, float[] heights, byte[] regions,
+                                                 float originX, float originY, float originZ, float voxelSize,
+                                                 int countX, int countY, int countZ, float[] density);
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int IsBuiltInternal(int index, int generation, out int value);
         [MethodImpl(MethodImplOptions.InternalCall)]
