@@ -299,7 +299,9 @@ namespace Crucible {
 		void DetachCurrentFile()
 		{
 			m_path.clear();
-			m_dirty = true;
+			// In Prefab Mode "dirty" means the prefab has unsaved edits, and losing the scene's
+			// file is not one: the stage marks the scene dirty itself when it gives it back.
+			if (!m_sceneLocked) m_dirty = true;
 		}
 
 		/*********************************************************************

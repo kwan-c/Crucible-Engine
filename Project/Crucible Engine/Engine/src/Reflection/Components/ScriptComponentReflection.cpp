@@ -10,7 +10,8 @@ RTTR_REGISTRATION {
         rttr::value("Prefab", ScriptFieldType::Prefab),
         rttr::value("AudioClip", ScriptFieldType::AudioClip),
         rttr::value("Texture", ScriptFieldType::Texture), rttr::value("Font", ScriptFieldType::Font),
-        rttr::value("Material", ScriptFieldType::Material), rttr::value("Model", ScriptFieldType::Model));
+        rttr::value("Material", ScriptFieldType::Material), rttr::value("Model", ScriptFieldType::Model),
+        rttr::value("Component", ScriptFieldType::Component));
     rttr::registration::class_<ScriptFieldValue>("ScriptFieldValue")
         .constructor<>()
         .property("declaringType", &ScriptFieldValue::declaringType)
@@ -19,7 +20,8 @@ RTTR_REGISTRATION {
         .property("single", &ScriptFieldValue::single).property("real", &ScriptFieldValue::real)
         .property("text", &ScriptFieldValue::text).property("stringIsNull", &ScriptFieldValue::stringIsNull)
         .property("entityId", &ScriptFieldValue::entityId)  // missing in older scenes - stays 0
-        .property("assetId", &ScriptFieldValue::assetId);
+        .property("assetId", &ScriptFieldValue::assetId)
+        .property("componentType", &ScriptFieldValue::componentType);  // missing in older scenes - stays ""
 
     // One script. The same keys the single-script ScriptComponent used to have.
     rttr::registration::class_<ScriptEntry>("ScriptEntry")

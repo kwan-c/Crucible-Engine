@@ -122,6 +122,7 @@ namespace {
 Crucible::AssetBrowser::~AssetBrowser() {
 	// The GLFW callback stays set (the window may already be gone here); it checks this pointer.
 	if (s_dropTarget == this) s_dropTarget = nullptr;
+	ReleaseThumbnails();   // while the Renderer and ImGui's Vulkan backend are still alive (EditorManager::Shutdown)
 }
 
 void Crucible::AssetBrowser::InstallDropCallback() {

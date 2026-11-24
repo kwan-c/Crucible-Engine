@@ -155,7 +155,7 @@ namespace Crucible {
 		// the selection and hidden entities by guid and puts the undo history aside.
 		// End: after the snapshot was restored (restored = true), or with the world kept (false).
 		// Brings them back, pointed at the restored entities.
-		void BeginWorldSwap();
+		void BeginWorldSwap(bool nested = false);   // nested: one prefab opened from another
 		void EndWorldSwap(bool restored);
 
 		// ---- Editor shortcuts ----
@@ -206,6 +206,8 @@ namespace Crucible {
 		bool          m_uiPositionYUp = true;                                  // display only, not saved: +Y up on every start
 		std::vector<std::uint64_t> m_selectionBeforePlay;   // scene guids of the entities selected at Play; active one last
 		std::vector<std::uint64_t> m_hiddenBeforePlay;      // scene guids of the entities hidden in the Scene view at Play (SceneVisibility.h)
+		// The two lists above for each outer level while prefabs are opened from one another.
+		std::vector<std::pair<std::vector<std::uint64_t>, std::vector<std::uint64_t>>> m_outerSwaps;
 	};
 
 	namespace ImGuiManager {

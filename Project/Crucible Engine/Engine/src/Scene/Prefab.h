@@ -94,8 +94,14 @@ namespace Crucible {
         3 - each entry also has a stable "id" (16 hex digits) that instances
             link to (PrefabInstance::fileId). Version 1 and 2 files load with
             their positions as ids.
+        4 - entries of a prefab nested inside this one also keep a
+            "PrefabInstance" component: the link to the INNER prefab. Each
+            nested copy has its own entry ids here, so a scene instance
+            still links to this file alone. Only a file that really holds a
+            nested prefab is written as 4; every other file stays 3.
      *************************************************************************/
-    inline constexpr int kPrefabVersion = 3;
+    inline constexpr int kPrefabVersion = 4;
+    inline constexpr int kPrefabFlatVersion = 3;   //!< written when nothing is nested
 
     /*************************************************************************
      \brief  File extension of a prefab, including the dot.
@@ -355,6 +361,15 @@ namespace Crucible {
         int ParentAt(std::size_t index) const { return index < m_parents.size() ? m_parents[index] : -1; }
         int Version() const { return m_version; }
 
+        /*********************************************************************
+         \brief  For a copy that is not linked to this file (no asset guid):
+                 keep the links its nested entries hold to their inner
+                 prefabs. Prefab Mode and the nested update use it, so a
+                 nested copy is an instance of the inner prefab there.
+                 Off by default: unlinked copies come out as plain entities.
+         *********************************************************************/
+        void KeepNestedLinks(bool keep) { m_keepNested = keep; }
+
     private:
         /*********************************************************************
          \brief  Shared body of SaveFrom / SaveKeepingIds.
@@ -385,6 +400,7 @@ namespace Crucible {
         std::uint64_t    m_asset = 0;     //!< the file's asset guid, from its .meta (0 = none)
         std::uint64_t    m_hash = 0;      //!< content hash of the loaded file (0 = from text)
         bool             m_valid = false;
+        bool             m_keepNested = false;   //!< see KeepNestedLinks
     };
 
 #ifdef _MSC_VER

@@ -135,11 +135,16 @@ namespace Crucible {
     //  Play mode
     // =======================================================================
 
-    void UndoHistory::BeginPlaySession()
+    void UndoHistory::BeginPlaySession(bool nested)
     {
-        if (m_stash.active || m_scenes == nullptr)
+        if ((m_stash.active && !nested) || m_scenes == nullptr)
         {
             return;
+        }
+        if (m_stash.active)
+        {
+            m_outerStashes.push_back(std::move(m_stash));
+            m_stash = PlayStash{};
         }
 
         // Stop rebuilds the world, so handles will not survive it; scene guids
@@ -197,6 +202,11 @@ namespace Crucible {
         m_liveToKey = std::move(m_stash.liveToKey);
         const auto guidOfKey = std::move(m_stash.guidOfKey);
         m_stash = PlayStash{};
+        if (!m_outerStashes.empty())
+        {
+            m_stash = std::move(m_outerStashes.back());
+            m_outerStashes.pop_back();
+        }
 
         if (!worldRestored || m_scenes == nullptr)
         {
