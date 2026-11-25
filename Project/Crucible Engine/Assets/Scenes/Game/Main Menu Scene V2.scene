@@ -850,6 +850,100 @@
             }
         },
         {
+            "id": "73F290E48EE2C003",
+            "parent": "B4FCB8E406278019",
+            "siblingIndex": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Left Arrow"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -895.2130737304688,
+                        "y": -49.453155517578125
+                    },
+                    "size": {
+                        "x": 320.0,
+                        "y": 120.0
+                    },
+                    "rotation": -90.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 17076727176571633669
+                },
+                "UIButton": {
+                    "onClick": "Custom",
+                    "sceneAsset": 0,
+                    "actionId": "TorsoPrev",
+                    "normal": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.8999999761581421,
+                        "y": 0.8999999761581421,
+                        "z": 0.8999999761581421,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "74FCB8E40796C029",
             "parent": "14FCB8E406278011",
             "siblingIndex": 1,
@@ -1165,6 +1259,100 @@
                     "loop": false,
                     "previewInEditor": true,
                     "playOnStart": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "9BF290E48EE2C007",
+            "parent": "B4FCB8E406278019",
+            "siblingIndex": 6,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Confirm Button"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": -210.06658935546875,
+                        "y": 420.0
+                    },
+                    "size": {
+                        "x": 320.0,
+                        "y": 120.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 11888580405840822275
+                },
+                "UIButton": {
+                    "onClick": "Custom",
+                    "sceneAsset": 0,
+                    "actionId": "Confirm",
+                    "normal": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.8999999761581421,
+                        "y": 0.8999999761581421,
+                        "z": 0.8999999761581421,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -1596,10 +1784,116 @@
                             "enabled": true,
                             "assembly": "Managed/Crucible.Scripts.dll",
                             "namespace": "Crucible.Scripts",
-                            "class": "MainMenuManager",
+                            "class": "MainMenuIntro",
                             "fields": [
                                 {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
+                                    "declaringType": "Crucible.Scripts.MainMenuIntro",
+                                    "name": "head",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 7399195265520173075,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuIntro",
+                                    "name": "torso",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 10281499027037290513,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuIntro",
+                                    "name": "logo",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 11158645423424126981,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuIntro",
+                                    "name": "startButton",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 15923805671970537499,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuIntro",
+                                    "name": "optionsButton",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 7276894387419185183,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuIntro",
+                                    "name": "quitButton",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 11888580405846573085,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                }
+                            ]
+                        },
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "MainMenuFlow",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "viewCamera",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 11028428049436147719,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
                                     "name": "camPosition1",
                                     "type": "Entity",
                                     "boolean": false,
@@ -1613,7 +1907,7 @@
                                     "componentType": ""
                                 },
                                 {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
                                     "name": "camPosition2",
                                     "type": "Entity",
                                     "boolean": false,
@@ -1627,8 +1921,8 @@
                                     "componentType": ""
                                 },
                                 {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "logoModel",
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "camPosition3",
                                     "type": "Entity",
                                     "boolean": false,
                                     "integer": 0,
@@ -1636,13 +1930,13 @@
                                     "real": 0.0,
                                     "text": "",
                                     "stringIsNull": false,
-                                    "entityId": 11158645423424126981,
+                                    "entityId": 11094284412045606913,
                                     "assetId": 0,
                                     "componentType": ""
                                 },
                                 {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "legsParent",
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "torsoTable",
                                     "type": "Entity",
                                     "boolean": false,
                                     "integer": 0,
@@ -1650,13 +1944,13 @@
                                     "real": 0.0,
                                     "text": "",
                                     "stringIsNull": false,
-                                    "entityId": 7975656017823596559,
+                                    "entityId": 2088747616688373781,
                                     "assetId": 0,
                                     "componentType": ""
                                 },
                                 {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "torsoParent",
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "questTable",
                                     "type": "Entity",
                                     "boolean": false,
                                     "integer": 0,
@@ -1664,13 +1958,13 @@
                                     "real": 0.0,
                                     "text": "",
                                     "stringIsNull": false,
-                                    "entityId": 10281499027037290513,
+                                    "entityId": 16500266424273960983,
                                     "assetId": 0,
                                     "componentType": ""
                                 },
                                 {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "headParent",
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "ground",
                                     "type": "Entity",
                                     "boolean": false,
                                     "integer": 0,
@@ -1678,69 +1972,13 @@
                                     "real": 0.0,
                                     "text": "",
                                     "stringIsNull": false,
-                                    "entityId": 7399195265520173075,
+                                    "entityId": 4753216136712781827,
                                     "assetId": 0,
                                     "componentType": ""
                                 },
                                 {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "headRotAft",
-                                    "type": "Float",
-                                    "boolean": false,
-                                    "integer": 0,
-                                    "single": 16.0,
-                                    "real": 0.0,
-                                    "text": "",
-                                    "stringIsNull": false,
-                                    "entityId": 0,
-                                    "assetId": 0,
-                                    "componentType": ""
-                                },
-                                {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "torsoRotAft",
-                                    "type": "Float",
-                                    "boolean": false,
-                                    "integer": 0,
-                                    "single": 0.0,
-                                    "real": 0.0,
-                                    "text": "",
-                                    "stringIsNull": false,
-                                    "entityId": 0,
-                                    "assetId": 0,
-                                    "componentType": ""
-                                },
-                                {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "torsoRotBef",
-                                    "type": "Float",
-                                    "boolean": false,
-                                    "integer": 0,
-                                    "single": 20.0,
-                                    "real": 0.0,
-                                    "text": "",
-                                    "stringIsNull": false,
-                                    "entityId": 0,
-                                    "assetId": 0,
-                                    "componentType": ""
-                                },
-                                {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "headRotBef",
-                                    "type": "Float",
-                                    "boolean": false,
-                                    "integer": 0,
-                                    "single": 30.0,
-                                    "real": 0.0,
-                                    "text": "",
-                                    "stringIsNull": false,
-                                    "entityId": 0,
-                                    "assetId": 0,
-                                    "componentType": ""
-                                },
-                                {
-                                    "declaringType": "Crucible.Scripts.MainMenuManager",
-                                    "name": "canvas",
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "backButton",
                                     "type": "Entity",
                                     "boolean": false,
                                     "integer": 0,
@@ -1748,13 +1986,162 @@
                                     "real": 0.0,
                                     "text": "",
                                     "stringIsNull": false,
-                                    "entityId": 13041501910453420057,
+                                    "entityId": 18154732359208058885,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "leftArrow",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 8354899570049859587,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "rightArrow",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 15848889349987057665,
+                                    "assetId": 0,
+                                    "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.MainMenuFlow",
+                                    "name": "confirmButton",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 11237203331566977031,
                                     "assetId": 0,
                                     "componentType": ""
                                 }
                             ]
                         }
                     ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "C3F290E48EE2C009",
+            "parent": "FBF290E48EE2C005",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Text"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 200.0,
+                        "y": 50.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Back",
+                    "colour": {
+                        "x": 0.6941176652908325,
+                        "y": 0.4588235318660736,
+                        "z": 0.2666666805744171,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 50.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -1860,6 +2247,100 @@
             }
         },
         {
+            "id": "DBF290E48E734001",
+            "parent": "B4FCB8E406278019",
+            "siblingIndex": 3,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Right Arrow"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 894.9195556640625,
+                        "y": -49.453155517578125
+                    },
+                    "size": {
+                        "x": 320.0,
+                        "y": 120.0
+                    },
+                    "rotation": 90.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 17076727176571633669
+                },
+                "UIButton": {
+                    "onClick": "Custom",
+                    "sceneAsset": 0,
+                    "actionId": "TorsoNext",
+                    "normal": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.8999999761581421,
+                        "y": 0.8999999761581421,
+                        "z": 0.8999999761581421,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
             "id": "DCFCB8E40627801B",
             "parent": "B4FCB8E406278019",
             "siblingIndex": 1,
@@ -1947,6 +2428,113 @@
                         "w": 0.5
                     },
                     "interactable": true
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "E3F290E48EE2C00B",
+            "parent": "9BF290E48EE2C007",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Text"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 0.0,
+                        "y": 0.0
+                    },
+                    "size": {
+                        "x": 200.0,
+                        "y": 50.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": false
+                },
+                "UIText": {
+                    "text": "Confirm",
+                    "colour": {
+                        "x": 0.6933333277702332,
+                        "y": 0.45918184518814087,
+                        "z": 0.2650074064731598,
+                        "w": 1.0
+                    },
+                    "fontAsset": 11391592331814764547,
+                    "fontSize": 48.0,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1.0,
+                    "characterSpacing": 0.0,
+                    "richText": true,
+                    "bold": true,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 10.0,
+                    "maxFontSize": 40.0,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "outlineWidth": 2.0,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1.0,
+                        "y": 0.8500000238418579,
+                        "z": 0.4000000059604645,
+                        "w": 0.800000011920929
+                    },
+                    "glowWidth": 3.0,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.6000000238418579
+                    },
+                    "shadowOffset": {
+                        "x": 2.0,
+                        "y": 2.0
+                    },
+                    "shadowSoftness": 0.0
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -2042,6 +2630,100 @@
                 },
                 "EntityName": {
                     "name": "CamPos"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "FBF290E48EE2C005",
+            "parent": "B4FCB8E406278019",
+            "siblingIndex": 5,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Back Button"
+                },
+                "UIRect": {
+                    "anchorMin": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "anchorMax": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "position": {
+                        "x": 215.69338989257813,
+                        "y": 432.7866516113281
+                    },
+                    "size": {
+                        "x": 320.0,
+                        "y": 120.0
+                    },
+                    "rotation": 0.0,
+                    "raycastTarget": true
+                },
+                "UIImage": {
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "textureAsset": 17653187928875057159
+                },
+                "UIButton": {
+                    "onClick": "Custom",
+                    "sceneAsset": 0,
+                    "actionId": "Back",
+                    "normal": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0,
+                        "w": 1.0
+                    },
+                    "hovered": {
+                        "x": 0.8999999761581421,
+                        "y": 0.8999999761581421,
+                        "z": 0.8999999761581421,
+                        "w": 1.0
+                    },
+                    "pressed": {
+                        "x": 0.699999988079071,
+                        "y": 0.699999988079071,
+                        "z": 0.699999988079071,
+                        "w": 1.0
+                    },
+                    "disabled": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "interactable": true
                 },
                 "EntityTag": {
                     "tag": "Untagged"
