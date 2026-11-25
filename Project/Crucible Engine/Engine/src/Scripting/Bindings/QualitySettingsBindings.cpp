@@ -7,7 +7,7 @@
 * \brief         Internal calls behind the static C# QualitySettings class
 *                (ManagedScripts/Runtime/QualitySettings.cs): the player's
 *                graphics quality - preset, anti-aliasing, shadows, ambient
-*                occlusion, bloom, volumetric fog.
+*                occlusion, bloom, volumetric fog, VSync, frame-rate limit.
 *
 * \details
 *    Every change goes through Core::SetGraphicsSettings, which stores it in
@@ -27,6 +27,7 @@
 #include "Scripting/ScriptBindings.h"
 #include "Configuration/UserSettings.h"
 #include "Core.h"
+#include <cmath>
 #if CRUCIBLE_WITH_MONO
 #include <mono/metadata/loader.h>
 
@@ -98,7 +99,7 @@ namespace Crucible::ScriptBindings
 			if (value < 0 || value >= static_cast<int32_t>(QualityLevel::Custom))
 				return 0;
 			return Change([value](GraphicsSettings& s) {
-				s = GraphicsPreset(static_cast<QualityLevel>(value));
+				s = ApplyPreset(s, static_cast<QualityLevel>(value));   // VSync and the frame-rate limit kept
 				return true;
 			});
 		}
@@ -151,6 +152,58 @@ namespace Crucible::ScriptBindings
 				return true;
 			});
 		}
+
+		/*********************************************************************
+		 \brief  C# QualitySettings.FrameRateLimit: -1 = the team's
+		         targetFPS, 0 = unlimited, else clamped to 15..1000.
+		 *********************************************************************/
+		int32_t ManagedGetFrameRateLimit(int32_t* out) noexcept
+		{
+			return Query(out, [](const GraphicsSettings& s) { return s.frameRateLimit; });
+		}
+
+		int32_t ManagedSetFrameRateLimit(int32_t value) noexcept
+		{
+			return Change([value](GraphicsSettings& s) {
+				s.frameRateLimit = ClampFrameRateLimit(value);
+				return true;
+			});
+		}
+
+		/*********************************************************************
+		 \brief  Float settings (brightness, FOV offset): `clamp` makes the
+		         value valid. NaN / infinity are refused.
+		 *********************************************************************/
+		template <float GraphicsSettings::*Member>
+		int32_t GetFloat(float* out) noexcept
+		{
+			try
+			{
+				const Core* core = CurrentCore();
+				if (!out || !core)
+					return 0;
+				*out = core->GetGraphicsSettings().*Member;
+				return 1;
+			}
+			catch (...)
+			{
+				return 0;
+			}
+		}
+
+		template <float GraphicsSettings::*Member, float (*Clamp)(float)>
+		int32_t SetFloat(float value) noexcept
+		{
+			if (!std::isfinite(value))
+				return 0;
+			return Change([value](GraphicsSettings& s) {
+				s.*Member = Clamp(value);
+				return true;
+			});
+		}
+
+		float BrightnessClamp(float v) { return ClampBrightness(v); }
+		float FovOffsetClamp(float v) { return ClampFovOffset(v); }
 
 		// ======================================================================
 		// Save / revert / defaults
@@ -219,6 +272,20 @@ namespace Crucible::ScriptBindings
 		Add("Crucible.QualitySettings::SetBloomInternal", &SetFlag<&GraphicsSettings::bloom>);
 		Add("Crucible.QualitySettings::GetVolumetricFogInternal", &GetFlag<&GraphicsSettings::volumetricFog>);
 		Add("Crucible.QualitySettings::SetVolumetricFogInternal", &SetFlag<&GraphicsSettings::volumetricFog>);
+		Add("Crucible.QualitySettings::GetVSyncInternal", &GetFlag<&GraphicsSettings::vsync>);
+		Add("Crucible.QualitySettings::SetVSyncInternal", &SetFlag<&GraphicsSettings::vsync>);
+		Add("Crucible.QualitySettings::GetFrameRateLimitInternal", &ManagedGetFrameRateLimit);
+		Add("Crucible.QualitySettings::SetFrameRateLimitInternal", &ManagedSetFrameRateLimit);
+		Add("Crucible.QualitySettings::GetBrightnessInternal", &GetFloat<&GraphicsSettings::brightness>);
+		Add("Crucible.QualitySettings::SetBrightnessInternal", &SetFloat<&GraphicsSettings::brightness, &BrightnessClamp>);
+		Add("Crucible.QualitySettings::GetFieldOfViewOffsetInternal", &GetFloat<&GraphicsSettings::fovOffset>);
+		Add("Crucible.QualitySettings::SetFieldOfViewOffsetInternal", &SetFloat<&GraphicsSettings::fovOffset, &FovOffsetClamp>);
+		Add("Crucible.QualitySettings::GetVignetteInternal", &GetFlag<&GraphicsSettings::vignette>);
+		Add("Crucible.QualitySettings::SetVignetteInternal", &SetFlag<&GraphicsSettings::vignette>);
+		Add("Crucible.QualitySettings::GetFilmGrainInternal", &GetFlag<&GraphicsSettings::filmGrain>);
+		Add("Crucible.QualitySettings::SetFilmGrainInternal", &SetFlag<&GraphicsSettings::filmGrain>);
+		Add("Crucible.QualitySettings::GetChromaticAberrationInternal", &GetFlag<&GraphicsSettings::chromaticAberration>);
+		Add("Crucible.QualitySettings::SetChromaticAberrationInternal", &SetFlag<&GraphicsSettings::chromaticAberration>);
 		Add("Crucible.QualitySettings::SaveInternal", &ManagedSave);
 		Add("Crucible.QualitySettings::RevertInternal", &ManagedRevert);
 		Add("Crucible.QualitySettings::ResetToDefaultsInternal", &ManagedResetToDefaults);

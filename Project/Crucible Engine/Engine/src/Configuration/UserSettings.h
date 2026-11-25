@@ -28,7 +28,10 @@
 *                                   "keys": { "forward": "W", "back": "S", "left": "A", "right": "D",
 *                                             "jump": "Space", "jumpButton": "GamepadA" } },
 *                        "quality": { "level": "High", "antiAliasing": "MSAA4x", "shadowQuality": "High",
-*                                     "ambientOcclusion": true, "bloom": true, "volumetricFog": true },
+*                                     "ambientOcclusion": true, "bloom": true, "volumetricFog": true,
+*                                     "vsync": true, "frameRateLimit": -1,
+*                                     "brightness": 1.0, "fovOffset": 0.0, "vignette": true,
+*                                     "filmGrain": true, "chromaticAberration": true },
 *                        "game":  { "graphics": { "fullScreen": true, "maximized": false } }
 *                    }
 *
@@ -48,6 +51,10 @@
 *    -v1.2       graphics quality (GraphicsSettings: preset, anti-aliasing,
 *                shadows, AO, bloom, volumetric fog), for C# QualitySettings
 *                (Tan Chun Kwang Xavier)
+*    -v1.3       VSync and the frame-rate limit (GraphicsSettings::vsync,
+*                frameRateLimit); outside the presets (Tan Chun Kwang Xavier)
+*    -v1.4       brightness, FOV offset, vignette / film grain / chromatic
+*                aberration switches; outside the presets (Tan Chun Kwang Xavier)
 *
 **************************************************************************/
 #pragma once
@@ -116,6 +123,30 @@ namespace Crucible {
         Off, Low, Medium, High, Ultra
     };
 
+    inline constexpr int32_t kFrameRateDefault   = -1;
+    inline constexpr int32_t kFrameRateUnlimited = 0;
+    inline constexpr int32_t kFrameRateMin       = 15;
+    inline constexpr int32_t kFrameRateMax       = 1000;
+
+    // A frame-rate limit made valid: default and unlimited kept, the rest clamped.
+    constexpr int32_t ClampFrameRateLimit(int32_t fps) {
+        return fps < 0 ? kFrameRateDefault : fps == 0 ? kFrameRateUnlimited
+             : fps < kFrameRateMin ? kFrameRateMin : fps > kFrameRateMax ? kFrameRateMax : fps;
+    }
+
+    inline constexpr float kBrightnessMin = 0.5f;
+    inline constexpr float kBrightnessMax = 1.5f;
+    inline constexpr float kFovOffsetMin  = -10.0f;
+    inline constexpr float kFovOffsetMax  = 30.0f;
+
+    // Brightness / FOV offset made valid (NaN -> the default).
+    constexpr float ClampBrightness(float v) {
+        return !(v == v) ? 1.0f : v < kBrightnessMin ? kBrightnessMin : v > kBrightnessMax ? kBrightnessMax : v;
+    }
+    constexpr float ClampFovOffset(float v) {
+        return !(v == v) ? 0.0f : v < kFovOffsetMin ? kFovOffsetMin : v > kFovOffsetMax ? kFovOffsetMax : v;
+    }
+
     struct GraphicsSettings {
         // Defaults = the High preset, which is what the renderer drew before these
         // settings existed (RenderTypes.h's PostSettings / ShadowSettings defaults).
@@ -126,13 +157,35 @@ namespace Crucible {
         bool          bloom            = true;
         bool          volumetricFog    = true;
 
+        // Display preferences, NOT part of the presets: changing them never makes
+        // the level Custom, and picking a level never changes them.
+        // VSync on = no tearing, the frame rate follows the monitor (FIFO). Off =
+        // MAILBOX where the GPU has it (no tearing either), else IMMEDIATE (may tear).
+        bool          vsync            = true;
+        // Frames per second at most: kFrameRateDefault = the team's EngineConfig
+        // targetFPS, kFrameRateUnlimited = no limit, otherwise kFrameRateMin..Max.
+        int32_t       frameRateLimit   = kFrameRateDefault;
+
+        // The player's view, also outside the presets. Applied on top of the scene's
+        // Skybox and cameras, so every level keeps its own look relative to the others.
+        float         brightness          = 1.0f;   // x the scene's exposure, kBrightnessMin..Max
+        float         fovOffset           = 0.0f;   // degrees added to every camera, kFovOffsetMin..Max
+        bool          vignette            = true;   // false = off even where a scene uses them
+        bool          filmGrain           = true;
+        bool          chromaticAberration = true;
+
         bool operator==(const GraphicsSettings&) const = default;
     };  // GRAPHICSSETTINGS STRUCT
 
-    // The settings a preset stands for. Custom gives the defaults (High).
+    // The settings a preset stands for. Custom gives the defaults (High). Display and
+    // view settings (VSync .. chromaticAberration) are the defaults; ApplyPreset keeps the player's own.
     ENGINE_API GraphicsSettings GraphicsPreset(QualityLevel level);
 
-    // The preset `settings` matches (its `quality` field ignored), or Custom.
+    // `settings` with every quality setting changed to `level`'s; display and
+    // view settings (VSync .. chromaticAberration) stay as they are.
+    ENGINE_API GraphicsSettings ApplyPreset(const GraphicsSettings& settings, QualityLevel level);
+
+    // The preset `settings` matches (only the preset fields compared), or Custom.
     ENGINE_API QualityLevel MatchQualityLevel(const GraphicsSettings& settings);
 
     struct UserSettings {

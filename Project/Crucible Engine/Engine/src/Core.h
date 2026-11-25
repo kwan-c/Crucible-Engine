@@ -204,7 +204,7 @@ namespace Crucible
         void ApplyGraphicsSettings();
         // Editor only: the renderer's settings from before a script first changed them, put back
         // at Stop (RestoreEditorRenderSettings). Empty while no script has changed them.
-        struct RenderSettingsSnapshot { PostSettings post; ShadowSettings shadows; };
+        struct RenderSettingsSnapshot { PostSettings post; ShadowSettings shadows; bool vsync = true; };
         std::optional<RenderSettingsSnapshot> m_editorRenderSnapshot;
         void RestoreEditorRenderSettings();
 

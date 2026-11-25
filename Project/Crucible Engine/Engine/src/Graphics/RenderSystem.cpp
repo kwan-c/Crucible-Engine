@@ -202,6 +202,13 @@ namespace Crucible {
         //   Per view (PrepareView -> RenderScene::BuildViewBatches, on the worker threads): each camera
         //   gets its own visible list, so the Scene and Game views never cull with each other's camera.
         //   Not while suspended (window minimized): the frame time stats restart when drawing resumes.
+        // The player's view over the scene's environment. m_environment is reset after every
+        // frame, so this never compounds.
+        m_environment.exposure *= std::max(m_postSettings.brightness, 0.0f);
+        if (!m_postSettings.vignette)            { m_environment.vignetteIntensity = 0.0f; }
+        if (!m_postSettings.filmGrain)           { m_environment.filmGrain = 0.0f; }
+        if (!m_postSettings.chromaticAberration) { m_environment.chromaticAberration = 0.0f; }
+
         if (m_drawSuspended) { m_lastFrameStart = 0.0; }
         else                 { DrawFrame(); }
 

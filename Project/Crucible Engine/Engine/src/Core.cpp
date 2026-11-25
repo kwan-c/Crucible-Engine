@@ -155,7 +155,7 @@ namespace Crucible {
     void Core::SetGraphicsSettings(const GraphicsSettings& settings) {
         // First change in the editor: remember the Scene View panel's values for Stop.
         if (m_config.app == AppKind::Editor && !m_editorRenderSnapshot) {
-            m_editorRenderSnapshot = RenderSettingsSnapshot{ m_renderer->GetPostSettings(), m_renderer->GetShadowSettings() };
+            m_editorRenderSnapshot = RenderSettingsSnapshot{ m_renderer->GetPostSettings(), m_renderer->GetShadowSettings(), m_renderer->GetVSync() };
         }
         m_userSettings.graphics = settings;
         m_userSettings.graphics.quality = MatchQualityLevel(settings);
@@ -174,6 +174,11 @@ namespace Crucible {
         post.ao            = g.ambientOcclusion;
         post.bloom         = g.bloom;
         post.volumetricFog = g.volumetricFog;
+        post.brightness          = ClampBrightness(g.brightness);
+        post.fovOffset           = ClampFovOffset(g.fovOffset);
+        post.vignette            = g.vignette;
+        post.filmGrain           = g.filmGrain;
+        post.chromaticAberration = g.chromaticAberration;
 
         // Cascades are the cost (each re-renders the casters); distance trades reach for
         // sharpness. High = the ShadowSettings defaults.
@@ -186,12 +191,17 @@ namespace Crucible {
         case ShadowQuality::High:   shadows.cascadeCount = 3; shadows.distance = 80.0f;  break;
         case ShadowQuality::Ultra:  shadows.cascadeCount = std::min(4u, kMaxShadowCascades); shadows.distance = 120.0f; break;
         }
+
+        // Rebuilds the swapchain only if it changed. The frame-rate limit is read by
+        // Run's frame cap every frame.
+        m_renderer->SetVSync(g.vsync);
     }
 
     void Core::RestoreEditorRenderSettings() {
         if (!m_editorRenderSnapshot) { return; }
         m_renderer->GetPostSettings()   = m_editorRenderSnapshot->post;
         m_renderer->GetShadowSettings() = m_editorRenderSnapshot->shadows;
+        m_renderer->SetVSync(m_editorRenderSnapshot->vsync);
         m_editorRenderSnapshot.reset();
     }
 
@@ -335,7 +345,11 @@ namespace Crucible {
         // can draw, which pins the GPU at 100% whatever the scene costs.
         const FrameTimerResolution timerResolution;
         const auto frameCap = [this](bool minimized) -> uint32_t {
-            const uint32_t target = m_config.graphics.targetFPS;
+            // The player's limit (options menu) wins over the team's targetFPS when set.
+            // The editor only uses it while a script has changed the settings in Play.
+            const bool playerLimit = m_config.app == AppKind::Game || m_editorRenderSnapshot.has_value();
+            const int32_t limit = playerLimit ? m_userSettings.graphics.frameRateLimit : kFrameRateDefault;
+            const uint32_t target = limit == kFrameRateDefault ? m_config.graphics.targetFPS : static_cast<uint32_t>(limit);
             const bool background = minimized || !m_window->IsFocused();
             const bool networked  = m_network && m_network->IsActive();
             uint32_t cap = target;

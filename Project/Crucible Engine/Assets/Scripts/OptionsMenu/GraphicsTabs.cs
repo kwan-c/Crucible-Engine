@@ -4,6 +4,7 @@ namespace @Crucible.@Scripts
     {
         public Entity windowsTab;
         public Entity advancedTab;
+        public Entity accessibilityTab;
         public override void OnCreate()
         {
            ShowTab(0);
@@ -16,6 +17,9 @@ namespace @Crucible.@Scripts
 
             if (UI.WasActionTriggered("tabAdvanced"))
                 ShowTab(1);
+
+            if (UI.WasActionTriggered("tabAccessibility"))
+                ShowTab(2);
         }
 
         private void ShowTab(int tab)
@@ -25,6 +29,9 @@ namespace @Crucible.@Scripts
 
             if (advancedTab != null)
                 advancedTab.SetEnabled<UIRect>(tab == 1);
+
+            if (accessibilityTab != null)
+                accessibilityTab.SetEnabled<UIRect>(tab == 2);
         }
     }
 }

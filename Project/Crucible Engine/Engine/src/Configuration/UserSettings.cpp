@@ -21,6 +21,10 @@
 *    -v1.2       graphics quality under "quality", enums by name; the
 *                presets (GraphicsPreset, MatchQualityLevel)
 *                (Tan Chun Kwang Xavier)
+*    -v1.3       "quality/vsync", "quality/frameRateLimit"; ApplyPreset
+*                (Tan Chun Kwang Xavier)
+*    -v1.4       brightness, fovOffset, vignette, filmGrain,
+*                chromaticAberration (Tan Chun Kwang Xavier)
 *
 **************************************************************************/
 #include "UserSettings.h"
@@ -127,11 +131,24 @@ namespace Crucible {
         return s;
     }   // GraphicsPreset()
 
+    GraphicsSettings ApplyPreset(const GraphicsSettings& settings, QualityLevel level) {
+        // Only the preset's own fields are copied, so every other (player) setting is kept.
+        const GraphicsSettings preset = GraphicsPreset(level);
+        GraphicsSettings s = settings;
+        s.quality          = preset.quality;
+        s.antiAliasing     = preset.antiAliasing;
+        s.shadowQuality    = preset.shadowQuality;
+        s.ambientOcclusion = preset.ambientOcclusion;
+        s.bloom            = preset.bloom;
+        s.volumetricFog    = preset.volumetricFog;
+        return s;
+    }   // ApplyPreset()
+
     QualityLevel MatchQualityLevel(const GraphicsSettings& settings) {
         for (QualityLevel level : { QualityLevel::Low, QualityLevel::Medium, QualityLevel::High, QualityLevel::Ultra }) {
             GraphicsSettings candidate = settings;
             candidate.quality = level;
-            if (candidate == GraphicsPreset(level)) return level;
+            if (candidate == ApplyPreset(settings, level)) return level;
         }
         return QualityLevel::Custom;
     }   // MatchQualityLevel()
@@ -185,6 +202,13 @@ namespace Crucible {
         graphics.ambientOcclusion = doc.Get("quality/ambientOcclusion", graphics.ambientOcclusion);
         graphics.bloom            = doc.Get("quality/bloom",            graphics.bloom);
         graphics.volumetricFog    = doc.Get("quality/volumetricFog",    graphics.volumetricFog);
+        graphics.vsync            = doc.Get("quality/vsync",            graphics.vsync);
+        graphics.frameRateLimit   = ClampFrameRateLimit(doc.Get("quality/frameRateLimit", graphics.frameRateLimit));
+        graphics.brightness       = ClampBrightness(doc.Get("quality/brightness", graphics.brightness));
+        graphics.fovOffset        = ClampFovOffset(doc.Get("quality/fovOffset", graphics.fovOffset));
+        graphics.vignette            = doc.Get("quality/vignette",            graphics.vignette);
+        graphics.filmGrain           = doc.Get("quality/filmGrain",           graphics.filmGrain);
+        graphics.chromaticAberration = doc.Get("quality/chromaticAberration", graphics.chromaticAberration);
         // The saved level is only a label: worked out again from the settings, so a
         // hand-edited file can never say "High" over settings that are not High.
         graphics.quality          = MatchQualityLevel(graphics);
@@ -232,6 +256,13 @@ namespace Crucible {
         doc.Set("quality/ambientOcclusion", settings.graphics.ambientOcclusion);
         doc.Set("quality/bloom",            settings.graphics.bloom);
         doc.Set("quality/volumetricFog",    settings.graphics.volumetricFog);
+        doc.Set("quality/vsync",            settings.graphics.vsync);
+        doc.Set("quality/frameRateLimit",   settings.graphics.frameRateLimit);
+        doc.Set("quality/brightness",          Tidy(settings.graphics.brightness));
+        doc.Set("quality/fovOffset",           Tidy(settings.graphics.fovOffset));
+        doc.Set("quality/vignette",            settings.graphics.vignette);
+        doc.Set("quality/filmGrain",           settings.graphics.filmGrain);
+        doc.Set("quality/chromaticAberration", settings.graphics.chromaticAberration);
 
         if (!doc.SaveToFile(path)) {
             CRU_WARN("[UserSettings] could not write '{}'", PathToUtf8(path));

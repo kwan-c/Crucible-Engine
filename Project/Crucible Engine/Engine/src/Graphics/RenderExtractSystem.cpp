@@ -400,7 +400,8 @@ namespace Crucible {
             bestPriority = cam.priority;
             best.SetPose(worldTransform.matrix);
             // Clamp so a half-typed Inspector value can never produce a degenerate projection.
-            best.fovY  = glm::clamp(cam.fovY, 1.0f, 179.0f);
+            // The player's FOV offset (options menu) on top of the designer's value.
+            best.fovY  = glm::clamp(cam.fovY + m_renderer.GetPostSettings().fovOffset, 1.0f, 179.0f);
             best.nearZ = std::max(cam.nearZ, 0.001f);
             best.farZ  = std::max(cam.farZ, best.nearZ + 0.01f);
 

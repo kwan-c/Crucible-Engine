@@ -32,6 +32,10 @@
 *        High      MSAA4x        High     on   on     on     (default)
 *        Ultra     MSAA4x        Ultra    on   on     on
 *
+*    VSync, FrameRateLimit, Brightness, FieldOfViewOffset, Vignette,
+*    FilmGrain and ChromaticAberration are preferences outside the presets:
+*    picking a Level keeps them, and changing them never makes it Custom.
+*
 *    IN THE EDITOR changes apply too, so a menu can be tested in Play, but
 *    Stop puts the Scene View panel's renderer settings back. The editor
 *    never starts with the saved settings; the game build does.
@@ -131,6 +135,73 @@ namespace Crucible
             set { SetVolumetricFogInternal(value ? 1 : 0); }
         }
 
+        /// <summary>
+        /// VSync on: no tearing, the frame rate follows the monitor. Off: frames go out as soon
+        /// as they are ready. Not part of the presets. Default on.
+        /// </summary>
+        public static bool VSync
+        {
+            get { int v; return GetVSyncInternal(out v) == 0 || v != 0; }
+            set { SetVSyncInternal(value ? 1 : 0); }
+        }
+
+        /// <summary>FrameRateLimit value: the game's own frame rate (EngineConfig targetFPS).</summary>
+        public const int FrameRateDefault = -1;
+        /// <summary>FrameRateLimit value: no limit (VSync, when on, still holds it to the monitor).</summary>
+        public const int FrameRateUnlimited = 0;
+
+        /// <summary>
+        /// Frames per second at most: FrameRateDefault, FrameRateUnlimited, or a number
+        /// (clamped to 15..1000). Not part of the presets. Default FrameRateDefault.
+        /// </summary>
+        public static int FrameRateLimit
+        {
+            get { int v; return GetFrameRateLimitInternal(out v) != 0 ? v : FrameRateDefault; }
+            set { SetFrameRateLimitInternal(value); }
+        }
+
+        /// <summary>
+        /// Brightness: multiplies each scene's own exposure, so dark levels stay darker than
+        /// bright ones. 0.5 .. 1.5 (clamped); default 1 = as designed. Not part of the presets.
+        /// </summary>
+        public static float Brightness
+        {
+            get { float v; return GetBrightnessInternal(out v) != 0 ? v : 1.0f; }
+            set { SetBrightnessInternal(value); }
+        }
+
+        /// <summary>
+        /// Degrees added to every camera's vertical field of view: -10 .. +30 (clamped);
+        /// default 0 = as designed. Camera.FieldOfView still reads and sets the designer's
+        /// value; screen-to-world rays include this offset. Not part of the presets.
+        /// </summary>
+        public static float FieldOfViewOffset
+        {
+            get { float v; return GetFieldOfViewOffsetInternal(out v) != 0 ? v : 0.0f; }
+            set { SetFieldOfViewOffsetInternal(value); }
+        }
+
+        /// <summary>Darkened screen corners, where a scene's Skybox uses them. Off = never. Default on.</summary>
+        public static bool Vignette
+        {
+            get { int v; return GetVignetteInternal(out v) == 0 || v != 0; }
+            set { SetVignetteInternal(value ? 1 : 0); }
+        }
+
+        /// <summary>Film grain noise, where a scene's Skybox uses it. Off = never. Default on.</summary>
+        public static bool FilmGrain
+        {
+            get { int v; return GetFilmGrainInternal(out v) == 0 || v != 0; }
+            set { SetFilmGrainInternal(value ? 1 : 0); }
+        }
+
+        /// <summary>Colour fringes toward the screen edges, where a scene's Skybox uses them. Off = never. Default on.</summary>
+        public static bool ChromaticAberration
+        {
+            get { int v; return GetChromaticAberrationInternal(out v) == 0 || v != 0; }
+            set { SetChromaticAberrationInternal(value ? 1 : 0); }
+        }
+
         /// <summary>Writes every player setting to UserSettings.json. False if it could not.</summary>
         public static bool Save() { return SaveInternal() != 0; }
 
@@ -154,6 +225,20 @@ namespace Crucible
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetBloomInternal(int value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetVolumetricFogInternal(out int value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetVolumetricFogInternal(int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetVSyncInternal(out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetVSyncInternal(int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetFrameRateLimitInternal(out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetFrameRateLimitInternal(int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetBrightnessInternal(out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetBrightnessInternal(float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetFieldOfViewOffsetInternal(out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetFieldOfViewOffsetInternal(float value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetVignetteInternal(out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetVignetteInternal(int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetFilmGrainInternal(out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetFilmGrainInternal(int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int GetChromaticAberrationInternal(out int value);
+        [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SetChromaticAberrationInternal(int value);
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int SaveInternal();
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int RevertInternal();
         [MethodImpl(MethodImplOptions.InternalCall)] private static extern int ResetToDefaultsInternal();
