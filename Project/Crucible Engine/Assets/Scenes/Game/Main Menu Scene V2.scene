@@ -204,9 +204,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 1.2541401386260986,
+                        "x": 1.2541353702545166,
                         "y": 3.071592330932617,
-                        "z": 1.222757339477539
+                        "z": 5.29434871673584
                     },
                     "rotation": {
                         "x": 0.0,
@@ -266,9 +266,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": -1.0592623949050903,
+                        "x": -1.0592576265335083,
                         "y": 3.072000026702881,
-                        "z": 1.222757339477539
+                        "z": 5.29434871673584
                     },
                     "rotation": {
                         "x": 7.27324145355368e-10,
@@ -390,9 +390,9 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 0.0,
+                        "x": 2.831216079357546e-7,
                         "y": 2.799999952316284,
-                        "z": 2.627237558364868
+                        "z": 6.698827266693115
                     },
                     "rotation": {
                         "x": 0.0,
@@ -592,10 +592,10 @@
                         "z": 0.0
                     },
                     "rotation": {
-                        "x": 0.13917310535907745,
+                        "x": 0.06951771676540375,
                         "y": 0.0,
                         "z": 0.0,
-                        "w": 0.9902680516242981
+                        "w": 0.9975807070732117
                     },
                     "scale": {
                         "x": 1.0,
@@ -969,10 +969,10 @@
                         "z": 0.0
                     },
                     "rotation": {
-                        "x": 0.0,
+                        "x": 0.09634706377983093,
                         "y": 0.0,
                         "z": 0.0,
-                        "w": 1.0
+                        "w": 0.995347797870636
                     },
                     "scale": {
                         "x": 1.0,
@@ -1022,15 +1022,15 @@
             "components": {
                 "Transform": {
                     "positions": {
-                        "x": 0.0,
-                        "y": 4.9773359298706055,
-                        "z": 3.3345980644226074
+                        "x": 2.7501676082611084,
+                        "y": 6.128589630126953,
+                        "z": 3.3345978260040283
                     },
                     "rotation": {
-                        "x": 0.0,
-                        "y": 0.0,
-                        "z": 0.0,
-                        "w": 1.0
+                        "x": -0.2101576328277588,
+                        "y": 0.3080817461013794,
+                        "z": 0.06997907161712646,
+                        "w": 0.9252147674560547
                     },
                     "scale": {
                         "x": 1.0,
@@ -1047,6 +1047,35 @@
                 },
                 "EntityName": {
                     "name": "Camera"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "99F6D0E48921C001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 2.75,
+                        "y": 6.129000186920166,
+                        "z": 3.3350000381469727
+                    },
+                    "rotation": {
+                        "x": -0.21016092598438263,
+                        "y": 0.3080825209617615,
+                        "z": 0.06998049467802048,
+                        "w": 0.9252136945724487
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "camPosition3"
                 },
                 "EntityTag": {
                     "tag": "Untagged"
@@ -1088,7 +1117,8 @@
                         "w": 0.0
                     },
                     "meshAsset": 0,
-                    "materialAsset": 0
+                    "materialAsset": 0,
+                    "$enabled": false
                 },
                 "EntityName": {
                     "name": "logo"
@@ -1544,7 +1574,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 6246273760588087297,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1557,7 +1588,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 6822734512922558469,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1570,7 +1602,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 11158645423424126981,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1583,7 +1616,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 7975656017823596559,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1596,7 +1630,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 10281499027037290513,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1609,7 +1644,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 7399195265520173075,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1622,7 +1658,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 0,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1635,7 +1672,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 0,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1648,7 +1686,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 0,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1661,7 +1700,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 0,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 },
                                 {
                                     "declaringType": "Crucible.Scripts.MainMenuManager",
@@ -1674,7 +1714,8 @@
                                     "text": "",
                                     "stringIsNull": false,
                                     "entityId": 13041501910453420057,
-                                    "assetId": 0
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
@@ -1884,7 +1925,7 @@
                     "positions": {
                         "x": 0.06845378875732422,
                         "y": 3.072000026702881,
-                        "z": 1.7991217374801636
+                        "z": 5.870724201202393
                     },
                     "rotation": {
                         "x": 0.0,
