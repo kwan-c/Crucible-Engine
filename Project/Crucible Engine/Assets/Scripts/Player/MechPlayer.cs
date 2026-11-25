@@ -82,7 +82,7 @@ namespace Crucible.Scripts
     // A CombatHealth so the enemies' attacks and bolts find it (CombatHealth.Find). The health
     // itself is MechHealth (the HUD reads it), so the two overrides below hand over to that;
     // CombatHealth's own Maximum Health field does nothing on the mech.
-    public sealed class MechPlayer : CombatHealth
+    public sealed partial class MechPlayer : CombatHealth
     {
         // --- Ground locomotion (MechMovementController defaults) ------------------- //
         public float moveSpeed = 5f;           // m/s when the legs have no Speed stat (FullPlayer_mech_specialist: 10)
@@ -237,6 +237,7 @@ namespace Crucible.Scripts
             Weapons = new MechWeapon[MechLoadout.WeaponSockets.Length];
             Abilities = new MechAbility[MechLoadout.AbilitySockets.Length];
             Health = new MechHealth(250f);
+            Health.BlocksDamage = BlocksWeaponDamage;
             Targeting = new MechTargetLock(Entity);
             Health.Damaged += amount => NotifyCombatAction();
             Health.Damaged += amount => StartShake(damageShake, damageShakeDuration);   // CombatFeedback.OnDamaged
@@ -276,6 +277,7 @@ namespace Crucible.Scripts
             {
                 attacksArmed = false;
                 meleeWeapon = null;   // a swing still sliding in dies with the mech
+                ClearWeaponEffects();
                 planarVelocity = Vector3.Zero;
                 quickBoostTimer = 0f;
                 uninterruptedMoveTime = 0f; IsAutoRunning = false;
@@ -323,8 +325,9 @@ namespace Crucible.Scripts
             {
                 quickBoost |= hitStopDash;
                 hitStopDash = false;
-                Tick(move, quickBoost, deltaTime);
+                if (!ApplyHookPull(quickBoost, deltaTime)) Tick(move, quickBoost, deltaTime);
                 UpdateMelee(deltaTime);   // after movement: a dash or a jump this frame cancels an assisted swing
+                UpdateWeaponEffects(deltaTime);
                 UpdateLegsAnimation();
             }
             Targeting.Update(gameplayCamera, gameplay ? Input.MouseDelta : Vector2.Zero, deltaTime);
@@ -448,6 +451,7 @@ namespace Crucible.Scripts
             MechPartDef oldDef = equipped[s];
             MechPart old = mountedParts[s];
             Entity mount = mounts[s];
+            shieldUntil[s] = 0f;
             RemoveNearbyPart(part);
 
             if (mount != null)
@@ -887,19 +891,37 @@ namespace Crucible.Scripts
                 if (weapon == null) continue;
                 KeyCode key = KeyFor(weapon.Socket);
                 bool requested = weapon.RepeatWhileHeld ? Input.IsDown(key) : Input.IsPressed(key);
-                // One melee swing at a time (Unity's MeleeAttack.TryStart refuses while Pending): the
-                // other arm can't swing while an assisted swing is still sliding in.
-                if (weapon.IsMelee && meleeWeapon != null) continue;
-                if (!requested || !weapon.TryAttack(now)) continue;
-                NotifyCombatAction();
-                ResolveHit(weapon);
-                // Presentation: the physical part's Fire animation and attack sound.
-                MechPart mounted = mountedParts[(int)weapon.Socket];
-                if (mounted != null) mounted.PlayAttack();
-                StartShake(mounted);
-                ResetWeaponIdle();   // an attack ends the weapon idle (MechWeaponAnimator.PlayAttack)
-                if (WeaponFired != null) WeaponFired(weapon);
+                if (requested) TryUseWeapon(weapon, now);
             }
+        }
+
+        internal bool TryUseWeapon(MechWeapon weapon, float now)
+        {
+            if (!IsStillEquipped(weapon) || Health.IsDead || MechHitStop.BlocksNewActions(Entity)) return false;
+            // An assisted swing or a punch sequence occupies the mech's melee attack slot.
+            if (weapon.IsMelee && (meleeWeapon != null || punchWeapon != null)) return false;
+
+            var mechanic = weapon.Def.Mechanic;
+            int shotCount = mechanic == MechWeaponMechanic.Katyusha ? weapon.MagazineRounds
+                : mechanic == MechWeaponMechanic.Shotgun ? 6 : 1;
+            MechCombatTargets.Target specialTarget = null;
+            if (mechanic == MechWeaponMechanic.Tentacles || mechanic == MechWeaponMechanic.Tesla)
+            {
+                specialTarget = FindWeaponTarget(Transform.WorldPosition + Vector3.Up * .5f,
+                    weapon.Def.Range, Targeting.CurrentTarget, null);
+                if (specialTarget == null) return false;
+            }
+            if (!weapon.TryAttack(now, mechanic == MechWeaponMechanic.Katyusha ? shotCount : 1)) return false;
+
+            NotifyCombatAction();
+            if (weapon.Def.Attack == MechAttackType.Special) UseSpecialWeapon(weapon, specialTarget, now);
+            else ResolveHit(weapon, shotCount);
+            MechPart mounted = mountedParts[(int)weapon.Socket];
+            if (mounted != null) mounted.PlayAttack();
+            StartShake(mounted);
+            ResetWeaponIdle();
+            WeaponFired?.Invoke(weapon);
+            return true;
         }
 
         static KeyCode KeyFor(MechSocket socket)
@@ -914,7 +936,7 @@ namespace Crucible.Scripts
             }
         }
 
-        void ResolveHit(MechWeapon weapon)
+        void ResolveHit(MechWeapon weapon, int shotCount)
         {
             Vector3 origin = Transform.WorldPosition;
             if (weapon.IsMelee) { StartMelee(weapon, origin); return; }
@@ -941,10 +963,7 @@ namespace Crucible.Scripts
                     : origin + (side * muzzleOffsetX + Vector3.Up * muzzleOffsetY + forward * muzzleOffsetZ) * unityScale;
                 Vector3 direction = (aimPoint - muzzle).Normalized;
                 if (MechMath.SqrLength(direction) < 0.0001f) direction = MechMath.Flat(Transform.Forward).Normalized;
-                Entity shot = part.projectile.Instantiate(muzzle, Quaternion.LookRotation(direction, Vector3.Up));
-                // The Damage Amp is captured now, at the press, as Unity's RangedAttack.Fire does: a shot
-                // fired during the amp still hits harder if the amp ends while it flies.
-                if (shot != null) { MechProjectile.Fire(shot, weapon, Entity, direction, DamageMultiplier); return; }
+                if (FireWeaponProjectiles(weapon, part.projectile, muzzle, direction, aimPoint, shotCount)) return;
                 Log.Warning("MechPlayer: could not spawn " + weapon.Name + "'s projectile; using an instant hit.");
             }
 
@@ -993,6 +1012,19 @@ namespace Crucible.Scripts
             // out, or the mech turning, during the approach changes nothing.
             meleeDamage = weapon.Def.Damage * DamageMultiplier;   // Unity's MeleeAttack: x DamageModifiers.Total
             meleeForward = MechMath.Flat(Transform.Forward).Normalized;
+            if (weapon.Def.MeleeWidth > 0f)
+            {
+                ResolveAuthoredMelee(weapon, origin, meleeForward, DamageMultiplier);
+                if (weapon.Def.Mechanic == MechWeaponMechanic.PunchyArm)
+                {
+                    punchWeapon = weapon;
+                    punchesLeft = 2;
+                    punchAge = 0f;
+                    punchDamageScale = DamageMultiplier;
+                    punchDirection = meleeForward;
+                }
+                return;
+            }
             meleeExtension = FindMeleeApproach(origin, meleeForward, out meleeTarget);
             if (meleeExtension > 0.01f) { meleeWeapon = weapon; meleeApproachTime = 0f; return; }
             MeleeHit(meleeDamage, origin, meleeForward, 0f);
@@ -1064,10 +1096,6 @@ namespace Crucible.Scripts
         {
             Vector3 right = Vector3.Cross(forward, Vector3.Up).Normalized;
             float k = unityScale;
-            // Unity's TryMeleePush: along the swing (the mech's facing), not from the mech to each
-            // golem, so everything in the box is shoved the same way.
-            Vector3 push = forward * Math.Max(0f, meleeImpulseSpeed);
-            Vector3 killLaunch = forward * Math.Max(0f, meleeKillImpulseSpeed) + Vector3.Up * Math.Max(0f, meleeKillLiftSpeed);
             var targets = new List<MechCombatTargets.Target>(MechCombatTargets.All);
             foreach (var target in targets)
             {
@@ -1076,14 +1104,21 @@ namespace Crucible.Scripts
                 float side = Vector3.Dot(offset, right), up = offset.Y, ahead = Vector3.Dot(offset, forward);
                 if (Math.Abs(side) > meleeSizeX * 0.5f * k || Math.Abs(up) > meleeSizeY * 0.5f * k) continue;
                 if (Math.Abs(ahead - (meleeCenterZ * k + extension)) > meleeSizeZ * 0.5f * k) continue;
-                // Only golems are pushed (Unity: only victims with an EnemyAgent); anything else
-                // (a Zoo dummy) just takes the damage through its registered callback.
-                Enemy enemy = meleePush ? target.Entity.GetComponent<Enemy>() : null;
-                bool landed = true;
-                if (enemy != null) landed = enemy.ApplyMeleeHit(damage, push, killLaunch, meleePushSeconds);
-                else target.OnDamage(damage, origin);
-                if (landed) ConfirmHit(target.Entity, MechHitKind.Melee);
+                if (ApplyMeleeDamage(target, damage, origin, forward)) ConfirmHit(target.Entity, MechHitKind.Melee);
             }
+        }
+
+        bool ApplyMeleeDamage(MechCombatTargets.Target target, float damage, Vector3 origin, Vector3 forward)
+        {
+            Enemy enemy = meleePush ? target.Entity.GetComponent<Enemy>() : null;
+            if (enemy == null)
+            {
+                target.OnDamage(damage, origin);
+                return true;
+            }
+            Vector3 push = forward * Math.Max(0f, meleeImpulseSpeed);
+            Vector3 killLaunch = forward * Math.Max(0f, meleeKillImpulseSpeed) + Vector3.Up * Math.Max(0f, meleeKillLiftSpeed);
+            return enemy.ApplyMeleeHit(damage, push, killLaunch, meleePushSeconds);
         }
 
         // --- camera hard lock (Unity's CameraControlThirdPerson.UpdateCameraOrbit) ------------------- //

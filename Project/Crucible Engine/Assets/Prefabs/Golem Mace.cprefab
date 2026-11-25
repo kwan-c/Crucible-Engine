@@ -125,6 +125,45 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.17857142857142858,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
                                 }
                             ]
                         }
@@ -350,6 +389,61 @@
                 },
                 "EntityName": {
                     "name": "Head"
+                }
+            }
+        },
+        {
+            "id": "9646561DDED193E7",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.7088742,
+                        "y": 0.7088742,
+                        "z": 0.7088742
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Melee",
+                    "modelAsset": 4175691030365061123,
+                    "node": 18
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
                 }
             }
         }

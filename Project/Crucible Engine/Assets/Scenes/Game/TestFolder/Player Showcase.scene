@@ -1946,7 +1946,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -1959,7 +1959,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -1972,7 +1972,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.76,
@@ -1985,7 +1985,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -2275,7 +2275,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -2288,7 +2288,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -2301,7 +2301,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.76,
@@ -2314,7 +2314,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -2564,7 +2564,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -2577,7 +2577,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -2590,7 +2590,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.82,
@@ -2603,7 +2603,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -2853,7 +2853,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -2866,7 +2866,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -2879,7 +2879,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 2.16,
@@ -2892,7 +2892,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -3189,7 +3189,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -3202,7 +3202,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -3215,7 +3215,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.26,
@@ -3228,7 +3228,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -3538,7 +3538,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -3551,7 +3551,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -3564,7 +3564,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": -0.6,
@@ -3577,7 +3577,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -3603,7 +3603,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "firingShake",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.04,
@@ -3616,7 +3616,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "firingShakeDuration",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.18,
@@ -3913,7 +3913,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -3926,7 +3926,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -3939,7 +3939,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.15,
@@ -3952,7 +3952,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -3978,7 +3978,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "firingShake",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.075,
@@ -3991,7 +3991,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "firingShakeDuration",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.26,
@@ -4275,7 +4275,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.55,
@@ -4288,7 +4288,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountedScale",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 1.0,
@@ -4301,7 +4301,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "groundLift",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.15,
@@ -4314,7 +4314,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "mountFrame",
-              "type": "Boolean",
+              "type": "Bool",
               "boolean": true,
               "integer": 0,
               "single": 0.0,
@@ -4340,7 +4340,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "firingShake",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.075,
@@ -4353,7 +4353,7 @@
             {
               "declaringType": "Crucible.Scripts.MechPart",
               "name": "firingShakeDuration",
-              "type": "Single",
+              "type": "Float",
               "boolean": false,
               "integer": 0,
               "single": 0.26,

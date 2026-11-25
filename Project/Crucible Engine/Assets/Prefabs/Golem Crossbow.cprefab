@@ -239,7 +239,7 @@
                             "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
-                            "assetId": 5751008649613577526
+                            "assetId": 7904467981687486775
                         },
                         {
                             "declaringType": "Crucible.Scripts.Enemy",
@@ -252,7 +252,7 @@
                             "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
-                            "assetId": 15352894240604444263
+                            "assetId": 711293355780095693
                         },
                         {
                             "declaringType": "Crucible.Scripts.Enemy",
@@ -263,6 +263,58 @@
                             "single": 0.0,
                             "real": 0.0,
                             "text": "None",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "spawnCost",
+                            "type": "Int",
+                            "boolean": false,
+                            "integer": 2,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "equippedWeaponId",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "small_crossbow",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "weaponDamageMultiplier",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.2857142857142857,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.Enemy",
+                            "name": "projectileSpeedMultiplier",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.45,
+                            "real": 0,
+                            "text": "",
                             "stringIsNull": false,
                             "entityId": 0,
                             "assetId": 0
@@ -408,6 +460,94 @@
                 },
                 "EntityName": {
                     "name": "Telegraph"
+                }
+            }
+        },
+        {
+            "id": "1215CC5343B88B15",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 1,
+                        "w": 0
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 18,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Arm",
+                    "modelAsset": 4175691030365061123,
+                    "node": 16
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 5967637165055411507,
+                    "clip": 0,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                }
+            }
+        },
+        {
+            "id": "CC56E0CB92A47F55",
+            "parent": 4,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.040878534,
+                        "y": 1.7930981,
+                        "z": 0.16400842
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Muzzle",
+                    "modelAsset": 11181561406948196535,
+                    "node": 16
+                },
+                "EntityName": {
+                    "name": "Weapon Muzzle"
                 }
             }
         }

@@ -1,0 +1,366 @@
+{
+    "version": 3,
+    "name": "Part Small Crossbow",
+    "entities": [
+        {
+            "id": "32C0F40052A04D97",
+            "parent": -1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": -0.5000000000000001,
+                        "y": 0.5000000000000001,
+                        "z": 0.5000000000000001,
+                        "w": 0.5000000000000001
+                    },
+                    "scale": {
+                        "x": 0.55,
+                        "y": 0.55,
+                        "z": 0.55
+                    }
+                },
+                "Collider": {
+                    "type": "Sphere",
+                    "size": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    },
+                    "radius": 4,
+                    "height": 2,
+                    "center": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "friction": 0.2,
+                    "bounciness": 0,
+                    "layer": "NonMoving",
+                    "isTrigger": true
+                },
+                "AudioSource": {
+                    "clip": 9648021925293490179,
+                    "loadType": "DecompressOnLoad",
+                    "output": "SFX",
+                    "playOnAwake": false,
+                    "loop": false,
+                    "volume": 1,
+                    "pitch": 1,
+                    "spatialBlend": 0.35,
+                    "minDistance": 4,
+                    "maxDistance": 40,
+                    "rolloffMode": "Linear"
+                },
+                "ScriptComponent": {
+                    "enabled": true,
+                    "assembly": "Managed/Crucible.Scripts.dll",
+                    "namespace": "Crucible.Scripts",
+                    "class": "MechPart",
+                    "fields": [
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "partId",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "small_crossbow",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "groundScale",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0.55,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "mountedScale",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 1,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "groundLift",
+                            "type": "Float",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 1.26,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "mountFrame",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "projectile",
+                            "type": "Prefab",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 7904467981687486775
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "socketPoses",
+                            "type": "String",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "ArmL:-0.007088080751942644,1.1528589658339938,0.663408299821999,-0.052720032904272573,5.4766752549673114E-08,6.419385595313187E-08,0.9986092970415295;ArmR:-0.007088080751942644,1.1528589658339938,0.663408299821999,-0.052720032904272573,5.4766752549673114E-08,6.419385595313187E-08,0.9986092970415295",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "attackSound",
+                            "type": "AudioClip",
+                            "boolean": false,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 9648021925293490179
+                        },
+                        {
+                            "declaringType": "Crucible.Scripts.MechPart",
+                            "name": "settleOnSpawn",
+                            "type": "Bool",
+                            "boolean": true,
+                            "integer": 0,
+                            "single": 0,
+                            "real": 0,
+                            "text": "",
+                            "stringIsNull": false,
+                            "entityId": 0,
+                            "assetId": 0
+                        }
+                    ]
+                },
+                "EntityName": {
+                    "name": "Part Small Crossbow"
+                }
+            }
+        },
+        {
+            "id": "FCAD17AAA27B56FB",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0070886205664577595,
+                        "y": -1.0344803593753327,
+                        "z": -1.1788857087411242
+                    },
+                    "rotation": {
+                        "x": -3.304941803964015e-9,
+                        "y": 0.05272018791222299,
+                        "z": -0.9986093708761368,
+                        "w": 8.489450854527964e-8
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 18,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 5967637165055411507,
+                    "clip": 0,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Model"
+                }
+            }
+        },
+        {
+            "id": "719C557A187FC765",
+            "parent": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -0.040878534,
+                        "y": 1.7930981,
+                        "z": 0.16400842
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1
+                    }
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Muzzle",
+                    "modelAsset": 11181561406948196535,
+                    "node": 16
+                },
+                "EntityName": {
+                    "name": "Muzzle"
+                }
+            }
+        },
+        {
+            "id": "86AD2E961E17C70B",
+            "parent": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0.5
+                    },
+                    "rotation": {
+                        "x": 0.7071067811865476,
+                        "y": 0,
+                        "z": 0,
+                        "w": 0.7071067811865476
+                    },
+                    "scale": {
+                        "x": 1.8181818181818181,
+                        "y": 1.8181818181818181,
+                        "z": 1.8181818181818181
+                    }
+                },
+                "WorldText": {
+                    "text": "",
+                    "colour": {
+                        "x": 1,
+                        "y": 1,
+                        "z": 1,
+                        "w": 1
+                    },
+                    "fontAsset": 0,
+                    "fontSize": 0.32,
+                    "size": {
+                        "x": 4,
+                        "y": 1.2
+                    },
+                    "pivot": {
+                        "x": 0.5,
+                        "y": 0.5
+                    },
+                    "billboard": "Upright",
+                    "alwaysOnTop": false,
+                    "doubleSided": true,
+                    "intensity": 1,
+                    "fade": false,
+                    "fadeStart": 20,
+                    "fadeEnd": 30,
+                    "horizontalAlign": "Center",
+                    "verticalAlign": "Middle",
+                    "wrap": true,
+                    "overflow": "Overflow",
+                    "lineSpacing": 1,
+                    "characterSpacing": 0,
+                    "richText": true,
+                    "bold": false,
+                    "underline": false,
+                    "bestFit": false,
+                    "minFontSize": 0.1,
+                    "maxFontSize": 1,
+                    "outline": false,
+                    "outlineColour": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "outlineWidth": 0.02,
+                    "glow": false,
+                    "glowColour": {
+                        "x": 1,
+                        "y": 0.85,
+                        "z": 0.4,
+                        "w": 0.8
+                    },
+                    "glowWidth": 0.03,
+                    "glowSoftness": 0.5,
+                    "shadow": false,
+                    "shadowColour": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 0.6
+                    },
+                    "shadowOffset": {
+                        "x": 0.02,
+                        "y": 0.02
+                    },
+                    "shadowSoftness": 0
+                },
+                "EntityName": {
+                    "name": "Label"
+                }
+            }
+        }
+    ]
+}

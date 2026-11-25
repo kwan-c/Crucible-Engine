@@ -98,6 +98,20 @@ namespace Crucible.Scripts
         }
     }
 
+    [NodeDescription(name: "Request Spinner Wind-up", story: "Request Spinner wind-up", category: "Lithomachia/Enemy", id: "efe00bba42474790b03cbcee4ca00ad3",
+                     description: "Starts the optional Spinner wind-up preview. A disabled or unavailable preview ends this branch.")]
+    public sealed class RequestSpinnerWindupAction : EnemyGraphAction
+    {
+        protected override Status Tick()
+        {
+            if (!Controller.previewSpinnerWindup || !Controller.SensePlayer()) return Status.Failure;
+            Controller.Hold("Request Spinner wind-up");
+            if (!Controller.TargetInReach()) return Status.Failure;
+            if (Controller.CooldownRemaining > 0f) return Status.Running;
+            return Controller.TrySpinnerWindup() ? Status.Success : Status.Failure;
+        }
+    }
+
     [NodeDescription(name: "Wait For Weapon Attack", story: "Wait for weapon attack", category: "Lithomachia/Enemy", id: "48e8f62d4ecb4d8d8b3334a212a34449",
                      description: "Holds still (keeping the swing's facing) until the attack has played out. Cancels it if the player is lost.")]
     public sealed class WaitEnemyAttackAction : EnemyGraphAction

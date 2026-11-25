@@ -10507,6 +10507,45 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.17857142857142858,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
                                 }
                             ]
                         }
@@ -10516,7 +10555,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 6951089305458046364,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -36987,6 +37026,45 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.17857142857142858,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
                                 }
                             ]
                         }
@@ -36996,7 +37074,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 6951089305458046364,
                     "overrides": []
                 },
                 "FlowFieldAgent": {
@@ -50173,6 +50251,45 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.17857142857142858,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
                                 }
                             ]
                         }
@@ -50182,7 +50299,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 6951089305458046364,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -52994,6 +53111,45 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.17857142857142858,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
                                 }
                             ]
                         }
@@ -53003,7 +53159,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 6951089305458046364,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -54874,6 +55030,45 @@
                                     "stringIsNull": false,
                                     "entityId": 0,
                                     "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "equippedWeaponId",
+                                    "type": "String",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "mace",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "weaponDamageMultiplier",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.17857142857142858,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "spawnCost",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 1,
+                                    "single": 0,
+                                    "real": 0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
                                 }
                             ]
                         }
@@ -54883,7 +55078,7 @@
                     "prefabAsset": 12564058752782925993,
                     "fileId": 16599284018906890403,
                     "isRoot": true,
-                    "prefabHash": 4831314441599175503,
+                    "prefabHash": 6951089305458046364,
                     "overrides": [
                         "ScriptComponent/scripts"
                     ]
@@ -60864,6 +61059,321 @@
                 },
                 "EntityTag": {
                     "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "AA394B7EC4F62919",
+            "parent": "6EA048DEEB8D401D",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.7088742,
+                        "y": 0.7088742,
+                        "z": 0.7088742
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Melee",
+                    "modelAsset": 4175691030365061123,
+                    "node": 18
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "F6D0DC6F96F69E51",
+            "parent": "484E60DEE5BD8007",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.7088742,
+                        "y": 0.7088742,
+                        "z": 0.7088742
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Melee",
+                    "modelAsset": 4175691030365061123,
+                    "node": 18
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "B93F7CB79EB2C1F7",
+            "parent": "4EA048DEEB8D401F",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.7088742,
+                        "y": 0.7088742,
+                        "z": 0.7088742
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Melee",
+                    "modelAsset": 4175691030365061123,
+                    "node": 18
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "26B85BF4256F0CDB",
+            "parent": "C6A048DEEB8D401B",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.7088742,
+                        "y": 0.7088742,
+                        "z": 0.7088742
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Melee",
+                    "modelAsset": 4175691030365061123,
+                    "node": 18
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                }
+            }
+        },
+        {
+            "id": "CB78037F554ADEB1",
+            "parent": "66A048DEEB8D4019",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0
+                    },
+                    "rotation": {
+                        "x": 0,
+                        "y": 0,
+                        "z": 0,
+                        "w": 1
+                    },
+                    "scale": {
+                        "x": 0.7088742,
+                        "y": 0.7088742,
+                        "z": 0.7088742
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 11181561406948196535,
+                    "modelRoot": 27,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Melee",
+                    "modelAsset": 4175691030365061123,
+                    "node": 18
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 8389400805626647199,
+                    "clip": 0,
+                    "speed": 1,
+                    "loop": true,
+                    "previewInEditor": false,
+                    "playOnStart": true
+                },
+                "EntityName": {
+                    "name": "Weapon Model"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 10828437040351253479,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
                 }
             }
         }

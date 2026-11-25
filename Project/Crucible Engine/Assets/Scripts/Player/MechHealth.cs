@@ -29,6 +29,7 @@ namespace Crucible.Scripts
         public float Current { get; private set; }
         public bool IsDead { get { return Current <= 0f; } }
         public float Normalized { get { return MechMath.Clamp01(Current / Math.Max(1f, Maximum)); } }
+        internal Func<bool> BlocksDamage { get; set; }
 
         /// <summary>Health actually lost (after clamping).</summary>
         public event Action<float> Damaged;
@@ -53,7 +54,7 @@ namespace Crucible.Scripts
 
         public bool ApplyDamage(float amount)
         {
-            if (IsDead || amount <= 0f || !MechMath.Finite(amount)) return false;
+            if (IsDead || amount <= 0f || !MechMath.Finite(amount) || (BlocksDamage != null && BlocksDamage())) return false;
             float applied = Math.Min(Current, amount);
             Current -= applied;
             if (Damaged != null) Damaged(applied);
