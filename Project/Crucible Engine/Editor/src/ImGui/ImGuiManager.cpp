@@ -208,8 +208,9 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Core& core)
 
 	initInfo.DescriptorPool = context.descriptorPool;
 	// Let ImGui create+own its own pool. One slot per texture ImGui draws at once (its font, the
-	// viewports, Asset Browser thumbnails, importer previews...): the minimum (8) ran out.
-	initInfo.DescriptorPoolSize = 64;
+	// viewports, Asset Browser thumbnails, importer previews...): the minimum (8) ran out. The Asset
+	// Browser keeps up to 256 texture thumbnails (ImGuiPanel_AssetBrowser_Thumbnails.cpp).
+	initInfo.DescriptorPoolSize = 512;
     initInfo.MinImageCount = context.minImageCount;
     initInfo.ImageCount = context.imageCount;
 	initInfo.PipelineInfoMain.MSAASamples = context.msaaSamples;
@@ -495,9 +496,10 @@ void Crucible::EditorManager::OnPlayStateChanged(const EngineEvents::PlayStateCh
 	// Pause / Resume: same world, same handles
 }
 
-void Crucible::EditorManager::BeginWorldSwap()
+void Crucible::EditorManager::BeginWorldSwap(bool nested)
 {
 	if (m_core == nullptr) { return; }
+	if (nested) { m_outerSwaps.emplace_back(std::move(m_selectionBeforePlay), std::move(m_hiddenBeforePlay)); }
 
 	auto inspector = GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	World& world = m_core->GetWorld();
@@ -525,7 +527,7 @@ void Crucible::EditorManager::BeginWorldSwap()
 		std::uint64_t const guid = scenes.Current().IdOf(e).m_Value;
 		if (guid != 0) { m_hiddenBeforePlay.push_back(guid); }
 	}
-	m_history.BeginPlaySession();
+	m_history.BeginPlaySession(nested);
 }
 
 void Crucible::EditorManager::EndWorldSwap(bool sceneRestored)
@@ -579,6 +581,12 @@ void Crucible::EditorManager::EndWorldSwap(bool sceneRestored)
 	// The Scene view's outline reads this every frame; don't let it hold a stale handle meanwhile.
 	DebugDrawSystem::SetSelectedEntity(inspector ? inspector->GetSelectedEntity() : kNullEntity);
 	m_selectionBeforePlay.clear();
+
+	if (!m_outerSwaps.empty()) {   // back on an outer level: what it remembered for ITS way back
+		m_selectionBeforePlay = std::move(m_outerSwaps.back().first);
+		m_hiddenBeforePlay    = std::move(m_outerSwaps.back().second);
+		m_outerSwaps.pop_back();
+	}
 }
 
 void Crucible::EditorManager::Undo()

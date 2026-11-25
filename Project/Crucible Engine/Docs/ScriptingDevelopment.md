@@ -121,10 +121,18 @@ source/reference lists off the command line. Compiler outputs are first written
 under `work/<assembly-name>` with their original assembly filename. Only a
 successful DLL/symbol pair replaces that library's previous build outputs.
 
-A compiler error fails the build and prevents dependent deployment. Previously
-deployed assemblies remain unchanged; they are the previous successful version,
-not the failed edit. Fix the reported source/reference error and rebuild. Do not
-interpret launching an old binary after a failed build as testing the new script.
+A compiler error in `Assets/Scripts` (Crucible.Scripts) does not stop the engine
+build, in any configuration. Its errors appear as build warnings, the last good
+DLL is deployed, and Editor/Game still build. With no earlier DLL (a clean build),
+a placeholder with no scripts is built from `AssemblyInfo.cs` and dated in the
+past. The next build retries, and the Editor compiles on open and shows the errors
+in its Console. Do not treat running after such a build as testing the new script,
+and check for these warnings before packaging: a package would contain the last
+good scripts, or none.
+
+A compiler error in any other managed library (Crucible.ScriptCore, the examples)
+fails the build and prevents dependent deployment. Previously deployed assemblies
+remain unchanged; they are the previous successful version, not the failed edit.
 
 Deployment validates all input files, duplicate output filenames, framework
 shadowing and its owned-file list before copying. Missing/colliding dependencies

@@ -35,9 +35,11 @@
 #include "Resources/ResourceManager.h"   // hot reload after a refresh
 
 #include <GLFW/glfw3.h>   // glfwGetWindowAttrib: refresh when the editor gets the focus back
+#include <imgui_internal.h>   // ScrollToItem: a pinged tile is scrolled into view
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstring>
 #include <cstdio>
 #include <filesystem>
@@ -459,6 +461,11 @@ void Crucible::AssetBrowser::Reveal(std::string const& virtualPath) {
 	m_selected = virtualPath;
 	m_syncTree = true;
 	ImGui::SetWindowFocus(m_panelName.c_str());
+
+	// The tile flashes, and the grid scrolls to it the first time it is drawn (DrawTile).
+	m_pingPath = virtualPath;
+	m_pingStart = ImGui::GetTime();
+	m_pingScroll = true;
 }
 
 void Crucible::AssetBrowser::Update(float) {
@@ -473,6 +480,7 @@ void Crucible::AssetBrowser::Update(float) {
 	if (m_ready) {
 		ProcessDroppedFiles();
 		UpdateModelCompiles();
+		UpdateThumbnails();
 	}
 
 	// Something else took the Inspector (an entity was picked in the Hierarchy): the clip
@@ -545,6 +553,11 @@ void Crucible::AssetBrowser::Update(float) {
 		if (!m_selected.empty() && m_renaming.empty() && ImGui::Shortcut(ImGuiKey_Delete)) {
 			BeginDelete(IsMultiSelect() ? m_selection : std::vector<std::string>{ m_selected });
 		}
+		// Shortcut too, for the same reason: the Hierarchy's Ctrl+D duplicates entities.
+		if (!m_selected.empty() && m_renaming.empty() && ImGui::Shortcut(ImGuiMod_Ctrl | ImGuiKey_D)) {
+			if (IsRefreshAllowed()) m_pendingDuplicate = IsMultiSelect() ? m_selection : std::vector<std::string>{ m_selected };
+			else CRU_USER_WARN("Cannot duplicate while in play mode - press Stop first");
+		}
 	}
 
 	DrawDeleteConfirm();
@@ -557,6 +570,7 @@ void Crucible::AssetBrowser::Update(float) {
 	// After drawing, like navigation below: renaming refreshes the index and the item list.
 	ApplyPendingRename();
 	ApplyPendingDelete();
+	ApplyPendingDuplicate();
 	ApplyPendingPrefab();
 	ApplyPendingMove();
 	FinishImport();
@@ -706,6 +720,95 @@ void Crucible::AssetBrowser::CreateFolder() {
 	}
 	else {
 		CRU_WARN("[AssetBrowser] Could not create folder '{}': {}", candidate, ec.message());
+	}
+}
+
+// ------------------------------------------------------------------ duplicate
+
+std::string Crucible::AssetBrowser::DuplicateDestination(std::string const& virtualPath) const {
+	// "Rock.png" -> "Rock 1.png"; "Rock 1.png" -> "Rock 2.png" (the number goes up, not "Rock 1 1").
+	fs::path const original(virtualPath);
+	std::error_code ec;
+	bool const isFolder = fs::is_directory(AbsolutePathOf(virtualPath), ec);
+	std::string const folder    = ParentOf(virtualPath);
+	std::string const extension = isFolder ? std::string{} : original.extension().string();
+	std::string base = isFolder ? original.filename().string() : original.stem().string();
+
+	int next = 1;
+	if (std::size_t const space = base.find_last_of(' '); space != std::string::npos && space + 1 < base.size()
+		&& std::all_of(base.begin() + static_cast<std::ptrdiff_t>(space) + 1, base.end(), [](unsigned char c) { return std::isdigit(c) != 0; })
+		&& base.size() - space - 1 <= 6) {
+		next = std::stoi(base.substr(space + 1)) + 1;
+		base.erase(space);
+	}
+	for (int i = next; i < next + 10000; ++i) {
+		std::string const name = base + " " + std::to_string(i) + extension;
+		std::string const candidate = folder.empty() ? name : folder + "/" + name;
+		if (!fs::exists(AbsolutePathOf(candidate), ec)) return candidate;
+	}
+	return {};
+}
+
+void Crucible::AssetBrowser::ApplyPendingDuplicate() {
+	if (!m_pendingDuplicate) return;
+	std::vector<std::string> sources = std::move(*m_pendingDuplicate);
+	m_pendingDuplicate.reset();
+
+	if (!IsRefreshAllowed()) {
+		CRU_USER_WARN("Cannot duplicate while in play mode - press Stop first");
+		return;
+	}
+	// A file inside a selected folder is copied with that folder, not twice.
+	std::erase_if(sources, [&](std::string const& path) {
+		return path.empty() || std::any_of(sources.begin(), sources.end(),
+			[&](std::string const& other) { return path.size() > other.size() && path.rfind(other + "/", 0) == 0; });
+	});
+
+	std::vector<std::string> copies;
+	for (std::string const& source : sources) {
+		std::string const destination = DuplicateDestination(source);
+		if (destination.empty()) { CRU_USER_WARN("Cannot duplicate '{}': no free name", source); continue; }
+
+		fs::path const from = AbsolutePathOf(source), to = AbsolutePathOf(destination);
+		std::error_code ec;
+		if (fs::is_directory(from, ec)) {
+			// Every file but the .meta files, so the copies get guids of their own.
+			fs::create_directories(to, ec);
+			for (fs::recursive_directory_iterator it(from, ec), end; !ec && it != end; it.increment(ec)) {
+				fs::path const target = to / fs::relative(it->path(), from, ec);
+				if (it->is_directory(ec)) { fs::create_directories(target, ec); continue; }
+				if (AssetRegistry::IsMetaFile(it->path())) continue;
+				std::error_code copyError;
+				fs::copy_file(it->path(), target, fs::copy_options::skip_existing, copyError);
+				if (copyError) CRU_USER_WARN("Duplicate of '{}': could not copy {}: {}", source, it->path().filename().string(), copyError.message());
+			}
+		}
+		else {
+			fs::copy_file(from, to, fs::copy_options::none, ec);
+			if (ec) { CRU_USER_WARN("Cannot duplicate '{}': {}", source, ec.message()); continue; }
+			// Settings edited through this asset (a font's .fontsettings) come along; their .meta does not.
+			for (std::string_view const suffix : kCompanionSuffixes) {
+				fs::path companion = from, companionCopy = to;
+				companion += std::string(suffix);
+				companionCopy += std::string(suffix);
+				std::error_code companionError;
+				if (fs::is_regular_file(companion, companionError))
+					fs::copy_file(companion, companionCopy, fs::copy_options::skip_existing, companionError);
+			}
+		}
+		CRU_USER_INFO("Duplicated {} -> {}", source, destination);
+		copies.push_back(destination);
+	}
+	if (copies.empty()) return;
+
+	Refresh();   // gives the copies their .meta and guid, and compiles a copied .glb
+	if (copies.size() == 1) {
+		m_selection.clear();
+		BeginRename(copies.front());   // name it straight away, like New Folder
+	}
+	else {
+		m_selection = copies;          // the copies are selected, to move or rename next
+		m_selected = copies.back();
 	}
 }
 
@@ -953,6 +1056,12 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	if (renamingThis) ImGui::SetNextItemAllowOverlap();   // let the rename field on top take the mouse
 	bool const released = ImGui::InvisibleButton("##Tile", tileSize);
 	bool const hovered = ImGui::IsItemHovered();
+	bool const pinged = !m_pingPath.empty() && m_pingPath == item.virtualPath;
+	if (pinged && m_pingScroll) {
+		ImGui::ScrollToItem(ImGuiScrollFlags_KeepVisibleCenterY);   // only scrolls if it is off screen
+		m_pingScroll = false;
+		m_pingStart = ImGui::GetTime();   // the flash starts when it is on screen, not while the tab was hidden
+	}
 
 	// Dropping a Hierarchy entity on a folder saves the prefab in that folder. Right after the
 	// button, while it is still the last item.
@@ -1027,20 +1136,53 @@ void Crucible::AssetBrowser::DrawTile(Item const& item) {
 	if (selected || hovered)
 		dl->AddRectFilled(p0, p1, ImGui::GetColorU32(selected ? ImGuiCol_HeaderActive : ImGuiCol_HeaderHovered), 4.0f);
 
+	// Pinged: a yellow outline that pulses twice and fades out (Unity's ping), so the eye finds it.
+	if (pinged) {
+		constexpr double kPingSeconds = 1.6;
+		double const t = ImGui::GetTime() - m_pingStart;
+		if (t >= kPingSeconds) {
+			m_pingPath.clear();
+		}
+		else {
+			float const fade  = 1.0f - static_cast<float>(t / kPingSeconds);
+			float const pulse = 0.5f + 0.5f * std::cos(static_cast<float>(t) * 7.85f);   // two pulses
+			int const alpha = static_cast<int>(255.0f * fade * (0.45f + 0.55f * pulse));
+			dl->AddRect(ImVec2(p0.x - 1.0f, p0.y - 1.0f), ImVec2(p1.x + 1.0f, p1.y + 1.0f), IM_COL32(255, 205, 60, alpha), 5.0f, 0, 3.0f);
+		}
+	}
+
 	float const pad = size * 0.14f;
 	ImVec2 const i0(p0.x + pad, p0.y + pad);
 	ImVec2 const i1(p0.x + size - pad, p0.y + size - pad);
 	float const w = i1.x - i0.x;
 	float const h = i1.y - i0.y;
 
+	// Only tiles on screen ask for a thumbnail, so a big folder costs nothing until scrolled to.
+	ImVec2 imageSize;
+	void* const thumbnail = (!item.isFolder && ImGui::IsRectVisible(p0, p1)) ? ThumbnailFor(item, imageSize) : nullptr;
+
 	if (item.isFolder) {
 		ImU32 const folderColor = IM_COL32(222, 178, 82, 255);
 		dl->AddRectFilled(ImVec2(i0.x, i0.y + h * 0.10f), ImVec2(i0.x + w * 0.45f, i0.y + h * 0.30f), folderColor, 3.0f);  // tab
 		dl->AddRectFilled(ImVec2(i0.x, i0.y + h * 0.22f), ImVec2(i1.x, i1.y - h * 0.05f), folderColor, 3.0f);              // body
 	}
+	else if (thumbnail != nullptr) {
+		// The image itself, fitted inside the badge's box with its proportions kept, over a dark
+		// checkerboard so transparent parts read as transparent.
+		dl->AddRectFilled(i0, i1, IM_COL32(48, 48, 52, 255), 4.0f);
+		float const cell = std::max(4.0f, w / 8.0f);
+		dl->PushClipRect(i0, i1, true);
+		for (float y = i0.y; y < i1.y; y += cell)
+			for (float x = i0.x + ((static_cast<int>((y - i0.y) / cell) % 2) ? cell : 0.0f); x < i1.x; x += cell * 2.0f)
+				dl->AddRectFilled(ImVec2(x, y), ImVec2(x + cell, y + cell), IM_COL32(62, 62, 68, 255));
+		dl->PopClipRect();
+		float const scale = std::min(w / imageSize.x, h / imageSize.y);
+		ImVec2 const shown(imageSize.x * scale, imageSize.y * scale);
+		ImVec2 const a(i0.x + (w - shown.x) * 0.5f, i0.y + (h - shown.y) * 0.5f);
+		dl->AddImage(reinterpret_cast<ImTextureID>(thumbnail), a, ImVec2(a.x + shown.x, a.y + shown.y));
+	}
 	else {
-		// TODO: textures could show a real thumbnail here once the renderer can hand ImGui a texture
-		// (ImGui_ImplVulkan_AddTexture) - draw it with dl->AddImage(i0, i1) instead of the badge.
+		// No thumbnail (yet): the type's colour and the extension. Images get theirs once decoded.
 		dl->AddRectFilled(i0, i1, TypeColor(item.type), 4.0f);
 		// The whole extension, scaled down to fit the box if it is long ("CFONT", "WAV" stays full
 		// size), and clipped to the box as a last resort at very small tile sizes.
@@ -1112,6 +1254,10 @@ void Crucible::AssetBrowser::DrawItemContextMenu(Item const& item) {
 	std::string const deleteLabel = severalSelected ? "Delete " + std::to_string(m_selection.size()) + " Items" : std::string("Delete");
 	if (ImGui::MenuItem(deleteLabel.c_str(), "Del", false, IsRefreshAllowed()))
 		BeginDelete(severalSelected ? m_selection : std::vector<std::string>{ item.virtualPath });
+
+	std::string const duplicateLabel = severalSelected ? "Duplicate " + std::to_string(m_selection.size()) + " Items" : std::string("Duplicate");
+	if (ImGui::MenuItem(duplicateLabel.c_str(), "Ctrl+D", false, IsRefreshAllowed()))
+		m_pendingDuplicate = severalSelected ? m_selection : std::vector<std::string>{ item.virtualPath };
 
 	if (ImGui::MenuItem("Show in Explorer"))
 		ShowInExplorer(AbsolutePathOf(item.virtualPath), true);

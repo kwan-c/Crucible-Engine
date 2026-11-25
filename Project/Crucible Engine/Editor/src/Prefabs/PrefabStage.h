@@ -11,9 +11,14 @@
 * history aside and replaces the world's contents with the prefab; exiting restores all of it.
 * Every panel keeps working on the same World.
 *
-* The prefab's entities are NOT linked instances (no PrefabInstance), so nothing about them is
-* locked. Which file entry each one came from is kept here, by undo key (EntryIdOf): unlike a
-* scene id, that survives deleting a part and undoing the delete.
+* The prefab's own entities are NOT linked instances (no PrefabInstance), so nothing about them
+* is locked. Prefabs nested in it ARE instances of their inner prefab, with the usual overrides,
+* Apply, Revert and Unpack. Which file entry each entity came from is kept here, by undo key
+* (EntryIdOf): unlike a scene id, that survives deleting a part and undoing the delete.
+*
+* Opening a prefab from inside another adds a level (Scene > House > Window). Each level keeps its
+* own snapshot and undo history; leaving one asks about ITS unsaved edits, and the level below
+* then picks up what changed. Prefabs holding a changed one are rewritten as levels are left.
 *
 * Save writes a temporary file, checks it loads, then replaces the .cprefab, so a failed save
 * leaves the prefab as it was. On Exit the open scene's instances update (their overrides kept),
@@ -22,8 +27,9 @@
 * While a prefab is open:
 *	- saving, opening and creating scenes are refused (SceneManager::SetSceneLocked), so the
 *	  prefab can never be written over the scene's file;
-*	- Play is refused, and so are Create Prefab, Apply, placing prefabs and project-wide tag
-*	  changes, which all assume the world holds the scene.
+*	- Play is refused, and so are Create Prefab, Apply to All Scenes and project-wide tag
+*	  changes, which all assume the world holds the scene. Placing a prefab that would end up
+*	  inside itself is refused too.
 *
 * Exit with unsaved edits asks Save / Discard / Cancel. The Scene view frames the prefab on open
 * and returns to where it was on Exit. The preview light and ground grid are render-only: they
@@ -37,19 +43,32 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace Crucible::PrefabStage {
 
 	// True from the frame a prefab has opened until the frame it has closed.
 	bool IsActive();
 
-	// Asks to open the .cprefab at `virtualPath`, at the next safe point. Refused (with a
-	// message) during Play or while another prefab is open.
+	// Asks to open the .cprefab at `virtualPath`, at the next safe point. With a prefab already
+	// open it becomes a new level. Refused (with a message) during Play, or if it is open already.
 	void RequestOpen(std::string const& virtualPath);
 
-	// Asks to go back to the scene at the next safe point, first asking Save / Discard / Cancel
-	// if there are unsaved edits. Does nothing if no prefab is open.
+	// Asks to go back one level at the next safe point, first asking Save / Discard / Cancel if
+	// there are unsaved edits. Does nothing if no prefab is open.
 	void RequestExit();
+
+	// The same, all the way back to the scene, asking at each level that has unsaved edits.
+	void RequestExitAll();
+
+	// The prefabs open right now, outermost first.
+	std::vector<std::uint64_t> OpenAssets();
+
+	// True if placing `asset` in the open prefab would put a prefab inside itself.
+	bool WouldCreateLoop(std::uint64_t asset);
+
+	// A prefab file changed while in Prefab Mode: the prefabs holding it are updated on the way out.
+	void NoteChanged(std::uint64_t asset);
 
 	// True once after that box was cancelled, so a pending "close the editor" can be dropped.
 	bool ConsumeExitCancelled();

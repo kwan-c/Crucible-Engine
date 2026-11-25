@@ -695,9 +695,97 @@ namespace Crucible
 		}
 
 		/*********************************************************************
+		 \brief  If a field's type is one of the ScriptCore component wrappers
+		         (kScriptComponentTypes, e.g. Crucible.Transform), returns its
+		         name ("Transform"); otherwise nullptr.
+		 *********************************************************************/
+		const char* ScriptCoreComponentType(MonoType* type)
+		{
+			for (const char* name : kScriptComponentTypes)
+				if (IsScriptCoreClass(type, name))
+					return name;
+			return nullptr;
+		}
+
+		/*********************************************************************
+		 \brief  Reads which entity a managed component wrapper (Transform,
+		         RigidBody, ...) belongs to: its private `entity` field, a
+		         Crucible.EntityIdentity whose fields are `index` and
+		         `generation` (EntityScript.cs - keep those names).
+		 *********************************************************************/
+		bool ReadComponentOwner(MonoObject* component, Entity& out)
+		{
+			MonoClassField* owner = mono_class_get_field_from_name(mono_object_get_class(component), "entity");
+			if (!owner)
+				return false;
+			MonoType* ownerType = mono_field_get_type(owner);
+			if (mono_type_get_type(ownerType) != MONO_TYPE_VALUETYPE)
+				return false;
+			MonoClass* identity = mono_class_from_mono_type(ownerType);
+			MonoClassField* index = mono_class_get_field_from_name(identity, "index");
+			MonoClassField* generation = mono_class_get_field_from_name(identity, "generation");
+			uint32_t raw[2] = {0, 0};
+			if (!index || !generation || mono_class_value_size(identity, nullptr) != sizeof(raw))
+				return false;
+			// Copy the struct out, then box it: a boxed struct's fields read like any
+			// object's, so we never depend on its layout.
+			mono_field_get_value(component, owner, raw);
+			GcRoot boxed(mono_value_box(mono_object_get_domain(component), identity, raw));
+			if (!boxed.Get())
+				return false;
+			uint32_t values[2] = {0, 0};
+			mono_field_get_value(boxed.Get(), index, &values[0]);
+			mono_field_get_value(boxed.Get(), generation, &values[1]);
+			out = Entity{values[0], values[1]};
+			return true;
+		}
+
+		/*********************************************************************
+		 \brief  Creates the managed component wrapper of class `componentClass`
+		         (e.g. Crucible.Transform) for a live entity, by calling
+		         Entity.GetComponentOfType in C# - so the wrapper is built exactly
+		         the way scripts get one.
+		 \param  component  receives the wrapper, or stays null if the entity
+		                    has no such component
+		 \return false (and why) if the call itself failed.
+		 *********************************************************************/
+		bool NewManagedComponent(MonoDomain* domain, MonoClass* componentClass, Entity entity, GcRoot& component,
+		                         std::string& error)
+		{
+			MonoClass* entityClass = mono_class_from_name(mono_class_get_image(componentClass), "Crucible", "Entity");
+			MonoMethod* method = entityClass ? mono_class_get_method_from_name(entityClass, "GetComponentOfType", 1)
+			                                 : nullptr;
+			if (!method)
+			{
+				error = "Crucible.Entity.GetComponentOfType is missing from ScriptCore";
+				return false;
+			}
+			GcRoot owner(NewManagedEntity(domain, entityClass, entity));
+			GcRoot type(reinterpret_cast<MonoObject*>(mono_type_get_object(domain, mono_class_get_type(componentClass))));
+			if (!owner.Get() || !type.Get())
+			{
+				error = "Could not create the entity reference";
+				return false;
+			}
+			void* arguments[] = {type.Get()};
+			ManagedCallScope scope;
+			MonoObject* exception = nullptr;
+			MonoObject* result = mono_runtime_invoke(method, owner.Get(), arguments, &exception);
+			if (exception)
+			{
+				error = ManagedException(exception);
+				return false;
+			}
+			component = GcRoot(result);
+			return true;
+		}
+
+		/*********************************************************************
 		 \brief  Lists the fields the Inspector can show: public, non-static, not
 		         readonly/const, not [NonSerialized], of type bool/int/float/double/
-		         string/Crucible.Entity/Prefab/AudioClip/Texture/Font/Material/Model. Includes fields inherited from base classes.
+		         string/Crucible.Entity/Prefab/AudioClip/Texture/Font/Material/Model
+		         or a component wrapper (kScriptComponentTypes). Includes fields
+		         inherited from base classes.
 		 *********************************************************************/
 		std::vector<InspectableField> InspectableFields(MonoClass* type)
 		{
@@ -728,6 +816,11 @@ namespace Crucible
 						value.type = ScriptFieldType::Material;
 					else if (IsScriptCoreClass(fieldType, "Model"))
 						value.type = ScriptFieldType::Model;
+					else if (const char* component = ScriptCoreComponentType(fieldType))
+					{
+						value.type = ScriptFieldType::Component;
+						value.componentType = component;
+					}
 					else switch (ManagedKind(fieldType))
 					{
 					case ValueKind::Boolean:
@@ -809,6 +902,18 @@ namespace Crucible
 					GcRoot targetRoot(target);
 					Entity entity;
 					value.entityId = targetRoot.Get() && ReadEntityIdentity(targetRoot.Get(), entity)
+					                     ? ScriptBindings::EntityContext::SceneIdOf(entity)
+					                     : 0;
+					break;
+				}
+				case ScriptFieldType::Component:
+				{
+					// Shown as the owning entity's scene id, like an Entity field.
+					MonoObject* component = nullptr;
+					mono_field_get_value(owner.Get(), entry.field, &component);
+					GcRoot componentRoot(component);
+					Entity entity;
+					value.entityId = componentRoot.Get() && ReadComponentOwner(componentRoot.Get(), entity)
 					                     ? ScriptBindings::EntityContext::SceneIdOf(entity)
 					                     : 0;
 					break;
@@ -921,6 +1026,33 @@ namespace Crucible
 							              value.name);
 					}
 					mono_field_set_value(owner.Get(), field, target.Get());
+					break;
+				}
+				case ScriptFieldType::Component:
+				{
+					// Scene id -> live entity -> its wrapper (Entity.GetComponentOfType).
+					// Unassigned, missing entity or missing component -> null, with a
+					// warning; a bad reference never stops the script from starting.
+					Entity entity;
+					GcRoot component;
+					if (value.entityId != 0)
+					{
+						if (!ScriptBindings::EntityContext::FromSceneId(value.entityId, entity))
+							CRU_USER_WARN("[Script] Field '{}' points to an entity that is not in this scene; it "
+							              "will be null",
+							              value.name);
+						else
+						{
+							std::string failure;
+							if (!NewManagedComponent(domain, mono_class_from_mono_type(mono_field_get_type(field)),
+							                         entity, component, failure))
+								CRU_USER_WARN("[Script] Field '{}': {}; it will be null", value.name, failure);
+							else if (!component.Get())
+								CRU_USER_WARN("[Script] Field '{}' points to an entity with no {}; it will be null",
+								              value.name, value.componentType);
+						}
+					}
+					mono_field_set_value(owner.Get(), field, component.Get());
 					break;
 				}
 				case ScriptFieldType::Prefab:
