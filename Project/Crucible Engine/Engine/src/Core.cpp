@@ -110,6 +110,11 @@ namespace Crucible {
         // Play mode drives the always-on systems too, so it is built once every member exists.
         m_playMode = std::make_unique<PlayMode>(*m_world, *m_scenes, m_events, m_systems);
 
+        // The player's graphics quality. Only the game starts with it: in the editor the Scene
+        // View panel owns the renderer's settings, and a script's changes are undone at Stop.
+        if (m_config.app == AppKind::Game) { ApplyGraphicsSettings(); }
+        m_playMode->OnBeforeStop([this] { RestoreEditorRenderSettings(); });
+
         // Layers draw inside the renderer's open render pass via OnRender().
         m_renderer->SetOverlayCallback([this] {
             for (auto& layer : m_layers) layer->OnRender();
@@ -146,6 +151,49 @@ namespace Crucible {
     }
 
     std::vector<WindowResolution> Core::GetScreenResolutions() const { return m_window->GetResolutions(); }
+
+    void Core::SetGraphicsSettings(const GraphicsSettings& settings) {
+        // First change in the editor: remember the Scene View panel's values for Stop.
+        if (m_config.app == AppKind::Editor && !m_editorRenderSnapshot) {
+            m_editorRenderSnapshot = RenderSettingsSnapshot{ m_renderer->GetPostSettings(), m_renderer->GetShadowSettings() };
+        }
+        m_userSettings.graphics = settings;
+        m_userSettings.graphics.quality = MatchQualityLevel(settings);
+        ApplyGraphicsSettings();
+    }
+
+    void Core::ApplyGraphicsSettings() {
+        const GraphicsSettings& g = m_userSettings.graphics;
+
+        // Only the fields the player controls; the rest (bloom threshold, toon shading, ...) are
+        // left as they are. The renderer clamps MSAA to the GPU and rebuilds its targets itself.
+        PostSettings& post = m_renderer->GetPostSettings();
+        post.fxaa          = g.antiAliasing != AntiAliasing::Off;
+        post.msaaSamples   = g.antiAliasing == AntiAliasing::MSAA4x ? 4u
+                           : g.antiAliasing == AntiAliasing::MSAA2x ? 2u : 1u;
+        post.ao            = g.ambientOcclusion;
+        post.bloom         = g.bloom;
+        post.volumetricFog = g.volumetricFog;
+
+        // Cascades are the cost (each re-renders the casters); distance trades reach for
+        // sharpness. High = the ShadowSettings defaults.
+        ShadowSettings& shadows = m_renderer->GetShadowSettings();
+        shadows.enabled = g.shadowQuality != ShadowQuality::Off;
+        switch (g.shadowQuality) {
+        case ShadowQuality::Off:    break;
+        case ShadowQuality::Low:    shadows.cascadeCount = 1; shadows.distance = 40.0f;  break;
+        case ShadowQuality::Medium: shadows.cascadeCount = 2; shadows.distance = 60.0f;  break;
+        case ShadowQuality::High:   shadows.cascadeCount = 3; shadows.distance = 80.0f;  break;
+        case ShadowQuality::Ultra:  shadows.cascadeCount = std::min(4u, kMaxShadowCascades); shadows.distance = 120.0f; break;
+        }
+    }
+
+    void Core::RestoreEditorRenderSettings() {
+        if (!m_editorRenderSnapshot) { return; }
+        m_renderer->GetPostSettings()   = m_editorRenderSnapshot->post;
+        m_renderer->GetShadowSettings() = m_editorRenderSnapshot->shadows;
+        m_editorRenderSnapshot.reset();
+    }
 
     void Core::SaveWindowState() const {
         SavedWindowState state;
@@ -187,18 +235,6 @@ namespace Crucible {
             SceneManager::Snapshot snapshot;
             if (m_scenes->CaptureSnapshot(snapshot)) { m_resources->UnloadUnused(snapshot.scene.document); }
         });
-
-        // ======== asset debugging (Removable) ==========
-        // On the shared index. A second AssetManager here used to run its own reconcile -
-        // writing .meta files a second time on every launch - before m_assets even existed.
-        //{
-        //    std::cout << "\n\n";
-        //    m_assets->PrintIndex();
-
-        //    auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
-        //    m_assets->PrintLoaded();
-        //}
-        // ===========================================
 
         // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
         // and the Game open the same one. Empty = start with no scene.

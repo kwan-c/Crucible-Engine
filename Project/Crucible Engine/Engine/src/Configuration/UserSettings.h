@@ -27,6 +27,8 @@
 *                        "input": { "mouseSensitivity": 1.0, "stickSensitivity": 1.0, "invertY": false,
 *                                   "keys": { "forward": "W", "back": "S", "left": "A", "right": "D",
 *                                             "jump": "Space", "jumpButton": "GamepadA" } },
+*                        "quality": { "level": "High", "antiAliasing": "MSAA4x", "shadowQuality": "High",
+*                                     "ambientOcclusion": true, "bloom": true, "volumetricFog": true },
 *                        "game":  { "graphics": { "fullScreen": true, "maximized": false } }
 *                    }
 *
@@ -43,11 +45,15 @@
 *                jumpButton), saved by key name; ECSPlayerControllerSystem
 *                reads them instead of hardcoded WASD / Space / A
 *                (Tan Chun Kwang Xavier)
+*    -v1.2       graphics quality (GraphicsSettings: preset, anti-aliasing,
+*                shadows, AO, bloom, volumetric fog), for C# QualitySettings
+*                (Tan Chun Kwang Xavier)
 *
 **************************************************************************/
 #pragma once
 
 // STL
+#include <cstdint>
 #include <filesystem>
 
 // Crucible engine
@@ -87,9 +93,52 @@ namespace Crucible {
         KeyCode jumpButton = KeyCode::GamepadA;     // a second jump binding, for the gamepad
     };  // INPUTSETTINGS STRUCT
 
+    // The options menu's Graphics page (C# QualitySettings). Saved by name ("High",
+    // "MSAA4x"), so reordering these enums never changes what a saved file means.
+    // Core::SetGraphicsSettings turns them into the renderer's PostSettings and
+    // ShadowSettings (Core::ApplyGraphicsSettings has the exact numbers).
+    enum class QualityLevel : uint8_t {
+        Low, Medium, High, Ultra,
+        Custom      // the individual settings match no preset
+    };
+
+    // MSAA smooths geometry edges; FXAA (a screen pass) also catches the edges
+    // shading makes (toon lines, thin highlights), so the MSAA levels keep FXAA on.
+    enum class AntiAliasing : uint8_t {
+        Off,
+        FXAA,
+        MSAA2x,     // + FXAA
+        MSAA4x      // + FXAA
+    };
+
+    // The sun's cascaded shadows: how many cascades and how far they reach.
+    enum class ShadowQuality : uint8_t {
+        Off, Low, Medium, High, Ultra
+    };
+
+    struct GraphicsSettings {
+        // Defaults = the High preset, which is what the renderer drew before these
+        // settings existed (RenderTypes.h's PostSettings / ShadowSettings defaults).
+        QualityLevel  quality          = QualityLevel::High;
+        AntiAliasing  antiAliasing     = AntiAliasing::MSAA4x;
+        ShadowQuality shadowQuality    = ShadowQuality::High;
+        bool          ambientOcclusion = true;
+        bool          bloom            = true;
+        bool          volumetricFog    = true;
+
+        bool operator==(const GraphicsSettings&) const = default;
+    };  // GRAPHICSSETTINGS STRUCT
+
+    // The settings a preset stands for. Custom gives the defaults (High).
+    ENGINE_API GraphicsSettings GraphicsPreset(QualityLevel level);
+
+    // The preset `settings` matches (its `quality` field ignored), or Custom.
+    ENGINE_API QualityLevel MatchQualityLevel(const GraphicsSettings& settings);
+
     struct UserSettings {
-        AudioSettings audio;
-        InputSettings input;
+        AudioSettings    audio;
+        InputSettings    input;
+        GraphicsSettings graphics;
     };  // USERSETTINGS STRUCT
 
     class ENGINE_API UserSettingsLoader {

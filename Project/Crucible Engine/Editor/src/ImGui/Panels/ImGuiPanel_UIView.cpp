@@ -13,6 +13,7 @@
 #include "SceneVisibility.h"
 #include "ECS/World.h"
 #include "Undo/EntityCommands.h"
+#include "Undo/UndoHistory.h"   // GroupCommand: a multi-element drag is one undo step
 
 #include <algorithm>
 #include <cmath>
@@ -275,32 +276,30 @@ void Crucible::UIView::HandleSelection(bool hovered, bool active) {
 		m_hotHandle = (hovered && selectedItem) ? HitTestGizmo(*selectedItem, io.MousePos) : GizmoHandle::None;
 	}
 
-	auto beginDrag = [&](Entity entity, GizmoHandle handle) {
-		UIRect const* rect = m_world.Read<UIRect>(entity);
-		if (!rect) { return; }
-		m_dragEntity = entity;
-		m_dragHandle = handle;
-		m_dragMoved = false;
-		m_dragStartMouse = io.MousePos;
-		m_dragStartRect = *rect;
-	};
-
 	if (hovered && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+		m_clickCollapseTo = {};
 		if (m_hotHandle != GizmoHandle::None) {
 			// On a gizmo handle: drag it. The selection stays as it is.
-			beginDrag(selected, m_hotHandle);
+			BeginDrag(selected, m_hotHandle);
 		}
 		else {
 			// Same rules as SceneView::Select - Ctrl toggles, Shift adds, and with either held a
-			// click on empty page keeps the selection. A plain click selects just what was hit.
+			// click on empty page keeps the selection. A plain click selects just what was hit -
+			// except on an element that is already part of a multi-selection: that keeps the
+			// selection (making it the active one) so the group can be dragged together, and only
+			// narrows to it if the mouse comes back up without moving.
 			Entity const hit = PickElement(ScreenToCanvas(io.MousePos));
 			if (inspector) {
 				if (io.KeyCtrl)       { if (hit.IsValid()) { inspector->ToggleSelected(hit); } }
 				else if (io.KeyShift) { if (hit.IsValid()) { inspector->AddToSelection(hit); } }
+				else if (hit.IsValid() && inspector->IsSelected(hit) && inspector->SelectionCount() > 1) {
+					inspector->SetSelection(inspector->GetSelection(), hit);
+					m_clickCollapseTo = hit;
+				}
 				else                  { inspector->SetSelectedEntity(hit); }
 			}
 			// A plain click on an element can also drag it by its body (free move, any tool).
-			if (hit.IsValid() && !io.KeyCtrl && !io.KeyShift) { beginDrag(hit, GizmoHandle::MoveFree); }
+			if (hit.IsValid() && !io.KeyCtrl && !io.KeyShift) { BeginDrag(hit, GizmoHandle::MoveFree); }
 		}
 	}
 
@@ -336,7 +335,7 @@ void Crucible::UIView::HandleSelection(bool hovered, bool active) {
 		                         ImGui::IsKeyPressed(ImGuiKey_RightCtrl, false) || ImGui::IsKeyReleased(ImGuiKey_RightCtrl);
 		if (moved || (m_dragMoved && ctrlChanged)) {
 			if (!m_dragMoved) {
-				m_dragBefore = EntityState::Capture(m_world, m_dragEntity);
+				for (DragMover& mover : m_dragMovers) { mover.before = EntityState::Capture(m_world, mover.entity); }
 				m_dragMoved = true;
 			}
 			ApplyDrag(io.MousePos);
@@ -358,23 +357,89 @@ void Crucible::UIView::HandleSelection(bool hovered, bool active) {
 	}
 
 	// Release: one undo step for the whole drag (the Scene view's gizmo does the same).
-	if (m_dragEntity.IsValid() && ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
-		if (m_dragMoved && m_world.IsAlive(m_dragEntity)) {
-			char const* verb = "Move UI Element";
-			if (m_dragHandle == GizmoHandle::Rotate) { verb = "Rotate UI Element"; }
-			if (m_dragHandle == GizmoHandle::ScaleX || m_dragHandle == GizmoHandle::ScaleY || m_dragHandle == GizmoHandle::ScaleUniform) { verb = "Scale UI Element"; }
+	if (ImGui::IsMouseReleased(ImGuiMouseButton_Left)) {
+		// A click (no movement) on a member of a multi-selection: now select just it.
+		if (m_clickCollapseTo.IsValid() && !m_dragMoved && inspector && m_world.IsAlive(m_clickCollapseTo)) {
+			inspector->SetSelectedEntity(m_clickCollapseTo);
+		}
+		m_clickCollapseTo = {};
+		if (m_dragEntity.IsValid()) { EndDrag(); }
+	}
+}
 
-			UndoHistory& history = EditorManager::GetInstance().GetHistory();
-			std::string after = EntityState::Capture(m_world, m_dragEntity);
-			if (after != m_dragBefore) {
-				history.Push(std::make_unique<EntityStateCommand>(history.KeyOf(m_dragEntity), std::move(m_dragBefore), std::move(after), verb));
+void Crucible::UIView::BeginDrag(Entity lead, GizmoHandle handle) {
+	UIRect const* leadRect = m_world.Read<UIRect>(lead);
+	UI::LayoutItem const* leadItem = FindItem(lead);
+	if (!leadRect || !leadItem) { return; }
+
+	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
+	if (inspector) { inspector->CommitPendingEdit(); }   // a pending Inspector edit stays its own undo step
+
+	m_dragEntity = lead;
+	m_dragHandle = handle;
+	m_dragMoved = false;
+	m_dragStartMouse = ImGui::GetIO().MousePos;
+	m_dragStartRect = *leadRect;
+	m_dragStartPivot = leadItem->ToScreen(leadItem->pivot);
+
+	// Movers: every selected element laid out on this page, minus those with a selected ancestor
+	// (the parent carries them; moving both would move the child twice). SceneView's GizmoMovers.
+	std::vector<Entity> selection = inspector ? inspector->GetSelection() : std::vector<Entity>{};
+	if (std::find(selection.begin(), selection.end(), lead) == selection.end()) { selection.push_back(lead); }
+	auto const isSelected = [&](Entity e) { return std::find(selection.begin(), selection.end(), e) != selection.end(); };
+
+	m_dragMovers.clear();
+	for (Entity const e : selection) {
+		if (!m_world.IsAlive(e)) { continue; }
+		UIRect const* rect = m_world.Read<UIRect>(e);
+		UI::LayoutItem const* item = FindItem(e);
+		if (!rect || !item) { continue; }   // not a screen-space UI element on this page
+		bool covered = false;
+		for (Entity p = m_world.GetParent(e); p.IsValid(); p = m_world.GetParent(p)) {
+			if (isSelected(p)) { covered = true; break; }
+		}
+		if (covered) { continue; }
+
+		glm::mat2 const parentLinear(item->parentToScreen);
+		DragMover mover;
+		mover.entity = e;
+		mover.startRect = *rect;
+		mover.startPivot = item->ToScreen(item->pivot);
+		mover.canvasToParent = std::abs(glm::determinant(parentLinear)) > 1.0e-9f ? glm::inverse(parentLinear) : glm::mat2(0.0f);
+		mover.scale = std::max(item->scale, 1.0e-6f);
+		m_dragMovers.push_back(std::move(mover));
+	}
+}
+
+void Crucible::UIView::EndDrag() {
+	if (m_dragMoved) {
+		char const* noun = "UI Element";
+		std::string verb = "Move";
+		if (m_dragHandle == GizmoHandle::Rotate) { verb = "Rotate"; }
+		if (m_dragHandle == GizmoHandle::ScaleX || m_dragHandle == GizmoHandle::ScaleY || m_dragHandle == GizmoHandle::ScaleUniform) { verb = "Scale"; }
+
+		// One EntityStateCommand per element that changed, pushed as one undo step.
+		UndoHistory& history = EditorManager::GetInstance().GetHistory();
+		std::vector<std::unique_ptr<EditorCommand>> parts;
+		for (DragMover& mover : m_dragMovers) {
+			if (mover.before.empty() || !m_world.IsAlive(mover.entity)) { continue; }
+			std::string after = EntityState::Capture(m_world, mover.entity);
+			if (after != mover.before) {
+				parts.push_back(std::make_unique<EntityStateCommand>(history.KeyOf(mover.entity), std::move(mover.before), std::move(after), verb + " " + noun));
 			}
 		}
-		m_dragEntity = {};
-		m_dragHandle = GizmoHandle::None;
-		m_dragMoved = false;
-		m_dragBefore.clear();
+		// The lead last, so it is the active one again after an undo / redo.
+		std::stable_partition(parts.begin(), parts.end(), [&](auto const& part) { return !(part->Target() == history.KeyOf(m_dragEntity)); });
+
+		if (!parts.empty()) {
+			std::string const label = parts.size() == 1 ? verb + " " + noun : verb + " " + std::to_string(parts.size()) + " UI Elements";
+			history.Push(GroupCommand::Make(std::move(parts), label));
+		}
 	}
+	m_dragEntity = {};
+	m_dragHandle = GizmoHandle::None;
+	m_dragMoved = false;
+	m_dragMovers.clear();
 }
 
 // ------------------------------------------------------------------------------------------------ //
@@ -423,13 +488,19 @@ Crucible::UIView::GizmoHandle Crucible::UIView::HitTestGizmo(UI::LayoutItem cons
 }
 
 void Crucible::UIView::ApplyDrag(ImVec2 mouse) {
+	// The lead decides the change (its snapping, its gizmo); every mover then gets the same change.
 	UI::LayoutItem const* item = FindItem(m_dragEntity);
-	UIRect* rect = m_world.Write<UIRect>(m_dragEntity);
-	if (!item || !rect) { return; }
+	if (!item) { return; }
 
 	bool const snap = ImGui::GetIO().KeyCtrl;
 	glm::vec2 const drag(mouse.x - m_dragStartMouse.x, mouse.y - m_dragStartMouse.y);   // screen pixels
 	UIRect const& start = m_dragStartRect;
+
+	// Moves a mover's pivot by a canvas-pixel offset from where it started (position is the
+	// pivot's offset from its anchors, in the parent's possibly turned space, in reference pixels).
+	auto moveBy = [](DragMover const& mover, UIRect& rect, glm::vec2 canvasDelta) {
+		rect.position = mover.startRect.position + mover.canvasToParent * canvasDelta / mover.scale;
+	};
 
 	switch (m_dragHandle) {
 		case GizmoHandle::MoveX:
@@ -438,34 +509,54 @@ void Crucible::UIView::ApplyDrag(ImVec2 mouse) {
 			glm::vec2 screenDelta = drag;
 			if (m_dragHandle == GizmoHandle::MoveX) { screenDelta.y = 0.0f; }
 			if (m_dragHandle == GizmoHandle::MoveY) { screenDelta.x = 0.0f; }
-			// Screen pixels -> canvas pixels -> the parent's (possibly turned) space -> reference pixels.
-			glm::vec2 const canvasDelta = screenDelta / m_zoom;
-			glm::vec2 const local = glm::inverse(glm::mat2(item->parentToScreen)) * canvasDelta / std::max(item->scale, 1.0e-6f);
-			glm::vec2 position = start.position + local;
-			if (snap) {
-				// Only the coordinates this drag changes, so an X drag can't nudge Y onto the grid.
+			// Screen pixels -> canvas pixels -> the lead's parent's (possibly turned) space -> reference pixels.
+			glm::vec2 canvasDelta = screenDelta / m_zoom;
+			glm::mat2 const leadParent(item->parentToScreen);
+			float const leadScale = std::max(item->scale, 1.0e-6f);
+			if (snap && std::abs(glm::determinant(leadParent)) > 1.0e-9f) {
+				// Snap the LEAD's position (only the coordinates this drag changes, so an X drag can't
+				// nudge Y onto the grid), then move everything by that snapped offset - the group keeps
+				// its arrangement instead of each element snapping on its own.
+				glm::vec2 const local = glm::inverse(leadParent) * canvasDelta / leadScale;
+				glm::vec2 position = start.position + local;
 				if (local.x != 0.0f) { position.x = SnapTo(position.x, kMoveSnap); }
 				if (local.y != 0.0f) { position.y = SnapTo(position.y, kMoveSnap); }
+				canvasDelta = leadParent * (position - start.position) * leadScale;
 			}
-			rect->position = position;
+			for (DragMover const& mover : m_dragMovers) {
+				if (UIRect* rect = m_world.Write<UIRect>(mover.entity)) { moveBy(mover, *rect, canvasDelta); }
+			}
 			break;
 		}
 		case GizmoHandle::Rotate: {
-			glm::vec2 const origin = MakeGizmoFrame(*item).origin;   // the pivot doesn't move while turning
+			glm::vec2 const origin = MakeGizmoFrame(*item).origin;   // the lead's pivot doesn't move while turning
 			glm::vec2 const startVec(m_dragStartMouse.x - origin.x, m_dragStartMouse.y - origin.y);
 			glm::vec2 const nowVec(mouse.x - origin.x, mouse.y - origin.y);
 			if (glm::dot(startVec, startVec) < 1.0f || glm::dot(nowVec, nowVec) < 1.0f) { break; }   // on the pivot: no angle
 			float delta = ScreenAngle(nowVec) - ScreenAngle(startVec);
 			delta = std::remainder(delta, 360.0f);   // -180..180: crossing "left" doesn't jump a full turn
-			float rotation = start.rotation + delta;
-			if (snap) { rotation = SnapTo(rotation, kRotateSnap); }
-			rect->rotation = rotation;
+			if (snap) { delta = SnapTo(start.rotation + delta, kRotateSnap) - start.rotation; }
+
+			// Everything turns by the same angle around the lead's pivot, like the Scene view (Unity's
+			// Pivot mode): each one's rotation changes, and its pivot swings around the lead's.
+			// Canvas y points down, so a counter-clockwise turn on screen is this matrix.
+			float const radians = glm::radians(delta);
+			float const c = std::cos(radians), s = std::sin(radians);
+			for (DragMover const& mover : m_dragMovers) {
+				UIRect* rect = m_world.Write<UIRect>(mover.entity);
+				if (!rect) { continue; }
+				rect->rotation = mover.startRect.rotation + delta;
+				glm::vec2 const offset = mover.startPivot - m_dragStartPivot;
+				glm::vec2 const turned(offset.x * c + offset.y * s, -offset.x * s + offset.y * c);
+				moveBy(mover, *rect, turned - offset);
+			}
 			break;
 		}
 		case GizmoHandle::ScaleX:
 		case GizmoHandle::ScaleY:
 		case GizmoHandle::ScaleUniform: {
 			// Dragging a handle by its own length doubles the size; back to the centre shrinks it to 0.
+			// Each element is resized by the same factor in place, along its own axes.
 			GizmoFrame const f = MakeGizmoFrame(*item);
 			float along = drag.x;   // uniform: horizontal drag, like the Scene view's centre box
 			if (m_dragHandle == GizmoHandle::ScaleX) { along = glm::dot(drag, f.x); }
@@ -473,10 +564,14 @@ void Crucible::UIView::ApplyDrag(ImVec2 mouse) {
 			float factor = 1.0f + along / kGizmoLength;
 			if (snap) { factor = SnapTo(factor, kScaleSnap); }
 			factor = std::max(factor, 0.0f);
-			glm::vec2 size = start.size;
-			if (m_dragHandle != GizmoHandle::ScaleY) { size.x = start.size.x * factor; }
-			if (m_dragHandle != GizmoHandle::ScaleX) { size.y = start.size.y * factor; }
-			rect->size = size;
+			for (DragMover const& mover : m_dragMovers) {
+				UIRect* rect = m_world.Write<UIRect>(mover.entity);
+				if (!rect) { continue; }
+				glm::vec2 size = mover.startRect.size;
+				if (m_dragHandle != GizmoHandle::ScaleY) { size.x = mover.startRect.size.x * factor; }
+				if (m_dragHandle != GizmoHandle::ScaleX) { size.y = mover.startRect.size.y * factor; }
+				rect->size = size;
+			}
 			break;
 		}
 		case GizmoHandle::None:
@@ -546,6 +641,18 @@ void Crucible::UIView::DrawOverlay(ImDrawList* drawList) {
 	auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 	if (!inspector) { return; }
 	Entity const active = inspector->GetSelectedEntity();
+
+	// The rest of a multi-selection: a fainter outline, no gizmo (the gizmo on the active one moves them all).
+	for (Entity const e : inspector->GetSelection()) {
+		if (e == active) { continue; }
+		UI::LayoutItem const* other = FindItem(e);
+		if (!other) { continue; }
+		auto const corners = other->Corners();
+		ImVec2 points[4];
+		for (int i = 0; i < 4; ++i) { points[i] = CanvasToScreen(corners[i]); }
+		drawList->AddPolyline(points, 4, IM_COL32(255, 140, 0, 140), ImDrawFlags_Closed, 1.5f);
+	}
+
 	UI::LayoutItem const* item = active.IsValid() ? FindItem(active) : nullptr;
 	if (item) {
 		// The element's real (possibly turned) outline, then the tool's gizmo on its pivot.

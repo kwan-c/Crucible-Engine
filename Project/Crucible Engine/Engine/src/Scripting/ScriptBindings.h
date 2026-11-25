@@ -116,6 +116,10 @@ namespace Crucible
 		 *********************************************************************/
 		void SetCore(Core* core);
 
+		/// The engine SetCore was last given (nullptr if none): for other bindings that need it
+		/// (Bindings/QualitySettingsBindings.cpp). Defined in Bindings/ScreenBindings.cpp.
+		Core* CurrentCore();
+
 		/*********************************************************************
 		 \brief  Gives the C# MeshRenderer the resource manager (a model's
 		         material slots). nullptr clears it. Non-owning; main thread
@@ -174,5 +178,6 @@ namespace Crucible
 		void RegisterApplicationBindings();    // Bindings/ApplicationBindings.cpp    (C# Application: IsPlaying)
 		void RegisterTagBindings();            // Bindings/TagBindings.cpp            (C# Entity.Tag, CompareTag, FindWithTag)
 		void RegisterGraphicsBindings();       // Bindings/GraphicsBindings.cpp       (C# Graphics: shader builds still running)
+		void RegisterQualitySettingsBindings(); // Bindings/QualitySettingsBindings.cpp (C# QualitySettings: preset, AA, shadows, AO, bloom, fog)
 	}
 }
