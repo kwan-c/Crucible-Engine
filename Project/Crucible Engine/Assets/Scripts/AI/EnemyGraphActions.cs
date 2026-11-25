@@ -19,20 +19,26 @@ namespace Crucible.Scripts
     {
         protected Enemy Controller;
 
+        bool began;
+
         protected sealed override Status OnStart()
         {
             Controller = Self.GetComponent<Enemy>();
             if (Controller == null || !Controller.IsReady) return Status.Failure;
-            Begin();
+            began = false;
             return Step();
         }
 
         protected sealed override Status OnUpdate() { return Step(); }
 
+        // Unity's Step: during a hit stop the node just waits (Running), and a node that starts
+        // in one only Begins once the stop is over, so nothing is decided while frozen.
         Status Step()
         {
             if (Controller == null || !Controller.IsReady) return Status.Failure;
-            return DeltaTime <= 0f ? Status.Running : Tick();
+            if (DeltaTime <= 0f || Controller.IsFrozen) return Status.Running;
+            if (!began) { began = true; Begin(); }
+            return Tick();
         }
 
         protected virtual void Begin() { }

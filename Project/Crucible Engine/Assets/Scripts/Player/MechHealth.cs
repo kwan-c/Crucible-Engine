@@ -2,8 +2,10 @@
 * \file:         MechHealth.cs
 * \author:       Tok Duan Jie Nelson
 * \par:          Email: t.duanjienelson@digipen.edu
+* \author:       Hugo Low Ren Hao (M3: Heal, for the Heal ability)
+* \par:          Email: low.h@digipen.edu
 * \date          7 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         The mech's single health pool. Port of Unity's CombatHealth
 *                (Scripts/Damage/CombatHealth.cs).
 *
@@ -58,6 +60,20 @@ namespace Crucible.Scripts
             if (Changed != null) Changed();
             if (IsDead && Died != null) Died();
             return true;
+        }
+
+        /// <summary>
+        /// Restores up to amount, never past the maximum; the dead stay dead (Unity: CombatHealth.Heal).
+        /// Returns what was actually restored.
+        /// </summary>
+        public float Heal(float amount)
+        {
+            if (IsDead || amount <= 0f || !MechMath.Finite(amount)) return 0f;
+            float restored = Math.Min(Maximum - Current, amount);
+            if (restored <= 0f) return 0f;   // already full: no Changed event every frame
+            Current += restored;
+            if (Changed != null) Changed();
+            return restored;
         }
 
         /// <summary>Back to full (also revives). Showcase/debug use.</summary>
