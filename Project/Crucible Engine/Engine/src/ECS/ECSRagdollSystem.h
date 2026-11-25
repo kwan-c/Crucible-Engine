@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          20 November 2026
-* \version       0.8
+* \version       0.9
 * \brief
 *                Ragdolls built at death from an animated model's bones.
 *                Port of Gam3333's CombatRagdoll (Unity).
@@ -62,6 +62,8 @@
 *    -v0.8       review fixes: RequestRagdoll takes the World and checks the
 *                model at once (a "no" now reaches the caller, so Enemy topples);
 *                a mirrored bone is warned about; the list clears on Stop
+*    -v0.9       removed GetRagdoll and Part::anchorInParent: only the
+*                deleted ragdoll test used them
 *
 **************************************************************************/
 #pragma once
@@ -108,8 +110,6 @@ namespace Crucible {
             std::uint32_t bone = 0;               // the model node it moves
             Math::vec3    boneScale{1.0f};        // the bone's world scale at spawn: the body has none,
                                                   // so it is put back on when the bone is posed
-            Math::vec3    anchorInParent{0.0f};   // this body's origin in the parent body's frame at
-                                                  // spawn: where the joint keeps it (tests measure gaps)
             Math::quat    sampledRotation{1.0f, 0.0f, 0.0f, 0.0f};   // at the last rest sample
         };
         Entity            model;                  // the entity with the MeshRenderer and AnimatedModel
@@ -176,9 +176,8 @@ namespace Crucible {
         ENGINE_API bool RequestRagdoll(const World& world, Entity model, const Math::vec3& velocity,
                                        Entity owner = kNullEntity);
 
-        // The ragdolls alive now, oldest first (tests and debugging).
+        // How many ragdolls are alive now (C# Ragdoll.Count).
         ENGINE_API std::size_t RagdollCount() const noexcept;
-        ENGINE_API const RagdollInstance* GetRagdoll(std::size_t index) const noexcept;
 
     private:
 

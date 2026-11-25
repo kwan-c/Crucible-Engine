@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          20 November 2026
-* \version       0.8
+* \version       0.9
 * \brief         See ECSRagdollSystem.h.
 *
 **************************************************************************/
@@ -236,10 +236,6 @@ namespace Crucible {
 
     std::size_t ECSRagdollSystem::RagdollCount() const noexcept { return m_ragdolls.size(); }
 
-    const RagdollInstance* ECSRagdollSystem::GetRagdoll(std::size_t index) const noexcept {
-        return index < m_ragdolls.size() ? &m_ragdolls[index] : nullptr;
-    }   // ECSRagdollSystem::GetRagdoll()
-
     /*! \brief  Builds one ragdoll, Unity's CombatRagdoll.Build: a box body per piece placed on
                 its bone where the animation has it this frame, then a Character joint from every
                 piece but the core to its nearest ancestor piece (else the core).
@@ -285,8 +281,6 @@ namespace Crucible {
         ragdoll.owner = request.owner;
         ragdoll.modelAsset = renderer->modelAsset;
         std::unordered_map<std::uint32_t, std::size_t> partOfBone;   // bone node -> index in ragdoll.parts
-        std::vector<Math::vec3> spawnPosition;                       // per part, for the joint anchors
-        std::vector<Math::quat> spawnRotation;
 
         // --- the bodies ---------------------------------------------------- //
         for (std::size_t i = 0; i < rig.pieces.size(); ++i) {
@@ -328,9 +322,7 @@ namespace Crucible {
             world.AddComponent(body, rigidbody);
 
             partOfBone[piece.bone] = ragdoll.parts.size();
-            ragdoll.parts.push_back(RagdollInstance::Part{body, kNullEntity, piece.bone, scale, Math::vec3(0.0f), rotation});
-            spawnPosition.push_back(position);
-            spawnRotation.push_back(rotation);
+            ragdoll.parts.push_back(RagdollInstance::Part{body, kNullEntity, piece.bone, scale, rotation});
         }
         if (ragdoll.parts.empty()) return;
 
@@ -343,7 +335,6 @@ namespace Crucible {
                 if (found != partOfBone.end()) { parentIndex = found->second; break; }
             }
             part.parent = ragdoll.parts[parentIndex].body;
-            part.anchorInParent = glm::inverse(spawnRotation[parentIndex]) * (spawnPosition[i] - spawnPosition[parentIndex]);
 
             // Unity's ConfigurableJoint on its default axis: X limited +-35, Y and Z +-30, the joint
             // point at this part's own origin (its bone's pivot). Limits count from this pose.
