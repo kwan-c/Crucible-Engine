@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          26 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         Each mission's level numbers, from the GDD's side quest
 *                specs (M3): map size, which chunks it places, their sizes
 *                and spacing. Plain data, so it can be tested alone.
@@ -20,7 +20,8 @@
 *    two chunks (Unity's minSpacing, picked per level); edge margin 20 m.
 *    Laid out as in Unity: spawn in the middle third, areas spread out,
 *    extract as far from the spawn as it can; the areas are numbered
-*    1st / 2nd / 3rd as a route from the spawn. Spawn and extract are 24 m boxes (Unity's start chunk;
+*    1st / 2nd / 3rd as a route from the spawn, and roads (RoadBuilder)
+*    follow that route. Spawn and extract are 24 m boxes (Unity's start chunk;
 *    the GDD gives no size).
 *
 *    Escort and Liberation: not yet (later port steps); asking for them
@@ -30,6 +31,7 @@
 *    -v1.0       Capture
 *    -v1.1       Capture as a journey: spawn first, the 1st area linked to it
 *    -v1.2       back to Unity's layout; spacing range = minimum gap; route order
+*    -v1.3       road settings per mission (Capture: roads along the route)
 *
 **************************************************************************/
 using System.Collections.Generic;
@@ -42,6 +44,7 @@ namespace Crucible.@Scripts
         public float MapSize;                               // metres, square
         public List<ChunkRequest> Chunks = new List<ChunkRequest>();   // in placement order
         public ChunkPlacementSettings Placement = new ChunkPlacementSettings();
+        public RoadSettings Roads = new RoadSettings();     // Unity's road numbers (SubLevelGen_*.asset)
     }
 
     public static class MissionPresets
@@ -78,6 +81,10 @@ namespace Crucible.@Scripts
             for (int i = 0; i < 3; i++)
                 p.Chunks.Add(new ChunkRequest { Role = Capture, Order = i + 1, Footprint = area });
             p.Chunks.Add(new ChunkRequest { Role = Extract, Footprint = new ChunkFootprint(ChunkShape.Box, kExtractSize, kExtractSize), End = true });
+
+            // Roads follow the objective route (spawn -> 1st -> 2nd -> 3rd -> extract). Unity's KOTH
+            // used a network instead (chain off: shortest links + 1 loop); the other numbers are Unity's.
+            p.Roads.chain = true;
             return p;
         }
     }

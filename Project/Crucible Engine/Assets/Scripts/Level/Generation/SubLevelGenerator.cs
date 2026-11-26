@@ -73,7 +73,8 @@
 *                chunks are placed and flattened (ChunkPlacer), spawned in
 *                Play (spawnChunk, extractChunk, captureChunk), and the
 *                player starts on the spawn chunk; chunks get their route
-*                order from the placement (ChunkPlacement.Order)
+*                order from the placement (ChunkPlacement.Order); roads
+*                join the chunks (RoadBuilder)
 **************************************************************************/
 using System.Collections.Generic;
 
@@ -255,6 +256,25 @@ namespace Crucible.@Scripts
                 if (!found[i]) Log.Warning("SubLevelGenerator: no room for " + Describe(preset.Chunks[i]) + " on seed " + seed + " - skipped");
             Log.Info("SubLevelGenerator: " + preset.Name + ": " + placements.Count + " of " + preset.Chunks.Count + " chunks placed, at least " +
                      ChunkPlacer.SpacingFor(seed, s).ToString("F0") + " m apart");
+            BuildRoads();
+        }
+
+        // Roads between the placed chunks (RoadBuilder: A* routes over the terrain), pressed into the
+        // ground and painted as Road, after the chunks are flattened. One log line; a warning when a
+        // road found no route, and a note for roads carved through a cliff.
+        private void BuildRoads()
+        {
+            RoadSettings r = preset.Roads;
+            r.maxWalkableSlope = maxWalkableSlope;
+            List<Road> roads = RoadBuilder.Build(map, placements, preset.Chunks, r);
+            int wanted = RoadBuilder.LinkCount(placements.Count, r);
+            int carved = 0, cells = 0;
+            foreach (Road road in roads) if (road.Carved) carved++;
+            for (int i = 0; i < map.Road.Length; i++) if (map.Road[i]) cells++;
+            Log.Info("SubLevelGenerator: " + roads.Count + " of " + wanted + " roads (" + (r.chain ? "along the route" : "network") + "), " +
+                     cells + " road cells" + (carved > 0 ? ", " + carved + " carved through a cliff" : ""));
+            if (roads.Count < wanted)
+                Log.Warning("SubLevelGenerator: " + (wanted - roads.Count) + " road(s) found no route on seed " + seed + " - skipped");
         }
 
         private static string Describe(ChunkRequest request)
