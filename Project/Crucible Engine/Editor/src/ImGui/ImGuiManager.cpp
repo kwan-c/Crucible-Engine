@@ -208,8 +208,9 @@ void Crucible::ImGuiManager::Init(const ImGuiVulkanContext& context, Core& core)
 
 	initInfo.DescriptorPool = context.descriptorPool;
 	// Let ImGui create+own its own pool. One slot per texture ImGui draws at once (its font, the
-	// viewports, Asset Browser thumbnails, importer previews...): the minimum (8) ran out.
-	initInfo.DescriptorPoolSize = 64;
+	// viewports, Asset Browser thumbnails, importer previews...): the minimum (8) ran out. The Asset
+	// Browser keeps up to 256 texture thumbnails (ImGuiPanel_AssetBrowser_Thumbnails.cpp).
+	initInfo.DescriptorPoolSize = 512;
     initInfo.MinImageCount = context.minImageCount;
     initInfo.ImageCount = context.imageCount;
 	initInfo.PipelineInfoMain.MSAASamples = context.msaaSamples;

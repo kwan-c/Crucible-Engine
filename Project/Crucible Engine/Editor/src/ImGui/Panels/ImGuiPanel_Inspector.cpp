@@ -13,6 +13,7 @@
 
 #include "ImGuiPanel_Inspector.h"
 #include "ImGui/Panels/ImGuiPanel_Animator.h"
+#include "ImGui/Panels/ImGuiPanel_AssetBrowser.h"   // ping: show an asset field's file
 #include "ImGui/EditorWidgets.h"
 #include "ImGui/EditorTheme.h"
 #include "Shaders/MaterialShaderUI.h"
@@ -395,6 +396,33 @@ namespace {
 		}
 	}
 
+	// Ping: the Asset Browser opens the folder of the asset this id names, selects it and flashes
+	// it. The source file is shown (Models/rock.glb, not its compiled .cmodel). False when the id
+	// is no file in Assets: None, a built-in ("Cube"), or a model's embedded material.
+	bool PingAsset(std::uint64_t id) {
+		if (id == 0) return false;
+		Crucible::Core* core = Crucible::EditorManager::GetInstance().GetCore();
+		auto browser = Crucible::EditorManager::GetInstance().GetPanel<Crucible::AssetBrowser>(ImguiPanels::ASSETBROWSER);
+		if (!core || !browser) return false;
+		Crucible::AssetEntry const* found = nullptr;
+		for (Crucible::AssetEntry const& entry : core->GetAssets().GetAll()) {
+			if (entry.guid.m_Value != id) continue;
+			found = &entry;
+			if (!entry.compiled) break;   // the source wins over its compiled copy
+		}
+		if (!found || found->compiled) return false;
+		browser->Reveal(found->virtualPath);
+		return true;
+	}
+
+	// Right-click on an asset field (call right after drawing it): "Show in Asset Browser".
+	void AssetFieldContextMenu(std::uint64_t id) {
+		if (!ImGui::BeginPopupContextItem()) return;   // keyed by the field itself, so each field has its own
+		if (ImGui::MenuItem("Show in Asset Browser", nullptr, false, id != 0) && !PingAsset(id))
+			CRU_USER_INFO("[Inspector] That asset is built in or part of another file - nothing to show in the Asset Browser");
+		ImGui::EndPopup();
+	}
+
 	// One material texture slot's drag-drop target. Draws a small placeholder box (no GPU->ImGui
 	// texture preview for material slots yet - ViewportPanel is the one place that pattern already
 	// exists, for the Scene/Game render targets) plus the slot's label, and returns the accepted
@@ -477,6 +505,10 @@ namespace {
 				}
 			}
 			ImGui::EndDragDropTarget();
+		}
+		if (!open) {
+			if (id != 0) ImGui::SetItemTooltip("Right-click to show it in the Asset Browser");
+			AssetFieldContextMenu(id);   // right-click: Show in Asset Browser (a click opens the list)
 		}
 
 		if (open) {
@@ -636,9 +668,12 @@ namespace {
 
 		float const spacing    = ImGui::GetStyle().ItemInnerSpacing.x;
 		float const clearWidth = ImGui::GetFrameHeight();
-		ImGui::Button(text.c_str(), ImVec2(ImGui::CalcItemWidth() - clearWidth - spacing, 0.0f));
+		// A click shows the file in the Asset Browser (Unity's ping); it is also the drop target.
+		if (ImGui::Button(text.c_str(), ImVec2(ImGui::CalcItemWidth() - clearWidth - spacing, 0.0f)) && id != 0)
+			PingAsset(id);
 		if (ImGui::IsItemHovered())
-			ImGui::SetTooltip("Drag a %s here from the Asset Browser", kind);
+			ImGui::SetTooltip(id != 0 ? "Click to show it in the Asset Browser.\nDrag a %s here from the Asset Browser to change it"
+			                          : "Drag a %s here from the Asset Browser", kind);
 
 		if (ImGui::BeginDragDropTarget()) {
 			if (ImGuiPayload const* payload = ImGui::AcceptDragDropPayload(Crucible::EditorWidgets::kAssetPayload)) {
@@ -651,6 +686,7 @@ namespace {
 			}
 			ImGui::EndDragDropTarget();
 		}
+		AssetFieldContextMenu(id);   // right-click: Show in Asset Browser
 
 		ImGui::SameLine(0.0f, spacing);
 		if (ImGui::Button("X", ImVec2(clearWidth, 0.0f)) && id != 0) { id = 0; changed = true; }

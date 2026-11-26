@@ -20,6 +20,7 @@
 #include "Graphics/RenderExtractSystem.h"
 #include "Animation/AnimatedModelSystem.h"
 #include "Animation/SocketAttachmentSystem.h"
+#include "ECS/ECSRagdollSystem.h"
 #include "Graphics/DebugDrawSystem.h"
 #include "Graphics/ParticleSystem.h"
 #include "Text/WorldTextSystem.h"
@@ -472,6 +473,7 @@ namespace Crucible {
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
+        m_systems.RegisterSystem<ECSRagdollSystem>(*m_resources, *m_playMode);   // PreRender, after the animation's pose, before sockets read it: ragdolls (Hugo)
         m_systems.RegisterSystem<ECSTerrainSystem>(*m_renderer);                          // PreRender, Edit too, before RenderExtract: each Terrain's mesh onto its MeshRenderer (rebuilt only when its grid changes)
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get(), &m_systems);   // PreRender: simulates ParticleEmitters, submits their particles and lights; m_systems: Play vs Edit
