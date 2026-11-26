@@ -17,7 +17,11 @@
 *      Tables -> Torsos   click the Torsos table: the camera pans to
 *                         position 3 while the ground and its tables slide
 *                         away from the golem (+Z), out of the shot.
-*      Torsos -> Tables   Back: the ground slides home FIRST, then the
+*                         The torso carousel (TorsoSelector, same entity)
+*                         then opens: the other torsos drop in from above.
+*      Torsos -> Tables   Back (or Confirm, which first locks in the torso
+*                         in front): the other torsos lift away, leaving the
+*                         golem, then the ground slides home, then the
 *                         camera pans back (Hugo's order).
 *      Tables -> Quests   click the Quests table: the camera pans above it,
 *                         looking down.
@@ -71,6 +75,7 @@ namespace Crucible.Scripts
         private View view = View.Title;
 
         private MainMenuIntro intro;         // owns the logo and the title buttons
+        private TorsoSelector torsos;        // the torso carousel (optional: without it the view is empty)
         private Camera cameraComponent;      // for the mouse ray
         private Vector3 groundHome;          // where the ground starts (and returns to)
 
@@ -87,6 +92,7 @@ namespace Crucible.Scripts
         {
             intro = Entity.GetComponent<MainMenuIntro>();
             if (intro == null) Log.Warning("MainMenuFlow: no MainMenuIntro on this entity.");
+            torsos = Entity.GetComponent<TorsoSelector>();
             if (viewCamera == null || camPosition1 == null || camPosition2 == null || camPosition3 == null)
                 Log.Warning("MainMenuFlow: set viewCamera and camPosition1/2/3.");
             if (torsoTable == null || questTable == null) Log.Warning("MainMenuFlow: set torsoTable and questTable.");
@@ -140,6 +146,12 @@ namespace Crucible.Scripts
             if (running.Count > 0) return;   // mid-move: ignore
             if (actionId == "Start" && view == View.Title && (intro == null || intro.IsFinished)) StartToTables();
             else if (actionId == "Back") Back();
+            else if (actionId == "Confirm" && view == View.Torsos)
+            {
+                // Lock in the torso in front, then leave exactly as Back does (the lift leaves it on the golem).
+                if (torsos != null) torsos.Confirm();
+                Back();
+            }
         }
 
         // ------------------------------------------------------------------ moves
@@ -176,9 +188,12 @@ namespace Crucible.Scripts
             {
                 case View.Torsos:
                     SetTorsoButtonsActive(false);
-                    // The ground comes home first, then the camera pans back: two moves in a row.
-                    Run(new List<MenuTween> { SlideGround(groundHome) }, () =>
-                        Run(PanTo(camPosition2), () => view = View.Tables));
+                    // Three moves in a row: the other torsos lift away, then the
+                    // ground comes home, then the camera pans back.
+                    MenuTween fold = torsos != null ? torsos.Close() : null;
+                    Run(new List<MenuTween> { fold }, () =>
+                        Run(new List<MenuTween> { SlideGround(groundHome) }, () =>
+                            Run(PanTo(camPosition2), () => view = View.Tables)));
                     break;
 
                 case View.Quests:
@@ -226,6 +241,7 @@ namespace Crucible.Scripts
                 Run(tweens, () =>
                 {
                     SetTorsoButtonsActive(true);
+                    if (torsos != null) torsos.Open();   // the other torsos drop into the ring
                     view = View.Torsos;
                 });
             }
@@ -249,6 +265,13 @@ namespace Crucible.Scripts
             running.Clear();
             foreach (MenuTween tween in tweens) if (tween != null) running.Add(tween);
             arrived = whenDone;
+            // Nothing to wait for (no carousel, no ground set): go straight on. Without this an
+            // empty move would never "arrive" (OnUpdate only finishes moves that have tweens).
+            if (running.Count == 0)
+            {
+                arrived = null;
+                if (whenDone != null) whenDone();
+            }
         }
 
         // The camera's move and turn to a spot, both over panSeconds.

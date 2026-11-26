@@ -3,7 +3,7 @@
 * \author:       Hugo Low Ren Hao
 * \par:          Email: low.h@digipen.edu
 * \date          25 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Moves a value from where it is now to a target over a set
 *                time, with easing ("tweening"). The main menu uses it for
 *                camera pans, the golem looking up, button fades and floats,
@@ -27,6 +27,8 @@
 *    Our engine has no Animation window (no keyframed property clips), so
 *    this does the same job in code.
 *
+*    v1.1  Value(): tweens a plain number (the torso carousel's ring)
+*
 **************************************************************************/
 using System;
 
@@ -41,7 +43,7 @@ namespace Crucible.Scripts
         InOut     // slow, fast, slow: camera pans, the golem looking up (the default)
     }
 
-    /// <summary>One running tween. Start one with Move, Rotate, RotateLocal, Fade, Slide or Wait.</summary>
+    /// <summary>One running tween. Start one with Move, Rotate, RotateLocal, Fade, Slide, Value or Wait.</summary>
     public sealed class MenuTween
     {
         private readonly float duration;          // seconds from start to end
@@ -148,6 +150,16 @@ namespace Crucible.Scripts
         {
             Vector2 from = rect.Position;
             return new MenuTween(seconds, ease, t => rect.Position = from + (to - from) * t);
+        }
+
+        /// <summary>
+        /// Tweens a plain number from `from` to `to`, handing each step's value to `apply`: for
+        /// things that aren't a Transform or UI field, like the torso carousel's ring angle and
+        /// radius (the script lays the torsos out from those numbers itself).
+        /// </summary>
+        public static MenuTween Value(float from, float to, float seconds, Action<float> apply, Ease ease = Ease.InOut)
+        {
+            return new MenuTween(seconds, ease, t => apply(from + (to - from) * t));
         }
 
         /// <summary>A pause: Done after `seconds`, changes nothing ("a short moment later", a clip's length).</summary>
