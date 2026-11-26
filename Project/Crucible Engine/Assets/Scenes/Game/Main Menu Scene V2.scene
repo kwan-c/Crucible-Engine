@@ -2486,6 +2486,20 @@
                                     "entityId": 0,
                                     "assetId": 9933657504994738225,
                                     "componentType": ""
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.QuestDetails",
+                                    "name": "landVolume",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.20000000298023224,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0,
+                                    "componentType": ""
                                 }
                             ]
                         }
