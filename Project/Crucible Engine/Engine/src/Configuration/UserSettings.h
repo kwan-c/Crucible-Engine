@@ -12,7 +12,9 @@
 * \details
 *                EngineConfig.json is the TEAM's file: it is in Assets, in
 *                git, and holds project defaults. UserSettings.json is the
-*                PLAYER's: it sits next to the .exe, never reaches git, and
+*                PLAYER's: it sits in the program's data folder (Local
+*                AppData for the game, see Systems/UserDataPath.h), never
+*                reaches git, and
 *                one player's choices never change anyone else's game.
 *                Unity splits it the same way (Project Settings versus
 *                PlayerPrefs).
@@ -213,7 +215,7 @@ namespace Crucible {
         */
         static bool Save(const UserSettings& settings);
 
-        // Where the file is: next to the running .exe, the same path as
+        // Where the file is: in the program's data folder, the same path as
         // EngineConfigLoader::UserSettingsFile(). Empty if that is unknown.
         static std::filesystem::path File();
 

@@ -28,7 +28,6 @@
     },
     "game": {
         "graphics": {
-            "windowTitle": "Mekanomachia",
             "fullScreen": true,
             "maximized": false
         },
