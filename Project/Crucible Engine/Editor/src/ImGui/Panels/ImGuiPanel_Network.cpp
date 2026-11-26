@@ -83,14 +83,12 @@ NetworkPanel::~NetworkPanel() = default;   // the control lets go of the server:
 
 void NetworkPanel::Init()
 {
-    // Like the Animator: hidden until opened (Network menu), then a tab in the
-    // centre area beside the Scene and Game views; drag it elsewhere if you like. The "###" id is
-    // new, so a layout saved when this was a tab beside the Inspector no longer applies; the
-    // title still reads "Network".
+    // Hidden until opened (the Network menu, or View > Network), then a floating window in the
+    // middle of the editor; dock it anywhere if you like. The "###" id is new, so a layout saved
+    // when this was a tab beside the Inspector no longer applies; the title still reads "Network".
     m_panelName = "Network###NetworkWindow";
     m_flags = ImGuiWindowFlags_None;
-    m_docked = true;
-    m_dockArea = DockArea::Center;
+    m_docked = false;   // not part of the default layout: a floating window opened from View > Network
     LoadFromSession();
 
     // The connection server on this PC: found next to the Editor or in the build folder, and taken
@@ -145,6 +143,10 @@ void NetworkPanel::Update(float)
     if (network.IsActive()) UpdateRates();   // every frame while a session runs, so the window never spans a gap
 
     if (!m_visible) return;
+
+    // First open (no saved position): a small window in the middle of the editor.
+    ImGui::SetNextWindowSize({ 320.0f, 420.0f }, ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowPos(ImGui::GetMainViewport()->GetCenter(), ImGuiCond_FirstUseEver, { 0.5f, 0.5f });
     if (m_makeFocus) { ImGui::SetNextWindowFocus(); m_makeFocus = false; }
     bool open = true;
     if (ImGui::Begin(m_panelName.c_str(), &open, m_flags)) {

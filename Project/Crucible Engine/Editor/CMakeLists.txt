@@ -63,11 +63,38 @@ if(CRUCIBLE_ENABLE_MONO)
 endif()
 
 # File > Package Game builds the Release game with this machine's CMake, from this build folder,
-# then zips it with CPack (Editor/src/Packaging/PackageJob.h).
+# then zips it with CPack and/or makes the installer with Inno Setup (Editor/src/Packaging/PackageJob.h).
+#
+# The installer: Tools/Package/Installer holds InstallScript.iss (and GAMEDIRECTORY, which the
+# Editor fills), and ISCC.exe is Inno Setup 6's compiler. Found here when Inno Setup is installed
+# for everyone or just this user. If it is not found (or installed after run.bat), the Editor also
+# looks in the registry when it packages, so this may be empty.
+set(CRUCIBLE_PROGRAM_FILES_X86 "ProgramFiles(x86)")   # $ENV{} cannot take the brackets directly
+find_program(CRUCIBLE_ISCC_COMMAND ISCC
+    PATHS
+        "$ENV{${CRUCIBLE_PROGRAM_FILES_X86}}/Inno Setup 6"
+        "$ENV{ProgramFiles}/Inno Setup 6"
+        "$ENV{LOCALAPPDATA}/Programs/Inno Setup 6"
+        "[HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Inno Setup 6_is1;InstallLocation]"
+        "[HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Inno Setup 6_is1;InstallLocation]"
+        "[HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\Inno Setup 6_is1;InstallLocation]"
+    NO_DEFAULT_PATH
+    DOC "Inno Setup 6 compiler (ISCC.exe), for File > Package Game's installer"
+)
+if(CRUCIBLE_ISCC_COMMAND)
+    message(STATUS "Package Game: Inno Setup compiler found at ${CRUCIBLE_ISCC_COMMAND}")
+    set(CRUCIBLE_ISCC_FOR_EDITOR "${CRUCIBLE_ISCC_COMMAND}")
+else()
+    message(STATUS "Package Game: Inno Setup 6 not found - install it to make the installer (the zip still works)")
+    set(CRUCIBLE_ISCC_FOR_EDITOR "")
+endif()
+
 target_compile_definitions(Editor PRIVATE
     CRUCIBLE_CMAKE_COMMAND="${CMAKE_COMMAND}"
     CRUCIBLE_CPACK_COMMAND="${CMAKE_CPACK_COMMAND}"
     CRUCIBLE_BUILD_DIR="${CMAKE_BINARY_DIR}"
+    CRUCIBLE_INSTALLER_DIR="${CMAKE_SOURCE_DIR}/Tools/Package/Installer"
+    CRUCIBLE_ISCC_COMMAND="${CRUCIBLE_ISCC_FOR_EDITOR}"
 )
 
 # Network > Connection Server starts CrucibleConnectionServer.exe (ConnectionServer/): building the

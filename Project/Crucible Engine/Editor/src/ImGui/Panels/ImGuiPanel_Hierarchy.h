@@ -201,9 +201,21 @@ namespace Crucible {
 		// to the Scene tab and frames the selection (SceneView::FrameSelected).
 		void FocusSelection();
 
-		// The entity just created by CreateUIElement: the rows above it open once so it is visible.
-		// Cleared after the tree is drawn.
-		Entity m_revealEntity = kNullEntity;
+		// Entities whose rows must become visible: every row above them opens once (SetNextItemOpen,
+		// before each ancestor's TreeNodeEx, so the whole path opens in a single frame). Filled when
+		// an entity is created here, and when the selection changes anywhere else (Scene view, UI
+		// Editor, undo...) - see RevealSelectionIfChanged. Cleared after the tree is drawn.
+		std::vector<Entity> m_reveal;
+		// The row to scroll to (centred) if it is outside the visible part of the panel. Set with
+		// m_reveal when the selection changes; cleared after the tree is drawn.
+		Entity m_scrollToEntity = kNullEntity;
+		// The Inspector's active entity as of the last frame, to notice selection changes.
+		Entity m_lastActive = kNullEntity;
+		// When the active entity changed since last frame: reveal every selected entity's row and
+		// scroll to the active one. Like Unity, rows opened this way stay open.
+		void RevealSelectionIfChanged();
+		// True if `entity` is a (strict) ancestor of anything in m_reveal.
+		bool IsRevealAncestor(Entity entity) const;
 
 		// Spawns a new entity with a ParticleEmitter set up as one of the presets in
 		// Graphics/ParticlePresets.h: "Sparks", "Fire", "Smoke" or "Splash".
