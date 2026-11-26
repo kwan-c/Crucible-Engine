@@ -6,7 +6,7 @@ namespace Crucible.Scripts
     //   1. Attach to any entity.
     //   2. In the EDITOR: press Play and use the keys below - the window must NOT change, and one
     //      "ignored in the editor" line must appear in the log (only once). L still lists sizes.
-    //   3. In the GAME BUILD (Mekanomachia.exe):
+    //   3. In the GAME BUILD (Lithomachia.exe):
     //        F8   Windowed            F9   Maximized          F10  Fullscreen (last chosen resolution)
     //        G    toggle FullScreen   H    log the mode and sizes
     //        L    list the monitor's resolutions

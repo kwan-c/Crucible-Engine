@@ -1,0 +1,29 @@
+/*!
+* @file			GameInfo.h (generated from Engine/src/GameInfo.h.in - edit that, not this)
+* @author		Tan Chun Kwang Xavier
+* @par			chunkwangxavier.tan@digipen.edu
+* @date			26 November 2026
+*
+* @brief		The game's name and version, as C++ constants.
+*
+* CMake writes this file into Build/Generated from CRUCIBLE_GAME_NAME and CRUCIBLE_GAME_VERSION
+* in the top-level CMakeLists.txt. To rename the game or change its version, change them there
+* and re-run run.bat: the .exe, the zip, the installer and every use of these constants follow.
+*
+* All Content copyrighted 2026 DigiPen Institute of Technology Singapore.
+* All Rights Reserved
+*/
+#pragma once
+
+namespace Crucible::GameInfo {
+
+	// "Lithomachia": the .exe's name, the window title, the Local AppData folder, ...
+	inline constexpr const char* Name = "@CRUCIBLE_GAME_NAME@";
+
+	// "0.1.0", and its parts (for Vulkan's VK_MAKE_VERSION, for one).
+	inline constexpr const char* Version      = "@CRUCIBLE_GAME_VERSION@";
+	inline constexpr unsigned    VersionMajor = @CRUCIBLE_GAME_VERSION_MAJOR@;
+	inline constexpr unsigned    VersionMinor = @CRUCIBLE_GAME_VERSION_MINOR@;
+	inline constexpr unsigned    VersionPatch = @CRUCIBLE_GAME_VERSION_PATCH@;
+
+}

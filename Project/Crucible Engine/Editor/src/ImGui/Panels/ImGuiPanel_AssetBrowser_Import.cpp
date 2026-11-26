@@ -81,6 +81,7 @@ namespace {
 		case AssetType::StateGraph:         return { "StateGraphs" };
 		case AssetType::BehaviorGraph:      return { "StateGraphs" };
 		case AssetType::ShaderGraph:        return { "ShaderGraphs" };
+		case AssetType::EditorTheme:        return { "Editor/Themes" };
 		default:                            return {};
 		}
 	}
@@ -121,6 +122,7 @@ namespace {
 Crucible::AssetBrowser::~AssetBrowser() {
 	// The GLFW callback stays set (the window may already be gone here); it checks this pointer.
 	if (s_dropTarget == this) s_dropTarget = nullptr;
+	ReleaseThumbnails();   // while the Renderer and ImGui's Vulkan backend are still alive (EditorManager::Shutdown)
 }
 
 void Crucible::AssetBrowser::InstallDropCallback() {
@@ -157,14 +159,13 @@ void Crucible::AssetBrowser::ProcessDroppedFiles() {
 		return;
 	}
 
-	bool const hiddenTab = docked && !panel->DockTabIsVisible;
-	if (hiddenTab) ImGui::SetWindowFocus(m_panelName.c_str());
+	if (docked && !panel->DockTabIsVisible) ImGui::SetWindowFocus(m_panelName.c_str());
 
 	if (!IsRefreshAllowed()) {
 		m_importProblems.push_back({ "Import", "stop Play Mode before adding files" });
 		return;
 	}
-	PlanImport(paths, hiddenTab);
+	PlanImport(paths);
 }
 
 std::string Crucible::AssetBrowser::ImportFolderFor(std::string const& extension) const {
@@ -174,9 +175,8 @@ std::string Crucible::AssetBrowser::ImportFolderFor(std::string const& extension
 	return std::string(roots.front());
 }
 
-void Crucible::AssetBrowser::PlanImport(std::vector<fs::path> const& paths, bool jumpToFolder) {
+void Crucible::AssetBrowser::PlanImport(std::vector<fs::path> const& paths) {
 	std::error_code ec;
-	std::string jumpFolder;
 
 	for (fs::path const& path : paths) {
 		std::string name;
@@ -209,7 +209,6 @@ void Crucible::AssetBrowser::PlanImport(std::vector<fs::path> const& paths, bool
 			m_importProblems.push_back({ name, "it is already in Assets/" + folder });
 			continue;
 		}
-		if (jumpFolder.empty()) jumpFolder = folder;
 
 		std::string const key = Lower(destination);
 		if (fs::exists(target, ec) || m_importPlanned.count(key) != 0) {
@@ -231,7 +230,8 @@ void Crucible::AssetBrowser::PlanImport(std::vector<fs::path> const& paths, bool
 		}
 	}
 
-	if (jumpToFolder && !jumpFolder.empty()) NavigateTo(jumpFolder);
+	// Where to show the files is decided in FinishImport: a file skipped in the conflict popup
+	// must not pull the browser away from where the user is.
 	if (m_conflicts.empty()) m_finishImport = true;
 }
 
@@ -356,6 +356,9 @@ void Crucible::AssetBrowser::FinishImport() {
 	}
 
 	std::string lastDone;
+	std::string lastImported;            // copied in from File Explorer, not moved inside the browser
+	std::vector<std::string> importedTo; // each folder that received a dropped file, in drop order
+	bool importedHere = false;           // a dropped file landed in the folder being shown
 	for (ImportJob const& job : jobs) {
 		std::string const name = FileNameOf(job.destination);
 		std::string error;
@@ -376,6 +379,11 @@ void Crucible::AssetBrowser::FinishImport() {
 			}
 			if (job.replace) ForgetCompiledCopy(job.destination);
 			CRU_USER_INFO("{} {}", job.replace ? "Replaced" : "Imported", job.destination);
+
+			std::string const folder = ParentOf(job.destination);
+			lastImported = job.destination;
+			if (folder == m_currentFolder) importedHere = true;
+			if (std::find(importedTo.begin(), importedTo.end(), folder) == importedTo.end()) importedTo.push_back(folder);
 		}
 		lastDone = job.destination;
 	}
@@ -383,9 +391,23 @@ void Crucible::AssetBrowser::FinishImport() {
 	if (lastDone.empty()) return;
 	Refresh();   // indexes the files, hot-reloads what changed, and queues new models for compiling
 	m_selection.clear();
+
+	// Dropped files that all went elsewhere: show where the last one went. If any landed in the
+	// folder being shown (Textures/Hero keeps a texture), the browser stays, as the user chose it.
+	if (!lastImported.empty() && !importedHere) {
+		NavigateTo(ParentOf(lastImported));
+		m_selected = lastImported;
+	}
 	// Otherwise the footer keeps naming a file that has just left this folder.
-	if (ParentOf(lastDone) == m_currentFolder) m_selected = lastDone;
+	else if (ParentOf(lastDone) == m_currentFolder) m_selected = lastDone;
 	else m_selected.clear();
+
+	// Only one folder is shown, so name the others.
+	if (importedTo.size() > 1) {
+		std::string list;
+		for (std::string const& folder : importedTo) list += (list.empty() ? "Assets/" : ", Assets/") + folder;
+		CRU_USER_INFO("Dropped files went to {}", list);
+	}
 }
 
 void Crucible::AssetBrowser::ForgetCompiledCopy(std::string const& virtualPath) {
@@ -454,8 +476,13 @@ void Crucible::AssetBrowser::AcceptAssetMove(std::string const& folder) {
 }
 
 std::vector<std::string> Crucible::AssetBrowser::FilesToMove(std::string const& dragged) const {
-	if (IsMultiSelect() && IsSelected(dragged)) return m_selection;
-	return { dragged };   // a drag starting on an unselected file moves only that file
+	if (!IsMultiSelect() || !IsSelected(dragged)) return { dragged };   // a drag starting on an unselected file moves only that file
+	// Selected folders stay where they are: only files move by dragging.
+	std::vector<std::string> files;
+	std::error_code ec;
+	for (std::string const& path : m_selection)
+		if (!fs::is_directory(AbsolutePathOf(path), ec)) files.push_back(path);
+	return files;
 }
 
 void Crucible::AssetBrowser::ApplyPendingMove() {
@@ -516,12 +543,12 @@ bool Crucible::AssetBrowser::IsSelected(std::string const& virtualPath) const {
 }
 
 void Crucible::AssetBrowser::ToggleInSelection(std::string const& virtualPath) {
-	// Starting from one selected file: it joins the selection, unless it is a folder.
+	// Starting from one selected file or folder: it joins the selection.
 	if (!IsMultiSelect()) {
 		m_selection.clear();
 		auto const current = std::find_if(m_items.begin(), m_items.end(),
 			[this](Item const& item) { return item.virtualPath == m_selected; });
-		if (current != m_items.end() && !current->isFolder) m_selection.push_back(m_selected);
+		if (current != m_items.end()) m_selection.push_back(m_selected);
 	}
 
 	m_selectionAnchor = virtualPath;
@@ -550,7 +577,7 @@ void Crucible::AssetBrowser::SelectRangeTo(std::string const& virtualPath) {
 
 	m_selection.clear();
 	for (auto it = first; it != last + 1; ++it)
-		if (!it->isFolder) m_selection.push_back(it->virtualPath);   // folders cannot be moved this way
+		m_selection.push_back(it->virtualPath);   // folders too: they can be deleted with the rest (a drag moves only the files)
 	m_selected = virtualPath;
 	if (m_selectionAnchor.empty()) m_selectionAnchor = anchor->virtualPath;
 }

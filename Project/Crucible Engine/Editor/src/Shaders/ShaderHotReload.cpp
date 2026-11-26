@@ -268,6 +268,7 @@ namespace Crucible {
 			const fs::path file = watched.shader.generatedFrom();
 			const std::string name = ToUtf8(file);
 			signature += HashBytes(name.data(), name.size(), FileStamp(file) + 1);
+			if (watched.shader.dependencies) { signature += watched.shader.dependencies() * 0x9E3779B97F4A7C15ull; }
 		}
 		return signature;
 	}
@@ -387,7 +388,8 @@ namespace Crucible {
 	// Makes a generated shader's source again if the file it comes from has changed since the last
 	// time. False when there is no source worth compiling: the file has a mistake in it.
 	bool ShaderHotReload::Regenerate(Watched& watched) {
-		const uint64_t stamp = watched.shader.generatedFrom ? FileStamp(watched.shader.generatedFrom()) : 0;
+		uint64_t stamp = watched.shader.generatedFrom ? FileStamp(watched.shader.generatedFrom()) : 0;
+		if (watched.shader.dependencies) { stamp += watched.shader.dependencies() * 0x9E3779B97F4A7C15ull; }   // a sub-graph it uses changed
 		if (watched.generated && stamp == watched.generatedStamp) {
 			return watched.generateErrors == 0 && !watched.source.empty();
 		}
@@ -398,6 +400,21 @@ namespace Crucible {
 		std::string source, paramsJson, error;
 		if (!watched.shader.generate(source, paramsJson, error)) {
 			watched.generateErrors = 1;
+
+			// The file itself is gone: the renderer drops the version it has, and forgets it here too,
+			// so the same graph put back is compiled and handed over again.
+			const fs::path from = watched.shader.generatedFrom ? watched.shader.generatedFrom() : fs::path();
+			std::error_code gone;
+			if (watched.shader.missing && watched.shader.generatedFrom && (from.empty() || !fs::exists(from, gone))) {
+				watched.shader.missing();
+				watched.runningHash = 0;
+				watched.sourceHash  = 0;
+				watched.source.clear();
+				const std::string text = label + ": its file is no longer in Assets";
+				if (m_firstError.empty()) { m_firstError = text; }
+				CRU_USER_ERROR("{} - its materials draw with the error material until it is back.", text);
+				return false;
+			}
 			const std::string text = label + ": " + (error.empty() ? "it could not be turned into a shader" : error);
 			if (m_firstError.empty()) { m_firstError = text; }
 			CRU_USER_ERROR("{} - still using the last version that worked.", text);

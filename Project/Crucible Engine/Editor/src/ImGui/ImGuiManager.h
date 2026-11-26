@@ -150,6 +150,14 @@ namespace Crucible {
 		void Undo();
 		void Redo();
 
+		// ---- Replacing the world and bringing the scene back (Play / Stop, Prefab Mode) ----
+		// Begin: after the scene's snapshot was taken (it gives every entity a guid). Remembers
+		// the selection and hidden entities by guid and puts the undo history aside.
+		// End: after the snapshot was restored (restored = true), or with the world kept (false).
+		// Brings them back, pointed at the restored entities.
+		void BeginWorldSwap(bool nested = false);   // nested: one prefab opened from another
+		void EndWorldSwap(bool restored);
+
 		// ---- Editor shortcuts ----
 		// Frees the mouse while the game has it captured in Play mode. Project Settings > Editor
 		// ("releaseCursorKey" in EngineConfig.json), Shift+F1 by default. Escape is left to the game.
@@ -198,6 +206,8 @@ namespace Crucible {
 		bool          m_uiPositionYUp = true;                                  // display only, not saved: +Y up on every start
 		std::vector<std::uint64_t> m_selectionBeforePlay;   // scene guids of the entities selected at Play; active one last
 		std::vector<std::uint64_t> m_hiddenBeforePlay;      // scene guids of the entities hidden in the Scene view at Play (SceneVisibility.h)
+		// The two lists above for each outer level while prefabs are opened from one another.
+		std::vector<std::pair<std::vector<std::uint64_t>, std::vector<std::uint64_t>>> m_outerSwaps;
 	};
 
 	namespace ImGuiManager {

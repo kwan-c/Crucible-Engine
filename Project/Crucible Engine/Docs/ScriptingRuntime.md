@@ -81,7 +81,7 @@ on incremental builds, including when a deployed file was removed. Both use the
 same SDK and framework; no machine-specific SDK path is compiled into Engine.dll.
 
 ```text
-Editor.exe or Mekanomachia.exe
+Editor.exe or Lithomachia.exe
 Engine.dll and the engine's existing dependencies
 mono-2.0-sgen.dll
 MonoPosixHelper.dll

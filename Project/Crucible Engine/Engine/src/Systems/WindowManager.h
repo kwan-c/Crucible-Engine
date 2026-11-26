@@ -97,6 +97,11 @@ namespace Crucible {
         void ToggleMaximize() { if (IsMaximized()) Restore(); else Maximize(); }
         bool IsMaximized() const { return m_maximized; }
 
+        // Minimized to the taskbar (or a 0x0 framebuffer): nothing can be seen, so Core skips
+        // drawing. Unfocused: another app has the keyboard; Core drops to backgroundFPS.
+        bool IsMinimized() const;
+        bool IsFocused() const;
+
         // The window's size when it is neither fullscreen nor maximized - what to save as
         // "windowWidth" / "windowHeight".
         int GetWindowedWidth() const { return m_windowedW; }
@@ -153,6 +158,9 @@ namespace Crucible {
         // so a "borderless" monitor window would stay in front after alt-tab). Also switches
         // between the two while fullscreen. False if the monitor has no usable mode.
         bool ApplyFullscreen(GLFWmonitor* monitor);
+        // Borderless fullscreen: topmost while focused (so the taskbar cannot stay on top of it),
+        // a normal window otherwise. Windows only; no-op in windowed / exclusive fullscreen.
+        void UpdateBorderlessTopmost();
         // Applies the pending windowed size (after Restore / the title bar's un-maximize).
         void ApplyPendingSize();
         // Re-fits the window to the locked aspect ratio (no-op while fullscreen / maximized).

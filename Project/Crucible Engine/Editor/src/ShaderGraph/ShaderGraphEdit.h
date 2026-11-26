@@ -37,12 +37,17 @@ namespace Crucible::ShaderGraph {
 	/// A graph to start from: one Output node.
 	Graph NewGraph();
 
+	/// A sub-graph to start from (ShaderGraphSubgraphs.h): one output, "out" (a vec3), and its node.
+	Graph NewSubgraph();
+
 	/// The graph's Output node's id, or 0 if it has none.
 	uint32_t OutputNodeOf(const Graph& graph);
 
 	/*********************************************************************
 	 \brief  Adds a node of `type` at (x, y).
-	 \param  parameter  For a Parameter node: the parameter it reads.
+	 \param  parameter  For a Parameter node: the parameter it reads. For a Subgraph node: its
+	                    sub-graph's GUID (ShaderGraphSubgraphs.h). For a SubgraphInput or
+	                    SubgraphOutput node (in a sub-graph only): the input or output.
 	 \return Its id; 0 if `type` is not in the node table, or is a second
 	         Output.
 	 *********************************************************************/
@@ -53,6 +58,30 @@ namespace Crucible::ShaderGraph {
 
 	/// Removes the link into this input pin. False if there was none.
 	bool DeleteLinkInto(Graph& graph, uint32_t toNode, std::string_view toPin);
+
+	/*********************************************************************
+	 \brief  Puts a Reroute node at (x, y) on the link into this input pin:
+	         the link then runs from its output into the Reroute, and from
+	         the Reroute into the pin.
+	 \param  why  If refused: the reason, as one sentence for the user.
+	 \return The Reroute's id; 0, and the graph untouched, if there is no
+	         such link or a Reroute cannot carry it (a texture).
+	 *********************************************************************/
+	uint32_t InsertReroute(Graph& graph, uint32_t toNode, std::string_view toPin, float x, float y, std::string& why);
+
+	/*********************************************************************
+	 \brief  Points a Subgraph node at another sub-graph (by GUID): to swap
+	         one for another, or to find one again whose GUID changed. Links
+	         and constants on pins the new one does not have are dropped.
+	 \return false if `node` is not a Subgraph node or the GUID is not in
+	         the sub-graph library.
+	 *********************************************************************/
+	bool SetSubgraph(Graph& graph, uint32_t node, std::string_view guid);
+
+	// ---- Comment boxes -------------------------------------------------------------------------
+
+	/// Removes these comment boxes (never the nodes in them). Returns how many went.
+	size_t DeleteComments(Graph& graph, const std::vector<uint32_t>& ids);
 
 	/*********************************************************************
 	 \brief  Links an output pin to an input pin, replacing whatever was
@@ -85,6 +114,25 @@ namespace Crucible::ShaderGraph {
 	std::vector<uint32_t> Paste(Graph& graph, const Clipboard& clipboard, float x, float y);
 
 	// ---- Parameters ----------------------------------------------------------------------------
+
+	/// The three lists of named values a graph has, each edited the same way: a shader graph's
+	/// parameters, and a sub-graph's inputs and outputs. Each entry is read (or, for an output,
+	/// given) by nodes that name it: Parameter, SubgraphInput, SubgraphOutput.
+	enum class ListKind { Parameters, Inputs, Outputs };
+
+	/// `wanted` if no entry of that list has that name, else `wanted` with a number after it.
+	std::string UniqueListName(const Graph& graph, ListKind kind, std::string_view wanted);
+	/// Adds an entry of `type` under a new name; returns its place. (An output cannot be a texture: a vec3 instead.)
+	size_t AddListEntry(Graph& graph, ListKind kind, ParameterType type);
+	/// Renames an entry, in the list and in the nodes that name it. False, and why, if the name cannot be used.
+	/// A sub-graph's input or output: graphs using it link to it by name, so their links to it are lost.
+	bool RenameListEntry(Graph& graph, ListKind kind, size_t index, std::string_view name, std::string& why);
+	/// Removes an entry and the nodes that name it (with their links).
+	void DeleteListEntry(Graph& graph, ListKind kind, size_t index);
+	/// Moves an entry one place up (-1) or down (+1). False if it cannot move that way.
+	bool MoveListEntry(Graph& graph, ListKind kind, size_t index, int by);
+
+	// The same for a graph's parameters:
 
 	/// `wanted` if no parameter has that name, else `wanted` with a number after it. Never empty.
 	std::string UniqueParameterName(const Graph& graph, std::string_view wanted);

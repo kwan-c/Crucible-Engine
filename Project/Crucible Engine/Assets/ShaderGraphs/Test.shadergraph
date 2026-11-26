@@ -1,7 +1,7 @@
 {
   "version": 1,
   "domain": "surface",
-  "nextId": 16,
+  "nextId": 17,
   "parameters": [
     { "name": "vector", "type": "vec2", "default": [0.0, 0.0], "min": 0.0, "max": 1.0 },
     { "name": "texture", "type": "texture", "colour": true, "default": "white" },
@@ -12,8 +12,8 @@
     { "id": 4, "type": "Parameter", "x": -422.14804, "y": 259.98727, "settings": { "parameter": "texture" } },
     { "id": 5, "type": "SampleTexture", "x": -195.90602, "y": 207.84528 },
     { "id": 6, "type": "Sine", "x": -288.78036, "y": 643.4776 },
-    { "id": 7, "type": "Time", "x": -490.0714, "y": 611.88873 },
-    { "id": 10, "type": "Multiply", "x": 5.8343134, "y": 634.2894 },
+    { "id": 7, "type": "Time", "x": -541.1273, "y": 647.5315 },
+    { "id": 10, "type": "Multiply", "x": 33.47744, "y": 612.5095 },
     { "id": 11, "type": "WorldNormal", "x": -332.3468, "y": 535.36487 },
     { "id": 13, "type": "Parameter", "x": 159.94568, "y": 724.0897, "settings": { "parameter": "value" } },
     { "id": 15, "type": "Multiply", "x": 382.75296, "y": 652.1055 }
@@ -28,5 +28,8 @@
     { "from": [13, "out"], "to": [15, "b"] },
     { "from": [10, "out"], "to": [15, "a"] },
     { "from": [15, "out"], "to": [1, "vertexOffset"] }
+  ],
+  "comments": [
+    { "id": 16, "x": -442.14804, "y": 161.84528, "w": 456.242, "h": 218.0, "text": "eggsdee", "colour": [0.3, 0.4, 0.6] }
   ]
 }

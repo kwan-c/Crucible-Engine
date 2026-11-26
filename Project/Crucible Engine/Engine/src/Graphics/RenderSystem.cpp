@@ -56,6 +56,16 @@ namespace Crucible {
             return c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
         }
 
+        // ErrorShader.spv: what a material whose shader cannot be drawn is drawn with
+        // (MaterialShaders). Empty if it is missing - not fatal, MaterialShaders says so.
+        std::vector<uint32_t> LoadErrorShader() {
+            try {
+                return LoadShaderWords("ErrorShader.spv");
+            } catch (const std::exception&) {
+                return {};
+            }
+        }
+
         // A mesh shader's parameter list, <name>.params.json: beside its compiled code
         // (Resources/Shaders, where the build copies it) or, when the shader has not been built
         // yet and the sources are there (the Editor), beside its source. False if it has none -
@@ -105,7 +115,7 @@ namespace Crucible {
                 default:                     m_outlinePass.BuildMaskPipelines(m_context, shader, true, solid, cutout); break;
                 }
             },
-            "DefaultShader", LoadShaderWords("DefaultShader.spv"));
+            "DefaultShader", LoadShaderWords("DefaultShader.spv"), LoadErrorShader());
         m_outlinePass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), m_swapchain.GetSurfaceFormat().format);
         m_aoPass.Create(m_context, *m_layouts.GetDescriptorSetLayout(), *m_layouts.GetMaterialDescriptorSetLayout(), *m_layouts.GetTonemapDescriptorSetLayout());
         m_bloomPass.Create(m_context, *m_layouts.GetSingleTextureSetLayout(), RenderLayouts::kSceneColorFormat);
@@ -191,7 +201,16 @@ namespace Crucible {
         // CULL, SORT & DRAW
         //   Per view (PrepareView -> RenderScene::BuildViewBatches, on the worker threads): each camera
         //   gets its own visible list, so the Scene and Game views never cull with each other's camera.
-        DrawFrame();
+        //   Not while suspended (window minimized): the frame time stats restart when drawing resumes.
+        // The player's view over the scene's environment. m_environment is reset after every
+        // frame, so this never compounds.
+        m_environment.exposure *= std::max(m_postSettings.brightness, 0.0f);
+        if (!m_postSettings.vignette)            { m_environment.vignetteIntensity = 0.0f; }
+        if (!m_postSettings.filmGrain)           { m_environment.filmGrain = 0.0f; }
+        if (!m_postSettings.chromaticAberration) { m_environment.chromaticAberration = 0.0f; }
+
+        if (m_drawSuspended) { m_lastFrameStart = 0.0; }
+        else                 { DrawFrame(); }
 
         // Everything submitted for this frame is consumed; lights and environment are per-frame
         // state exactly like the render queue (see SubmitLight/SetEnvironment).
@@ -251,6 +270,17 @@ namespace Crucible {
         // Mesh shaders: take in the pipelines built since last frame, and ask for whatever the MSAA
         // level in use still needs (a shader a material has just named, a reloaded one).
         m_materialShaders.Update(RenderLayouts::MsaaIndex(m_msaaSamples), m_deferred);
+
+        // The first time the shaders the start-up scene asked for are all built, keep the pipeline
+        // cache on disk now rather than only at shutdown: the next start (even after a crash) then
+        // builds them in a fraction of the time. The background thread is idle at this point.
+        const uint32_t pendingBuilds = m_materialShaders.PendingBuilds();
+        if (!m_savedCacheAfterBuilds && m_pendingShaderBuilds > 0 && pendingBuilds == 0) {
+            m_savedCacheAfterBuilds = true;
+            m_context.SavePipelineCache();
+            CRU_INFO("[Renderer] Every mesh shader is built; pipeline cache saved.");
+        }
+        m_pendingShaderBuilds = pendingBuilds;
 
         // Lights first: every view's uniforms read the light count and shadow light this picks.
         m_lights.BuildFrameLights(frameIndex);
@@ -891,16 +921,16 @@ namespace Crucible {
         }
 
         // Its compiled code, if the build has made it. Without it the shader is registered all
-        // the same: its materials draw with the built-in shader, and under the Editor the shader
-        // hot reload compiles Assets/Shaders/<name>.slang and hands the result to
-        // ReloadMaterialShader.
+        // the same: its materials draw with the error shader, and under the Editor the shader
+        // hot reload compiles Assets/Shaders/<name>.slang (or generates and compiles the shader
+        // graph) and hands the result to ReloadMaterialShader.
         std::vector<uint32_t> spirv;
         try {
             spirv = LoadShaderWords(name + ".spv");
         } catch (const std::exception& e) {
             if (!quiet) {
-                CRU_USER_WARN("[Renderer] Shader '{}' has no compiled code yet - its materials draw with the default shader "
-                              "until it does. ({})", name, e.what());
+                CRU_USER_WARN("[Renderer] Shader '{}' has no compiled code - its materials draw with the error shader "
+                              "until it has some. ({})", name, e.what());
             }
         }
         const MaterialShaderHandle shader = m_materialShaders.Add(name, std::move(spirv));
@@ -931,6 +961,9 @@ namespace Crucible {
     }   // Renderer::SetMaterialShaderParams()
 
     const std::string& Renderer::GetMaterialShaderName(MaterialShaderHandle shader) const { return m_materialShaders.Name(shader); }
+    void Renderer::MarkMaterialShaderMissing(MaterialShaderHandle shader) { m_materialShaders.SetMissing(shader); }
+    bool Renderer::IsMaterialShaderBroken(MaterialShaderHandle shader) const { return m_materialShaders.IsBroken(shader); }
+    uint32_t Renderer::GetPendingMaterialShaderBuilds() const { return m_materialShaders.PendingBuilds(); }
     uint32_t Renderer::GetMaterialShaderCount() const { return m_materialShaders.Count(); }
 
     bool Renderer::ReloadMaterialShader(MaterialShaderHandle shader, std::span<const uint32_t> spirv, std::string& error) {

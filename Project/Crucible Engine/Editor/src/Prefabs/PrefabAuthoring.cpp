@@ -11,6 +11,7 @@
 * All Rights Reserved
 */
 #include "Prefabs/PrefabAuthoring.h"
+#include "Prefabs/PrefabStage.h"
 
 #include "ImGui/ImGuiManager.h"
 #include "ImGui/EditorWidgets.h"
@@ -36,6 +37,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -120,6 +122,12 @@ namespace Crucible::PrefabAuthoring {
 
 	bool CanCreate() {
 		Core* core = EditorManager::GetInstance().GetCore();
+		// In Prefab Mode the world holds a prefab, not the scene these operations work on.
+		return core != nullptr && !core->IsInPlaySession() && !core->HasPendingPlayRequest() && !PrefabStage::IsActive();
+	}
+
+	bool CanApply() {
+		Core* core = EditorManager::GetInstance().GetCore();
 		return core != nullptr && !core->IsInPlaySession() && !core->HasPendingPlayRequest();
 	}
 
@@ -154,6 +162,9 @@ namespace Crucible::PrefabAuthoring {
 			roots.push_back(e);
 		}
 		if (roots.empty()) { return written; }
+
+		// Instances inside the new prefab stay linked: their override lists go into its file.
+		RefreshStoredOverrides(world);
 
 		AssetManager& assets = EditorManager::GetInstance().GetCore()->GetAssets();
 		fs::path dir{ assets.GetAssetRoot() };
@@ -279,10 +290,26 @@ namespace Crucible::PrefabAuthoring {
 		}
 		Prefab const& prefab = *loaded;
 
+		bool const inStage = PrefabStage::IsActive();
+		if (inStage && PrefabStage::WouldCreateLoop(prefab.AssetGuid())) {
+			CRU_USER_WARN("Cannot place '{}' here: it is, or already contains, a prefab open in Prefab Mode", prefab.Name());
+			return kNullEntity;
+		}
+
 		CommitInspectorEdit();
 		auto inspector = EditorManager::GetInstance().GetPanel<Inspector>(ImguiPanels::INSPECTOR);
 
 		if (!(parent == kNullEntity) && !world.IsAlive(parent)) { parent = kNullEntity; }
+
+		// In Prefab Mode only the root's tree is the prefab, so a drop always lands inside it.
+		if (inStage && parent == kNullEntity) {
+			parent = PrefabStage::Root();
+			if (position && world.IsAlive(parent)) {
+				if (WorldTransform const* wt = world.Read<WorldTransform>(parent); wt != nullptr && wt->valid) {
+					position = Math::vec3(glm::vec3(glm::inverse(wt->matrix) * glm::vec4(glm::vec3(*position), 1.0f)));
+				}
+			}
+		}
 
 		// Parts that reference each other point at the new copy's parts, not the original's.
 		Entity const root = prefab.Instantiate(world, parent,
@@ -900,7 +927,7 @@ namespace Crucible::PrefabAuthoring {
 			ImGui::PushID(property.c_str());
 			if (ImGui::BeginPopupContextItem("##PrefabPropertyMenu")) {
 				std::string const what = Describe(*g_draw.world, item);
-				if (ImGui::MenuItem(("Apply " + property + " to Prefab").c_str(), nullptr, false, CanCreate())) {
+				if (ImGui::MenuItem(("Apply " + property + " to Prefab").c_str(), nullptr, false, CanApply())) {
 					g_pending = PendingAction{ true, { item }, "Apply " + what };
 				}
 				if (ImGui::MenuItem(("Revert " + property + " to Prefab").c_str())) {
@@ -933,7 +960,7 @@ namespace Crucible::PrefabAuthoring {
 		std::string const name(component);
 		// One item for the whole component: property "" applies / reverts every value of it.
 		Override const whole{ added ? Override::Kind::AddedComponent : Override::Kind::Property, entity, name, {} };
-		if (ImGui::MenuItem(added ? "Apply to Prefab (add it there)" : "Apply Component to Prefab", nullptr, false, CanCreate())) {
+		if (ImGui::MenuItem(added ? "Apply to Prefab (add it there)" : "Apply Component to Prefab", nullptr, false, CanApply())) {
 			g_pending = PendingAction{ true, { whole }, "Apply " + name };
 		}
 		if (ImGui::MenuItem(added ? "Remove (added to this instance)" : "Revert Component to Prefab")) {
@@ -978,17 +1005,26 @@ namespace Crucible::PrefabAuthoring {
 				: m_prefab(prefab), m_file(std::move(file)), m_before(std::move(before)), m_after(std::move(after))
 				, m_select(select), m_label(std::move(label)) {}
 
-			void Undo(UndoHistory&) override { Write(m_before); }
-			void Redo(UndoHistory&) override { Write(m_after); }
+			void Undo(UndoHistory&) override { Write(m_before, m_after); }
+			void Redo(UndoHistory&) override { Write(m_after, m_before); }
 			EntityKey          Target() const override { return m_select; }
 			std::string const& Label()  const override { return m_label; }
 
 		private:
-			void Write(std::string const& text) const {
-				if (!WriteText(m_file, text)) {
+			// Only over the version this step left: the file may have been saved since (Prefab
+			// Mode, a git pull), and undoing an old Apply must not throw that work away.
+			void Write(std::string const& text, std::string const& expected) const {
+				std::string current;
+				if (ReadText(m_file, current) && current != expected) {
+					CRU_USER_WARN("'{}' has changed since this step, so the file was left as it is", m_file.filename().string());
+				}
+				else if (!WriteText(m_file, text)) {
 					CRU_USER_ERROR("Could not write '{}' - the prefab file and the scene may now disagree", m_file.string());
 				}
 				InvalidateCachedPrefab(m_prefab);
+				// Prefabs holding this one follow (in Prefab Mode: when it is left).
+				if (PrefabStage::IsActive()) { PrefabStage::NoteChanged(m_prefab); }
+				else                         { UpdatePrefabsContaining(m_prefab, {}); }
 			}
 
 			std::uint64_t m_prefab;
@@ -1104,6 +1140,7 @@ namespace Crucible::PrefabAuthoring {
 			int const parentIndex = old.IndexOf(parentLink->fileId);
 			if (parentIndex < 0) { return false; }
 
+			std::unordered_map<std::uint64_t, std::uint64_t> nestedAsset;   // entity -> inner prefab it stays linked to
 			auto visit = [&](auto&& self, Entity e, int parent) -> void {
 				std::size_t const index = doc.PushObject("entities");
 				std::string const base = "entities/" + std::to_string(index);
@@ -1111,7 +1148,17 @@ namespace Crucible::PrefabAuthoring {
 				doc.Set(base + "/id", AssetRegistry::GuidToString(xresource::instance_guid{ id }));
 				doc.Set(base + "/parent", parent);
 				EntityIO::WriteComponents(world, e, doc, base + "/components");
-				doc.Remove(base + "/components/" + std::string(ComponentTraits<PrefabInstance>::name));   // never a link in a file
+
+				// A whole instance added here stays nested (the same rule as Prefab::WriteTree).
+				bool keepLink = false;
+				if (PrefabInstance const* link = world.Read<PrefabInstance>(e)) {
+					Entity const up = world.GetParent(e);
+					auto const parentAsset = nestedAsset.find((static_cast<std::uint64_t>(up.index) << 32) | up.generation);
+					keepLink = link->isRoot || (parentAsset != nestedAsset.end() && parentAsset->second == link->prefabAsset);
+					if (keepLink) { nestedAsset[(static_cast<std::uint64_t>(e.index) << 32) | e.generation] = link->prefabAsset; }
+				}
+				if (keepLink) { doc.Set("version", kPrefabVersion); }
+				else          { doc.Remove(base + "/components/" + std::string(ComponentTraits<PrefabInstance>::name)); }
 				added.emplace_back(e, id);
 				int const thisIndex = static_cast<int>(index);
 				world.ForEachChild(e, [&](Entity child) { self(self, child, thisIndex); });
@@ -1397,12 +1444,31 @@ namespace Crucible::PrefabAuthoring {
 
 	bool ApplyToPrefab(World& world, Entity root, std::vector<Override> const& items, std::string const& label) {
 		if (items.empty() || !IsInstanceRoot(world, root)) { return false; }
-		if (!CanCreate()) {
+		if (!CanApply()) {
 			CRU_USER_WARN("Stop Play Mode to apply changes to a prefab");
 			return false;
 		}
 		Core* core = EditorManager::GetInstance().GetCore();
 		std::uint64_t const prefab = world.Read<PrefabInstance>(root)->prefabAsset;
+
+		// An added child may hold prefab instances, which stay nested: never one that would
+		// end up inside itself. Their override lists go into the file, so they must be current.
+		bool addsEntities = false;
+		for (Override const& item : items) {
+			if (item.kind != Override::Kind::AddedEntity || !world.IsAlive(item.entity)) { continue; }
+			addsEntities = true;
+			std::vector<Entity> subtree;
+			world.CollectSubtree(item.entity, subtree);
+			for (Entity const e : subtree) {
+				PrefabInstance const* link = world.Read<PrefabInstance>(e);
+				if (link != nullptr && (link->prefabAsset == prefab || PrefabContains(link->prefabAsset, prefab))) {
+					CRU_USER_WARN("Cannot apply '{}': it holds a prefab that contains this one, which would put a prefab inside itself", NameOf(world, item.entity));
+					return false;
+				}
+			}
+		}
+		if (addsEntities) { RefreshStoredOverrides(world); }
+
 		std::string const path = PrefabPathOf(prefab);
 		Prefab const* old = LoadedPrefab(prefab);
 		if (path.empty() || old == nullptr) {
@@ -1442,7 +1508,8 @@ namespace Crucible::PrefabAuthoring {
 			std::string const idPath = "entities/" + std::to_string(i) + "/id";
 			if (!doc.Has(idPath)) { doc.Set(idPath, AssetRegistry::GuidToString(xresource::instance_guid{ old->IdAt(i) })); }
 		}
-		doc.Set("version", kPrefabVersion);
+		// Stays 3 unless the file holds a nested prefab (AppendSubtree raises it when it adds one).
+		doc.Set("version", old->Version() >= kPrefabVersion ? kPrefabVersion : kPrefabFlatVersion);
 
 		std::vector<std::pair<Entity, std::uint64_t>> added;
 		std::size_t applied = 0;
@@ -1527,7 +1594,25 @@ namespace Crucible::PrefabAuthoring {
 
 		CRU_USER_INFO("{}: {} change{} written to {}; {} other instance{} in this scene updated", label,
 		              applied, applied == 1 ? "" : "s", path, updated, updated == 1 ? "" : "s");
+
+		// Prefabs holding this one follow, then any of their instances here. In Prefab Mode the
+		// open levels must not change under the user, so that waits until they are left.
+		if (PrefabStage::IsActive()) {
+			PrefabStage::NoteChanged(prefab);
+		}
+		else if (!UpdatePrefabsContaining(prefab, {}).empty()) {
+			UpdateChangedInstances(world);
+		}
 		return true;
+	}
+
+	void RememberPrefabVersion(std::uint64_t prefabAsset) {
+		LoadedPrefab(prefabAsset);   // caches it in g_versions, by content hash
+	}
+
+	void PrefabFileReplaced(std::uint64_t prefabAsset) {
+		InvalidateCachedPrefab(prefabAsset);
+		LoadedPrefab(prefabAsset);
 	}
 
 	namespace {
@@ -1539,7 +1624,8 @@ namespace Crucible::PrefabAuthoring {
 
 	std::size_t UpdateChangedInstances(World& world) {
 		// Never while playing: the world holds runtime state, and Stop throws it away anyway.
-		if (!CanCreate()) { return 0; }
+		// In Prefab Mode this updates the prefabs nested in the open one.
+		if (!CanApply()) { return 0; }
 
 		std::string const label = "Update Prefab Instances";
 		std::vector<std::unique_ptr<EditorCommand>> parts;
@@ -1613,6 +1699,162 @@ namespace Crucible::PrefabAuthoring {
 		}
 	}
 
+	namespace {
+		// The prefabs nested directly in `prefab` (from its entries' links).
+		std::vector<std::uint64_t> DirectlyNested(Prefab const& prefab) {
+			std::vector<std::uint64_t> out;
+			if (prefab.Version() < kPrefabVersion) { return out; }   // only format 4 holds links
+			std::string const key = "/" + std::string(ComponentTraits<PrefabInstance>::name) + "/prefabAsset";
+			for (std::size_t i = 0; i < prefab.EntityCount(); ++i) {
+				std::uint64_t const inner = prefab.Document().Get<std::uint64_t>(prefab.ComponentsPath(i) + key, 0);
+				if (inner != 0 && std::find(out.begin(), out.end(), inner) == out.end()) { out.push_back(inner); }
+			}
+			return out;
+		}
+
+		// Every prefab holding `target`, at any depth. Safe on a loop in hand-edited files.
+		std::vector<std::uint64_t> ContainersOf(std::uint64_t target) {
+			std::vector<std::uint64_t> found;
+			Core* core = EditorManager::GetInstance().GetCore();
+			if (core == nullptr || target == 0) { return found; }
+
+			std::unordered_map<std::uint64_t, std::vector<std::uint64_t>> holders;   // inner -> prefabs directly holding it
+			for (AssetEntry const* entry : core->GetAssets().GetByType(AssetType::Prefab)) {
+				if (entry == nullptr) { continue; }
+				std::uint64_t const guid = entry->guid.m_Value;
+				if (Prefab const* prefab = LoadedPrefab(guid)) {
+					for (std::uint64_t const inner : DirectlyNested(*prefab)) { holders[inner].push_back(guid); }
+				}
+			}
+
+			std::unordered_set<std::uint64_t> seen{ target };
+			std::vector<std::uint64_t> pending{ target };
+			while (!pending.empty()) {
+				std::uint64_t const current = pending.back();
+				pending.pop_back();
+				auto const direct = holders.find(current);
+				if (direct == holders.end()) { continue; }
+				for (std::uint64_t const holder : direct->second) {
+					if (seen.insert(holder).second) {
+						found.push_back(holder);
+						pending.push_back(holder);
+					}
+				}
+			}
+			return found;
+		}
+
+		// Updates the prefabs nested in one prefab FILE, in a scratch world, and replaces the file
+		// (through a checked temporary) if anything changed. True if it was rewritten.
+		bool UpdateNestedInFile(std::uint64_t asset) {
+			Core* core = EditorManager::GetInstance().GetCore();
+			std::string const virtualPath = PrefabPathOf(asset);
+			if (core == nullptr || virtualPath.empty()) { return false; }
+			fs::path const file = core->GetAssets().Resolve(virtualPath);
+
+			std::string text;
+			Prefab prefab;
+			if (!ReadText(file, text) || !prefab.LoadFromString(text) || prefab.Version() < kPrefabVersion) { return false; }
+			prefab.KeepNestedLinks(true);
+
+			World scratch;
+			Scene scene;
+			fs::path temp = file;
+			temp += ".saving";
+			std::error_code ec;
+			bool written = false;
+			std::string after;
+			{
+				NotRecorded const quiet;
+				SceneIdsFrom const ids(scene);
+				std::vector<Entity> entries;
+				Entity root = kNullEntity;
+				try {
+					root = prefab.Instantiate(scratch, kNullEntity, [&scene](Entity e) { return scene.EnsureId(e).m_Value; }, &entries);
+				}
+				catch (std::exception const& error) {
+					CRU_USER_WARN("Could not update the prefabs nested in {}: {}", virtualPath, error.what());
+					return false;
+				}
+				if (!scratch.IsAlive(root)) { return false; }
+
+				std::vector<std::unique_ptr<EditorCommand>> unused;
+				std::size_t fromSavedList = 0;
+				if (UpdateInstancesIn(scratch, 0, unused, "Update", fromSavedList) == 0) { g_draw.frame = -1; return false; }
+				RefreshStoredOverrides(scratch);
+
+				std::unordered_map<std::uint64_t, std::uint64_t> entryOf;
+				for (std::size_t i = 0; i < entries.size(); ++i) { entryOf[Pack(entries[i])] = prefab.IdAt(i); }
+				written = Prefab::SaveKeepingIds(scratch, root, temp,
+					[&entryOf](Entity e) { auto const it = entryOf.find(Pack(e)); return it != entryOf.end() ? it->second : std::uint64_t{ 0 }; },
+					prefab.Name(), nullptr, [&scene](Entity e) { return scene.IdOf(e).m_Value; });
+			}
+			g_draw.frame = -1;   // the scratch world's entities share handle numbers with the open one's
+
+			Prefab check;
+			if (!written || !check.Load(temp) || !ReadText(temp, after)) {
+				fs::remove(temp, ec);
+				CRU_USER_ERROR("Could not update {}: the file was left unchanged", virtualPath);
+				return false;
+			}
+			if (after == text) { fs::remove(temp, ec); return false; }
+
+			RememberPrefabVersion(asset);   // what its own instances compare against when they follow
+			fs::rename(temp, file, ec);
+			if (ec) {
+				std::error_code ignored;
+				fs::remove(temp, ignored);
+				CRU_USER_ERROR("Could not update {}: {}. The file was left unchanged", virtualPath, ec.message());
+				return false;
+			}
+			PrefabFileReplaced(asset);
+			CRU_USER_INFO("Updated the prefabs nested in {}", virtualPath);
+			return true;
+		}
+	}
+
+	bool PrefabContains(std::uint64_t outer, std::uint64_t target) {
+		std::vector<std::uint64_t> const holders = ContainersOf(target);
+		return std::find(holders.begin(), holders.end(), outer) != holders.end();
+	}
+
+	std::vector<std::uint64_t> UpdatePrefabsContaining(std::uint64_t changed, std::vector<std::uint64_t> const& skip) {
+		std::vector<std::uint64_t> rewritten;
+		std::vector<std::uint64_t> const holders = ContainersOf(changed);
+
+		// Repeated passes until nothing changes, so a prefab holding two others sees both updated.
+		// Each prefab needs at most one pass per level; the limit also ends a loop in hand-edited files.
+		for (std::size_t pass = 0; pass <= holders.size(); ++pass) {
+			bool any = false;
+			for (std::uint64_t const holder : holders) {
+				if (std::find(skip.begin(), skip.end(), holder) != skip.end()) { continue; }
+				if (UpdateNestedInFile(holder)) {
+					any = true;
+					if (std::find(rewritten.begin(), rewritten.end(), holder) == rewritten.end()) { rewritten.push_back(holder); }
+				}
+			}
+			if (!any) { break; }
+		}
+		return rewritten;
+	}
+
+	std::vector<std::uint64_t> BringNestedUpToDate(std::uint64_t asset, std::vector<std::uint64_t> const& skip) {
+		std::vector<std::uint64_t> rewritten;
+		std::unordered_set<std::uint64_t> visited;   // also ends a loop in hand-edited files
+		auto const skipped = [&skip](std::uint64_t a) { return std::find(skip.begin(), skip.end(), a) != skip.end(); };
+
+		auto visit = [&](auto&& self, std::uint64_t current) -> void {
+			if (skipped(current) || !visited.insert(current).second) { return; }
+			Prefab const* prefab = LoadedPrefab(current);
+			if (prefab == nullptr) { return; }
+			std::vector<std::uint64_t> const inners = DirectlyNested(*prefab);   // copied: files are rewritten below
+			for (std::uint64_t const inner : inners) { self(self, inner); }
+			if (UpdateNestedInFile(current)) { rewritten.push_back(current); }
+		};
+		visit(visit, asset);
+		return rewritten;
+	}
+
 	std::vector<std::string> ScenesUsing(std::uint64_t prefabAsset) {
 		std::vector<std::string> scenes;
 		Core* core = EditorManager::GetInstance().GetCore();
@@ -1620,11 +1862,14 @@ namespace Crucible::PrefabAuthoring {
 		SceneManager& open = core->GetScenes();
 		std::string const openKey = open.HasPath() ? PathKey(open.CurrentPath()) : std::string{};
 		// A scene file stores the guid as a number ("prefabAsset": 1234...), which is all this looks for.
-		std::string const needle = std::to_string(prefabAsset);
+		std::vector<std::string> needles{ std::to_string(prefabAsset) };
+		for (std::uint64_t const holder : ContainersOf(prefabAsset)) { needles.push_back(std::to_string(holder)); }
 		for (AssetEntry const* scene : core->GetAssets().GetByType(AssetType::Scene)) {
 			if (scene == nullptr || PathKey(scene->absolutePath) == openKey) { continue; }
 			std::string text;
-			if (ReadText(scene->absolutePath, text) && text.find(needle) != std::string::npos) { scenes.push_back(scene->virtualPath); }
+			if (!ReadText(scene->absolutePath, text)) { continue; }
+			bool const uses = std::any_of(needles.begin(), needles.end(), [&text](std::string const& needle) { return text.find(needle) != std::string::npos; });
+			if (uses) { scenes.push_back(scene->virtualPath); }
 		}
 		std::sort(scenes.begin(), scenes.end());
 		return scenes;
@@ -1657,6 +1902,9 @@ namespace Crucible::PrefabAuthoring {
 				std::vector<std::unique_ptr<EditorCommand>> unused;
 				std::size_t fromSavedList = 0;
 				updated = UpdateInstancesIn(scratch, prefabAsset, unused, "Update", fromSavedList);
+				for (std::uint64_t const holder : ContainersOf(prefabAsset)) {   // instances of prefabs holding it
+					updated += UpdateInstancesIn(scratch, holder, unused, "Update", fromSavedList);
+				}
 				if (updated > 0) { RefreshStoredOverrides(scratch); }   // what the open scene's save hook would do
 			}
 			g_draw.frame = -1;   // the scratch world's entities share handle numbers with the open scene's
@@ -1747,11 +1995,15 @@ namespace Crucible::PrefabAuthoring {
 			// A part: Select, and its own count. The full list, Apply and Unpack are on the
 			// instance's root, as in Unity.
 			std::size_t const count = DrawnOverrides(world, entity).size();
-			ButtonRow row(1, kMinBarButtonWidth);
+			ButtonRow row(2, kMinBarButtonWidth);
 			ImGui::BeginDisabled(path.empty());
 			if (row.Button("Select")) { RevealInBrowser(path); }
 			ImGui::EndDisabled();
 			ImGui::SetItemTooltip("Show the .cprefab in the Asset Browser");
+			ImGui::BeginDisabled(path.empty() || !CanApply());
+			if (row.Button("Open")) { PrefabStage::RequestOpen(path); }
+			ImGui::EndDisabled();
+			ImGui::SetItemTooltip("Edit the prefab in Prefab Mode");
 			if (count > 0) { ImGui::TextDisabled("%zu override%s here (listed on the instance's root)", count, count == 1 ? "" : "s"); }
 			return;
 		}
@@ -1759,12 +2011,17 @@ namespace Crucible::PrefabAuthoring {
 		// Line 2+: the root's buttons, sharing the panel's width (wrapping onto a second row
 		// when it is narrow): Select | Overrides (n) | Unpack. Apply lives in the Overrides menu.
 		std::vector<Override> const all = InstanceOverrides(world, entity);
-		ButtonRow row(3, kMinBarButtonWidth);
+		ButtonRow row(4, kMinBarButtonWidth);
 
 		ImGui::BeginDisabled(path.empty());
 		if (row.Button("Select")) { RevealInBrowser(path); }
 		ImGui::EndDisabled();
 		ImGui::SetItemTooltip("Show the .cprefab in the Asset Browser");
+
+		ImGui::BeginDisabled(path.empty() || !CanApply());
+		if (row.Button("Open")) { PrefabStage::RequestOpen(path); }
+		ImGui::EndDisabled();
+		ImGui::SetItemTooltip("Edit the prefab in Prefab Mode");
 
 		// Always clickable: with no overrides the menu still offers Apply to All Scenes (push the
 		// prefab as it is now out to every scene).
@@ -1791,7 +2048,7 @@ namespace Crucible::PrefabAuthoring {
 				ImGui::AlignTextToFramePadding();
 				ImGui::Text("%s%s", who.c_str(), what.c_str());
 				ImGui::SameLine();
-				ImGui::BeginDisabled(!CanCreate());
+				ImGui::BeginDisabled(!CanApply());
 				if (ImGui::SmallButton("Apply")) {
 					ApplyToPrefab(world, entity, { all[i] }, "Apply " + what);
 					reverted = true;
@@ -1818,7 +2075,7 @@ namespace Crucible::PrefabAuthoring {
 				ImGui::EndDisabled();
 				ImGui::SameLine();
 
-				ImGui::BeginDisabled(all.empty() || !CanCreate());
+				ImGui::BeginDisabled(all.empty() || !CanApply());
 				if (ImGui::Button("Apply All")) {
 					ApplyToPrefab(world, entity, all, "Apply All (" + PrefabNameOf(path) + ")");
 					ImGui::CloseCurrentPopup();

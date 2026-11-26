@@ -59,6 +59,18 @@ namespace Crucible {
 		// keeping the direction it is looking in. Bound to F here and in the Hierarchy, and to
 		// double-clicking a Hierarchy row. Does nothing with no selection.
 		void      FrameSelected();
+		// The same glide, around any set of entities.
+		void      FrameEntities(std::vector<Entity> const& entities);
+
+		// Where this view's camera is and which way it looks (Prefab Mode puts it back on Exit).
+		struct CameraView {
+			glm::vec3 position{ 0.0f };
+			float     yaw = 0.0f;
+			float     pitch = 0.0f;
+		};
+		// False if the view has no camera yet (its panel has never had a size).
+		bool      GetCameraView(CameraView& out);
+		void      SetCameraView(CameraView const& view);   // immediate: cancels any glide
 
 	private:
 		void DrawToolbar();

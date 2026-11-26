@@ -2,10 +2,12 @@
 * \file:         Animator.cs
 * \author:       Tan Chun Kwang Xavier
 * \par:          Email: chunkwangxavier.tan@digipen.edu
+* \author:       Hugo Low Ren Hao (v1.1: Speed, for hit stop)
+* \par:          Email: low.h@digipen.edu
 * \date          30 October 2026
-* \version       1.0
-* \brief         C# access to an entity's Animator controller parameters.
-*                Part of Crucible.ScriptCore.dll.
+* \version       1.1
+* \brief         C# access to an entity's Animator controller parameters,
+*                and its playback Speed. Part of Crucible.ScriptCore.dll.
 *
 * \details
 *    Use it from a script as `Animator.SetBool("Running", true);`.
@@ -32,6 +34,9 @@ namespace Crucible
         {
             entity = owner;
         }
+
+        /// <summary>The entity this component is on (Unity's .gameObject), e.g. target.Entity.Name.</summary>
+        public Entity Entity { get { return new Entity(entity.Index, entity.Generation); } }
         /// <summary>Sets a Bool parameter. Returns false if it could not be set.</summary>
         public bool SetBool(string name, bool value)
         {
@@ -57,6 +62,16 @@ namespace Crucible
         {
             return Set(name, 4, 0, 0);
         }
+        /// <summary>
+        /// Playback speed (Unity's animator.speed): 1 normal, 0 holds the current pose (hit stop),
+        /// 2 double speed. Reads 1 if the entity has no animated model; setting one does nothing.
+        /// Unlike the parameters, it takes effect straight away (not queued).
+        /// </summary>
+        public float Speed
+        {
+            get { float v; return GetSpeedInternal(unchecked((int)entity.Index), unchecked((int)entity.Generation), out v) != 0 ? v : 1f; }
+            set { SetSpeedInternal(unchecked((int)entity.Index), unchecked((int)entity.Generation), ref value); }
+        }
         // Packs the call for C++. `operation` matches ScriptAnimatorOperation:
         // 0 Bool, 1 Float, 2 Integer, 3 Trigger, 4 ResetTrigger.
         private bool Set(string name, int operation, int integer, float number)
@@ -69,5 +84,10 @@ namespace Crucible
         [MethodImpl(MethodImplOptions.InternalCall)]
         private static extern int SetParameterInternal(int index, int generation, string name, int operation,
                                                        int integer, float number);
+        // Implemented in C++: ManagedAnimatorGetSpeed / ManagedAnimatorSetSpeed, same file.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int GetSpeedInternal(int index, int generation, out float value);
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        private static extern int SetSpeedInternal(int index, int generation, ref float value);
     }
 }

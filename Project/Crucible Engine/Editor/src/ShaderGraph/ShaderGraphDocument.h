@@ -37,8 +37,8 @@ namespace Crucible::ShaderGraph {
 	public:
 		Document();   ///< a new graph (one Output node), with nothing to undo and nothing to save
 
-		/// Starts over with a new graph. Counts as unsaved.
-		void New();
+		/// Starts over with a new graph - or, with `subgraph`, a new sub-graph (ShaderGraphSubgraphs.h). Counts as unsaved.
+		void New(bool subgraph = false);
 
 		/// Replaces the graph with a file's contents. On failure (false, and why) the old graph stays.
 		bool Load(std::string_view json, std::string& error);

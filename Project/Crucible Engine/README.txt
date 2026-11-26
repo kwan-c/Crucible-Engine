@@ -15,8 +15,8 @@ IMGD | 2402709 | Vu Phan Hung | phanhung.vu@digipen.edu
 
 How to Run Engine:
 
-1. Double Click "run.bat" file to start CMake
-2. Within generated "/Build" Folder, will exist the sln solution file labelled "Crucible.sln"
+1. Double Click "run.bat" file to start CMake (or "run.bat 2022" / "run.bat 2026" from a terminal to pick a Visual Studio)
+2. Within generated "/Build" Folder, will exist the solution file: "Crucible.sln" (Visual Studio 2022) or "Crucible.slnx" (Visual Studio 2026)
 3. Run the solution file and build within Visual Studio to launch engine
 
 

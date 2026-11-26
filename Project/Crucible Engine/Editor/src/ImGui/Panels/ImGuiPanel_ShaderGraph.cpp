@@ -16,6 +16,7 @@
 #include "ShaderGraph/ShaderGraphAsset.h"
 #include "ShaderGraph/ShaderGraphEdit.h"
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 #include "Shaders/ShaderHotReload.h"
 
 #include "AssetPipe/AssetRegistry.h"
@@ -30,6 +31,8 @@
 
 #include <algorithm>
 #include <array>
+#include <cstdarg>
+#include <cstdio>
 #include <cmath>
 #include <string_view>
 
@@ -42,6 +45,29 @@ namespace Crucible {
 		constexpr ImVec4 kErrorText{ 1.0f, 0.55f, 0.43f, 1.0f };     // the State Graph window's
 		constexpr ImVec4 kFineText{ 0.6f, 0.85f, 0.6f, 1.0f };
 		constexpr ImVec4 kWarningText{ 0.95f, 0.75f, 0.4f, 1.0f };
+
+		// Text in a colour, wrapped at the edge of the panel it is in. (ImGui::TextColored and
+		// TextDisabled never wrap: a long message ran off the side of a narrow panel.)
+		void WrappedColored(const ImVec4& colour, const char* format, ...) IM_FMTARGS(2);
+		void WrappedColored(const ImVec4& colour, const char* format, ...) {
+			va_list args;
+			va_start(args, format);
+			ImGui::PushStyleColor(ImGuiCol_Text, colour);
+			ImGui::TextWrappedV(format, args);
+			ImGui::PopStyleColor();
+			va_end(args);
+		}
+
+		// The same in the dimmed colour of hints.
+		void WrappedDisabled(const char* format, ...) IM_FMTARGS(1);
+		void WrappedDisabled(const char* format, ...) {
+			va_list args;
+			va_start(args, format);
+			ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+			ImGui::TextWrappedV(format, args);
+			ImGui::PopStyleColor();
+			va_end(args);
+		}
 
 		// The preview's own shader: never on disk, always the graph that is open.
 		constexpr const char* kPreviewShader = "ShaderGraphPreview";
@@ -147,9 +173,17 @@ namespace Crucible {
 			}
 
 			DrawToolbar(readOnly);
-			if (!m_message.empty()) { ImGui::TextColored(m_messageIsError ? kErrorText : kFineText, "%s", m_message.c_str()); }
+			if (!m_message.empty()) { WrappedColored(m_messageIsError ? kErrorText : kFineText, "%s", m_message.c_str()); }
 
 			if (m_hasDocument) {
+				// A sub-graph changed on disk (or one came or went): what the generator said about this
+				// graph is stale, and so are the preview and the live shader.
+				if (const uint64_t version = SubgraphsVersion(); version != m_subgraphsSeen) {
+					m_subgraphsSeen = version;
+					m_document.Touch();
+					m_liveDue = true;
+					m_liveAt = ImGui::GetTime();
+				}
 				const float width = ImGui::GetContentRegionAvail().x;
 				const float left  = 240.0f;
 				const float right = 300.0f;
@@ -162,7 +196,7 @@ namespace Crucible {
 				ImGui::SameLine();
 				ImGui::BeginChild("Canvas", { (std::max)(100.0f, width - left - right - gap * 2.0f), 0.0f }, ImGuiChildFlags_Borders,
 				                  ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-				ImGui::TextDisabled("Right-click to add a node. Drag from pin to pin to link. Drag on empty canvas to select; middle-drag pans, the wheel zooms.");
+				WrappedDisabled("Right-click to add a node. Drag from pin to pin to link. Drag on empty canvas to select; middle-drag pans, the wheel zooms.");
 				{
 					const std::vector<Problem> problems = ShownProblems();
 					const ShaderGraphView::Result result = m_view.Draw(m_document.GetGraph(), m_document.Check(), problems, readOnly);
@@ -202,13 +236,21 @@ namespace Crucible {
 
 	void ShaderGraphPanel::DrawToolbar(bool readOnly) {
 		ImGui::BeginDisabled(readOnly);
-		if (ImGui::Button("New")) { Guard(Pending::New); }
+		if (ImGui::Button("New")) { ImGui::OpenPopup("NewWhat"); }
+		if (ImGui::BeginPopup("NewWhat")) {
+			if (ImGui::MenuItem("Shader graph")) { Guard(Pending::New); }
+			ImGui::SetItemTooltip("A shader: materials pick it as their Shader.");
+			if (ImGui::MenuItem("Sub-graph")) { Guard(Pending::NewSubgraph); }
+			ImGui::SetItemTooltip("A group of nodes with inputs and outputs, used in shader graphs as one node.");
+			ImGui::EndPopup();
+		}
 		ImGui::SameLine();
 		if (ImGui::Button("Open")) { m_openPicker = true; }
 		ImGui::SameLine();
 		ImGui::BeginDisabled(!m_hasDocument);
 		if (ImGui::Button("Save")) { Save(); }
-		ImGui::SetItemTooltip("Writes the file. Materials using this graph update a moment later (Ctrl+S).");
+		ImGui::SetItemTooltip("%s", IsSubgraph() ? "Writes the file. Graphs using this sub-graph, and their materials, update a moment later."
+		                                          : "Writes the file. Materials using this graph update a moment later (Ctrl+S).");
 		ImGui::SameLine();
 		if (ImGui::Button("Save As")) { m_openSaveAs = true; }
 		ImGui::SameLine();
@@ -240,7 +282,7 @@ namespace Crucible {
 					ImGui::TextColored(kWarningText, "- compiling...");
 				} else if (hotReload->HasErrors(name)) {
 					ImGui::SameLine();
-					ImGui::TextColored(kErrorText, "- the saved shader has errors; its last good version is drawing");
+					WrappedColored(kErrorText, "- the saved shader has errors; its last good version is drawing");
 				}
 			}
 		}
@@ -248,35 +290,54 @@ namespace Crucible {
 	}
 
 	bool ShaderGraphPanel::DrawParameters(bool readOnly) {
-		Graph& graph = m_document.GetGraph();
-		bool changed = false;
-		if (m_parameter >= static_cast<int>(graph.parameters.size())) { m_parameter = -1; }
+		// A shader graph has parameters; a sub-graph has inputs and outputs instead.
+		if (!IsSubgraph()) { return DrawList(ListKind::Parameters, readOnly); }
+		bool changed = DrawList(ListKind::Inputs, readOnly);
+		ImGui::Spacing();
+		ImGui::Spacing();
+		changed = DrawList(ListKind::Outputs, readOnly) || changed;
+		return changed;
+	}
 
-		ImGui::TextUnformatted("Parameters");
+	bool ShaderGraphPanel::DrawList(ListKind kind, bool readOnly) {
+		Graph& graph = m_document.GetGraph();
+		std::vector<Parameter>& list = kind == ListKind::Inputs ? graph.inputs : kind == ListKind::Outputs ? graph.outputs : graph.parameters;
+		const char* nodeType = kind == ListKind::Inputs ? kSubgraphInputNode : kind == ListKind::Outputs ? kSubgraphOutputNode : kParameterNode;
+		const char* heading = kind == ListKind::Inputs ? "Inputs" : kind == ListKind::Outputs ? "Outputs" : "Parameters";
+		bool changed = false;
+		const bool mine = m_list == kind;   // the selection is in this list
+		if (mine && m_parameter >= static_cast<int>(list.size())) { m_parameter = -1; }
+
+		ImGui::PushID(heading);
+		ImGui::TextUnformatted(heading);
 		ImGui::SameLine();
 		ImGui::BeginDisabled(readOnly);
 		if (ImGui::SmallButton("+ Add")) { ImGui::OpenPopup("AddParameter"); }
 		if (ImGui::BeginPopup("AddParameter")) {
 			for (const TypeChoice& choice : kParameterTypes) {
+				if (kind == ListKind::Outputs && choice.type == ParameterType::Texture) { continue; }   // a sub-graph gives back no textures
 				if (ImGui::MenuItem(choice.label)) {
-					m_parameter = static_cast<int>(AddParameter(graph, choice.type));
+					m_parameter = static_cast<int>(AddListEntry(graph, kind, choice.type));
+					m_list = kind;
 					changed = true;
 				}
 			}
 			ImGui::EndPopup();
 		}
-		ImGui::TextDisabled("What each material sets for itself.");
+		WrappedDisabled("%s", kind == ListKind::Inputs  ? "What the node using this sub-graph is given: one pin each." :
+		                      kind == ListKind::Outputs ? "What it gives back: one pin each." : "What each material sets for itself.");
 		ImGui::Separator();
 
-		for (int i = 0; i < static_cast<int>(graph.parameters.size()); ++i) {
-			const Parameter& parameter = graph.parameters[static_cast<size_t>(i)];
+		for (int i = 0; i < static_cast<int>(list.size()); ++i) {
+			const Parameter& parameter = list[static_cast<size_t>(i)];
 			ImGui::PushID(i);
-			if (ImGui::Selectable(parameter.name.c_str(), i == m_parameter, ImGuiSelectableFlags_AllowDoubleClick)) {
+			if (ImGui::Selectable(parameter.name.c_str(), mine && i == m_parameter, ImGuiSelectableFlags_AllowDoubleClick)) {
 				m_parameter = i;
+				m_list = kind;
 				if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
-					// A node that reads it, in the middle of the canvas.
+					// A node that reads it (or gives it), in the middle of the canvas.
 					const Math::vec2 centre = m_view.ViewCentre();
-					if (const uint32_t node = AddNode(graph, kParameterNode, centre.x - 95.0f, centre.y - 25.0f, parameter.name)) {
+					if (const uint32_t node = AddNode(graph, nodeType, centre.x - 95.0f, centre.y - 25.0f, parameter.name)) {
 						m_view.Select(node);
 						changed = true;
 					}
@@ -286,11 +347,11 @@ namespace Crucible {
 			ImGui::TextDisabled("%s", TypeLabel(parameter.type));
 			ImGui::PopID();
 		}
-		if (graph.parameters.empty()) { ImGui::TextDisabled("None yet."); }
+		if (list.empty()) { ImGui::TextDisabled("None yet."); }
 
-		if (m_parameter >= 0) {
+		if (mine && m_parameter >= 0) {
 			const size_t index = static_cast<size_t>(m_parameter);
-			Parameter& parameter = graph.parameters[index];
+			Parameter& parameter = list[index];
 			ImGui::Separator();
 			ImGui::PushID("selected");
 			ImGui::PushItemWidth(-70.0f);
@@ -302,10 +363,12 @@ namespace Crucible {
 			}
 			ImGui::InputText("Name", &m_nameBuffer);
 			m_nameEditing = ImGui::IsItemActive();
-			ImGui::SetItemTooltip("Materials keep their values under this name:\nafter a rename they use the default until it is set again.");
+			ImGui::SetItemTooltip("%s", kind == ListKind::Parameters
+				? "Materials keep their values under this name:\nafter a rename they use the default until it is set again."
+				: "Graphs using this sub-graph link to its pins by name:\nafter a rename, their links to this one are lost.");
 			if (ImGui::IsItemDeactivatedAfterEdit()) {
 				std::string why;
-				if (RenameParameter(graph, index, m_nameBuffer, why)) {
+				if (RenameListEntry(graph, kind, index, m_nameBuffer, why)) {
 					changed = true;
 				} else {
 					SetMessage(why, true);
@@ -315,6 +378,7 @@ namespace Crucible {
 
 			if (ImGui::BeginCombo("Type", TypeLabel(parameter.type))) {
 				for (const TypeChoice& choice : kParameterTypes) {
+					if (kind == ListKind::Outputs && choice.type == ParameterType::Texture) { continue; }
 					if (ImGui::Selectable(choice.label, choice.type == parameter.type) && choice.type != parameter.type) {
 						parameter.type = choice.type;
 						changed = true;
@@ -325,6 +389,10 @@ namespace Crucible {
 
 			switch (parameter.type) {
 			case ParameterType::Texture: {
+				if (kind == ListKind::Inputs) {
+					// The node using the sub-graph links a texture in; these only set what its preview shows.
+					WrappedDisabled("Must be linked where the sub-graph is used. Below: what this window's preview shows.");
+				}
 				if (ImGui::Checkbox("Colour data", &parameter.textureIsColour)) { changed = true; }
 				ImGui::SetItemTooltip("On for pictures of colour (albedo, emissive).\nOff for data: normal maps, masks, roughness.");
 				constexpr std::array<const char*, 3> kDefaults{ "white", "black", "normal" };
@@ -341,11 +409,17 @@ namespace Crucible {
 				break;
 			}
 			case ParameterType::Colour:
+				if (kind == ListKind::Outputs) { break; }
 				if (EditColour("Default", parameter.defaultValue.data())) { changed = true; }
 				break;
 			default: {
+				if (kind == ListKind::Outputs) { break; }   // an output is only a name and a type
 				const uint32_t count = parameter.type == ParameterType::Vec2 ? 2u : parameter.type == ParameterType::Vec3 ? 3u : parameter.type == ParameterType::Vec4 ? 4u : 1u;
 				if (EditNumbers("Default", parameter.defaultValue.data(), count)) { changed = true; }
+				if (kind == ListKind::Inputs) {
+					ImGui::SetItemTooltip("What the input is with nothing linked into it and no constant typed on the node.");
+					break;
+				}
 				if (ImGui::DragFloat("Min", &parameter.minValue, 0.01f)) { changed = true; }
 				if (ImGui::DragFloat("Max", &parameter.maxValue, 0.01f)) { changed = true; }
 				ImGui::SetItemTooltip("The range of the material's slider in the Inspector.");
@@ -356,19 +430,19 @@ namespace Crucible {
 
 			if (ImGui::SmallButton("Add node")) {
 				const Math::vec2 centre = m_view.ViewCentre();
-				if (const uint32_t node = AddNode(graph, kParameterNode, centre.x - 95.0f, centre.y - 25.0f, parameter.name)) {
+				if (const uint32_t node = AddNode(graph, nodeType, centre.x - 95.0f, centre.y - 25.0f, parameter.name)) {
 					m_view.Select(node);
 					changed = true;
 				}
 			}
 			ImGui::SameLine();
-			if (ImGui::SmallButton("Up") && MoveParameter(graph, index, -1)) { --m_parameter; changed = true; }
-			ImGui::SetItemTooltip("The order here is the order in a material's Inspector.");
+			if (ImGui::SmallButton("Up") && MoveListEntry(graph, kind, index, -1)) { --m_parameter; changed = true; }
+			ImGui::SetItemTooltip("%s", kind == ListKind::Parameters ? "The order here is the order in a material's Inspector." : "The order here is the order of the pins on the node.");
 			ImGui::SameLine();
-			if (ImGui::SmallButton("Down") && MoveParameter(graph, index, +1)) { ++m_parameter; changed = true; }
+			if (ImGui::SmallButton("Down") && MoveListEntry(graph, kind, index, +1)) { ++m_parameter; changed = true; }
 			ImGui::SameLine();
 			if (ImGui::SmallButton("Delete")) {
-				DeleteParameter(graph, index);   // and the nodes that read it
+				DeleteListEntry(graph, kind, index);   // and the nodes that name it
 				m_view.KeepSelectionIn(graph);
 				m_parameter = -1;
 				changed = true;
@@ -376,6 +450,7 @@ namespace Crucible {
 			ImGui::PopID();
 		}
 		ImGui::EndDisabled();
+		ImGui::PopID();
 		return changed;
 	}
 
@@ -392,7 +467,7 @@ namespace Crucible {
 			// Nothing (or several things) selected: the graph as a whole.
 			if (m_view.SelectedNodes().size() > 1) {
 				ImGui::Text("%zu nodes selected.", m_view.SelectedNodes().size());
-				ImGui::TextDisabled("Drag one to move them all. Delete, Ctrl+C and Ctrl+D work on all of them.");
+				WrappedDisabled("Drag one to move them all. Delete, Ctrl+C and Ctrl+D work on all of them.");
 				ImGui::Separator();
 			}
 			size_t stopping = 0;
@@ -402,9 +477,9 @@ namespace Crucible {
 				ImGui::TextWrapped("Save to update the materials that use this graph.");
 			} else {
 				if (stopping != 0) {
-					ImGui::TextColored(kErrorText, "%zu problem%s to fix:", stopping, stopping == 1 ? "" : "s");
+					WrappedColored(kErrorText, "%zu problem%s to fix:", stopping, stopping == 1 ? "" : "s");
 				} else {
-					ImGui::TextColored(kWarningText, "Nothing stops the shader, but:");
+					WrappedColored(kWarningText, "Nothing stops the shader, but:");
 				}
 				for (size_t i = 0; i < problems.size(); ++i) {
 					const Problem& problem = problems[i];
@@ -417,15 +492,23 @@ namespace Crucible {
 			}
 			if (m_view.SelectedNodes().empty()) {
 				ImGui::Separator();
-				ImGui::TextDisabled("Select a node to set its values.");
+				WrappedDisabled("Select a node to set its values.");
 			}
 			return false;
 		}
 
-		const NodeType* type = FindNodeType(node->type);
+		const NodeType* type = TypeOfNode(graph, *node);
 		ImGui::TextUnformatted(Title(node->type).c_str());
 		if (!type) {
-			ImGui::TextColored(kErrorText, "This Editor has no such node.");
+			if (node->type == kSubgraphNode) {
+				// A sub-graph it cannot find, or cannot use: say why, and how to point it at one.
+				for (const Problem& problem : problems) {
+					if (problem.node == node->id) { WrappedColored(kErrorText, "%s", problem.message.c_str()); }
+				}
+				WrappedDisabled("Right-click the node and choose Use sub-graph to point it at one.");
+			} else {
+				WrappedColored(kErrorText, "This Editor has no such node.");
+			}
 			return false;
 		}
 		ImGui::SameLine();
@@ -451,7 +534,7 @@ namespace Crucible {
 						changed = true;
 					}
 				}
-				if (graph.parameters.empty()) { ImGui::TextDisabled("Add one in the list on the left."); }
+				if (graph.parameters.empty()) { WrappedDisabled("Add one in the list on the left."); }
 				ImGui::EndCombo();
 			}
 		}
@@ -558,6 +641,24 @@ namespace Crucible {
 			if (ImGui::GetIO().MouseWheel != 0.0f) { m_orbitZoom = std::clamp(m_orbitZoom * std::pow(0.9f, ImGui::GetIO().MouseWheel), 0.4f, 4.0f); }
 		}
 
+		// A sub-graph: which of its outputs the preview shows (as the albedo).
+		if (IsSubgraph()) {
+			const std::vector<Parameter>& outputs = m_document.GetGraph().outputs;
+			if (m_previewOutput >= static_cast<int>(outputs.size())) { m_previewOutput = 0; }
+			ImGui::SetNextItemWidth(110.0f);
+			if (ImGui::BeginCombo("##output", outputs.empty() ? "(no outputs)" : outputs[static_cast<size_t>(m_previewOutput)].name.c_str())) {
+				for (int i = 0; i < static_cast<int>(outputs.size()); ++i) {
+					if (ImGui::Selectable(outputs[static_cast<size_t>(i)].name.c_str(), i == m_previewOutput) && i != m_previewOutput) {
+						m_previewOutput = i;
+						m_liveDue = true;
+						m_liveAt = ImGui::GetTime();
+					}
+				}
+				ImGui::EndCombo();
+			}
+			ImGui::SetItemTooltip("The output the preview shows, as the surface's colour. Every input is at its default.");
+			ImGui::SameLine();
+		}
 		ImGui::SetNextItemWidth(110.0f);
 		ImGui::Combo("##mesh", &m_previewMesh, kPreviewMeshes.data(), static_cast<int>(kPreviewMeshes.size()));
 		ImGui::SetItemTooltip("What the preview shows the graph on. Drag the picture to turn it, the wheel zooms.");
@@ -566,13 +667,13 @@ namespace Crucible {
 		const ShaderHotReload* hotReload = ShaderHotReload::Active();
 		ImGui::SameLine();
 		if (!hotReload) {
-			ImGui::TextColored(kWarningText, "no shader compiler");
+			WrappedColored(kWarningText, "no shader compiler");
 			ImGui::SetItemTooltip("slangc was not found on this machine (the Vulkan SDK), so nothing can be previewed.");
 		} else if (!m_document.Check().ok) {
-			ImGui::TextColored(kErrorText, "the last graph that worked");
+			WrappedColored(kErrorText, "the last graph that worked");
 			ImGui::SetItemTooltip("The graph has a problem that stops its shader. The preview keeps the last version that worked.");
 		} else if (hotReload->HasErrors(kPreviewShader)) {
-			ImGui::TextColored(kErrorText, "compiler errors");
+			WrappedColored(kErrorText, "compiler errors");
 		} else if (m_liveDue || hotReload->IsCompiling(kPreviewShader)) {
 			ImGui::TextColored(kWarningText, "updating...");
 		} else {
@@ -606,7 +707,10 @@ namespace Crucible {
 		}
 
 		// The preview: constants as hidden parameters, so dragging one needs no compile.
-		const Generated preview = Generate(m_document.GetGraph(), Options{ true });
+		Options live;
+		live.liveConstants = true;
+		live.previewOutput = static_cast<size_t>((std::max)(m_previewOutput, 0));   // a sub-graph: the output it shows
+		const Generated preview = Generate(m_document.GetGraph(), live);
 		if (!preview.ok || !hotReload->SetLive(kPreviewShader, preview.source, preview.paramsJson)) { return; }   // not watched yet: next frame
 		m_previewLines = preview.lineNodes;
 
@@ -647,7 +751,7 @@ namespace Crucible {
 			std::string pin;
 			if (ParseLiveConstantName(list.params[i].name, nodeId, pin)) {
 				const Node* node = graph.FindNode(nodeId);
-				const NodeType* type = node ? FindNodeType(node->type) : nullptr;
+				const NodeType* type = node ? TypeOfNode(graph, *node) : nullptr;
 				if (const int index = type ? type->FindInput(pin) : -1; index >= 0) {
 					const auto constant = node->inputs.find(pin);
 					const std::array<float, 4>& values = constant != node->inputs.end() ? constant->second : type->inputs[static_cast<size_t>(index)].defaultValue;
@@ -675,7 +779,17 @@ namespace Crucible {
 					ImGui::CloseCurrentPopup();
 				}
 			}
-			if (graphs.empty()) { ImGui::TextDisabled("No .shadergraph files in Assets yet."); }
+			if (graphs.empty()) { WrappedDisabled("No .shadergraph files in Assets yet."); }
+			// And the sub-graphs.
+			bool firstSubgraph = true;
+			for (const AssetEntry& entry : m_core.GetAssets().GetAll()) {
+				if (entry.compiled || entry.extension != kSubgraphExtension || entry.guid.m_Value == 0) { continue; }
+				if (firstSubgraph) { ImGui::SeparatorText("Sub-graphs"); firstSubgraph = false; }
+				if (ImGui::Selectable(entry.virtualPath.c_str())) {
+					Guard(Pending::Open, entry.guid.m_Value);
+					ImGui::CloseCurrentPopup();
+				}
+			}
 			ImGui::EndPopup();
 		}
 
@@ -700,7 +814,7 @@ namespace Crucible {
 			if (ImGui::Button("Discard")) {
 				const Pending action = m_pending;
 				m_pending = Pending::None;
-				if (action == Pending::New) { NewGraph(); }
+				if (action == Pending::New || action == Pending::NewSubgraph) { NewGraph(action == Pending::NewSubgraph); }
 				else if (action == Pending::Open) { Load(m_pendingAsset); }
 				ImGui::CloseCurrentPopup();
 			}
@@ -717,7 +831,7 @@ namespace Crucible {
 			m_openGuard    = true;
 			return;
 		}
-		if (action == Pending::New) { NewGraph(); }
+		if (action == Pending::New || action == Pending::NewSubgraph) { NewGraph(action == Pending::NewSubgraph); }
 		else if (action == Pending::Open) { Load(asset); }
 	}
 
@@ -736,22 +850,29 @@ namespace Crucible {
 		m_nameEditing = false;
 	}
 
-	void ShaderGraphPanel::NewGraph() {
+	void ShaderGraphPanel::NewGraph(bool subgraph) {
 		StopLive();   // the graph that was open: its materials go back to its file
-		m_document.New();
+		m_document.New(subgraph);
 		m_asset       = 0;
 		m_hasDocument = true;
 		m_parameter   = -1;
+		m_previewOutput = 0;
 		m_view.ClearSelection();
 		AfterRebuild();
 		m_view.FrameAll(m_document.GetGraph());
-		SetMessage("New shader graph. Right-click to add nodes and link them into the Output; Save As gives it a file.", false);
+		if (subgraph) {
+			std::snprintf(m_savePath, sizeof(m_savePath), "ShaderGraphs/Subgraphs/New Sub-graph%s", kSubgraphExtension);
+			SetMessage("New sub-graph. Add its inputs and outputs on the left; Save As gives it a file, and graphs can then use it (Sub-graph in their add menu).", false);
+		} else {
+			std::snprintf(m_savePath, sizeof(m_savePath), "ShaderGraphs/New Shader Graph%s", kShaderGraphExtension);
+			SetMessage("New shader graph. Right-click to add nodes and link them into the Output; Save As gives it a file.", false);
+		}
 	}
 
 	bool ShaderGraphPanel::Load(std::uint64_t asset) {
 		const AssetEntry* entry = m_core.GetAssets().FindByGuid(xresource::instance_guid{ asset });
 		std::string text;
-		if (!entry || entry->extension != kShaderGraphExtension || !m_core.GetAssets().ReadText(entry->virtualPath, text)) {
+		if (!entry || (entry->extension != kShaderGraphExtension && entry->extension != kSubgraphExtension) || !m_core.GetAssets().ReadText(entry->virtualPath, text)) {
 			SetMessage("Could not read that shader graph", true);
 			return false;
 		}
@@ -763,6 +884,7 @@ namespace Crucible {
 		m_asset       = asset;
 		m_hasDocument = true;
 		m_parameter   = -1;
+		m_previewOutput = 0;
 		m_view.ClearSelection();
 		AfterRebuild();
 		m_view.FrameAll(m_document.GetGraph());
@@ -786,7 +908,10 @@ namespace Crucible {
 		m_document.MarkSaved();
 		StopLive();   // the file now says what was live: from here the shader is the file's, and is kept beside the built ones
 		const Generated& check = m_document.Check();
-		if (check.ok) {
+		if (IsSubgraph()) {
+			SyncSubgraphs(m_core.GetAssets(), true);   // graphs using it are made again now, not in half a second
+			SetMessage("Saved " + path + (check.ok ? " - graphs using it update in a moment." : ", but it has problems: graphs using it will say so."), !check.ok);
+		} else if (check.ok) {
 			SetMessage("Saved " + path + " - materials using it update in a moment.", false);
 		} else {
 			SetMessage("Saved " + path + ", but it has problems: its materials keep the last good shader until they are fixed.", true);
@@ -797,7 +922,7 @@ namespace Crucible {
 
 	bool ShaderGraphPanel::SaveAs(std::string path) {
 		if (!m_hasDocument) { return false; }
-		const std::string_view extension = kShaderGraphExtension;
+		const std::string_view extension = IsSubgraph() ? kSubgraphExtension : kShaderGraphExtension;
 		if (path.size() < extension.size() || path.compare(path.size() - extension.size(), extension.size(), extension) != 0) { path += extension; }
 
 		m_document.Commit();
@@ -810,12 +935,13 @@ namespace Crucible {
 		StopLive();   // if this was a saved graph being saved under a new name: the old one goes back to its file
 		m_asset = id;
 		m_document.MarkSaved();
-		SetMessage("Saved " + path + ". Pick it as a material's Shader in the Inspector to use it.", false);
+		SetMessage("Saved " + path + (IsSubgraph() ? ". Graphs can use it now: Sub-graph in their add menu." : ". Pick it as a material's Shader in the Inspector to use it."), false);
 		if (auto browser = EditorManager::GetInstance().GetPanel<AssetBrowser>(ImguiPanels::ASSETBROWSER)) { browser->Refresh(); }
 		return true;
 	}
 
 	std::string ShaderGraphPanel::ShaderName() const {
+		if (IsSubgraph()) { return {}; }   // not a shader of its own: no material uses it, nothing in the scene follows it
 		return m_asset != 0 ? AssetRegistry::GuidToString(xresource::instance_guid{ m_asset }) : std::string();
 	}
 

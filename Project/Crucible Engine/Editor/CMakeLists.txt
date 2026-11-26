@@ -18,6 +18,8 @@ add_executable(Editor
     ${EDITOR_HEADERS}
     "${CMAKE_SOURCE_DIR}/Tools/Cook/Cook.cpp"
     "${CMAKE_SOURCE_DIR}/Tools/Cook/Cook.h"
+    "${CMAKE_SOURCE_DIR}/Tools/Cook/CookShaderGraphs.cpp"
+    "${CMAKE_SOURCE_DIR}/Tools/Cook/CookShaderGraphs.h"
     # The Texture Importer compiles one image the same way the build does (stb + Compressonator: editor only).
     "${CMAKE_SOURCE_DIR}/Tools/Common/TextureBuild.cpp"
     "${CMAKE_SOURCE_DIR}/Tools/Common/TextureBuild.h"

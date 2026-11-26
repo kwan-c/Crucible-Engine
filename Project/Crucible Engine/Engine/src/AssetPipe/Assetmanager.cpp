@@ -121,6 +121,7 @@ namespace Crucible {
         case AssetType::StateGraph:    return "StateGraph";
         case AssetType::BehaviorGraph: return "BehaviorGraph";
         case AssetType::ShaderGraph:   return "ShaderGraph";
+        case AssetType::EditorTheme:   return "EditorTheme";
         case AssetType::Unknown:  return "Unknown";
         case AssetType::Count:    break;
         }
@@ -204,8 +205,11 @@ namespace Crucible {
         if (e == ".behaviorgraph")
             return AssetType::BehaviorGraph;
 
-        if (e == ".shadergraph")
+        if (e == ".shadergraph" || e == ".shadersubgraph")   // a sub-graph opens in the same window (Editor/src/ShaderGraph)
             return AssetType::ShaderGraph;
+
+        if (e == ".crutones")
+            return AssetType::EditorTheme;
 
         if (e == ".ttf" || e == ".otf" || e == ".cfont")   // .cfont = compiled by the editor (Text/FontData.h)
             return AssetType::Font;

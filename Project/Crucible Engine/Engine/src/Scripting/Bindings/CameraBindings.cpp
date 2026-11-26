@@ -90,7 +90,8 @@ namespace Crucible::ScriptBindings
 				return false; // no game screen (Game view closed)
 			view.width = static_cast<float>(size.x);
 			view.height = static_cast<float>(size.y);
-			view.fovY = glm::radians(std::clamp(camera->fovY, 1.0f, 179.0f));
+			// What the renderer draws with: the player's FOV offset included (RenderExtractSystem).
+			view.fovY = glm::radians(std::clamp(camera->fovY + renderer->GetPostSettings().fovOffset, 1.0f, 179.0f));
 			view.nearZ = std::max(camera->nearZ, 0.001f);
 			view.farZ = std::max(camera->farZ, view.nearZ + 0.01f);
 			return true;
@@ -417,6 +418,11 @@ namespace Crucible::ScriptBindings
 	void SetRenderer(const Renderer* newRenderer)
 	{
 		renderer = newRenderer;
+	}
+
+	const Renderer* CurrentRenderer()
+	{
+		return renderer;
 	}
 
 	void RegisterCameraBindings()

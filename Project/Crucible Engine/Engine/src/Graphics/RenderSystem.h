@@ -356,8 +356,10 @@ namespace Crucible {
             A mesh shader is Assets/Shaders/<name>.slang - a surface function
             followed by SurfaceTemplate.slang - compiled to
             Resources/Shaders/<name>.spv by the build. Its pipelines are
-            built in the background: until they are ready, and whenever the
-            .spv is missing, its materials draw with the built-in shader.
+            built in the background: until they are ready its materials draw
+            with the built-in shader. When the .spv is missing (a shader graph
+            not compiled or cooked, a deleted one) or cannot be built, they
+            draw with the error shader (ErrorShader.slang, magenta squares).
          \param[in] name  The shader's name, without folder or extension
                           ("MagicOrb"). Empty = the built-in shader.
          \return Its handle (the same one every time), or an Invalid handle -
@@ -399,6 +401,27 @@ namespace Crucible {
          \note  Call on the frame thread, outside DrawFrame().
          *********************************************************************/
         ENGINE_API bool ReloadMaterialShader(MaterialShaderHandle shader, std::span<const uint32_t> spirv, std::string& error);
+
+        /*********************************************************************
+         \brief  Says a mesh shader's source is gone (the Editor, when a shader
+                 graph's file is deleted): its materials draw with the error
+                 shader until ReloadMaterialShader gives it code again.
+         \note   Frame thread only. Nothing happens for the built-in shader.
+         *********************************************************************/
+        ENGINE_API void MarkMaterialShaderMissing(MaterialShaderHandle shader);
+
+        /// Whether a mesh shader's materials draw with the error shader: it has no code, or its
+        /// code could not be built. False while it only waits for its first build.
+        ENGINE_API bool IsMaterialShaderBroken(MaterialShaderHandle shader) const;
+
+        /*********************************************************************
+         \brief  How many mesh shaders are still having their pipelines built
+                 in the background (their materials draw with the built-in
+                 shader meanwhile). A loading screen can wait for 0 so the
+                 first frames of a level show every material as it is meant
+                 to look.
+         *********************************************************************/
+        ENGINE_API uint32_t GetPendingMaterialShaderBuilds() const;
 
         /*********************************************************************
          \brief  A mesh shader's own parameters and textures: what a
@@ -642,6 +665,16 @@ namespace Crucible {
         ENGINE_API void           SetViewportActive(ViewportHandle handle, bool active);
 
         /*********************************************************************
+         \brief  Skips DrawFrame() while set: Update() still consumes the
+                 frame's submissions (so nothing piles up) but records and
+                 presents nothing. Core sets it while the window is
+                 minimized - nothing can be seen, and a 0x0 swapchain cannot
+                 be drawn into anyway.
+         *********************************************************************/
+        void                      SetDrawSuspended(bool suspended) { m_drawSuspended = suspended; }
+        bool                      IsDrawSuspended() const { return m_drawSuspended; }
+
+        /*********************************************************************
          \brief  The colour a viewport shows where no scene is drawn: always
                  for a UI viewport, and for a Game viewport while there is
                  no main camera. Default opaque black.
@@ -697,6 +730,19 @@ namespace Crucible {
          \brief  Bloom settings (see PostSettings). Changes apply next frame.
          *********************************************************************/
         PostSettings&             GetPostSettings() { return m_postSettings; }
+        const PostSettings&       GetPostSettings() const { return m_postSettings; }
+
+        /*********************************************************************
+         rief  VSync on (no tearing, frame rate follows the monitor) or
+                 off. A change rebuilds the swapchain after this frame, the
+                 same way a window resize does.
+         *********************************************************************/
+        void                      SetVSync(bool on) {
+            if (on == m_swapchain.GetVSync()) { return; }
+            m_swapchain.SetVSync(on);
+            m_window.m_framebufferResized = true;
+        }
+        bool                      GetVSync() const { return m_swapchain.GetVSync(); }
         /// Where the last frames' time went (CPU stages and GPU passes), smoothed.
         const RenderFrameStats&   GetFrameStats() const { return m_frameStats; }
         /// The built-in load test: set `count` above 0 to add that many extra objects.
@@ -1068,6 +1114,8 @@ namespace Crucible {
         // The mesh shaders and their scene pipelines. AFTER m_scenePass: it is destroyed first, which
         // stops its background thread while the pass whose layout that thread builds with is still there.
         MaterialShaders             m_materialShaders;
+        uint32_t                    m_pendingShaderBuilds = 0;      // m_materialShaders.PendingBuilds() last frame
+        bool                        m_savedCacheAfterBuilds = false; // the pipeline cache was saved once the first builds were done
         DebugLinePass               m_debugLinePass;
         UIPass                      m_uiPass{ m_context, m_resources };   // also holds m_resources (declared below; used once frames start)
         VolumetricFogPass           m_fogPass{ m_context };   // froxel fog (compute); its pool is BEFORE every view's FogVolumeTargets
@@ -1119,6 +1167,7 @@ namespace Crucible {
         RenderFrameStats                            m_frameStats;
         GpuProfiler                                 m_profiler;
         double                                      m_lastFrameStart = 0.0;  // seconds, steady clock
+        bool                                        m_drawSuspended = false; // SetDrawSuspended
 
         // Load test (see StressSettings).
         StressSettings                              m_stressSettings;

@@ -20,6 +20,7 @@
 #include "Graphics/RenderExtractSystem.h"
 #include "Animation/AnimatedModelSystem.h"
 #include "Animation/SocketAttachmentSystem.h"
+#include "ECS/ECSRagdollSystem.h"
 #include "Graphics/DebugDrawSystem.h"
 #include "Graphics/ParticleSystem.h"
 #include "Text/WorldTextSystem.h"
@@ -49,6 +50,43 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include <thread>
+
+#ifdef _WIN32
+// winmm's timer-resolution calls, declared here so Core.cpp does not pull in <windows.h> and its
+// macros. Same signatures as <timeapi.h> (MMRESULT is a UINT, WINAPI is __stdcall).
+extern "C" __declspec(dllimport) unsigned int __stdcall timeBeginPeriod(unsigned int uPeriod);
+extern "C" __declspec(dllimport) unsigned int __stdcall timeEndPeriod(unsigned int uPeriod);
+#pragma comment(lib, "winmm.lib")
+#endif
+
+namespace {
+
+    // Windows sleeps in steps of the system timer (often 15.6 ms), far too coarse to pace a
+    // 60 fps frame. This asks for 1 ms steps for as long as the main loop runs.
+    struct FrameTimerResolution {
+#ifdef _WIN32
+        FrameTimerResolution()  { timeBeginPeriod(1); }
+        ~FrameTimerResolution() { timeEndPeriod(1); }
+#else
+        FrameTimerResolution()  = default;
+#endif
+        FrameTimerResolution(const FrameTimerResolution&) = delete;
+        FrameTimerResolution& operator=(const FrameTimerResolution&) = delete;
+    };
+
+    // Returns at `deadline` (glfwGetTime seconds). Sleeps for most of the wait and spins only the
+    // last ~1.5 ms, since a sleep can wake a little late but a spin cannot.
+    void WaitUntil(double deadline) {
+        for (;;) {
+            const double remaining = deadline - glfwGetTime();
+            if (remaining <= 0.0) { return; }
+            if (remaining > 0.002) { std::this_thread::sleep_for(std::chrono::duration<double>(remaining - 0.0015)); }
+            else                   { std::this_thread::yield(); }
+        }
+    }
+
+}   // anonymous namespace
 
 
 
@@ -72,6 +110,11 @@ namespace Crucible {
 
         // Play mode drives the always-on systems too, so it is built once every member exists.
         m_playMode = std::make_unique<PlayMode>(*m_world, *m_scenes, m_events, m_systems);
+
+        // The player's graphics quality. Only the game starts with it: in the editor the Scene
+        // View panel owns the renderer's settings, and a script's changes are undone at Stop.
+        if (m_config.app == AppKind::Game) { ApplyGraphicsSettings(); }
+        m_playMode->OnBeforeStop([this] { RestoreEditorRenderSettings(); });
 
         // Layers draw inside the renderer's open render pass via OnRender().
         m_renderer->SetOverlayCallback([this] {
@@ -109,6 +152,59 @@ namespace Crucible {
     }
 
     std::vector<WindowResolution> Core::GetScreenResolutions() const { return m_window->GetResolutions(); }
+
+    void Core::SetGraphicsSettings(const GraphicsSettings& settings) {
+        // First change in the editor: remember the Scene View panel's values for Stop.
+        if (m_config.app == AppKind::Editor && !m_editorRenderSnapshot) {
+            m_editorRenderSnapshot = RenderSettingsSnapshot{ m_renderer->GetPostSettings(), m_renderer->GetShadowSettings(), m_renderer->GetVSync() };
+        }
+        m_userSettings.graphics = settings;
+        m_userSettings.graphics.quality = MatchQualityLevel(settings);
+        ApplyGraphicsSettings();
+    }
+
+    void Core::ApplyGraphicsSettings() {
+        const GraphicsSettings& g = m_userSettings.graphics;
+
+        // Only the fields the player controls; the rest (bloom threshold, toon shading, ...) are
+        // left as they are. The renderer clamps MSAA to the GPU and rebuilds its targets itself.
+        PostSettings& post = m_renderer->GetPostSettings();
+        post.fxaa          = g.antiAliasing != AntiAliasing::Off;
+        post.msaaSamples   = g.antiAliasing == AntiAliasing::MSAA4x ? 4u
+                           : g.antiAliasing == AntiAliasing::MSAA2x ? 2u : 1u;
+        post.ao            = g.ambientOcclusion;
+        post.bloom         = g.bloom;
+        post.volumetricFog = g.volumetricFog;
+        post.brightness          = ClampBrightness(g.brightness);
+        post.fovOffset           = ClampFovOffset(g.fovOffset);
+        post.vignette            = g.vignette;
+        post.filmGrain           = g.filmGrain;
+        post.chromaticAberration = g.chromaticAberration;
+
+        // Cascades are the cost (each re-renders the casters); distance trades reach for
+        // sharpness. High = the ShadowSettings defaults.
+        ShadowSettings& shadows = m_renderer->GetShadowSettings();
+        shadows.enabled = g.shadowQuality != ShadowQuality::Off;
+        switch (g.shadowQuality) {
+        case ShadowQuality::Off:    break;
+        case ShadowQuality::Low:    shadows.cascadeCount = 1; shadows.distance = 40.0f;  break;
+        case ShadowQuality::Medium: shadows.cascadeCount = 2; shadows.distance = 60.0f;  break;
+        case ShadowQuality::High:   shadows.cascadeCount = 3; shadows.distance = 80.0f;  break;
+        case ShadowQuality::Ultra:  shadows.cascadeCount = std::min(4u, kMaxShadowCascades); shadows.distance = 120.0f; break;
+        }
+
+        // Rebuilds the swapchain only if it changed. The frame-rate limit is read by
+        // Run's frame cap every frame.
+        m_renderer->SetVSync(g.vsync);
+    }
+
+    void Core::RestoreEditorRenderSettings() {
+        if (!m_editorRenderSnapshot) { return; }
+        m_renderer->GetPostSettings()   = m_editorRenderSnapshot->post;
+        m_renderer->GetShadowSettings() = m_editorRenderSnapshot->shadows;
+        m_renderer->SetVSync(m_editorRenderSnapshot->vsync);
+        m_editorRenderSnapshot.reset();
+    }
 
     void Core::SaveWindowState() const {
         SavedWindowState state;
@@ -150,18 +246,6 @@ namespace Crucible {
             SceneManager::Snapshot snapshot;
             if (m_scenes->CaptureSnapshot(snapshot)) { m_resources->UnloadUnused(snapshot.scene.document); }
         });
-
-        // ======== asset debugging (Removable) ==========
-        // On the shared index. A second AssetManager here used to run its own reconcile -
-        // writing .meta files a second time on every launch - before m_assets even existed.
-        //{
-        //    std::cout << "\n\n";
-        //    m_assets->PrintIndex();
-
-        //    auto tex = m_assets->Load("Textures/Orange_Milk.jpg");
-        //    m_assets->PrintLoaded();
-        //}
-        // ===========================================
 
         // Startup scene, from EngineConfig.json ("project": { "startupScene" }) so the Editor
         // and the Game open the same one. Empty = start with no scene.
@@ -257,7 +341,30 @@ namespace Crucible {
 
     void Core::Run() {
 
+        // Frame pacing: EngineConfig "graphics" targetFPS, and backgroundFPS while the window is
+        // minimized or unfocused (see EngineConfig.h). Without it the loop runs as fast as the GPU
+        // can draw, which pins the GPU at 100% whatever the scene costs.
+        const FrameTimerResolution timerResolution;
+        const auto frameCap = [this](bool minimized) -> uint32_t {
+            // The player's limit (options menu) wins over the team's targetFPS when set.
+            // The editor only uses it while a script has changed the settings in Play.
+            const bool playerLimit = m_config.app == AppKind::Game || m_editorRenderSnapshot.has_value();
+            const int32_t limit = playerLimit ? m_userSettings.graphics.frameRateLimit : kFrameRateDefault;
+            const uint32_t target = limit == kFrameRateDefault ? m_config.graphics.targetFPS : static_cast<uint32_t>(limit);
+            const bool background = minimized || !m_window->IsFocused();
+            const bool networked  = m_network && m_network->IsActive();
+            uint32_t cap = target;
+            if (background && !networked) {
+                const uint32_t bg = m_config.graphics.backgroundFPS;
+                if (bg > 0 && (cap == 0 || bg < cap)) { cap = bg; }
+            }
+            // A minimized window draws nothing, so an uncapped loop would only spin the CPU.
+            if (minimized && cap == 0) { cap = 60; }
+            return cap;
+        };
+
         double lastTime = glfwGetTime();
+        double nextFrame = lastTime;   // when the next frame may start (frame pacing)
 
         while (!m_window->ShouldClose()) {
 
@@ -293,7 +400,26 @@ namespace Crucible {
             m_playMode->TickEvents(dt);         // delayed events whose time has come get queued (gameplay time only while Playing)
 
             for (auto& layer : m_layers) layer->OnUpdate(dt);
+
+            // Minimized: nothing can be seen, so nothing is drawn. Everything else above still
+            // runs, so a network session or a script keeps ticking.
+            const bool minimized = m_window->IsMinimized();
+            m_renderer->SetDrawSuspended(minimized);
             m_renderer->Update(dt);
+
+            // Wait out the rest of this frame. The schedule advances by whole periods so the
+            // average rate is exact; if the loop has fallen more than a frame behind (a slow
+            // frame, a breakpoint, the cap just changed) it restarts from now instead of racing
+            // to catch up.
+            if (const uint32_t cap = frameCap(minimized); cap > 0) {
+                const double period = 1.0 / static_cast<double>(cap);
+                nextFrame += period;
+                const double after = glfwGetTime();
+                if (after - nextFrame > period || nextFrame - after > period) { nextFrame = after; }
+                WaitUntil(nextFrame);
+            } else {
+                nextFrame = glfwGetTime();
+            }
         }
         // Entity teardown precedes GPU shutdown as well as world destruction.
         if (auto* scripts = m_systems.FindSystem<EntityScriptSystem>()) scripts->StopAll();
@@ -347,6 +473,7 @@ namespace Crucible {
         m_systems.RegisterSystem<HierarchyTransformSystem>();   // after CPU poses/socket preparation: fills WorldTransform
         auto& animator = m_systems.RegisterSystem<AnimatedModelSystem>(*m_resources, *m_playMode, m_world.get());
         m_systems.RegisterSystem<SocketAttachmentSystem>(*m_resources);
+        m_systems.RegisterSystem<ECSRagdollSystem>(*m_resources, *m_playMode);   // PreRender, after the animation's pose, before sockets read it: ragdolls (Hugo)
         m_systems.RegisterSystem<ECSTerrainSystem>(*m_renderer);                          // PreRender, Edit too, before RenderExtract: each Terrain's mesh onto its MeshRenderer (rebuilt only when its grid changes)
         m_systems.RegisterSystem<RenderExtractSystem>(*m_renderer, m_resources.get());   // second in PreRender: Submit()s meshes
         m_systems.RegisterSystem<ParticleSystem>(*m_renderer, m_resources.get(), &m_systems);   // PreRender: simulates ParticleEmitters, submits their particles and lights; m_systems: Play vs Edit

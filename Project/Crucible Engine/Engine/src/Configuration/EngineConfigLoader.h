@@ -52,8 +52,9 @@ namespace Crucible
 
 		// ---- Per-user window state ------------------------------------------------------------ //
 		//
-		// UserSettings.json, next to the running .exe (not in Assets, so one person's fullscreen
-		// doesn't end up in everyone's EngineConfig.json through git). Same layout as an app
+		// UserSettings.json, in the program's data folder (Systems/UserDataPath.h): beside the
+		// Editor's .exe, %LOCALAPPDATA%\<game name> for the game. Not in Assets, so one person's
+		// fullscreen doesn't end up in everyone's EngineConfig.json through git. Same layout as an app
 		// section of EngineConfig.json:
 		//     { "editor": { "graphics": { "fullScreen": false, "maximized": true } }, "game": { ... } }
 		// LoadForApp layers `app`'s section on top of everything else. Delete the file to go back

@@ -427,6 +427,15 @@ namespace Crucible {
                             around lights) wherever the scene's Skybox
                             turns it on. Off: always the cheaper analytic
                             fog. Costs two compute passes per view.
+
+        The player's own view (options menu, C# QualitySettings), applied on
+        top of whatever the scene's Skybox and camera say:
+          - brightness:     multiplies the scene's exposure (1 = as designed).
+          - fovOffset:      degrees added to every camera's vertical field of
+                            view (0 = as designed). Camera.FieldOfView in C#
+                            still reads the designer's value.
+          - vignette, filmGrain, chromaticAberration: false forces that
+                            effect off even where the scene's Skybox uses it.
      *************************************************************************/
     struct PostSettings {
         bool  bloom = true;
@@ -440,6 +449,13 @@ namespace Crucible {
         float aoIntensity = 1.2f;
         bool  volumetricFog = true;   // lit froxel fog where the scene's Skybox asks for it (off = always the analytic fog)
         bool  toonShading = true;     // toon shading where the scene's Skybox asks for it (off = always the PBR lighting, to compare)
+
+        // The player's view (see above).
+        float brightness = 1.0f;
+        float fovOffset = 0.0f;
+        bool  vignette = true;
+        bool  filmGrain = true;
+        bool  chromaticAberration = true;
     };
 
     /// Push constant shared by every post pass (Post.slang's PostPush). c and d are read only by

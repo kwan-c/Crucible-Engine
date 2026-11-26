@@ -75,6 +75,10 @@ namespace Crucible::PrefabAuthoring {
 	// Whether a prefab may be created right now (false in Play Mode, or before Core exists).
 	bool CanCreate();
 
+	// Whether instances can be applied, updated or opened: like CanCreate, but also true in
+	// Prefab Mode, where a nested prefab is an ordinary instance of its inner prefab.
+	bool CanApply();
+
 	// The entities a Hierarchy drag stands for: the whole Inspector selection when the dragged
 	// row is part of it (the Hierarchy drags the whole selection), otherwise just that row.
 	std::vector<Entity> DraggedEntities(World& world, Entity dragged);
@@ -234,10 +238,42 @@ namespace Crucible::PrefabAuthoring {
 	// does); runs UpdateChangedInstances once, as soon as the asset index is up.
 	void RunStartupCheck(World& world);
 
+	// ---- Writing a .cprefab from elsewhere (Prefab Mode) ----
+
+	// Call just BEFORE replacing the file: keeps the current version in memory, so instances can
+	// work out their overrides against it exactly when they update.
+	void RememberPrefabVersion(std::uint64_t prefabAsset);
+
+	// Call just AFTER replacing the file: drops the cached copies and loads the new version.
+	void PrefabFileReplaced(std::uint64_t prefabAsset);
+
+	// ---- Nested prefabs (format 4, see Scene/Prefab.h) ----
+	//
+	// An outer prefab's file holds a full copy of each prefab nested in it, whose entries also
+	// link to the inner prefab. A scene instance links to the outer prefab only: its parts have
+	// the outer file's entry ids, so three nested Windows never share an identity. When an inner
+	// prefab changes, the outer FILE is updated (keeping what it overrode), its content hash
+	// changes, and scenes follow through the usual UpdateChangedInstances.
+
+	// True if `outer` holds `target` at any depth.
+	bool PrefabContains(std::uint64_t outer, std::uint64_t target);
+
+	// Brings every prefab file that holds `changed`, at any depth, up to date, inner ones first,
+	// and saves those that changed. Files in `skip` (open in Prefab Mode) are left alone. Not
+	// undoable: they are other files, and git has the old versions. Returns the rewritten ones.
+	std::vector<std::uint64_t> UpdatePrefabsContaining(std::uint64_t changed, std::vector<std::uint64_t> const& skip);
+
+	// The other direction: brings the prefabs nested in `asset`, at any depth, up to date in
+	// their files, innermost first, then `asset`'s own file. Prefab Mode runs it before opening
+	// a prefab. Files in `skip` are left alone (neither rewritten nor looked into). Not undoable.
+	// Returns the rewritten ones.
+	std::vector<std::uint64_t> BringNestedUpToDate(std::uint64_t asset, std::vector<std::uint64_t> const& skip);
+
 	// ---- Every scene at once ("Apply to All Scenes...") ----
 
-	// The scene files other than the open one that contain an instance of the prefab (virtual
-	// paths, sorted). Found by the guid in their text, so no scene is loaded to find out.
+	// The scene files other than the open one that contain an instance of the prefab, or of a
+	// prefab holding it (virtual paths, sorted). Found by the guid in their text, so no scene is
+	// loaded to find out.
 	std::vector<std::string> ScenesUsing(std::uint64_t prefabAsset);
 
 	// Brings the prefab's instances in every other scene file up to date (the same update as

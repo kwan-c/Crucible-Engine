@@ -121,7 +121,9 @@ namespace Crucible.Scripts
 
         public void Wake()
         {
-            if (!asleep) return;
+            // Not a corpse: one killed asleep stays "asleep", and its body lies around for up to
+            // 30 s as a ragdoll; waking it would switch its brain back on (StopForDeath turned it off).
+            if (!asleep || IsDead) return;
             asleep = false;
             if (HasComponent<StateGraphAgent>()) Entity.SetEnabled<StateGraphAgent>(true);
         }

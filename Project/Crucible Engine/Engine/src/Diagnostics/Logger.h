@@ -63,9 +63,9 @@ namespace Crucible::Debug
     {
         bool consoleSink     = true;                 // stdout
         bool debugOutputSink = true;                 // VS Output window
-        // Empty = no file. A relative path (like the default) is placed next to the running
-        // .exe, not in the working directory, so the log is always beside the program it is
-        // from - Build/Game/Debug/crucible.log, or the packaged game's folder.
+        // Empty = no file. A relative path (like the default) is placed in the program's data
+        // folder (Systems/UserDataPath.h), not in the working directory: beside the Editor's
+        // .exe, or %LOCALAPPDATA%\<game name>\crucible.log for the game.
         std::filesystem::path logFile = "crucible.log";
         Level minLevel = Level::Trace;
         bool  showSourceLocation = true;             // the [Core.cpp:87] part

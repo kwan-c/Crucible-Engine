@@ -55,6 +55,15 @@ namespace Crucible {
 	std::vector<ShaderGraphFile> ListShaderGraphs(const AssetManager& assets);
 
 	/*********************************************************************
+	 \brief  Brings the sub-graph library (ShaderGraphSubgraphs.h) in line
+	         with the .shadersubgraph files in Assets: adds new ones,
+	         reads changed ones again, drops deleted ones. Looks at most
+	         twice a second unless `force`. Call every frame (the shader hot
+	         reload layer does), and before generating.
+	 *********************************************************************/
+	void SyncSubgraphs(const AssetManager& assets, bool force = false);
+
+	/*********************************************************************
 	 \brief  Reads a graph's file, checks it and writes its shader
 	         (ShaderGraph::Generate). Each problem found goes to the
 	         Console with the node it is on: as an error if it stops the

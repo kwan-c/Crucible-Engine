@@ -2,27 +2,33 @@
 * \file:         MechLoadout.cs
 * \author:       Tok Duan Jie Nelson
 * \par:          Email: t.duanjienelson@digipen.edu
+* \author:       Hugo Low Ren Hao (M3: sync with Unity main)
+* \par:          Email: low.h@digipen.edu
 * \date          8 November 2026
-* \version       1.1
+* \version       1.2
 * \brief         The part catalogue (Unity's Assets/PartCatalogue PartData
 *                stats), the weapon rules (Unity's Part.cs Consume /
 *                TryReload) and ability cooldowns (PartAbilityCooldown).
 *
 * \details
 *    MechPartDef is the shared, read-only data of a part type (Unity's
-*    PartData asset). MechWeapon / MechAbility are the live state of ONE
-*    physical part - ammo and cooldowns stay with the part when it is
-*    dropped or swapped, as in Unity.
+*    PartData asset). MechWeapon is the live state of ONE physical part -
+*    ammo and cooldowns stay with the part when it is dropped or swapped, as
+*    in Unity. MechAbility is simpler: it belongs to the part TYPE in a
+*    socket, so swapping in another part of the same type keeps its cooldown
+*    and running effect (Unity would end them); a different type starts fresh.
 *
-*    Range is in golem lengths in Unity (MechRulesConfig: 4 m per golem);
-*    full damage applies up to that effective range, then falls linearly to
-*    zero at 1.5x (the maximum range).
+*    Range is in golem lengths in Unity (MechRulesConfig: 4 m per golem).
+*    A shot does full damage up to Range and disappears there; there is no
+*    falloff (Unity main removed it).
 *
 *    Times use Time.ElapsedTime (Play time, pause excluded) as Unity used
 *    Time.time.
 *
 *    v1.1  stats come from MechPartDef; damage / range / splash / melee added
 *          for hits; parts can be swapped (MechPart, MechPlayer.Equip).
+*    v1.2  Unity main: one Range with no falloff; abilities (Heal, Damage Amp,
+*          Jump) with power, duration and an effect window on MechAbility.
 *
 **************************************************************************/
 using System;
@@ -35,6 +41,14 @@ namespace Crucible.Scripts
     public enum MechPartKind { Arm, Shoulder, Head, Torso, Legs }
 
     public enum MechAttackType { None, Melee, Projectile, Splash }
+
+    /// <summary>
+    /// What a head, torso or legs part does on its key (Unity: PartAbility, same order).
+    /// Heal: AbilityPower % of maximum health per second for AbilityDuration.
+    /// DamageAmp: weapon damage x (1 + AbilityPower %) for AbilityDuration.
+    /// Jump: an instant leap of AbilityPower golem lengths, only from the ground.
+    /// </summary>
+    public enum MechAbilityKind { None, DamageAmp, Heal, Jump }
 
     /// <summary>One part type's stats. Unity: a PartData asset.</summary>
     public sealed class MechPartDef
@@ -52,11 +66,14 @@ namespace Crucible.Scripts
         public float ProjectileSpeed;   // m/s (Unity: ProjectileSpeed)
         public float ProjectileSize;    // sphere radius of the shot, m (Unity: ProjectileSize)
         public float AbilityCooldown;   // head / torso / legs
+        public MechAbilityKind Ability; // None = the part has no ability (no HUD pod, its key does nothing)
+        public float AbilityPower;      // meaning depends on Ability (see MechAbilityKind)
+        public float AbilityDuration;   // seconds; 0 = instant (Jump)
 
         public bool IsWeapon { get { return Attack != MechAttackType.None; } }
         public const float MetresPerGolem = 4f;
-        public float EffectiveRange { get { return RangeGolems * MetresPerGolem; } }
-        public float MaximumRange { get { return Attack == MechAttackType.Melee ? EffectiveRange : EffectiveRange * 1.5f; } }
+        /// <summary>Metres. A shot does full damage up to here and disappears at it (Unity: MechCombat's ranged fire).</summary>
+        public float Range { get { return RangeGolems * MetresPerGolem; } }
 
         public static bool Fits(MechPartKind kind, MechSocket socket)
         {
@@ -95,10 +112,15 @@ namespace Crucible.Scripts
             new MechPartDef { Id = "cannon", Name = "CANNON", Kind = MechPartKind.Shoulder, Attack = MechAttackType.Splash,
                               Damage = 100f, SplashDamage = 50f, SplashRadius = 3f, Ammo = 30, Magazine = 1, FireRate = 1f, Reload = 3f,
                               RangeGolems = 10f, Speed = -4f, ProjectileSpeed = 100f, ProjectileSize = .3f },
-            new MechPartDef { Id = "golem_head", Name = "GOLEM HEAD", Kind = MechPartKind.Head, Health = 50f, AbilityCooldown = 10f },
-            new MechPartDef { Id = "golem_torso", Name = "GOLEM TORSO", Kind = MechPartKind.Torso, Health = 150f, AbilityCooldown = 30f },
+            // Abilities from Unity main's PartData_Head / _Torso / _Legs_Fast. Golem Legs and Heavy Legs
+            // have a cooldown stat there but no ability, so Space does nothing with them.
+            new MechPartDef { Id = "golem_head", Name = "GOLEM HEAD", Kind = MechPartKind.Head, Health = 50f, AbilityCooldown = 10f,
+                              Ability = MechAbilityKind.Heal, AbilityPower = 5f, AbilityDuration = 10f },
+            new MechPartDef { Id = "golem_torso", Name = "GOLEM TORSO", Kind = MechPartKind.Torso, Health = 150f, AbilityCooldown = 30f,
+                              Ability = MechAbilityKind.DamageAmp, AbilityPower = 50f, AbilityDuration = 20f },
             new MechPartDef { Id = "golem_legs", Name = "GOLEM LEGS", Kind = MechPartKind.Legs, Health = 50f, AbilityCooldown = 6f },
-            new MechPartDef { Id = "fast_legs", Name = "FAST LEGS", Kind = MechPartKind.Legs, Health = 50f, Speed = 10f, AbilityCooldown = 4f },
+            new MechPartDef { Id = "fast_legs", Name = "FAST LEGS", Kind = MechPartKind.Legs, Health = 50f, Speed = 10f, AbilityCooldown = 4f,
+                              Ability = MechAbilityKind.Jump, AbilityPower = 1f },
             new MechPartDef { Id = "heavy_legs", Name = "HEAVY LEGS", Kind = MechPartKind.Legs, Health = 50f, Speed = 5f, AbilityCooldown = 5f },
         };
 
@@ -158,14 +180,6 @@ namespace Crucible.Scripts
         public bool IsReloading(float now) { return reloadEndsAt > now; }
         public bool IsEmpty { get { return UsesAmmo && RemainingAmmo <= 0; } }
 
-        /// <summary>Damage at this distance: full to the effective range, then down to 0 at the maximum.</summary>
-        public float DamageAt(float distance)
-        {
-            if (distance <= Def.EffectiveRange) return Def.Damage;
-            float span = Def.MaximumRange - Def.EffectiveRange;
-            return span <= 0f ? 0f : Def.Damage * MechMath.Clamp01(1f - (distance - Def.EffectiveRange) / span);
-        }
-
         /// <summary>
         /// One shot or swing, if ready. A shot uses a round; emptying the magazine with ammo left
         /// starts the reload by itself, and the next shot waits for the interval and the reload.
@@ -212,7 +226,9 @@ namespace Crucible.Scripts
         public string Name { get { return Def.Name; } }
         public string KeyLabel { get { return KeyLabelFor(Socket); } }
         public float Cooldown { get { return Math.Max(0f, Def.AbilityCooldown); } }
-        float readyAt, duration;
+        public MechAbilityKind Kind { get { return Def.Ability; } }
+        public float Power { get { return Math.Max(0f, Def.AbilityPower); } }
+        float readyAt, duration, activeUntil;
 
         public MechAbility(MechPartDef def, MechSocket socket) { Def = def; Socket = socket; }
 
@@ -225,10 +241,17 @@ namespace Crucible.Scripts
         public bool IsCoolingDown(float now) { return Remaining(now) > 0f; }
         public float Progress(float now) { return duration > 0f ? MechMath.Clamp01(1f - Remaining(now) / duration) : 1f; }
 
-        /// <summary>An accepted activation starts the cooldown; refused while it is still running.</summary>
+        /// <summary>Its effect is running (Heal, Damage Amp). Always false for an instant ability.</summary>
+        public bool IsActive(float now) { return now < activeUntil; }
+
+        /// <summary>
+        /// Starts the effect window and the cooldown together, as Unity does (the cooldown runs
+        /// while the effect lasts). Refused while either is still running.
+        /// </summary>
         public bool ConfirmActivation(float now)
         {
-            if (IsCoolingDown(now)) return false;
+            if (IsCoolingDown(now) || IsActive(now)) return false;
+            activeUntil = now + Math.Max(0f, Def.AbilityDuration);
             duration = Cooldown;
             readyAt = now + Cooldown;
             return true;

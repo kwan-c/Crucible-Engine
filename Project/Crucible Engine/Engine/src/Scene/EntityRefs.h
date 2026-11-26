@@ -11,7 +11,7 @@
     Saved entity references are 64-bit ids: a scene id (Scene::IdOf) in a
     scene, a prefab entry id (the per-entry "id" Prefab::SaveFrom writes)
     inside a .cprefab. Today two things hold them:
-      - ScriptComponent fields of type Entity (ScriptFieldValue::entityId)
+      - ScriptComponent fields of type Entity or Component (ScriptFieldValue::entityId)
       - PhysicsJoint::m_connectedBody (the only ENTITY_REF property)
     A new component with an entity reference must be added to Remap() here,
     or prefabs will keep pointing at the entity they were made from.

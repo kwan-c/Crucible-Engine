@@ -188,13 +188,20 @@ namespace Crucible {
 
     vk::PresentModeKHR VulkanSwapchain::ChoosePresentMode(std::vector<vk::PresentModeKHR> const& modes) {
 
-        // Assert that at least Fifo is present.
+        // FIFO is the one mode every GPU must have: waits for the monitor, never tears.
         assert(std::ranges::any_of(modes, [](auto presentMode) {
             return presentMode == vk::PresentModeKHR::eFifo; }));
 
-        // Return eMailbox if available, else default to eFifo.
-        return std::ranges::any_of(modes, [](const vk::PresentModeKHR value) {
-            return vk::PresentModeKHR::eMailbox == value; }) ? vk::PresentModeKHR::eMailbox : vk::PresentModeKHR::eFifo;
+        if (m_vsync) {
+            return vk::PresentModeKHR::eFifo;
+        }
+
+        // VSync off: MAILBOX replaces the waiting image with the newest one, so the frame
+        // rate is free and it still never tears. IMMEDIATE shows at once and may tear.
+        const auto has = [&modes](vk::PresentModeKHR mode) { return std::ranges::find(modes, mode) != modes.end(); };
+        if (has(vk::PresentModeKHR::eMailbox))   { return vk::PresentModeKHR::eMailbox; }
+        if (has(vk::PresentModeKHR::eImmediate)) { return vk::PresentModeKHR::eImmediate; }
+        return vk::PresentModeKHR::eFifo;
 
     }   // VulkanSwapchain::ChoosePresentMode()
 

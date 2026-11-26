@@ -53,11 +53,21 @@ target_compile_definitions(Engine
         GLM_FORCE_DEPTH_ZERO_TO_ONE                      # GLM projections use Vulkan's 0..1 depth range (default is OpenGL's -1..1).
 )
 
+# GameInfo.h: the game's name and version from the top-level CMakeLists.txt, as C++ constants.
+# Written into the Build folder, so the name lives in one place only.
+string(REPLACE "." ";" CRUCIBLE_GAME_VERSION_PARTS "${CRUCIBLE_GAME_VERSION}")
+list(GET CRUCIBLE_GAME_VERSION_PARTS 0 CRUCIBLE_GAME_VERSION_MAJOR)
+list(GET CRUCIBLE_GAME_VERSION_PARTS 1 CRUCIBLE_GAME_VERSION_MINOR)
+list(GET CRUCIBLE_GAME_VERSION_PARTS 2 CRUCIBLE_GAME_VERSION_PATCH)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/GameInfo.h.in"
+               "${CMAKE_BINARY_DIR}/Generated/GameInfo.h" @ONLY)
+
 # Include directories
 target_include_directories(Engine
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/Generated>   # GameInfo.h
         $<INSTALL_INTERFACE:include>
     PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}/src

@@ -34,14 +34,17 @@ namespace Crucible
     // Native subsystem bindings must validate owner lifetime before world access.
     public struct EntityIdentity
     {
+        // Read by native code (ScriptRuntime.cpp, ReadComponentOwner). Do not rename.
+        private uint index;
+        private uint generation;
         /// <summary>The entity's slot number.</summary>
-        public uint Index { get; private set; }
+        public uint Index { get { return index; } }
         /// <summary>Increments each time the slot is reused.</summary>
-        public uint Generation { get; private set; }
+        public uint Generation { get { return generation; } }
         internal EntityIdentity(uint index, uint generation)
         {
-            Index = index;
-            Generation = generation;
+            this.index = index;
+            this.generation = generation;
         }
         /// <summary>Formats as "index:generation", e.g. "12:3".</summary>
         public override string ToString()

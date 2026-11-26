@@ -96,6 +96,9 @@ namespace Crucible::ShaderGraph {
 	/// vertices (metres, in the world). With something plugged into it the graph's shader moves
 	/// vertices - in the scene and in the shadow, depth and selection-outline passes alike.
 	inline constexpr const char* kVertexOffsetPin = "vertexOffset";
+	/// A point a link is routed through: one "any" input, "in", and one output, "out", that is
+	/// the same value. The canvas draws it as a dot.
+	inline constexpr const char* kRerouteNode = "Reroute";
 	/// A node that reads one of the graph's parameters, named by its "parameter" setting. Its
 	/// output has the parameter's type; a texture parameter gives a texture.
 	inline constexpr const char* kParameterNode = "Parameter";

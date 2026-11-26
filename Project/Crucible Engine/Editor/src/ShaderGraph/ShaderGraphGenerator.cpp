@@ -18,6 +18,7 @@
 #include "ShaderGraph/ShaderGraphGenerator.h"
 
 #include "ShaderGraph/ShaderGraphNodes.h"
+#include "ShaderGraph/ShaderGraphSubgraphs.h"
 
 #include <algorithm>
 #include <array>
@@ -93,7 +94,10 @@ namespace Crucible::ShaderGraph {
 
 		class Builder {
 		public:
-			Builder(const Graph& graph, Generated& result, const Options& options) : m_graph(graph), m_result(result), m_options(options) {}
+			// `graph` is the graph with its sub-graphs expanded (Flatten); `flat` says which Subgraph
+			// nodes could not be.
+			Builder(const Flattened& flat, Generated& result, const Options& options)
+				: m_graph(flat.graph), m_flat(flat), m_result(result), m_options(options) {}
 
 			void Run() {
 				CheckParameters();
@@ -188,7 +192,13 @@ namespace Crucible::ShaderGraph {
 						Report(Stops::Always, node.id, {}, node.id == 0 ? "a node has no id" : "two nodes have the id " + std::to_string(node.id));
 						continue;
 					}
-					info.type = FindNodeType(node.type);
+					if (node.type == kSubgraphNode) {
+						// Still here: it could not be expanded (Flatten says why). It is never written.
+						const auto why = m_flat.failed.find(node.id);
+						Report(Stops::IfUsed, node.id, {}, why != m_flat.failed.end() ? why->second : "its sub-graph cannot be used");
+						continue;
+					}
+					info.type = TypeOfNode(m_graph, node);
 					if (!info.type) {
 						Report(Stops::IfUsed, node.id, {}, "\"" + node.type + "\" is not a kind of node this Editor has (was the graph made by a newer one?)");
 						continue;
@@ -333,6 +343,10 @@ namespace Crucible::ShaderGraph {
 					const bool vertex = static_cast<int>(pin) == m_vertexPin;
 					if (vertex) { m_moves = output.vertex = true; }   // the Output is in both functions then
 					Reach(SourceOf(output.incoming[pin]), vertex);
+				}
+				// A sub-graph being checked (SubgraphAsSurface): every output counts, previewed or not.
+				for (size_t i = 0; i < m_nodes.size(); ++i) {
+					if (m_nodes[i].type && m_nodes[i].node->settings.count("subgraphOutput") != 0) { Reach(i, false); }
 				}
 			}
 
@@ -524,12 +538,19 @@ namespace Crucible::ShaderGraph {
 			std::string LiveConstantText(const NodeInfo& info, const InputPin& pin, ValueType type, const std::array<float, 4>& values) {
 				constexpr std::array<const char*, 5> kParts{ "", ".x", ".xy", ".xyz", "" };
 				const auto read = [&](size_t slot) { return "MaterialParam(" + std::to_string(slot) + ")" + kParts[ComponentCount(type)]; };
+				// Whose constant it is: a sub-graph input's _Pass node stands for the Subgraph node's pin.
+				uint32_t    node = info.node->id;
+				std::string pinName = pin.name;
+				if (const auto alias = info.node->settings.find("liveNode"); alias != info.node->settings.end()) {
+					node = static_cast<uint32_t>(std::stoul(alias->second));
+					pinName = info.node->settings.at("livePin");
+				}
 				for (const Generated::LiveConstant& known : m_result.liveConstants) {
-					if (known.node == info.node->id && known.pin == pin.name) { return read(known.slot); }
+					if (known.node == node && known.pin == pinName) { return read(known.slot); }
 				}
 				const size_t slot = m_numberCount + m_result.liveConstants.size();
 				if (slot >= kMaxNumberParameters) { return {}; }
-				m_result.liveConstants.push_back({ info.node->id, pin.name, LiveConstantName(info.node->id, pin.name), slot, type, values });
+				m_result.liveConstants.push_back({ node, pinName, LiveConstantName(node, pinName), slot, type, values });
 				return read(slot);
 			}
 
@@ -712,6 +733,7 @@ namespace Crucible::ShaderGraph {
 			static constexpr size_t kNone = static_cast<size_t>(-1);
 
 			const Graph&                         m_graph;
+			const Flattened&                     m_flat;
 			Generated&                           m_result;
 			const Options                        m_options;
 			size_t                               m_numberCount = 0;   // the graph's own number and colour parameters
@@ -726,11 +748,86 @@ namespace Crucible::ShaderGraph {
 			bool                                 m_moves = false;     // something is plugged into it
 		};
 
+		// What the generator found in the expanded graph, told in terms of the graph as the user sees
+		// it: everything about a node that came out of a sub-graph is about its Subgraph node.
+		void MapBack(const Graph& graph, const Flattened& flat, Generated& result) {
+			const auto outerOf = [&](uint32_t node) {
+				const auto found = flat.origin.find(node);
+				return found != flat.origin.end() ? found->second : node;
+			};
+
+			// Problems: on the Subgraph node; one on an input's or output's own check is on that pin.
+			std::vector<Problem> problems;
+			for (Problem problem : result.problems) {
+				if (const auto origin = flat.origin.find(problem.node); origin != flat.origin.end()) {
+					if (const auto pin = flat.pinOf.find(problem.node); pin != flat.pinOf.end()) {
+						problem.pin = pin->second;
+					} else {
+						const Node* inner = flat.graph.FindNode(problem.node);
+						const auto from = flat.from.find(problem.node);
+						problem.message = "inside " + (from != flat.from.end() ? from->second : std::string("its sub-graph")) + " (" +
+						                  (inner ? inner->type : std::string("a node")) + (problem.pin.empty() ? "" : ", " + problem.pin) + "): " + problem.message;
+						problem.pin.clear();
+					}
+					problem.node = origin->second;
+				}
+				const bool repeated = std::any_of(problems.begin(), problems.end(), [&](const Problem& p) {
+					return p.node == problem.node && p.pin == problem.pin && p.message == problem.message;
+				});
+				if (!repeated) { problems.push_back(std::move(problem)); }
+			}
+			result.problems = std::move(problems);
+
+			for (uint32_t& node : result.lineNodes) { node = outerOf(node); }
+
+			// What the view colours pins by: a Subgraph node's outputs are the types its sub-graph
+			// declares; it is valid if everything in it is, used if anything in it is.
+			std::vector<Generated::NodeResult> nodes;
+			std::unordered_map<uint32_t, size_t> subgraphs;   // Subgraph node -> its place in `nodes`
+			for (const Generated::NodeResult& node : result.nodes) {
+				const uint32_t outer = outerOf(node.node);
+				if (outer == node.node) {
+					nodes.push_back(node);
+					continue;
+				}
+				auto [at, added] = subgraphs.emplace(outer, nodes.size());
+				if (added) {
+					Generated::NodeResult summary;
+					summary.node = outer;
+					summary.valid = true;
+					if (const Node* subgraph = graph.FindNode(outer); const NodeType* type = subgraph ? TypeOfNode(graph, *subgraph) : nullptr) {
+						for (const OutputPin& pin : type->outputs) { summary.outputs.push_back(pin.type); }
+					}
+					nodes.push_back(std::move(summary));
+				}
+				Generated::NodeResult& summary = nodes[at->second];
+				summary.valid = summary.valid && node.valid;
+				summary.used = summary.used || node.used;
+			}
+			result.nodes = std::move(nodes);
+		}
+
 	}   // anonymous namespace
 
 	Generated Generate(const Graph& graph, const Options& options) {
+		// A sub-graph: checked, and previewed, as a shader graph of its own (same node ids).
+		if (graph.domain == kSubgraphDomain) {
+			Generated result = Generate(SubgraphAsSurface(graph, options.previewOutput), options);
+			if (const std::string why = SubgraphProblem(graph); !why.empty()) {
+				result.problems.insert(result.problems.begin(), Problem{ 0, {}, why, true });
+				result.ok = false;
+				result.source.clear();
+				result.paramsJson.clear();
+				result.lineNodes.clear();
+				result.liveConstants.clear();
+				result.movesVertices = false;
+			}
+			return result;
+		}
 		Generated result;
-		Builder(graph, result, options).Run();
+		const Flattened flat = Flatten(graph);
+		Builder(flat, result, options).Run();
+		MapBack(graph, flat, result);
 		if (!result.ok) {
 			result.source.clear();
 			result.paramsJson.clear();

@@ -20,8 +20,12 @@
 *      .bill or, for "*_skybox" images and .hdr, its .sky (build CompiledTextures).
 *   4. Checks every image a scene or prefab uses as a skybox is named "*_skybox", so it is
 *      compiled as a sky (otherwise the game would show the default sky there).
+*   5. Compiles every shader graph (.shadergraph) into Resources/Shaders/<GUID>.spv and
+*      <GUID>.params.json, removes those whose graph is gone, and checks every .mat's shader
+*      has compiled code (CookShaderGraphs.h). Needs slangc (the Vulkan SDK), as the build does.
 *
-* Never copies source-only files (.glb, .png/.jpg/.hdr, .ttf, .fontsettings, .slang, .cs, ...).
+* Never copies source-only files (.glb, .png/.jpg/.hdr, .ttf, .fontsettings, .slang, .cs, ...),
+* nor anything under Assets/Editor (editor-only files such as .crutones editor themes).
 * Used by the CrucibleCook tool (the "Cook" build target, for the installer) and by the
 * editor's File -> Cook Resources. Writes nothing to Assets.
 *
@@ -41,6 +45,7 @@ namespace Crucible::Cook {
 		std::size_t copied    = 0;   ///< files copied (new or changed), .meta files not counted
 		std::size_t unchanged = 0;   ///< already up to date in Resources
 		std::size_t removed   = 0;   ///< copies deleted because the original is gone
+		std::size_t compiled  = 0;   ///< shader graphs whose shader was written (new or changed)
 		std::vector<std::string> missing;    ///< compiled files the game needs but Resources lacks
 		std::vector<std::string> warnings;   ///< everything else worth reading
 		std::vector<std::string> errors;     ///< files that could not be copied or removed
@@ -49,10 +54,19 @@ namespace Crucible::Cook {
 		bool Ok() const { return errors.empty() && missing.empty(); }
 	};
 
+	/// Where Cook finds the shader compiler and keeps what it compiled (shader graphs, step 5).
+	struct ShaderOptions {
+		std::filesystem::path compiler;   ///< slangc; empty = ShaderCompiler::FindCompiler (the build's, beside the program, the Vulkan SDK's)
+		std::filesystem::path cacheDir;   ///< empty = <program folder>/Cache/Shaders (in the Editor: the hot reload's cache)
+	};
+
 	/// Whether Cook copies this Assets file (virtual path, forward slashes) into Resources.
 	bool ShouldCopy(std::string const& virtualPath);
 
 	/// Runs Cook from the Assets folder into the Resources folder (both must exist).
-	Report Run(std::filesystem::path const& assets, std::filesystem::path const& resources);
+	Report Run(std::filesystem::path const& assets, std::filesystem::path const& resources, ShaderOptions const& shaders = {});
+
+	/// Step 5's compiling alone (no copying, no checks): the build's ShaderGraphs target.
+	Report RunShaderGraphs(std::filesystem::path const& assets, std::filesystem::path const& resources, ShaderOptions const& shaders = {});
 
 }
