@@ -4,7 +4,8 @@
 * \par:          Email: low.h@digipen.edu
 * \date          26 November 2026
 * \version       1.1   the board's ridge rocks (QuestBoardRocks) rise first;
-*                      every stone lies wholly inside the floor oval
+*                      every stone lies wholly inside the floor oval;
+*                      each stone gets a QuestBoard quest
 * \brief         The main menu's quest table: the first time the camera
 *                looks down at it, the quest stones drop onto it one after
 *                another. Port of Unity's small-stone arrival
@@ -106,6 +107,12 @@ namespace Crucible.Scripts
 
         /// <summary>True once the stones have dropped (or been skipped): later visits find them in place.</summary>
         public bool HasDropped { get; private set; }
+
+        /// <summary>True while the rocks rise or a stone is still falling or settling.</summary>
+        public bool IsBusy { get { return waitingForRocks || current >= 0; } }
+
+        /// <summary>The stones (Quest Slab instances), for QuestPicker.</summary>
+        public IEnumerable<Entity> Slabs { get { foreach (Stone stone in list) yield return stone.entity; } }
 
         // One stone: where it rests and how it arrives.
         private sealed class Stone
@@ -224,6 +231,14 @@ namespace Crucible.Scripts
             HasDropped = true;
             cameraEntity = camera;
             Scatter();
+            // A fresh board: one quest per slab (QuestBoard's placeholders for now). The slabs are
+            // still hidden, but their scripts already exist (only OnCreate waits), so they take it now.
+            List<QuestInfo> offers = QuestBoard.Offers(list.Count);
+            for (int i = 0; i < list.Count; i++)
+            {
+                QuestSlab slab = list[i].entity.GetComponent<QuestSlab>();
+                if (slab != null) slab.SetQuest(offers[i]);
+            }
             for (int i = 0; i < list.Count; i++)
             {
                 Stone stone = list[i];
