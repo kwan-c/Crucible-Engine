@@ -36,6 +36,7 @@ import sys
 
 import numpy as np
 
+sys.dont_write_bytecode = True   # no __pycache__ in the repo when TreeGen is imported
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "TreeGen"))
 from treegen import Mesh, blob, shade, to_glb  # noqa: E402
 

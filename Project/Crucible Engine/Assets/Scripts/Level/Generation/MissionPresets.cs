@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          26 November 2026
-* \version       1.4
+* \version       1.5
 * \brief         Each mission's level numbers, from the GDD's side quest
 *                specs (M3): map size, which chunks it places, their sizes
 *                and spacing. Plain data, so it can be tested alone.
@@ -33,6 +33,7 @@
 *    -v1.2       back to Unity's layout; spacing range = minimum gap; route order
 *    -v1.3       road settings per mission (Capture: roads along the route)
 *    -v1.4       decor (tree scatter) settings per mission
+*    -v1.5       Capture areas get a generated interior (InteriorSettings)
 *
 **************************************************************************/
 using System.Collections.Generic;
@@ -81,7 +82,7 @@ namespace Crucible.@Scripts
             ChunkFootprint area = new ChunkFootprint(ChunkShape.Circle, 60f, 60f);   // GDD: radius 30
             p.Chunks.Add(new ChunkRequest { Role = Spawn, Footprint = new ChunkFootprint(ChunkShape.Box, kSpawnSize, kSpawnSize), Start = true });
             for (int i = 0; i < 3; i++)
-                p.Chunks.Add(new ChunkRequest { Role = Capture, Order = i + 1, Footprint = area });
+                p.Chunks.Add(new ChunkRequest { Role = Capture, Order = i + 1, Footprint = area, Interior = new InteriorSettings() });   // Unity's KOTH interior
             p.Chunks.Add(new ChunkRequest { Role = Extract, Footprint = new ChunkFootprint(ChunkShape.Box, kExtractSize, kExtractSize), End = true });
 
             // Roads follow the objective route (spawn -> 1st -> 2nd -> 3rd -> extract). Unity's KOTH

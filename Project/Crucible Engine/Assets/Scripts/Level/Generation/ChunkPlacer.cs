@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          26 November 2026
-* \version       1.2
+* \version       1.3
 * \brief         Places a mission's chunks on a TerrainMap and flattens the
 *                ground under them, as plain data (no engine calls), so it
 *                can be tested alone.
@@ -42,6 +42,7 @@
 *    -v1.2       back to Unity's layout (spread out, Start in the middle third,
 *                End far from the Start); the spacing range is a minimum gap
 *                picked per seed; links removed; ordered chunks numbered as a route
+*    -v1.3       ChunkRequest.Interior (generated interior for circles)
 *
 **************************************************************************/
 using System;
@@ -99,6 +100,7 @@ namespace Crucible.@Scripts
         public ChunkFootprint Footprint;
         public bool Start;                  // Unity's start chunk (the spawn): flattest spot in the middle third, placed first
         public bool End;                    // Unity's end chunk (the extract): as far from the Start as it can
+        public InteriorSettings Interior;   // circles only: generated blocks and walls inside (ChunkInterior); null = flat
     }
 
     // Where one chunk went: its centre and the ground height it sits on, in the map's space.

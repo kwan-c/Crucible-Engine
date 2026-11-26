@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       2.3
+* \version       2.4
 * \brief         Generates a sub-level from a seed: the terrain and, for a
 *                mission level, its chunks. Roads and decor are later port
 *                steps.
@@ -77,6 +77,9 @@
 *                join the chunks (RoadBuilder)
 *    -v2.3       Scattered trees in Play (DecorScatter; one tree prefab
 *                field per theme)
+*    -v2.4       Chunk interiors (ChunkInterior) after the roads; chunk
+*                Setup and outposts (ChunkOutpost + OutpostPlanner) once
+*                the chunk's scripts are attached, then the nav re-bake
 **************************************************************************/
 using System.Collections.Generic;
 
@@ -140,6 +143,18 @@ namespace Crucible.@Scripts
         private List<ChunkPlacement> placements = new List<ChunkPlacement>();
         private readonly List<Entity> chunks = new List<Entity>();                 // spawned in Play
         private readonly List<Entity> trees = new List<Entity>();                  // spawned in Play
+        private List<Road> roads = new List<Road>();                               // this map's roads (entrances for interiors)
+        private readonly List<PendingChunk> pending = new List<PendingChunk>();    // spawned chunks waiting for their scripts
+        private int outpostPieces;
+        private const int kScriptWaitFrames = 30;                                  // frames to wait for a chunk's scripts
+
+        // A chunk just spawned: its prefab's scripts are attached a frame later, so Setup and the outpost wait.
+        private sealed class PendingChunk
+        {
+            public Entity Chunk;
+            public int Placement;                                                  // index into placements
+            public int Frames;
+        }
         private ChunkPlacement spawnPlacement;
         private Entity spawnStart;                                                  // the spawn chunk's PlayerStart, if any
         private const float kPlayerDrop = 2f;                                       // metres above the start the player drops from
@@ -154,6 +169,7 @@ namespace Crucible.@Scripts
         {
             // The player is put on the ground once the terrain's world transform exists.
             if (!playerPlaced && map != null) playerPlaced = PlacePlayer();
+            if (pending.Count > 0) FinishChunks();
         }
 
         /// <summary>
@@ -196,7 +212,7 @@ namespace Crucible.@Scripts
                 SpawnTrees();
                 CheckNavigation();
                 ApplyPlayerSlope();
-                Navigation.Rebake();
+                if (pending.Count == 0) Navigation.Rebake();   // else once the chunks' outposts are in (FinishChunks)
             }
 
             int percent = map.WalkableCount * 100 / (map.Cols * map.Rows);
@@ -265,6 +281,24 @@ namespace Crucible.@Scripts
             Log.Info("SubLevelGenerator: " + preset.Name + ": " + placements.Count + " of " + preset.Chunks.Count + " chunks placed, at least " +
                      ChunkPlacer.SpacingFor(seed, s).ToString("F0") + " m apart");
             BuildRoads();
+            BuildInteriors();
+        }
+
+        // The circular chunks' interiors (ChunkInterior: blocks, walls, an open middle, lanes from the road
+        // entrances), after the roads. A warning for any chunk whose centre an entrance can't walk to.
+        private void BuildInteriors()
+        {
+            ChunkInterior.Build(map, seed, placements, preset.Chunks, roads, maxWalkableSlope);
+            int shaped = 0;
+            for (int i = 0; i < placements.Count; i++)
+            {
+                ChunkRequest request = preset.Chunks[placements[i].Request];
+                if (request.Interior == null || !request.Footprint.Circle) continue;
+                shaped++;
+                if (!ChunkInterior.CentreReachable(map, placements[i], request.Footprint, ChunkInterior.Entrances(i, placements[i], roads)))
+                    Log.Warning("SubLevelGenerator: on seed " + seed + " a road entrance can't walk to the middle of " + Describe(request) + " " + placements[i].Order);
+            }
+            if (shaped > 0) Log.Info("SubLevelGenerator: " + shaped + " chunk interior(s) shaped");
         }
 
         // Roads between the placed chunks (RoadBuilder: A* routes over the terrain), pressed into the
@@ -274,7 +308,7 @@ namespace Crucible.@Scripts
         {
             RoadSettings r = preset.Roads;
             r.maxWalkableSlope = maxWalkableSlope;
-            List<Road> roads = RoadBuilder.Build(map, placements, preset.Chunks, r);
+            roads = RoadBuilder.Build(map, placements, preset.Chunks, r);
             int wanted = RoadBuilder.LinkCount(placements.Count, r);
             int carved = 0, cells = 0;
             foreach (Road road in roads) if (road.Carved) carved++;
@@ -302,15 +336,18 @@ namespace Crucible.@Scripts
 
         private void SpawnChunks()
         {
-            foreach (Entity old in chunks) if (old.IsAlive) Destroy(old);
+            foreach (Entity old in chunks) if (old.IsAlive) Destroy(old);   // their outpost pieces go with them
             chunks.Clear();
+            pending.Clear();
+            outpostPieces = 0;
             spawnPlacement = null;
             spawnStart = null;
             playerPlaced = false;
 
             List<string> warned = new List<string>();    // no HashSet: it lives in System.Core, which the engine's Mono doesn't load
-            foreach (ChunkPlacement p in placements)
+            for (int index = 0; index < placements.Count; index++)
             {
+                ChunkPlacement p = placements[index];
                 ChunkRequest request = preset.Chunks[p.Request];
                 Prefab prefab = PrefabFor(request.Role);
                 if (request.Role == MissionPresets.Spawn) spawnPlacement = p;
@@ -322,11 +359,60 @@ namespace Crucible.@Scripts
                 Entity chunk = prefab.Instantiate(terrain);
                 if (chunk == null) continue;
                 chunk.Transform.Position = new Vector3(p.X, p.Height, p.Z);
-                ChunkDefinition definition = chunk.GetComponent<ChunkDefinition>();
-                if (definition != null) definition.Setup(request.Role, p.Order, request.Footprint);
-                else if (Warn(warned, request.Role + "!")) Log.Warning("SubLevelGenerator: the " + request.Role + " chunk prefab has no ChunkDefinition");
                 if (request.Role == MissionPresets.Spawn) spawnStart = chunk.FindChild("PlayerStart");
                 chunks.Add(chunk);
+                pending.Add(new PendingChunk { Chunk = chunk, Placement = index });
+            }
+        }
+
+        // Each frame while chunks are pending: once a chunk's scripts are attached, give it its role, order
+        // and footprint (ChunkDefinition.Setup) and build its outpost (ChunkOutpost); a chunk still without
+        // a ChunkDefinition after kScriptWaitFrames gets a warning. When none are left, navigation re-bakes
+        // (so it sees the outpost pieces).
+        private void FinishChunks()
+        {
+            for (int i = pending.Count - 1; i >= 0; i--)
+            {
+                PendingChunk item = pending[i];
+                if (item.Chunk == null || !item.Chunk.IsAlive) { pending.RemoveAt(i); continue; }
+                ChunkPlacement p = placements[item.Placement];
+                ChunkRequest request = preset.Chunks[p.Request];
+                ChunkDefinition definition = item.Chunk.GetComponent<ChunkDefinition>();
+                if (definition == null)
+                {
+                    if (++item.Frames < kScriptWaitFrames) continue;
+                    Log.Warning("SubLevelGenerator: the " + request.Role + " chunk prefab has no ChunkDefinition");
+                    pending.RemoveAt(i);
+                    continue;
+                }
+                definition.Setup(request.Role, p.Order, request.Footprint);
+                ChunkOutpost outpost = item.Chunk.GetComponent<ChunkOutpost>();
+                if (outpost != null) SpawnOutpost(item.Chunk, item.Placement, outpost);
+                pending.RemoveAt(i);
+            }
+            if (pending.Count > 0) return;
+            if (outpostPieces > 0) Log.Info("SubLevelGenerator: " + outpostPieces + " outpost pieces");
+            Navigation.Rebake();
+        }
+
+        // One chunk's outpost (OutpostPlanner on its generated interior), spawned under the chunk.
+        private void SpawnOutpost(Entity chunk, int index, ChunkOutpost outpost)
+        {
+            ChunkPlacement p = placements[index];
+            ChunkRequest request = preset.Chunks[p.Request];
+            if (!request.Footprint.Circle) return;
+            List<OutpostItem> items = OutpostPlanner.Plan(map, seed ^ unchecked(0x2545f491 * (index + 1)), p, request.Footprint,
+                ChunkInterior.Entrances(index, p, roads), request.Interior, outpost.ToSettings());
+            foreach (OutpostItem item in items)
+            {
+                Prefab prefab = outpost.Piece(item.Slot, item.Piece);
+                if (prefab == null) continue;
+                Entity piece = prefab.Instantiate(chunk);
+                if (piece == null) continue;
+                piece.Transform.Position = new Vector3(item.X - p.X, item.Height - p.Height, item.Z - p.Z);
+                piece.Transform.Rotation = Quaternion.Euler(0f, item.Yaw, 0f);
+                piece.Transform.Scale = piece.Transform.Scale * item.Scale;
+                outpostPieces++;
             }
         }
 

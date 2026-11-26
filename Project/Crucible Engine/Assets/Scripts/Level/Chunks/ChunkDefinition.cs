@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          26 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         A placed chunk's label: its role in the mission, its order
 *                (Capture's 1st, 2nd, 3rd) and its footprint. Holds no
 *                gameplay; the objectives on the chunk will.
@@ -12,8 +12,9 @@
 *    Ported from the Unity prototype (Level/Chunks/ChunkDefinition.cs). Put
 *    it on a chunk prefab's root. Unlike Unity, the size isn't set on the
 *    prefab: SubLevelGenerator takes it from the mission's preset
-*    (MissionPresets) and calls Setup right after spawning the chunk, so
-*    one table holds every mission number. Setup also stretches the
+*    (MissionPresets) and calls Setup once the chunk's scripts are
+*    attached (a frame after spawning), so one table holds every mission
+*    number. Setup also stretches the
 *    prefab's "Footprint" child (a 1 m Disc or Plane) to the footprint, so
 *    the chunk shows its real size.
 *
@@ -26,6 +27,7 @@
 *
 * \history
 *    -v1.0       ported from Unity: role, order, footprint, Contains
+*    -v1.1       comment: Setup comes a frame after spawning
 *
 **************************************************************************/
 namespace Crucible.@Scripts
@@ -41,7 +43,7 @@ namespace Crucible.@Scripts
         /// <summary>The footprint in metres, centred on this entity.</summary>
         public ChunkFootprint Footprint { get; private set; }
 
-        /// <summary>Called by SubLevelGenerator right after it spawns the chunk.</summary>
+        /// <summary>Called by SubLevelGenerator once the chunk's scripts are attached (a frame after spawning).</summary>
         public void Setup(string role, int order, ChunkFootprint footprint)
         {
             Role = role;
