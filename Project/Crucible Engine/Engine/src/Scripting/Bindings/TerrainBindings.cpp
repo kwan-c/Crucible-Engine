@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.1
 * \brief         Internal calls behind the C# Terrain class
 *                (ManagedScripts/Runtime/Terrain.cs).
 *
@@ -21,6 +21,10 @@
 *
 *    Same shape as NavigationBindings.cpp: 1 = done, 0 = refused (dead
 *    entity, no such component, a bad value); never throws into C#.
+*
+* \history
+*    -v1.0       first version
+*    -v1.1       Build takes a cave volume (count 0 for none)
 *
 **************************************************************************/
 #include "Scripting/ScriptBindings.h"
@@ -49,6 +53,11 @@ namespace Crucible::ScriptBindings
 		// cells is 16 km at the usual 4 m, and ~400 MB of mesh.
 		constexpr std::uint32_t kMaxCellsPerSide = 4096;
 
+		// Past this a cave volume is a mistake: 512 samples a side at 2 m is a
+		// kilometre, and the density alone is 512 MB at the full cube.
+		constexpr std::uint32_t kMaxSamplesPerSide = 512;
+		constexpr std::size_t   kMaxSamples        = std::size_t{ 64 } * 1024 * 1024;
+
 		std::size_t LengthOf(MonoArray* array)
 		{
 			return array ? static_cast<std::size_t>(mono_array_length(array)) : 0;
@@ -58,12 +67,17 @@ namespace Crucible::ScriptBindings
 		 \brief  C# Terrain.Build: replaces the entity's ground.
 		 \param  heights (cols + 1) * (rows + 1) corner heights, row-major.
 		 \param  regions cols * rows cells, one TerrainRegion each.
+		 \param  originX..Z, voxelSize, countX, countY, countZ, density
+		         the cave volume (TerrainVolume): counts 0 and density null
+		         for none.
 		 \return 1 when built; 0 for a dead entity, no Terrain, sizes that
-		         disagree with cols and rows, or NaN heights (the old
-		         ground is kept).
+		         disagree with cols and rows, NaN heights or a bad volume
+		         (the old ground is kept).
 		 *********************************************************************/
 		int32_t ManagedTerrainBuild(int32_t index, int32_t generation, int32_t cols, int32_t rows, float cellSize,
-		                            MonoArray* heights, MonoArray* regions) noexcept
+		                            MonoArray* heights, MonoArray* regions,
+		                            float originX, float originY, float originZ, float voxelSize, int32_t countX, int32_t countY, int32_t countZ,
+		                            MonoArray* density) noexcept
 		{
 			try
 			{
@@ -74,6 +88,14 @@ namespace Crucible::ScriptBindings
 				const std::size_t corners = static_cast<std::size_t>(cols + 1) * static_cast<std::size_t>(rows + 1);
 				const std::size_t cells   = static_cast<std::size_t>(cols) * static_cast<std::size_t>(rows);
 				if (LengthOf(heights) != corners || LengthOf(regions) != cells)
+					return 0;
+				const bool hasVolume = countX > 0;
+				if (countX < 0 || countY < 0 || countZ < 0 ||
+				    static_cast<std::uint32_t>(countX) > kMaxSamplesPerSide || static_cast<std::uint32_t>(countY) > kMaxSamplesPerSide ||
+				    static_cast<std::uint32_t>(countZ) > kMaxSamplesPerSide)
+					return 0;
+				const std::size_t samples = static_cast<std::size_t>(countX) * static_cast<std::size_t>(countY) * static_cast<std::size_t>(countZ);
+				if (hasVolume ? (samples > kMaxSamples || LengthOf(density) != samples) : LengthOf(density) != 0)
 					return 0;
 
 				Entity entity;
@@ -94,7 +116,18 @@ namespace Crucible::ScriptBindings
 				const std::uint8_t* regionData = mono_array_addr(regions, std::uint8_t, 0);
 				grid.regions.assign(regionData, regionData + cells);
 
-				return terrain->Build(std::move(grid)) ? 1 : 0;   // Build rejects NaN heights and unknown regions
+				if (hasVolume)
+				{
+					grid.volume.origin    = Math::vec3(originX, originY, originZ);
+					grid.volume.voxelSize = voxelSize;
+					grid.volume.countX    = static_cast<std::uint32_t>(countX);
+					grid.volume.countY    = static_cast<std::uint32_t>(countY);
+					grid.volume.countZ    = static_cast<std::uint32_t>(countZ);
+					const float* densityData = mono_array_addr(density, float, 0);
+					grid.volume.density.assign(densityData, densityData + samples);
+				}
+
+				return terrain->Build(std::move(grid)) ? 1 : 0;   // Build rejects NaN heights, unknown regions and a bad volume
 			}
 			catch (...)
 			{

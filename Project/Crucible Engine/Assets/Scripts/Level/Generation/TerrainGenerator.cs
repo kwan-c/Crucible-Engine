@@ -3,7 +3,7 @@
 * \author:       Jean David Vidal Cruzado
 * \par:          Email: jeandavidvidal.c@digipen.edu
 * \date          10 November 2026
-* \version       1.0
+* \version       1.2
 * \brief         Seeded terraced terrain as plain data: TerrainSettings in,
 *                TerrainMap out. No engine calls, so it can be tested alone.
 *
@@ -25,6 +25,13 @@
 *    The map is centred on the origin of the entity it is built on, the
 *    same layout as the engine's Terrain: (cols + 1) * (rows + 1) corner
 *    heights, row-major.
+*
+* \history
+*    -v1.0       ported from Unity
+*    -v1.1       TerrainMap.Tunnel (set by CaveGenerator), painted as the
+*                Tunnel region
+*    -v1.2       TerrainMap.Volume (a cave volume) replaces Tunnel: caves
+*                draw their own floors
 **************************************************************************/
 namespace Crucible.@Scripts
 {
@@ -59,6 +66,7 @@ namespace Crucible.@Scripts
         public float[] Heights { get; private set; }   // (Cols + 1) * (Rows + 1) corners
         public bool[] Walkable { get; private set; }   // Cols * Rows cells
         public bool[] Road { get; private set; }       // Cols * Rows cells, set by the road builder later
+        public TerrainVolume Volume { get; set; }      // a cave volume over part of the map (CaveGenerator), or null
 
         public TerrainMap(int cols, int rows, float cellSize, float minX, float minZ)
         {

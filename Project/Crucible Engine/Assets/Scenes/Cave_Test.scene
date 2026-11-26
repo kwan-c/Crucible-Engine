@@ -1,0 +1,1036 @@
+{
+    "version": 1,
+    "name": "Cave_Test",
+    "entities": [
+        {
+            "id": "1758E0DCA687400F",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": -20.0,
+                        "y": 45.0,
+                        "z": -20.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "1B2730E440174007",
+            "parent": "932730E440174001",
+            "siblingIndex": 2,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9399999976158142,
+                        "z": 1.5
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.019999999552965164,
+                        "z": 3.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": false,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 1.0,
+                        "y": 0.4000000059604645,
+                        "z": 0.11999999731779099,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Telegraph"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890417,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "232730E440174005",
+            "parent": "932730E440174001",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.6199839115142822,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 2.0,
+                        "y": 0.10000000149011612,
+                        "z": 0.10000000149011612
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.30000001192092896,
+                        "y": 1.0,
+                        "z": 0.3499999940395355,
+                        "w": 0.5
+                    },
+                    "meshAsset": 3578055278504480029,
+                    "materialAsset": 0
+                },
+                "EntityName": {
+                    "name": "Health Bar"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 8528833486658961575,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "3758E0DCA67A0007",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 25.0,
+                        "y": 45.0,
+                        "z": 30.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 1.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": true,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": false,
+                        "freezeRotationY": false,
+                        "freezeRotationZ": false
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Moving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Capsule"
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 17246782011306147853,
+                    "fileId": 10905713735968489483,
+                    "isRoot": true,
+                    "prefabHash": 7306435685216836802,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 30.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.2000000476837158,
+                    "startWith": "FollowField",
+                    "stoppingDistance": 10.0,
+                    "slowingDistance": 20.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 0.6000000238418579,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "3E8540DC9CCE8007",
+            "parent": "E68540DC9CCE8005",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.5,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "CameraOrbit": {
+                    "sensitivity": 0.10000000149011612,
+                    "stickSpeed": 180.0,
+                    "minPitch": -30.0,
+                    "maxPitch": 70.0,
+                    "yaw": 0.0,
+                    "pitch": 0.0
+                },
+                "EntityName": {
+                    "name": "Camera Pivot"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "4513C1756A880087",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Sub Level Generator"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "SubLevelGenerator",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.SubLevelGenerator",
+                                    "name": "seed",
+                                    "type": "Int",
+                                    "boolean": false,
+                                    "integer": 12345,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.SubLevelGenerator",
+                                    "name": "player",
+                                    "type": "Entity",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 16610754116893704197,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.SubLevelGenerator",
+                                    "name": "caves",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "832730E440174003",
+            "parent": "932730E440174001",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": -0.9718225002288818,
+                        "z": -0.2288585901260376
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 4175691030365061123,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Body"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 15446362514300043429,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "868540DC9CCE8009",
+            "parent": "3E8540DC9CCE8007",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 5.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Camera": {
+                    "enabled": true,
+                    "fovY": 60.0,
+                    "nearZ": 0.10000000149011612,
+                    "farZ": 1000.0,
+                    "priority": 1
+                },
+                "EntityName": {
+                    "name": "Player Camera"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "932730E440174001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 17.208940505981445,
+                        "y": 38.414947509765625,
+                        "z": 54.60002899169922
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "RigidBody": {
+                    "velocity": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "mass": 200.0,
+                    "useGravity": true,
+                    "drag": 0.0,
+                    "angularDrag": 0.05000000074505806,
+                    "isKinematic": false,
+                    "constraints": {
+                        "freezePositionX": false,
+                        "freezePositionY": false,
+                        "freezePositionZ": false,
+                        "freezeRotationX": true,
+                        "freezeRotationY": true,
+                        "freezeRotationZ": true
+                    }
+                },
+                "Collider": {
+                    "type": "Box",
+                    "size": {
+                        "x": 3.041851282119751,
+                        "y": 2.0844321250915527,
+                        "z": 1.7326987981796265
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": -0.22885863482952118
+                    },
+                    "friction": 0.20000000298023224,
+                    "bounciness": 0.0,
+                    "layer": "Enemy",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Golem Mace"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "Enemy",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CombatHealth",
+                                    "name": "maximumHealth",
+                                    "type": "Float",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 120.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                },
+                                {
+                                    "declaringType": "Crucible.Scripts.Enemy",
+                                    "name": "dropPrefab",
+                                    "type": "Prefab",
+                                    "boolean": false,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 5267962757949921808
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 16599284018906890403,
+                    "isRoot": true,
+                    "prefabHash": 1811445575636163755,
+                    "overrides": []
+                },
+                "FlowFieldAgent": {
+                    "speed": 6.0,
+                    "acceleration": 15.0,
+                    "angularSpeed": 240.0,
+                    "baseOffset": 1.0,
+                    "startWith": "Nothing",
+                    "stoppingDistance": 2.200000047683716,
+                    "slowingDistance": 12.0,
+                    "neighbourRadius": 10.0,
+                    "avoidancePriority": 50,
+                    "alignmentWeight": 0.4000000059604645,
+                    "radius": 1.600000023841858,
+                    "avoidanceDistance": 3.0,
+                    "avoidanceWeight": 2.200000047683716
+                },
+                "StateGraphAgent": {
+                    "graph": 4968574966415897207,
+                    "logStateChanges": false
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "97BB28E13DCA5532",
+            "parent": "4513C1756A880087",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.0
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "Collider": {
+                    "type": "HeightField",
+                    "size": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "radius": 0.5,
+                    "height": 2.0,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "friction": 0.6000000238418579,
+                    "bounciness": 0.0,
+                    "layer": "NonMoving",
+                    "isTrigger": false
+                },
+                "EntityName": {
+                    "name": "Terrain"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                },
+                "Terrain": {
+                    "groundColour": {
+                        "x": 0.41999998688697815,
+                        "y": 0.550000011920929,
+                        "z": 0.30000001192092896
+                    },
+                    "cliffColour": {
+                        "x": 0.46000000834465027,
+                        "y": 0.4300000071525574,
+                        "z": 0.4000000059604645
+                    },
+                    "roadColour": {
+                        "x": 0.6299999952316284,
+                        "y": 0.5299999713897705,
+                        "z": 0.38999998569488525
+                    },
+                    "tunnelColour": {
+                        "x": 0.36000001430511475,
+                        "y": 0.27000001072883606,
+                        "z": 0.18000000715255737
+                    }
+                }
+            }
+        },
+        {
+            "id": "C68540DC9CCA4001",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 100.0,
+                        "y": 100.0,
+                        "z": 100.0
+                    },
+                    "rotation": {
+                        "x": -0.4226182699203491,
+                        "y": -0.0,
+                        "z": -0.0,
+                        "w": 0.9063077569007874
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "Light": {
+                    "type": "Directional",
+                    "colour": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    },
+                    "intensity": 1.0,
+                    "range": 10.0,
+                    "innerConeDeg": 20.0,
+                    "outerConeDeg": 30.0,
+                    "enabled": true,
+                    "castShadows": true
+                },
+                "EntityName": {
+                    "name": "Directional Light"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "CE8540DC9CCA4003",
+            "parent": "4513C1756A880087",
+            "siblingIndex": 1,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 120.0,
+                        "y": 1.0,
+                        "z": 120.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Nav Surface"
+                },
+                "FlowFieldSurface": {
+                    "cellSize": 2.0,
+                    "bodyRadiusPadding": 0.6000000238418579,
+                    "stepHeight": 0.30000001192092896,
+                    "agentHeight": 1.600000023841858,
+                    "maxLayersPerCell": 4,
+                    "maxDropHeight": 3.0,
+                    "floodRadius": 100.0,
+                    "rebuildDistance": 3.0,
+                    "wallAdjacencyCost": 4.0,
+                    "dynamicUpdateInterval": 0.25
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "D81908E4FDA9AEDF",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Cursor Lock"
+                },
+                "ScriptComponent": {
+                    "scripts": [
+                        {
+                            "enabled": true,
+                            "assembly": "Managed/Crucible.Scripts.dll",
+                            "namespace": "Crucible.Scripts",
+                            "class": "CursorLock",
+                            "fields": [
+                                {
+                                    "declaringType": "Crucible.Scripts.CursorLock",
+                                    "name": "locked",
+                                    "type": "Bool",
+                                    "boolean": true,
+                                    "integer": 0,
+                                    "single": 0.0,
+                                    "real": 0.0,
+                                    "text": "",
+                                    "stringIsNull": false,
+                                    "entityId": 0,
+                                    "assetId": 0
+                                }
+                            ]
+                        }
+                    ]
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "E68540DC9CCE8005",
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 1.0,
+                        "z": 0.4270303249359131
+                    },
+                    "rotation": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 1.0
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 0,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.5,
+                        "y": 0.5,
+                        "z": 0.5,
+                        "w": 0.5
+                    },
+                    "meshAsset": 5067099792209742713,
+                    "materialAsset": 0
+                },
+                "CharacterController": {
+                    "height": 2.0,
+                    "radius": 0.5,
+                    "center": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "slopeLimit": 45.0,
+                    "stepOffset": 0.30000001192092896,
+                    "pushStrength": 100.0,
+                    "layer": "Player"
+                },
+                "PlayerController": {
+                    "moveSpeed": 6.0,
+                    "jumpHeight": 1.5,
+                    "faceCamera": true
+                },
+                "EntityName": {
+                    "name": "Player"
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        },
+        {
+            "id": "EB2730E440174009",
+            "parent": "832730E440174003",
+            "siblingIndex": 0,
+            "components": {
+                "Transform": {
+                    "positions": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    },
+                    "rotation": {
+                        "x": 0.7071067690849304,
+                        "y": 0.0,
+                        "z": 0.0,
+                        "w": 0.7071067690849304
+                    },
+                    "scale": {
+                        "x": 1.0,
+                        "y": 1.0,
+                        "z": 1.0
+                    }
+                },
+                "MeshRenderer": {
+                    "visible": true,
+                    "modelAsset": 14686256933579063307,
+                    "modelRoot": 4294967295,
+                    "materialOverrides": [],
+                    "colour": {
+                        "x": 0.550000011920929,
+                        "y": 0.41999998688697815,
+                        "z": 0.30000001192092896,
+                        "w": 0.5
+                    },
+                    "meshAsset": 0,
+                    "materialAsset": 0
+                },
+                "MaterialParams": {
+                    "emissiveScale": 1.0,
+                    "custom": {
+                        "x": 0.0,
+                        "y": 0.0,
+                        "z": 0.0
+                    }
+                },
+                "EntityName": {
+                    "name": "Head"
+                },
+                "AnimatedModel": {
+                    "controllerAsset": 7930011071109024257,
+                    "clip": 8,
+                    "speed": 1.0,
+                    "loop": true,
+                    "previewInEditor": true,
+                    "playOnStart": true
+                },
+                "SocketAttachment": {
+                    "enabled": true,
+                    "socketName": "Shoulder",
+                    "modelAsset": 4175691030365061123,
+                    "node": 17
+                },
+                "PrefabInstance": {
+                    "prefabAsset": 12564058752782925993,
+                    "fileId": 5334910539341692929,
+                    "isRoot": false,
+                    "prefabHash": 0,
+                    "overrides": []
+                },
+                "EntityTag": {
+                    "tag": "Untagged"
+                }
+            }
+        }
+    ]
+}
